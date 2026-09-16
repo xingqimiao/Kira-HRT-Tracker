@@ -11,6 +11,7 @@ import { useAppData } from './hooks/useAppData';
 import { useAppNavigation, ViewKey } from './hooks/useAppNavigation';
 import { useLiveShareSync } from './hooks/useLiveShareSync';
 import { useCloudSync } from './hooks/useCloudSync';
+import { useCoreSync } from './hooks/useCoreSync';
 
 import WeightEditorModal from './components/WeightEditorModal';
 import DoseFormModal from './components/DoseFormModal';
@@ -19,7 +20,9 @@ import Sidebar from './components/Sidebar';
 import PasswordInputModal from './components/PasswordInputModal';
 import DisclaimerModal from './components/DisclaimerModal';
 import AuthModal from './components/AuthModal';
+import CoreAuthModal from './components/CoreAuthModal';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { useCoreSession, CoreSessionProvider } from './hooks/useCoreSession';
 import { cloudService } from './services/cloud';
 
 // Pages
@@ -30,6 +33,8 @@ import CalibrationSettings from './pages/CalibrationSettings';
 import Settings from './pages/Settings';
 import Account from './pages/Account';
 import Admin from './pages/Admin';
+import CoreAccountSettings from './pages/CoreAccountSettings';
+import XAuthLanding from './pages/XAuthLanding';
 import SessionsPage from './pages/Sessions';
 import TwoFactorPage from './pages/TwoFactor';
 import ChangePasswordPage from './pages/ChangePassword';
@@ -56,6 +61,19 @@ const AppContent = () => {
     const { showDialog } = useDialog();
     const { mode } = useHRTMode();
     const { user, token, logout, needsSetup2FA, clearSetup2FA } = useAuth();
+
+    /**
+     * The Application Core session, alongside the legacy Worker one.
+     *
+     * Both exist during the migration and they are not the same thing: the Core holds
+     * the key to the records, the Worker session drives cloud backup and passkeys.
+     * The Core is now the primary way in — it is what the server actually protects
+     * records with — and the data layer below is scoped to whichever identity is
+     * present, preferring Core.
+     */
+    const coreSession = useCoreSession();
+    const [isCoreAuthOpen, setIsCoreAuthOpen] = useState(false);
+    const [prefillUsername, setPrefillUsername] = useState('');
     const [twoFAEnabled, setTwoFAEnabled] = useState(false);
 
     // Use Custom Hooks
@@ -86,7 +104,7 @@ const AppContent = () => {
         applySyncedState,
         scope,
         readyScope,
-    } = useAppData(showDialog);
+    } = useAppData(showDialog, coreSession.user?.userId ?? null);
 
     useLiveShareSync({
         authToken: token,
@@ -155,6 +173,35 @@ const AppContent = () => {
         // Never touch the cloud while the data layer is mid-switch between
         // accounts or modes: the payload would mix one account's in-memory
         // records with another's storage keys.
+        ready: readyScope === scope,
+        buildPayload: buildExportPayload,
+        applyRemote: applySyncedState,
+        events,
+        labResults,
+        doseTemplates,
+        weight,
+        pkParams,
+    });
+
+    /**
+     * Two-way sync against the Application Core — the path that actually stores the
+     * records.
+     *
+     * Both sync hooks run, and they are not redundant: this one puts doses and labs
+     * in the Core's structured, encrypted store (where an agent can read them and
+     * where account deletion can genuinely remove them), while `useCloudSync` above
+     * maintains the legacy encrypted backup blob for the existing Worker deployment.
+     * They share `buildExportPayload` / `applySyncedState` and the app's own merge
+     * engine, so neither duplicates the merge rules.
+     *
+     * Gated on `coreSession.isSignedIn`: without a Core session there is no key
+     * server-side, so a push would 401 — and, worse, a *pull* would silently do
+     * nothing while looking like it worked.
+     */
+    const coreSyncState = useCoreSync({
+        token: coreSession.token,
+        userId: coreSession.user?.userId ?? null,
+        enabled: coreSession.isSignedIn,
         ready: readyScope === scope,
         buildPayload: buildExportPayload,
         applyRemote: applySyncedState,
@@ -532,8 +579,24 @@ const AppContent = () => {
                             setDevMode={setDevMode}
                             onNavigateToMilkTea={() => handleViewChange('settings-milk-tea')}
                             onNavigateToCatStates={() => handleViewChange('settings-cat-states')}
+                            onNavigateToSecurity={() => {
+                                // One entry point either way: with a Core session it
+                                // opens the security page, without one it starts the
+                                // sign-in that creates the session.
+                                if (coreSession.isSignedIn) handleViewChange('settings-security');
+                                else setIsCoreAuthOpen(true);
+                            }}
+                            coreSignedIn={coreSession.isSignedIn}
                             isAdmin={!!user?.isAdmin}
                             onNavigateToAdmin={() => handleViewChange('admin')}
+                        />
+                    )}
+
+                    {currentView === 'settings-security' && (
+                        <CoreAccountSettings
+                            session={coreSession}
+                            onBack={() => handleViewChange('settings')}
+                            onDeleted={() => handleViewChange('home')}
                         />
                     )}
 
@@ -777,9 +840,29 @@ const AppContent = () => {
                 onClose={() => setIsAuthModalOpen(false)}
             />
 
+            {/* The Core sign-in. Rendered alongside the legacy modal during the
+                migration: the Core is what actually protects records, and this is the
+                flow with the mandatory second factor. */}
+            <CoreAuthModal
+                isOpen={isCoreAuthOpen}
+                onClose={() => { setIsCoreAuthOpen(false); setPrefillUsername(''); }}
+                session={coreSession}
+                initialUsername={prefillUsername}
+                onSignedIn={() => setPrefillUsername('')}
+            />
         </div >
     );
 };
+
+/**
+ * Where the browser lands after an X authorization.
+ *
+ * Path-based rather than a view key, because the server redirects to a real URL and
+ * the app must recognise it on a cold load — the user arrives from X with no app state
+ * at all. Same approach as `/share`, which has the same constraint.
+ */
+const isXAuthRoute = (): boolean =>
+    /^\/auth\/x\/(callback|setup)\/?$/.test(window.location.pathname);
 
 const getShareRoute = (): { isShareRoute: boolean; token: string | null } => {
     if (!/^\/share\/?$/.test(window.location.pathname)) {
@@ -796,8 +879,12 @@ const getShareRoute = (): { isShareRoute: boolean; token: string | null } => {
 
 const App = () => {
     const [shareRoute, setShareRoute] = useState(getShareRoute);
+    const [xAuthRoute, setXAuthRoute] = useState(isXAuthRoute);
     useEffect(() => {
-        const updateRoute = () => setShareRoute(getShareRoute());
+        const updateRoute = () => {
+            setShareRoute(getShareRoute());
+            setXAuthRoute(isXAuthRoute());
+        };
         window.addEventListener('hashchange', updateRoute);
         window.addEventListener('popstate', updateRoute);
         return () => {
@@ -805,24 +892,59 @@ const App = () => {
             window.removeEventListener('popstate', updateRoute);
         };
     }, []);
+
+    /**
+     * The X landing is reached from an external redirect, so it must be handled
+     * before anything that expects app state — including the onboarding gate, which
+     * would otherwise intercept a brand-new X user and hide the setup they need.
+     */
+    if (xAuthRoute) {
+        return (
+            <LanguageProvider>
+                <HRTModeProvider>
+                    <DialogProvider>
+                        <AuthProvider>
+                            <CoreSessionProvider>
+                            <ErrorBoundary>
+                                <XAuthLanding navigate={() => {
+                                    // Replace, not push: the callback URL carries a
+                                    // spent one-time code, and Back must not return to
+                                    // a link that cannot work twice.
+                                    window.history.replaceState(null, '', '/');
+                                    setXAuthRoute(false);
+                                    window.location.reload();
+                                }} />
+                            </ErrorBoundary>
+                            </CoreSessionProvider>
+                        </AuthProvider>
+                    </DialogProvider>
+                </HRTModeProvider>
+            </LanguageProvider>
+        );
+    }
     return (
         <LanguageProvider>
             <HRTModeProvider>
-                {shareRoute.isShareRoute ? (
-                    <ErrorBoundary>
-                        <PublicShare token={shareRoute.token} />
-                    </ErrorBoundary>
-                ) : (
-                    <DialogProvider>
-                        <AuthProvider>
-                            <PixelCatProvider>
-                                <ErrorBoundary>
-                                    <AppContent />
-                                </ErrorBoundary>
-                            </PixelCatProvider>
-                        </AuthProvider>
-                    </DialogProvider>
-                )}
+                {/* One session for the whole app, including the X landing below:
+                    the callback stores a token that AppContent then reads, so two
+                    instances would silently be two sessions. */}
+                <CoreSessionProvider>
+                    {shareRoute.isShareRoute ? (
+                        <ErrorBoundary>
+                            <PublicShare token={shareRoute.token} />
+                        </ErrorBoundary>
+                    ) : (
+                        <DialogProvider>
+                            <AuthProvider>
+                                <PixelCatProvider>
+                                    <ErrorBoundary>
+                                        <AppContent />
+                                    </ErrorBoundary>
+                                </PixelCatProvider>
+                            </AuthProvider>
+                        </DialogProvider>
+                    )}
+                </CoreSessionProvider>
             </HRTModeProvider>
         </LanguageProvider>
     );

@@ -93,14 +93,27 @@ export interface DoseDayGroup {
     events: DoseEvent[];
 }
 
-export const useAppData = (showDialog: (type: 'alert' | 'confirm', message: string, onConfirm?: () => void) => void) => {
+export const useAppData = (
+    showDialog: (type: 'alert' | 'confirm', message: string, onConfirm?: () => void) => void,
+    /**
+     * Storage owner, when something other than the legacy auth session owns the data.
+     *
+     * The Application Core session is the case: the Core holds the key to the records
+     * and identifies the account, while the Worker session only drives cloud backup.
+     * Storage is keyed by this value, so getting it wrong does not error — it silently
+     * reads and writes another account's namespace. Hence an explicit parameter rather
+     * than a fallback buried in the hook, so the precedence is visible at the call site.
+     */
+    ownerOverride?: string | null,
+) => {
     const { t, lang } = useTranslation();
     const { mode, isTransmasc } = useHRTMode();
     const { user } = useAuth();
 
     // Everything below is scoped to (account, mode). `scope` is the composite the
     // reload/persist handshake keys on — see loadedScopeRef.
-    const owner = user?.id ?? LOCAL_OWNER;
+    // Core first: it is the identity the server protects data with.
+    const owner = ownerOverride ?? user?.id ?? LOCAL_OWNER;
     const scope = `${owner}|${mode}`;
     const keyFor = (m: 'transfem' | 'transmasc', suffix: string) => modeKeyFor(owner, m, suffix);
     const sharedKey = (suffix: string) => nsFor(owner, suffix);

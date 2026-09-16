@@ -7,6 +7,13 @@ import { useHRTMode } from '../contexts/HRTModeContext';
 import { usePixelCats, CatStyle } from '../contexts/PixelCatContext';
 
 interface SettingsProps {
+    /**
+     * Open the Application Core account-security page — or start the sign-in that
+     * creates a session, when there is not one yet.
+     */
+    onNavigateToSecurity?: () => void;
+    /** Whether a Core session exists, so the row can describe what it will do. */
+    coreSignedIn?: boolean;
     t: (key: string) => string;
     lang: Lang;
     setLang: (lang: Lang) => void;
@@ -76,6 +83,7 @@ const Settings: React.FC<SettingsProps> = ({
     onNavigateToLanguage, onNavigateToAppearance, onNavigateToWeight,
     onNavigateToExport, onNavigateToImport, autoSync, setAutoSync, isLoggedIn,
     devMode, setDevMode, onNavigateToMilkTea, onNavigateToCatStates, isAdmin, onNavigateToAdmin,
+    onNavigateToSecurity, coreSignedIn,
 }) => {
     const { mode } = useHRTMode();
     const { showCats, setShowCats, catStyle, setCatStyle } = usePixelCats();
@@ -260,6 +268,23 @@ const Settings: React.FC<SettingsProps> = ({
 
     const AboutContent = () => (
         <div>
+            {/* Algorithm attribution. Required by the upstream project's README, and
+                it is the honest thing regardless: the pharmacokinetic model is the
+                substance of this app and it is not our work. Kept as its own row with
+                a visible description rather than buried in a credits list, because
+                "visibly link back" is the actual requirement — a link nobody can find
+                does not satisfy it. */}
+            <button
+                onClick={() => showDialog('confirm', t('drawer.algorithm_confirm'), () => window.open('https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test', '_blank'))}
+                className={rowBase}
+            >
+                <div>
+                    <p className={rowLabel}>{t('drawer.algorithm_credits')}</p>
+                    <p className={`text-xs ${muted} mt-0.5`}>{t('drawer.algorithm_credits_desc')}</p>
+                </div>
+                <ChevronRight size={15} className={muted} />
+            </button>
+
             <button
                 onClick={() => showDialog('confirm', t('drawer.model_confirm'), () => window.open('https://mahiro.uk/articles/estrogen-model-summary', '_blank'))}
                 className={rowBase}
@@ -285,6 +310,23 @@ const Settings: React.FC<SettingsProps> = ({
                 <span className={rowLabel}>{t('drawer.disclaimer')}</span>
                 <ChevronRight size={15} className={muted} />
             </button>
+
+            {/* Account security against the Application Core: password, second factor,
+                X linking, deletion. Separate from the legacy "Account" row because it
+                is a different backend and a different set of credentials. */}
+            {onNavigateToSecurity && (
+                <button onClick={onNavigateToSecurity} className={rowBase}>
+                    <div>
+                        <p className={rowLabel}>{t('settings.security')}</p>
+                        <p className={`text-xs ${muted} mt-0.5`}>
+                            {coreSignedIn
+                                ? t('settings.security_desc')
+                                : t('settings.security_signin_desc')}
+                        </p>
+                    </div>
+                    <ChevronRight size={15} className={muted} />
+                </button>
+            )}
 
             {/* The intro only ever shows itself once, so this is the only way back
                 to it — and the only way anyone who skipped it can read it. */}
