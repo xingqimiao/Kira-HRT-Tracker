@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import Icon from './Icon';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Check } from 'lucide-react';
+import { ChevronDown, Check } from '../icons';
 
 interface Option {
     value: string;
@@ -103,7 +104,7 @@ const CustomSelect: React.FC<CustomSelectProps> = ({ value, onChange, options, l
     return (
         <div className="space-y-1.5 flex flex-col" ref={containerRef}>
             {label && !icon && (
-                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 pl-1">
+                <label className="block text-xs font-semibold text-cos-on-surface-variant  pl-1">
                     {label}
                 </label>
             )}
@@ -112,33 +113,33 @@ const CustomSelect: React.FC<CustomSelectProps> = ({ value, onChange, options, l
                 <button
                     type="button"
                     onClick={() => setIsOpen(!isOpen)}
-                    className={`group w-full min-h-[44px] px-3 py-2 bg-white dark:bg-neutral-900 border outline-none flex items-center justify-between overflow-hidden
+                    className={`group w-full min-h-[44px] px-3 py-2 bg-cos-surface-container  border outline-none flex items-center justify-between overflow-hidden
                         ${isOpen
                             ? 'border-[var(--color-m3-primary)] ring-1 ring-[var(--color-m3-primary)]/20 rounded-t-md'
-                            : 'border-gray-200 dark:border-neutral-800 hover:border-gray-300 dark:hover:border-neutral-700 rounded-md'}`}
+                            : 'border-cos-outline  hover:border-cos-outline  rounded-md'}`}
                 >
                     {icon ? (
                         <>
                             <div className="flex items-center gap-2">
                                 {icon}
-                                <span className="font-medium text-gray-900 dark:text-gray-100 text-sm">{label}</span>
+                                <span className="font-medium text-cos-on-surface  text-sm">{label}</span>
                             </div>
                             <div className="flex items-center gap-1.5">
-                                <span className="text-sm text-gray-500">{selectedOption?.label}</span>
-                                <ChevronDown size={16} className={`chev text-gray-400 ${isOpen ? 'rotate-180' : ''}`} />
+                                <span className="text-sm text-cos-on-surface-variant">{selectedOption?.label}</span>
+                                <Icon icon={ChevronDown} size={16} className={`chev text-cos-outline ${isOpen ? 'rotate-180' : ''}`} />
                             </div>
                         </>
                     ) : (
                         <>
                             <div className="flex items-center gap-2 min-w-0 flex-1">
-                                {selectedOption?.icon && <div className="text-gray-500 dark:text-gray-400">{selectedOption.icon}</div>}
-                                <span className="font-medium text-gray-900 dark:text-gray-100 text-sm truncate">{selectedOption?.label || value}</span>
+                                {selectedOption?.icon && <div className="text-cos-on-surface-variant ">{selectedOption.icon}</div>}
+                                <span className="font-medium text-cos-on-surface  text-sm truncate">{selectedOption?.label || value}</span>
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0">
                                 {selectedOption?.description && (
-                                    <span className="text-xs text-gray-500 dark:text-gray-400">{selectedOption.description}</span>
+                                    <span className="text-xs text-cos-on-surface-variant ">{selectedOption.description}</span>
                                 )}
-                                <ChevronDown size={16} className={`chev text-gray-400 ${isOpen ? 'rotate-180' : ''}`} />
+                                <Icon icon={ChevronDown} size={16} className={`chev text-cos-outline ${isOpen ? 'rotate-180' : ''}`} />
                             </div>
                         </>
                     )}
@@ -148,7 +149,7 @@ const CustomSelect: React.FC<CustomSelectProps> = ({ value, onChange, options, l
                     <div
                         ref={dropdownRef}
                         style={positionStyle}
-                        className="dropdown-in fixed z-[999] bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 border-t-0 rounded-b-md shadow-sm overflow-y-auto py-1"
+                        className="dropdown-in fixed z-[999] bg-cos-surface-container  border border-cos-outline  border-t-0 rounded-b-md shadow-sm overflow-y-auto py-1"
                     >
                         {options.map(opt => (
                             <button
@@ -157,17 +158,17 @@ const CustomSelect: React.FC<CustomSelectProps> = ({ value, onChange, options, l
                                 className={`w-full px-3 py-2 text-start flex items-center gap-2 relative overflow-hidden
                                     ${opt.value === value
                                         ? 'bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-surface)] font-medium'
-                                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-neutral-800'}`}
+                                        : 'text-cos-on-surface  hover:bg-cos-surface-container '}`}
                             >
-                                {opt.icon && <div className="text-gray-400 dark:text-gray-500">{opt.icon}</div>}
+                                {opt.icon && <div className="text-cos-outline ">{opt.icon}</div>}
                                 <span className="flex-1 text-sm">{opt.label}</span>
                                 {opt.description && (
-                                    <span className={`text-xs ${opt.value === value ? 'text-[var(--color-m3-on-surface-variant)]' : 'text-gray-500 dark:text-gray-400'}`}>
+                                    <span className={`text-xs ${opt.value === value ? 'text-[var(--color-m3-on-surface-variant)]' : 'text-cos-on-surface-variant '}`}>
                                         {opt.description}
                                     </span>
                                 )}
                                 {opt.value === value && (
-                                    <Check size={16} className="text-[var(--color-m3-primary)]" strokeWidth={2.5} />
+                                    <Icon icon={Check} size={16} className="text-[var(--color-m3-primary)]" strokeWidth={2.5} />
                                 )}
                             </button>
                         ))}

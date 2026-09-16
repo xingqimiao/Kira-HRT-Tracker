@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Loader2, AlertTriangle } from 'lucide-react';
+import Icon from '../components/Icon';
+import { CheckCircle2, Loader2, AlertTriangle } from '../icons';
 
 import TotpSecretDisplay from '../components/TotpSecretDisplay';
 import { coreAuth, CoreAuthError, readXCallbackParams } from '../services/coreAuth';
@@ -99,7 +100,7 @@ const XAuthLanding: React.FC<XAuthLandingProps> = ({
     return (
       <Page>
         <p className="flex items-center gap-2.5 text-sm">
-          <Loader2 size={17} className="animate-spin" />
+          <Icon icon={Loader2} size={17} className="animate-spin" />
           {t('core.x.working')}
         </p>
       </Page>
@@ -110,7 +111,7 @@ const XAuthLanding: React.FC<XAuthLandingProps> = ({
     return (
       <Page>
         <Headline
-          icon={<CheckCircle2 size={19} className="text-[var(--color-m3-primary)]" />}
+          icon={<Icon icon={CheckCircle2} size={19} className="text-[var(--color-m3-primary)]" />}
           title={t('core.x.linked_title')}
           body={
             (params.handle ? `@${params.handle}. ` : '') + t('core.x.linked_body')
@@ -127,7 +128,7 @@ const XAuthLanding: React.FC<XAuthLandingProps> = ({
     return (
       <Page>
         <Headline
-          icon={<AlertTriangle size={19} className="text-[#B3261E]" />}
+          icon={<Icon icon={AlertTriangle} size={19} className="text-[#B3261E]" />}
           title={t('core.x.failed_title')}
           body={message}
         />
@@ -179,7 +180,7 @@ const XAuthLanding: React.FC<XAuthLandingProps> = ({
     <Page wide>
       <div className="space-y-2 mb-4">
         <h2 className="text-base font-semibold">{t('core.x.setup_title')}</h2>
-        <p className="text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+        <p className="text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)] ">
           {t('core.x.setup_body')}
         </p>
       </div>
@@ -241,7 +242,7 @@ const SetupForm: React.FC<{
       </section>
 
       <form
-        className="space-y-3 pt-5 border-t border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]"
+        className="space-y-3 pt-5 border-t border-[var(--color-m3-outline-variant)] "
         onSubmit={async (e) => {
           e.preventDefault();
           if (busy) return;
@@ -273,7 +274,7 @@ const SetupForm: React.FC<{
             required
             minLength={8}
           />
-          <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+          <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">
             {t('core.x.setup_password_hint')}
           </p>
         </div>
@@ -295,13 +296,13 @@ const SetupForm: React.FC<{
 
         {error && (
           <p className="text-xs flex items-start gap-1.5 text-[#B3261E]" role="alert">
-            <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+            <Icon icon={AlertTriangle} size={13} className="mt-0.5 shrink-0" />
             <span>{error}</span>
           </p>
         )}
 
         <button type="submit" disabled={busy} className="btn-primary w-full">
-          {busy && <Loader2 size={16} className="animate-spin" />}
+          {busy && <Icon icon={Loader2} size={16} className="animate-spin" />}
           {t('core.x.setup_submit')}
         </button>
       </form>
@@ -329,7 +330,7 @@ const Headline: React.FC<{ icon: React.ReactNode; title: string; body: string }>
     {icon && <span className="mt-0.5 shrink-0">{icon}</span>}
     <div className="space-y-1">
       <p className="text-sm font-medium">{title}</p>
-      <p className="text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+      <p className="text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)] ">
         {body}
       </p>
     </div>

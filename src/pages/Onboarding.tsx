@@ -36,11 +36,11 @@ export const markOnboardingSeen = (): void => {
     localStorage.setItem(ONBOARDING_KEY, 'true');
 };
 
-const divider = 'border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]';
+const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
 
 /** The tick beside a chosen language or mode, in the primary colour. */
 const Tick: React.FC = () => (
-    <PixelMark name="check" size={16} className="shrink-0 text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)]" />
+    <PixelMark name="check" size={16} className="shrink-0 text-[var(--color-m3-primary)] " />
 );
 
 /**
@@ -84,19 +84,19 @@ const DoseRings: React.FC<{ count: number; at: number }> = ({ count, at }) => {
             height={18}
             aria-hidden="true"
             focusable="false"
-            className="text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)]"
+            className="text-[var(--color-m3-primary)] "
         >
             <line
                 x1={PAD} y1={MID} x2={width - PAD} y2={MID}
                 strokeWidth={1}
-                className="stroke-[var(--color-m3-outline-variant)] dark:stroke-[var(--color-m3-dark-outline-variant)]"
+                className="stroke-[var(--color-m3-outline-variant)] "
             />
             {Array.from({ length: count }, (_, i) => (
                 <circle
                     key={i}
                     className={`onb-ring ${i <= at
                         ? 'fill-current stroke-current'
-                        : 'fill-[var(--color-m3-surface-dim)] stroke-[var(--color-m3-outline-variant)] dark:fill-[var(--color-m3-dark-surface)] dark:stroke-[var(--color-m3-dark-outline-variant)]'}`}
+                        : 'fill-[var(--color-m3-surface-dim)] stroke-[var(--color-m3-outline-variant)]  '}`}
                     cx={PAD + i * GAP}
                     cy={MID}
                     r={i === at ? 4.2 : 3}
@@ -235,7 +235,7 @@ const HowStep: React.FC<{ curve: CurveData | null }> = ({ curve }) => {
                             <button
                                 type="button"
                                 onClick={() => play(0)}
-                                className="ms-auto rounded-md px-1.5 py-0.5 text-[0.75rem] text-[var(--color-m3-primary)] hover:bg-[var(--color-m3-surface-container)] dark:text-[var(--color-m3-primary-light)] dark:hover:bg-[var(--color-m3-dark-surface-container)]"
+                                className="ms-auto rounded-md px-1.5 py-0.5 text-[0.75rem] text-[var(--color-m3-primary)] hover:bg-[var(--color-m3-surface-container)]  "
                             >
                                 {t('onboarding.how_replay')}
                             </button>
@@ -442,11 +442,11 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, onDone }) => {
     };
 
     return (
-        <div className="flex h-[100dvh] w-full select-none flex-col bg-[var(--color-m3-surface-dim)] font-sans text-[var(--color-m3-on-surface)] dark:bg-[var(--color-m3-dark-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+        <div className="flex h-[100dvh] w-full select-none flex-col bg-[var(--color-m3-surface-dim)] font-sans text-[var(--color-m3-on-surface)]  ">
             <div className="flex shrink-0 justify-end px-4 pt-[calc(0.75rem+env(safe-area-inset-top,0px))]">
                 <button
                     onClick={onDone}
-                    className={`rounded-lg px-2 py-1.5 text-[0.8125rem] text-muted hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] ${isLast ? 'invisible' : ''}`}
+                    className={`rounded-lg px-2 py-1.5 text-[0.8125rem] text-muted hover:bg-[var(--color-m3-surface-container)]  ${isLast ? 'invisible' : ''}`}
                     tabIndex={isLast ? -1 : 0}
                 >
                     {t('onboarding.skip')}
@@ -482,7 +482,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, onDone }) => {
                 </div>
             </div>
 
-            <div className={`shrink-0 px-6 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] border-t border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]`}>
+            <div className={`shrink-0 px-6 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] border-t border-[var(--color-m3-outline-variant)] `}>
                 <div className="mx-auto grid w-full max-w-md grid-cols-[1fr_auto_1fr] items-center gap-4">
                     <div className="justify-self-start">
                         {step > 0 && (

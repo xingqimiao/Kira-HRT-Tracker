@@ -404,22 +404,22 @@ export const useAppData = (
             // Transmasc: total T status bands (ng/dL). Reference: male range 300–1000 ng/dL.
             if (currentT > 0) {
                 const c = currentT;
-                if (c > 1000) return { label: 'status.level.t_high',    color: 'text-amber-600', bg: 'bg-amber-50',  border: 'border-amber-200' };
-                if (c >= 600) return { label: 'status.level.t_upper',   color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' };
-                if (c >= 300) return { label: 'status.level.t_male',    color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' };
-                if (c >= 100) return { label: 'status.level.t_subtarget', color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-200' };
-                return { label: 'status.level.t_low', color: 'text-gray-600', bg: 'bg-gray-50', border: 'border-gray-200' };
+                if (c > 1000) return { label: 'status.level.t_high',    color: 'text-cos-warning', bg: 'bg-cos-warning-container',  border: 'border-cos-warning' };
+                if (c >= 600) return { label: 'status.level.t_upper',   color: 'text-cos-success', bg: 'bg-cos-success-container', border: 'border-cos-success' };
+                if (c >= 300) return { label: 'status.level.t_male',    color: 'text-cos-success', bg: 'bg-cos-success-container', border: 'border-cos-success' };
+                if (c >= 100) return { label: 'status.level.t_subtarget', color: 'text-cos-accent', bg: 'bg-indigo-50', border: 'border-indigo-200' };
+                return { label: 'status.level.t_low', color: 'text-cos-on-surface-variant', bg: 'bg-cos-surface-container', border: 'border-cos-outline' };
             }
             return null;
         }
         if (currentLevel > 0) {
             const conc = currentLevel;
-            if (conc > 300) return { label: 'status.level.high', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' };
-            if (conc >= 100 && conc <= 200) return { label: 'status.level.mtf', color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' };
-            if (conc >= 70 && conc <= 300) return { label: 'status.level.luteal', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200' };
-            if (conc >= 30 && conc < 70) return { label: 'status.level.follicular', color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-200' };
-            if (conc >= 8 && conc < 30) return { label: 'status.level.male', color: 'text-gray-600', bg: 'bg-gray-50', border: 'border-gray-200' };
-            return { label: 'status.level.low', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' };
+            if (conc > 300) return { label: 'status.level.high', color: 'text-cos-warning', bg: 'bg-cos-warning-container', border: 'border-cos-warning' };
+            if (conc >= 100 && conc <= 200) return { label: 'status.level.mtf', color: 'text-cos-success', bg: 'bg-cos-success-container', border: 'border-cos-success' };
+            if (conc >= 70 && conc <= 300) return { label: 'status.level.luteal', color: 'text-cos-accent', bg: 'bg-blue-50', border: 'border-blue-200' };
+            if (conc >= 30 && conc < 70) return { label: 'status.level.follicular', color: 'text-cos-accent', bg: 'bg-indigo-50', border: 'border-indigo-200' };
+            if (conc >= 8 && conc < 30) return { label: 'status.level.male', color: 'text-cos-on-surface-variant', bg: 'bg-cos-surface-container', border: 'border-cos-outline' };
+            return { label: 'status.level.low', color: 'text-cos-warning', bg: 'bg-cos-warning-container', border: 'border-cos-warning' };
         }
         return null;
     }, [currentLevel, currentT, isTransmasc]);

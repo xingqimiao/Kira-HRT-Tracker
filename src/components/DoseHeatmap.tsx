@@ -349,17 +349,17 @@ const DoseHeatmap = ({
                 {hover && (
                     <div
                         ref={setTipEl}
-                        className="absolute z-20 pointer-events-none px-2.5 py-1.5 rounded-md bg-[var(--color-m3-surface-bright)] dark:bg-[var(--color-m3-dark-surface-container)] border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]"
+                        className="absolute z-20 pointer-events-none px-2.5 py-1.5 rounded-md bg-[var(--color-m3-surface-bright)]  border border-[var(--color-m3-outline-variant)] "
                         style={{ left: tipLeft, top: tipTop }}
                     >
-                        <div className="text-[0.625rem] whitespace-nowrap text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+                        <div className="text-[0.625rem] whitespace-nowrap text-[var(--color-m3-on-surface-variant)] ">
                             {dayLabel(hover.date)}
                         </div>
-                        <div className="text-xs font-medium whitespace-nowrap text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+                        <div className="text-xs font-medium whitespace-nowrap text-[var(--color-m3-on-surface)] ">
                             {hover.count > 0 ? doseLabel(hover.count) : t('heatmap.none')}
                         </div>
                         {hoverMg.map(([ester, mg]) => (
-                            <div key={ester} className="text-[0.625rem] whitespace-nowrap tabular-nums text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+                            <div key={ester} className="text-[0.625rem] whitespace-nowrap tabular-nums text-[var(--color-m3-on-surface-variant)] ">
                                 {ester} · {mg.toFixed(2)} mg
                             </div>
                         ))}

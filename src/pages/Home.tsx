@@ -1,5 +1,6 @@
 import React from 'react';
-import { Info, Share2 } from 'lucide-react';
+import Icon from '../components/Icon';
+import { Info, Share2 } from '../icons';
 import { DoseEvent, SimulationResult, LabResult, getDoseAdvisory, getHormoneLevelAdvisory, isT_LabUnit } from '../../logic';
 import ResultChart from '../components/ResultChart';
 import DoseHeatmap from '../components/DoseHeatmap';
@@ -79,26 +80,26 @@ const Home: React.FC<HomeProps> = ({
         </span>
     ) : null;
 
-    const on = "text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]";
-    const muted = "text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]";
-    const dim = "text-[var(--color-m3-outline-variant)] dark:text-[var(--color-m3-dark-outline-variant)]";
+    const on = "text-[var(--color-m3-on-surface)] ";
+    const muted = "text-[var(--color-m3-on-surface-variant)] ";
+    const dim = "text-[var(--color-m3-outline-variant)] ";
 
     return (
-        <>
+        <div className="mx-auto w-full max-w-[1200px] px-4 sm:px-6 md:px-8">
             <EstimateInfoModal isOpen={isEstimateInfoOpen} onClose={() => setIsEstimateInfoOpen(false)} />
 
-            <header className="pt-6 pb-4 border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]">
-                <div className="px-6 md:px-8 max-w-2xl">
+            <header className="pt-8 pb-6">
+                <div className="m3-card mb-2">
                 {/* Title row */}
                 <div className="flex items-center justify-between mb-5">
                     <div className="flex items-center gap-1.5">
-                        <span className={`text-sm ${muted}`}>{t('status.estimate')}</span>
+                        <h1 className="m3-card-title">{t('status.estimate')}</h1>
                         <button
                             onClick={() => setIsEstimateInfoOpen(true)}
-                            className={`${muted} hover:text-[var(--color-m3-on-surface)] dark:hover:text-[var(--color-m3-dark-on-surface)]`}
+                            className={`${muted} hover:text-[var(--color-m3-on-surface)] `}
                             title={t('status.read_me')}
                         >
-                            <Info size={13} />
+                            <Icon icon={Info} size={13} />
                         </button>
                     </div>
                     <div className="flex items-center gap-3">
@@ -117,10 +118,10 @@ const Home: React.FC<HomeProps> = ({
                                 }
                                 onNavigateToShare();
                             }}
-                            className={`${muted} inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium hover:text-[var(--color-m3-on-surface)] hover:bg-[var(--color-m3-surface-container)] dark:hover:text-[var(--color-m3-dark-on-surface)] dark:hover:bg-[var(--color-m3-dark-surface-container)] disabled:cursor-not-allowed disabled:opacity-40`}
+                            className={`${muted} inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium hover:text-[var(--color-m3-on-surface)] hover:bg-[var(--color-m3-surface-container)]   disabled:cursor-not-allowed disabled:opacity-40`}
                             title={events.length ? shareCopy.modalDescription : shareCopy.noData}
                         >
-                            <Share2 size={14} strokeWidth={1.75} />
+                            <Icon icon={Share2} size={14} strokeWidth={1.75} />
                             {shareCopy.action}
                         </button>
                     </div>
@@ -213,9 +214,9 @@ const Home: React.FC<HomeProps> = ({
                 letting it sit empty, and drops underneath when there isn't any.
                 Only widened once there's data — the empty state centres itself
                 on this container and should stay in the narrow column. */}
-            <main className={`w-full max-w-2xl px-6 pt-5 pb-32 md:px-8 ${events.length ? '2xl:max-w-[74rem]' : ''}`}>
+            <main className="w-full pb-24">
                 {events.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center text-center py-16 px-6">
+                    <div className="m3-card flex flex-col items-center justify-center text-center !py-20">
                         <p className={`text-base font-semibold ${on} mb-1`}>{t('home.empty_title')}</p>
                         <p className={`text-sm ${muted} mb-6 max-w-xs`}>{t('home.empty_subtitle')}</p>
                         <button
@@ -226,8 +227,8 @@ const Home: React.FC<HomeProps> = ({
                         </button>
                     </div>
                 ) : (
-                    <div className="flex flex-col gap-8 2xl:flex-row 2xl:items-start 2xl:gap-10">
-                        <div className="min-w-0 2xl:flex-1 2xl:max-w-2xl">
+                    <div className="flex flex-col gap-8 2xl:flex-row 2xl:items-start 2xl:gap-6">
+                        <div className="min-w-0 2xl:flex-[3]">
                             <ResultChart
                                 sim={simulation}
                                 events={events}
@@ -241,12 +242,12 @@ const Home: React.FC<HomeProps> = ({
                         <DoseHeatmap
                             events={events}
                             isDarkMode={isDarkMode}
-                            className="min-w-0 2xl:flex-1 2xl:min-w-[16rem] 2xl:max-w-[26rem]"
+                            className="min-w-0 2xl:flex-[2] 2xl:min-w-[16rem]"
                         />
                     </div>
                 )}
             </main>
-        </>
+        </div>
     );
 };
 

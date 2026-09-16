@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
+import Icon from './Icon';
 import { useTranslation } from '../contexts/LanguageContext';
-import { X, Upload } from 'lucide-react';
+import { X, Upload } from '../icons';
 import { useEscape } from '../hooks/useEscape';
 
 const ImportModal = ({ isOpen, onClose, onImportJson }: { isOpen: boolean; onClose: () => void; onImportJson: (text: string) => boolean | Promise<boolean> }) => {
@@ -45,7 +46,7 @@ const ImportModal = ({ isOpen, onClose, onImportJson }: { isOpen: boolean; onClo
                     <div className="flex justify-between items-center mb-4 shrink-0">
                         <h3 className="modal-title mb-0">{t('import.title')}</h3>
                         <button onClick={onClose} className="p-1 text-muted hover:text-body">
-                            <X size={18} />
+                            <Icon icon={X} size={18} />
                         </button>
                     </div>
 
@@ -69,16 +70,16 @@ const ImportModal = ({ isOpen, onClose, onImportJson }: { isOpen: boolean; onClo
                             </div>
 
                             <div className="relative flex py-1 items-center">
-                                <div className="flex-grow border-t border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]" />
+                                <div className="flex-grow border-t border-[var(--color-m3-outline-variant)] " />
                 <span className="flex-shrink-0 mx-3 text-xs text-muted">{t('common.or')}</span>
-                                <div className="flex-grow border-t border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]" />
+                                <div className="flex-grow border-t border-[var(--color-m3-outline-variant)] " />
                             </div>
 
                             <button
                                 onClick={() => fileInputRef.current?.click()}
                                 className="btn-secondary w-full py-3 border-dashed"
                             >
-                                <Upload size={16} />
+                                <Icon icon={Upload} size={16} />
                                 {t('import.file_btn')}
                             </button>
                             <input

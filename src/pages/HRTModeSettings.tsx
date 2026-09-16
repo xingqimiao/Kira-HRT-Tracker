@@ -1,5 +1,6 @@
 import React from 'react';
-import { ArrowLeft, Check } from 'lucide-react';
+import Icon from '../components/Icon';
+import { ArrowLeft, Check } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useHRTMode } from '../contexts/HRTModeContext';
 
@@ -18,13 +19,13 @@ const HRTModeSettings: React.FC<HRTModeSettingsProps> = ({ onBack }) => {
 
     return (
         <div className="relative pb-32">
-            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)] dark:bg-[var(--color-m3-dark-surface)] px-6 md:px-8 pt-8 pb-3">
+            <div className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3">
                 <button
                     onClick={onBack}
-                    className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)]"
+                    className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] "
                 >
-                    <ArrowLeft size={18} className="text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] shrink-0" />
-                    <span className="text-xl font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+                    <Icon icon={ArrowLeft} size={18} className="text-[var(--color-m3-on-surface-variant)]  shrink-0" />
+                    <span className="text-xl font-semibold text-[var(--color-m3-on-surface)] ">
                         {t('settings.hrt_mode')}
                     </span>
                 </button>
@@ -35,16 +36,16 @@ const HRTModeSettings: React.FC<HRTModeSettingsProps> = ({ onBack }) => {
                     <button
                         key={value}
                         onClick={() => setMode(value)}
-                        className="w-full flex items-center justify-between py-4 border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] last:border-b-0 text-start"
+                        className="w-full flex items-center justify-between py-4 border-b border-[var(--color-m3-outline-variant)]  last:border-b-0 text-start"
                     >
                         <span className={`text-[0.9375rem] ${mode === value
-                            ? 'font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]'
-                            : 'text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]'
+                            ? 'font-semibold text-[var(--color-m3-on-surface)] '
+                            : 'text-[var(--color-m3-on-surface)] '
                         }`}>
                             {t(labelKey)}
                         </span>
                         {mode === value && (
-                            <Check size={16} className="text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)] shrink-0" />
+                            <Icon icon={Check} size={16} className="text-[var(--color-m3-primary)]  shrink-0" />
                         )}
                     </button>
                 ))}

@@ -1,15 +1,16 @@
 import React, { useState, useRef } from 'react';
+import Icon from './Icon';
 import { useTranslation } from '../contexts/LanguageContext';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp } from '../icons';
 
 interface ImportSectionProps {
     onImportJson: (text: string) => boolean | Promise<boolean>;
 }
 
-const rowBase = "flex items-start justify-between py-[18px] border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]";
-const rowLabel = "text-[0.9375rem] text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]";
-const rowDesc = "text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] mt-0.5";
-const actionBtn = "text-sm font-medium text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)] shrink-0 ml-6 mt-0.5";
+const rowBase = "flex items-start justify-between py-[18px] border-b border-[var(--color-m3-outline-variant)] ";
+const rowLabel = "text-[0.9375rem] text-[var(--color-m3-on-surface)] ";
+const rowDesc = "text-xs text-[var(--color-m3-on-surface-variant)]  mt-0.5";
+const actionBtn = "text-sm font-medium text-[var(--color-m3-primary)]  shrink-0 ml-6 mt-0.5";
 
 const ImportSection: React.FC<ImportSectionProps> = ({ onImportJson }) => {
     const { t } = useTranslation();
@@ -54,7 +55,7 @@ const ImportSection: React.FC<ImportSectionProps> = ({ onImportJson }) => {
             </div>
 
             {/* Paste JSON */}
-            <div className="border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] last:border-b-0">
+            <div className="border-b border-[var(--color-m3-outline-variant)]  last:border-b-0">
                 <button
                     onClick={() => { setShowPaste(v => !v); setText(''); }}
                     className="w-full flex items-start justify-between py-[18px] text-start"
@@ -63,15 +64,15 @@ const ImportSection: React.FC<ImportSectionProps> = ({ onImportJson }) => {
                         <p className={rowLabel}>{t('import.text')}</p>
                         <p className={rowDesc}>{t('import.paste_hint')}</p>
                     </div>
-                    <span className="shrink-0 ml-6 mt-0.5 p-1 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
-                        {showPaste ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    <span className="shrink-0 ml-6 mt-0.5 p-1 text-[var(--color-m3-on-surface-variant)] ">
+                        {showPaste ? <Icon icon={ChevronUp} size={16} /> : <Icon icon={ChevronDown} size={16} />}
                     </span>
                 </button>
 
                 {showPaste && (
                     <div className="pb-4 space-y-3">
                         <textarea
-                            className="w-full h-28 p-3 bg-[var(--color-m3-surface-container-lowest)] dark:bg-[var(--color-m3-dark-surface-container-low)] border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] rounded-md outline-none focus:border-[var(--color-m3-outline)] dark:focus:border-[var(--color-m3-dark-outline)] font-mono text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] placeholder:text-[var(--color-m3-on-surface-variant)] resize-none"
+                            className="w-full h-28 p-3 bg-[var(--color-m3-surface-container-lowest)]  border border-[var(--color-m3-outline-variant)]  rounded-md outline-none focus:border-[var(--color-m3-outline)]  font-mono text-[var(--color-m3-on-surface)]  placeholder:text-[var(--color-m3-on-surface-variant)] resize-none"
                             style={{ fontSize: '16px' }}
                             placeholder={t('import.paste_hint')}
                             value={text}
@@ -85,7 +86,7 @@ const ImportSection: React.FC<ImportSectionProps> = ({ onImportJson }) => {
                             <button
                                 onClick={handleTextImport}
                                 disabled={!text.trim()}
-                                className="px-4 py-2 text-sm font-medium bg-[var(--color-m3-primary)] text-white rounded-md disabled:opacity-40 disabled:cursor-not-allowed"
+                                className="px-4 py-2 text-sm font-medium bg-[var(--color-m3-primary)] text-cos-on-primary rounded-md disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                                 {t('drawer.import')}
                             </button>

@@ -1,6 +1,7 @@
 import { formatRelative } from '../utils/helpers';
+import Icon from '../components/Icon';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 
 interface TransparencyStats {
@@ -18,7 +19,7 @@ interface TransparencyStats {
 
 const REFRESH_INTERVAL_MS = 30_000;
 
-const rowBase = "flex items-baseline justify-between py-[18px] border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]";
+const rowBase = "flex items-baseline justify-between py-[18px] border-b border-[var(--color-m3-outline-variant)] ";
 
 interface TransparencySettingsProps {
     onBack: () => void;
@@ -64,115 +65,115 @@ const TransparencySettings: React.FC<TransparencySettingsProps> = ({ onBack }) =
     return (
         <div className="pb-32">
             {/* Header */}
-            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)] dark:bg-[var(--color-m3-dark-surface)] px-6 md:px-8 pt-8 pb-3 flex items-center">
+            <div className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3 flex items-center">
                 <button
                     onClick={onBack}
-                    className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)]"
+                    className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] "
                 >
-                    <ArrowLeft size={18} className="text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] shrink-0" />
-                    <span className="text-xl font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+                    <Icon icon={ArrowLeft} size={18} className="text-[var(--color-m3-on-surface-variant)]  shrink-0" />
+                    <span className="text-xl font-semibold text-[var(--color-m3-on-surface)] ">
                         {t('transparency.title')}
                     </span>
                 </button>
             </div>
 
             {lastUpdated && (
-                <p className="px-6 md:px-8 text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] mb-6">
+                <p className="px-6 md:px-8 text-xs text-[var(--color-m3-on-surface-variant)]  mb-6">
                     {t('transparency.last_updated').replace('{t}', new Date(lastUpdated).toLocaleTimeString())}
                 </p>
             )}
 
             <div className="px-6 md:px-8 max-w-2xl">
                 {error && (
-                    <p className="mb-4 text-sm text-red-500 dark:text-red-400">
+                    <p className="mb-4 text-sm text-cos-error ">
                         {error}
                     </p>
                 )}
 
                 {/* Stats */}
-                <h2 className="text-xl font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] mb-6">
+                <h2 className="text-xl font-semibold text-[var(--color-m3-on-surface)]  mb-6">
                     {t('transparency.title')}
                 </h2>
 
                 <div>
                     <div className={rowBase}>
-                        <span className="text-[0.9375rem] text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+                        <span className="text-[0.9375rem] text-[var(--color-m3-on-surface)] ">
                             {t('transparency.stat.total_users')}
                         </span>
-                        <span className="text-2xl font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] tabular-nums">
+                        <span className="text-2xl font-semibold text-[var(--color-m3-on-surface)]  tabular-nums">
                             {(stats?.total_users ?? 0).toLocaleString()}
                         </span>
                     </div>
 
                     <div className={rowBase}>
-                        <span className="text-[0.9375rem] text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+                        <span className="text-[0.9375rem] text-[var(--color-m3-on-surface)] ">
                             {t('transparency.stat.total_backups')}
                         </span>
-                        <span className="text-2xl font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] tabular-nums">
+                        <span className="text-2xl font-semibold text-[var(--color-m3-on-surface)]  tabular-nums">
                             {(stats?.total_backups ?? 0).toLocaleString()}
                         </span>
                     </div>
 
                     <div className={rowBase}>
                         <div>
-                            <p className="text-[0.9375rem] text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+                            <p className="text-[0.9375rem] text-[var(--color-m3-on-surface)] ">
                                 {t('transparency.stat.new_users_24h')}
                             </p>
-                            <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] mt-0.5">
+                            <p className="text-xs text-[var(--color-m3-on-surface-variant)]  mt-0.5">
                                 {t('transparency.stat.new_users_7d').replace('{n}', String(stats?.new_users_7d ?? 0))}
                             </p>
                         </div>
-                        <span className="text-2xl font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] tabular-nums">
+                        <span className="text-2xl font-semibold text-[var(--color-m3-on-surface)]  tabular-nums">
                             {(stats?.new_users_24h ?? 0).toLocaleString()}
                         </span>
                     </div>
 
                     <div className={rowBase}>
                         <div>
-                            <p className="text-[0.9375rem] text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+                            <p className="text-[0.9375rem] text-[var(--color-m3-on-surface)] ">
                                 {t('transparency.stat.self_deleted')}
                             </p>
-                            <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] mt-0.5">
+                            <p className="text-xs text-[var(--color-m3-on-surface-variant)]  mt-0.5">
                                 {t('transparency.stat.delta_7d').replace('{n}', String(stats?.self_deleted_7d ?? 0))}
                             </p>
                         </div>
-                        <span className="text-2xl font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] tabular-nums">
+                        <span className="text-2xl font-semibold text-[var(--color-m3-on-surface)]  tabular-nums">
                             {(stats?.self_deleted_count ?? 0).toLocaleString()}
                         </span>
                     </div>
 
                     <div className={`${rowBase} border-b-0`}>
                         <div>
-                            <p className="text-[0.9375rem] text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+                            <p className="text-[0.9375rem] text-[var(--color-m3-on-surface)] ">
                                 {t('transparency.stat.admin_deleted')}
                             </p>
-                            <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] mt-0.5">
+                            <p className="text-xs text-[var(--color-m3-on-surface-variant)]  mt-0.5">
                                 {t('transparency.stat.delta_7d').replace('{n}', String(stats?.admin_deleted_7d ?? 0))}
                             </p>
                         </div>
-                        <span className="text-2xl font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] tabular-nums">
+                        <span className="text-2xl font-semibold text-[var(--color-m3-on-surface)]  tabular-nums">
                             {(stats?.admin_deleted_count ?? 0).toLocaleString()}
                         </span>
                     </div>
                 </div>
 
                 {/* Recent registrations */}
-                <h2 className="text-xl font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] mt-10 mb-6">
+                <h2 className="text-xl font-semibold text-[var(--color-m3-on-surface)]  mt-10 mb-6">
                     {t('transparency.recent.title')}
                 </h2>
 
-                <div className="divide-y divide-[var(--color-m3-outline-variant)] dark:divide-[var(--color-m3-dark-outline-variant)]">
+                <div className="divide-y divide-[var(--color-m3-outline-variant)] ">
                     {(stats?.recent_registrations ?? []).length === 0 && !loading ? (
-                        <p className="py-6 text-sm text-center text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+                        <p className="py-6 text-sm text-center text-[var(--color-m3-on-surface-variant)] ">
                             {t('transparency.recent.empty')}
                         </p>
                     ) : (
                         (stats?.recent_registrations ?? []).map((r, idx) => (
                             <div key={`${r.anon_id}-${r.created_at}-${idx}`} className="flex items-center justify-between py-3">
-                                <span className="font-mono text-sm text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+                                <span className="font-mono text-sm text-[var(--color-m3-on-surface)] ">
                                     user_{r.anon_id}***
                                 </span>
-                                <span className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] tabular-nums">
+                                <span className="text-xs text-[var(--color-m3-on-surface-variant)]  tabular-nums">
                                     {formatRelative(r.created_at, now, t)}
                                 </span>
                             </div>

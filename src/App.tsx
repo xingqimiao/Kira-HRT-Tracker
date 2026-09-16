@@ -17,6 +17,7 @@ import WeightEditorModal from './components/WeightEditorModal';
 import DoseFormModal from './components/DoseFormModal';
 import ImportModal from './components/ImportModal';
 import Sidebar from './components/Sidebar';
+import Icon from './components/Icon';
 import PasswordInputModal from './components/PasswordInputModal';
 import DisclaimerModal from './components/DisclaimerModal';
 import AuthModal from './components/AuthModal';
@@ -155,7 +156,11 @@ const AppContent = () => {
 
     const [theme, setTheme] = useState<AppTheme>(() => {
         const saved = localStorage.getItem('app-theme');
-        return (saved as AppTheme) || 'system';
+        // Dark is the default, not "follow the OS". The interface is designed against
+        // the dark palette — near-black surfaces and hairline separators — and that is
+        // what a first visit should show. Light is one tap away in Appearance, and a
+        // stored choice always wins.
+        return (saved as AppTheme) || 'dark';
     });
 
     useEffect(() => {
@@ -440,16 +445,19 @@ const AppContent = () => {
     }
 
     return (
-        <div className="h-[100dvh] w-full bg-[var(--color-m3-surface)] dark:bg-[var(--color-m3-dark-surface)] flex flex-col md:flex-row font-sans text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] select-none overflow-hidden">
+        <div className="h-[100dvh] w-full bg-[var(--color-m3-surface)] flex flex-col font-sans text-[var(--color-m3-on-surface)] select-none overflow-hidden">
             <Sidebar
                 navItems={navItems}
                 currentView={currentView}
                 onViewChange={(v) => !needsSetup2FA && handleViewChange(v)}
             />
-            <div className="flex-1 flex flex-col overflow-hidden w-full bg-[var(--color-m3-surface-dim)] dark:bg-[var(--color-m3-dark-surface)] relative">
+            <div className="flex-1 flex flex-col overflow-hidden w-full bg-[var(--color-m3-surface-dim)]  relative">
 
-                {/* Mobile site label — reflects the current deployment host */}
-                <div className="md:hidden shrink-0 pt-[calc(0.5rem+env(safe-area-inset-top,0px))] pb-1 text-center text-[0.6875rem] font-medium tracking-wide text-muted select-none">
+                {/* The host, shown only where the browser chrome does not already say
+                    it: this app is reachable on more than one domain, and which one you
+                    are on decides where the data goes. On a phone that is worth 11px of
+                    vertical space; in a desktop window the address bar says it. */}
+                <div className="md:hidden shrink-0 pt-[env(safe-area-inset-top,0px)] pb-1 text-center text-[0.6875rem] font-medium tracking-wide text-muted select-none">
                     {window.location.hostname}
                 </div>
 
@@ -462,6 +470,12 @@ const AppContent = () => {
                     key={currentView}
                     className={`flex-1 flex flex-col overflow-y-auto scrollbar-hide scroll-pb-nav ${transitionDirection === 'backward' ? 'view-enter-backward' : 'view-enter-forward'}`}
                 >
+                    {/* Full-bleed, and each page owns its own measure: most cap at 2xl,
+                        and the dashboard widens once there is a chart to show. A shared
+                        cap here would fight those per-page decisions, and the sticky
+                        headers inside each page need to span the column they stick
+                        within. */}
+                    <div className="w-full pb-10">
                     {currentView === 'home' && (
                         <Home
                             t={t}
@@ -738,12 +752,13 @@ const AppContent = () => {
                     {currentView === 'admin' && user?.isAdmin && (
                         <Admin />
                     )}
+                    </div>
                 </div>
 
                 {/* Bottom Navigation — floating island */}
-                <nav className="fixed left-4 right-4 bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] z-40 md:hidden rounded-2xl bg-[var(--color-m3-surface-bright)] dark:bg-[var(--color-m3-dark-surface-container)] border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] shadow-[var(--shadow-m3-3)]">
+                <nav className="fixed left-4 right-4 bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] z-40 md:hidden rounded-2xl bg-[var(--color-m3-surface-bright)]  border border-[var(--color-m3-outline-variant)]  shadow-[var(--shadow-m3-3)]">
                     <div className="flex items-stretch p-1.5 gap-1">
-                        {navItems.filter(item => item.id !== 'admin').map(({ id, icon: Icon, label }) => {
+                        {navItems.filter(item => item.id !== 'admin').map(({ id, icon, label }) => {
                             const activeTab = ({
                                 'home': 'home',
                                 'history': 'history',
@@ -776,13 +791,13 @@ const AppContent = () => {
                                     disabled={isDisabled}
                                     className={`flex-1 flex flex-col items-center justify-center gap-1 py-1.5 transition-colors duration-150 motion-reduce:transition-none
                                         ${isDisabled
-                                            ? 'text-[var(--color-m3-outline)] dark:text-[var(--color-m3-dark-outline)] cursor-not-allowed'
+                                            ? 'text-[var(--color-m3-outline)]  cursor-not-allowed'
                                             : isActive
                                             ? 'text-body'
                                             : 'text-muted'
                                         }`}
                                 >
-                                    <Icon size={20} strokeWidth={isActive ? 2 : 1.75} />
+                                    <Icon icon={icon} size={20} strokeWidth={isActive ? 1.9 : 1.75} />
                                     <span className="text-[0.625rem] font-medium">
                                         {label}
                                     </span>

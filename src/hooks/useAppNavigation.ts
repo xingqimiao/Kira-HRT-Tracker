@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Home, ListTodo, Settings as SettingsIcon, UserCircle, ShieldCheck } from 'lucide-react';
-import CalibrationCurveIcon from '../components/CalibrationCurveIcon';
+import { Home, ListTodo, Settings as SettingsIcon, UserCircle, ShieldCheck, CalibrationCurve } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 
 export type ViewKey = 'home' | 'share' | 'history' | 'lab' | 'lab-calibration' | 'settings' | 'account' | 'admin' | 'sessions' | 'two-factor' | 'change-password' | 'delete-account' | 'edit-profile' | 'edit-avatar' | 'pk-params' | 'settings-hrt-mode' | 'settings-language' | 'settings-appearance' | 'settings-weight' | 'settings-export' | 'settings-import' | 'settings-transparency' | 'settings-milk-tea' | 'settings-cat-states' | 'settings-security';
@@ -35,7 +34,7 @@ export const useAppNavigation = (user: any) => {
     const navItems = [
         { id: 'home', label: t('nav.home'), icon: Home },
         { id: 'history', label: t('nav.history'), icon: ListTodo },
-        { id: 'lab', label: t('nav.lab'), icon: CalibrationCurveIcon },
+        { id: 'lab', label: t('nav.lab'), icon: CalibrationCurve },
         { id: 'settings', label: t('nav.settings'), icon: SettingsIcon },
         { id: 'account', label: t('nav.account'), icon: UserCircle },
     ];

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Check, ChevronDown, Copy, Eye, EyeOff, Link2, Loader2, LockKeyhole, Trash2 } from 'lucide-react';
+import Icon from '../components/Icon';
+import { ArrowLeft, Check, ChevronDown, Copy, Eye, EyeOff, Link2, Loader2, LockKeyhole, Trash2 } from '../icons';
 import { DoseEvent, HRTMode, SimulationResult } from '../../logic';
 import { useTranslation } from '../contexts/LanguageContext';
 import { getShareCopy } from '../i18n/share';
@@ -35,8 +36,8 @@ const formatStamp = (timestamp: number, lang: string): string =>
     });
 
 const badgeBase = 'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium leading-none';
-const liveBadgeClass = `${badgeBase} bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-primary-container)] dark:bg-[var(--color-m3-dark-primary-container)] dark:text-[var(--color-m3-dark-on-primary-container)]`;
-const metaBadgeClass = `${badgeBase} bg-[var(--color-m3-surface-container)] text-muted dark:bg-[var(--color-m3-dark-surface-container)]`;
+const liveBadgeClass = `${badgeBase} bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-primary-container)]  `;
+const metaBadgeClass = `${badgeBase} bg-[var(--color-m3-surface-container)] text-muted `;
 
 const ShareSettings: React.FC<ShareSettingsProps> = ({
     onBack,
@@ -165,14 +166,14 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
 
     return (
         <div className="relative space-y-4 pb-32">
-            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)] px-6 pb-3 pt-8 dark:bg-[var(--color-m3-dark-surface)] md:px-8">
+            <div className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 bg-[var(--color-m3-surface-dim)] px-6 pb-3 pt-8  md:px-8">
                 <button
                     type="button"
                     onClick={onBack}
-                    className="-ml-2 flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)]"
+                    className="-ml-2 flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-[var(--color-m3-surface-container)] "
                 >
-                    <ArrowLeft size={18} className="shrink-0 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]" />
-                    <span className="text-xl font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+                    <Icon icon={ArrowLeft} size={18} className="shrink-0 text-[var(--color-m3-on-surface-variant)] " />
+                    <span className="text-xl font-semibold text-[var(--color-m3-on-surface)] ">
                         {copy.modalTitle}
                     </span>
                 </button>
@@ -184,7 +185,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                         <div className="pb-0 pt-5">
                             <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-2 text-body">
                                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-primary-container)]">
-                                    <Check size={14} strokeWidth={2.25} />
+                                    <Icon icon={Check} size={14} strokeWidth={2.25} />
                                 </span>
                                 <p className="text-[0.9375rem] font-medium">{copy.created}</p>
                                 {createdShare.live && (
@@ -192,7 +193,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                                 )}
                                 {createdShare.passwordRequired && (
                                     <span className={metaBadgeClass}>
-                                        <LockKeyhole size={12} />
+                                        <Icon icon={LockKeyhole} size={12} />
                                         {copy.protected}
                                     </span>
                                 )}
@@ -201,7 +202,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                             <label className="sr-only" htmlFor="created-share-link">
                                 {copy.copy}
                             </label>
-                            <div className="flex flex-col gap-1 border-b border-[var(--color-m3-outline-variant)] py-1 dark:border-[var(--color-m3-dark-outline-variant)] sm:flex-row sm:items-center sm:gap-3">
+                            <div className="flex flex-col gap-1 border-b border-[var(--color-m3-outline-variant)] py-1  sm:flex-row sm:items-center sm:gap-3">
                                 <input
                                     ref={linkInputRef}
                                     id="created-share-link"
@@ -215,14 +216,14 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                                 <button
                                     type="button"
                                     onClick={handleCopy}
-                                    className="-mr-2 grid shrink-0 place-items-center self-end rounded-md px-2.5 py-2 text-[0.9375rem] font-medium text-[var(--color-m3-primary)] transition-colors hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] sm:self-auto"
+                                    className="-mr-2 grid shrink-0 place-items-center self-end rounded-md px-2.5 py-2 text-[0.9375rem] font-medium text-[var(--color-m3-primary)] transition-colors hover:bg-[var(--color-m3-surface-container)]  sm:self-auto"
                                 >
                                     <span className={`col-start-1 row-start-1 inline-flex items-center gap-1.5 ${copied ? 'invisible' : ''}`}>
-                                        <Copy size={14} />
+                                        <Icon icon={Copy} size={14} />
                                         {copy.copy}
                                     </span>
                                     <span className={`col-start-1 row-start-1 inline-flex items-center gap-1.5 ${copied ? '' : 'invisible'}`}>
-                                        <Check size={14} />
+                                        <Icon icon={Check} size={14} />
                                         {copy.copied}
                                     </span>
                                 </button>
@@ -233,12 +234,12 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                             )}
                         </div>
                     ) : (
-                        <form onSubmit={handleSubmit} className="border-b border-[var(--color-m3-outline-variant)] pb-6 dark:border-[var(--color-m3-dark-outline-variant)]">
+                        <form onSubmit={handleSubmit} className="border-b border-[var(--color-m3-outline-variant)] pb-6 ">
                             <div className="callout mb-5">
                                 {liveEnabled ? copy.liveSnapshotNote : copy.snapshotNote}
                             </div>
 
-                            <div className="mb-5 flex items-center justify-between gap-4 border-b border-[var(--color-m3-outline-variant)] py-[18px] dark:border-[var(--color-m3-dark-outline-variant)]">
+                            <div className="mb-5 flex items-center justify-between gap-4 border-b border-[var(--color-m3-outline-variant)] py-[18px] ">
                                 <label htmlFor="share-live-toggle" className="cursor-pointer text-[0.9375rem] font-medium text-body">
                                     {copy.liveToggle}
                                 </label>
@@ -248,9 +249,9 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                                     role="switch"
                                     aria-checked={liveEnabled}
                                     onClick={() => setLiveEnabled(value => !value)}
-                                    className={`relative inline-flex switch-track h-6 w-11 shrink-0 items-center rounded-full ${liveEnabled ? 'bg-[var(--color-m3-primary)]' : 'bg-[var(--color-m3-outline-variant)] dark:bg-[var(--color-m3-dark-outline-variant)]'}`}
+                                    className={`relative inline-flex switch-track h-6 w-11 shrink-0 items-center rounded-full ${liveEnabled ? 'bg-[var(--color-m3-primary)]' : 'bg-[var(--color-m3-outline-variant)] '}`}
                                 >
-                                    <span className={`inline-block switch-knob h-4 w-4 rounded-full bg-white shadow-sm ${liveEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    <span className={`inline-block switch-knob h-4 w-4 rounded-full bg-cos-surface-container shadow-sm ${liveEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
                                 </button>
                             </div>
 
@@ -270,9 +271,9 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                                             setPasswordEnabled(value => !value);
                                             setError(null);
                                         }}
-                                        className={`relative inline-flex switch-track h-6 w-11 shrink-0 items-center rounded-full ${passwordEnabled ? 'bg-[var(--color-m3-primary)]' : 'bg-[var(--color-m3-outline-variant)] dark:bg-[var(--color-m3-dark-outline-variant)]'}`}
+                                        className={`relative inline-flex switch-track h-6 w-11 shrink-0 items-center rounded-full ${passwordEnabled ? 'bg-[var(--color-m3-primary)]' : 'bg-[var(--color-m3-outline-variant)] '}`}
                                     >
-                                        <span className={`inline-block switch-knob h-4 w-4 rounded-full bg-white shadow-sm ${passwordEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                        <span className={`inline-block switch-knob h-4 w-4 rounded-full bg-cos-surface-container shadow-sm ${passwordEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
                                     </button>
                                 </div>
 
@@ -301,7 +302,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                                                 className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted hover:text-body"
                                                 aria-label={showPassword ? 'Hide password' : 'Show password'}
                                             >
-                                                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                                {showPassword ? <Icon icon={EyeOff} size={16} /> : <Icon icon={Eye} size={16} />}
                                             </button>
                                         </div>
                                     </div>
@@ -313,14 +314,14 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                                     type="button"
                                     onClick={() => setIsExpiryPickerOpen(value => !value)}
                                     aria-expanded={isExpiryPickerOpen}
-                                    className="flex w-full items-center justify-between border-b border-[var(--color-m3-outline-variant)] py-[18px] text-start dark:border-[var(--color-m3-dark-outline-variant)]"
+                                    className="flex w-full items-center justify-between border-b border-[var(--color-m3-outline-variant)] py-[18px] text-start "
                                 >
                                     <span className="text-[0.9375rem] text-body">{copy.expiryLabel}</span>
                                     <span className="flex items-center gap-1.5 text-muted">
                                         <span className="text-sm tabular-nums">
                                             {expiresAtInput ? formatStamp(new Date(expiresAtInput).getTime(), lang) : '—'}
                                         </span>
-                                        <ChevronDown size={14} className={`chev ${isExpiryPickerOpen ? 'rotate-180' : ''}`} />
+                                        <Icon icon={ChevronDown} size={14} className={`chev ${isExpiryPickerOpen ? 'rotate-180' : ''}`} />
                                     </span>
                                 </button>
                                 <DateTimePicker
@@ -336,7 +337,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                             </div>
 
                             {error && (
-                                <p className="mb-4 text-sm text-red-600 dark:text-red-400" role="alert">{error}</p>
+                                <p className="mb-4 text-sm text-cos-error " role="alert">{error}</p>
                             )}
 
                             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -348,7 +349,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                                     disabled={submitting || !events.length || (passwordEnabled && password.length < 8)}
                                     className="btn-primary min-w-[8.5rem]"
                                 >
-                                    {submitting ? <Loader2 size={15} className="animate-spin" /> : <Link2 size={15} />}
+                                    {submitting ? <Icon icon={Loader2} size={15} className="animate-spin" /> : <Icon icon={Link2} size={15} />}
                                     {submitting ? copy.creating : copy.create}
                                 </button>
                             </div>
@@ -360,14 +361,14 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                         <p className="mt-1 text-sm leading-relaxed text-muted">{copy.manageDescription}</p>
                         {sharesLoading ? (
                             <div className="flex items-center gap-2 py-4 text-sm text-muted">
-                                <Loader2 size={14} className="animate-spin" /> {copy.loading}
+                                <Icon icon={Loader2} size={14} className="animate-spin" /> {copy.loading}
                             </div>
                         ) : shares.length === 0 ? (
                             <p className="py-4 text-sm text-muted">{copy.noneActive}</p>
                         ) : (
-                            <div className="mt-3 border-t border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]">
+                            <div className="mt-3 border-t border-[var(--color-m3-outline-variant)] ">
                                 {shares.map(share => (
-                                    <div key={share.id} className="flex items-center gap-3 border-b border-[var(--color-m3-outline-variant)] py-3.5 last:border-b-0 dark:border-[var(--color-m3-dark-outline-variant)]">
+                                    <div key={share.id} className="flex items-center gap-3 border-b border-[var(--color-m3-outline-variant)] py-3.5 last:border-b-0 ">
                                         <div className="min-w-0 flex-1">
                                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
                                                 <p className="text-sm font-medium text-body">
@@ -378,7 +379,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                                                 )}
                                                 {share.passwordRequired && (
                                                     <span className={metaBadgeClass}>
-                                                        <LockKeyhole size={12} />
+                                                        <Icon icon={LockKeyhole} size={12} />
                                                         {copy.protected}
                                                     </span>
                                                 )}
@@ -391,9 +392,9 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                                             type="button"
                                             onClick={() => handleRevoke(share)}
                                             disabled={revokingId === share.id}
-                                            className="-mr-2 inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/20"
+                                            className="-mr-2 inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-2 text-sm font-medium text-cos-error hover:bg-cos-error-container disabled:opacity-50  "
                                         >
-                                            {revokingId === share.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                                            {revokingId === share.id ? <Icon icon={Loader2} size={14} className="animate-spin" /> : <Icon icon={Trash2} size={14} />}
                                             {copy.revoke}
                                         </button>
                                     </div>

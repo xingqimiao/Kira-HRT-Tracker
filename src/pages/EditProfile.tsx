@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import Icon from '../components/Icon';
+import { ArrowLeft } from '../icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from '../contexts/LanguageContext';
 
@@ -10,8 +11,8 @@ const EditProfile: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
 
-    const on = 'text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]';
-    const muted = 'text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]';
+    const on = 'text-[var(--color-m3-on-surface)] ';
+    const muted = 'text-[var(--color-m3-on-surface-variant)] ';
 
     const handleSubmit = async () => {
         if (!username.trim()) return;
@@ -29,12 +30,12 @@ const EditProfile: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
     return (
         <div className="relative pb-32">
-            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)] dark:bg-[var(--color-m3-dark-surface)] px-6 md:px-8 pt-8 pb-3">
+            <div className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3">
                 <button
                     onClick={onBack}
-                    className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)]"
+                    className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] "
                 >
-                    <ArrowLeft size={18} className={`${muted} shrink-0`} />
+                    <Icon icon={ArrowLeft} size={18} className={`${muted} shrink-0`} />
                     <span className={`text-xl font-semibold ${on}`}>{t('account.edit_profile')}</span>
                 </button>
             </div>
@@ -43,7 +44,7 @@ const EditProfile: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <p className={`text-sm leading-relaxed ${muted}`}>{t('account.edit_profile_desc')}</p>
 
                 {error && (
-                    <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm rounded-lg">
+                    <div className="p-3 bg-cos-error-container  text-cos-error  text-sm rounded-lg">
                         {error}
                     </div>
                 )}
@@ -54,7 +55,7 @@ const EditProfile: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         type="text"
                         value={username}
                         onChange={e => setUsername(e.target.value)}
-                        className={`w-full px-4 py-3 text-sm bg-white dark:bg-neutral-900 border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] rounded-lg focus:border-[var(--color-m3-primary)] focus:ring-1 focus:ring-[var(--color-m3-primary)] outline-none transition-colors ${on} placeholder-[var(--color-m3-outline)] dark:placeholder-[var(--color-m3-dark-outline)]`}
+                        className={`w-full px-4 py-3 text-sm bg-cos-surface-container  border border-[var(--color-m3-outline-variant)]  rounded-lg focus:border-[var(--color-m3-primary)] focus:ring-1 focus:ring-[var(--color-m3-primary)] outline-none transition-colors ${on} placeholder-[var(--color-m3-outline)] `}
                         placeholder={t('account.new_username')}
                         autoFocus
                     />
@@ -63,7 +64,7 @@ const EditProfile: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <button
                     onClick={handleSubmit}
                     disabled={!username.trim() || isLoading || username === user?.username}
-                    className="w-full py-3 text-sm font-medium bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full py-3 text-sm font-medium bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] text-cos-on-primary rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {isLoading ? '...' : t('btn.save')}
                 </button>

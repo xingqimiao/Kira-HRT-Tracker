@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Lock } from 'lucide-react';
+import Icon from '../components/Icon';
+import { ArrowLeft, Lock } from '../icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { settingsMuted, settingsOn } from '../components/SettingsListItem';
@@ -15,7 +16,7 @@ const ChangePassword: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
     const on = settingsOn;
     const muted = settingsMuted;
-    const inputCls = `w-full px-4 py-3 text-sm bg-[var(--color-m3-surface-container-lowest)] dark:bg-[var(--color-m3-dark-surface-container-low)] border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] rounded-md focus:border-[var(--color-m3-on-surface)] dark:focus:border-[var(--color-m3-dark-on-surface)] outline-none ${on} placeholder:text-[var(--color-m3-outline)] dark:placeholder:text-[var(--color-m3-dark-outline)]`;
+    const inputCls = `w-full px-4 py-3 text-sm bg-[var(--color-m3-surface-container-lowest)]  border border-[var(--color-m3-outline-variant)]  rounded-md focus:border-[var(--color-m3-on-surface)]  outline-none ${on} placeholder:text-[var(--color-m3-outline)] `;
 
     const handleSubmit = async () => {
         if (!current || !newPass || !confirm) return;
@@ -36,24 +37,24 @@ const ChangePassword: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
     return (
         <div className="relative pb-32">
-            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)] dark:bg-[var(--color-m3-dark-surface)] px-6 md:px-10 pt-8 pb-3">
+            <div className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-10 pt-8 pb-3">
                 <button
                     onClick={onBack}
-                    className="flex items-center gap-2 -ml-2 px-2 py-1.5 rounded-md hover:bg-[var(--color-m3-surface-container-low)] dark:hover:bg-[var(--color-m3-dark-surface-container-low)] transition-colors"
+                    className="flex items-center gap-2 -ml-2 px-2 py-1.5 rounded-md hover:bg-[var(--color-m3-surface-container-low)]  transition-colors"
                 >
-                    <ArrowLeft size={18} strokeWidth={1.5} className={`${muted} shrink-0`} />
+                    <Icon icon={ArrowLeft} size={18} strokeWidth={1.5} className={`${muted} shrink-0`} />
                     <span className={`text-xl font-semibold ${on}`}>{t('account.change_password')}</span>
                 </button>
             </div>
 
             <div className="px-6 md:px-10 mt-2 max-w-md space-y-5">
                 <div className="flex items-start gap-3">
-                    <Lock size={18} className={`${muted} shrink-0 mt-0.5`} />
+                    <Icon icon={Lock} size={18} className={`${muted} shrink-0 mt-0.5`} />
                     <p className={`text-sm leading-relaxed ${muted}`}>{t('account.change_password_desc')}</p>
                 </div>
 
                 {error && (
-                    <p className="text-sm text-red-500 dark:text-red-400">{error}</p>
+                    <p className="text-sm text-cos-error ">{error}</p>
                 )}
 
                 <div className="space-y-4">
@@ -74,7 +75,7 @@ const ChangePassword: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <button
                     onClick={handleSubmit}
                     disabled={!current || !newPass || !confirm || isLoading}
-                    className="w-full py-2.5 text-sm font-medium bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="w-full py-2.5 text-sm font-medium bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] text-cos-on-primary rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                     {isLoading ? '...' : t('btn.save')}
                 </button>

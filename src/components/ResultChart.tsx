@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import Icon from './Icon';
 import { useTranslation } from '../contexts/LanguageContext';
 import { formatDate, formatTime } from '../utils/helpers';
 import {
@@ -6,7 +7,7 @@ import {
     interpolateConcentration_E2, interpolateConcentration_CPA, interpolateConcentration_T,
     convertToPgMl, convertToNgDl, isT_LabUnit, T_ESTERS,
 } from '../../logic';
-import { Activity } from 'lucide-react';
+import { Activity } from '../icons';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { useElementSize } from '../hooks/useElementSize';
 
@@ -534,27 +535,27 @@ const ResultChart = ({
 
     if (!sim || sim.timeH.length === 0) {
         return (
-            <div className="h-72 md:h-96 flex flex-col items-center justify-center text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
-                <Activity className="w-10 h-10 mb-3 opacity-25" strokeWidth={1.25} />
+            <div className="h-72 md:h-96 flex flex-col items-center justify-center text-[var(--color-m3-on-surface-variant)] ">
+                <Icon icon={Activity} className="w-10 h-10 mb-3 opacity-25" strokeWidth={1.25} />
                 <p className="text-sm">{t('timeline.empty')}</p>
             </div>
         );
     }
 
     const chipBase = 'px-2 py-0.5 text-[0.6875rem] rounded-md transition-colors';
-    const chipOn = 'text-body font-medium border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]';
+    const chipOn = 'text-body font-medium border border-[var(--color-m3-outline-variant)] ';
     const chipOff = 'text-muted hover:text-body';
 
     return (
         <div className="w-full">
             {/* Header: title + range chips — flat, matching the page */}
             <div className="flex items-center justify-between gap-3 mb-2">
-                <h2 className="text-sm text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] truncate">
+                <h2 className="text-sm text-[var(--color-m3-on-surface-variant)]  truncate">
                     {title ?? t('chart.title')}
                 </h2>
                 <div className="flex items-center gap-2 shrink-0">
                     {Math.abs(calFactor - 1) > 0.001 && (
-                        <span className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] opacity-70 tabular-nums">
+                        <span className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)]  opacity-70 tabular-nums">
                             ×{calFactor.toFixed(2)}
                         </span>
                     )}
@@ -573,7 +574,7 @@ const ResultChart = ({
             </div>
 
             {/* Legend — always visible so each line is labelled, on mobile too */}
-            <div className="flex items-center gap-4 mb-1 text-[0.6875rem] text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+            <div className="flex items-center gap-4 mb-1 text-[0.6875rem] text-[var(--color-m3-on-surface-variant)] ">
                 <span className="flex items-center gap-1.5">
                     <span className="w-3.5 h-[2px] rounded-full" style={{ background: c.primary }} />
                     {primaryMeta.label}
@@ -771,28 +772,28 @@ const ResultChart = ({
                 {/* Hover tooltip */}
                 {showHover && (
                     <div
-                        className="absolute z-20 pointer-events-none px-2.5 py-1.5 rounded-md bg-[var(--color-m3-surface-bright)] dark:bg-[var(--color-m3-dark-surface-container)] border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]"
+                        className="absolute z-20 pointer-events-none px-2.5 py-1.5 rounded-md bg-[var(--color-m3-surface-bright)]  border border-[var(--color-m3-outline-variant)] "
                         style={{
                             left: Math.min(Math.max(X(hoverPt!.t), mL + 4), mL + plotW - 4),
                             top: Math.max(YP(hoverPt!.p) - 12, 8),
                             transform: `translate(${X(hoverPt!.t) > mL + plotW * 0.6 ? '-100%' : '0'}, -100%)`,
                         }}
                     >
-                        <div className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] mb-0.5 whitespace-nowrap">
+                        <div className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)]  mb-0.5 whitespace-nowrap">
                             {formatDate(new Date(hoverPt!.t), lang, timeZone)} · {formatTime(new Date(hoverPt!.t), timeZone)}
                         </div>
                         <div className="flex items-baseline gap-1 whitespace-nowrap">
                             <span className="text-sm font-medium tabular-nums" style={{ color: c.primary }}>
                                 {hoverPt!.p.toFixed(primaryMeta.decimals)}
                             </span>
-                            <span className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{primaryMeta.unit}</span>
+                            <span className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)] ">{primaryMeta.unit}</span>
                         </div>
                         {hasSecondary && hoverPt!.s != null && (
                             <div className="flex items-baseline gap-1 whitespace-nowrap">
                                 <span className="text-xs font-medium tabular-nums" style={{ color: c.second }}>
                                     {hoverPt!.s.toFixed(2)}
                                 </span>
-                                <span className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">ng/ml</span>
+                                <span className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)] ">ng/ml</span>
                             </div>
                         )}
                     </div>

@@ -1,16 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import Icon from '../components/Icon';
 import { useTranslation } from '../contexts/LanguageContext';
-import {
-  AlertTriangle,
-  Check,
-  Copy,
-  Loader2,
-  LogOut,
-  RefreshCw,
-  ShieldCheck,
-  Trash2,
-  Unlink,
-} from 'lucide-react';
+import { AlertTriangle, Check, Copy, Loader2, LogOut, RefreshCw, ShieldCheck, Trash2, Unlink } from '../icons';
 
 import { coreAuth, CoreAuthError, type AccountSummary, type XLink } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
@@ -29,9 +20,9 @@ import type { CoreSession } from '../hooks/useCoreSession';
  * not be enough to change how an account is reached.
  */
 
-const on = 'text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]';
-const muted = 'text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]';
-const divider = 'border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]';
+const on = 'text-[var(--color-m3-on-surface)] ';
+const muted = 'text-[var(--color-m3-on-surface-variant)] ';
+const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
 
 interface CoreAccountSettingsProps {
   session: CoreSession;
@@ -141,7 +132,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
             className="text-xs flex items-start gap-1.5 text-[#B3261E] mb-4"
             role="alert"
           >
-            <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+            <Icon icon={AlertTriangle} size={13} className="mt-0.5 shrink-0" />
             <span>{error}</span>
           </p>
         )}
@@ -150,7 +141,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
         {summary && (
           <section className="mb-6">
             <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{t('core.acct.your_records')}</span>
-            <div className={`mt-2 rounded-[var(--radius-md)] border ${divider.replace('border-b ', '')} border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] px-4`}>
+            <div className={`mt-2 rounded-[var(--radius-md)] border ${divider.replace('border-b ', '')} border-[var(--color-m3-outline-variant)]  px-4`}>
               <Stat label={t('core.acct.doses')} value={summary.doseCount} />
               <Stat label={t('core.acct.labs')} value={summary.labCount} />
               <Stat label={t('core.acct.codes_left')} value={summary.recoveryCodesRemaining} warn={summary.recoveryCodesRemaining <= 2} />
@@ -171,21 +162,21 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
 
           <div className="mt-2 flex flex-col">
             <Row
-              icon={<ShieldCheck size={17} />}
+              icon={<Icon icon={ShieldCheck} size={17} />}
               title={t('core.acct.pw_and_totp')}
               subtitle={t('core.acct.pw_and_totp_sub')}
               right={<span className={`text-xs ${muted}`}>{t('core.acct.active')}</span>}
             />
 
             <Row
-              icon={<RefreshCw size={17} />}
+              icon={<Icon icon={RefreshCw} size={17} />}
               title={t('core.acct.change_pw')}
               subtitle={t('core.acct.change_pw_sub')}
               onClick={() => setDialog('password')}
             />
 
             <Row
-              icon={<Copy size={17} />}
+              icon={<Icon icon={Copy} size={17} />}
               title={t('core.acct.regen')}
               subtitle={
                 summary
@@ -224,7 +215,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
                             .replace('{last}', new Date(l.lastLoginAt).toLocaleDateString())
                         : t('core.acct.x_linked').replace('{date}', new Date(l.linkedAt).toLocaleDateString())
                     }
-                    right={<Unlink size={15} className={muted} />}
+                    right={<Icon icon={Unlink} size={15} className={muted} />}
                     onClick={() => setDialog('unlink')}
                   />
                 ))
@@ -242,7 +233,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
           <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{t('core.acct.delete_section')}</span>
           <div className="mt-2 flex flex-col">
             <Row
-              icon={<Trash2 size={17} />}
+              icon={<Icon icon={Trash2} size={17} />}
               title={t('core.acct.delete')}
               subtitle={
                 summary
@@ -259,10 +250,10 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
 
         <button
           onClick={() => void session.signOut().then(onBack)}
-          className={`mt-6 w-full flex items-center justify-center gap-2 py-3 rounded-[var(--radius-sm)] border ${divider.replace('border-b ', '')} border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] text-sm hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] transition-colors`}
+          className={`mt-6 w-full flex items-center justify-center gap-2 py-3 rounded-[var(--radius-sm)] border ${divider.replace('border-b ', '')} border-[var(--color-m3-outline-variant)]  text-sm hover:bg-[var(--color-m3-surface-container)]  transition-colors`}
           style={{ transitionDuration: 'var(--md-sys-motion-duration-short3)' }}
         >
-          <LogOut size={16} />
+          <Icon icon={LogOut} size={16} />
           {t('core.acct.sign_out')}
         </button>
       </div>
@@ -364,7 +355,7 @@ const Row: React.FC<{
     <Tag
       {...(onClick ? { type: 'button' as const, onClick, disabled } : {})}
       className={`w-full flex items-start gap-3 py-3.5 text-start ${divider} last:border-b-0 ${
-        onClick ? 'hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] -mx-2 px-2 rounded transition-colors disabled:opacity-50' : ''
+        onClick ? 'hover:bg-[var(--color-m3-surface-container)]  -mx-2 px-2 rounded transition-colors disabled:opacity-50' : ''
       }`}
       style={onClick ? { transitionDuration: 'var(--md-sys-motion-duration-short3)' } : undefined}
     >
@@ -393,7 +384,7 @@ const Dialog: React.FC<{
         <button
           type="button"
           onClick={onClose}
-          className="mt-3 w-full text-xs py-2 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] hover:underline"
+          className="mt-3 w-full text-xs py-2 text-[var(--color-m3-on-surface-variant)]  hover:underline"
         >
           Cancel
         </button>
@@ -424,7 +415,7 @@ const Field: React.FC<{
       className={`input-base ${mono ? 'font-mono text-center tracking-[0.3em]' : ''}`}
     />
     {hint && (
-      <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+      <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">
         {hint}
       </p>
     )}
@@ -440,9 +431,9 @@ const Submit: React.FC<{ busy: boolean; disabled?: boolean; danger?: boolean; ch
   <button
     type="submit"
     disabled={busy || disabled}
-    className={`${danger ? 'bg-[#B3261E] text-white' : 'btn-primary'} w-full mt-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-[var(--radius-sm)] text-sm font-medium disabled:opacity-50`}
+    className={`${danger ? 'bg-[#B3261E] text-cos-on-primary' : 'btn-primary'} w-full mt-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-[var(--radius-sm)] text-sm font-medium disabled:opacity-50`}
   >
-    {busy && <Loader2 size={16} className="animate-spin" />}
+    {busy && <Icon icon={Loader2} size={16} className="animate-spin" />}
     {children}
   </button>
 );
@@ -517,7 +508,7 @@ const RecoveryDialog: React.FC<{
         <div className="callout !text-[0.75rem] mt-1 mb-3">
           <strong>{t('core.regen.done_note').split('.')[0]}.</strong>{t('core.regen.done_note').split('.').slice(1).join('.')}
         </div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-[0.8125rem] px-3 py-3 rounded-[var(--radius-sm)] border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] bg-[var(--color-m3-surface-container-low)] dark:bg-[var(--color-m3-dark-surface-container)]">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-[0.8125rem] px-3 py-3 rounded-[var(--radius-sm)] border border-[var(--color-m3-outline-variant)]  bg-[var(--color-m3-surface-container-low)] ">
           {codes.map((c) => <span key={c}>{c}</span>)}
         </div>
         <button
@@ -531,7 +522,7 @@ const RecoveryDialog: React.FC<{
           }}
           className="btn-secondary w-full mt-3 !text-xs"
         >
-          {copied ? <Check size={14} /> : <Copy size={14} />}
+          {copied ? <Icon icon={Check} size={14} /> : <Icon icon={Copy} size={14} />}
           {copied ? t('core.copied') : t('core.regen.copy_all')}
         </button>
       </Dialog>
@@ -540,7 +531,7 @@ const RecoveryDialog: React.FC<{
 
   return (
     <Dialog title={t('core.acct.regen')} onClose={onClose}>
-      <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] mb-3">
+      <p className="text-xs text-[var(--color-m3-on-surface-variant)]  mb-3">
         {t('core.regen.intro')}
       </p>
       <form
@@ -577,7 +568,7 @@ const UnlinkDialog: React.FC<{
 
   return (
     <Dialog title={t('core.unlink.title')} onClose={onClose}>
-      <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] mb-3">
+      <p className="text-xs text-[var(--color-m3-on-surface-variant)]  mb-3">
         {handle
           ? t('core.unlink.body').replace('{handle}', `@${handle}`)
           : t('core.unlink.body_generic')}
@@ -678,7 +669,7 @@ const DeleteDialog: React.FC<{
         <button
           type="button"
           onClick={() => { setUseBackup(v => !v); setError(null); }}
-          className="text-xs text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)] hover:underline"
+          className="text-xs text-[var(--color-m3-primary)]  hover:underline"
         >
           {useBackup ? t('core.del.use_totp') : t('core.del.use_backup')}
         </button>

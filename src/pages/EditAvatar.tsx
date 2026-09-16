@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
+import Icon from '../components/Icon';
 import Cropper from 'react-easy-crop';
-import { ArrowLeft, ImagePlus, Check } from 'lucide-react';
+import { ArrowLeft, ImagePlus, Check } from '../icons';
 import getCroppedImg from '../utils/cropImage';
 import { useTranslation } from '../contexts/LanguageContext';
 import { apiFetch } from '../services/apiClient';
@@ -19,8 +20,8 @@ const EditAvatar: React.FC<{ username: string; token: string; onBack: () => void
     const [cacheBuster] = useState(() => Date.now());
 
     const avatarUrl = `/api/user/avatar/${username}?t=${cacheBuster}`;
-    const on = 'text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]';
-    const muted = 'text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]';
+    const on = 'text-[var(--color-m3-on-surface)] ';
+    const muted = 'text-[var(--color-m3-on-surface-variant)] ';
 
     const onCropComplete = useCallback((_a: any, pixels: any) => setCroppedAreaPixels(pixels), []);
 
@@ -65,26 +66,26 @@ const EditAvatar: React.FC<{ username: string; token: string; onBack: () => void
 
     return (
         <div className="relative pb-32">
-            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)] dark:bg-[var(--color-m3-dark-surface)] px-6 md:px-8 pt-8 pb-3">
+            <div className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3">
                 <button
                     onClick={onBack}
-                    className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)]"
+                    className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] "
                 >
-                    <ArrowLeft size={18} className={`${muted} shrink-0`} />
+                    <Icon icon={ArrowLeft} size={18} className={`${muted} shrink-0`} />
                     <span className={`text-xl font-semibold ${on}`}>{t('avatar.title')}</span>
                 </button>
             </div>
 
             <div className="px-6 md:px-8 mt-4 max-w-md space-y-5">
                 {error && (
-                    <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm rounded-lg">
+                    <div className="p-3 bg-cos-error-container  text-cos-error  text-sm rounded-lg">
                         {error}
                     </div>
                 )}
 
                 {!imageSrc ? (
                     <div className="flex flex-col items-center gap-6 py-4">
-                        <div className="w-36 h-36 rounded-full overflow-hidden relative bg-[var(--color-m3-surface-container)] dark:bg-[var(--color-m3-dark-surface-container)]">
+                        <div className="w-36 h-36 rounded-full overflow-hidden relative bg-[var(--color-m3-surface-container)] ">
                             <img
                                 src={avatarUrl}
                                 alt={username}
@@ -97,9 +98,9 @@ const EditAvatar: React.FC<{ username: string; token: string; onBack: () => void
                         </div>
                         <button
                             onClick={() => fileInputRef.current?.click()}
-                            className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-lg border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)] hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] transition-colors"
+                            className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-lg border border-[var(--color-m3-outline-variant)]  text-[var(--color-m3-primary)]  hover:bg-[var(--color-m3-surface-container)]  transition-colors"
                         >
-                            <ImagePlus size={16} />
+                            <Icon icon={ImagePlus} size={16} />
                             {t('avatar.change')}
                         </button>
                     </div>
@@ -129,23 +130,23 @@ const EditAvatar: React.FC<{ username: string; token: string; onBack: () => void
                                 step={0.1}
                                 aria-label={t('avatar.zoom')}
                                 onChange={(e) => setZoom(Number(e.target.value))}
-                                className="w-full h-1 rounded-lg appearance-none cursor-pointer bg-[var(--color-m3-surface-container-high)] dark:bg-[var(--color-m3-dark-surface-container-high)] accent-[var(--color-m3-primary)]"
+                                className="w-full h-1 rounded-lg appearance-none cursor-pointer bg-[var(--color-m3-surface-container-high)]  accent-[var(--color-m3-primary)]"
                             />
                         </div>
 
                         <div className="flex gap-2">
                             <button
                                 onClick={resetPicker}
-                                className="flex-1 py-3 rounded-lg font-medium text-sm text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] transition-colors"
+                                className="flex-1 py-3 rounded-lg font-medium text-sm text-[var(--color-m3-on-surface-variant)]  hover:bg-[var(--color-m3-surface-container)]  transition-colors"
                             >
                                 {t('btn.cancel')}
                             </button>
                             <button
                                 onClick={handleUpload}
                                 disabled={isUploading}
-                                className="flex-1 py-3 rounded-lg font-medium text-sm text-white bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                                className="flex-1 py-3 rounded-lg font-medium text-sm text-cos-on-primary bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
                             >
-                                {isUploading ? '…' : <><Check size={16} /> {t('btn.save')}</>}
+                                {isUploading ? '…' : <><Icon icon={Check} size={16} /> {t('btn.save')}</>}
                             </button>
                         </div>
                     </>

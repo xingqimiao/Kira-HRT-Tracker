@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import Icon from './Icon';
 import { v4 as uuidv4 } from 'uuid';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
 import CustomSelect from './CustomSelect';
 import DateTimePicker from './DateTimePicker';
 import { Route, Ester, ExtraKey, DoseEvent, SL_TIER_ORDER, SublingualTierParams, getBioavailabilityMultiplier, getToE2Factor, getDoseAdvisory } from '../../logic';
-import { Save, Trash2, Info, Bookmark, BookmarkPlus, X, ChevronDown, Check, AlertTriangle, ExternalLink } from 'lucide-react';
+import { Save, Trash2, Info, Bookmark, BookmarkPlus, X, ChevronDown, Check, AlertTriangle, ExternalLink } from '../icons';
 import { DoseAdvisoryLine } from './DoseAdvisory';
 import { LOCALE_MAP } from '../utils/helpers';
 import InjectionFields from './dose_form/InjectionFields';
@@ -42,11 +43,11 @@ const DOSE_GUIDE_CONFIG: Partial<Record<Route, DoseGuideConfig>> = {
 };
 
 const LEVEL_BADGE_STYLES: Record<DoseLevelKey, string> = {
-    low: 'text-emerald-700 dark:text-emerald-300',
-    medium: 'text-sky-700 dark:text-sky-300',
-    high: 'text-amber-700 dark:text-amber-300',
-    very_high: 'text-rose-700 dark:text-rose-300',
-    above: 'text-red-700 dark:text-red-300'
+    low: 'text-cos-success ',
+    medium: 'text-cos-accent ',
+    high: 'text-cos-warning ',
+    very_high: 'text-cos-error ',
+    above: 'text-cos-error '
 };
 
 const formatGuideNumber = (val: number) => {
@@ -607,35 +608,35 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                     disabled={templates.length === 0}
                     className={`px-2 py-1 text-xs font-medium rounded flex items-center gap-1 ${
                         templates.length === 0
-                            ? 'text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] opacity-40 cursor-not-allowed'
-                            : 'text-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-container)] dark:hover:bg-[var(--color-m3-primary-container)]/20'
+                            ? 'text-[var(--color-m3-on-surface-variant)]  opacity-40 cursor-not-allowed'
+                            : 'text-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-container)] '
                     }`}
                     title={t('template.load_title')}
                 >
-                    <Bookmark size={14} />
+                    <Icon icon={Bookmark} size={14} />
                     <span>{t('template.load_title')}</span>
                 </button>
                 {showTemplateMenu && templates.length > 0 && (
-                    <div className="absolute right-0 top-full mt-1 bg-[var(--color-m3-surface-container-lowest)] dark:bg-[var(--color-m3-dark-surface-container)] rounded-xl border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] w-64 max-h-64 overflow-y-auto z-50">
+                    <div className="absolute right-0 top-full mt-1 bg-[var(--color-m3-surface-container-lowest)]  rounded-xl border border-[var(--color-m3-outline-variant)]  w-64 max-h-64 overflow-y-auto z-50">
                         <div className="py-1">
                             {templates.map((template: DoseTemplate) => (
-                                <div key={template.id} className="group flex items-center justify-between px-3 py-2.5 hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container-high)] border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] last:border-b-0">
+                                <div key={template.id} className="group flex items-center justify-between px-3 py-2.5 hover:bg-[var(--color-m3-surface-container)]  border-b border-[var(--color-m3-outline-variant)]  last:border-b-0">
                                     <button
                                         onClick={() => { handleLoadTemplate(template); setShowTemplateMenu(false); }}
                                         className="flex-1 text-left"
                                     >
-                                        <div className="text-sm font-medium text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">{template.name}</div>
-                                        <div className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] mt-0.5">
+                                        <div className="text-sm font-medium text-[var(--color-m3-on-surface)] ">{template.name}</div>
+                                        <div className="text-xs text-[var(--color-m3-on-surface-variant)]  mt-0.5">
                                             {t(`route.${template.route}`)} · {template.doseMG.toFixed(2)} mg
                                         </div>
                                     </button>
                                     {templateToDelete === template.id ? (
                                         <div className="flex items-center gap-0.5 pl-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                            <button onClick={() => { setTemplateToDelete(null); setShowTemplateMenu(false); onDeleteTemplate(template.id); }} className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded" title={t('btn.confirm')}>
-                                                <Check size={13} />
+                                            <button onClick={() => { setTemplateToDelete(null); setShowTemplateMenu(false); onDeleteTemplate(template.id); }} className="p-1 text-cos-error hover:bg-cos-error-container  rounded" title={t('btn.confirm')}>
+                                                <Icon icon={Check} size={13} />
                                             </button>
-                                            <button onClick={() => setTemplateToDelete(null)} className="p-1 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container-high)] rounded" title={t('btn.cancel')}>
-                                                <X size={13} />
+                                            <button onClick={() => setTemplateToDelete(null)} className="p-1 text-[var(--color-m3-on-surface-variant)]  hover:bg-[var(--color-m3-surface-container)]  rounded" title={t('btn.cancel')}>
+                                                <Icon icon={X} size={13} />
                                             </button>
                                         </div>
                                     ) : (
@@ -644,10 +645,10 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                                                 e.stopPropagation();
                                                 setTemplateToDelete(template.id);
                                             }}
-                                            className="opacity-0 group-hover:opacity-100 p-1.5 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] hover:text-red-500 rounded shrink-0"
+                                            className="opacity-0 group-hover:opacity-100 p-1.5 text-[var(--color-m3-on-surface-variant)]  hover:text-cos-error rounded shrink-0"
                                             title={t('btn.delete')}
                                         >
-                                            <Trash2 size={13} />
+                                            <Icon icon={Trash2} size={13} />
                                         </button>
                                     )}
                                 </div>
@@ -667,14 +668,14 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
 
             {/* Header */}
             {!isInline && !hideHeader && (
-                <div className="px-6 py-4 border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] flex justify-between items-center shrink-0">
-                    <h3 className="text-base font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+                <div className="px-6 py-4 border-b border-[var(--color-m3-outline-variant)]  flex justify-between items-center shrink-0">
+                    <h3 className="text-base font-semibold text-[var(--color-m3-on-surface)] ">
                         {eventToEdit ? t('modal.dose.edit_title') : t('modal.dose.add_title')}
                     </h3>
                     <div className="flex gap-2 items-center">
                         {renderLoadTemplateControl()}
-                        <button onClick={onCancel} className="p-1.5 hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container-high)] rounded-lg">
-                            <X size={18} className="text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]" />
+                        <button onClick={onCancel} className="p-1.5 hover:bg-[var(--color-m3-surface-container)]  rounded-lg">
+                            <Icon icon={X} size={18} className="text-[var(--color-m3-on-surface-variant)] " />
                         </button>
                     </div>
                 </div>
@@ -682,8 +683,8 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
 
             {/* Inline Header (Simpler) */}
             {isInline && !hideHeader && (
-                <div className="pb-4 border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] flex justify-between items-center">
-          <span className="text-[0.8125rem] font-semibold text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+                <div className="pb-4 border-b border-[var(--color-m3-outline-variant)]  flex justify-between items-center">
+          <span className="text-[0.8125rem] font-semibold text-[var(--color-m3-on-surface-variant)] ">
                         {t('timeline.add_title')}
                     </span>
                     {renderLoadTemplateControl()}
@@ -696,14 +697,14 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                     <button
                         type="button"
                         onClick={() => setIsDatePickerOpen(v => !v)}
-                        className="w-full flex items-center justify-between py-[18px] border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] text-start"
+                        className="w-full flex items-center justify-between py-[18px] border-b border-[var(--color-m3-outline-variant)]  text-start"
                     >
-                        <span className="text-[0.9375rem] text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">{t('field.time')}</span>
-                        <div className="flex items-center gap-1.5 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+                        <span className="text-[0.9375rem] text-[var(--color-m3-on-surface)] ">{t('field.time')}</span>
+                        <div className="flex items-center gap-1.5 text-[var(--color-m3-on-surface-variant)] ">
                             <span className="text-sm tabular-nums">
                                 {dateStr ? new Date(dateStr).toLocaleString(LOCALE_MAP[lang] || 'en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
                             </span>
-                            <ChevronDown size={14} className={`chev ${isDatePickerOpen ? 'rotate-180' : ''}`} />
+                            <Icon icon={ChevronDown} size={14} className={`chev ${isDatePickerOpen ? 'rotate-180' : ''}`} />
                         </div>
                     </button>
                     <DateTimePicker
@@ -732,7 +733,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                 />
 
                 {route === Route.patchRemove && (
-                    <div className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] bg-[var(--color-m3-surface-container)] dark:bg-[var(--color-m3-dark-surface-container)] p-3 rounded-[var(--radius-md)]">
+                    <div className="text-xs text-[var(--color-m3-on-surface-variant)]  bg-[var(--color-m3-surface-container)]  p-3 rounded-[var(--radius-md)]">
                         {t('patch.remove_hint')}
                     </div>
                 )}
@@ -836,22 +837,22 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
 
                         {/* Injection-specific guide from mtf.wiki */}
                         {route === Route.injection && !isTransmasc && (
-                            <div className="mt-3 border-t border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] pt-3 space-y-3">
+                            <div className="mt-3 border-t border-[var(--color-m3-outline-variant)]  pt-3 space-y-3">
                                 {/* Safety Warning */}
                                 <div className="flex gap-2">
-                                    <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                                    <Icon icon={AlertTriangle} className="w-4 h-4 text-cos-warning shrink-0 mt-0.5" />
                                     <div>
-                                        <span className="text-sm font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">{t('inj.guide.title')}</span>
-                                        <p className="text-sm text-amber-700 dark:text-amber-400 mt-0.5">{t('inj.guide.safety')}</p>
+                                        <span className="text-sm font-semibold text-[var(--color-m3-on-surface)] ">{t('inj.guide.title')}</span>
+                                        <p className="text-sm text-cos-warning  mt-0.5">{t('inj.guide.safety')}</p>
                                     </div>
                                 </div>
 
                                 {/* Usage & Dosage */}
                                 <div className="space-y-1.5 pl-6">
-                                    <p className="text-sm text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{t('inj.guide.route_methods')}</p>
-                                    <p className="text-xs font-medium text-red-600 dark:text-red-400">{t('inj.guide.route_warn')}</p>
-                                    <p className="text-sm font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] mt-1">{t('inj.guide.dosage_title')}</p>
-                                    <ul className="text-sm text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] space-y-0.5 list-disc list-inside">
+                                    <p className="text-sm text-[var(--color-m3-on-surface-variant)] ">{t('inj.guide.route_methods')}</p>
+                                    <p className="text-xs font-medium text-cos-error ">{t('inj.guide.route_warn')}</p>
+                                    <p className="text-sm font-semibold text-[var(--color-m3-on-surface)]  mt-1">{t('inj.guide.dosage_title')}</p>
+                                    <ul className="text-sm text-[var(--color-m3-on-surface-variant)]  space-y-0.5 list-disc list-inside">
                                         <li>{t('inj.guide.dosage_ev')}</li>
                                         <li>{t('inj.guide.dosage_ec')}</li>
                                     </ul>
@@ -866,18 +867,18 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                                         className="inline-flex items-center gap-1 text-sm text-[var(--color-m3-primary)] hover:underline mt-0.5"
                                     >
                                         {t('inj.guide.sim_link')}
-                                        <ExternalLink size={13} />
+                                        <Icon icon={ExternalLink} size={13} />
                                     </a>
                                 </div>
 
                                 {/* Precautions */}
                                 <div className="pl-6 space-y-1">
-                                    <p className="text-sm font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">{t('inj.guide.notes_title')}</p>
-                                    <ul className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] space-y-1.5 list-disc list-inside leading-relaxed">
+                                    <p className="text-sm font-semibold text-[var(--color-m3-on-surface)] ">{t('inj.guide.notes_title')}</p>
+                                    <ul className="text-xs text-[var(--color-m3-on-surface-variant)]  space-y-1.5 list-disc list-inside leading-relaxed">
                                         <li>{t('inj.guide.note_1')}</li>
                                         <li>{t('inj.guide.note_2')}</li>
-                                        <li className="font-semibold text-red-600 dark:text-red-400">{t('inj.guide.note_3')}</li>
-                                        <li><span className="font-semibold text-amber-700 dark:text-amber-400">{t('inj.guide.note_4')}</span></li>
+                                        <li className="font-semibold text-cos-error ">{t('inj.guide.note_3')}</li>
+                                        <li><span className="font-semibold text-cos-warning ">{t('inj.guide.note_4')}</span></li>
                                         <li>{t('inj.guide.note_5')}</li>
                                         <li>{t('inj.guide.note_6')}</li>
                                         <li>{t('inj.guide.note_7')}</li>
@@ -895,24 +896,24 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                                         e.preventDefault();
                                         confirmAndOpenExternal('https://mtf.wiki/zh-cn/docs/medicine/estrogen/injection');
                                     }}
-                                    className="inline-flex items-center gap-1 text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] hover:text-[var(--color-m3-primary)]"
+                                    className="inline-flex items-center gap-1 text-xs text-[var(--color-m3-on-surface-variant)]  hover:text-[var(--color-m3-primary)]"
                                 >
                                     {t('inj.guide.source')}
-                                    <ExternalLink size={12} />
+                                    <Icon icon={ExternalLink} size={12} />
                                 </a>
                             </div>
                         )}
 
                         {/* CPA dosage hint */}
                         {ester === Ester.CPA && (
-                            <div className="mt-3 p-3 rounded-[var(--radius-lg)] border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] bg-[var(--color-m3-surface-container-low)] dark:bg-[var(--color-m3-dark-surface-container)] flex gap-3">
-                                <Info className="w-5 h-5 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] shrink-0 mt-0.5" />
+                            <div className="mt-3 p-3 rounded-[var(--radius-lg)] border border-[var(--color-m3-outline-variant)]  bg-[var(--color-m3-surface-container-low)]  flex gap-3">
+                                <Icon icon={Info} className="w-5 h-5 text-[var(--color-m3-on-surface-variant)]  shrink-0 mt-0.5" />
                                 <div className="space-y-1.5">
-                                    <span className="text-sm font-bold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">{t('dose.guide.title')}</span>
+                                    <span className="text-sm font-bold text-[var(--color-m3-on-surface)] ">{t('dose.guide.title')}</span>
                                     <ul className="space-y-1 mt-1">
                                         {(['rec', 'combo', 'ultralow'] as const).map(key => (
-                                            <li key={key} className="flex items-start gap-1.5 text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] leading-relaxed">
-                                                <span className="mt-1.5 w-1 h-1 rounded-full bg-[var(--color-m3-on-surface-variant)] dark:bg-[var(--color-m3-dark-on-surface-variant)] shrink-0" />
+                                            <li key={key} className="flex items-start gap-1.5 text-xs text-[var(--color-m3-on-surface-variant)]  leading-relaxed">
+                                                <span className="mt-1.5 w-1 h-1 rounded-full bg-[var(--color-m3-on-surface-variant)]  shrink-0" />
                                                 {t(`dose.guide.cpa_hint.${key}`)}
                                             </li>
                                         ))}
@@ -923,27 +924,27 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
 
                         {/* Dose guide for non-injection routes */}
                         {doseGuide && (
-                            <div className="mt-2 pt-2 border-t border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] flex gap-2">
-                                <Info className="w-3.5 h-3.5 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] shrink-0 mt-0.5" />
+                            <div className="mt-2 pt-2 border-t border-[var(--color-m3-outline-variant)]  flex gap-2">
+                                <Icon icon={Info} className="w-3.5 h-3.5 text-[var(--color-m3-on-surface-variant)]  shrink-0 mt-0.5" />
                                 <div className="space-y-0.5 min-w-0">
                                     <div className="flex items-center gap-2">
-                                        <span className="text-xs font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">{t('dose.guide.title')}</span>
+                                        <span className="text-xs font-semibold text-[var(--color-m3-on-surface)] ">{t('dose.guide.title')}</span>
                                         {doseGuide.level && (
                                             <span className={`text-xs font-medium ${guideBadgeClass}`}>
                                                 {t(`dose.guide.level.${doseGuide.level}`)}
                                             </span>
                                         )}
                                     </div>
-                                    <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+                                    <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">
                                         {t('dose.guide.current')}: {doseGuide.value !== null ? `${formatGuideNumber(doseGuide.value)} ${guideUnitLabel}` : t('dose.guide.current_blank')}
                                     </p>
                                     {guideRangeText && (
-                                        <p className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] leading-snug">
+                                        <p className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)]  leading-snug">
                                             {t('dose.guide.reference')}: {guideRangeText}
                                         </p>
                                     )}
                                     {doseGuide.showRateHint && (
-                                        <p className="text-[0.6875rem] text-amber-700 dark:text-amber-500 leading-snug">
+                                        <p className="text-[0.6875rem] text-cos-warning  leading-snug">
                                             {t('dose.guide.patch_rate_hint')}
                                         </p>
                                     )}
@@ -953,7 +954,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
 
                         {/* Recent-use heads-up — logged doses already running high */}
                         {doseAdvisory && (
-                            <div className="mt-2 pt-2 border-t border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]">
+                            <div className="mt-2 pt-2 border-t border-[var(--color-m3-outline-variant)] ">
                                 <DoseAdvisoryLine advisory={doseAdvisory} t={t} />
                             </div>
                         )}
@@ -962,7 +963,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
             </div>
 
             {/* Footer Buttons */}
-            <div className={`flex flex-wrap gap-y-2 justify-between items-center shrink-0 border-t border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] ${!isInline ? 'px-6 py-3' : hideHeader ? 'py-2' : 'py-3'}`}>
+            <div className={`flex flex-wrap gap-y-2 justify-between items-center shrink-0 border-t border-[var(--color-m3-outline-variant)]  ${!isInline ? 'px-6 py-3' : hideHeader ? 'py-2' : 'py-3'}`}>
                 <div className="flex gap-2 items-center flex-wrap min-h-10 w-full sm:w-auto">
 
                     {/* Template Save Section */}
@@ -975,20 +976,20 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                                 value={templateName}
                                 onChange={(e) => setTemplateName(e.target.value)}
                                 placeholder={t('template.name_placeholder')}
-                                className="flex-1 min-w-0 px-2.5 py-1.5 text-sm bg-[var(--color-m3-surface-container-lowest)] dark:bg-[var(--color-m3-dark-surface-container-low)] border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] rounded-md focus:ring-1 focus:ring-[var(--color-m3-primary)]/30 focus:border-[var(--color-m3-primary)] outline-none text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]"
+                                className="flex-1 min-w-0 px-2.5 py-1.5 text-sm bg-[var(--color-m3-surface-container-lowest)]  border border-[var(--color-m3-outline-variant)]  rounded-md focus:ring-1 focus:ring-[var(--color-m3-primary)]/30 focus:border-[var(--color-m3-primary)] outline-none text-[var(--color-m3-on-surface)] "
                                 style={{ fontSize: '16px' }}
                             />
                             <button
                                 onClick={handleSaveAsTemplate}
-                                className="p-1.5 ml-1 text-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-container)] dark:hover:bg-[var(--color-m3-primary-container)]/20 rounded shrink-0"
+                                className="p-1.5 ml-1 text-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-container)]  rounded shrink-0"
                             >
-                                <Check size={18} />
+                                <Icon icon={Check} size={18} />
                             </button>
                             <button
                                 onClick={() => { setShowSaveTemplateInput(false); setTemplateName(''); }}
-                                className="p-1.5 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container-high)] rounded shrink-0"
+                                className="p-1.5 text-[var(--color-m3-on-surface-variant)]  hover:bg-[var(--color-m3-surface-container)]  rounded shrink-0"
                             >
-                                <X size={18} />
+                                <Icon icon={X} size={18} />
                             </button>
                         </div>
                         
@@ -1001,10 +1002,10 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                                     setShowDeleteConfirm(false);
                                     setShowTemplateMenu(false);
                                 }}
-                                className="p-2 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] hover:text-[var(--color-m3-primary)] rounded flex items-center justify-center"
+                                className="p-2 text-[var(--color-m3-on-surface-variant)]  hover:text-[var(--color-m3-primary)] rounded flex items-center justify-center"
                                 title={t('template.save_title')}
                             >
-                                <BookmarkPlus size={18} />
+                                <Icon icon={BookmarkPlus} size={18} />
                             </button>
                         </div>
                     </div>
@@ -1013,26 +1014,26 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                     {eventToEdit && (
                         <div className="flex items-center">
                             <div className={`overflow-hidden flex items-center ${
-                                showDeleteConfirm ? 'w-[8.75rem] sm:w-40 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded opacity-100 pl-3 pr-1 py-1' : 'w-0 opacity-0 border border-transparent'
+                                showDeleteConfirm ? 'w-[8.75rem] sm:w-40 bg-cos-error-container  border border-red-100  rounded opacity-100 pl-3 pr-1 py-1' : 'w-0 opacity-0 border border-transparent'
                             }`}>
-                                <span className="text-xs text-red-600 dark:text-red-400 font-medium whitespace-nowrap grow">{t('dialog.confirm_title')}?</span>
+                                <span className="text-xs text-cos-error  font-medium whitespace-nowrap grow">{t('dialog.confirm_title')}?</span>
                                 <div className="flex items-center shrink-0 ml-2">
                                     <button
                                         onClick={() => {
                                             onDelete(eventToEdit.id);
                                             onCancel();
                                         }}
-                                        className="p-1 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded"
+                                        className="p-1 text-cos-error  hover:bg-cos-error-container  rounded"
                                         title={t('btn.ok')}
                                     >
-                                        <Check size={16} />
+                                        <Icon icon={Check} size={16} />
                                     </button>
                                     <button
                                         onClick={() => setShowDeleteConfirm(false)}
-                                        className="p-1 text-gray-500 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
+                                        className="p-1 text-cos-on-surface-variant hover:bg-cos-error-container  rounded"
                                         title={t('btn.cancel')}
                                     >
-                                        <X size={16} />
+                                        <Icon icon={X} size={16} />
                                     </button>
                                 </div>
                             </div>
@@ -1046,9 +1047,9 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                                         setShowSaveTemplateInput(false);
                                         setShowTemplateMenu(false);
                                     }}
-                                    className="p-2 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] hover:text-red-500 rounded flex items-center justify-center"
+                                    className="p-2 text-[var(--color-m3-on-surface-variant)]  hover:text-cos-error rounded flex items-center justify-center"
                                 >
-                                    <Trash2 size={18} />
+                                    <Icon icon={Trash2} size={18} />
                                 </button>
                             </div>
                         </div>
@@ -1059,7 +1060,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                     {hideHeader && (
                         <button
                             onClick={onCancel}
-                            className="flex-1 sm:flex-none sm:min-w-[88px] flex items-center justify-center px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-md text-sm"
+                            className="flex-1 sm:flex-none sm:min-w-[88px] flex items-center justify-center px-4 py-2 text-cos-on-surface-variant  hover:bg-cos-surface-container  rounded-md text-sm"
                         >
                             {t('btn.cancel')}
                         </button>
@@ -1067,13 +1068,13 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                     <button
                         onClick={handleSave}
                         disabled={isSaving}
-                        className="flex-1 sm:flex-none sm:min-w-[88px] px-4 py-2 bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] text-white rounded-md font-medium text-sm disabled:opacity-70 flex items-center justify-center gap-1.5"
+                        className="flex-1 sm:flex-none sm:min-w-[88px] px-4 py-2 bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] text-cos-on-primary rounded-md font-medium text-sm disabled:opacity-70 flex items-center justify-center gap-1.5"
                     >
                         {isSaving ? (
                             <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                         ) : (
                             <>
-                                <Save size={16} />
+                                <Icon icon={Save} size={16} />
                                 <span>{t('btn.save')}</span>
                             </>
                         )}

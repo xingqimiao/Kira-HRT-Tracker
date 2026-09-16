@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, Megaphone, X } from 'lucide-react';
+import Icon from './Icon';
+import { AlertCircle, Megaphone, X } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { noticeService, noticeText, SiteNotice as Notice } from '../services/notice';
 
@@ -91,13 +92,13 @@ const SiteNoticeBanner: React.FC = () => {
 
     const warn = notice.level === 'warn';
     const tone = warn
-        ? 'text-amber-700/90 dark:text-amber-400/85'
-        : 'text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)]';
-    const Icon = warn ? AlertCircle : Megaphone;
+        ? 'text-cos-warning/90 '
+        : 'text-[var(--color-m3-primary)] ';
+    const levelIcon = warn ? AlertCircle : Megaphone;
 
     return (
         <div className={`shrink-0 flex items-start gap-1.5 px-6 md:px-10 pt-2 pb-1 text-[0.8125rem] leading-snug ${tone}`}>
-            <Icon size={14} strokeWidth={1.75} className="mt-[3px] shrink-0" />
+            <Icon icon={levelIcon} size={14} strokeWidth={1.75} className="mt-[3px] shrink-0" />
             <p className="flex-1 min-w-0 max-h-[30vh] overflow-y-auto whitespace-pre-wrap break-words">{linkify(noticeText(notice, lang))}</p>
             <button
                 onClick={dismiss}
@@ -105,7 +106,7 @@ const SiteNoticeBanner: React.FC = () => {
                 title={t('notice.dismiss')}
                 className="mt-[1px] p-1 -m-1 shrink-0 rounded hover:opacity-70 transition-opacity"
             >
-                <X size={14} strokeWidth={1.75} />
+                <Icon icon={X} size={14} strokeWidth={1.75} />
             </button>
         </div>
     );

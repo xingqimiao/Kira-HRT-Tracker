@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import Icon from './Icon';
 import { useTranslation } from '../contexts/LanguageContext';
 import { LabResult, isT_LabUnit } from '../../logic';
-import { Check, Trash2, X, ChevronDown } from 'lucide-react';
+import { Check, Trash2, X, ChevronDown } from '../icons';
 import { v4 as uuidv4 } from 'uuid';
 import DateTimePicker from './DateTimePicker';
 import { LOCALE_MAP } from '../utils/helpers';
@@ -15,7 +16,7 @@ interface LabResultFormProps {
 
 type LabUnit = 'pg/ml' | 'pmol/l' | 'ng/dl' | 'nmol/l';
 
-const divider = "border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]";
+const divider = "border-b border-[var(--color-m3-outline-variant)] ";
 
 const E2_UNITS: LabUnit[] = ['pmol/l', 'pg/ml'];
 const T_UNITS: LabUnit[] = ['ng/dl', 'nmol/l'];
@@ -39,7 +40,7 @@ const HormoneValueField: React.FC<{
 }> = ({ label, units, unit, onUnitChange, value, onValueChange }) => (
     <div>
         <div className="flex items-center justify-between mb-3">
-            <span className="text-[0.9375rem] text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+            <span className="text-[0.9375rem] text-[var(--color-m3-on-surface)] ">
                 {label}
             </span>
             <div className="flex gap-4">
@@ -48,8 +49,8 @@ const HormoneValueField: React.FC<{
                         key={u}
                         onClick={() => onUnitChange(u)}
                         className={`text-sm pb-0.5 border-b-2 ${unit === u
-                            ? 'font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] border-[var(--color-m3-primary)]'
-                            : 'text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] border-transparent'
+                            ? 'font-semibold text-[var(--color-m3-on-surface)]  border-[var(--color-m3-primary)]'
+                            : 'text-[var(--color-m3-on-surface-variant)]  border-transparent'
                         }`}
                     >
                         {UNIT_LABELS[u]}
@@ -63,7 +64,7 @@ const HormoneValueField: React.FC<{
             placeholder="0.0"
             value={value}
             onChange={e => onValueChange(e.target.value)}
-            className="w-full bg-[var(--color-m3-surface-container-lowest)] dark:bg-[var(--color-m3-dark-surface-container-low)] border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] rounded-md px-3 py-2 outline-none focus:border-[var(--color-m3-primary)] text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] placeholder:text-[var(--color-m3-on-surface-variant)] tabular-nums"
+            className="w-full bg-[var(--color-m3-surface-container-lowest)]  border border-[var(--color-m3-outline-variant)]  rounded-md px-3 py-2 outline-none focus:border-[var(--color-m3-primary)] text-[var(--color-m3-on-surface)]  placeholder:text-[var(--color-m3-on-surface-variant)] tabular-nums"
             style={{ fontSize: '16px' }}
         />
     </div>
@@ -138,14 +139,14 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
                     onClick={() => setIsDatePickerOpen(v => !v)}
                     className={`w-full flex items-center justify-between py-[18px] ${divider} text-start`}
                 >
-                    <span className="text-[0.9375rem] text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+                    <span className="text-[0.9375rem] text-[var(--color-m3-on-surface)] ">
                         {t('lab.date')}
                     </span>
-                    <div className="flex items-center gap-1.5 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+                    <div className="flex items-center gap-1.5 text-[var(--color-m3-on-surface-variant)] ">
                         <span className="text-sm tabular-nums">
                             {dateStr ? new Date(dateStr).toLocaleString(LOCALE_MAP[lang] || 'en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
                         </span>
-                        <ChevronDown size={14} className={`chev ${isDatePickerOpen ? 'rotate-180' : ''}`} />
+                        <Icon icon={ChevronDown} size={14} className={`chev ${isDatePickerOpen ? 'rotate-180' : ''}`} />
                     </div>
                 </button>
                 <DateTimePicker
@@ -194,7 +195,7 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
                                 onValueChange={setTValue}
                             />
                         </div>
-                        <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] pt-2">
+                        <p className="text-xs text-[var(--color-m3-on-surface-variant)]  pt-2">
                             {t('lab.dual_hint')}
                         </p>
                     </>
@@ -207,27 +208,27 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
                     {resultToEdit && onDelete && (
                         <>
                             {showDeleteConfirm ? (
-                                <div className="flex items-center gap-1 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded px-2 py-1">
-                                    <span className="text-xs text-red-600 dark:text-red-400 font-medium whitespace-nowrap">{t('dialog.confirm_title')}?</span>
+                                <div className="flex items-center gap-1 bg-cos-error-container  border border-red-100  rounded px-2 py-1">
+                                    <span className="text-xs text-cos-error  font-medium whitespace-nowrap">{t('dialog.confirm_title')}?</span>
                                     <button
                                         onClick={() => { onDelete(resultToEdit.id); onCancel(); }}
-                                        className="p-1 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded"
+                                        className="p-1 text-cos-error  hover:bg-cos-error-container  rounded"
                                     >
-                                        <Check size={14} />
+                                        <Icon icon={Check} size={14} />
                                     </button>
                                     <button
                                         onClick={() => setShowDeleteConfirm(false)}
-                                        className="p-1 text-[var(--color-m3-on-surface-variant)] hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                                        className="p-1 text-[var(--color-m3-on-surface-variant)] hover:bg-cos-error-container  rounded"
                                     >
-                                        <X size={14} />
+                                        <Icon icon={X} size={14} />
                                     </button>
                                 </div>
                             ) : (
                                 <button
                                     onClick={() => setShowDeleteConfirm(true)}
-                                    className="p-2 text-[var(--color-m3-on-surface-variant)] hover:text-red-500 rounded"
+                                    className="p-2 text-[var(--color-m3-on-surface-variant)] hover:text-cos-error rounded"
                                 >
-                                    <Trash2 size={16} />
+                                    <Icon icon={Trash2} size={16} />
                                 </button>
                             )}
                         </>
@@ -237,16 +238,16 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
                 <div className="flex gap-2 ml-auto">
                     <button
                         onClick={onCancel}
-                        className="min-w-[88px] px-4 py-2 text-sm text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] rounded-md flex items-center justify-center"
+                        className="min-w-[88px] px-4 py-2 text-sm text-[var(--color-m3-on-surface-variant)]  hover:bg-[var(--color-m3-surface-container)]  rounded-md flex items-center justify-center"
                     >
                         {t('btn.cancel')}
                     </button>
                     <button
                         onClick={handleSave}
                         disabled={!canSave || !dateStr}
-                        className="min-w-[88px] px-4 py-2 text-sm font-medium bg-[var(--color-m3-primary)] text-white rounded-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                        className="min-w-[88px] px-4 py-2 text-sm font-medium bg-[var(--color-m3-primary)] text-cos-on-primary rounded-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
                     >
-                        <Check size={14} />
+                        <Icon icon={Check} size={14} />
                         {t('btn.save')}
                     </button>
                 </div>

@@ -1,5 +1,7 @@
 import React from 'react';
-import { ArrowLeft, Check, Minus, CircleOff, Gauge, Radar, Wind, Rewind, FastForward, LucideIcon } from 'lucide-react';
+import Icon from '../components/Icon';
+import { ArrowLeft, Check, Minus, CircleOff, Gauge, Radar, Wind, Rewind, FastForward } from '../icons';
+import type { IconComponent } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { CalibrationMethod, CalibrationHistoryMode, CalibrationResult } from '../../logic';
 
@@ -12,13 +14,13 @@ interface CalibrationSettingsProps {
     onBack: () => void;
 }
 
-const muted = 'text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]';
-const on = 'text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]';
-const divider = 'border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]';
+const muted = 'text-[var(--color-m3-on-surface-variant)] ';
+const on = 'text-[var(--color-m3-on-surface)] ';
+const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
 
 interface MethodDef {
     value: CalibrationMethod;
-    icon: LucideIcon;
+    icon: IconComponent;
     recommended?: boolean;
     pros: string[];
     cons: string[];
@@ -38,7 +40,7 @@ const METHODS: MethodDef[] = [
 // Only EKF and MIPD fit a personal clearance; OU-Kalman corrects amplitude only.
 const fitsClearance = (m: CalibrationMethod) => m === 'ekf' || m === 'mipd';
 
-const HISTORY_MODES: { value: CalibrationHistoryMode; icon: LucideIcon }[] = [
+const HISTORY_MODES: { value: CalibrationHistoryMode; icon: IconComponent }[] = [
     { value: 'retrospective', icon: Rewind },
     { value: 'forward', icon: FastForward },
 ];
@@ -47,12 +49,12 @@ const HISTORY_MODES: { value: CalibrationHistoryMode; icon: LucideIcon }[] = [
 // methods and the history modes so the two lists render identically.
 const OptionCard: React.FC<{
     selected: boolean;
-    icon: LucideIcon;
+    icon: IconComponent;
     title: string;
     badge?: string;
     onClick: () => void;
     children?: React.ReactNode;
-}> = ({ selected, icon: Icon, title, badge, onClick, children }) => (
+}> = ({ selected, icon, title, badge, onClick, children }) => (
     <button
         onClick={onClick}
         className="w-full text-start rounded-2xl border p-4 outline-none focus:outline-none focus-visible:outline-none transition-colors"
@@ -66,14 +68,14 @@ const OptionCard: React.FC<{
                 className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center"
                 style={{ background: 'color-mix(in srgb, var(--color-m3-primary) 10%, transparent)' }}
             >
-                <Icon size={17} className="text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)]" />
+                <Icon icon={icon} size={17} className="text-[var(--color-m3-primary)]" />
             </div>
 
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                     <span className={`text-[0.9375rem] ${selected ? `font-semibold ${on}` : on}`}>{title}</span>
                     {badge && (
-                        <span className="text-[0.625rem] font-medium px-1.5 py-0.5 rounded-full text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)] border border-[var(--color-m3-primary)]/30">
+                        <span className="text-[0.625rem] font-medium px-1.5 py-0.5 rounded-full text-[var(--color-m3-primary)]  border border-[var(--color-m3-primary)]/30">
                             {badge}
                         </span>
                     )}
@@ -113,12 +115,12 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({ method, setMe
 
     return (
         <div className="relative pb-32">
-            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)] dark:bg-[var(--color-m3-dark-surface)] px-6 md:px-8 pt-8 pb-3">
+            <div className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3">
                 <button
                     onClick={onBack}
-                    className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg outline-none focus:outline-none focus-visible:outline-none hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)]"
+                    className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg outline-none focus:outline-none focus-visible:outline-none hover:bg-[var(--color-m3-surface-container)] "
                 >
-                    <ArrowLeft size={18} className={`${muted} shrink-0`} />
+                    <Icon icon={ArrowLeft} size={18} className={`${muted} shrink-0`} />
                     <span className={`text-xl font-semibold ${on}`}>{t('cal.settings')}</span>
                 </button>
             </div>
@@ -142,13 +144,13 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({ method, setMe
                             <ul className="mt-3 space-y-1.5">
                                 {pros.map(k => (
                                     <li key={k} className="flex items-start gap-2 text-[0.78125rem] leading-snug">
-                                        <Check size={13} className="mt-[3px] shrink-0 text-emerald-600/80 dark:text-emerald-400/80" />
+                                        <Icon icon={Check} size={13} className="mt-[3px] shrink-0 text-cos-success/80 " />
                                         <span className={muted}>{t(k)}</span>
                                     </li>
                                 ))}
                                 {cons.map(k => (
                                     <li key={k} className="flex items-start gap-2 text-[0.78125rem] leading-snug">
-                                        <Minus size={13} className={`mt-[3px] shrink-0 ${muted}`} />
+                                        <Icon icon={Minus} size={13} className={`mt-[3px] shrink-0 ${muted}`} />
                                         <span className={muted}>{t(k)}</span>
                                     </li>
                                 ))}

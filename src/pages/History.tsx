@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Plus, Check, Trash2, ListChecks } from 'lucide-react';
+import Icon from '../components/Icon';
+import { Plus, Check, Trash2, ListChecks } from '../icons';
 import { v4 as uuidv4 } from 'uuid';
 import { DoseEvent, Route, Ester, ExtraKey, getToE2Factor, isTestosteroneEster } from '../../logic';
 import { formatTime } from '../utils/helpers';
@@ -15,10 +16,10 @@ const formatWearDays = (days: number): string =>
 
 const MAX_BATCH_COUNT = 365;
 
-const muted = 'text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]';
-const on = 'text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]';
-const headerBtn = 'flex items-center gap-1.5 text-sm font-medium px-2 py-1 rounded-md hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)]';
-const numInput = 'w-16 h-8 px-2 bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-md text-center text-sm font-medium focus:ring-1 focus:ring-[var(--color-m3-primary)]/30 focus:border-[var(--color-m3-primary)] outline-none text-gray-900 dark:text-gray-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
+const muted = 'text-[var(--color-m3-on-surface-variant)] ';
+const on = 'text-[var(--color-m3-on-surface)] ';
+const headerBtn = 'flex items-center gap-1.5 text-sm font-medium px-2 py-1 rounded-md hover:bg-[var(--color-m3-surface-container)] ';
+const numInput = 'w-16 h-8 px-2 bg-cos-surface-container  border border-cos-outline  rounded-md text-center text-sm font-medium focus:ring-1 focus:ring-[var(--color-m3-primary)]/30 focus:border-[var(--color-m3-primary)] outline-none text-cos-on-surface  [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
 
 interface HistoryProps {
     t: (key: string) => string;
@@ -125,7 +126,7 @@ const History: React.FC<HistoryProps> = ({
 
     return (
         <div className="relative pb-32">
-            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)] dark:bg-[var(--color-m3-dark-surface)] px-6 md:px-8 pt-8 pb-3 flex items-center justify-between max-w-2xl">
+            <div className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3 flex items-center justify-between max-w-2xl">
                 <div>
                     <h1 className={`text-xl font-semibold ${on}`}>
                         {t('timeline.title')}
@@ -137,15 +138,15 @@ const History: React.FC<HistoryProps> = ({
                 {selectMode ? (
                     <div className="flex items-center gap-1 -mr-2">
                         <button onClick={toggleSelectAll} className={`${headerBtn} ${muted}`}>
-                            <ListChecks size={15} strokeWidth={1.5} />
+                            <Icon icon={ListChecks} size={15} strokeWidth={1.5} />
                             <span>{t('timeline.select_all')}</span>
                         </button>
                         <button
                             onClick={handleDeleteSelected}
                             disabled={!selectedIds.size}
-                            className={`${headerBtn} text-red-500 dark:text-red-400 disabled:opacity-40`}
+                            className={`${headerBtn} text-cos-error  disabled:opacity-40`}
                         >
-                            <Trash2 size={15} strokeWidth={1.5} />
+                            <Icon icon={Trash2} size={15} strokeWidth={1.5} />
                             <span>{t('btn.delete')}{selectedIds.size ? ` (${selectedIds.size})` : ''}</span>
                         </button>
                         <button onClick={exitSelectMode} className={`${headerBtn} ${muted}`}>
@@ -156,15 +157,15 @@ const History: React.FC<HistoryProps> = ({
                     <div className="flex items-center gap-1 -mr-2">
                         {totalRecords > 0 && (
                             <button onClick={enterSelectMode} className={`${headerBtn} ${muted}`}>
-                                <ListChecks size={15} strokeWidth={1.5} />
+                                <Icon icon={ListChecks} size={15} strokeWidth={1.5} />
                                 <span>{t('timeline.select')}</span>
                             </button>
                         )}
                         <button
                             onClick={() => setIsQuickAddOpen(!isQuickAddOpen)}
-                            className={`${headerBtn} text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)]`}
+                            className={`${headerBtn} text-[var(--color-m3-primary)] `}
                         >
-                            <Plus size={15} className={isQuickAddOpen ? 'rotate-45' : ''} />
+                            <Icon icon={Plus} size={15} className={isQuickAddOpen ? 'rotate-45' : ''} />
                             <span>{isQuickAddOpen ? t('btn.cancel') : t('btn.add') || '添加'}</span>
                         </button>
                     </div>
@@ -181,17 +182,17 @@ const History: React.FC<HistoryProps> = ({
                             </div>
                             <button
                                 onClick={() => setBatchOn(!batchOn)}
-                                className={`relative inline-flex switch-track h-6 w-11 shrink-0 items-center rounded-full ${batchOn ? 'bg-[var(--color-m3-primary)]' : 'bg-[var(--color-m3-outline-variant)] dark:bg-[var(--color-m3-dark-outline-variant)]'}`}
+                                className={`relative inline-flex switch-track h-6 w-11 shrink-0 items-center rounded-full ${batchOn ? 'bg-[var(--color-m3-primary)]' : 'bg-[var(--color-m3-outline-variant)] '}`}
                                 role="switch"
                                 aria-checked={batchOn}
                             >
-                                <span className={`inline-block switch-knob h-4 w-4 rounded-full bg-white shadow ${batchOn ? 'translate-x-6' : 'translate-x-1'}`} />
+                                <span className={`inline-block switch-knob h-4 w-4 rounded-full bg-cos-surface-container shadow ${batchOn ? 'translate-x-6' : 'translate-x-1'}`} />
                             </button>
                         </div>
                         {batchOn && (
                             <div className="pb-3">
                                 <div className="flex items-center gap-5 flex-wrap">
-                                    <label className={`flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400`}>
+                                    <label className={`flex items-center gap-2 text-xs font-semibold text-cos-on-surface-variant `}>
                                         {t('timeline.batch_interval')}
                                         <input
                                             type="number"
@@ -202,7 +203,7 @@ const History: React.FC<HistoryProps> = ({
                                             className={numInput}
                                         />
                                     </label>
-                                    <label className={`flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400`}>
+                                    <label className={`flex items-center gap-2 text-xs font-semibold text-cos-on-surface-variant `}>
                                         {t('timeline.batch_count')}
                                         <input
                                             type="number"
@@ -236,7 +237,7 @@ const History: React.FC<HistoryProps> = ({
             </div>
 
             {groupedEvents.length === 0 && (
-                <div className="px-6 md:px-8 flex flex-col items-center text-center py-20 max-w-2xl text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+                <div className="px-6 md:px-8 flex flex-col items-center text-center py-20 max-w-2xl text-[var(--color-m3-on-surface-variant)] ">
                     <PixelCat pose="donut" className="mb-4" />
                     <p className="text-sm">{t('timeline.empty')}</p>
                 </div>
@@ -246,8 +247,8 @@ const History: React.FC<HistoryProps> = ({
             <div className="px-6 md:px-8 max-w-2xl">
                 {groupedEvents.map(({ key, label, events: dayEvents }) => (
                     <div key={key} className="mb-6 last:mb-0">
-                        <div className="sticky top-[94px] z-10 bg-[var(--color-m3-surface-dim)] dark:bg-[var(--color-m3-dark-surface)] py-2">
-              <span className="text-xs font-semibold text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{label}</span>
+                        <div className="sticky top-[94px] z-10 bg-[var(--color-m3-surface-dim)]  py-2">
+              <span className="text-xs font-semibold text-[var(--color-m3-on-surface-variant)] ">{label}</span>
                         </div>
                         <div>
                             {dayEvents.map(ev => {
@@ -255,45 +256,45 @@ const History: React.FC<HistoryProps> = ({
                                 const isSelected = selectedIds.has(ev.id);
                                 const isFuture = ev.timeH > nowH;
                                 return (
-                                <div key={ev.id} className="border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] last:border-b-0">
+                                <div key={ev.id} className="border-b border-[var(--color-m3-outline-variant)]  last:border-b-0">
                                     <div
                                         onClick={() => selectMode ? toggleSelected(ev.id) : setEditingId(isEditing ? null : ev.id)}
-                                        className={`py-3.5 flex items-start gap-3 cursor-pointer -mx-2 px-2 rounded-md hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] ${(isEditing || (selectMode && isSelected)) ? 'bg-[var(--color-m3-surface-container)] dark:bg-[var(--color-m3-dark-surface-container)]' : ''}`}
+                                        className={`py-3.5 flex items-start gap-3 cursor-pointer -mx-2 px-2 rounded-md hover:bg-[var(--color-m3-surface-container)]  ${(isEditing || (selectMode && isSelected)) ? 'bg-[var(--color-m3-surface-container)] ' : ''}`}
                                     >
                                         {selectMode ? (
-                                            <span className={`mt-[3px] w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? 'bg-[var(--color-m3-primary)] border-[var(--color-m3-primary)]' : 'border-[var(--color-m3-outline)] dark:border-[var(--color-m3-dark-outline)]'}`}>
-                                                {isSelected && <Check size={11} strokeWidth={2.5} className="text-white" />}
+                                            <span className={`mt-[3px] w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? 'bg-[var(--color-m3-primary)] border-[var(--color-m3-primary)]' : 'border-[var(--color-m3-outline)] '}`}>
+                                                {isSelected && <Icon icon={Check} size={11} strokeWidth={2.5} className="text-cos-on-primary" />}
                                             </span>
                                         ) : (
-                                            <div className="mt-[7px] w-1.5 h-1.5 rounded-full shrink-0 bg-[var(--color-m3-outline)] dark:bg-[var(--color-m3-dark-outline)]" />
+                                            <div className="mt-[7px] w-1.5 h-1.5 rounded-full shrink-0 bg-[var(--color-m3-outline)] " />
                                         )}
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center justify-between gap-2">
                                                 <div className="flex items-center gap-2 min-w-0">
-                                                    <span className="font-medium text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] truncate text-sm">
+                                                    <span className="font-medium text-[var(--color-m3-on-surface)]  truncate text-sm">
                                                         {ev.route === Route.patchRemove ? t('route.patchRemove') : t(`ester.${ev.ester}`)}
                                                     </span>
                                                     {isFuture && (
-                                                        <span className={`shrink-0 text-[0.6875rem] font-medium ${muted} px-1.5 py-0.5 rounded bg-[var(--color-m3-surface-container)] dark:bg-[var(--color-m3-dark-surface-container)]`}>
+                                                        <span className={`shrink-0 text-[0.6875rem] font-medium ${muted} px-1.5 py-0.5 rounded bg-[var(--color-m3-surface-container)] `}>
                                                             {t('timeline.future')}
                                                         </span>
                                                     )}
                                                 </div>
-                                                <span className="text-xs tabular-nums text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] shrink-0">
+                                                <span className="text-xs tabular-nums text-[var(--color-m3-on-surface-variant)]  shrink-0">
                                                     {formatTime(new Date(ev.timeH * 3600000))}
                                                 </span>
                                             </div>
-                                            <div className="mt-1 flex flex-wrap items-baseline gap-x-2 text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+                                            <div className="mt-1 flex flex-wrap items-baseline gap-x-2 text-xs text-[var(--color-m3-on-surface-variant)] ">
                                                 <span className="truncate">{t(`route.${ev.route}`)}</span>
                                                 {ev.extras[ExtraKey.releaseRateUGPerDay] ? (
                                                     <>
                                                         <span className="opacity-40">·</span>
-                                                        <span className="text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">{`${ev.extras[ExtraKey.releaseRateUGPerDay]} µg/d`}</span>
+                                                        <span className="text-[var(--color-m3-on-surface)] ">{`${ev.extras[ExtraKey.releaseRateUGPerDay]} µg/d`}</span>
                                                     </>
                                                 ) : ev.route !== Route.patchRemove && (
                                                     <>
                                                         <span className="opacity-40">·</span>
-                                                        <span className="text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] font-medium">{`${ev.doseMG.toFixed(2)} mg`}</span>
+                                                        <span className="text-[var(--color-m3-on-surface)]  font-medium">{`${ev.doseMG.toFixed(2)} mg`}</span>
                                                         {ev.ester !== Ester.E2 && ev.ester !== Ester.CPA && !isTestosteroneEster(ev.ester) && (
                                                             <span className="opacity-70">
                                                                 {`(${t('label.e2')} eq: ${(ev.doseMG * getToE2Factor(ev.ester)).toFixed(2)} mg)`}
@@ -309,7 +310,7 @@ const History: React.FC<HistoryProps> = ({
                                                 {ev.route === Route.patchApply && typeof ev.extras[ExtraKey.patchWearH] === 'number' && ev.extras[ExtraKey.patchWearH]! > 0 && (
                                                     <>
                                                         <span className="opacity-40">·</span>
-                                                        <span className="text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">{`${formatWearDays(ev.extras[ExtraKey.patchWearH]! / 24)} ${t('unit.day_short')}`}</span>
+                                                        <span className="text-[var(--color-m3-on-surface)] ">{`${formatWearDays(ev.extras[ExtraKey.patchWearH]! / 24)} ${t('unit.day_short')}`}</span>
                                                     </>
                                                 )}
                                             </div>

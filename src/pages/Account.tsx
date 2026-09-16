@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { UploadCloud, LogOut, BadgeCheck, Edit2, Loader2, Trash2, Cloud, HardDrive, DownloadCloud, Merge, ChevronDown, Plus, Minus, Fingerprint, Lock, MonitorSmartphone, CloudOff, CheckCircle2, AlertCircle } from 'lucide-react';
+import Icon from '../components/Icon';
+import { UploadCloud, LogOut, BadgeCheck, Edit2, Loader2, Trash2, Cloud, HardDrive, DownloadCloud, Merge, ChevronDown, Plus, Minus, Fingerprint, Lock, MonitorSmartphone, CloudOff, CheckCircle2, AlertCircle } from '../icons';
 import ShieldIcon from '../components/ShieldIcon';
 import { SettingsListItem } from '../components/SettingsListItem';
 
@@ -34,11 +35,11 @@ interface AccountProps {
     lastSyncedAt: number | null;
 }
 
-const divider = "border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]";
-const sectionLabel ="text-xs font-semibold text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] mb-2 block";
+const divider = "border-b border-[var(--color-m3-outline-variant)] ";
+const sectionLabel ="text-xs font-semibold text-[var(--color-m3-on-surface-variant)]  mb-2 block";
 const rowBase = `w-full flex items-center gap-3 py-4 ${divider} text-start`;
-const iconCls = "text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] shrink-0";
-const statusMuted = "text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] shrink-0";
+const iconCls = "text-[var(--color-m3-on-surface-variant)]  shrink-0";
+const statusMuted = "text-xs text-[var(--color-m3-on-surface-variant)]  shrink-0";
 
 /**
  * Why the password prompt is open.
@@ -54,12 +55,12 @@ type UnlockTarget =
 
 const SyncIcon: React.FC<{ status: SyncStatus; className?: string }> = ({ status, className }) => {
     switch (status) {
-        case 'syncing': return <Loader2 size={18} className={`${className} animate-spin`} />;
-        case 'synced': return <CheckCircle2 size={18} className={className} />;
-        case 'locked': return <Lock size={18} className={className} />;
-        case 'error': return <AlertCircle size={18} className="text-amber-600 dark:text-amber-400 shrink-0" />;
-        case 'off': return <CloudOff size={18} className={className} />;
-        default: return <Cloud size={18} className={className} />;
+        case 'syncing': return <Icon icon={Loader2} size={18} className={`${className} animate-spin`} />;
+        case 'synced': return <Icon icon={CheckCircle2} size={18} className={className} />;
+        case 'locked': return <Icon icon={Lock} size={18} className={className} />;
+        case 'error': return <Icon icon={AlertCircle} size={18} className="text-cos-warning  shrink-0" />;
+        case 'off': return <Icon icon={CloudOff} size={18} className={className} />;
+        default: return <Icon icon={Cloud} size={18} className={className} />;
     }
 };
 
@@ -391,11 +392,11 @@ const Account: React.FC<AccountProps> = ({
         }
     };
 
-    const inputCls = "w-full px-3 py-2.5 text-sm bg-[var(--color-m3-surface-container-lowest)] dark:bg-[var(--color-m3-dark-surface-container-low)] border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] rounded-md focus:outline-none focus:ring-1 focus:ring-[var(--color-m3-primary)]/30 focus:border-[var(--color-m3-primary)] text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]";
+    const inputCls = "w-full px-3 py-2.5 text-sm bg-[var(--color-m3-surface-container-lowest)]  border border-[var(--color-m3-outline-variant)]  rounded-md focus:outline-none focus:ring-1 focus:ring-[var(--color-m3-primary)]/30 focus:border-[var(--color-m3-primary)] text-[var(--color-m3-on-surface)] ";
 
     return (
         <div className="relative pb-32 px-6 md:px-10">
-            <h1 className="sticky top-0 z-20 -mx-6 md:-mx-10 px-6 md:px-10 pt-8 pb-3 mb-3 bg-[var(--color-m3-surface-dim)] dark:bg-[var(--color-m3-dark-surface)] text-xl font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+            <h1 className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 -mx-6 md:-mx-10 px-6 md:px-10 pt-8 pb-3 mb-3 bg-[var(--color-m3-surface-dim)]  text-xl font-semibold text-[var(--color-m3-on-surface)] ">
                 {t('account.title')}
             </h1>
 
@@ -406,7 +407,7 @@ const Account: React.FC<AccountProps> = ({
                         <button
                             type="button"
                             onClick={() => onNavigate('edit-avatar')}
-                            className="relative group w-28 h-28 rounded-full overflow-hidden cursor-pointer bg-[var(--color-m3-surface-container)] dark:bg-[var(--color-m3-dark-surface-container)] focus:outline-none focus:ring-2 focus:ring-[var(--color-m3-primary)]/40 focus:ring-offset-2 focus:ring-offset-[var(--color-m3-surface)] dark:focus:ring-offset-[var(--color-m3-dark-surface)]"
+                            className="relative group w-28 h-28 rounded-full overflow-hidden cursor-pointer bg-[var(--color-m3-surface-container)]  focus:outline-none focus:ring-2 focus:ring-[var(--color-m3-primary)]/40 focus:ring-offset-2 focus:ring-offset-[var(--color-m3-surface)] "
                             aria-label={t('avatar.change')}
                         >
                             <img
@@ -415,26 +416,26 @@ const Account: React.FC<AccountProps> = ({
                                 className={`w-full h-full object-cover absolute inset-0 z-10 ${avatarError ? 'hidden' : 'block'}`}
                                 onError={() => setAvatarError(true)}
                             />
-                            <div className="w-full h-full flex items-center justify-center text-4xl font-light text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] absolute inset-0">
+                            <div className="w-full h-full flex items-center justify-center text-4xl font-light text-[var(--color-m3-on-surface-variant)]  absolute inset-0">
                                 {user.username.charAt(0).toUpperCase()}
                             </div>
                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/35 transition-colors flex items-center justify-center z-20">
-                                <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity font-medium text-xs">
+                                <span className="text-cos-on-primary opacity-0 group-hover:opacity-100 transition-opacity font-medium text-xs">
                                     {t('avatar.change')}
                                 </span>
                             </div>
                         </button>
                         <div className="flex items-center gap-1.5 mt-1">
-                            <span className="font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] text-lg">{user.username}</span>
+                            <span className="font-semibold text-[var(--color-m3-on-surface)]  text-lg">{user.username}</span>
                             {user.isAdmin && (
-                                <BadgeCheck className="w-5 h-5 text-[var(--color-m3-primary)]" strokeWidth={2.5} />
+                                <Icon icon={BadgeCheck} className="w-5 h-5 text-[var(--color-m3-primary)]" strokeWidth={2.5} />
                             )}
                         </div>
                         <button
                             onClick={() => onNavigate('edit-profile')}
                             className="text-xs text-[var(--color-m3-primary)] flex items-center gap-1"
                         >
-                            <Edit2 size={12} />
+                            <Icon icon={Edit2} size={12} />
                             {t('account.edit_profile')}
                         </button>
                     </div>
@@ -485,13 +486,13 @@ const Account: React.FC<AccountProps> = ({
                             <button
                                 type="button"
                                 onClick={() => { setUnlockError(null); setUnlockTarget({ purpose: 'sync' }); }}
-                                className={`w-full flex items-center gap-2.5 py-3 ${divider} text-start hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] -mx-2 px-2 rounded`}
+                                className={`w-full flex items-center gap-2.5 py-3 ${divider} text-start hover:bg-[var(--color-m3-surface-container)]  -mx-2 px-2 rounded`}
                             >
                                 <SyncIcon status={syncStatus} className={iconCls} />
-                                <p className="flex-1 min-w-0 text-sm text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+                                <p className="flex-1 min-w-0 text-sm text-[var(--color-m3-on-surface)] ">
                                     {t('sync.status.locked')}
                                 </p>
-                                <span className="text-xs font-medium text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)] shrink-0">
+                                <span className="text-xs font-medium text-[var(--color-m3-primary)]  shrink-0">
                                     {t('sync.unlock_action')}
                                 </span>
                             </button>
@@ -499,11 +500,11 @@ const Account: React.FC<AccountProps> = ({
                             <div className={`flex items-center gap-2.5 py-3 ${divider}`}>
                                 <SyncIcon status={syncStatus} className={iconCls} />
                                 <div className="flex-1 min-w-0">
-                                    <p className="text-sm text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+                                    <p className="text-sm text-[var(--color-m3-on-surface)] ">
                                         {t(`sync.status.${syncStatus}`)}
                                     </p>
                                     {lastSyncedAt !== null && syncStatus !== 'off' && (
-                                        <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+                                        <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">
                                             {(t('sync.last_synced') as string).replace('{time}', new Date(lastSyncedAt).toLocaleTimeString())}
                                         </p>
                                     )}
@@ -520,59 +521,59 @@ const Account: React.FC<AccountProps> = ({
                         <button
                             onClick={handleSave}
                             disabled={savingCloud || syncStatus === 'locked' || syncStatus === 'syncing'}
-                            className={`${rowBase} hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] -mx-2 px-2 rounded disabled:opacity-50`}
+                            className={`${rowBase} hover:bg-[var(--color-m3-surface-container)]  -mx-2 px-2 rounded disabled:opacity-50`}
                         >
                             {savingCloud
-                                ? <Loader2 className={`${iconCls} animate-spin`} size={18} />
-                                : <UploadCloud className={iconCls} size={18} />
+                                ? <Icon icon={Loader2} className={`${iconCls} animate-spin`} size={18} />
+                                : <Icon icon={UploadCloud} className={iconCls} size={18} />
                             }
                             <div className="flex-1 text-start">
-                                <p className="font-medium text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] text-sm">{t('account.backup_cloud')}</p>
-                                <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{t('account.backup_cloud_desc')}</p>
+                                <p className="font-medium text-[var(--color-m3-on-surface)]  text-sm">{t('account.backup_cloud')}</p>
+                                <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">{t('account.backup_cloud_desc')}</p>
                             </div>
                             {backupList.length > 0 && (
-                                <span className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] tabular-nums shrink-0">{backupList.length}/10</span>
+                                <span className="text-xs text-[var(--color-m3-on-surface-variant)]  tabular-nums shrink-0">{backupList.length}/10</span>
                             )}
                         </button>
 
                         {/* Backup list */}
                         {backupsLoading ? (
                             <div className="flex justify-center py-6">
-                                <Loader2 className="animate-spin text-[var(--color-m3-on-surface-variant)]" size={20} />
+                                <Icon icon={Loader2} className="animate-spin text-[var(--color-m3-on-surface-variant)]" size={20} />
                             </div>
                         ) : backupList.length === 0 ? (
                             <div className="py-6 flex flex-col items-center gap-2">
-                                <Cloud size={28} className="text-[var(--color-m3-outline)] dark:text-[var(--color-m3-dark-outline)]" />
-                                <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{t('account.no_backups')}</p>
+                                <Icon icon={Cloud} size={28} className="text-[var(--color-m3-outline)] " />
+                                <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">{t('account.no_backups')}</p>
                             </div>
                         ) : (
                             backupList.map(b => (
                                 <div key={b.id} className={divider}>
                                     <div
-                                        className="flex items-center py-3 cursor-pointer hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] -mx-2 px-2 rounded"
+                                        className="flex items-center py-3 cursor-pointer hover:bg-[var(--color-m3-surface-container)]  -mx-2 px-2 rounded"
                                         onClick={() => toggleExpand(b)}
                                     >
-                                        <HardDrive size={14} className={`${iconCls} mr-3`} />
+                                        <Icon icon={HardDrive} size={14} className={`${iconCls} mr-3`} />
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-sm text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] truncate">
+                                            <p className="text-sm text-[var(--color-m3-on-surface)]  truncate">
                                                 {new Date(b.created_at * 1000).toLocaleString()}
                                             </p>
-                                            <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{formatBytes(b.data_size)}</p>
+                                            <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">{formatBytes(b.data_size)}</p>
                                         </div>
                                         <button
                                             onClick={(e) => { e.stopPropagation(); handleDeleteBackup(b.id); }}
-                                            className="p-1.5 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] hover:text-red-500 rounded shrink-0"
+                                            className="p-1.5 text-[var(--color-m3-on-surface-variant)]  hover:text-cos-error rounded shrink-0"
                                         >
-                                            <Trash2 size={14} />
+                                            <Icon icon={Trash2} size={14} />
                                         </button>
-                                        <ChevronDown size={14} className={`chev ${iconCls} ${expandedId === b.id ? 'rotate-180' : ''}`} />
+                                        <Icon icon={ChevronDown} size={14} className={`chev ${iconCls} ${expandedId === b.id ? 'rotate-180' : ''}`} />
                                     </div>
                                     <div className="disclosure" data-open={expandedId === b.id}>
                                         <div className="disclosure-inner">
                                             <div className="pb-4 pt-1 space-y-3">
                                                 {expandLoading === b.id ? (
                                                     <div className="flex justify-center py-6">
-                                                        <Loader2 className="animate-spin text-[var(--color-m3-on-surface-variant)]" size={20} />
+                                                        <Icon icon={Loader2} className="animate-spin text-[var(--color-m3-on-surface-variant)]" size={20} />
                                                     </div>
                                                 ) : expandedData[b.id] ? (() => {
                                                     const data = expandedData[b.id];
@@ -589,8 +590,8 @@ const Account: React.FC<AccountProps> = ({
                                                                     { label: t('account.backup_templates'), val: (data.doseTemplates || []).length },
                                                                 ].map(({ label, val }) => (
                                                                     <div key={label} className="text-center">
-                                    <p className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] font-medium">{label}</p>
-                                                                        <p className="text-sm font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] mt-0.5 tabular-nums">{val}</p>
+                                    <p className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)]  font-medium">{label}</p>
+                                                                        <p className="text-sm font-semibold text-[var(--color-m3-on-surface)]  mt-0.5 tabular-nums">{val}</p>
                                                                     </div>
                                                                 ))}
                                                             </div>
@@ -601,14 +602,14 @@ const Account: React.FC<AccountProps> = ({
                                                                     {(data.events as any[]).slice(0, 3).map((ev: any, i: number) => (
                                                                         <div key={i} className={`flex items-center justify-between py-2 text-xs ${divider} last:border-b-0`}>
                                                                             <div className="flex items-center gap-2">
-                                                                                <span className="font-medium text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">{ev.ester}</span>
-                                                                                <span className="text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{ev.route}</span>
+                                                                                <span className="font-medium text-[var(--color-m3-on-surface)] ">{ev.ester}</span>
+                                                                                <span className="text-[var(--color-m3-on-surface-variant)] ">{ev.route}</span>
                                                                             </div>
-                                                                            <span className="font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] tabular-nums">{ev.doseMG} mg</span>
+                                                                            <span className="font-semibold text-[var(--color-m3-on-surface)]  tabular-nums">{ev.doseMG} mg</span>
                                                                         </div>
                                                                     ))}
                                                                     {(data.events || []).length > 3 && (
-                                                                        <p className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] text-center py-1.5">
+                                                                        <p className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)]  text-center py-1.5">
                                                                             +{(data.events || []).length - 3} …
                                                                         </p>
                                                                     )}
@@ -619,51 +620,51 @@ const Account: React.FC<AccountProps> = ({
                                                             <div className={`grid ${showingDiff ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                                                                 <div className="overflow-hidden">
                                                                     <div className="space-y-2 pt-2">
-                                    <p className="text-[0.625rem] font-semibold text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{t('account.merge_preview')}</p>
+                                    <p className="text-[0.625rem] font-semibold text-[var(--color-m3-on-surface-variant)] ">{t('account.merge_preview')}</p>
                                                                         {diff.totalDiff === 0 ? (
-                                                                            <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] py-2 text-center">{t('account.nothing_to_merge')}</p>
+                                                                            <p className="text-xs text-[var(--color-m3-on-surface-variant)]  py-2 text-center">{t('account.nothing_to_merge')}</p>
                                                                         ) : (
                                                                             <div className="space-y-1.5">
                                                                                 {diff.newEvents.length > 0 && (
                                                                                     <div className="flex items-center gap-1.5 text-xs">
-                                                                                        <Plus size={12} strokeWidth={1.5} className="text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] shrink-0" />
-                                                                                        <span className="text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">{t('account.new_doses')}</span>
-                                                                                        <span className="text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] font-medium tabular-nums">+{diff.newEvents.length}</span>
+                                                                                        <Icon icon={Plus} size={12} strokeWidth={1.5} className="text-[var(--color-m3-on-surface-variant)]  shrink-0" />
+                                                                                        <span className="text-[var(--color-m3-on-surface)] ">{t('account.new_doses')}</span>
+                                                                                        <span className="text-[var(--color-m3-on-surface)]  font-medium tabular-nums">+{diff.newEvents.length}</span>
                                                                                     </div>
                                                                                 )}
                                                                                 {diff.newLabs.length > 0 && (
                                                                                     <div className="flex items-center gap-1.5 text-xs">
-                                                                                        <Plus size={12} strokeWidth={1.5} className="text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] shrink-0" />
-                                                                                        <span className="text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">{t('account.new_labs')}</span>
-                                                                                        <span className="text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] font-medium tabular-nums">+{diff.newLabs.length}</span>
+                                                                                        <Icon icon={Plus} size={12} strokeWidth={1.5} className="text-[var(--color-m3-on-surface-variant)]  shrink-0" />
+                                                                                        <span className="text-[var(--color-m3-on-surface)] ">{t('account.new_labs')}</span>
+                                                                                        <span className="text-[var(--color-m3-on-surface)]  font-medium tabular-nums">+{diff.newLabs.length}</span>
                                                                                     </div>
                                                                                 )}
                                                                                 {diff.newTemplates.length > 0 && (
                                                                                     <div className="flex items-center gap-1.5 text-xs">
-                                                                                        <Plus size={12} strokeWidth={1.5} className="text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] shrink-0" />
-                                                                                        <span className="text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">{t('account.new_templates')}</span>
-                                                                                        <span className="text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] font-medium tabular-nums">+{diff.newTemplates.length}</span>
+                                                                                        <Icon icon={Plus} size={12} strokeWidth={1.5} className="text-[var(--color-m3-on-surface-variant)]  shrink-0" />
+                                                                                        <span className="text-[var(--color-m3-on-surface)] ">{t('account.new_templates')}</span>
+                                                                                        <span className="text-[var(--color-m3-on-surface)]  font-medium tabular-nums">+{diff.newTemplates.length}</span>
                                                                                     </div>
                                                                                 )}
                                                                                 {diff.localOnlyEvents.length > 0 && (
                                                                                     <div className="flex items-center gap-1.5 text-xs">
-                                                                                        <Minus size={12} strokeWidth={1.5} className="text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] shrink-0" />
-                                                                                        <span className="text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{t('account.local_only_doses')}</span>
-                                                                                        <span className="text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] font-medium tabular-nums">{diff.localOnlyEvents.length}</span>
+                                                                                        <Icon icon={Minus} size={12} strokeWidth={1.5} className="text-[var(--color-m3-on-surface-variant)]  shrink-0" />
+                                                                                        <span className="text-[var(--color-m3-on-surface-variant)] ">{t('account.local_only_doses')}</span>
+                                                                                        <span className="text-[var(--color-m3-on-surface-variant)]  font-medium tabular-nums">{diff.localOnlyEvents.length}</span>
                                                                                     </div>
                                                                                 )}
                                                                                 {diff.localOnlyLabs.length > 0 && (
                                                                                     <div className="flex items-center gap-1.5 text-xs">
-                                                                                        <Minus size={12} strokeWidth={1.5} className="text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] shrink-0" />
-                                                                                        <span className="text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{t('account.local_only_labs')}</span>
-                                                                                        <span className="text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] font-medium tabular-nums">{diff.localOnlyLabs.length}</span>
+                                                                                        <Icon icon={Minus} size={12} strokeWidth={1.5} className="text-[var(--color-m3-on-surface-variant)]  shrink-0" />
+                                                                                        <span className="text-[var(--color-m3-on-surface-variant)] ">{t('account.local_only_labs')}</span>
+                                                                                        <span className="text-[var(--color-m3-on-surface-variant)]  font-medium tabular-nums">{diff.localOnlyLabs.length}</span>
                                                                                     </div>
                                                                                 )}
                                                                                 {diff.localOnlyTemplates.length > 0 && (
                                                                                     <div className="flex items-center gap-1.5 text-xs">
-                                                                                        <Minus size={12} strokeWidth={1.5} className="text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] shrink-0" />
-                                                                                        <span className="text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{t('account.local_only_templates')}</span>
-                                                                                        <span className="text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] font-medium tabular-nums">{diff.localOnlyTemplates.length}</span>
+                                                                                        <Icon icon={Minus} size={12} strokeWidth={1.5} className="text-[var(--color-m3-on-surface-variant)]  shrink-0" />
+                                                                                        <span className="text-[var(--color-m3-on-surface-variant)] ">{t('account.local_only_templates')}</span>
+                                                                                        <span className="text-[var(--color-m3-on-surface-variant)]  font-medium tabular-nums">{diff.localOnlyTemplates.length}</span>
                                                                                     </div>
                                                                                 )}
                                                                             </div>
@@ -671,9 +672,9 @@ const Account: React.FC<AccountProps> = ({
                                                                         {diff.total > 0 && (
                                                                             <button
                                                                                 onClick={() => { onCloudMerge(b.id); setExpandedId(null); setMergeDiffId(null); }}
-                                                                                className="w-full py-2 bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] text-white text-xs font-medium rounded-md flex items-center justify-center gap-1.5 mt-1 transition-colors"
+                                                                                className="w-full py-2 bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] text-cos-on-primary text-xs font-medium rounded-md flex items-center justify-center gap-1.5 mt-1 transition-colors"
                                                                             >
-                                                                                <Merge size={13} strokeWidth={1.5} />
+                                                                                <Icon icon={Merge} size={13} strokeWidth={1.5} />
                                                                                 {t('account.confirm_merge')} (+{diff.total})
                                                                             </button>
                                                                         )}
@@ -686,19 +687,19 @@ const Account: React.FC<AccountProps> = ({
                                                                 <button
                                                                     onClick={() => setMergeDiffId(showingDiff ? null : b.id)}
                                                                     className={`flex-1 py-2 text-xs font-medium rounded-md flex items-center justify-center gap-1.5 border transition-colors ${showingDiff
-                                                                        ? 'bg-[var(--color-m3-surface-container)] dark:bg-[var(--color-m3-dark-surface-container-high)] border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]'
-                                                                        : 'border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] hover:bg-[var(--color-m3-surface-container-low)] dark:hover:bg-[var(--color-m3-dark-surface-container-high)]'
+                                                                        ? 'bg-[var(--color-m3-surface-container)]  border-[var(--color-m3-outline-variant)]  text-[var(--color-m3-on-surface)] '
+                                                                        : 'border-[var(--color-m3-outline-variant)]  text-[var(--color-m3-on-surface)]  hover:bg-[var(--color-m3-surface-container-low)] '
                                                                     }`}
                                                                 >
-                                                                    <Merge size={13} strokeWidth={1.5} />
+                                                                    <Icon icon={Merge} size={13} strokeWidth={1.5} />
                                                                     {t('account.merge')}
-                                                                    {diff.total > 0 && <span className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] font-medium">+{diff.total}</span>}
+                                                                    {diff.total > 0 && <span className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)]  font-medium">+{diff.total}</span>}
                                                                 </button>
                                                                 <button
                                                                     onClick={() => { onCloudLoad(b.id); setExpandedId(null); }}
-                                                                    className="flex-1 py-2 bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] text-white text-xs font-medium rounded-md flex items-center justify-center gap-1.5 transition-colors"
+                                                                    className="flex-1 py-2 bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] text-cos-on-primary text-xs font-medium rounded-md flex items-center justify-center gap-1.5 transition-colors"
                                                                 >
-                                                                    <DownloadCloud size={13} strokeWidth={1.5} />
+                                                                    <Icon icon={DownloadCloud} size={13} strokeWidth={1.5} />
                                                                     {t('account.restore')}
                                                                 </button>
                                                             </div>
@@ -715,15 +716,15 @@ const Account: React.FC<AccountProps> = ({
 
                     {/* Danger Zone */}
                     <div className="mb-6">
-                        <span className={`${sectionLabel} text-red-500`}>{t('account.danger_zone')}</span>
+                        <span className={`${sectionLabel} text-cos-error`}>{t('account.danger_zone')}</span>
                         <button
                             onClick={() => onNavigate('delete-account')}
-                            className={`${rowBase} hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] -mx-2 px-2 rounded`}
+                            className={`${rowBase} hover:bg-[var(--color-m3-surface-container)]  -mx-2 px-2 rounded`}
                         >
-                            <Trash2 className="text-red-500 shrink-0" size={18} />
+                            <Icon icon={Trash2} className="text-cos-error shrink-0" size={18} />
                             <div className="text-start">
-                                <p className="font-medium text-red-600 dark:text-red-400 text-sm">{t('account.delete_account')}</p>
-                                <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{t('account.delete_account_desc')}</p>
+                                <p className="font-medium text-cos-error  text-sm">{t('account.delete_account')}</p>
+                                <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">{t('account.delete_account_desc')}</p>
                             </div>
                         </button>
                     </div>
@@ -732,9 +733,9 @@ const Account: React.FC<AccountProps> = ({
                     <div className="flex justify-center pt-2">
                         <button
                             onClick={onLogout}
-                            className="flex items-center gap-2 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] hover:text-[var(--color-m3-on-surface)] dark:hover:text-[var(--color-m3-dark-on-surface)] px-6 py-2 rounded-md text-sm"
+                            className="flex items-center gap-2 text-[var(--color-m3-on-surface-variant)]  hover:text-[var(--color-m3-on-surface)]  px-6 py-2 rounded-md text-sm"
                         >
-                            <LogOut size={16} />
+                            <Icon icon={LogOut} size={16} />
                             {t('account.sign_out')}
                         </button>
                     </div>
@@ -751,8 +752,8 @@ const Account: React.FC<AccountProps> = ({
                                 key={String(key)}
                                 onClick={() => { setIsLogin(key); setAuthError(null); setNeedsTOTP(false); }}
                                 className={`text-sm pb-2 -mb-px border-b-2 ${isLogin === key
-                                    ? 'font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] border-[var(--color-m3-primary)]'
-                                    : 'text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] border-transparent'
+                                    ? 'font-semibold text-[var(--color-m3-on-surface)]  border-[var(--color-m3-primary)]'
+                                    : 'text-[var(--color-m3-on-surface-variant)]  border-transparent'
                                 }`}
                             >
                                 {label}
@@ -762,12 +763,12 @@ const Account: React.FC<AccountProps> = ({
 
                     <form onSubmit={handleAuthSubmit} className="space-y-4">
                         {authError && (
-                            <p className="text-sm text-red-500 dark:text-red-400">
+                            <p className="text-sm text-cos-error ">
                                 {authError}
                             </p>
                         )}
                         <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{t('auth.username')}</label>
+              <label className="block text-xs font-semibold text-[var(--color-m3-on-surface-variant)] ">{t('auth.username')}</label>
                             <input
                                 type="text"
                                 value={username}
@@ -780,7 +781,7 @@ const Account: React.FC<AccountProps> = ({
                             />
                         </div>
                         <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{t('auth.password')}</label>
+              <label className="block text-xs font-semibold text-[var(--color-m3-on-surface-variant)] ">{t('auth.password')}</label>
                             <input
                                 type="password"
                                 value={password}
@@ -794,13 +795,13 @@ const Account: React.FC<AccountProps> = ({
                         </div>
                         {needsTOTP && isLogin && (
                             <div className="space-y-3">
-                                <div className="p-2.5 text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] bg-[var(--color-m3-surface-container)] dark:bg-[var(--color-m3-dark-surface-container)] rounded-md flex items-center gap-2">
-                                    <ShieldIcon size={16} className="shrink-0 text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)]" />
+                                <div className="p-2.5 text-xs text-[var(--color-m3-on-surface-variant)]  bg-[var(--color-m3-surface-container)]  rounded-md flex items-center gap-2">
+                                    <ShieldIcon size={16} className="shrink-0 text-[var(--color-m3-primary)] " />
                                     {t('auth.needs_2fa')}
                                 </div>
                                 {useBackupCode ? (
                                     <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{t('auth.backup_code_label')}</label>
+                    <label className="block text-xs font-semibold text-[var(--color-m3-on-surface-variant)] ">{t('auth.backup_code_label')}</label>
                                         <input
                                             type="text"
                                             value={backupCode}
@@ -821,7 +822,7 @@ const Account: React.FC<AccountProps> = ({
                                     <>
                                         {twoFAMethod !== 'passkey' && (
                                             <div className="space-y-1.5">
-                        <label className="block text-xs font-semibold text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{t('auth.totp_code')}</label>
+                        <label className="block text-xs font-semibold text-[var(--color-m3-on-surface-variant)] ">{t('auth.totp_code')}</label>
                                                 <input
                                                     type="text"
                                                     inputMode="numeric"
@@ -839,30 +840,30 @@ const Account: React.FC<AccountProps> = ({
                                             </div>
                                         )}
                                         {twoFAMethod === 'passkey' && typeof window !== 'undefined' && !window.PublicKeyCredential && (
-                                            <p className="text-xs text-red-500 text-center">{t('auth.passkey_unsupported')}</p>
+                                            <p className="text-xs text-cos-error text-center">{t('auth.passkey_unsupported')}</p>
                                         )}
                                         {typeof window !== 'undefined' && !!window.PublicKeyCredential && (
                                             <>
                                                 {twoFAMethod !== 'passkey' && (
                                                     <div className="flex items-center gap-2">
-                                                        <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] dark:bg-[var(--color-m3-dark-outline-variant)]" />
-                                                        <span className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{t('common.or')}</span>
-                                                        <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] dark:bg-[var(--color-m3-dark-outline-variant)]" />
+                                                        <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] " />
+                                                        <span className="text-xs text-[var(--color-m3-on-surface-variant)] ">{t('common.or')}</span>
+                                                        <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] " />
                                                     </div>
                                                 )}
                                                 <button
                                                     type="button"
                                                     onClick={() => handlePasskeyLogin()}
                                                     disabled={passkeyLoading}
-                                                    className="w-full py-2.5 text-sm font-medium border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] rounded-md hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] disabled:opacity-50 flex items-center justify-center gap-2"
+                                                    className="w-full py-2.5 text-sm font-medium border border-[var(--color-m3-outline-variant)]  rounded-md hover:bg-[var(--color-m3-surface-container)]  text-[var(--color-m3-on-surface)]  disabled:opacity-50 flex items-center justify-center gap-2"
                                                 >
-                                                    {passkeyLoading ? <Loader2 size={16} className="animate-spin" /> : <Fingerprint size={16} />}
+                                                    {passkeyLoading ? <Icon icon={Loader2} size={16} className="animate-spin" /> : <Icon icon={Fingerprint} size={16} />}
                                                     {t('auth.passkey_as_2fa')}
                                                 </button>
                                             </>
                                         )}
                                         <button type="button" onClick={() => setUseBackupCode(true)}
-                                            className="w-full text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] hover:text-[var(--color-m3-on-surface)] dark:hover:text-[var(--color-m3-dark-on-surface)] text-center py-1">
+                                            className="w-full text-xs text-[var(--color-m3-on-surface-variant)]  hover:text-[var(--color-m3-on-surface)]  text-center py-1">
                                             {t('auth.use_backup_code')}
                                         </button>
                                     </>
@@ -873,26 +874,26 @@ const Account: React.FC<AccountProps> = ({
                             <button
                                 type="submit"
                                 disabled={authLoading}
-                                className="w-full py-2.5 text-sm font-medium bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                className="w-full py-2.5 text-sm font-medium bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] text-cos-on-primary rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                             >
-                                {authLoading && <Loader2 size={16} className="animate-spin" />}
+                                {authLoading && <Icon icon={Loader2} size={16} className="animate-spin" />}
                                 {isLogin ? t('auth.sign_in') : t('auth.sign_up')}
                             </button>
                         )}
                         {isLogin && !needsTOTP && typeof window !== 'undefined' && !!window.PublicKeyCredential && (
                             <>
                                 <div className="flex items-center gap-2">
-                                    <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] dark:bg-[var(--color-m3-dark-outline-variant)]" />
-                                    <span className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">{t('common.or')}</span>
-                                    <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] dark:bg-[var(--color-m3-dark-outline-variant)]" />
+                                    <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] " />
+                                    <span className="text-xs text-[var(--color-m3-on-surface-variant)] ">{t('common.or')}</span>
+                                    <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] " />
                                 </div>
                                 <button
                                     type="button"
                                     onClick={() => handlePasskeyLogin()}
                                     disabled={passkeyLoading}
-                                    className="w-full py-2.5 text-sm font-medium border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] rounded-md hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] disabled:opacity-50 flex items-center justify-center gap-2"
+                                    className="w-full py-2.5 text-sm font-medium border border-[var(--color-m3-outline-variant)]  rounded-md hover:bg-[var(--color-m3-surface-container)]  text-[var(--color-m3-on-surface)]  disabled:opacity-50 flex items-center justify-center gap-2"
                                 >
-                                    {passkeyLoading ? <Loader2 size={16} className="animate-spin" /> : <Fingerprint size={16} />}
+                                    {passkeyLoading ? <Icon icon={Loader2} size={16} className="animate-spin" /> : <Icon icon={Fingerprint} size={16} />}
                                     {t('auth.passkey_login')}
                                 </button>
                             </>

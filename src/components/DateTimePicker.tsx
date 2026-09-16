@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import Icon from './Icon';
 import { createPortal } from 'react-dom';
-import { CalendarDays, Clock3, ChevronDown, Check } from 'lucide-react';
+import { CalendarDays, Clock3, ChevronDown, Check } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useEscape } from '../hooks/useEscape';
 import { LOCALE_MAP } from '../utils/helpers';
@@ -98,16 +99,15 @@ const PartSelect: React.FC<PartSelectProps> = ({ label, value, options, onChange
                 aria-haspopup="listbox"
                 aria-expanded={isOpen}
                 className={`w-full min-h-11 flex items-center justify-between gap-1 rounded-lg border px-2.5 py-2 text-sm tabular-nums outline-none transition-colors motion-reduce:transition-none
-                    bg-white dark:bg-neutral-900 text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]
+                    bg-cos-surface-container  text-[var(--color-m3-on-surface)] 
                     ${isOpen
                         ? 'border-[var(--color-m3-primary)] ring-1 ring-[var(--color-m3-primary)]/20'
-                        : 'border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] hover:border-[var(--color-m3-outline)] dark:hover:border-[var(--color-m3-dark-outline)]'}`}
+                        : 'border-[var(--color-m3-outline-variant)]  hover:border-[var(--color-m3-outline)] '}`}
             >
                 <span className="truncate">{selected?.label ?? value}</span>
-                <ChevronDown
+                <Icon icon={ChevronDown}
                     size={14}
-                    className={`chev shrink-0 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] ${isOpen ? 'rotate-180' : ''}`}
-                />
+                    className={`chev shrink-0 text-[var(--color-m3-on-surface-variant)]  ${isOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {isOpen && portalTarget && createPortal(
@@ -116,7 +116,7 @@ const PartSelect: React.FC<PartSelectProps> = ({ label, value, options, onChange
                     role="listbox"
                     aria-label={label}
                     style={positionStyle}
-                    className="dropdown-in fixed z-[80] overflow-y-auto rounded-lg border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] bg-white dark:bg-neutral-900 shadow-[var(--shadow-m3-3)] py-1"
+                    className="dropdown-in fixed z-[80] overflow-y-auto rounded-lg border border-[var(--color-m3-outline-variant)]  bg-cos-surface-container  shadow-[var(--shadow-m3-3)] py-1"
                 >
                     {options.map(option => (
                         <button
@@ -128,11 +128,11 @@ const PartSelect: React.FC<PartSelectProps> = ({ label, value, options, onChange
                             onClick={() => { onChange(option.value); setIsOpen(false); }}
                             className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-start tabular-nums
                                 ${option.value === value
-                                    ? 'bg-[var(--color-m3-primary-container)] dark:bg-[var(--color-m3-dark-primary-container)] text-[var(--color-m3-on-primary-container)] dark:text-[var(--color-m3-dark-on-primary-container)] font-medium'
-                                    : 'text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container-high)]'}`}
+                                    ? 'bg-[var(--color-m3-primary-container)]  text-[var(--color-m3-on-primary-container)]  font-medium'
+                                    : 'text-[var(--color-m3-on-surface)]  hover:bg-[var(--color-m3-surface-container)] '}`}
                         >
                             <span>{option.label}</span>
-                            {option.value === value && <Check size={14} className="text-[var(--color-m3-primary)]" strokeWidth={2.5} />}
+                            {option.value === value && <Icon icon={Check} size={14} className="text-[var(--color-m3-primary)]" strokeWidth={2.5} />}
                         </button>
                     ))}
                 </div>,
@@ -241,7 +241,7 @@ const DateTimePicker: React.FC<DateTimePickerProps> = ({
         if (inline) onConfirm(next);
     };
 
-    const labelClass = 'block mb-1.5 text-xs font-medium text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]';
+    const labelClass = 'block mb-1.5 text-xs font-medium text-[var(--color-m3-on-surface-variant)] ';
 
     const renderPart = (
         label: string,
@@ -280,8 +280,8 @@ const DateTimePicker: React.FC<DateTimePickerProps> = ({
         <div className={inline ? 'pt-3 pb-1 space-y-5' : 'px-5 py-5 space-y-5'}>
             {showDate && (
                 <section>
-                    <div className="flex items-center gap-2 mb-3 text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
-                        <CalendarDays size={16} />
+                    <div className="flex items-center gap-2 mb-3 text-[var(--color-m3-on-surface)] ">
+                        <Icon icon={CalendarDays} size={16} />
                         <span className="text-sm font-medium">{t('date.select')}</span>
                     </div>
                     <div className="grid grid-cols-[1.05fr_1.35fr_0.8fr] gap-2.5">
@@ -304,8 +304,8 @@ const DateTimePicker: React.FC<DateTimePickerProps> = ({
 
             {showTime && (
                 <section>
-                    <div className="flex items-center gap-2 mb-3 text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
-                        <Clock3 size={16} />
+                    <div className="flex items-center gap-2 mb-3 text-[var(--color-m3-on-surface)] ">
+                        <Icon icon={Clock3} size={16} />
                         <span className="text-sm font-medium">{t('time.select')}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-2.5">
@@ -330,32 +330,32 @@ const DateTimePicker: React.FC<DateTimePickerProps> = ({
     if (inline) return <div className="mb-3">{body}</div>;
 
     const inner = (
-        <div className="rounded-xl border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] bg-[var(--color-m3-surface-container-lowest)] dark:bg-[var(--color-m3-dark-surface-container)]">
-            <div className="px-5 pt-5 pb-4 border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]">
+        <div className="rounded-xl border border-[var(--color-m3-outline-variant)]  bg-[var(--color-m3-surface-container-lowest)] ">
+            <div className="px-5 pt-5 pb-4 border-b border-[var(--color-m3-outline-variant)] ">
                 {title && (
-                    <p className="text-sm font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] mb-1">
+                    <p className="text-sm font-semibold text-[var(--color-m3-on-surface)]  mb-1">
                         {title}
                     </p>
                 )}
-                <p className="text-sm tabular-nums text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+                <p className="text-sm tabular-nums text-[var(--color-m3-on-surface-variant)] ">
                     {[showDate ? dateSummary : null, showTime ? timeSummary : null].filter(Boolean).join(' · ')}
                 </p>
             </div>
 
             {body}
 
-            <div className="px-5 pb-5 pt-3 flex justify-end gap-2 border-t border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]">
+            <div className="px-5 pb-5 pt-3 flex justify-end gap-2 border-t border-[var(--color-m3-outline-variant)] ">
                 <button
                     type="button"
                     onClick={onClose}
-                    className="px-4 py-2.5 text-sm font-medium rounded-md text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container-high)]"
+                    className="px-4 py-2.5 text-sm font-medium rounded-md text-[var(--color-m3-on-surface-variant)]  hover:bg-[var(--color-m3-surface-container)] "
                 >
                     {t('btn.cancel')}
                 </button>
                 <button
                     type="button"
                     onClick={() => onConfirm(selectedDate)}
-                    className="px-5 py-2.5 text-sm font-medium rounded-md bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] text-white"
+                    className="px-5 py-2.5 text-sm font-medium rounded-md bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] text-cos-on-primary"
                 >
                     {t('btn.ok')}
                 </button>
@@ -372,12 +372,12 @@ const DateTimePicker: React.FC<DateTimePickerProps> = ({
                         type="button"
                         aria-label={t('btn.cancel')}
                         onClick={onClose}
-                        className="fixed inset-0 z-[60] bg-black/30 dark:bg-black/50"
+                        className="fixed inset-0 z-[60] bg-black/30 "
                     />
                     <div
                         ref={containerRef}
                         style={positionStyle}
-                        className={`fixed z-[70] bg-[var(--color-m3-surface-container-lowest)] dark:bg-[var(--color-m3-dark-surface-container)] overflow-hidden shadow-[var(--shadow-m3-3)] border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] ${Object.keys(positionStyle).length > 0 ? 'rounded-[var(--radius-xl)]' : 'bottom-0 left-0 right-0 w-full rounded-t-[var(--radius-xl)] border-b-0'}`}
+                        className={`fixed z-[70] bg-[var(--color-m3-surface-container-lowest)]  overflow-hidden shadow-[var(--shadow-m3-3)] border border-[var(--color-m3-outline-variant)]  ${Object.keys(positionStyle).length > 0 ? 'rounded-[var(--radius-xl)]' : 'bottom-0 left-0 right-0 w-full rounded-t-[var(--radius-xl)] border-b-0'}`}
                     >
                         {inner}
                     </div>

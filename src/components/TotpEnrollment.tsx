@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Copy, Download, Loader2, ShieldCheck, AlertTriangle } from 'lucide-react';
+import Icon from './Icon';
+import { Check, Copy, Download, Loader2, ShieldCheck, AlertTriangle } from '../icons';
 
 import TotpSecretDisplay from './TotpSecretDisplay';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -109,7 +110,7 @@ const TotpEnrollment: React.FC<TotpEnrollmentProps> = ({
   return (
     <div className="space-y-5">
       {heading && (
-        <div className="text-sm text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+        <div className="text-sm text-[var(--color-m3-on-surface-variant)] ">
           {heading}
         </div>
       )}
@@ -125,8 +126,8 @@ const TotpEnrollment: React.FC<TotpEnrollmentProps> = ({
         <StepLabel index={2} done={confirmed}>{t('core.enroll.step2')}</StepLabel>
 
         {confirmed ? (
-          <p className="flex items-center gap-2 text-sm text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)]">
-            <ShieldCheck size={17} />
+          <p className="flex items-center gap-2 text-sm text-[var(--color-m3-primary)] ">
+            <Icon icon={ShieldCheck} size={17} />
             {t('core.enroll.confirmed')}
           </p>
         ) : (
@@ -142,14 +143,14 @@ const TotpEnrollment: React.FC<TotpEnrollmentProps> = ({
               disabled={submitting}
             />
             {submitting && (
-              <p className="text-xs flex items-center gap-1.5 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
-                <Loader2 size={13} className="animate-spin" />
+              <p className="text-xs flex items-center gap-1.5 text-[var(--color-m3-on-surface-variant)] ">
+                <Icon icon={Loader2} size={13} className="animate-spin" />
                 {t('core.loading')}
               </p>
             )}
             {shownError && (
               <p className="text-xs flex items-start gap-1.5 text-[#B3261E]" role="alert">
-                <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                <Icon icon={AlertTriangle} size={13} className="mt-0.5 shrink-0" />
                 <span>{shownError}</span>
               </p>
             )}
@@ -166,7 +167,7 @@ const TotpEnrollment: React.FC<TotpEnrollmentProps> = ({
             <strong>{t('core.enroll.step3')}</strong> {t('core.enroll.codes_once')}
           </div>
 
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-[0.8125rem] px-3 py-3 rounded-[var(--radius-sm)] border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] bg-[var(--color-m3-surface-container-low)] dark:bg-[var(--color-m3-dark-surface-container)]">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-[0.8125rem] px-3 py-3 rounded-[var(--radius-sm)] border border-[var(--color-m3-outline-variant)]  bg-[var(--color-m3-surface-container-low)] ">
             {material.backupCodes.map((c) => (
               <span key={c} className="tracking-[0.06em]">{c}</span>
             ))}
@@ -174,11 +175,11 @@ const TotpEnrollment: React.FC<TotpEnrollmentProps> = ({
 
           <div className="flex gap-2">
             <button type="button" onClick={copyCodes} className="btn-secondary flex-1 !text-xs">
-              {copied ? <Check size={14} /> : <Copy size={14} />}
+              {copied ? <Icon icon={Check} size={14} /> : <Icon icon={Copy} size={14} />}
               {copied ? t('core.copied') : t('core.copy')}
             </button>
             <button type="button" onClick={downloadCodes} className="btn-secondary flex-1 !text-xs">
-              <Download size={14} />
+              <Icon icon={Download} size={14} />
               {t('core.download')}
             </button>
           </div>
@@ -206,12 +207,12 @@ const StepLabel: React.FC<{ index: number; done: boolean; children: React.ReactN
       className={`grid place-items-center w-5 h-5 rounded-full text-[0.6875rem] font-semibold shrink-0 transition-colors ${
         done
           ? 'bg-[var(--color-m3-primary)] text-[var(--color-m3-on-primary)]'
-          : 'bg-[var(--color-m3-surface-container-high)] text-[var(--color-m3-on-surface-variant)] dark:bg-[var(--color-m3-dark-surface-container-high)] dark:text-[var(--color-m3-dark-on-surface-variant)]'
+          : 'bg-[var(--color-m3-surface-container-high)] text-[var(--color-m3-on-surface-variant)]  '
       }`}
       style={{ transitionDuration: 'var(--md-sys-motion-duration-short3)' }}
       aria-hidden="true"
     >
-      {done ? <Check size={11} strokeWidth={3} /> : index}
+      {done ? <Icon icon={Check} size={11} strokeWidth={3} /> : index}
     </span>
     <span className="text-sm font-medium">{children}</span>
   </div>

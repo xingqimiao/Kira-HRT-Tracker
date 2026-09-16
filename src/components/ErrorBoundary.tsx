@@ -1,5 +1,6 @@
 import React, { ReactNode } from 'react';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import Icon from './Icon';
+import { AlertTriangle, RefreshCw } from '../icons';
 import { Lang, TRANSLATIONS } from '../i18n/translations';
 
 /**
@@ -55,16 +56,16 @@ class ErrorBoundary extends React.Component<Props, State> {
 
             return (
                 <div className="flex flex-col items-center justify-center min-h-[50vh] p-8 text-center">
-                    <AlertTriangle size={32} strokeWidth={1.5} className="text-red-500 dark:text-red-400 mb-4" />
-                    <h2 className="text-lg font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] mb-2">
+                    <Icon icon={AlertTriangle} size={32} strokeWidth={1.5} className="text-cos-error  mb-4" />
+                    <h2 className="text-lg font-semibold text-[var(--color-m3-on-surface)]  mb-2">
                         {tr('error.title')}
                     </h2>
-                    <p className="text-sm text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] mb-6 max-w-md leading-relaxed">
+                    <p className="text-sm text-[var(--color-m3-on-surface-variant)]  mb-6 max-w-md leading-relaxed">
                         {tr('error.body')}
                     </p>
                     {this.state.error && (
                         <div className="callout mb-6 text-left w-full max-w-md overflow-x-auto">
-                            <code className="text-xs text-red-600 dark:text-red-400 font-mono">
+                            <code className="text-xs text-cos-error  font-mono">
                                 {this.state.error.toString()}
                             </code>
                         </div>
@@ -73,7 +74,7 @@ class ErrorBoundary extends React.Component<Props, State> {
                         onClick={this.handleReload}
                         className="btn-primary"
                     >
-                        <RefreshCw size={15} strokeWidth={1.5} />
+                        <Icon icon={RefreshCw} size={15} strokeWidth={1.5} />
                         {tr('error.reload')}
                     </button>
                 </div>

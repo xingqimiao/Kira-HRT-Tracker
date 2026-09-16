@@ -3,67 +3,114 @@
 @variant dark (&:is(.dark *));
 
 @theme static {
-    --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, "Noto Sans Hebrew", "Noto Sans Arabic", sans-serif;
-    --font-display: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, "Noto Sans Hebrew", "Noto Sans Arabic", sans-serif;
+    /* A system stack, deliberately. The reference design serves Google Sans and
+       HarmonyOS Sans webfonts; pulling those from a CDN would put a third-party
+       request on every page load, which the privacy policy promises does not happen.
+       This stack is close enough in metrics that the layout does not change. */
+    --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", "Noto Sans Hebrew", "Noto Sans Arabic", Helvetica, Arial, sans-serif;
+    --font-display: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", "Noto Sans Hebrew", "Noto Sans Arabic", Helvetica, Arial, sans-serif;
 
-    /* Primary — Claude terracotta/orange */
-    --color-m3-primary: #CC785C;
-    --color-m3-primary-light: #D8927C;
-    --color-m3-primary-container: #FCEEE8;
-    --color-m3-on-primary: #FFFFFF;
-    --color-m3-on-primary-container: #7A3920;
+    /* — Primary: the accent, used sparingly. Nothing decorative is filled with it. — */
+    --color-m3-primary: #F5A9B8;
+    --color-m3-primary-light: #F8C3CD;
+    --color-m3-primary-container: #3A1F27;
+    --color-m3-on-primary: #211016;
+    --color-m3-on-primary-container: #FBD9E0;
 
-    /* Accent */
-    --color-m3-accent: #CC785C;
-    --color-m3-accent-light: #D8927C;
-    --color-m3-accent-container: #FCEEE8;
-    --color-m3-on-accent: #FFFFFF;
-    --color-m3-on-accent-container: #7A3920;
+    /* — Secondary: the cool counterweight to the accent. — */
+    --color-m3-accent: #5BCEFA;
+    --color-m3-accent-light: #93DEFB;
+    --color-m3-accent-container: #16333F;
+    --color-m3-on-accent: #08202B;
+    --color-m3-on-accent-container: #C4EAFD;
 
-    /* Surfaces — white page, warm neutrals for everything raised off it */
-    --color-m3-surface: #FFFFFF;
-    --color-m3-surface-dim: #FFFFFF;
-    --color-m3-surface-bright: #FFFFFF;
-    --color-m3-surface-container-lowest: #FFFFFF;
-    --color-m3-surface-container-low: #F7F6F3;
-    --color-m3-surface-container: #EDECEA;
-    --color-m3-surface-container-high: #E5E4E0;
-    --color-m3-surface-container-highest: #DDDBD7;
-    --color-m3-on-surface: #1A1916;
-    --color-m3-on-surface-variant: #6B6860;
-    --color-m3-outline: #9E9B94;
-    --color-m3-outline-variant: #E3E1DC;
+    /* — Surfaces: near-black, and five barely-different steps off it. Depth here is
+         a hairline and a lighter fill, never a shadow. — */
+    --color-m3-surface: #0D0D12;
+    --color-m3-surface-dim: #0D0D12;
+    --color-m3-surface-bright: #22232A;
+    --color-m3-surface-container-lowest: #131319;
+    --color-m3-surface-container-low: #16171D;
+    --color-m3-surface-container: #1B1C22;
+    --color-m3-surface-container-high: #202128;
+    --color-m3-surface-container-highest: #2A2B32;
+    --color-m3-on-surface: #F4F5F7;
+    --color-m3-on-surface-variant: #A2A4AD;
+    --color-m3-outline: #3A3C45;
+    --color-m3-outline-variant: #272930;
 
-    /* Dark primary container — warm terracotta on dark */
-    --color-m3-dark-primary-container: #452B1F;
-    --color-m3-dark-on-primary-container: #F2D3C2;
+    /* — Semantic roles, so no call site has to hard-code a hue. — */
+    --color-m3-error: #FFB4AB;
+    --color-m3-error-container: #3B1512;
+    --color-m3-on-error-container: #FFDAD6;
+    --color-m3-success: #9FE6B4;
+    --color-m3-success-container: #16301F;
+    --color-m3-warning: #F5D08A;
+    --color-m3-warning-container: #3A2C11;
 
-    /* Dark surfaces — warm dark */
-    --color-m3-dark-surface: #1C1B18;
-    --color-m3-dark-surface-dim: #141311;
-    --color-m3-dark-surface-bright: #2A2925;
-    --color-m3-dark-surface-container-lowest: #0D0C0A;
-    --color-m3-dark-surface-container-low: #1C1B18;
-    --color-m3-dark-surface-container: #272521;
-    --color-m3-dark-surface-container-high: #3A3835;
-    --color-m3-dark-surface-container-highest: #4D4B47;
-    --color-m3-dark-on-surface: #E8E6E1;
-    --color-m3-dark-on-surface-variant: #A8A59E;
-    --color-m3-dark-outline: #767370;
-    --color-m3-dark-outline-variant: #3A3835;
+    /* Tailwind-facing names for the same roles. The cos- prefix is deliberate: every
+       colour here is a role, and text-cos-error says what the text means where
+       text-red-500 only says what it looks like. */
+    --color-cos-on-surface: var(--color-m3-on-surface);
+    --color-cos-on-surface-variant: var(--color-m3-on-surface-variant);
+    --color-cos-outline: var(--color-m3-outline);
+    --color-cos-primary: var(--color-m3-primary);
+    --color-cos-on-primary: var(--color-m3-on-primary);
+    --color-cos-accent: var(--color-m3-accent);
+    --color-cos-error: var(--color-m3-error);
+    --color-cos-error-container: var(--color-m3-error-container);
+    --color-cos-success: var(--color-m3-success);
+    --color-cos-success-container: var(--color-m3-success-container);
+    --color-cos-warning: var(--color-m3-warning);
+    --color-cos-warning-container: var(--color-m3-warning-container);
+
+    /* — The dark set. Identical on purpose: this app is dark-first, and the dark:
+         overrides written through the codebase are the structure the styling was
+         authored against. Keeping the two sets equal means the default theme is not a
+         special case — it is the theme. The light palette lives in :root:not(.dark)
+         and overrides these role by role. — */
+    --color-m3-dark-primary: #F5A9B8;
+    --color-m3-dark-primary-container: #3A1F27;
+    --color-m3-dark-on-primary-container: #FBD9E0;
+    --color-m3-dark-surface: #0D0D12;
+    --color-m3-dark-surface-dim: #0D0D12;
+    --color-m3-dark-surface-bright: #22232A;
+    --color-m3-dark-surface-container-lowest: #131319;
+    --color-m3-dark-surface-container-low: #16171D;
+    --color-m3-dark-surface-container: #1B1C22;
+    --color-m3-dark-surface-container-high: #25262B;
+    --color-m3-dark-surface-container-highest: #303137;
+    --color-m3-dark-on-surface: #F4F5F7;
+    --color-m3-dark-on-surface-variant: #B4B6BE;
+    --color-m3-dark-outline: #3A3C45;
+    --color-m3-dark-outline-variant: #272930;
+
+    /* — Translucent hairlines, the values this design is actually built on. They are
+         their own tokens because they sit over a surface rather than replace it. — */
+    --color-m3-line-soft: #FFFFFF14;
+    --color-m3-line: #FFFFFF1F;
+    --color-m3-line-strong: #FFFFFF29;
+    --color-m3-fill-soft: #FFFFFF0F;
 
     /* M3 Shape Scale */
+    /* M3 shape scale. large-increased is the corner this design is built on. */
     --radius-xs: 4px;
     --radius-sm: 8px;
     --radius-md: 12px;
     --radius-lg: 16px;
+    --radius-large-increased: 20px;
     --radius-xl: 28px;
     --radius-full: 9999px;
 
-    /* Elevation — kept minimal */
-    --shadow-m3-1: 0 1px 2px rgba(0, 0, 0, 0.04);
-    --shadow-m3-2: 0 1px 3px rgba(0, 0, 0, 0.06);
-    --shadow-m3-3: 0 2px 8px rgba(0, 0, 0, 0.08);
+    /* Elevation is tonal here, not shadowed. These exist only for the few surfaces
+       that float over content they do not control — dialogs and menus. */
+    --shadow-m3-1: 0 1px 2px rgba(0, 0, 0, 0.30);
+    --shadow-m3-2: 0 8px 24px rgba(0, 0, 0, 0.44);
+    --shadow-m3-3: 0 16px 48px rgba(0, 0, 0, 0.56);
+
+    /* The height of the primary bar. Sticky page headers and the scroller's own top
+       padding offset by it, so it is declared once rather than as a magic 64px. */
+    --m3-navbar-height: 64px;
 
     /* ═══════════════════════════════════════════════════════════════════════
        MOTION — Material 3 tokens
@@ -463,18 +510,70 @@ html {
     touch-action: pan-x pan-y;
 }
 
-/* Black & white theme — light palette rendered fully grayscale */
+/* ── The light reading of the same palette ──────────────────────────────────
+   Not a second design. The role names are the constant — surface, on-surface,
+   outline — so a component written against them is correct in both themes, and the
+   light set is simply the same system with the tonal direction flipped.
+
+   Scoped to :root:not(.dark) rather than :root.light so a page that has not been
+   given a class yet still gets the dark default. */
+:root:not(.dark) {
+    --color-m3-primary: #A8405A;
+    --color-m3-primary-light: #C25570;
+    --color-m3-primary-container: #FCE4EA;
+    --color-m3-on-primary: #FFFFFF;
+    --color-m3-on-primary-container: #3A101C;
+
+    --color-m3-accent: #0B6E96;
+    --color-m3-accent-light: #1A85AE;
+    --color-m3-accent-container: #DDEEF6;
+    --color-m3-on-accent: #FFFFFF;
+    --color-m3-on-accent-container: #04222E;
+
+    --color-m3-surface: #FBFBFC;
+    --color-m3-surface-dim: #F4F4F6;
+    --color-m3-surface-bright: #FFFFFF;
+    --color-m3-surface-container-lowest: #FFFFFF;
+    --color-m3-surface-container-low: #F7F7F9;
+    --color-m3-surface-container: #F0F0F3;
+    --color-m3-surface-container-high: #E8E8EC;
+    --color-m3-surface-container-highest: #E0E0E5;
+    --color-m3-on-surface: #16171C;
+    --color-m3-on-surface-variant: #5C5F69;
+    --color-m3-outline: #C7C9D1;
+    --color-m3-outline-variant: #E4E5EA;
+
+    --color-m3-error: #B3261E;
+    --color-m3-error-container: #FCEAE8;
+    --color-m3-on-error-container: #410E0B;
+    --color-m3-success: #1E6B3A;
+    --color-m3-success-container: #E1F3E6;
+    --color-m3-warning: #7A5B14;
+    --color-m3-warning-container: #FAF0D5;
+
+    /* The hairlines invert with the surface: the same alpha of black. */
+    --color-m3-line-soft: #0000000F;
+    --color-m3-line: #00000014;
+    --color-m3-line-strong: #00000029;
+    --color-m3-fill-soft: #0000000A;
+}
+
+/* Black & white theme — the palette rendered fully grayscale */
 html.mono {
     filter: grayscale(1);
 }
 
-html.dark body {
-    background: var(--color-m3-dark-surface);
+/* The page is painted from the role tokens in both themes, so there is never a
+   moment where the body and the app shell disagree about which surface they are on. */
+html,
+html.dark {
+    background: var(--color-m3-surface);
 }
 
 body {
     font-family: var(--font-sans);
     background: var(--color-m3-surface);
+    color: var(--color-m3-on-surface);
     height: 100%;
     margin: 0;
     overscroll-behavior-y: contain;
@@ -497,12 +596,15 @@ body {
 }
 
 .scroll-pb-nav {
-    /* floating nav: bar height + bottom gap + breathing room */
+    /* The floating bottom bar, plus the screen gesture area, plus breathing room:
+       92px is the bar and its gap. Only applies where that bar exists. */
     padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px));
 }
 @media (min-width: 768px) {
     .scroll-pb-nav {
+        /* No bottom bar here, but the top bar floats over the content. */
         padding-bottom: 0;
+        padding-top: var(--m3-navbar-height);
     }
 }
 
@@ -584,22 +686,21 @@ body {
     }
 }
 
+/* A dialog is the one surface that genuinely floats over content it does not
+   control, so it is the one place a shadow earns its keep. Everything else
+   separates with a hairline. */
 .modal-card {
-    background-color: var(--color-m3-surface-bright);
-    border: 1px solid var(--color-m3-outline-variant);
-    border-radius: var(--radius-md);
-    padding: 1.25rem;
+    background-color: var(--color-m3-surface-container-low);
+    border: 1px solid var(--color-m3-line);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-m3-2);
+    padding: 1.5rem;
     max-height: 88vh;
     overflow-y: auto;
 }
 .dark .modal-card {
-    background-color: var(--color-m3-dark-surface-container);
-    border-color: var(--color-m3-dark-outline-variant);
-}
-@media (min-width: 768px) {
-    .modal-card {
-        border-radius: var(--radius-md);
-    }
+    background-color: var(--color-m3-dark-surface-container-low);
+    border-color: var(--color-m3-line);
 }
 
 .modal-title {
@@ -613,28 +714,38 @@ body {
     color: var(--color-m3-dark-on-surface);
 }
 
+/* Buttons are pills — the shape is the signal that something is pressable, and it is
+   the one shape this design uses consistently. M3's filled button also moves its fill
+   a step on hover rather than changing hue.
+
+   min-height 40px is the M3 medium button; the 48px floor applies to icon-only
+   controls, which is enforced at .m3-icon-button. */
 .btn-primary {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.375rem;
-    padding: 0.5rem 1rem;
+    min-height: 40px;
+    padding: 0.5rem 1.25rem;
     font-size: 0.875rem;
     font-weight: 500;
+    letter-spacing: 0.01em;
     color: var(--color-m3-on-primary);
     background-color: var(--color-m3-primary);
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-full);
     cursor: pointer;
     transition: background-color var(--duration-quick) var(--ease-standard),
+                box-shadow var(--duration-quick) var(--ease-standard),
                 opacity var(--duration-quick) var(--ease-standard),
                 transform var(--duration-quick) var(--ease-standard);
 }
 .btn-primary:active:not(:disabled) {
-    transform: scale(0.98);
+    transform: scale(0.97);
 }
 .btn-primary:hover:not(:disabled) {
     background-color: var(--color-m3-primary-light);
+    box-shadow: var(--shadow-m3-1);
 }
 .btn-primary:disabled {
     opacity: 0.5;
@@ -646,53 +757,100 @@ body {
     align-items: center;
     justify-content: center;
     gap: 0.375rem;
-    padding: 0.5rem 1rem;
+    min-height: 40px;
+    padding: 0.5rem 1.25rem;
     font-size: 0.875rem;
     font-weight: 500;
+    letter-spacing: 0.01em;
     color: var(--color-m3-on-surface);
     background-color: transparent;
-    border: 1px solid var(--color-m3-outline-variant);
-    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-m3-outline);
+    border-radius: var(--radius-full);
     cursor: pointer;
     transition: background-color var(--duration-quick) var(--ease-standard),
                 border-color var(--duration-quick) var(--ease-standard),
                 transform var(--duration-quick) var(--ease-standard);
 }
 .btn-secondary:active:not(:disabled) {
-    transform: scale(0.98);
+    transform: scale(0.97);
 }
 .dark .btn-secondary {
     color: var(--color-m3-dark-on-surface);
-    border-color: var(--color-m3-dark-outline-variant);
+    border-color: var(--color-m3-dark-outline);
 }
 .btn-secondary:hover:not(:disabled) {
     background-color: var(--color-m3-surface-container);
+    border-color: var(--color-m3-outline);
 }
 .dark .btn-secondary:hover:not(:disabled) {
     background-color: var(--color-m3-dark-surface-container);
+    border-color: var(--color-m3-dark-outline);
 }
 
+/* The same shape with no outline at rest — for a row of equal-weight choices where a
+   fill would read as a selection. */
+.btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    min-height: 40px;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-m3-on-surface-variant);
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: background-color var(--duration-quick) var(--ease-standard),
+                color var(--duration-quick) var(--ease-standard);
+}
+.btn-ghost:hover:not(:disabled) {
+    color: var(--color-m3-on-surface);
+    background-color: var(--color-m3-fill-soft);
+}
+.dark .btn-ghost {
+    color: var(--color-m3-dark-on-surface-variant);
+}
+.dark .btn-ghost:hover:not(:disabled) {
+    color: var(--color-m3-dark-on-surface);
+    background-color: var(--color-m3-fill-soft);
+}
+
+/* Filled text fields: the box is a wash of white on the surface, not a white card with
+   a border. Focus is the only state that draws an outline, so the eye has exactly one
+   "you are here". */
 .input-base {
     width: 100%;
-    padding: 0.625rem 0.75rem;
+    padding: 0.625rem 0.875rem;
     font-size: 0.875rem;
     color: var(--color-m3-on-surface);
-    background-color: var(--color-m3-surface);
+    background-color: var(--color-m3-surface-container-lowest);
     border: 1px solid var(--color-m3-outline-variant);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     outline: none;
-    transition: border-color var(--duration-quick) var(--ease-standard);
+    transition: border-color var(--duration-quick) var(--ease-standard),
+                background-color var(--duration-quick) var(--ease-standard);
 }
 .dark .input-base {
     color: var(--color-m3-dark-on-surface);
     background-color: var(--color-m3-dark-surface-container-low);
-    border-color: var(--color-m3-dark-outline-variant);
+    border-color: var(--color-m3-line);
+}
+.input-base::placeholder {
+    color: var(--color-m3-on-surface-variant);
+}
+.dark .input-base::placeholder {
+    color: var(--color-m3-dark-on-surface-variant);
 }
 .input-base:focus {
     border-color: var(--color-m3-primary);
+    background-color: var(--color-m3-surface-container);
 }
 .dark .input-base:focus {
-    border-color: var(--color-m3-primary-light);
+    border-color: var(--color-m3-dark-primary);
+    background-color: var(--color-m3-dark-surface-container);
 }
 
 .modal-shell-wide {
@@ -730,6 +888,110 @@ body {
     border-color: var(--color-m3-dark-outline-variant);
 }
 
+/* ── Card ──────────────────────────────────────────────────────────────────
+   The app's one containment primitive, and deliberately the plainest thing on the
+   page: a translucent wash over the background and a single hairline. No shadow,
+   because nothing here is elevatable — a card groups, it does not float.
+
+   fill-soft rather than a surface-container step: on a near-black page a 6% white
+   wash reads as "grouped", while a five-point step is invisible. */
+.m3-card {
+    background-color: var(--color-m3-fill-soft);
+    border: 1px solid var(--color-m3-line);
+    border-radius: var(--radius-large-increased);
+    padding: 1rem 1.5rem;
+    transition: border-color var(--duration-quick) var(--ease-standard),
+                background-color var(--duration-quick) var(--ease-standard);
+}
+
+/* A card that navigates somewhere. Only the hairline changes on hover — scaling the
+   whole card would move its text. */
+.m3-card-interactive {
+    cursor: pointer;
+}
+.m3-card-interactive:hover {
+    border-color: var(--color-m3-line-strong);
+    background-color: var(--color-m3-surface-container-low);
+}
+
+/* The primary card in a column. */
+.m3-card-raised {
+    background-color: var(--color-m3-surface-container-low);
+}
+
+/* A page or card heading — the largest thing on a screen. */
+.m3-card-title {
+    font-size: 1.375rem;
+    line-height: 1.375;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--color-m3-on-surface);
+}
+
+/* ── Nav ───────────────────────────────────────────────────────────────────
+   64px, the page colour at 88%, and a blur. The blur is not decoration: content
+   scrolling under a bar that is only 88% opaque otherwise reads as a smear, and
+   blurring it keeps the bar legible without making it a solid block. */
+.m3-navbar {
+    display: flex;
+    align-items: center;
+    height: var(--m3-navbar-height);
+    flex-shrink: 0;
+    background-color: color-mix(in srgb, var(--color-m3-surface) 88%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--color-m3-line);
+}
+
+/* Nav links are pills. The current one is filled, not underlined — the fill is the
+   whole signal, so there is no second indicator competing with it. */
+.m3-nav-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 8px 16px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-m3-on-surface-variant);
+    border-radius: var(--radius-full);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color var(--duration-quick) var(--ease-standard),
+                color var(--duration-quick) var(--ease-standard);
+}
+.m3-nav-pill:hover {
+    color: var(--color-m3-on-surface);
+    background-color: var(--color-m3-fill-soft);
+}
+.m3-nav-pill[aria-current="page"],
+.m3-nav-pill.is-active {
+    color: var(--color-m3-on-surface);
+    background-color: var(--color-m3-line);
+}
+
+/* A round target for an icon that is the whole control. 48px is the M3 floor for a
+   touch target; the icon inside stays whatever size the call site asks for. */
+.m3-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-full);
+    color: var(--color-m3-on-surface-variant);
+    cursor: pointer;
+    transition: background-color var(--duration-quick) var(--ease-standard),
+                color var(--duration-quick) var(--ease-standard);
+}
+.m3-icon-button:hover {
+    color: var(--color-m3-on-surface);
+    background-color: var(--color-m3-fill-soft);
+}
+.m3-icon-button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
 /* M3 Menu Styles */
 .m3-menu {
     background-color: var(--color-m3-surface-container-low);
@@ -751,7 +1013,7 @@ body {
 
 .dark .m3-menu {
     background-color: var(--color-m3-dark-surface-container-high);
-    border-color: var(--color-m3-dark-outline-variant);
+    border-color: var(--color-m3-line);
 }
 
 .m3-menu-item {
@@ -782,13 +1044,13 @@ body {
 }
 
 .m3-menu-item.selected {
-    background-color: var(--color-m3-secondary-container);
-    color: var(--color-m3-on-secondary-container);
+    background-color: var(--color-m3-accent-container);
+    color: var(--color-m3-on-accent-container);
 }
 
 .dark .m3-menu-item.selected {
-    background-color: var(--color-m3-dark-secondary-container);
-    color: var(--color-m3-dark-on-secondary-container);
+    background-color: var(--color-m3-accent-container);
+    color: var(--color-m3-on-accent-container);
 }
 
 .dropdown-in {

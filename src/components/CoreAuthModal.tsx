@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Loader2, AlertTriangle, X } from 'lucide-react';
+import Icon from './Icon';
+import { Loader2, AlertTriangle, X } from '../icons';
 
 import TotpEnrollment from './TotpEnrollment';
 import { coreAuth, CoreAuthError, type RegistrationResponse } from '../services/coreAuth';
@@ -202,10 +203,10 @@ const CoreAuthModal: React.FC<CoreAuthModalProps> = ({
                 type="button"
                 onClick={onClose}
                 aria-label={t('core.close')}
-                className="-mr-1 -mt-1 p-1.5 rounded-full hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container-high)] transition-colors"
+                className="-mr-1 -mt-1 p-1.5 rounded-full hover:bg-[var(--color-m3-surface-container)]  transition-colors"
                 style={{ transitionDuration: 'var(--md-sys-motion-duration-short3)' }}
               >
-                <X size={17} />
+                <Icon icon={X} size={17} />
               </button>
             )}
           </div>
@@ -239,7 +240,7 @@ const CoreAuthModal: React.FC<CoreAuthModalProps> = ({
           {/* ── Second factor ──────────────────────────────────────────────── */}
           {screen === 'two_factor' && (
             <form onSubmit={handleSecondFactor} className="space-y-4">
-              <p className="text-sm text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+              <p className="text-sm text-[var(--color-m3-on-surface-variant)] ">
                 {useBackupCode ? t('core.2fa.intro_backup') : t('core.2fa.intro')}
               </p>
 
@@ -271,13 +272,13 @@ const CoreAuthModal: React.FC<CoreAuthModalProps> = ({
 
               {error && (
                 <p className="text-xs flex items-start gap-1.5 text-[#B3261E]" role="alert">
-                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                  <Icon icon={AlertTriangle} size={13} className="mt-0.5 shrink-0" />
                   <span>{error}</span>
                 </p>
               )}
 
               <button type="submit" disabled={busy} className="btn-primary w-full">
-                {busy && <Loader2 size={16} className="animate-spin" />}
+                {busy && <Icon icon={Loader2} size={16} className="animate-spin" />}
                 {t('core.continue')}
               </button>
 
@@ -290,7 +291,7 @@ const CoreAuthModal: React.FC<CoreAuthModalProps> = ({
                     setCode('');
                     setBackupCode('');
                   }}
-                  className="text-xs text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)] hover:underline"
+                  className="text-xs text-[var(--color-m3-primary)]  hover:underline"
                 >
                   {useBackupCode ? t('core.2fa.use_totp') : t('core.2fa.use_backup')}
                 </button>
@@ -305,7 +306,7 @@ const CoreAuthModal: React.FC<CoreAuthModalProps> = ({
                     setBackupCode('');
                     setUseBackupCode(false);
                   }}
-                  className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] hover:underline"
+                  className="text-xs text-[var(--color-m3-on-surface-variant)]  hover:underline"
                 >
                   {t('core.2fa.back')}
                 </button>
@@ -316,7 +317,7 @@ const CoreAuthModal: React.FC<CoreAuthModalProps> = ({
           {/* ── Credentials ────────────────────────────────────────────────── */}
           {screen === 'credentials' && (
             <form onSubmit={handleCredentials} className="space-y-4">
-              <p className="text-sm text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] !mt-0">
+              <p className="text-sm text-[var(--color-m3-on-surface-variant)]  !mt-0">
                 {isLogin ? t('core.signin.intro') : t('core.signup.intro')}
               </p>
 
@@ -349,7 +350,7 @@ const CoreAuthModal: React.FC<CoreAuthModalProps> = ({
                   minLength={8}
                 />
                 {!isLogin && (
-                  <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+                  <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">
                     {t('core.signup.hint')}
                   </p>
                 )}
@@ -357,7 +358,7 @@ const CoreAuthModal: React.FC<CoreAuthModalProps> = ({
 
               {error && (
                 <p className="text-xs flex items-start gap-1.5 text-[#B3261E]" role="alert">
-                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                  <Icon icon={AlertTriangle} size={13} className="mt-0.5 shrink-0" />
                   <span>{error}</span>
                 </p>
               )}
@@ -366,31 +367,31 @@ const CoreAuthModal: React.FC<CoreAuthModalProps> = ({
               )}
 
               <button type="submit" disabled={busy} className="btn-primary w-full">
-                {busy && <Loader2 size={16} className="animate-spin" />}
+                {busy && <Icon icon={Loader2} size={16} className="animate-spin" />}
                 {isLogin ? t('core.sign_in') : t('core.create_account')}
               </button>
 
               {xAvailable && (
                 <>
                   <div className="flex items-center gap-2">
-                    <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] dark:bg-[var(--color-m3-dark-outline-variant)]" />
-                    <span className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+                    <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] " />
+                    <span className="text-xs text-[var(--color-m3-on-surface-variant)] ">
                       {t('core.or')}
                     </span>
-                    <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] dark:bg-[var(--color-m3-dark-outline-variant)]" />
+                    <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] " />
                   </div>
                   <button type="button" onClick={handleX} disabled={busy} className="btn-secondary w-full">
                     {t('core.x.continue')}
                   </button>
                   {/* Stated up front, because the alternative is a user discovering
                       mid-flow that the button did not do what they expected. */}
-                  <p className="text-xs text-center text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+                  <p className="text-xs text-center text-[var(--color-m3-on-surface-variant)] ">
                     {t('core.x.note')}
                   </p>
                 </>
               )}
 
-              <div className="pt-1 text-center text-sm text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+              <div className="pt-1 text-center text-sm text-[var(--color-m3-on-surface-variant)] ">
                 {isLogin ? t('core.signin.no_account') : t('core.signin.has_account')}{' '}
                 <button
                   type="button"
@@ -399,7 +400,7 @@ const CoreAuthModal: React.FC<CoreAuthModalProps> = ({
                     setError(null);
                     setNotice(null);
                   }}
-                  className="text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)] hover:underline"
+                  className="text-[var(--color-m3-primary)]  hover:underline"
                 >
                   {isLogin ? t('core.signin.go_register') : t('core.signin.go_login')}
                 </button>

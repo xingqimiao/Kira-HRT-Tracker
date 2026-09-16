@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Trash2, Loader2, AlertCircle, Server, Search, KeyRound, PenLine, ImageOff, X, ChevronLeft, ChevronRight, Cloud, Trash, Users, ArrowLeft, ShieldCheck, ShieldOff, Megaphone } from 'lucide-react';
+import Icon from '../components/Icon';
+import { Trash2, Loader2, AlertCircle, Server, Search, KeyRound, PenLine, ImageOff, X, ChevronLeft, ChevronRight, Cloud, Trash, Users, ArrowLeft, ShieldCheck, ShieldOff, Megaphone } from '../icons';
 import { useAuth } from '../contexts/AuthContext';
 import { adminService, AdminUser, AdminUser2FA, BackupMeta, TwoFactorScope } from '../services/admin';
 import { useDialog } from '../contexts/DialogContext';
 import { settingsMuted, settingsOn } from '../components/SettingsListItem';
+import type { IconComponent } from '../icons';
 import { noticeService, NoticeLevel, SiteNotice } from '../services/notice';
 import { Lang } from '../i18n/translations';
 
@@ -11,13 +13,13 @@ type AdminCat = 'users' | 'notice' | 'system';
 type MobileView = 'list' | AdminCat;
 type UserPanel = null | { type: 'password'; user: AdminUser } | { type: 'edit'; user: AdminUser } | { type: 'backups'; user: AdminUser } | { type: '2fa'; user: AdminUser };
 
-const divider = 'border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]';
+const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
 const rowBase = `w-full flex items-center justify-between py-[18px] ${divider} text-start`;
-const rowLabel = 'text-[0.9375rem] text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]';
+const rowLabel = 'text-[0.9375rem] text-[var(--color-m3-on-surface)] ';
 const rowValue = `flex items-center gap-1 text-[0.9375rem] ${settingsMuted}`;
-const iconBtn = `p-2 rounded-lg ${settingsMuted} hover:text-[var(--color-m3-on-surface)] dark:hover:text-[var(--color-m3-dark-on-surface)] hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] transition-colors`;
-const dangerIconBtn = `p-2 rounded-lg ${settingsMuted} hover:text-red-500 dark:hover:text-red-400 hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] transition-colors`;
-const dangerTextBtn = 'shrink-0 px-3 py-1.5 text-xs font-medium text-red-500 dark:text-red-400 rounded-lg hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] transition-colors disabled:opacity-40 disabled:pointer-events-none';
+const iconBtn = `p-2 rounded-lg ${settingsMuted} hover:text-[var(--color-m3-on-surface)]  hover:bg-[var(--color-m3-surface-container)]  transition-colors`;
+const dangerIconBtn = `p-2 rounded-lg ${settingsMuted} hover:text-cos-error  hover:bg-[var(--color-m3-surface-container)]  transition-colors`;
+const dangerTextBtn = 'shrink-0 px-3 py-1.5 text-xs font-medium text-cos-error  rounded-lg hover:bg-[var(--color-m3-surface-container)]  transition-colors disabled:opacity-40 disabled:pointer-events-none';
 
 let _savedCat: AdminCat = 'users';
 let _savedMobileView: MobileView = 'list';
@@ -75,10 +77,10 @@ const Admin: React.FC = () => {
     const [noticeEnd, setNoticeEnd] = useState('');
     const [noticeLang, setNoticeLang] = useState<'default' | Lang>('default');
 
-    const cats: { id: AdminCat; label: string; Icon: React.ElementType; hint: string }[] = [
-        { id: 'users', label: 'Users', Icon: Users, hint: 'Accounts · Passwords · 2FA · Cloud backups' },
-        { id: 'notice', label: 'Notice', Icon: Megaphone, hint: 'Site-wide banner · Per-language text · Schedule' },
-        { id: 'system', label: 'System', Icon: Server, hint: 'Status · Environment' },
+    const cats: { id: AdminCat; label: string; icon: IconComponent; hint: string }[] = [
+        { id: 'users', label: 'Users', icon: Users, hint: 'Accounts · Passwords · 2FA · Cloud backups' },
+        { id: 'notice', label: 'Notice', icon: Megaphone, hint: 'Site-wide banner · Per-language text · Schedule' },
+        { id: 'system', label: 'System', icon: Server, hint: 'Status · Environment' },
     ];
 
     const selectCat = (c: AdminCat) => {
@@ -259,7 +261,7 @@ const Admin: React.FC = () => {
                                 <p className={`text-xs ${settingsMuted} mt-0.5`}>{panel.type === 'password' ? 'Change Password' : panel.type === 'edit' ? 'Edit Profile' : panel.type === '2fa' ? 'Two-Factor Authentication' : 'Cloud Backups'}</p>
                             </div>
                             <button onClick={() => setPanel(null)} className={`${iconBtn} -mr-1 -mt-1`} aria-label="Close">
-                                <X size={16} strokeWidth={1.5} />
+                                <Icon icon={X} size={16} strokeWidth={1.5} />
                             </button>
                         </div>
 
@@ -309,13 +311,13 @@ const Admin: React.FC = () => {
                                         </button>
                                     </div>
                                 </div>
-                                <div className={`border-t border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] pt-4 space-y-2`}>
+                                <div className={`border-t border-[var(--color-m3-outline-variant)]  pt-4 space-y-2`}>
                                     <label className={`block text-xs font-medium ${settingsMuted}`}>Avatar</label>
                                     <button
                                         onClick={() => handleResetAvatar(panel.user)}
-                                        className="btn-secondary text-red-500 dark:text-red-400"
+                                        className="btn-secondary text-cos-error "
                                     >
-                                        <ImageOff size={15} strokeWidth={1.5} /> Reset Avatar
+                                        <Icon icon={ImageOff} size={15} strokeWidth={1.5} /> Reset Avatar
                                     </button>
                                 </div>
                             </div>
@@ -323,7 +325,7 @@ const Admin: React.FC = () => {
 
                         {panel.type === '2fa' && (
                             twoFALoading ? (
-                                <div className="flex justify-center py-12"><Loader2 className={`animate-spin ${settingsMuted}`} size={20} /></div>
+                                <div className="flex justify-center py-12"><Icon icon={Loader2} className={`animate-spin ${settingsMuted}`} size={20} /></div>
                             ) : !twoFA ? (
                                 <p className={`text-sm ${settingsMuted} text-center py-8`}>Could not load 2FA status.</p>
                             ) : (
@@ -370,16 +372,16 @@ const Admin: React.FC = () => {
                                         </button>
                                     </div>
 
-                                    <div className="flex items-end justify-between gap-4 pt-4 border-t border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]">
-                                        <p className="text-xs text-red-500 dark:text-red-400 leading-relaxed">
+                                    <div className="flex items-end justify-between gap-4 pt-4 border-t border-[var(--color-m3-outline-variant)] ">
+                                        <p className="text-xs text-cos-error  leading-relaxed">
                                             Erasing a factor drops this account back to its password alone. Confirm who is asking before you do it.
                                         </p>
                                         <button
                                             onClick={() => clearTwoFA(panel.user, 'all', `Erase ALL two-factor authentication for "${panel.user.username}"? This removes the authenticator secret, every passkey and every backup code, and signs out all of their sessions.`)}
                                             disabled={!twoFA.enabled && twoFA.backupCodes === 0}
-                                            className="btn-secondary text-red-500 dark:text-red-400 shrink-0 disabled:opacity-40 disabled:pointer-events-none"
+                                            className="btn-secondary text-cos-error  shrink-0 disabled:opacity-40 disabled:pointer-events-none"
                                         >
-                                            <ShieldOff size={15} strokeWidth={1.5} /> Erase All
+                                            <Icon icon={ShieldOff} size={15} strokeWidth={1.5} /> Erase All
                                         </button>
                                     </div>
                                 </div>
@@ -388,7 +390,7 @@ const Admin: React.FC = () => {
 
                         {panel.type === 'backups' && (
                             backupsLoading ? (
-                                <div className="flex justify-center py-12"><Loader2 className={`animate-spin ${settingsMuted}`} size={20} /></div>
+                                <div className="flex justify-center py-12"><Icon icon={Loader2} className={`animate-spin ${settingsMuted}`} size={20} /></div>
                             ) : backups.length === 0 ? (
                                 <p className={`text-sm ${settingsMuted} text-center py-8`}>No backups found.</p>
                             ) : (
@@ -397,9 +399,9 @@ const Admin: React.FC = () => {
                                         <span className={`text-xs ${settingsMuted}`}>{backups.length} backup(s) · {formatBytes(backups.reduce((s, b) => s + b.data_size, 0))} total</span>
                                         <button
                                             onClick={handlePurgeBackups}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-500 dark:text-red-400 border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] rounded-lg hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] transition-colors"
+                                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-cos-error  border border-[var(--color-m3-outline-variant)]  rounded-lg hover:bg-[var(--color-m3-surface-container)]  transition-colors"
                                         >
-                                            <Trash size={13} strokeWidth={1.5} /> Purge All
+                                            <Icon icon={Trash} size={13} strokeWidth={1.5} /> Purge All
                                         </button>
                                     </div>
                                     <div>
@@ -414,7 +416,7 @@ const Admin: React.FC = () => {
                                                     className={dangerIconBtn}
                                                     title="Delete backup"
                                                 >
-                                                    <Trash2 size={15} strokeWidth={1.5} />
+                                                    <Icon icon={Trash2} size={15} strokeWidth={1.5} />
                                                 </button>
                                             </div>
                                         ))}
@@ -433,23 +435,23 @@ const Admin: React.FC = () => {
     const renderUsers = () => (
         <div>
             <div className="relative mb-5">
-                <Search size={15} strokeWidth={1.5} className={`absolute left-3 top-1/2 -translate-y-1/2 ${settingsMuted}`} />
+                <Icon icon={Search} size={15} strokeWidth={1.5} className={`absolute left-3 top-1/2 -translate-y-1/2 ${settingsMuted}`} />
                 <input
                     type="text"
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
                     placeholder="Search users..."
-                    className="w-full py-2.5 pr-3 pl-9 text-[0.9375rem] bg-[var(--color-m3-surface-container-lowest)] dark:bg-[var(--color-m3-dark-surface-container-low)] border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] rounded-lg outline-none focus:border-[var(--color-m3-primary)] text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] placeholder:text-[var(--color-m3-on-surface-variant)]"
+                    className="w-full py-2.5 pr-3 pl-9 text-[0.9375rem] bg-[var(--color-m3-surface-container-lowest)]  border border-[var(--color-m3-outline-variant)]  rounded-lg outline-none focus:border-[var(--color-m3-primary)] text-[var(--color-m3-on-surface)]  placeholder:text-[var(--color-m3-on-surface-variant)]"
                 />
             </div>
 
             {loading && users.length === 0 ? (
                 <div className="flex justify-center py-16">
-                    <Loader2 className={`animate-spin ${settingsMuted}`} size={20} />
+                    <Icon icon={Loader2} className={`animate-spin ${settingsMuted}`} size={20} />
                 </div>
             ) : error ? (
-                <p className="flex items-center gap-2 text-sm text-red-500 dark:text-red-400 py-4">
-                    <AlertCircle size={16} strokeWidth={1.5} /> {error}
+                <p className="flex items-center gap-2 text-sm text-cos-error  py-4">
+                    <Icon icon={AlertCircle} size={16} strokeWidth={1.5} /> {error}
                 </p>
             ) : users.length === 0 ? (
                 <p className={`text-sm ${settingsMuted} text-center py-14`}>No users found{searchDebounce ? ` for "${searchDebounce}"` : ''}.</p>
@@ -461,7 +463,7 @@ const Admin: React.FC = () => {
                             className={`flex items-center justify-between gap-3 py-4 ${divider}`}
                         >
                             <div className="flex items-center gap-3 min-w-0">
-                                <div className="w-9 h-9 rounded-full bg-[var(--color-m3-surface-container)] dark:bg-[var(--color-m3-dark-surface-container)] flex items-center justify-center overflow-hidden shrink-0">
+                                <div className="w-9 h-9 rounded-full bg-[var(--color-m3-surface-container)]  flex items-center justify-center overflow-hidden shrink-0">
                                     <img
                                         src={`/api/user/avatar/${u.username}`}
                                         alt={u.username}
@@ -481,13 +483,13 @@ const Admin: React.FC = () => {
                                         <p className={`text-xs ${settingsMuted} font-mono`}>{u.id.slice(0, 8)}</p>
                                         {(u.backup_count ?? 0) > 0 && (
                                             <span className={`inline-flex items-center gap-1 text-xs ${settingsMuted}`}>
-                                                <Cloud size={11} strokeWidth={1.5} />
+                                                <Icon icon={Cloud} size={11} strokeWidth={1.5} />
                                                 {u.backup_count} · {formatBytes(u.total_backup_size || 0)} · {timeAgo(u.last_backup_at)}
                                             </span>
                                         )}
                                         {((u.has_totp ?? 0) > 0 || (u.passkey_count ?? 0) > 0) && (
                                             <span className={`inline-flex items-center gap-1 text-xs ${settingsMuted}`} title="Two-factor authentication enabled">
-                                                <ShieldCheck size={11} strokeWidth={1.5} />
+                                                <Icon icon={ShieldCheck} size={11} strokeWidth={1.5} />
                                                 {[
                                                     (u.has_totp ?? 0) > 0 && 'TOTP',
                                                     (u.passkey_count ?? 0) > 0 && `${u.passkey_count} passkey${u.passkey_count === 1 ? '' : 's'}`,
@@ -500,19 +502,19 @@ const Admin: React.FC = () => {
 
                             <div className="flex items-center gap-0.5 shrink-0">
                                 <button onClick={() => openBackupsPanel(u)} className={iconBtn} title="Cloud Backups">
-                                    <Cloud size={15} strokeWidth={1.5} />
+                                    <Icon icon={Cloud} size={15} strokeWidth={1.5} />
                                 </button>
                                 <button onClick={() => openTwoFAPanel(u)} className={iconBtn} title="Reset 2FA">
-                                    <ShieldOff size={15} strokeWidth={1.5} />
+                                    <Icon icon={ShieldOff} size={15} strokeWidth={1.5} />
                                 </button>
                                 <button onClick={() => openPasswordPanel(u)} className={iconBtn} title="Change Password">
-                                    <KeyRound size={15} strokeWidth={1.5} />
+                                    <Icon icon={KeyRound} size={15} strokeWidth={1.5} />
                                 </button>
                                 <button onClick={() => openEditPanel(u)} className={iconBtn} title="Edit Profile">
-                                    <PenLine size={15} strokeWidth={1.5} />
+                                    <Icon icon={PenLine} size={15} strokeWidth={1.5} />
                                 </button>
                                 <button onClick={() => handleDeleteUser(u)} className={dangerIconBtn} title="Delete User">
-                                    <Trash2 size={15} strokeWidth={1.5} />
+                                    <Icon icon={Trash2} size={15} strokeWidth={1.5} />
                                 </button>
                             </div>
                         </div>
@@ -529,7 +531,7 @@ const Admin: React.FC = () => {
                         className={`${iconBtn} disabled:opacity-40 disabled:pointer-events-none`}
                         aria-label="Previous page"
                     >
-                        <ChevronLeft size={15} strokeWidth={1.5} />
+                        <Icon icon={ChevronLeft} size={15} strokeWidth={1.5} />
                     </button>
                     {Array.from({ length: totalPages }, (_, i) => i + 1)
                         .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 2)
@@ -547,8 +549,8 @@ const Admin: React.FC = () => {
                                     onClick={() => setPage(item as number)}
                                     className={`min-w-[32px] h-8 rounded-lg text-sm transition-colors ${
                                         page === item
-                                            ? `font-medium ${settingsOn} bg-[var(--color-m3-surface-container)] dark:bg-[var(--color-m3-dark-surface-container)]`
-                                            : `${settingsMuted} hover:text-[var(--color-m3-on-surface)] dark:hover:text-[var(--color-m3-dark-on-surface)] hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)]`
+                                            ? `font-medium ${settingsOn} bg-[var(--color-m3-surface-container)] `
+                                            : `${settingsMuted} hover:text-[var(--color-m3-on-surface)]  hover:bg-[var(--color-m3-surface-container)] `
                                     }`}
                                 >
                                     {item}
@@ -561,7 +563,7 @@ const Admin: React.FC = () => {
                         className={`${iconBtn} disabled:opacity-40 disabled:pointer-events-none`}
                         aria-label="Next page"
                     >
-                        <ChevronRight size={15} strokeWidth={1.5} />
+                        <Icon icon={ChevronRight} size={15} strokeWidth={1.5} />
                     </button>
                 </div>
             )}
@@ -685,7 +687,7 @@ const Admin: React.FC = () => {
 
     const renderNotice = () => (
         noticeLoading ? (
-            <div className="flex justify-center py-16"><Loader2 className={`animate-spin ${settingsMuted}`} size={20} /></div>
+            <div className="flex justify-center py-16"><Icon icon={Loader2} className={`animate-spin ${settingsMuted}`} size={20} /></div>
         ) : (
             <div className="space-y-5">
                 <p className={`text-xs ${settingsMuted} leading-relaxed`}>
@@ -701,8 +703,8 @@ const Admin: React.FC = () => {
                             onClick={() => setNoticeLang(id)}
                             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-colors ${
                                 noticeLang === id
-                                    ? `bg-[var(--color-m3-surface-container)] dark:bg-[var(--color-m3-dark-surface-container-high)] ${settingsOn} font-medium`
-                                    : `${settingsMuted} hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)]`
+                                    ? `bg-[var(--color-m3-surface-container)]  ${settingsOn} font-medium`
+                                    : `${settingsMuted} hover:bg-[var(--color-m3-surface-container)] `
                             }`}
                         >
                             {label}
@@ -739,8 +741,8 @@ const Admin: React.FC = () => {
                                 onClick={() => setNoticeLevel(level)}
                                 className={`px-3 py-1.5 rounded-lg text-xs transition-colors ${
                                     noticeLevel === level
-                                        ? `bg-[var(--color-m3-surface-container)] dark:bg-[var(--color-m3-dark-surface-container-high)] ${settingsOn} font-medium`
-                                        : `${settingsMuted} hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)]`
+                                        ? `bg-[var(--color-m3-surface-container)]  ${settingsOn} font-medium`
+                                        : `${settingsMuted} hover:bg-[var(--color-m3-surface-container)] `
                                 }`}
                             >
                                 {level === 'info' ? 'Info' : 'Warning'}
@@ -765,25 +767,25 @@ const Admin: React.FC = () => {
                         <label className={`block text-xs font-medium ${settingsMuted}`}>Preview</label>
                         <p className={`flex items-start gap-1.5 text-[0.8125rem] leading-snug whitespace-pre-wrap break-words ${
                             noticeLevel === 'warn'
-                                ? 'text-amber-700/90 dark:text-amber-400/85'
-                                : 'text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)]'
+                                ? 'text-cos-warning/90 '
+                                : 'text-[var(--color-m3-primary)] '
                         }`}>
                             {noticeLevel === 'warn'
-                                ? <AlertCircle size={14} strokeWidth={1.75} className="mt-[3px] shrink-0" />
-                                : <Megaphone size={14} strokeWidth={1.75} className="mt-[3px] shrink-0" />}
+                                ? <Icon icon={AlertCircle} size={14} strokeWidth={1.75} className="mt-[3px] shrink-0" />
+                                : <Icon icon={Megaphone} size={14} strokeWidth={1.75} className="mt-[3px] shrink-0" />}
                             <span>{noticePreview}</span>
                         </p>
                     </div>
                 )}
 
-                <div className="flex items-center justify-between gap-3 pt-2 border-t border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]">
+                <div className="flex items-center justify-between gap-3 pt-2 border-t border-[var(--color-m3-outline-variant)] ">
                     <span className={`text-xs ${settingsMuted}`}>
                         {noticeWindowLabel()}{notice ? ` · rev ${notice.revision}` : ''}
                     </span>
                     <div className="flex items-center gap-2 shrink-0">
                         <button onClick={clearNotice} disabled={!notice} className={dangerTextBtn}>Clear</button>
                         <button onClick={saveNotice} disabled={noticeSaving || !noticeBody.trim()} className="btn-primary disabled:opacity-40 disabled:pointer-events-none">
-                            {noticeSaving ? <Loader2 size={15} className="animate-spin" /> : <Megaphone size={15} strokeWidth={1.5} />}
+                            {noticeSaving ? <Icon icon={Loader2} size={15} className="animate-spin" /> : <Icon icon={Megaphone} size={15} strokeWidth={1.5} />}
                             {notice ? 'Update Notice' : 'Publish Notice'}
                         </button>
                     </div>
@@ -808,7 +810,7 @@ const Admin: React.FC = () => {
                     <p className={`text-xs ${settingsMuted} mt-0.5 leading-relaxed`}>Where the backend is connected.</p>
                 </div>
                 <span className={rowValue}>
-                    <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-[var(--color-m3-surface-container)] dark:bg-[var(--color-m3-dark-surface-container)]">
+                    <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-[var(--color-m3-surface-container)] ">
                         {window.location.hostname === 'localhost' ? 'Local' : 'Remote'}
                     </span>
                 </span>
@@ -822,21 +824,21 @@ const Admin: React.FC = () => {
         <div className="flex pt-8 pb-32 min-h-full">
 
             {/* ── Left category nav (desktop) ─────────────────────────── */}
-            <nav className="hidden md:flex flex-col w-52 shrink-0 px-3 gap-0.5 border-r border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]">
+            <nav className="hidden md:flex flex-col w-52 shrink-0 px-3 gap-0.5 border-r border-[var(--color-m3-outline-variant)] ">
                 <p className={`px-3 py-1.5 mb-3 text-xl font-semibold ${settingsOn}`}>
                     Admin
                 </p>
-                {cats.map(({ id, label, Icon }) => (
+                {cats.map(({ id, label, icon }) => (
                     <button
                         key={id}
                         onClick={() => selectCat(id)}
                         className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[0.9375rem] text-start
                             ${cat === id
-                                ? `bg-[var(--color-m3-surface-container)] dark:bg-[var(--color-m3-dark-surface-container-high)] ${settingsOn} font-medium`
-                                : `${settingsMuted} hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)]`
+                                ? `bg-[var(--color-m3-surface-container)]  ${settingsOn} font-medium`
+                                : `${settingsMuted} hover:bg-[var(--color-m3-surface-container)] `
                             }`}
                     >
-                        <Icon size={16} strokeWidth={1.75} />
+                        <Icon icon={icon} size={16} strokeWidth={1.75} />
                         {label}
                     </button>
                 ))}
@@ -857,34 +859,34 @@ const Admin: React.FC = () => {
             <div className="md:hidden flex-1 self-start px-6 pb-32">
                 {mobileView === 'list' ? (
                     <>
-                        <h1 className={`sticky top-0 z-20 -mx-6 px-6 pt-2 pb-3 mb-3 bg-[var(--color-m3-surface-dim)] dark:bg-[var(--color-m3-dark-surface)] text-xl font-semibold ${settingsOn}`}>Admin</h1>
-                        {cats.map(({ id, label, Icon, hint }) => (
+                        <h1 className={`sticky top-0 md:top-[var(--m3-navbar-height)] z-20 -mx-6 px-6 pt-2 pb-3 mb-3 bg-[var(--color-m3-surface-dim)]  text-xl font-semibold ${settingsOn}`}>Admin</h1>
+                        {cats.map(({ id, label, icon, hint }) => (
                             <button
                                 key={id}
                                 onClick={() => enterMobileCat(id)}
                                 className={`${rowBase} items-center`}
                             >
                                 <div className="flex items-center gap-3">
-                                    <div className="p-2 rounded-lg bg-[var(--color-m3-surface-container)] dark:bg-[var(--color-m3-dark-surface-container)]">
-                                        <Icon size={18} strokeWidth={1.75} className={settingsMuted} />
+                                    <div className="p-2 rounded-lg bg-[var(--color-m3-surface-container)] ">
+                                        <Icon icon={icon} size={18} strokeWidth={1.75} className={settingsMuted} />
                                     </div>
                                     <div className="text-start">
                                         <p className={`text-[0.9375rem] font-medium ${settingsOn}`}>{label}</p>
                                         <p className={`text-xs ${settingsMuted} mt-0.5 leading-relaxed`}>{hint}</p>
                                     </div>
                                 </div>
-                                <ChevronRight size={15} className={settingsMuted} />
+                                <Icon icon={ChevronRight} size={15} className={settingsMuted} />
                             </button>
                         ))}
                     </>
                 ) : (
                     <>
-                        <div className="sticky top-0 z-20 -mx-6 px-6 pt-2 pb-3 mb-3 bg-[var(--color-m3-surface-dim)] dark:bg-[var(--color-m3-dark-surface)]">
+                        <div className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 -mx-6 px-6 pt-2 pb-3 mb-3 bg-[var(--color-m3-surface-dim)] ">
                             <button
                                 onClick={exitMobileCat}
-                                className="flex items-center gap-2 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)]"
+                                className="flex items-center gap-2 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] "
                             >
-                                <ArrowLeft size={18} className={`${settingsMuted} shrink-0`} />
+                                <Icon icon={ArrowLeft} size={18} className={`${settingsMuted} shrink-0`} />
                                 <h1 className={`text-xl font-semibold ${settingsOn}`}>
                                     {cats.find(c => c.id === mobileView)?.label}
                                 </h1>

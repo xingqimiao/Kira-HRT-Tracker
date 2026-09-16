@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Clock3, Eye, EyeOff, Loader2, LockKeyhole } from 'lucide-react';
+import Icon from '../components/Icon';
+import { AlertCircle, Clock3, Eye, EyeOff, Loader2, LockKeyhole } from '../icons';
 import { DoseEvent, Ester, ExtraKey, getToE2Factor, isTestosteroneEster, Route } from '../../logic';
 import ResultChart from '../components/ResultChart';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -158,7 +159,7 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
         return (
             <PublicShell>
                 <div className="flex min-h-[65vh] flex-col items-center justify-center px-6 text-center" aria-live="polite">
-                    <Loader2 size={24} strokeWidth={1.5} className="mb-4 animate-spin text-[var(--color-m3-primary)]" aria-hidden="true" />
+                    <Icon icon={Loader2} size={24} strokeWidth={1.5} className="mb-4 animate-spin text-[var(--color-m3-primary)]" aria-hidden="true" />
                     <p className="text-sm text-muted">{copy.loading}</p>
                 </div>
             </PublicShell>
@@ -171,7 +172,7 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
                 <main className="mx-auto flex min-h-[70vh] max-w-md items-center px-6 py-16">
                     <div className="w-full rounded-xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-bright)] p-6 shadow-[var(--shadow-m3-1)]">
                         <div className="mb-5 flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-primary-container)]">
-                            <LockKeyhole size={18} strokeWidth={1.75} />
+                            <Icon icon={LockKeyhole} size={18} strokeWidth={1.75} />
                         </div>
                         <h1 className="text-xl font-semibold text-body">{copy.unlockTitle}</h1>
                         <p className="mt-2 text-sm leading-relaxed text-muted">{copy.unlockDescription}</p>
@@ -203,11 +204,11 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
                                     className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted hover:text-body"
                                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                                 >
-                                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    {showPassword ? <Icon icon={EyeOff} size={16} /> : <Icon icon={Eye} size={16} />}
                                 </button>
                             </div>
                             {passwordError && (
-                                <p id="share-password-error" className="mt-2 text-sm text-red-600" role="alert">{passwordError}</p>
+                                <p id="share-password-error" className="mt-2 text-sm text-cos-error" role="alert">{passwordError}</p>
                             )}
                             <button type="submit" className="btn-primary mt-4 w-full" disabled={unlocking || password.length < 8}>
                                 {unlocking ? copy.unlocking : copy.unlock}
@@ -225,7 +226,7 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
             <PublicShell>
                 <main className="mx-auto flex min-h-[70vh] max-w-md items-center px-6 py-16 text-center">
                     <div className="w-full">
-                        <AlertCircle size={28} strokeWidth={1.5} className="mx-auto mb-4 text-muted" />
+                        <Icon icon={AlertCircle} size={28} strokeWidth={1.5} className="mx-auto mb-4 text-muted" />
                         <h1 className="text-xl font-semibold text-body">
                             {expired ? copy.expiredTitle : copy.unavailableTitle}
                         </h1>
@@ -296,14 +297,14 @@ const SharedRecord = ({ details }: { details: ShareDetails }) => {
                         {details.passwordRequired && (
                             <div className="flex shrink-0 flex-wrap gap-2 text-xs text-muted">
                                 <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-m3-outline-variant)] px-2.5 py-1.5">
-                                    <LockKeyhole size={12} /> {copy.protected}
+                                    <Icon icon={LockKeyhole} size={12} /> {copy.protected}
                                 </span>
                             </div>
                         )}
                     </div>
                     <dl className="mt-6 flex flex-wrap gap-x-7 gap-y-2 text-xs text-muted">
                         <div className="flex items-center gap-1.5">
-                            <Clock3 size={13} />
+                            <Icon icon={Clock3} size={13} />
                             <dt>{copy.sharedOn}</dt>
                             <dd className="text-body">{formatDateTime(details.createdAt)}</dd>
                         </div>

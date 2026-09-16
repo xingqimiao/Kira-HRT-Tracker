@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
+import Icon from './Icon';
 import { useTranslation } from '../contexts/LanguageContext';
 import { QRCodeSVG } from 'qrcode.react';
-import { Check, Copy, Eye, EyeOff } from 'lucide-react';
+import { Check, Copy, Eye, EyeOff } from '../icons';
 
 /**
  * The secret half of authenticator enrolment: a QR code plus the key in text.
@@ -66,7 +67,7 @@ const TotpSecretDisplay: React.FC<TotpSecretDisplayProps> = ({
   return (
     <div className="space-y-3">
       <div className="flex flex-col items-center gap-2">
-        <div className="rounded-[var(--radius-md)] bg-white p-3 border border-[var(--color-m3-outline-variant)] shadow-[var(--shadow-m3-1)]">
+        <div className="rounded-[var(--radius-md)] bg-cos-surface-container p-3 border border-[var(--color-m3-outline-variant)] shadow-[var(--shadow-m3-1)]">
           <QRCodeSVG
             value={otpauthUri}
             size={160}
@@ -76,36 +77,36 @@ const TotpSecretDisplay: React.FC<TotpSecretDisplayProps> = ({
             fgColor="#000000"
           />
         </div>
-        <p className="text-xs text-center text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+        <p className="text-xs text-center text-[var(--color-m3-on-surface-variant)] ">
           {t('core.secret.scan')}
         </p>
       </div>
 
       <div className="space-y-1.5">
-        <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]">
+        <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">
           {t('core.secret.or_manual')}
         </p>
         <div className="flex items-stretch gap-2">
-          <div className="flex-1 min-w-0 font-mono text-[0.8125rem] tracking-[0.08em] px-3 py-2.5 rounded-[var(--radius-sm)] border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] bg-[var(--color-m3-surface-container-low)] dark:bg-[var(--color-m3-dark-surface-container)] break-all">
+          <div className="flex-1 min-w-0 font-mono text-[0.8125rem] tracking-[0.08em] px-3 py-2.5 rounded-[var(--radius-sm)] border border-[var(--color-m3-outline-variant)]  bg-[var(--color-m3-surface-container-low)]  break-all">
             {revealed ? grouped : '•••• •••• •••• •••• •••• •••• ••••'}
           </div>
           <button
             type="button"
             onClick={copy}
-            className="shrink-0 px-3 rounded-[var(--radius-sm)] border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container-high)] transition-colors"
+            className="shrink-0 px-3 rounded-[var(--radius-sm)] border border-[var(--color-m3-outline-variant)]  hover:bg-[var(--color-m3-surface-container)]  transition-colors"
             style={{ transitionDuration: 'var(--md-sys-motion-duration-short3)' }}
             aria-label={t('core.secret.copy_aria')}
           >
-            {copied ? <Check size={16} /> : <Copy size={16} />}
+            {copied ? <Icon icon={Check} size={16} /> : <Icon icon={Copy} size={16} />}
           </button>
         </div>
         <button
           type="button"
           onClick={() => setRevealed(v => !v)}
-          className="text-xs inline-flex items-center gap-1 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] hover:underline"
+          className="text-xs inline-flex items-center gap-1 text-[var(--color-m3-on-surface-variant)]  hover:underline"
           aria-pressed={revealed}
         >
-          {revealed ? <EyeOff size={13} /> : <Eye size={13} />}
+          {revealed ? <Icon icon={EyeOff} size={13} /> : <Icon icon={Eye} size={13} />}
           {revealed ? t('core.secret.hide') : t('core.secret.show')}
         </button>
       </div>

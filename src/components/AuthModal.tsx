@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { X, Loader2, Fingerprint } from 'lucide-react';
+import Icon from './Icon';
+import { X, Loader2, Fingerprint } from '../icons';
 import ShieldIcon from './ShieldIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -120,13 +121,13 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                         {isLogin ? t('auth.sign_in') : t('auth.sign_up')}
                     </h2>
                     <button onClick={onClose} className="p-1 text-muted hover:text-body">
-                        <X size={18} />
+                        <Icon icon={X} size={18} />
                     </button>
                 </div>
 
                 <form onSubmit={handleSubmit} className="px-5 pb-5 pt-1 space-y-3">
                     {error && (
-                        <div className="p-2.5 text-xs text-red-600 dark:text-red-400 callout border-red-200 dark:border-red-900/30">
+                        <div className="p-2.5 text-xs text-cos-error  callout border-cos-error ">
                             {error}
                         </div>
                     )}
@@ -158,7 +159,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                     {needsTOTP && isLogin && (
                         <div className="space-y-3">
                             <div className="callout flex items-center gap-2 text-xs">
-                                <ShieldIcon size={16} className="shrink-0 text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)]" />
+                                <ShieldIcon size={16} className="shrink-0 text-[var(--color-m3-primary)] " />
                                 {t('auth.needs_2fa')}
                             </div>
                             {useBackupCode ? (
@@ -200,15 +201,15 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                                         </div>
                                     )}
                                     {twoFAMethod === 'passkey' && typeof window !== 'undefined' && !window.PublicKeyCredential && (
-                                        <p className="text-xs text-red-500 text-center">{t('auth.passkey_unsupported')}</p>
+                                        <p className="text-xs text-cos-error text-center">{t('auth.passkey_unsupported')}</p>
                                     )}
                                     {typeof window !== 'undefined' && !!window.PublicKeyCredential && (
                                         <>
                                             {twoFAMethod !== 'passkey' && (
                                                 <div className="flex items-center gap-2">
-                                                    <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] dark:bg-[var(--color-m3-dark-outline-variant)]" />
+                                                    <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] " />
                                                     <span className="text-xs text-muted">{t('common.or')}</span>
-                                                    <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] dark:bg-[var(--color-m3-dark-outline-variant)]" />
+                                                    <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] " />
                                                 </div>
                                             )}
                                             <button
@@ -217,7 +218,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                                                 disabled={passkeyLoading}
                                                 className="btn-secondary w-full"
                                             >
-                                                {passkeyLoading ? <Loader2 size={16} className="animate-spin" /> : <Fingerprint size={16} />}
+                                                {passkeyLoading ? <Icon icon={Loader2} size={16} className="animate-spin" /> : <Icon icon={Fingerprint} size={16} />}
                                                 {t('auth.passkey_as_2fa')}
                                             </button>
                                         </>
@@ -237,7 +238,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                         disabled={loading}
                         className="btn-primary w-full mt-1"
                     >
-                        {loading && <Loader2 size={16} className="animate-spin" />}
+                        {loading && <Icon icon={Loader2} size={16} className="animate-spin" />}
                         {isLogin ? t('auth.sign_in') : t('auth.sign_up')}
                     </button>
                     )}
@@ -247,7 +248,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                         <button
                             type="button"
                             onClick={() => { setIsLogin(!isLogin); setError(null); }}
-                            className="text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)] hover:underline"
+                            className="text-[var(--color-m3-primary)]  hover:underline"
                         >
                             {isLogin ? t('auth.go_register') : t('auth.go_login')}
                         </button>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import Icon from '../components/Icon';
+import { ArrowLeft } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
 
@@ -28,17 +29,17 @@ const WeightSettings: React.FC<WeightSettingsProps> = ({ weight, onSave, onBack 
         }
     };
 
-    const divider = "border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]";
+    const divider = "border-b border-[var(--color-m3-outline-variant)] ";
 
     return (
         <div className="relative pb-32">
-            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)] dark:bg-[var(--color-m3-dark-surface)] px-6 md:px-8 pt-8 pb-3">
+            <div className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3">
                 <button
                     onClick={onBack}
-                    className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)]"
+                    className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] "
                 >
-                    <ArrowLeft size={18} className="text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] shrink-0" />
-                    <span className="text-xl font-semibold text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)]">
+                    <Icon icon={ArrowLeft} size={18} className="text-[var(--color-m3-on-surface-variant)]  shrink-0" />
+                    <span className="text-xl font-semibold text-[var(--color-m3-on-surface)] ">
                         {t('status.weight')}
                     </span>
                 </button>
@@ -52,14 +53,14 @@ const WeightSettings: React.FC<WeightSettingsProps> = ({ weight, onSave, onBack 
                             inputMode="decimal"
                             value={weightStr}
                             onChange={(e) => setWeightStr(e.target.value)}
-                            className="text-4xl font-light tabular-nums text-[var(--color-m3-on-surface)] dark:text-[var(--color-m3-dark-on-surface)] w-28 bg-transparent border-b-2 border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)] focus:border-[var(--color-m3-primary)] outline-none pb-1 text-center"
+                            className="text-4xl font-light tabular-nums text-[var(--color-m3-on-surface)]  w-28 bg-transparent border-b-2 border-[var(--color-m3-outline-variant)]  focus:border-[var(--color-m3-primary)] outline-none pb-1 text-center"
                             placeholder="0.0"
                             style={{ fontSize: '40px' }}
                             autoFocus
                         />
-                        <span className="text-lg font-medium text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] pb-1">kg</span>
+                        <span className="text-lg font-medium text-[var(--color-m3-on-surface-variant)]  pb-1">kg</span>
                     </div>
-                    <p className="text-xs text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)] max-w-[140px] text-right">
+                    <p className="text-xs text-[var(--color-m3-on-surface-variant)]  max-w-[140px] text-right">
                         {t('modal.weight.desc')}
                     </p>
                 </div>
@@ -68,7 +69,7 @@ const WeightSettings: React.FC<WeightSettingsProps> = ({ weight, onSave, onBack 
                     onClick={handleSave}
                     className={`w-full flex items-center py-[18px] ${divider} text-start`}
                 >
-                    <span className="text-[0.9375rem] font-medium text-[var(--color-m3-primary)] dark:text-[var(--color-m3-primary-light)]">
+                    <span className="text-[0.9375rem] font-medium text-[var(--color-m3-primary)] ">
                         {t('btn.save')}
                     </span>
                 </button>

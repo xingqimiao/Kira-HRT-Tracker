@@ -1,4 +1,5 @@
-import { Syringe, Pill, Droplet, Sticker, X, FlaskConical, Atom, Shield, Hexagon, Orbit, Dna, Shell } from 'lucide-react';
+import { Syringe, Pill, Droplet, Sticker, X, FlaskConical, Atom, Shield, Hexagon, Orbit, Dna, Shell } from '../icons';
+import Icon from '../components/Icon';
 import { Route, DoseEvent, Ester, getBioavailabilityMultiplier, getToE2Factor, ExtraKey } from '../../logic';
 import { Lang } from '../i18n/translations';
 
@@ -78,29 +79,29 @@ export const formatTime = (date: Date, timeZone?: string) => {
     return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false, timeZone });
 };
 
-const iconMuted = "w-5 h-5 text-[var(--color-m3-on-surface-variant)] dark:text-[var(--color-m3-dark-on-surface-variant)]";
+const iconMuted = "w-5 h-5 text-[var(--color-m3-on-surface-variant)] ";
 
 export const getRouteIcon = (route: Route) => {
     switch (route) {
-        case Route.injection: return <Syringe className={iconMuted} />;
-        case Route.oral: return <Pill className={iconMuted} />;
-        case Route.sublingual: return <Pill className={iconMuted} />;
-        case Route.gel: return <Droplet className={iconMuted} />;
-        case Route.patchApply: return <Sticker className={iconMuted} />;
-        case Route.patchRemove: return <X className={iconMuted} />;
+        case Route.injection: return <Icon icon={Syringe} className={iconMuted} />;
+        case Route.oral: return <Icon icon={Pill} className={iconMuted} />;
+        case Route.sublingual: return <Icon icon={Pill} className={iconMuted} />;
+        case Route.gel: return <Icon icon={Droplet} className={iconMuted} />;
+        case Route.patchApply: return <Icon icon={Sticker} className={iconMuted} />;
+        case Route.patchRemove: return <Icon icon={X} className={iconMuted} />;
     }
 };
 
 export const getEsterIcon = (ester: Ester) => {
     switch (ester) {
-        case Ester.E2: return <Atom className={iconMuted} />;
-        case Ester.CPA: return <Shield className={iconMuted} />;
-        case Ester.EV: return <Shell className={iconMuted} />;
-        case Ester.EB: return <Hexagon className={iconMuted} />;
-        case Ester.EC: return <Orbit className={iconMuted} />;
-        case Ester.EN: return <Dna className={iconMuted} />;
-        case Ester.EU: return <FlaskConical className={iconMuted} />;
-        default: return <FlaskConical className={iconMuted} />;
+        case Ester.E2: return <Icon icon={Atom} className={iconMuted} />;
+        case Ester.CPA: return <Icon icon={Shield} className={iconMuted} />;
+        case Ester.EV: return <Icon icon={Shell} className={iconMuted} />;
+        case Ester.EB: return <Icon icon={Hexagon} className={iconMuted} />;
+        case Ester.EC: return <Icon icon={Orbit} className={iconMuted} />;
+        case Ester.EN: return <Icon icon={Dna} className={iconMuted} />;
+        case Ester.EU: return <Icon icon={FlaskConical} className={iconMuted} />;
+        default: return <Icon icon={FlaskConical} className={iconMuted} />;
     }
 };
 

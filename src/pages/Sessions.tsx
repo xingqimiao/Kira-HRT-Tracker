@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Monitor, Smartphone, Loader2, LogOut, X } from 'lucide-react';
+import Icon from '../components/Icon';
+import { ArrowLeft, Monitor, Smartphone, Loader2, LogOut, X } from '../icons';
 import { authService, Session } from '../services/auth';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
@@ -92,16 +93,16 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, onBack }) => {
     };
 
     const otherSessions = sessions.filter(s => !s.is_current);
-    const divider = 'border-b border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]';
+    const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
 
     return (
         <div className="relative pb-32">
-            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)] dark:bg-[var(--color-m3-dark-surface)] px-6 md:px-10 pt-8 pb-3">
+            <div className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-10 pt-8 pb-3">
                 <button
                     onClick={onBack}
-                    className="flex items-center gap-2 -ml-2 px-2 py-1.5 rounded-md hover:bg-[var(--color-m3-surface-container-low)] dark:hover:bg-[var(--color-m3-dark-surface-container-low)] transition-colors"
+                    className="flex items-center gap-2 -ml-2 px-2 py-1.5 rounded-md hover:bg-[var(--color-m3-surface-container-low)]  transition-colors"
                 >
-                    <ArrowLeft size={18} strokeWidth={1.5} className={`${settingsMuted} shrink-0`} />
+                    <Icon icon={ArrowLeft} size={18} strokeWidth={1.5} className={`${settingsMuted} shrink-0`} />
                     <span className={`text-xl font-semibold ${settingsOn}`}>{t('account.sessions')}</span>
                 </button>
                 <p className={`text-sm ${settingsMuted} mt-1 ml-0.5 leading-relaxed`}>{t('account.sessions_desc')}</p>
@@ -110,7 +111,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, onBack }) => {
             <div className="px-6 md:px-10 mt-2 max-w-2xl">
                 {loading ? (
                     <div className="flex justify-center py-16">
-                        <Loader2 className={`animate-spin ${settingsMuted}`} size={20} />
+                        <Icon icon={Loader2} className={`animate-spin ${settingsMuted}`} size={20} />
                     </div>
                 ) : sessions.length === 0 ? (
                     <p className={`text-sm ${settingsMuted} text-center py-14`}>{t('account.sessions_empty')}</p>
@@ -132,7 +133,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, onBack }) => {
                                         <div className="flex items-center gap-2 flex-wrap">
                                             <p className={`text-sm font-medium ${settingsOn} truncate`}>{label}</p>
                                             {s.is_current && (
-                                                <span className={`shrink-0 text-[0.6875rem] font-medium ${settingsMuted} px-1.5 py-0.5 rounded bg-[var(--color-m3-surface-container)] dark:bg-[var(--color-m3-dark-surface-container)]`}>
+                                                <span className={`shrink-0 text-[0.6875rem] font-medium ${settingsMuted} px-1.5 py-0.5 rounded bg-[var(--color-m3-surface-container)] `}>
                                                     {t('account.sessions_current')}
                                                 </span>
                                             )}
@@ -151,9 +152,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, onBack }) => {
                                             onClick={() => handleTerminate(s.id)}
                                             disabled={isTerminating || terminating === 'others'}
                                             aria-label={t('account.sessions_terminate_confirm')}
-                                            className={`shrink-0 mt-1 p-1.5 rounded-md ${settingsMuted} hover:text-[var(--color-m3-on-surface)] dark:hover:text-[var(--color-m3-dark-on-surface)] hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)] disabled:opacity-40 transition-colors`}
+                                            className={`shrink-0 mt-1 p-1.5 rounded-md ${settingsMuted} hover:text-[var(--color-m3-on-surface)]  hover:bg-[var(--color-m3-surface-container)]  disabled:opacity-40 transition-colors`}
                                         >
-                                            {isTerminating ? <Loader2 size={15} strokeWidth={1.5} className="animate-spin" /> : <X size={15} strokeWidth={1.5} />}
+                                            {isTerminating ? <Icon icon={Loader2} size={15} strokeWidth={1.5} className="animate-spin" /> : <Icon icon={X} size={15} strokeWidth={1.5} />}
                                         </button>
                                     )}
                                 </div>
@@ -166,9 +167,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, onBack }) => {
                     <button
                         onClick={handleTerminateOthers}
                         disabled={terminating === 'others'}
-                        className={`w-full flex items-center justify-center gap-2 py-3.5 mt-2 text-sm font-medium ${settingsMuted} hover:text-[var(--color-m3-on-surface)] dark:hover:text-[var(--color-m3-dark-on-surface)] disabled:opacity-50 transition-colors`}
+                        className={`w-full flex items-center justify-center gap-2 py-3.5 mt-2 text-sm font-medium ${settingsMuted} hover:text-[var(--color-m3-on-surface)]  disabled:opacity-50 transition-colors`}
                     >
-                        {terminating === 'others' ? <Loader2 size={15} strokeWidth={1.5} className="animate-spin" /> : <LogOut size={15} strokeWidth={1.5} />}
+                        {terminating === 'others' ? <Icon icon={Loader2} size={15} strokeWidth={1.5} className="animate-spin" /> : <Icon icon={LogOut} size={15} strokeWidth={1.5} />}
                         {t('account.sessions_terminate_others')}
                     </button>
                 )}

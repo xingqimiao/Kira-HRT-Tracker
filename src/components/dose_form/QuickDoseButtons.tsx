@@ -1,5 +1,6 @@
 import React from 'react';
-import { Plus, X } from 'lucide-react';
+import Icon from '../Icon';
+import { Plus, X } from '../../icons';
 import { v4 as uuidv4 } from 'uuid';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useDialog } from '../../contexts/DialogContext';
@@ -84,9 +85,9 @@ const QuickDoseButtons: React.FC<QuickDoseButtonsProps> = ({
                         type="button"
                         onClick={() => onSelectDose(dose.value)}
                         className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md border
-                            border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]
+                            border-[var(--color-m3-outline-variant)] 
                             text-body
-                            hover:bg-[var(--color-m3-surface-container)] dark:hover:bg-[var(--color-m3-dark-surface-container)]"
+                            hover:bg-[var(--color-m3-surface-container)] "
                     >
                         {formatValue(dose.value)} {unit}
                     </button>
@@ -94,11 +95,11 @@ const QuickDoseButtons: React.FC<QuickDoseButtonsProps> = ({
                         type="button"
                         onClick={(e) => { e.stopPropagation(); handleDelete(dose.id); }}
                         className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-md flex items-center justify-center
-                            bg-[var(--color-m3-surface-container)] dark:bg-[var(--color-m3-dark-surface-container)]
-                            text-muted border border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]
+                            bg-[var(--color-m3-surface-container)] 
+                            text-muted border border-[var(--color-m3-outline-variant)] 
                             opacity-0 group-hover:opacity-100"
                     >
-                        <X size={10} strokeWidth={3} />
+                        <Icon icon={X} size={10} strokeWidth={3} />
                     </button>
                 </div>
             ))}
@@ -106,13 +107,13 @@ const QuickDoseButtons: React.FC<QuickDoseButtonsProps> = ({
                 type="button"
                 onClick={handleAdd}
                 className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md border border-dashed
-                    border-[var(--color-m3-outline-variant)] dark:border-[var(--color-m3-dark-outline-variant)]
+                    border-[var(--color-m3-outline-variant)] 
                     text-muted
-                    hover:border-[var(--color-m3-outline)] dark:hover:border-[var(--color-m3-dark-outline)]
+                    hover:border-[var(--color-m3-outline)] 
                     hover:text-body"
                 title={t('quickdose.add')}
             >
-                <Plus size={14} strokeWidth={2.5} />
+                <Icon icon={Plus} size={14} strokeWidth={2.5} />
             </button>
         </div>
     );
