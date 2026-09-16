@@ -2,7 +2,7 @@
 
 @variant dark (&:is(.dark *));
 
-@theme {
+@theme static {
     --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, "Noto Sans Hebrew", "Noto Sans Arabic", sans-serif;
     --font-display: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, "Noto Sans Hebrew", "Noto Sans Arabic", sans-serif;
 
@@ -65,10 +65,90 @@
     --shadow-m3-2: 0 1px 3px rgba(0, 0, 0, 0.06);
     --shadow-m3-3: 0 2px 8px rgba(0, 0, 0, 0.08);
 
-    /* Motion — subtle and quick */
-    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-    --duration-quick: 150ms;
-    --duration-base: 220ms;
+    /* ═══════════════════════════════════════════════════════════════════════
+       MOTION — Material 3 tokens
+       ═══════════════════════════════════════════════════════════════════════
+
+       Two families, and which one to use is decided by what is moving:
+
+         - **Easing + duration** for *transitions* — entering, exiting, or moving
+           along a shared axis. The spec keeps these for anything whose start and
+           end are both meaningful on screen.
+         - **Spring-like curves** for *expressive* motion — a component that should
+           feel physical, like a dialog appearing or a toggle snapping. M3 Expressive
+           implements these with real spring physics in Compose; Material Web is in
+           maintenance and has none, so the web approximation is an overshoot cubic
+           bezier. Kept deliberately subtle: the overshoot is a settle, not a bounce.
+
+       Named after the spec rather than by what they look like, so a value can be
+       corrected without renaming its callers.
+       ═══════════════════════════════════════════════════════════════════════ */
+
+    /* — Easing, legacy/transition set (M3 spec values) — */
+    --md-sys-motion-easing-linear: cubic-bezier(0, 0, 1, 1);
+    --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+    --md-sys-motion-easing-standard-decelerate: cubic-bezier(0, 0, 0, 1);
+    --md-sys-motion-easing-standard-accelerate: cubic-bezier(0.3, 0, 1, 1);
+    --md-sys-motion-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+    --md-sys-motion-easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+    --md-sys-motion-easing-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+
+    /* — Easing, expressive set (web approximation of the springs) —
+       `spatial` is for anything with a size or position: a sheet, a card, a FAB.
+       `effects` is for a value that changes in place: opacity, colour, a toggle
+       knob's fill. Effects must NOT overshoot, which is why they are separate. */
+    --md-sys-motion-easing-expressive-spatial: cubic-bezier(0.34, 1.28, 0.64, 1);
+    --md-sys-motion-easing-expressive-effects: cubic-bezier(0.2, 0, 0, 1);
+
+    /* — Duration (M3 spec values) — */
+    --md-sys-motion-duration-short1: 50ms;
+    --md-sys-motion-duration-short2: 100ms;
+    --md-sys-motion-duration-short3: 150ms;
+    --md-sys-motion-duration-short4: 200ms;
+    --md-sys-motion-duration-medium1: 250ms;
+    --md-sys-motion-duration-medium2: 300ms;
+    --md-sys-motion-duration-medium3: 350ms;
+    --md-sys-motion-duration-medium4: 400ms;
+    --md-sys-motion-duration-long1: 450ms;
+    --md-sys-motion-duration-long2: 500ms;
+    --md-sys-motion-duration-long3: 550ms;
+    --md-sys-motion-duration-long4: 600ms;
+    --md-sys-motion-duration-extra-long1: 700ms;
+    --md-sys-motion-duration-extra-long2: 800ms;
+    --md-sys-motion-duration-extra-long3: 900ms;
+    --md-sys-motion-duration-extra-long4: 1000ms;
+
+    /* — Composed transitions, so call sites name an intent, not three values.
+         Durations are the ones the spec pairs with each curve. — */
+    /* Entering the screen: 400ms, decelerating into place. */
+    --md-sys-motion-transition-enter: var(--md-sys-motion-duration-medium4)
+        var(--md-sys-motion-easing-emphasized-decelerate);
+    /* Leaving: 200ms, accelerating away, so the exit is never the thing that feels
+       slow about closing something. */
+    --md-sys-motion-transition-exit: var(--md-sys-motion-duration-short4)
+        var(--md-sys-motion-easing-emphasized-accelerate);
+    /* Both ends on screen: 500ms, symmetric. */
+    --md-sys-motion-transition-persist: var(--md-sys-motion-duration-long2)
+        var(--md-sys-motion-easing-emphasized);
+    /* Small utility moves (hover lift, icon swap): a shorter, plainer curve. */
+    --md-sys-motion-transition-quick: var(--md-sys-motion-duration-short3)
+        var(--md-sys-motion-easing-standard);
+    /* Expressive pop, for something that should feel physical. */
+    --md-sys-motion-transition-expressive: var(--md-sys-motion-duration-medium2)
+        var(--md-sys-motion-easing-expressive-spatial);
+
+    /* ── Back-compat aliases ────────────────────────────────────────────────
+       These names predate the token set and are referenced ~60 times across the
+       codebase. They are kept as aliases rather than renamed in one sweep:
+       a rename would be a large, purely mechanical diff that buries the motion
+       redesign in noise, and the alias makes the migration reversible. New code
+       should reach for the `--md-sys-motion-*` names directly.
+
+       `--ease-standard` deliberately maps to the *standard* curve, not emphasized:
+       it is used for hover/press feedback where a slower curve would feel laggy. */
+    --ease-standard: var(--md-sys-motion-easing-standard);
+    --duration-quick: var(--md-sys-motion-duration-short3);
+    --duration-base: var(--md-sys-motion-duration-medium1);
     /* How long the chart line takes to draw itself on. Markers and the "now"
        read-off are delayed along this same span so they land as it passes. */
     --duration-sweep: 900ms;
@@ -87,31 +167,92 @@
     to { opacity: 1; transform: none; }
 }
 
-/* Motion primitives */
-@keyframes fade-in {
+/* ═══════════════════════════════════════════════════════════════════════════
+   M3 MOTION PRIMITIVES
+
+   Entrances and exits are separate keyframes, not one animation played backwards.
+   M3 gives them different curves on purpose: entering decelerates (arrives quickly,
+   settles gently), leaving accelerates (departs gradually, then gets out of the
+   way). Reversing an entrance gives a symmetric motion that feels sluggish on the
+   way out, which is the most common way a web UI gets motion subtly wrong.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* — Fade (scrim, non-spatial content) — */
+@keyframes m3-fade-enter {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+@keyframes m3-fade-exit {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+
+/* — Dialog: scale + fade. The scale starts low enough to read as "appearing"
+     rather than "growing", and never overshoots — an overshoot on a surface the
+     user is about to read from is distracting, not playful. — */
+@keyframes m3-dialog-enter {
+    from { opacity: 0; transform: scale(0.90); }
+    to { opacity: 1; transform: none; }
+}
+@keyframes m3-dialog-exit {
+    from { opacity: 1; transform: none; }
+    to { opacity: 0; transform: scale(0.94); }
+}
+
+/* — Bottom sheet: slides from the edge it is anchored to. — */
+@keyframes m3-sheet-enter {
+    from { transform: translateY(100%); }
+    to { transform: none; }
+}
+@keyframes m3-sheet-exit {
+    from { transform: none; }
+    to { transform: translateY(100%); }
+}
+
+/* — Menu / dropdown: grows from the anchor point (`transform-origin` is set per
+     placement below). Scale-only, no fade, because a translucent menu over a
+     changing background reads as a glitch at this size. — */
+@keyframes m3-menu-enter {
+    from { opacity: 0; transform: scale(0.85); }
+    to { opacity: 1; transform: none; }
+}
+@keyframes m3-menu-exit {
+    from { opacity: 1; transform: none; }
+    to { opacity: 0; transform: scale(0.9); }
+}
+
+/* — Shared axis: forward and back navigation. Direction encodes hierarchy, so
+     going deeper moves in one direction and coming back moves the other. This is
+     the one case where reversing IS correct: the two are symmetric by definition. — */
+@keyframes m3-shared-axis-forward {
+    from { opacity: 0; transform: translateX(24px); }
+    to { opacity: 1; transform: none; }
+}
+@keyframes m3-shared-axis-backward {
+    from { opacity: 0; transform: translateX(-24px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* — State layer: the M3 press/hover feedback. A translucent overlay of the
+     component's own foreground colour, faded in — not a colour change, so it works
+     on any container colour and in any theme. — */
+@keyframes m3-state-layer-in {
     from { opacity: 0; }
     to { opacity: 1; }
 }
 
-@keyframes rise-in {
-    from { opacity: 0; transform: translateY(14px); }
-    to { opacity: 1; transform: translateY(0); }
-}
+/* ═══════════════════════════════════════════════════════════════════════════
+   LEGACY ALIASES
 
-@keyframes menu-in {
-    from { opacity: 0; transform: translateY(-4px) scale(0.98); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-@keyframes view-in-forward {
-    from { opacity: 0; transform: translateX(10px); }
-    to { opacity: 1; transform: translateX(0); }
-}
-
-@keyframes view-in-backward {
-    from { opacity: 0; transform: translateX(-10px); }
-    to { opacity: 1; transform: translateX(0); }
-}
+   These names are referenced throughout the components. Pointing them at the M3
+   keyframes upgrades every call site at once, without a mechanical rename that
+   would bury this redesign in a large diff.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@keyframes fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes rise-in { 0% { opacity: 0; transform: scale(0.94) translateY(8px); } 100% { opacity: 1; transform: none; } }
+@keyframes menu-in { 0% { opacity: 0; transform: scale(0.85); } 100% { opacity: 1; transform: none; } }
+@keyframes view-in-forward { 0% { opacity: 0; transform: translateX(24px); } 100% { opacity: 1; transform: none; } }
+@keyframes view-in-backward { 0% { opacity: 0; transform: translateX(-24px); } 100% { opacity: 1; transform: none; } }
 
 /* Prevent auto-zoom on iOS/Android when focusing small inputs.
    Excludes datetime-local/date/time/month/week which open native pickers
@@ -397,8 +538,20 @@ body {
     align-items: flex-end;
     justify-content: center;
     padding: 0;
-    background-color: rgba(0, 0, 0, 0.25);
-    animation: fade-in var(--duration-base) var(--ease-standard);
+    /* M3 scrim is a 32% black over the content beneath. Added `backdrop-filter` so
+       the surface behind reads as recessed rather than merely dimmed — the tonal
+       equivalent of the elevation M3 uses instead of shadows. */
+    background-color: rgb(0 0 0 / 0.32);
+    backdrop-filter: blur(2px);
+    animation: m3-fade-enter var(--md-sys-motion-duration-medium2)
+        var(--md-sys-motion-easing-standard-decelerate) both;
+}
+/* Leaving. `pointer-events: none` matters: the node is still in the DOM for the
+   duration of the exit, and without this a click during those 200ms hits a surface
+   that is visually gone. */
+.modal-overlay[data-state="closed"] {
+    animation: m3-fade-exit var(--md-sys-motion-transition-exit) both;
+    pointer-events: none;
 }
 @media (min-width: 768px) {
     .modal-overlay {
@@ -411,7 +564,24 @@ body {
     width: 100%;
     max-width: 24rem;
     padding-bottom: env(safe-area-inset-bottom, 0px);
-    animation: rise-in var(--duration-base) var(--ease-standard);
+    /* Compact: the surface is anchored to the bottom edge, so it arrives by sliding
+       up from it. */
+    animation: m3-sheet-enter var(--md-sys-motion-transition-enter) both;
+    will-change: transform;
+}
+.modal-shell[data-state="closed"] {
+    animation: m3-sheet-exit var(--md-sys-motion-transition-exit) both;
+}
+@media (min-width: 768px) {
+    .modal-shell {
+        /* Medium and up: the surface is centred and detached from any edge, so
+           sliding would imply an anchor it does not have. It scales in place. */
+        animation: m3-dialog-enter var(--md-sys-motion-transition-enter) both;
+        will-change: transform, opacity;
+    }
+    .modal-shell[data-state="closed"] {
+        animation: m3-dialog-exit var(--md-sys-motion-transition-exit) both;
+    }
 }
 
 .modal-card {
@@ -529,7 +699,20 @@ body {
     width: 100%;
     max-width: 36rem;
     padding-bottom: env(safe-area-inset-bottom, 0px);
-    animation: rise-in var(--duration-base) var(--ease-standard);
+    animation: m3-sheet-enter var(--md-sys-motion-transition-enter) both;
+    will-change: transform;
+}
+.modal-shell-wide[data-state="closed"] {
+    animation: m3-sheet-exit var(--md-sys-motion-transition-exit) both;
+}
+@media (min-width: 768px) {
+    .modal-shell-wide {
+        animation: m3-dialog-enter var(--md-sys-motion-transition-enter) both;
+        will-change: transform, opacity;
+    }
+    .modal-shell-wide[data-state="closed"] {
+        animation: m3-dialog-exit var(--md-sys-motion-transition-exit) both;
+    }
 }
 
 .callout {
@@ -556,7 +739,14 @@ body {
     min-width: 112px;
     max-width: 280px;
     z-index: 100;
-    animation: menu-in var(--duration-quick) var(--ease-standard);
+    /* Grows from the trigger by default (top-left). A menu placed above its
+       trigger should override this to `bottom left`. */
+    transform-origin: top left;
+    animation: m3-menu-enter var(--md-sys-motion-transition-expressive) both;
+}
+.m3-menu[data-state="closed"] {
+    animation: m3-menu-exit var(--md-sys-motion-transition-quick) both;
+    pointer-events: none;
 }
 
 .dark .m3-menu {
@@ -602,16 +792,20 @@ body {
 }
 
 .dropdown-in {
-    animation: menu-in var(--duration-quick) var(--ease-standard);
+    transform-origin: top left;
+    animation: m3-menu-enter var(--md-sys-motion-transition-expressive) both;
 }
 
 /* Page transitions — applied to the main view container, keyed by view */
+/* Drilling in and coming back are symmetric by definition, which is why this is the
+   one place a straight translation (rather than a decelerate-only entrance) is
+   correct: the motion carries meaning about which way the hierarchy went. */
 .view-enter-forward {
-    animation: view-in-forward var(--duration-base) var(--ease-standard);
+    animation: m3-shared-axis-forward var(--md-sys-motion-transition-persist) both;
 }
 
 .view-enter-backward {
-    animation: view-in-backward var(--duration-base) var(--ease-standard);
+    animation: m3-shared-axis-backward var(--md-sys-motion-transition-persist) both;
 }
 
 /* ── Ambient motion ───────────────────────────────────────────────
@@ -874,6 +1068,20 @@ select,
     .view-enter-forward,
     .view-enter-backward {
         animation: none;
+    }
+    /* Turning the animation off is not enough for anything that animates *out*.
+       The exit keyframes are what hides the surface, so with them disabled a
+       dismissed dialog would sit there visible for the exit duration — and, since
+       these nodes stay mounted while leaving, a stale dialog would block the page.
+       The closed state therefore has to be expressed as properties instead. */
+    .modal-overlay[data-state="closed"],
+    .modal-shell[data-state="closed"],
+    .modal-shell-wide[data-state="closed"],
+    .m3-menu[data-state="closed"],
+    .dropdown-in[data-state="closed"] {
+        animation: none;
+        opacity: 0;
+        visibility: hidden;
     }
     /* Hold a single resting pose instead of flicking between frames. */
     .px-ear-rest,
