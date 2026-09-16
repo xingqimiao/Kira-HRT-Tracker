@@ -6,7 +6,12 @@
 export const UNAUTHORIZED_EVENT = 'auth:unauthorized';
 
 const configuredApiOrigin = (() => {
-    const value = import.meta.env.VITE_API_ORIGIN?.trim();
+    // `import.meta.env` is Vite-only. Casting through a local shape rather than
+    // reading `import.meta.env` directly keeps this module valid for both
+    // configs — the bundler's (which declares `env`) and a plain Node/strict one
+    // (which does not) — instead of depending on ambient Vite types being loaded.
+    const viteEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+    const value = viteEnv?.VITE_API_ORIGIN?.trim();
     if (!value) return '';
     let parsed: URL;
     try {
