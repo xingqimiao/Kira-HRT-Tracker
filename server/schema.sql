@@ -1,0 +1,262 @@
+-- Application Core schema.
+--
+-- Two deliberate choices worth knowing before reading the tables:
+--
+-- 1. Health records are stored as ciphertext. A `medication_events` row cannot be
+--    read without the user's DEK, which exists server-side only while that user
+--    has an active unlock (see src/session.ts). That rules out SQL-level reporting
+--    or analytics over doses — a cost accepted on purpose, because the product's
+--    privacy claim is the thing being protected.
+--
+-- 2. Loose JSON is a `jsonb` column, not shredded into columns. The domain model
+--    in logic.ts (`DoseEvent.extras` varies per route and ester) is already
+--    shaped that way, and mirroring it in DDL would mean a migration per PK
+--    field. Row-level columns are reserved for what the server must query,
+--    index, or enforce uniqueness on.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- ---------------------------------------------------------------------------
+-- Accounts
+-- ---------------------------------------------------------------------------
+-- `wrapped_dek` is the user's data key, encrypted under a key derived from their
+-- password. The server can store it and hand it back; it cannot open it. A null
+-- value means an account created before it had a key and cannot store records
+-- until a password is set.
+-- Authentication shape, and the reason for each nullable column:
+--
+--   `password_hash` is NULLABLE because an account can be created through X
+--   OAuth. Such an account is deliberately *not usable* until a password is set:
+--   the data key is wrapped under a password-derived key, so with no password
+--   there is no key and no records can be written. `password_set_at` records that
+--   transition, and an X-created account cannot read or write anything until it
+--   is set. That is the whole answer to "what if the X account gets banned" —
+--   losing X costs the convenience of one login button, never the data.
+--
+--   `totp_secret_sealed` is the TOTP secret encrypted under a key held only in
+--   the environment (`TOTP_ENC_KEY`), not in this database. A dump that carried
+--   secrets in the clear would quietly switch off the second factor for every
+--   account, which is strictly worse than not offering 2FA at all.
+--
+--   `totp_last_step` is the highest TOTP step already spent. A code is valid for
+--   its whole 30-second step (90 with drift), so without this an observed code
+--   could be replayed inside that window. Requiring a strictly higher step makes
+--   each code single-use.
+--
+--   `failed_unlocks` / `locked_until` throttle password guessing per account.
+CREATE TABLE IF NOT EXISTS users (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    username            text NOT NULL UNIQUE,
+    display_name        text,
+    password_hash       text,
+    password_set_at     timestamptz,
+    wrapped_dek         jsonb,
+    totp_secret_sealed  text,
+    totp_enabled_at     timestamptz,
+    totp_last_step      bigint,
+    failed_unlocks      integer NOT NULL DEFAULT 0,
+    locked_until        timestamptz,
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now()
+);
+
+-- Bring a database created by an earlier revision up to the shape above.
+-- `CREATE TABLE IF NOT EXISTS` cannot add columns to a table that already exists,
+-- so an already-migrated development database would otherwise keep the old shape
+-- and fail at runtime instead of at migration time. Each line is a no-op when the
+-- column is already present.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name       text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_set_at    timestamptz;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret_sealed text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled_at    timestamptz;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_last_step     bigint;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_unlocks     integer NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until       timestamptz;
+-- Password became optional for X-created accounts.
+ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+-- The pre-encryption column, if it exists, is left in place but unused: dropping
+-- a column that might hold the only copy of someone's 2FA secret is not a
+-- migration this file should perform unattended.
+
+-- Tokens MCP clients and the web app present. Separate from the password so a
+-- leaked agent token can be revoked without a password change.
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name            text NOT NULL,
+    token_hash      text NOT NULL UNIQUE,
+    last_used_at    timestamptz,
+    expires_at      timestamptz,
+    created_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
+
+-- Recovery codes for the second factor. Hashed with scrypt, not stored
+-- reversibly: each code bypasses 2FA, so the set is equivalent to ten spare
+-- passwords and deserves the same treatment. `used_at` enforces single use.
+CREATE TABLE IF NOT EXISTS totp_backup_codes (
+    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_hash   text NOT NULL,
+    used_at     timestamptz,
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_totp_backup_codes_user
+    ON totp_backup_codes(user_id) WHERE used_at IS NULL;
+
+-- A linked external identity. One row per (provider, external account), so the
+-- same X account cannot be attached to two users, and one user can rebind to a
+-- different X account only after unlinking the old one.
+--
+-- `provider_user_id` is X's immutable numeric id, never the @handle: handles are
+-- changeable and can be released and re-registered by someone else, so keying a
+-- login on one would let a handle change transfer access.
+CREATE TABLE IF NOT EXISTS oauth_links (
+    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id           uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider          text NOT NULL CHECK (provider IN ('x')),
+    provider_user_id  text NOT NULL,
+    handle            text,
+    linked_at         timestamptz NOT NULL DEFAULT now(),
+    last_login_at     timestamptz,
+    UNIQUE (provider, provider_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_links_user ON oauth_links(user_id);
+
+-- In-flight OAuth authorizations, keyed by the `state` value.
+--
+-- Server-side rather than a signed cookie because the PKCE `code_verifier` must
+-- be stored somewhere and must not reach the browser: the verifier is what stops
+-- an intercepted authorization code from being redeemed by whoever intercepted
+-- it. Single-use, short-lived, and consumed on the callback.
+CREATE TABLE IF NOT EXISTS oauth_states (
+    state           text PRIMARY KEY,
+    code_verifier   text NOT NULL,
+    purpose         text NOT NULL CHECK (purpose IN ('login','link')),
+    -- Set for 'link': the account this authorization will be attached to.
+    user_id         uuid REFERENCES users(id) ON DELETE CASCADE,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    expires_at      timestamptz NOT NULL,
+    consumed_at     timestamptz
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states(expires_at);
+
+-- ---------------------------------------------------------------------------
+-- Health records — encrypted at rest
+-- ---------------------------------------------------------------------------
+-- Record ids are `text`, not `uuid`, because the domain treats them as opaque
+-- client-supplied strings: the app generates uuid v4 in practice but accepts any
+-- string id on import (`typeof item.id === 'string' ? item.id : uuidv4()`), and
+-- hand-written exports in the wild carry ids like `dose-2024-01-01`. Declaring
+-- them `uuid` adds a constraint the model never had and rejects real history on
+-- import. The length bound is the actual thing worth enforcing.
+--
+-- The primary key is (user_id, id), NOT id alone. Ids are client-generated, so
+-- nothing guarantees they are unique across accounts — and importing the same
+-- export into two accounts (a shared routine, a re-test) is legitimate. A global
+-- id key made the second import fail with a duplicate-key error, which is a
+-- constraint the domain never asked for. Record identity is scoped to its owner.
+--
+-- `payload` is an AES-GCM envelope: {"cloud":1,"iv":...,"data":...} holding the
+-- plaintext record. `version` implements optimistic locking, so two clients
+-- editing the same record cannot silently clobber each other — the loser gets a
+-- conflict and re-reads, rather than losing a dose entry.
+--
+-- `occurred_at` is duplicated out of the ciphertext in the clear, on purpose:
+-- the server needs to order and range-filter a timeline, and a timestamp alone
+-- leaks far less than the record it belongs to. `user_id` is likewise cleartext
+-- by necessity (see ARCHITECTURE.md).
+CREATE TABLE IF NOT EXISTS medication_events (
+    id              text NOT NULL CHECK (length(id) BETWEEN 1 AND 200),
+    user_id         uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, id),
+    occurred_at     timestamptz NOT NULL,
+    payload         jsonb NOT NULL,
+    version         integer NOT NULL DEFAULT 1,
+    deleted_at      timestamptz,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    updated_at      timestamptz NOT NULL DEFAULT now()
+);
+-- Timeline reads filter by user and order by time; this serves them from the
+-- index with no sort step.
+CREATE INDEX IF NOT EXISTS idx_medication_events_user_time
+    ON medication_events(user_id, occurred_at DESC)
+    WHERE deleted_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS lab_results (
+    id              text NOT NULL CHECK (length(id) BETWEEN 1 AND 200),
+    user_id         uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, id),
+    occurred_at     timestamptz NOT NULL,
+    payload         jsonb NOT NULL,
+    version         integer NOT NULL DEFAULT 1,
+    deleted_at      timestamptz,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    updated_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_lab_results_user_time
+    ON lab_results(user_id, occurred_at DESC)
+    WHERE deleted_at IS NULL;
+
+-- Per-user model settings: body weight, active HRT mode, PK parameter overrides,
+-- calibration method. One row per user — the settings a simulation cannot run
+-- without, which is why they are not folded into the event stream.
+CREATE TABLE IF NOT EXISTS user_settings (
+    user_id             uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    body_weight_kg      numeric(6,2),
+    hrt_mode            text NOT NULL DEFAULT 'transfem'
+                        CHECK (hrt_mode IN ('transfem','transmasc')),
+    calibration_method  text NOT NULL DEFAULT 'mipd'
+                        CHECK (calibration_method IN ('off','ekf','ou_kalman','mipd')),
+    calibration_history text NOT NULL DEFAULT 'retrospective'
+                        CHECK (calibration_history IN ('forward','retrospective')),
+    pk_params           jsonb,
+    timezone            text,
+    -- App-only collections that are not clinical records and that no agent has a
+    -- use for: dose templates and quick-dose buttons the web UI remembers. They
+    -- still have to survive a sync, or switching devices loses them, but giving
+    -- each its own table would put UI conveniences in the domain schema. One opaque
+    -- blob keeps them syncable without pretending they are records.
+    app_state           jsonb,
+    updated_at          timestamptz NOT NULL DEFAULT now()
+);
+
+-- ---------------------------------------------------------------------------
+-- Audit
+-- ---------------------------------------------------------------------------
+
+-- A record that an account was deleted, deliberately carrying no identifier.
+--
+-- Deleting an account cascades away every row that names it, which is what makes the
+-- deletion promise in the Privacy Policy true. But an operator still needs to be able
+-- to answer basic questions: are accounts being deleted in bulk (abuse, or a bug),
+-- and how long do people stay. Those are answerable from counts and timestamps alone.
+--
+-- `user_created_at` is the one field that is arguably identifying, and it is kept
+-- because "how long after signing up do people leave" is the useful signal. It is a
+-- timestamp at minute granularity with no account attached — write it rounded if you
+-- want to be stricter. There is no username, no id, and no IP, so the row cannot be
+-- tied back to a person or joined to anything.
+CREATE TABLE IF NOT EXISTS deletion_log (
+    id               bigserial PRIMARY KEY,
+    reason           text NOT NULL,
+    user_created_at  timestamptz,
+    deleted_at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_deletion_log_deleted_at ON deletion_log(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_deletion_log_reason ON deletion_log(reason);
+-- Records that an unlock happened, not what was read. Deliberately no record
+-- contents, since the server cannot read them anyway.
+--
+-- These rows are removed when an account is deleted, rather than kept with a nulled
+-- `user_id`. They carry an IP address, which is personal data, and the whole point of
+-- deletion is that nothing linkable survives. The aggregate fact of the deletion is
+-- preserved in `deletion_log` without identifiers.
+CREATE TABLE IF NOT EXISTS auth_events (
+    id          bigserial PRIMARY KEY,
+    user_id     uuid REFERENCES users(id) ON DELETE SET NULL,
+    kind        text NOT NULL,
+    ip          inet,
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_auth_events_user_time ON auth_events(user_id, created_at DESC);
