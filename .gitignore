@@ -29,6 +29,15 @@ src-tauri/target/release
 .wrangler
 .dev.vars
 
+# Credentials handed over out-of-band (X developer portal, etc). These arrive as
+# loose text/JSON files and would otherwise be swept up by `git add .` — which is
+# exactly how an OAuth client secret ends up in a public repository.
+oauth*.txt
+*credentials*.txt
+*secret*.txt
+client_secret*
+
+
 # Docker runtime configuration
 .env
 .env.*
@@ -38,3 +47,11 @@ data/
 # Test Data
 test_data_*.json
 /media
+
+# Test Postgres clusters (the suite boots an embedded one per file) and the local
+# UI-test server. These are thousands of binary files and must never be committed.
+.pgdata*/
+server/.pgdata*/
+serve_ui.mjs
+ui_server.mjs
+.playwright-mcp/
