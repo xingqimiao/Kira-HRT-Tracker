@@ -307,9 +307,20 @@ badly.
 
 ## 11. Practical checklist before publishing
 
-1. Fill in: legal entity, contact address, jurisdiction, effective date, retention
-   periods for backups and audit logs, minimum age.
-3. Confirm every claim against the code. The encryption claims, the "no analytics"
+1. Fill in: **who operates the service**, a contact address, jurisdiction, effective
+   date, retention periods for backups and audit logs, minimum age.
+
+   **An individual operator needs no company, and no legal entity.** This guide used to
+   say "legal entity", and the ToS skeleton's placeholder was `[[OPERATOR_LEGAL_NAME]]`,
+   which together read as though a registered entity were required to publish terms.
+   It is not: the field exists so a reader knows who they are dealing with, and for one
+   person running a project that is a name or a handle. Where the operator is
+   deliberately pseudonymous — as here, for a service handling trans health data —
+   signing as a project name is the more accurate choice, not a lesser one, because it
+   avoids publishing a real name that the operator has good reason to keep private.
+   What the terms must not do is *leave it blank*: an agreement that does not say who
+   is bound by it is not doing its job.
+2. Confirm every claim against the code. The encryption claims, the "no analytics"
    claim, and the share-link exclusions are all verifiable — see `ARCHITECTURE.md`.
 4. Add the policy link in the app's footer, and in the sign-in and signup screens. X
    checks that the policy is *linked from* the app, not merely reachable.
