@@ -6,6 +6,8 @@ import TotpSecretDisplay from '../components/TotpSecretDisplay';
 import { coreAuth, CoreAuthError, readXCallbackParams } from '../services/coreAuth';
 import { useCoreSession } from '../hooks/useCoreSession';
 import { useTranslation } from '../contexts/LanguageContext';
+import { setXLandingIntent } from '../utils/xLandingIntent';
+import type { ViewKey } from '../hooks/useAppNavigation';
 
 /**
  * Where the browser lands after an X authorization.
@@ -23,7 +25,15 @@ import { useTranslation } from '../contexts/LanguageContext';
  */
 
 interface XAuthLandingProps {
-  navigate: (view: string) => void;
+  /**
+     * Leave the landing for a view in the app.
+     *
+     * The landing renders instead of the app shell — it has to, so the spent
+     * callback code is cleaned before anything else runs — so it cannot switch
+     * views in place. The destination and any username are persisted, the page
+     * reloads, and App applies them on the other side.
+     */
+  navigate: (view: ViewKey, options?: { username?: string }) => void;
   onPrefillSignIn?: (username: string) => void;
   onSignedIn?: () => void;
 }
@@ -115,7 +125,7 @@ const XAuthLanding: React.FC<XAuthLandingProps> = ({
           icon={<Icon icon={CheckCircle2} size={18} className="text-[var(--color-m3-primary)]" />}
           body={(params.handle ? `@${params.handle}. ` : '') + t('core.x.linked_body')}
         />
-        <button type="button" onClick={() => navigate('settings')} className="btn-primary mt-6 w-full">
+        <button type="button" onClick={() => navigate('account')} className="btn-primary mt-6 w-full">
           {t('core.x.back_settings')}
         </button>
       </Page>
@@ -159,8 +169,11 @@ const XAuthLanding: React.FC<XAuthLandingProps> = ({
         <button
           type="button"
           onClick={() => {
+            // Straight to the Core form with the username filled in. This went to
+            // Home and passed the name to a prefill that nothing rendered, so the
+            // flow ended where it started having just proved who the user was.
             onPrefillSignIn?.(username);
-            navigate('home');
+            navigate('account', { username });
           }}
           className="btn-primary mt-6 w-full"
         >

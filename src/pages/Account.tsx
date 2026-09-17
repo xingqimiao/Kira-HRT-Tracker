@@ -27,6 +27,15 @@ interface AccountProps {
     lastSyncedAt: number | null;
     /** Runs a sync now. Present so the status row can be acted on, not just read. */
     onSyncNow: () => void;
+    /**
+     * A username to pre-fill the sign-in form with.
+     *
+     * Set when the X landing sent the user here: X has just confirmed who they are,
+     * so asking them to type the same name again is a step with no purpose. It
+     * previously reached only the modal, so the inline form — the one on this page —
+     * came up empty.
+     */
+    initialUsername?: string;
 }
 
 const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
@@ -62,6 +71,7 @@ const Account: React.FC<AccountProps> = ({
     syncStatus,
     lastSyncedAt,
     onSyncNow,
+    initialUsername,
 }) => {
     const { t } = useTranslation();
     const { showDialog } = useDialog();
@@ -185,7 +195,7 @@ const Account: React.FC<AccountProps> = ({
                 /* The one sign-in form in the app, rendered inline. `onCancel` is
                    deliberately absent: there is nothing to close, the form is the page. */
                 <div className="mx-auto w-full max-w-sm">
-                    <CoreAuthForm session={session} />
+                    <CoreAuthForm session={session} initialUsername={initialUsername} />
                 </div>
             )}
         </div>

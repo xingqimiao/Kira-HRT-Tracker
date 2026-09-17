@@ -12,6 +12,7 @@ import { useLiveShareSync } from './hooks/useLiveShareSync';
 import { useCloudSync } from './hooks/useCloudSync';
 import { useCoreSync } from './hooks/useCoreSync';
 import { onAppSettingsApplied } from './utils/appSettings';
+import { setXLandingIntent, takeXLandingIntent } from './utils/xLandingIntent';
 
 import WeightEditorModal from './components/WeightEditorModal';
 import DoseFormModal from './components/DoseFormModal';
@@ -65,8 +66,22 @@ const AppContent = () => {
      * present, preferring Core.
      */
     const coreSession = useCoreSession();
+
+    /**
+     * What the X landing asked for, read once during this first render.
+     *
+     * State rather than an effect, and read *before* the hooks that consume it, for two
+     * reasons: an effect applies the navigation after the first paint, so the user would
+     * see Home flash and then Account, and it made correctness depend on declaration
+     * order — the effect sat above `setPrefillUsername` and `handleViewChange`.
+     *
+     * `takeXLandingIntent` clears the key as it reads it, so a later manual reload does
+     * not drag the user back to the Account tab.
+     */
+    const [xIntent] = useState(() => takeXLandingIntent());
+
     const [isCoreAuthOpen, setIsCoreAuthOpen] = useState(false);
-    const [prefillUsername, setPrefillUsername] = useState('');
+    const [prefillUsername, setPrefillUsername] = useState(xIntent?.username ?? '');
 
     // Use Custom Hooks
     const {
@@ -111,7 +126,7 @@ const AppContent = () => {
         handleViewChange,
         mainScrollRef,
         navItems,
-    } = useAppNavigation(user);
+    } = useAppNavigation(user, xIntent?.view);
 
 
     // --- Local UI State (Modals & Forms) ---
@@ -604,6 +619,9 @@ const AppContent = () => {
                             syncStatus={coreSyncState.status}
                             lastSyncedAt={coreSyncState.lastSyncedAt}
                             onSyncNow={() => void coreSyncState.syncNow()}
+                            /* Carried through from the X landing, which knows the
+                               username X just confirmed. */
+                            initialUsername={prefillUsername}
                         />
                     )}
 
@@ -802,7 +820,14 @@ const App = () => {
                         <AuthProvider>
                             <CoreSessionProvider>
                             <ErrorBoundary>
-                                <XAuthLanding navigate={() => {
+                                <XAuthLanding navigate={(view, options) => {
+                                    // The destination is persisted, not used here: this
+                                    // route renders *instead of* the app shell, so it
+                                    // cannot switch views in place, and the reload below
+                                    // is what brings the shell back. Without persisting it,
+                                    // every button landed on Home — including the one
+                                    // that continues a sign-in.
+                                    setXLandingIntent({ view, username: options?.username });
                                     // Replace, not push: the callback URL carries a
                                     // spent one-time code, and Back must not return to
                                     // a link that cannot work twice.

@@ -4,11 +4,17 @@ import { useTranslation } from '../contexts/LanguageContext';
 
 export type ViewKey = 'home' | 'share' | 'history' | 'lab' | 'lab-calibration' | 'settings' | 'account' | 'admin' | 'sessions' | 'two-factor' | 'change-password' | 'delete-account' | 'edit-profile' | 'edit-avatar' | 'pk-params' | 'settings-hrt-mode' | 'settings-language' | 'settings-appearance' | 'settings-weight' | 'settings-export' | 'settings-import' | 'settings-security' | 'settings-mcp' | 'settings-licences';
 
-export const useAppNavigation = (user: any) => {
+/**
+ * `initialView` exists for the X landing: it renders instead of the app shell, so it
+ * cannot switch tabs itself and hands the destination over as the page reloads. Taking it
+ * as an initial state rather than navigating in an effect means the very first paint is
+ * the right tab — no flash of Home, and no dependence on effect timing.
+ */
+export const useAppNavigation = (user: any, initialView: ViewKey = 'home') => {
     const { t } = useTranslation();
 
     // --- State ---
-    const [currentView, setCurrentView] = useState<ViewKey>('home');
+    const [currentView, setCurrentView] = useState<ViewKey>(initialView);
     const [transitionDirection, setTransitionDirection] = useState<'forward' | 'backward'>('forward');
     const mainScrollRef = useRef<HTMLDivElement>(null);
 
