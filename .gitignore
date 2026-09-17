@@ -70,3 +70,9 @@ public/ocr/
 # Scratch space some tooling creates at the repo root (e.g. a temp bundle written
 # by a check script). Never part of the app.
 /tmp/
+
+# One-off edit scripts. They are written to make a single change to a file, applied,
+# and deleted — but they keep surviving `git add -A` because they exist for the few
+# seconds between writing and running. Ignoring the pattern is cheaper than noticing
+# them in the status every time.
+/_tmp-*.mjs
