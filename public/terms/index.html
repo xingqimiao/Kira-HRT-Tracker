@@ -13,12 +13,11 @@
   reads as a broken policy link — so this lives in `public/terms/index.html` and is
   copied verbatim to the web root at build time.
 
-  PLACEHOLDERS: every token written as a name inside double square brackets needs a
-  real value before this is published. Do not spell one out in this comment — a
-  literal example here becomes a false positive for the command below, which is the
-  only reliable way to find them all:
-
-      grep -o '\[\[[A-Z_]*\]\]' dist/terms/index.html | sort -u
+  VALUES: this document is in force as of 18 September 2026 and carries no
+  placeholders. The operator, contact address, jurisdiction and liability cap are
+  filled with the project's real position, so there is nothing left to substitute.
+  If any of them change, edit the text directly — and keep them consistent with the
+  Privacy Policy, which must not describe the data handling differently.
 -->
 <style>
   :root { color-scheme: light dark; }
@@ -46,19 +45,12 @@
 <body>
 
 <h1>Terms of Service</h1>
-<p class="meta">Kira Tracker · Effective [[EFFECTIVE_DATE]] · Last updated [[EFFECTIVE_DATE]]</p>
-
-<div class="draft">
-  <strong>This is a draft skeleton, not yet in force.</strong> Every bracketed name below
-  needs a real value, and the whole document should be reviewed by someone qualified in
-  [[JURISDICTION]] before it is relied on. It is published at this URL so the X
-  developer application can be submitted; replace this notice when the terms are final.
-</div>
+<p class="meta">Kira Tracker · Effective 18 September 2026 · Last updated 18 September 2026</p>
 
 <h2>1. Who we are</h2>
 <p>
-  Kira Tracker ("the Service") is operated by [[OPERATOR_LEGAL_NAME]] ("we", "us"),
-  reachable at [[CONTACT_EMAIL]]. The Service is available at
+  Kira Tracker ("the Service") is operated by the KiraMyao project ("we", "us"),
+  reachable at report@kiramyao.com. The Service is available at
   <a href="https://hrt.kiramyao.com">hrt.kiramyao.com</a>.
 </p>
 
@@ -148,7 +140,7 @@
   <li>Recovery codes are issued once. Store them somewhere safe. If you lose both your
       authenticator and your recovery codes, the records in that account cannot be
       recovered by anyone, including us.</li>
-  <li>You must be at least 13 years old, and old enough in [[JURISDICTION]] to consent
+  <li>You must be at least 13 years old, and old enough in the People's Republic of China to consent
       to this Service. See section 11.</li>
   <li>One account per person. Do not share account credentials.</li>
 </ul>
@@ -218,11 +210,11 @@
   decision you make about medication is yours and your prescriber's.
 </p>
 <p>
-  To the extent permitted by the law of [[JURISDICTION]]: the Service is provided
+  To the extent permitted by the law of the People's Republic of China: the Service is provided
   without warranties of any kind, including any warranty that an estimate is accurate,
   complete, or suitable for your circumstances; we are not liable for indirect or
   consequential loss, or for any loss arising from a decision about medication made
-  using the Service; and our total liability is limited to [[LIABILITY_CAP]].
+  using the Service; and our total liability is limited to the total amount you have paid us for the Service in the twelve months before the claim, which is nil because the Service is free.
 </p>
 <p>
   Nothing in these terms excludes liability that cannot lawfully be excluded, and
@@ -233,20 +225,20 @@
 <p>
   The Service is not directed at children under 13, and we do not knowingly hold
   accounts for them. If you believe a child under 13 has an account, write to
-  [[CONTACT_EMAIL]] and we will remove it. Users between 13 and the age of majority
-  in [[JURISDICTION]] should have a parent or guardian's permission.
+  report@kiramyao.com and we will remove it. Users between 13 and the age of majority
+  in the People's Republic of China should have a parent or guardian's permission.
 </p>
 
 <h2>12. Termination</h2>
 <p>
   You may stop using the Service at any time and request deletion of your account and
-  records at [[CONTACT_EMAIL]]. We may terminate your access for a breach of these
-  terms. On termination, [[RETENTION_ON_TERMINATION]].
+  records at report@kiramyao.com. We may terminate your access for a breach of these
+  terms. On termination, your account and everything attached to it are deleted immediately and completely — records, lab results, settings, recovery codes, API tokens and any linked X account.
 </p>
 
 <h2>13. Governing law</h2>
 <p>
-  These terms are governed by the laws of [[JURISDICTION]], and disputes are subject to
+  These terms are governed by the laws of the People's Republic of China, and disputes are subject to
   the exclusive jurisdiction of its courts.
 </p>
 
@@ -259,12 +251,12 @@
 
 <h2>15. Contact</h2>
 <p>
-  Questions about these terms: [[CONTACT_EMAIL]].
+  Questions about these terms: report@kiramyao.com.
 </p>
 
 <footer>
   See also the <a href="https://kiramyao.com/privacy">Privacy Policy</a>.
-  <br>Kira Tracker · [[OPERATOR_LEGAL_NAME]]
+  <br>Kira Tracker · the KiraMyao project
 </footer>
 
 </body>
