@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React from 'react';
+import { VALUE_EASE_MS, useEasedValue } from '../utils/motion';
 
 interface AnimatedNumberProps {
     value: number;
@@ -6,36 +7,18 @@ interface AnimatedNumberProps {
     duration?: number;
 }
 
-// Eases the displayed number toward `value` (ease-out cubic). Counts up from
-// 0 on mount, then glides between values on change. Renders the final value
-// immediately when the user prefers reduced motion.
-const AnimatedNumber: React.FC<AnimatedNumberProps> = ({ value, decimals = 1, duration = 550 }) => {
-    const [display, setDisplay] = useState(0);
-    const fromRef = useRef(0);
-    const rafRef = useRef<number | null>(null);
-
-    useEffect(() => {
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-            fromRef.current = value;
-            setDisplay(value);
-            return;
-        }
-        const from = fromRef.current;
-        const start = performance.now();
-        const tick = (now: number) => {
-            const p = Math.min((now - start) / duration, 1);
-            const eased = 1 - Math.pow(1 - p, 3);
-            const current = from + (value - from) * eased;
-            fromRef.current = current;
-            setDisplay(current);
-            if (p < 1) rafRef.current = requestAnimationFrame(tick);
-        };
-        rafRef.current = requestAnimationFrame(tick);
-        return () => {
-            if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-        };
-    }, [value, duration]);
-
+/**
+ * A number that glides to its value.
+ *
+ * The motion lives in `utils/motion.ts` rather than here, shared with anything else
+ * showing the same reading. That is not tidiness: the blood vial beside this number
+ * animated on its own terms — a jump after its own delay — so on first load the number
+ * counted up while the vial was already full, and on every change they arrived at
+ * different moments. One value, visibly disagreeing with itself. Counting up from zero on
+ * mount is part of the shared behaviour now.
+ */
+const AnimatedNumber: React.FC<AnimatedNumberProps> = ({ value, decimals = 1, duration = VALUE_EASE_MS }) => {
+    const display = useEasedValue(value, { duration });
     return <>{display.toFixed(decimals)}</>;
 };
 

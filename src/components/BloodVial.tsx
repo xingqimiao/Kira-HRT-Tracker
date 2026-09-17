@@ -3,6 +3,7 @@ import Icon from './Icon';
 import VialSpray from './VialSpray';
 import { AlertTriangle } from '../icons';
 import { useVial } from '../contexts/VialContext';
+import { useEasedValue } from '../utils/motion';
 import {
     CANVAS,
     INTERIOR,
@@ -77,7 +78,6 @@ const SPARKLE = ['.#.', '###', '.#.'];
  * The order is the point: the twinkle says a reading just landed, the rise says it went up.
  * Moving first would bury the first signal.
  */
-const SPARKLE_LEAD_MS = 260;
 
 /** Badge size in px. 16 is legible without crowding the reading beside it. */
 const BADGE_PX = 16;
@@ -152,12 +152,23 @@ const BloodVial: React.FC<BloodVialProps> = ({
     const { showVial } = useVial();
     const reduced = usePrefersReducedMotion();
 
+    // The eased level, on the shared clock. A hook, so it sits with the others rather
+    // than inside an effect — the effects below decide when the *spill* plays.
+    const eased = useEasedValue(level);
+
     /**
-     * `shown` lags the prop on an ordinary rise, so the liquid slides up a moment after the
-     * glints. On a cross into overflow it jumps: the tube is already full when it squirts,
-     * and easing that would read as the liquid arriving late to its own splash.
+     * The liquid's level, eased on the same clock as the number beside it.
+     *
+     * Shared with `AnimatedNumber` rather than timed to match it, because two constants
+     * that agree today drift the moment either is tuned. Seeded at zero for the same
+     * reason the number counts up: a fresh page should show the tube filling as the
+     * digits rise, not a full tube beside a number still climbing.
+     *
+     * The overflow case is unchanged — on a cross into the ceiling the level jumps,
+     * because the tube is already full when it squirts and easing that reads as the
+     * liquid arriving late to its own splash.
      */
-    const [shown, setShown] = useState(level);
+    const [shown, setShown] = useState(0);
     const [burst, setBurst] = useState(0);
     const [phase, setPhase] = useState<Phase>(
         () => (overflowRows(level, mode) > 0 ? 'settled' : 'idle'),
@@ -186,7 +197,9 @@ const BloodVial: React.FC<BloodVialProps> = ({
         previous.current = level;
 
         if (!rose) {
-            setShown(level);
+            // No `setShown` here: the eased effect below owns every non-overflow
+            // level. Setting it here too made a decrease jump and then ease, which
+            // is a stutter rather than a motion.
             setPour(1);
             setPhase(isOver ? 'settled' : 'idle');
             return;
@@ -206,9 +219,21 @@ const BloodVial: React.FC<BloodVialProps> = ({
             return;
         }
 
-        const id = setTimeout(() => setShown(level), SPARKLE_LEAD_MS);
-        return () => clearTimeout(id);
+        // No timer here: the liquid follows the shared easing, so the burst fired above
+        // already leads the level arriving. The old `SPARKLE_LEAD_MS` delay produced
+        // that ordering on its own clock; keeping it alongside would be two writers
+        // racing to set one value.
     }, [level, mode, reduced]);
+
+    // The eased value drives the liquid, so it moves with the number. Separate from the
+    // effect above, which owns when the spill plays.
+    useEffect(() => {
+        // A full tube holds its brim: the overflow cross sets the level in one step on
+        // purpose (the tube is already full when it squirts), and easing it afterwards
+        // would drag the brim back down.
+        if (overflowRows(level, mode) > 0) return;
+        setShown(eased);
+    }, [eased, level, mode]);
 
     /**
      * Run the spill down once the jet has finished.
