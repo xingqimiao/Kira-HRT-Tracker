@@ -40,60 +40,52 @@ used by the login flow.
 | **Website URL** (required) | `https://hrt.kiramyao.com` |
 | **Organization name** | your real name or org — shown on the consent screen |
 | **Organization URL** | `https://kiramyao.com` |
-| **Terms of Service** | `https://hrt.kiramyao.com/terms` |
+| **Terms of Service** | leave empty (see below) |
 | **Privacy Policy** | `https://kiramyao.com/privacy` |
 
 The callback **must** match `X_REDIRECT_URI` byte for byte, prefix included.
 
-**Both policy URLs must resolve before you submit**, and X checks that they are
-*linked from* the app, not merely reachable. The Terms URL is already wired: it is a
-static file at `public/terms/index.html`, served with real content (verified — see
-below). The Privacy Policy lives on the main domain and is yours to write; the guide
-is in `PRIVACY-POLICY-GUIDE.md`. Account deletion is implemented, so its deletion
+**Leave Terms of Service empty.** It is optional: X only requires the Terms and
+Privacy Policy URLs when the app requests users' email addresses, and this app has
+`requestEmailAddress: false`. The field is in the portal, but filling it is not a
+condition of the app working.
+
+This project used to publish one at `/terms`. It was removed: it duplicated the app's
+own disclaimer, and the parts that were not duplication — governing law, jurisdiction,
+liability cap — were guesses about an operator that does not exist as an entity. The
+medical disclaimer belongs where the reader is about to act on an estimate, which is
+the in-app `DisclaimerModal` and the line under a shared chart
+(`src/i18n/share.ts`), both already present.
+
+The Privacy Policy lives on the main domain; the guide is in
+`PRIVACY-POLICY-GUIDE.md`. Account deletion is implemented, so its deletion
 promise can be made honestly — the guide says what to claim and which claims would be
 false.
 
-### Why the Terms page is a static file and not an app route
+### Serving anything static on this host (the lesson the Terms page left behind)
 
-URL checkers do not execute JavaScript. An SPA route would return the empty
-application shell — a blank document that reads as a broken policy link. So the page
-is a real file, copied verbatim to the web root at build time:
+There is no Terms page any more, but the trap it was built to avoid still applies to
+any future static document under `hrt.kiramyao.com` (a licence page, an imprint, a
+notice): **URL checkers do not execute JavaScript**, so an SPA route returns an empty
+application shell that reads as a broken link.
 
-```
-public/terms/index.html  ->  dist/terms/index.html  ->  https://hrt.kiramyao.com/terms
-```
+Two things are needed, and both are in place:
 
-`/terms` and `/terms/` both resolve, because Caddy's `try_files` + `file_server`
-already serves a directory's `index.html`. No Caddy change is needed.
+1. The document must be a **real file** copied to the web root at build time, not a
+   route — anything in `public/` is, e.g. `public/x/index.html -> dist/x/index.html
+   -> https://hrt.kiramyao.com/x`.
+2. Caddy must reach a directory's `index.html`. It uses
+   `try_files {path} {path}/index.html /index.html`; the middle term is the one that
+   matters. Without it `/x` falls through to the SPA shell while `/x/index.html` works,
+   which passes a manual check and fails an automated one — exactly the bug `/terms`
+   had before it was fixed, and it was live for a while because a person sees a
+   working page (the shell loads the app).
 
-Verified against a server configured the same way:
-
-```
-/terms            -> 200  bytes=8786  real content, not an SPA shell
-/terms/           -> 200  bytes=8786
-/terms/index.html -> 200  bytes=8786
-```
-
-Find the values still to fill in:
+Verify with JavaScript **disabled**, which is the only way to see what a checker sees:
 
 ```bash
-grep -o '\[\[[A-Z_]*\]\]' dist/terms/index.html | sort -u
+curl -s https://hrt.kiramyao.com/<path> | wc -c        # a shell is ~2 KB, real content is much more
 ```
-
-Served as a directory index, so the page inherits `hrt.kiramyao.com`'s security
-headers — including `frame-ancestors 'none'`, which keeps the document from being
-embedded somewhere it could be misrepresented.
-
-**Scopes:** `users.read tweet.read`, set in code (`src/oauth.ts`), not in the portal.
-
-`tweet.read` is not used to read a post — this app never fetches one — but
-`GET /2/users/me` answers **403** without it, so sign-in completes at X and then
-fails at the profile fetch. The pair is the minimum that actually works, verified
-against a real login on 2026-09-18. Do not narrow it on the reasoning that a login
-only needs an identity: the authorize step still succeeds, so the failure appears
-one call later and reads as a broken credential.
-
-**Permissions:** "Read" is enough. Login never needs write access.
 
 ### Attribution is a requirement, not a courtesy
 
@@ -103,7 +95,7 @@ algorithm repository** and respect its licence terms. This is wired in three pla
 | Where | What |
 |---|---|
 | App → Settings → About | a row titled "Algorithm & model credits", describing the source and linking to the repo |
-| `hrt.kiramyao.com/terms` section 2 | the same attribution, plus the MIT copyright notice of the app code it is built from |
+| `THIRD-PARTY-LICENSES.md` | the model grant in full, plus the MIT copyright notice of the app code it is built from |
 | `README.md` | the upstream project's own attribution section, untouched |
 
 A link nobody can find does not satisfy "visibly", which is why the app row carries a
@@ -433,10 +425,11 @@ curl -s https://api.kiramyao.com/hrt/stats
 # 6. The callback path reaches this service, not the comment service.
 curl -sI 'https://api.kiramyao.com/hrt/auth/x/callback?code=x&state=y' | head -3
 
-# 7. The Terms URL returns a real document, not the app shell. This is what a URL
+# 7. The Privacy Policy returns a real document, not an app shell. This is what a URL
 #    checker sees, and it is the difference between a working policy link and a blank
-#    page. Look for the text, not just the status code.
-curl -s https://hrt.kiramyao.com/terms | grep -c "Terms of Service"
+#    page. Look for the text, not just the status code — and remember the app
+#    subdomain has a shell that returns 200 for anything, so a 200 proves nothing.
+curl -s https://kiramyao.com/privacy | grep -c "Kira Tracker"
 
 # 8. And the Privacy Policy, once written, must resolve too — it lives on the main
 #    domain, not on the app subdomain.

@@ -57,10 +57,13 @@ Three things about that string, each of which has caused a failure:
    allows specifically.
 
 - **Website URL:** `https://hrt.kiramyao.com`
-- **Terms of Service:** `https://hrt.kiramyao.com/terms`
-- **Privacy Policy:** required. `https://kiramyao.com/privacy` once that page
-  exists — see `PRIVACY-POLICY-GUIDE.md`. X checks these resolve, and it does not
-  accept a placeholder.
+- **Terms of Service:** leave empty. Optional, and this project does not publish one
+  — see the note in `DEPLOY.md`. X only requires it (and the Privacy Policy) when the
+  app asks for users' email addresses, which this one does not: `requestEmailAddress`
+  is `false`.
+- **Privacy Policy:** `https://kiramyao.com/privacy` — see `PRIVACY-POLICY-GUIDE.md`.
+  Filled in because the field is there, not because it is demanded of this app. If you
+  do supply it, X checks that it resolves and will not accept a placeholder.
 
 Save. The portal can take a minute to propagate; a request in the next 60 seconds
 may still see the old settings.
