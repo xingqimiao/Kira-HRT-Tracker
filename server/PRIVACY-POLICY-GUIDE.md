@@ -196,9 +196,27 @@ Now writable as stated. Cover each of these:
   persist in encrypted backups for up to N days."
 - **Audit records**: `auth_events` keeps sign-in and registration events with IP
   addresses, and they are deleted along with the account. State that.
-- **If a user loses their authenticator and recovery codes**, say plainly: neither you
-  nor they can recover the account, because you hold no key. Users need to know this
-  *before* it happens, not after.
+- **Keep the two losses apart** — this is a trap, and an earlier version of this
+  guide fell into it by writing "if a user loses their authenticator and recovery
+  codes, neither you nor they can recover the account". That sentence is true but it
+  teaches the wrong lesson, because it pairs the two as though either one mattered to
+  the data:
+  - **Losing the authenticator** locks you out of the *login*, not of the data. A
+    recovery code covers it. If the codes are gone as well there is **no reset route
+    at all** — `/auth/login` accepts a TOTP code or a recovery code and nothing else,
+    so neither the user nor you can get past the second factor. What survives is the
+    data: the account is still there and still decryptable, so finding a saved code
+    later restores access. It costs access, not history.
+  - **Losing the password** is the irreversible one. The data key is derived from it,
+    you hold no copy, and there is no reset route — `changePassword` requires the
+    current password precisely because re-wrapping the key needs it in hand. Recovery
+    codes are no substitute: the server stores only a hash of each, so they carry no
+    key material and cannot decrypt anything. The records are gone for good, whatever
+    else the user still holds.
+
+  Say both, and say which is which. A user who reads only the first version may keep
+  their recovery codes and believe their history is safe from a forgotten password,
+  which is backwards. Users need to know this *before* it happens, not after.
 
 ---
 
