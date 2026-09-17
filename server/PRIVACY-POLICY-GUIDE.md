@@ -352,11 +352,19 @@ badly.
 
 ---
 
-## What the policy should tell a reader, in their own words
+## How to say these things to a reader, in their own words
 
-This is the version that belongs in the published policy. No file paths, no function
-names — a reader cannot check those, and a claim they cannot check is one they have to
-take on trust, which is the opposite of what a privacy policy is for.
+This is the *language* to use in the published policy — the voice, the plain wording,
+the absence of file paths and function names. A reader cannot check a path, and a claim
+they cannot check is one they have to take on trust, which is the opposite of what a
+privacy policy is for.
+
+**It is not a section to paste in.** This was tried, as a closing "in one sentence"
+recap after the per-topic sections, and it was wrong: a second voice restating the
+whole document is not what a privacy policy is, and two places saying the same thing
+is how they drift apart — the recap does not get updated when a detail changes, and
+then it contradicts the section above it. The paragraphs below are the register to
+write §1–§9 in, each fact living in exactly one place.
 
 > **What we can see.** Your dose records and lab results are stored encrypted. We hold
 > no key to them at rest, so a stolen database does not expose them.
