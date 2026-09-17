@@ -933,7 +933,6 @@ body {
    scrolling under a bar that is only 88% opaque otherwise reads as a smear, and
    blurring it keeps the bar legible without making it a solid block. */
 .m3-navbar {
-    display: flex;
     align-items: center;
     height: var(--m3-navbar-height);
     flex-shrink: 0;
