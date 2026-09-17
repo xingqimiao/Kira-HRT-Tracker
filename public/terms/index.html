@@ -135,11 +135,15 @@
   <li>An account requires a username, a password, and a second factor (a TOTP
       authenticator app). Setup codes must be confirmed before the account can be used.</li>
   <li>You are responsible for keeping your password, authenticator, and recovery codes
-      secure. We cannot recover an account for you: your records are encrypted under a
-      key derived from your password, and we do not hold that key.</li>
-  <li>Recovery codes are issued once. Store them somewhere safe. If you lose both your
-      authenticator and your recovery codes, the records in that account cannot be
-      recovered by anyone, including us.</li>
+      secure. <strong>We cannot recover an account for you.</strong> Your records are
+      stored encrypted under a key derived from your password, we do not hold that key,
+      and there is no password-reset route — nobody, including us, can set a new
+      password on your behalf.</li>
+  <li>Recovery codes are issued once. Store them somewhere safe. <strong>A recovery code
+      replaces your authenticator when you lose it; it does not replace your
+      password.</strong> If you lose your password, the records in that account cannot
+      be recovered by anyone, including us, whether or not you still hold recovery
+      codes.</li>
   <li>You must be at least 13 years old, and old enough in the People's Republic of China to consent
       to this Service. See section 11.</li>
   <li>One account per person. Do not share account credentials.</li>
