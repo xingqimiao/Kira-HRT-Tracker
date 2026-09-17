@@ -430,15 +430,20 @@ const AppContent = () => {
                             onNavigateToHistory={() => handleViewChange('history')}
                             onNavigateToLab={() => handleViewChange('lab')}
                             onNavigateToShare={() => handleViewChange('share')}
-                            authToken={token}
+                            /* Same reason as ShareSettings below: the share feature
+                               authenticates against the Core. */
+                            authToken={coreSession.token}
                             onAuthRequired={() => setIsAuthModalOpen(true)}
                         />
                     )}
 
-                    {currentView === 'share' && token && (
+                    {/* Shares live on the Core, so this is the Core session's token.
+                        It was given the Worker token, which is a separate identity — a
+                        user signed in to the Core was asked to sign in again. */}
+                    {currentView === 'share' && coreSession.token && (
                         <ShareSettings
                             onBack={() => handleViewChange('home')}
-                            authToken={token}
+                            authToken={coreSession.token}
                             mode={mode}
                             events={events}
                             simulation={simulation}

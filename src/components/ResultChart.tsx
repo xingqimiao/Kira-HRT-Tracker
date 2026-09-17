@@ -168,10 +168,32 @@ const ResultChart = ({
 
     const selectRange = (r: RangeKey) => { setRange(r); setPanOffset(0); };
 
-    // Warm, on-brand palette — terracotta primary against a muted neutral grid.
-    const c = isDarkMode
-        ? { primary: '#D8927C', second: '#7A776F', grid: '#2E2C28', axis: '#7A776F', faint: '#5C5953', dot: '#1C1B18', lab: '#E0A38C' }
-        : { primary: '#CC785C', second: '#C2BDB3', grid: '#E7E4DD', axis: '#A8A59E', faint: '#C2BDB3', dot: '#FAF9F7', lab: '#B5664C' };
+    /**
+     * The plotted colours, read from the app's role tokens.
+     *
+     * Read rather than imported so the chart follows whichever theme and key colour are
+     * active with no prop threading — the tokens resolve on `<html>`, and the rest of the
+     * interface already works this way.
+     *
+     * It previously carried a terracotta palette of its own, inherited from upstream and
+     * never migrated: a warm salmon curve on a pink-and-blue interface. `isDarkMode` stays
+     * a dependency so a theme switch re-reads, since reading a custom property does not
+     * re-render on its own.
+     */
+    const c = useMemo(() => {
+        const cs = getComputedStyle(document.documentElement);
+        const role = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
+        return {
+            primary: role('--color-m3-chart-series-1', '#2C6E8F'),
+            second: role('--color-m3-chart-series-2', '#7A4E92'),
+            grid: role('--color-m3-chart-grid', '#E4E5EA'),
+            axis: role('--color-m3-chart-axis', '#6A6D78'),
+            faint: role('--color-m3-chart-faint', '#B4B7C0'),
+            dot: role('--color-m3-chart-marker', '#FFFFFF'),
+            lab: role('--color-m3-chart-lab', '#A16207'),
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isDarkMode]);
 
     // Which series are relevant for the current mode / logged doses.
     const hasE2 = isTransmasc ? false : events.some(e => e.ester !== 'CPA' && !T_ESTERS.has(e.ester));

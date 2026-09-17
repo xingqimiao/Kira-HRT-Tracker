@@ -266,3 +266,37 @@ CREATE TABLE IF NOT EXISTS auth_events (
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_auth_events_user_time ON auth_events(user_id, created_at DESC);
+
+-- Read-only share links. The whole point of the feature is to show a dosage history to
+-- someone who has no account, so the design decisions that matter are about what the
+-- row does *not* contain.
+--
+-- `token_hash`, not the token: the link is the credential, and a database dump should
+-- not hand over working links. It is a hash rather than an encrypted value because the
+-- server never needs to show the link again — the user keeps the URL.
+--
+-- `snapshot` holds only what the sharer chose to publish: the dose events and the
+-- modelled curve. No lab results, no weight, no profile. That is enforced where the
+-- snapshot is built and by a test on this table's shape, because a column that could
+-- hold a lab value is a column that eventually will.
+--
+-- `password_hash` is scrypt, the same treatment as a login password, since a share
+-- password guards health data in exactly the same way.
+--
+-- `expires_at` is NOT NULL: a link that never dies is a disclosure waiting to happen,
+-- and the UI always sets a window. Expiry is checked on read rather than by a sweeper,
+-- so a lapsed link is refused even if no cleanup has run.
+CREATE TABLE IF NOT EXISTS shares (
+    id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id          uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash       text NOT NULL UNIQUE,
+    password_hash    text,
+    live             boolean NOT NULL DEFAULT false,
+    snapshot         jsonb NOT NULL,
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    updated_at       timestamptz NOT NULL DEFAULT now(),
+    expires_at       timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_shares_user ON shares(user_id);
+-- Expiry is per-row and short, so the token hash is the only lookup that needs help.
+-- The unique constraint above already serves it.

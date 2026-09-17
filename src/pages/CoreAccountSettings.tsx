@@ -33,6 +33,38 @@ interface CoreAccountSettingsProps {
 
 type Dialog = null | 'password' | 'recovery' | 'unlink' | 'delete';
 
+/**
+ * A date for display, or null when there is not one to show.
+ *
+ * Guarded rather than trusting the input: this is rendered from a value the server
+ * sends, and "Invalid Date" is worse than a blank — it reads as a fault in the app
+ * rather than a value we never had.
+ */
+function formatDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString();
+}
+
+/**
+ * What an X row says under the handle.
+ *
+ * The linked date is normally known, but the string is chosen rather than assembled:
+ * `x_linked_used` carries two placeholders and the template has to be picked before
+ * either is filled, which is what makes a missing one fall back cleanly instead of
+ * leaving a stray `{last}` on screen.
+ */
+function xLinkSubtitle(
+  t: (key: string) => string,
+  link: { linkedAt: string | null; lastLoginAt: string | null },
+): string {
+  const linked = formatDate(link.linkedAt);
+  const last = formatDate(link.lastLoginAt);
+  if (!linked) return t('core.acct.x_section');
+  if (!last) return t('core.acct.x_linked').replace('{date}', linked);
+  return t('core.acct.x_linked_used').replace('{date}', linked).replace('{last}', last);
+}
+
 const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBack, onDeleted }) => {
   const [summary, setSummary] = useState<AccountSummary | null>(null);
   const [links, setLinks] = useState<XLink[]>([]);
@@ -43,6 +75,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
 
   const { t } = useTranslation();
   const token = session.token;
+  const createdDate = formatDate(summary?.createdAt);
 
   const refresh = useCallback(async () => {
     if (!token) return;
@@ -121,7 +154,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
         <h1 className="text-xl font-semibold mb-1">{t('core.acct.title')}</h1>
         <p className={`text-xs mb-6 ${muted}`}>
           {t('core.acct.signed_in_as')} <span className="font-medium">{session.user?.username}</span>
-          {summary?.createdAt ? ` · ${t('core.acct.created')} ${new Date(summary.createdAt).toLocaleDateString()}` : ''}
+          {createdDate ? ` · ${t('core.acct.created').replace('{date}', createdDate)}` : ''}
         </p>
 
         {notice && (
@@ -221,13 +254,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
                       <span className="text-[15px] font-semibold">𝕏</span>
                     )}
                     title={l.handle ? `@${l.handle}` : t('core.acct.x_section')}
-                    subtitle={
-                      l.lastLoginAt
-                        ? t('core.acct.x_linked_used')
-                            .replace('{date}', new Date(l.linkedAt).toLocaleDateString())
-                            .replace('{last}', new Date(l.lastLoginAt).toLocaleDateString())
-                        : t('core.acct.x_linked').replace('{date}', new Date(l.linkedAt).toLocaleDateString())
-                    }
+                    subtitle={xLinkSubtitle(t, l)}
                     right={<Icon icon={Unlink} size={15} className={muted} />}
                     onClick={() => setDialog('unlink')}
                   />

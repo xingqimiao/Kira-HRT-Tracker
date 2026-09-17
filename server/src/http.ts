@@ -26,6 +26,7 @@ import { getConfig } from './config.ts';
 import { buildServer, makeBearerResolver } from './mcp.ts';
 import { MedicationService, LabService, TimelineService, PKSimulationService } from './core.ts';
 import { AccountService } from './accounts.ts';
+import { ShareService } from './shares.ts';
 import type { AuthContext } from './types.ts';
 import { findUserSession, lookupSession, closeSession, openSession } from './session.ts';
 import { importPayload, buildExportPayload, publicStats } from './import.ts';
@@ -707,6 +708,83 @@ export function createRequestHandler() {
         if (!ctx) return;
         const removed = await AccountService.revokeApiToken(ctx.userId, tokenRevoke[1]);
         if (!removed) return send(res, 404, { error: 'no such token' });
+        return send(res, 200, { ok: true });
+      }
+
+      // --- Shares ----------------------------------------------------------
+      //
+      // `/api/shares/access` is the one route here that answers without a session: a
+      // share link exists precisely so someone without an account can read it. Its
+      // authorization is the token in the body, and the response is `publicView` — no
+      // id, no owner, no hash.
+      //
+      // It is rate-limited by IP like the other unauthenticated POST routes, because a
+      // token endpoint with no ceiling is an invitation to guess in bulk.
+      if (path === '/api/shares/access' && req.method === 'POST') {
+        const limits = getConfig().rateLimits;
+        if (rateLimited(`share:${clientIp(req)}`, limits.login, limits.windowMs)) {
+          return send(res, 429, { error: 'too many attempts; try again shortly' });
+        }
+        const body = (await readBody(req)) as { token?: unknown; password?: unknown } | undefined;
+        const result = await ShareService.access(body?.token, body?.password);
+        if (!result.ok) {
+          // The code, not the status, is what the client switches on — it already has
+          // copy for each of these. `SHARE_NOT_FOUND` covers both a token that never
+          // existed and one that has expired, which is the pair a prober could otherwise
+          // use to discover which links are real.
+          const codes: Record<string, [number, string]> = {
+            password_required: [401, 'PASSWORD_REQUIRED'],
+            invalid_password: [401, 'INVALID_PASSWORD'],
+            expired: [410, 'SHARE_EXPIRED'],
+            'not found': [404, 'SHARE_NOT_FOUND'],
+          };
+          const [status, code] = codes[result.error] ?? [404, 'SHARE_NOT_FOUND'];
+          return send(res, status, {
+            code,
+            ...(code === 'PASSWORD_REQUIRED' ? { passwordRequired: true } : {}),
+            message: result.error,
+          });
+        }
+        return send(res, 200, result.value);
+      }
+
+      if (path === '/api/shares' && req.method === 'GET') {
+        const ctx = await requireCtx();
+        if (!ctx) return;
+        return send(res, 200, { shares: await ShareService.list(ctx.userId) });
+      }
+
+      if (path === '/api/shares' && req.method === 'POST') {
+        const ctx = await requireCtx();
+        if (!ctx) return;
+        const body = (await readBody(req)) as
+          | { snapshot?: unknown; password?: unknown; expiresAt?: unknown; live?: unknown }
+          | undefined;
+        const result = await ShareService.create(ctx.userId, {
+          snapshot: body?.snapshot,
+          password: body?.password,
+          expiresAt: body?.expiresAt,
+          live: body?.live,
+        });
+        if (!result.ok) return send(res, 400, { code: 'SHARE_REJECTED', message: result.error });
+        return send(res, 201, result.value);
+      }
+
+      if (path === '/api/shares/live' && req.method === 'PUT') {
+        const ctx = await requireCtx();
+        if (!ctx) return;
+        const body = (await readBody(req)) as { snapshot?: unknown } | undefined;
+        const result = await ShareService.syncLive(ctx.userId, body?.snapshot);
+        if (!result.ok) return send(res, 400, { code: 'SHARE_REJECTED', message: result.error });
+        return send(res, 200, result.value);
+      }
+
+      const shareRevoke = path.match(/^\/api\/shares\/([0-9a-f-]{36})$/);
+      if (shareRevoke && req.method === 'DELETE') {
+        const ctx = await requireCtx();
+        if (!ctx) return;
+        const removed = await ShareService.revoke(ctx.userId, shareRevoke[1]);
+        if (!removed) return send(res, 404, { error: 'no such share' });
         return send(res, 200, { ok: true });
       }
 

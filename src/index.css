@@ -39,6 +39,16 @@
     --color-m3-outline: #3A3C45;
     --color-m3-outline-variant: #272930;
 
+    /* — Chart series. Two hues that stay apart from each other and from the grid in
+         both themes, plus the marker fill that sits on top of a series. — */
+    --color-m3-chart-series-1: #8FC7E8;
+    --color-m3-chart-series-2: #C9A0DC;
+    --color-m3-chart-grid: #2E3038;
+    --color-m3-chart-axis: #8A8D98;
+    --color-m3-chart-faint: #5A5D68;
+    --color-m3-chart-marker: #16171D;
+    --color-m3-chart-lab: #F5D08A;
+
     /* — Semantic roles, so no call site has to hard-code a hue. — */
     --color-m3-error: #FFB4AB;
     --color-m3-error-container: #3B1512;
@@ -542,6 +552,14 @@ html {
     --color-m3-on-surface-variant: #5C5F69;
     --color-m3-outline: #C7C9D1;
     --color-m3-outline-variant: #E4E5EA;
+
+    --color-m3-chart-series-1: #2C6E8F;
+    --color-m3-chart-series-2: #7A4E92;
+    --color-m3-chart-grid: #E4E5EA;
+    --color-m3-chart-axis: #6A6D78;
+    --color-m3-chart-faint: #B4B7C0;
+    --color-m3-chart-marker: #FFFFFF;
+    --color-m3-chart-lab: #A16207;
 
     --color-m3-error: #B3261E;
     --color-m3-error-container: #FCEAE8;

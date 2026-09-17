@@ -1288,4 +1288,6 @@ function requireKey(value: unknown, context: string): string {
   return value;
 }
 
+// `hashPassword` is here for the share passwords too: a share guards the same kind of
+// data as a login, so it gets the same treatment rather than a second, weaker scheme.
 export { hashPassword, hashToken, isComplete, loadUser, validatePassword, validateUsername };

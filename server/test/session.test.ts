@@ -14,6 +14,7 @@ import {
   closeSession,
   closeUserSessions,
   activeSessionCount,
+  findUserSession,
 } from '../src/session.ts';
 import { encryptCloudPayload, decryptCloudPayload } from '../src/engine.ts';
 
@@ -86,4 +87,60 @@ test('closing all of a user sessions leaves other users untouched', async () => 
 
   closeSession(tokenB);
   assert.equal(activeSessionCount(), 0);
+});
+
+/**
+ * The agent-token window.
+ *
+ * `findUserSession` is what lets a durable `hrt_` token read anything: the token
+ * supplies a user id, this supplies the key. These tests pin the two properties the
+ * policy depends on, because the policy's honesty rests on exactly them — an unlocked
+ * session is *required*, and a session stays open as long as someone keeps reading.
+ */
+test('an agent token needs an unlock: no session means no key', () => {
+  assert.equal(findUserSession(userId), null, 'a token alone must resolve to nothing');
+});
+
+test('an agent token reads during the owner\'s unlock, with no token of its own', async () => {
+  const { dek } = await createUserKeyMaterial(password, userId);
+  openSession(userId, dek);
+  // The token path passes no session token here — it only knows the user id. Getting
+  // the DEK back is what makes a leaked token dangerous while the user is signed in.
+  assert.equal(findUserSession(userId), dek);
+  closeUserSessions(userId);
+});
+
+test('a token read keeps the session alive past its nominal 30-minute window', async () => {
+  const { dek } = await createUserKeyMaterial(password, userId);
+  // A session that is already expired, to prove findUserSession is not merely
+  // returning something that happened to still be valid.
+  openSession(userId, dek, -1);
+  assert.equal(findUserSession(userId), null, 'expired session sweeps to nothing before any read');
+
+  const fresh = openSession(userId, dek, 1);
+  assert.equal(findUserSession(userId), dek, 'a token read extends the live window');
+  // The refresh means revoking is the only way to end it — expiry alone will not,
+  // so long as reads keep arriving. Documented in CODE-AUDIT.md.
+  closeSession(fresh);
+});
+
+test('revoking every session ends token access immediately', async () => {
+  const { dek } = await createUserKeyMaterial(password, userId);
+  openSession(userId, dek);
+  assert.equal(findUserSession(userId), dek);
+  closeUserSessions(userId);
+  assert.equal(findUserSession(userId), null, 'revocation must close the window, not shorten it');
+});
+
+test('the DEK a token obtains is scoped to its own account', async () => {
+  const a = await createUserKeyMaterial(password, userId);
+  const b = await createUserKeyMaterial(password, 'other-user');
+  assert.notEqual(a.dek, b.dek, 'two accounts must not share a DEK');
+
+  openSession('other-user', b.dek);
+  assert.equal(findUserSession(userId), null, 'an open session for B must not unlock A');
+  assert.equal(findUserSession('other-user'), b.dek);
+
+  closeUserSessions('other-user');
+  assert.equal(findUserSession(userId), null);
 });

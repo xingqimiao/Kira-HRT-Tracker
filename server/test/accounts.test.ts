@@ -641,6 +641,24 @@ test('linking, rebinding and unlinking X on an existing account', async () => {
     assert.equal(links.body.links.length, 1, 'the link is recorded');
     assert.equal(links.body.links[0].handle, 'linked_one');
 
+    // The whole field set, and camelCase specifically. Only `handle` was asserted
+    // before, so `avatarUrl` / `linkedAt` / `lastLoginAt` went unread by the client —
+    // which reads camelCase, matching this — while the rows it actually received were
+    // indexed by their snake_case column names. The symptom was an account page with a
+    // generic glyph and "Invalid Date", and nothing here failed.
+    const link = links.body.links[0];
+    for (const field of ['avatarUrl', 'linkedAt', 'lastLoginAt']) {
+      assert.ok(field in link, `/auth/x/links must serialise ${field} in camelCase`);
+      assert.ok(
+        !(`${field.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)}` in link),
+        `and must not also send the snake_case column name for ${field}`,
+      );
+    }
+    assert.ok(
+      Number.isFinite(Date.parse(link.linkedAt)),
+      `linkedAt must be a parseable timestamp, got ${JSON.stringify(link.linkedAt)}`,
+    );
+
     // Unlink requires a second-factor code, so a stolen session cannot detach a
     // compromised X account's audit trail.
     const badUnlink = await call(base, '/auth/x/unlink', json({ code: '000000' }, account.token));

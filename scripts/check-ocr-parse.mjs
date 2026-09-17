@@ -260,6 +260,57 @@ check('nothing found suggests nothing', () => {
     assert.deepEqual(suggestSelection([]), {})
 })
 
+check('a reference bound is not read as the patient value', () => {
+    // The bug a user hit, verbatim from their report. The analyser laid the row out as
+    // label / result / reference / unit, OCR flattened it, and the parser returned 143
+    // — the upper limit of normal — for a value of 396.53. The bound is a real number,
+    // in range, with a unit and a label beside it, so nothing else caught it.
+    const found = findHormoneValues('*雌二醇          396.53↑     <143       pmol/L')
+    assert.equal(found.length, 1, `expected one reading, got ${JSON.stringify(found)}`)
+    assert.equal(found[0].value, 396.53, 'the result column, not the reference column')
+    assert.equal(found[0].unit, 'pmol/l')
+    assert.equal(found[0].analyte, 'E2')
+
+    // And without the out-of-range arrow, which is the ordinary case on a normal result.
+    const normal = findHormoneValues('雌二醇           396.53      <143       pmol/L')
+    assert.equal(normal.length, 1)
+    assert.equal(normal[0].value, 396.53)
+})
+
+check('a reference range does not supply the value either', () => {
+    // Same shape with a two-sided range: the only number adjacent to the unit is the
+    // range's upper bound, so this failed the same way.
+    const found = findHormoneValues('雌二醇 (E2)      45.2        12.4-233.0 pg/mL')
+    assert.equal(found.length, 1, `expected one reading, got ${JSON.stringify(found)}`)
+    assert.equal(found[0].value, 45.2, 'not 233.0')
+    assert.equal(found[0].unit, 'pg/ml')
+
+    const t = findHormoneValues('睾酮 (T)         512         264-916    ng/dL')
+    assert.equal(t.length, 1)
+    assert.equal(t[0].value, 512, 'not 916')
+    assert.equal(t[0].analyte, 'T')
+})
+
+check('the bracketed abbreviation does not count as the value', () => {
+    // `(E2)` contains a digit. Counting it as a number made the table reader refuse a
+    // perfectly clear row, because its "exactly one number remains" rule saw three.
+    const found = findHormoneValues('雌二醇 (E2)      45.2        12.4-233.0 pg/mL')
+    assert.equal(found[0]?.value, 45.2)
+    // A row where the abbreviation is the only bracketed token still resolves.
+    const bare = findHormoneValues('雌二醇 (E2) 45.2 pg/mL')
+    assert.equal(bare[0]?.value, 45.2)
+})
+
+check('the reference column does not make an SHBG row into a reading', () => {
+    // The range must not defeat the exclusion list: this looks like a table row with
+    // one clean number, and 45.2 nmol/L is the binding globulin, not testosterone.
+    assert.deepEqual(
+        findHormoneValues('性激素结合球蛋白  45.2        nmol/L     18.0-114.0'),
+        [],
+        'SHBG is still excluded with a reference range present',
+    )
+})
+
 // --- report -----------------------------------------------------------------
 
 const failed = results.filter(([status]) => status === 'fail')

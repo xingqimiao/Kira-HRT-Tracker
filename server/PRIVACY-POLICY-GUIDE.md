@@ -126,9 +126,30 @@ Suggested wording:
 
 > You can connect an AI assistant to your account using a protocol called MCP. If you
 > do, the records you access through it are transmitted to that assistant's provider
-> and are governed by that provider's privacy policy, not ours. An assistant can only
-> reach your records while you have an active session, and a leaked API token alone
-> cannot read them — it proves identity but does not carry the decryption key.
+> and are governed by that provider's privacy policy, not ours.
+>
+> The connection works only while you have an active session. Connecting an assistant
+> does not give you remote access to your records, and it does not let the assistant
+> open your account: the key is only held in memory after you unlock with your
+> password. If your session has expired, the assistant is told the account is locked
+> and you must unlock it here first.
+>
+> Agent tokens are long-lived by design, so treat one as a password. A leaked token
+> cannot unlock your account on its own — it proves identity but carries no decryption
+> key. It can, however, read your records during any period when you already have an
+> active session, and each read extends that session, so an attacker holding your
+> token while you are signed in can keep the window open. Revoke the token in
+> Settings to end this immediately.
+>
+> Once records reach the assistant's provider, they are outside our control and we
+> cannot delete them there.
+
+That last paragraph is the part most policies get wrong. The token is **not** safe
+merely because it needs an unlock: `findUserSession` refreshes the idle timer on every
+token read, and the default token never expires. So "an unlocked session is required"
+and "a leaked token is harmless" are not the same claim. If you only state the first,
+the policy reads as a reassurance the code does not support. The code paths and the
+tests that pin this are in `CODE-AUDIT.md`.
 
 This matters legally (it is a disclosure of onward transfer) and practically (users
 genuinely do not expect the button to do this). An agent-connected account is
@@ -331,23 +352,41 @@ badly.
 
 ---
 
-## Where each claim is verified in the code
+## What the policy should tell a reader, in their own words
 
-| Claim | Where to check |
-|---|---|
-| Records encrypted, DEK wrapped under password | `server/src/session.ts`, `createUserKeyMaterial` / `unwrapDek` |
-| Only `occurred_at` and `user_id` are clear | `server/schema.sql` comments on `medication_events` |
-| TOTP secrets sealed, not stored raw | `server/src/totp.ts`, `sealTotpSecret` |
-| Session key lifetime | `server/src/session.ts`, `SESSION_TTL_MS` and `SESSION_TTL_MINUTES` |
-| Password hashing (scrypt) | `server/src/accounts.ts`, `hashPassword` |
-| Rate limits and lockout | `server/src/http.ts` limiter + `server/src/accounts.ts`, `noteFailedUnlock` |
-| Tokens revoked on password change | `server/src/accounts.ts`, `changePassword` |
-| An agent token alone reads nothing | `server/src/accounts.ts`, `resolveApiToken` — returns a user, never a key |
-| Deletion removes everything user-scoped | `server/test/deleteAccount.test.ts` — asserts each table is empty |
-| The deletion tombstone carries no identifier | `server/schema.sql`, `deletion_log`, and the tombstone test |
-| Individual record deletes are soft | `server/src/store.ts`, `softDelete` |
-| X receives no data from us | `server/src/oauth.ts` — the only X calls are token exchange and profile fetch |
-| No third-party requests in the app | `grep -rn "https://" src/ index.html` — links only |
-| Share links exclude labs and weight | `worker.ts` snapshot sanitiser, and `README.md` |
-| What a predicted level is | `server/src/core.ts`, `PKSimulationService` |
-| The medical disclaimer, and where it lives | `public/terms/index.html` section 3 — the binding text; `src/components/DisclaimerModal.tsx` and `src/i18n/share.ts` are summaries |
+This is the version that belongs in the published policy. No file paths, no function
+names — a reader cannot check those, and a claim they cannot check is one they have to
+take on trust, which is the opposite of what a privacy policy is for.
+
+> **What we can see.** Your dose records and lab results are stored encrypted. We hold
+> no key to them at rest, so a stolen database does not expose them.
+>
+> **When we can read them.** When you sign in, the key is held in the server's memory
+> for up to 30 minutes of inactivity so the service can read and update your records.
+> During that window we can read your records. When it expires, or when you sign out,
+> the key is discarded and we cannot read them again.
+>
+> **This is not end-to-end encryption.** Your browser talks to our server over TLS, and
+> the server decrypts while you are unlocked. We are not claiming we never see your
+> data — we are claiming we hold no key to it when you are away.
+>
+> **Your password is the one thing we cannot replace.** It derives the key. We keep only
+> a hash, which cannot be turned back into the key. If you lose your password, your
+> records are unrecoverable, by you or by us. Your recovery codes protect your *login*,
+> not your data — they cannot decrypt anything. Keep both somewhere you will not lose
+> them.
+>
+> **Agents and AI assistants.** You can connect an AI assistant by pasting an access
+> token into it. That token works only while you have an active session, and it cannot
+> unlock your account on its own. Treat it as a password: while you are signed in, a
+> leaked token can read your records and keep that session alive. Revoke it in Settings
+> to stop this. Once your records reach the assistant's provider, they are governed by
+> that provider's policy and we cannot delete them from there.
+>
+> **Deleting your account** removes your records, lab results, settings, recovery codes,
+> tokens and connected logins immediately and completely. One anonymised counter row
+> survives with no identifier attached. Records you delete individually are marked
+> deleted and hidden, but remain stored until you delete the account.
+
+For an engineer's audit trail of these claims, see `CODE-AUDIT.md`. It is an internal
+document and is not part of the policy.

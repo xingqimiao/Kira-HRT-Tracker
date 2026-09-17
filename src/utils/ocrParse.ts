@@ -235,11 +235,114 @@ export function findHormoneValues(rawText) {
     })
 }
 
+/**
+ * Whether the number at `index` is a reference bound rather than a patient value.
+ *
+ * Chinese lab reports print a single-sided range as `<143` or `>5`, and once OCR has
+ * flattened the table that reads exactly like `143 pmol/L` with a label beside it —
+ * which is how a real report came back with the *upper limit of normal* as the reading.
+ * The value on that line was 396.53 and the parser said 143.
+ *
+ * Walked backwards over spaces so `< 143` and `<143` both count. The widened forms are
+ * included because Chinese typesetting uses them.
+ */
+function isReferenceBound(line, index) {
+    let i = index - 1
+    while (i >= 0 && /\s/.test(line[i])) i--
+    if (i < 0) return false
+    return /[<>≤≥＜＞]/.test(line[i])
+}
+
+/**
+ * The character spans on a line that are a *reference* expression, not a result.
+ *
+ * Chinese lab reports print the reference column as one of:
+ *
+ *   - a single-sided bound — `<143`, `>5`, `≤143`, `≥5`, `＜143`
+ *   - a range — `12.4-233.0`, `264-916`
+ *
+ * Both matter, and the range matters for the same reason the bound does: on the row
+ * `雌二醇 45.2 12.4-233.0 pg/mL` the only number adjacent to the unit is 233.0, so
+ * without this the *upper limit of normal* is read as the reading.
+ *
+ * Spans rather than numbers, because a range has to be removed whole — excluding only
+ * its second half would leave 12.4 looking like a patient value.
+ *
+ * A date (`2026-09-17`) matches the range shape. That is tolerable: a date is far
+ * outside every unit's bounds and is refused a step later anyway, whereas refusing to
+ * treat `-joined digits as a range would miss the real ranges, which are common.
+ */
+function referenceSpans(line) {
+    const spans = []
+    const bound = /[<>≤≥＜＞]\s*(\d+(?:\.\d+)?)/g
+    let m
+    while ((m = bound.exec(line)) !== null) {
+        spans.push([m.index + m[0].length - m[1].length, m.index + m[0].length])
+    }
+    const range = /(\d+(?:\.\d+)?)\s*[-–—~至]\s*(\d+(?:\.\d+)?)/g
+    while ((m = range.exec(line)) !== null) {
+        spans.push([m.index, m.index + m[0].length])
+    }
+    return spans
+}
+
+/** Whether a number at `index` falls inside one of those spans. */
+function isReference(index, spans) {
+    return spans.some(([from, to]) => index >= from && index < to)
+}
+
+/**
+ * The table layout: label, patient value, reference, unit — flattened onto one line.
+ *
+ * Used only when the adjacency scan found nothing, so it cannot displace a reading the
+ * parser was already confident about.
+ *
+ * Every condition is a refusal rather than a guess, because a wrong number in a health
+ * record is worse than an empty field:
+ *
+ *   - exactly one number left after removing the reference expressions. Several means a
+ *     layout this cannot untangle, and picking one would be a coin flip presented as a
+ *     reading;
+ *   - exactly one distinct unit, since a wrong unit changes what the number means;
+ *   - the label within the usual window, and matching that unit's analyte.
+ */
+function tableRowValue(line, spans) {
+    const numbers = [...line.matchAll(/\d+(?:\.\d+)?/g)]
+        .filter((m) => !isReference(m.index, spans))
+        // The bracketed abbreviation is part of the *label*, and it contains a digit:
+        // `雌二醇 (E2)`. Counting that as a number made this refuse a perfectly clear
+        // row — `雌二醇 (E2) 45.2 12.4-233.0 pg/mL` has three numeric tokens, so the
+        // "exactly one" rule rejected it. Anything inside parentheses is label text.
+        .filter((m) => {
+            const open = line.lastIndexOf('(', m.index)
+            const close = line.lastIndexOf(')', m.index)
+            return !(open > -1 && open > close)
+        })
+    if (numbers.length !== 1) return null
+
+    const units = [...line.matchAll(/([A-Za-z]{1,4}\s*[/\-]?\s*[A-Za-z]{0,3})/g)]
+        .map((m) => canonicalUnit(m[1]))
+        .filter((u) => u !== null)
+    const distinct = [...new Set(units)]
+    if (distinct.length !== 1) return null
+
+    const unit = distinct[0]
+    const value = Number(numbers[0][0])
+    const bounds = BOUNDS[unit]
+    if (!Number.isFinite(value) || value < bounds.min || value > bounds.max) return null
+
+    const context = labelContext(line, numbers[0].index, numbers[0][0].length)
+    if (context === null || context !== UNIT_ANALYTES[unit]) return null
+
+    return { analyte: UNIT_ANALYTES[unit], value, unit, source: line.trim().slice(0, 120) }
+}
+
 function valuesInLine(line) {
     const lower = line.toLowerCase()
     if (EXCLUSIONS.some((x) => lower.includes(x))) return []
 
     const results = []
+    const spans = referenceSpans(line)
     // A number followed by a unit, which is the shape on most reports: `45.2 pg/mL`.
     // The unit alternation is `[A-Za-z]` rather than `[a-z]` because OCR emits the
     // confusions in either case (`pg/mI`, `ng/dI`) and the canonicaliser needs to
@@ -247,6 +350,11 @@ function valuesInLine(line) {
     const pattern = /(\d+(?:\.\d+)?)\s*([A-Za-z]{1,4}\s*[/\\-]?\s*[A-Za-z]{0,3})/g
     let match
     while ((match = pattern.exec(line)) !== null) {
+        // A reference bound or range is not a measurement. It is the one thing here
+        // that looks like every other valid reading: a real number, in range, with a
+        // unit and a label beside it.
+        if (isReference(match.index, spans)) continue
+
         const value = Number(match[1])
         const unit = canonicalUnit(match[2])
         if (unit === null || !Number.isFinite(value)) continue
@@ -269,6 +377,13 @@ function valuesInLine(line) {
             // against the report in their hand without trusting the parse.
             source: line.trim().slice(0, 120),
         })
+    }
+
+    // Only when the adjacency scan came up empty: an in-range value in a table row has
+    // no adjacent unit at all, since the reference column sits between them.
+    if (results.length === 0) {
+        const row = tableRowValue(line, spans)
+        if (row) results.push(row)
     }
     return results
 }

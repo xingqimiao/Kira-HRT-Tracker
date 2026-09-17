@@ -60,7 +60,8 @@ the in-app `DisclaimerModal` and the line under a shared chart
 The Privacy Policy lives on the main domain; the guide is in
 `PRIVACY-POLICY-GUIDE.md`. Account deletion is implemented, so its deletion
 promise can be made honestly — the guide says what to claim and which claims would be
-false.
+false. `CODE-AUDIT.md` maps each claim to the code that verifies it; that file is
+internal and does not go in front of users, who cannot check a file path.
 
 ### Serving anything static on this host (the lesson the Terms page left behind)
 
