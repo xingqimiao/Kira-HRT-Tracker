@@ -380,6 +380,25 @@ sudo rsync -a --delete dist/ /srv/hrt-web/
 `VITE_API_ORIGIN` is read by `src/services/apiClient.ts`. Without it the requests go
 same-origin and every API call from `hrt.` would 404 against the static host.
 
+**Do not skip that variable, and do not trust a green build to tell you.** It is the
+one setting whose failure is silent in a way that looks like something else entirely.
+Build without it and the site still loads and still looks right; the only symptom is
+behavioural — **the「使用 X 继续」button disappears, with no error anywhere.** That is
+because `CoreAuthForm` decides whether to offer X by fetching `/health` and reading
+`x_login`; against the static host that request 404s, an unreadable answer is treated
+as "not configured", and the button is simply not rendered. Every other route keeps
+working, so it reads as a broken X app rather than a build mistake.
+
+If you are unsure how a bundle was built:
+
+```bash
+grep -l 'api\.kiramyao\.com/hrt' dist/assets/*.js   # must print at least one file
+```
+
+No output means it was built without the origin. `dist/` is not tracked, so this
+never appears as a diff — there is no commit to review that would catch it. It was
+missed once during the 2026-09-18 deployment for exactly that reason.
+
 ---
 
 ## 5. Verifying a deployment
