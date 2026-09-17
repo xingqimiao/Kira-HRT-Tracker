@@ -66,3 +66,7 @@ server/t.exit
 # scripts/sync-ocr-assets.mjs (run automatically by `npm run build`). Reproducible,
 # and ~22 MB — not something to keep in history.
 public/ocr/
+
+# Scratch space some tooling creates at the repo root (e.g. a temp bundle written
+# by a check script). Never part of the app.
+/tmp/
