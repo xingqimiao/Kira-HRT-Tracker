@@ -19,8 +19,28 @@ dark-first values, so the default theme is not a special case — it is the them
 The light palette overrides the roles in `:root:not(.dark)`, and nothing else has
 to care which one is active.
 
-**Dark is the default** (`App.tsx` theme initialiser), because this is a record
-app read mostly at night. A stored choice in `app-theme` always wins.
+**Dark is the default**, because this is a record app read mostly at night. A stored
+choice in `app-theme` always wins.
+
+The theme and key colour are applied to `<html>` by `utils/themeInit.ts`, called at
+module load in `index.tsx` — **before React renders**. Do not move that back into a
+component effect. Three routes render *outside* `AppContent`, which is where the
+reactive theme effect lives: `/auth/x/callback`, a public share link, and the
+onboarding gate's pre-mount frame. While the only application point was inside
+`AppContent`, those routes never got `.dark` at all, so every `.dark …` rule and
+`dark:` variant sat inert and they painted light whatever the user had chosen — which
+is how the X enrolment page shipped with no dark mode. `themeInit` also resolves
+`system` (the stylesheet keys off classes, not a `prefers-color-scheme` query, so
+defaulting to light would break dark OSes) and sets `key-blue`.
+
+### Never put a QR code on a theme surface
+
+A TOTP enrolment code must sit on a **literal white plate with its own quiet zone**.
+`bg-cos-surface-container` — an undefined token, so effectively `background: none` —
+left one on a near-black page in dark mode, where no scanner could find it while it
+looked perfectly normal on screen. `TotpSecretDisplay` therefore uses `bg-white` and
+passes `marginSize={4}` so four modules of white travel with the code itself, and
+`scripts/check-qr-scannable.mjs` decodes the rendered QR against both palettes.
 
 ### Adding a colour
 

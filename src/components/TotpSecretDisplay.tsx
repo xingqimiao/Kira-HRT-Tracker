@@ -67,12 +67,32 @@ const TotpSecretDisplay: React.FC<TotpSecretDisplayProps> = ({
   return (
     <div className="space-y-3">
       <div className="flex flex-col items-center gap-2">
-        <div className="rounded-[var(--radius-md)] bg-cos-surface-container p-3 border border-[var(--color-m3-outline-variant)] shadow-[var(--shadow-m3-1)]">
+        {/*
+          A literal white plate, not a theme surface. The quiet zone is now carried by
+          the code itself (see `marginSize`), so scanning does not depend on this
+          element — but the plate must still be white for the same reason, since an
+          inverted or dark-backed QR is unscannable by a number of authenticator apps.
+
+          This previously used `bg-cos-surface-container`, a token that was never
+          defined anywhere in the stylesheet, so the plate was **transparent**: in dark
+          mode the black modules sat directly on near-black and the code could not be
+          located at all, while light mode worked by luck because the page behind
+          happened to be near-white.
+        */}
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-m3-outline-variant)] bg-white p-3 shadow-[var(--shadow-m3-1)]">
           <QRCodeSVG
             value={otpauthUri}
-            size={160}
+            size={190}
             level="M"
-            marginSize={0}
+            /*
+              The spec's four-module quiet zone, drawn in the QR's own background
+              colour. Set here rather than left to the plate's padding, because a quiet
+              zone that is merely "whatever is behind the code" is exactly what failed:
+              on a dark surface the finder patterns had nothing light to stand against.
+              Four modules of white now travel with the code in every theme, whatever
+              the plate is changed to later.
+            */
+            marginSize={4}
             bgColor="#FFFFFF"
             fgColor="#000000"
           />
