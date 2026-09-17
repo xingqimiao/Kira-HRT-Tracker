@@ -21,8 +21,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { readCoreState, syncWithCore, CoreSyncError, toLocalPayload } from '../services/coreSync';
-import { mergeSyncStates, fingerprintState, type SyncState } from '../utils/syncMerge';
+import { mergeSyncStates, fingerprintState, toAppState, type SyncState } from '../utils/syncMerge';
 import { normalizeSyncState } from '../utils/syncMerge';
+import { readAppSettings } from '../utils/appSettings';
 
 export type CoreSyncStatus = 'off' | 'idle' | 'syncing' | 'synced' | 'error';
 
@@ -48,6 +49,9 @@ interface Options {
   doseTemplates: unknown;
   weight: unknown;
   pkParams: unknown;
+  /** Account-scoped settings, same contract as the data above. */
+  calibrationMethod: unknown;
+  calibrationHistoryMode: unknown;
 }
 
 /** Absorb a burst of edits (a dose form can set several fields) into one push. */
@@ -65,6 +69,8 @@ export const useCoreSync = ({
   doseTemplates,
   weight,
   pkParams,
+  calibrationMethod,
+  calibrationHistoryMode,
 }: Options): CoreSyncState => {
   const [status, setStatus] = useState<CoreSyncStatus>('off');
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
@@ -124,7 +130,16 @@ export const useCoreSync = ({
       // Push the merged result. `updateExisting` is on because the merge has
       // already decided what wins by `updatedAt`; a second, different rule
       // server-side would fight it.
-      const pushed = await syncWithCore(authToken, toLocalPayload(merged.merged as any), {
+      //
+      // `appState` is rebuilt from the merged state rather than carried through
+      // `toLocalPayload`, which only knows about `modes`: a merge that adopted
+      // the account's settings has to publish them back, or the device that
+      // changed nothing would keep re-reading the same values and the one that
+      // did change something would never have its write acknowledged.
+      const pushed = await syncWithCore(authToken, {
+        ...toLocalPayload(merged.merged as any),
+        appState: toAppState(merged.merged),
+      }, {
         updateExisting: true,
       });
 
@@ -168,7 +183,15 @@ export const useCoreSync = ({
 
   // Local edits: debounce, then push. Skipped until the first reconcile, so this
   // device never uploads over a state it has not read.
-  const localFingerprint = JSON.stringify([events, labResults, doseTemplates, weight, pkParams]);
+  //
+  // The app-only settings are read from storage here rather than passed in: they
+  // live in four separate contexts and none of them would be re-read by a change
+  // to `events`. `readAppSettings` returns the same values until one of them
+  // actually changes, which is what makes it a usable dependency.
+  const localFingerprint = JSON.stringify([
+    events, labResults, doseTemplates, weight, pkParams,
+    readAppSettings(), calibrationMethod, calibrationHistoryMode,
+  ]);
   useEffect(() => {
     if (!activeRef.current) return;
     if (bootstrappedForRef.current !== userId) return;

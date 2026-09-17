@@ -66,6 +66,7 @@ import {
   generateState,
   isXConfigured,
   XOAuthError,
+  type XProfile,
 } from './oauth.ts';
 import { parseBodyWeight, parsePKParams } from './domain.ts';
 import type { Result } from './domain.ts';
@@ -83,7 +84,7 @@ const LOCKOUT_MS = 15 * 60 * 1000;
 /** In-flight OAuth authorizations. Long enough to scan a QR / read a consent screen. */
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
-const ISSUER = 'HRT Tracker';
+const ISSUER = 'Kira Tracker';
 
 export interface AccountRow {
   id: string;
@@ -607,8 +608,14 @@ export const AccountService = {
 
     // A password change is a security event: every other session and every API
     // token minted under the old credentials should stop working.
+    //
+    // Deleted rather than expired-in-place. Both reject the token, but a row left
+    // behind would sit in the user's token list looking live — and since tokens are
+    // permanent by default, an entry that had quietly stopped working is exactly the
+    // confusion the management screen exists to remove. The security event is still
+    // recorded below.
     closeUserSessions(ctx.userId);
-    await getPool().query(`UPDATE api_tokens SET expires_at = now() WHERE user_id = $1`, [ctx.userId]);
+    await getPool().query(`DELETE FROM api_tokens WHERE user_id = $1`, [ctx.userId]);
     await this.recordAuthEvent(ctx.userId, 'password_change');
 
     // Rotate recovery codes only when the account could not have seen the old ones
@@ -645,14 +652,69 @@ export const AccountService = {
 
   // --- Agent tokens -------------------------------------------------------
 
-  async mintApiToken(userId: string, name: string, ttlDays = 90): Promise<string> {
+  /**
+   * Mint a new agent token. **Permanent by default.**
+   *
+   * These are long-lived credentials a user pastes into an agent's config and then
+   * forgets about, so an expiry is the wrong default: it buys little (the token is
+   * revocable, and the records it can read are still gated on an unlock) while
+   * costing a silent breakage at an arbitrary date, months after the config was
+   * written. The user manages the set explicitly instead — see
+   * `listApiTokens` / `revokeApiToken`.
+   *
+   * `ttlDays` is still accepted so a caller may mint a short-lived token on purpose.
+   * Note that `expires_at` is what makes a token permanent, and that a password
+   * change still ends every token (see `changePassword`) — that is deliberate and is
+   * not undermined by the default here.
+   */
+  async mintApiToken(userId: string, name: string, ttlDays: number | null = null): Promise<string> {
     const token = `hrt_${randomBytes(32).toString('base64url')}`;
+    const expiresAt = ttlDays === null ? null : new Date(Date.now() + ttlDays * 86_400_000).toISOString();
     await getPool().query(
-      `INSERT INTO api_tokens (user_id, name, token_hash, expires_at)
-       VALUES ($1, $2, $3, now() + ($4 || ' days')::interval)`,
-      [userId, name, hashToken(token), String(ttlDays)],
+      `INSERT INTO api_tokens (user_id, name, token_hash, expires_at) VALUES ($1, $2, $3, $4)`,
+      [userId, name, hashToken(token), expiresAt],
     );
     return token;
+  },
+
+  /**
+   * The caller's tokens, newest first — metadata only.
+   *
+   * Never returns `token_hash`: the value was shown once at mint time and is not
+   * recoverable, so there is nothing here to return but the name and the dates.
+   * `expiresAt === null` is a permanent token, which is the normal case.
+   */
+  async listApiTokens(userId: string): Promise<{
+    id: string; name: string; createdAt: string; lastUsedAt: string | null; expiresAt: string | null;
+  }[]> {
+    const { rows } = await getPool().query(
+      `SELECT id, name, created_at, last_used_at, expires_at
+         FROM api_tokens WHERE user_id = $1 ORDER BY created_at DESC`,
+      [userId],
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      createdAt: new Date(r.created_at).toISOString(),
+      lastUsedAt: r.last_used_at ? new Date(r.last_used_at).toISOString() : null,
+      expiresAt: r.expires_at ? new Date(r.expires_at).toISOString() : null,
+    }));
+  },
+
+  /**
+   * Revoke one of the caller's tokens.
+   *
+   * Always scoped by `user_id` in the same statement as the id: the id arrives from
+   * the client, and a lookup that took it on its own would let anyone revoke anyone
+   * else's token by guessing a uuid. Returns whether a row was actually removed, so
+   * the caller can 404 rather than reporting a revoke that did not happen.
+   */
+  async revokeApiToken(userId: string, id: string): Promise<boolean> {
+    const { rowCount } = await getPool().query(
+      `DELETE FROM api_tokens WHERE id = $1 AND user_id = $2`,
+      [id, userId],
+    );
+    return (rowCount ?? 0) > 0;
   },
 
   /**
@@ -782,8 +844,9 @@ export const AccountService = {
         return { ok: false, error: 'that X account is already linked to a different account' };
       }
       await getPool().query(
-        `INSERT INTO oauth_links (user_id, provider, provider_user_id, handle) VALUES ($1, 'x', $2, $3)`,
-        [pending.user_id, profile.id, profile.handle],
+        `INSERT INTO oauth_links (user_id, provider, provider_user_id, handle, avatar_url)
+         VALUES ($1, 'x', $2, $3, $4)`,
+        [pending.user_id, profile.id, profile.handle, profile.avatarUrl],
       );
       await this.recordAuthEvent(pending.user_id, 'x_linked');
       return { ok: true, value: { outcome: 'link', handle: profile.handle } };
@@ -797,9 +860,15 @@ export const AccountService = {
 
     if (link.rows.length > 0) {
       const userId = link.rows[0].user_id;
+      // The avatar is refreshed on every sign-in, not only at link time: people
+      // change their picture, and X is the only source for it. `COALESCE` keeps the
+      // stored one when X sends nothing this time, so a transient omission cannot
+      // erase a picture that was working.
       await getPool().query(
-        `UPDATE oauth_links SET handle = $1, last_login_at = now() WHERE provider = 'x' AND provider_user_id = $2`,
-        [profile.handle, profile.id],
+        `UPDATE oauth_links
+            SET handle = $1, avatar_url = COALESCE($2, avatar_url), last_login_at = now()
+          WHERE provider = 'x' AND provider_user_id = $3`,
+        [profile.handle, profile.avatarUrl, profile.id],
       );
 
       const user = await loadUser({ id: userId });
@@ -824,7 +893,7 @@ export const AccountService = {
   /** Issue setup material for an account that has not finished enrolling. */
   async beginXSetup(
     user: AccountRow,
-    profile: { id: string; handle: string | null },
+    profile: XProfile,
   ): Promise<{ outcome: 'setup'; setupToken: string; username: string; totp: EnrollmentMaterial }> {
     const { material, sealed, codeHashes } = await buildEnrollment(user.id);
     await withTransaction(async (client) => {
@@ -844,7 +913,7 @@ export const AccountService = {
   },
 
   /** Create an account owned by an X identity, with no password yet. */
-  async createAccountFromX(profile: { id: string; handle: string | null; displayName: string | null }): Promise<Result<AccountRow>> {
+  async createAccountFromX(profile: XProfile): Promise<Result<AccountRow>> {
     const base = usernameFromHandle(profile.handle);
     // Usernames are unique; X handles are unique too but a local account may
     // already hold the name. Try the plain name, then suffixed variants.
@@ -860,8 +929,9 @@ export const AccountService = {
         );
         const user = rows[0];
         await getPool().query(
-          `INSERT INTO oauth_links (user_id, provider, provider_user_id, handle) VALUES ($1, 'x', $2, $3)`,
-          [user.id, profile.id, profile.handle],
+          `INSERT INTO oauth_links (user_id, provider, provider_user_id, handle, avatar_url)
+           VALUES ($1, 'x', $2, $3, $4)`,
+          [user.id, profile.id, profile.handle, profile.avatarUrl],
         );
         await settings.upsert(user.id, { hrtMode: 'transfem' }).catch(() => undefined);
         await this.recordAuthEvent(user.id, 'x_account_created');
@@ -1092,13 +1162,18 @@ export const AccountService = {
     return { ok: true, value: undefined };
   },
 
-  async listXLinks(userId: string): Promise<{ handle: string | null; linkedAt: string; lastLoginAt: string | null }[]> {
-    const { rows } = await getPool().query<{ handle: string | null; linked_at: Date; last_login_at: Date | null }>(
-      `SELECT handle, linked_at, last_login_at FROM oauth_links WHERE user_id = $1 AND provider = 'x'`,
+  async listXLinks(userId: string): Promise<{
+    handle: string | null; avatarUrl: string | null; linkedAt: string; lastLoginAt: string | null;
+  }[]> {
+    const { rows } = await getPool().query<{
+      handle: string | null; avatar_url: string | null; linked_at: Date; last_login_at: Date | null;
+    }>(
+      `SELECT handle, avatar_url, linked_at, last_login_at FROM oauth_links WHERE user_id = $1 AND provider = 'x'`,
       [userId],
     );
     return rows.map((r) => ({
       handle: r.handle,
+      avatarUrl: r.avatar_url,
       linkedAt: r.linked_at.toISOString(),
       lastLoginAt: r.last_login_at ? r.last_login_at.toISOString() : null,
     }));

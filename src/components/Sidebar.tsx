@@ -56,7 +56,7 @@ const Sidebar: React.FC<SidebarProps> = ({ navItems, currentView, onViewChange }
                     onClick={() => onViewChange('home')}
                     className="shrink-0 text-[0.9375rem] font-semibold tracking-tight text-[var(--color-m3-on-surface)]"
                 >
-                    Oyama Tracker
+                    Kira Tracker
                 </button>
 
                 <div className="ml-auto flex items-center gap-1">

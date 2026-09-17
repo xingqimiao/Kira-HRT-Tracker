@@ -25,11 +25,10 @@ type Cell = { col: number; row: number; date: Date; key: string; count: number; 
  * shade a square would be a category error; the tooltip breaks the day down by
  * compound instead, which is where an amount can be read honestly.
  *
- * The ramp is chosen so its grayscale projection stays monotonic — the mono
- * theme is a page-wide `grayscale(1)`, and a ramp picked on hue alone collapses
- * under it. That is why this component, unlike the chart beside it, needs no
- * `isMono` branch: nothing here is distinguished by colour alone, only by
- * lightness, and lightness survives the filter.
+ * The ramp is chosen so its grayscale projection stays monotonic. Nothing here is
+ * distinguished by colour alone, only by lightness — so the heatmap stays readable
+ * for anyone who cannot separate the hues, which is the reason it needs no special
+ * case where the chart beside it does.
  */
 const DoseHeatmap = ({
     events,

@@ -61,3 +61,8 @@ ui_server.mjs
 server/t.out
 server/t.err
 server/t.exit
+
+# OCR assets assembled from node_modules and a pinned release by
+# scripts/sync-ocr-assets.mjs (run automatically by `npm run build`). Reproducible,
+# and ~22 MB — not something to keep in history.
+public/ocr/

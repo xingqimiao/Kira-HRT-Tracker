@@ -166,7 +166,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
 
     return (
         <div className="relative space-y-4 pb-32">
-            <div className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 bg-[var(--color-m3-surface-dim)] px-6 pb-3 pt-8  md:px-8">
+            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)] px-6 pb-3 pt-8  md:px-8">
                 <button
                     type="button"
                     onClick={onBack}
@@ -179,7 +179,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                 </button>
             </div>
 
-            <div className="max-w-2xl px-6 md:px-8">
+            <div className="mx-auto w-full max-w-2xl px-6 md:px-8">
                 <p className="pb-5 text-sm leading-relaxed text-muted">{copy.modalDescription}</p>
                     {createdShare ? (
                         <div className="pb-0 pt-5">

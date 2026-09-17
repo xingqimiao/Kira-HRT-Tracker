@@ -289,7 +289,7 @@ function getValidatedJWTSecret(env: Env): string {
   return cachedJWTSecret;
 }
 
-// Lazily ensure the transparency deletion_log table exists.
+// Lazily ensure the deletion_log table exists.
 // This lets the feature deploy without requiring a manual migration on
 // existing databases. Cached per worker instance.
 // --- TOTP Helpers (RFC 6238 / RFC 4226) ---
@@ -709,170 +709,9 @@ async function sha256Hex(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-// --- Passkeys (WebAuthn) table lazy creation ---
-let passkeysEnsured = false;
-async function ensurePasskeys(env: Env): Promise<void> {
-  if (passkeysEnsured) return;
-  try {
-    await env.DB.prepare(
-      `CREATE TABLE IF NOT EXISTS passkeys (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        credential_id TEXT NOT NULL UNIQUE,
-        public_key_x TEXT NOT NULL,
-        public_key_y TEXT NOT NULL,
-        counter INTEGER DEFAULT 0,
-        device_name TEXT,
-        created_at INTEGER DEFAULT (unixepoch())
-      )`
-    ).run();
-    await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_passkeys_user_id ON passkeys(user_id)').run();
-    await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_passkeys_cred_id ON passkeys(credential_id)').run();
-    passkeysEnsured = true;
-  } catch (e) {
-    console.error('Failed to ensure passkeys table:', e);
-  }
-}
-
-// --- WebAuthn / Passkey crypto helpers ---
-
-function b64urlDecode(s: string): Uint8Array<ArrayBuffer> {
-  const b64 = s.replace(/-/g, '+').replace(/_/g, '/');
-  const pad = (4 - b64.length % 4) % 4;
-  return Uint8Array.from(atob(b64 + '='.repeat(pad)), c => c.charCodeAt(0));
-}
-
+/** base64url without padding — used for share tokens. */
 function b64urlEncode(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
-
-/**
- * Minimal CBOR decoder covering types used by WebAuthn (major types 0-5, 7 booleans).
- *
- * Every length is checked against what is actually left in the buffer. Without
- * that, a 5-byte header could declare a 4-billion-element array: reads past the
- * end return `undefined`, and since `undefined >> 5` is 0 and `undefined & 0x1f`
- * is 0, `readValue()` kept returning 0 forever instead of throwing — so the loop
- * ran to the declared length and burned the isolate. The input here is an
- * attacker-supplied attestationObject, so the declared length is never to be
- * trusted over the bytes actually present.
- */
-function decodeCBOR(bytes: Uint8Array): any {
-  let offset = 0;
-  function need(n: number): void {
-    if (n < 0 || offset + n > bytes.length) throw new Error('CBOR: truncated input');
-  }
-  function readLen(info: number): number {
-    if (info < 24) return info;
-    if (info === 24) { need(1); return bytes[offset++]; }
-    if (info === 25) { need(2); const v = (bytes[offset] << 8) | bytes[offset + 1]; offset += 2; return v; }
-    if (info === 26) { need(4); const v = ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0; offset += 4; return v; }
-    throw new Error('CBOR: unsupported length info ' + info);
-  }
-  function readValue(): any {
-    need(1);
-    const b = bytes[offset++];
-    const major = b >> 5, info = b & 0x1f;
-    if (major === 0) return readLen(info);
-    if (major === 1) return -1 - readLen(info);
-    if (major === 2) { const len = readLen(info); need(len); const sl = bytes.slice(offset, offset + len); offset += len; return sl; }
-    if (major === 3) { const len = readLen(info); need(len); const sl = bytes.slice(offset, offset + len); offset += len; return new TextDecoder().decode(sl); }
-    // A container's items cost at least one byte each, so a declared count
-    // larger than the bytes remaining is a lie and can be rejected up front —
-    // before allocating anything.
-    if (major === 4) { const len = readLen(info); need(len); return Array.from({ length: len }, () => readValue()); }
-    if (major === 5) { const len = readLen(info); need(len * 2); const map: any = {}; for (let i = 0; i < len; i++) { const k = readValue(); map[k] = readValue(); } return map; }
-    if (major === 7) { if (info === 20) return false; if (info === 21) return true; if (info === 22) return null; }
-    throw new Error('CBOR: unsupported major ' + major);
-  }
-  return readValue();
-}
-
-interface ParsedAuthData {
-  rpIdHash: Uint8Array;
-  flags: number;
-  signCount: number;
-  credentialId?: Uint8Array;
-  publicKeyX?: Uint8Array;
-  publicKeyY?: Uint8Array;
-}
-
-function parseAuthData(auth: Uint8Array): ParsedAuthData {
-  const rpIdHash = auth.slice(0, 32);
-  const flags = auth[32];
-  const signCount = ((auth[33] << 24) | (auth[34] << 16) | (auth[35] << 8) | auth[36]) >>> 0;
-  let credentialId: Uint8Array | undefined, publicKeyX: Uint8Array | undefined, publicKeyY: Uint8Array | undefined;
-  if (flags & 0x40) { // AT flag — attested credential data present
-    let off = 37 + 16; // skip rpIdHash(32) + flags(1) + signCount(4) + AAGUID(16)
-    const credIdLen = (auth[off] << 8) | auth[off + 1]; off += 2;
-    credentialId = auth.slice(off, off + credIdLen); off += credIdLen;
-    // Remaining bytes: CBOR-encoded COSE key (EC2, P-256)
-    const coseKey = decodeCBOR(auth.slice(off));
-    if (coseKey[-2] instanceof Uint8Array) publicKeyX = coseKey[-2]; // x
-    if (coseKey[-3] instanceof Uint8Array) publicKeyY = coseKey[-3]; // y
-  }
-  return { rpIdHash, flags, signCount, credentialId, publicKeyX, publicKeyY };
-}
-
-/** Convert DER-encoded ECDSA signature to raw (r‖s) for Web Crypto API. */
-function derSigToRaw(der: Uint8Array): Uint8Array<ArrayBuffer> {
-  if (der[0] !== 0x30) throw new Error('Not a DER sequence');
-  let pos = 2;
-  if (der[pos++] !== 0x02) throw new Error('Expected r INTEGER');
-  const rLen = der[pos++]; let r = der.slice(pos, pos + rLen); pos += rLen;
-  if (der[pos++] !== 0x02) throw new Error('Expected s INTEGER');
-  const sLen = der[pos++]; let s = der.slice(pos, pos + sLen);
-  // Strip potential leading 0x00 padding byte added by DER for positive integers
-  if (r[0] === 0) r = r.slice(1);
-  if (s[0] === 0) s = s.slice(1);
-  const raw = new Uint8Array(64);
-  raw.set(r, 32 - r.length);
-  raw.set(s, 64 - s.length);
-  return raw;
-}
-
-/** Verify a WebAuthn assertion (authentication response) for ES256 (P-256 ECDSA). */
-async function verifyPasskeyAssertion(
-  clientDataJSONb64: string,
-  authenticatorDatab64: string,
-  signatureb64: string,
-  storedX: string,
-  storedY: string,
-  storedCounter: number,
-  expectedOrigin: string,
-  expectedRpId: string,
-  expectedChallenge: string,
-): Promise<number> {
-  const clientData = JSON.parse(new TextDecoder().decode(b64urlDecode(clientDataJSONb64)));
-  if (clientData.type !== 'webauthn.get') throw new Error('Wrong type');
-  // Normalise challenge to base64url without padding before comparing
-  const received = clientData.challenge.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-  if (received !== expectedChallenge.replace(/=/g, '')) throw new Error('Challenge mismatch');
-  if (clientData.origin !== expectedOrigin) throw new Error('Origin mismatch');
-
-  const authBytes = b64urlDecode(authenticatorDatab64);
-  const { rpIdHash, flags, signCount } = parseAuthData(authBytes);
-  const rpHash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(expectedRpId)));
-  if (!rpIdHash.every((v, i) => v === rpHash[i])) throw new Error('RP ID mismatch');
-  if (!(flags & 1)) throw new Error('User presence not set');
-
-  // Verification data = authData || SHA-256(clientDataJSON)
-  const clientHash = new Uint8Array(await crypto.subtle.digest('SHA-256', b64urlDecode(clientDataJSONb64)));
-  const sigBase = new Uint8Array(authBytes.length + clientHash.length);
-  sigBase.set(authBytes); sigBase.set(clientHash, authBytes.length);
-
-  // Import stored public key (uncompressed EC point: 0x04 || x || y)
-  const x = b64urlDecode(storedX), y = b64urlDecode(storedY);
-  const uncompressed = new Uint8Array(65); uncompressed[0] = 0x04; uncompressed.set(x, 1); uncompressed.set(y, 33);
-  const cryptoKey = await crypto.subtle.importKey('raw', uncompressed, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
-
-  const rawSig = derSigToRaw(b64urlDecode(signatureb64));
-  const valid = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, cryptoKey, rawSig, sigBase);
-  if (!valid) throw new Error('Signature invalid');
-
-  // Counter must advance (0 means counter not implemented — allow)
-  if (storedCounter > 0 && signCount > 0 && storedCounter >= signCount) throw new Error('Counter not advancing (cloned authenticator?)');
-  return signCount;
 }
 
 export default {
@@ -944,7 +783,6 @@ export default {
         // but behind the Cloudflare edge they are never reached (CF always sets
         // CF-Connecting-IP), and anywhere else they are attacker-controlled — one
         // header per request buys a fresh bucket and the limiter stops existing.
-        // Same reasoning already spelled out 15 lines below for /api/transparency.
         // Missing header falls back to one shared bucket rather than a 400, so the
         // self-hosted build still serves; the per-account limiter in the login
         // handler is what actually bounds brute force there.
@@ -956,77 +794,13 @@ export default {
 
       // -- Public API Routes --
 
-      // Transparency: public aggregate stats. No PII exposed.
-      if (url.pathname === '/api/transparency' && request.method === 'GET') {
-        // Only trust CF-Connecting-IP on a public, unauthenticated endpoint.
-        // X-Forwarded-For / X-Real-IP can be spoofed by clients and would
-        // allow trivial rate-limit evasion.
-        const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
-        if (!(await checkRateLimit(env, `transparency:${clientIP}`, 30, 60000))) {
-          return withSecurityHeaders(new Response('Too many requests. Please try again later.', {
-            status: 429, headers: { ...corsHeaders, 'Retry-After': '60' }
-          }));
-        }
-
-        await ensureDeletionLog(env);
-        const now = Math.floor(Date.now() / 1000);
-        const day = 86400;
-        const HOUR = 3600;
-
-        const [totalUsersRow, totalBackupsRow, newUsers7dRow, newUsers24hRow,
-          adminDelRow, selfDelRow, adminDel7dRow, selfDel7dRow, recentRows] = await Promise.all([
-            env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE id != 'admin'").first<{ n: number }>(),
-            env.DB.prepare('SELECT COUNT(*) AS n FROM content').first<{ n: number }>(),
-            env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE id != 'admin' AND created_at >= ?").bind(now - 7 * day).first<{ n: number }>(),
-            env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE id != 'admin' AND created_at >= ?").bind(now - day).first<{ n: number }>(),
-            env.DB.prepare("SELECT COUNT(*) AS n FROM deletion_log WHERE reason = 'admin'").first<{ n: number }>(),
-            env.DB.prepare("SELECT COUNT(*) AS n FROM deletion_log WHERE reason = 'self'").first<{ n: number }>(),
-            env.DB.prepare("SELECT COUNT(*) AS n FROM deletion_log WHERE reason = 'admin' AND deleted_at >= ?").bind(now - 7 * day).first<{ n: number }>(),
-            env.DB.prepare("SELECT COUNT(*) AS n FROM deletion_log WHERE reason = 'self' AND deleted_at >= ?").bind(now - 7 * day).first<{ n: number }>(),
-            // Recent registrations — anonymized. We expose only a short
-            // non-reversible prefix of the hex-only portion of the UUID plus
-            // the creation timestamp. No username is ever returned.
-            env.DB.prepare("SELECT id, created_at FROM users WHERE id != 'admin' ORDER BY created_at DESC LIMIT 10").all<{ id: string; created_at: number }>(),
-          ]);
-
-        const recent = (recentRows.results || []).map(r => ({
-          // Only hex chars, first 4 — enough to visually distinguish entries
-          // but too short to enable enumeration.
-          anon_id: String(r.id).replace(/[^a-f0-9]/gi, '').slice(0, 4).toLowerCase().padEnd(4, '0'),
-          // Round timestamp to the nearest hour. The UI only displays
-          // coarse relative times ("X hours ago"), and rounding prevents
-          // an attacker from correlating an exact registration moment
-          // with an external signal to re-identify an anonymized entry.
-          created_at: Math.floor((r.created_at ?? 0) / HOUR) * HOUR,
-        }));
-
-        const body = {
-          total_users: totalUsersRow?.n ?? 0,
-          total_backups: totalBackupsRow?.n ?? 0,
-          new_users_24h: newUsers24hRow?.n ?? 0,
-          new_users_7d: newUsers7dRow?.n ?? 0,
-          admin_deleted_count: adminDelRow?.n ?? 0,
-          self_deleted_count: selfDelRow?.n ?? 0,
-          admin_deleted_7d: adminDel7dRow?.n ?? 0,
-          self_deleted_7d: selfDel7dRow?.n ?? 0,
-          recent_registrations: recent,
-          server_time: now,
-        };
-
-        return withSecurityHeaders(new Response(JSON.stringify(body), {
-          status: 200,
-          headers: {
-            ...corsHeaders,
-            'Content-Type': 'application/json',
-            'Cache-Control': 'public, max-age=15',
-          },
-        }));
-      }
       // Site notice: the operator's one banner. Public and unauthenticated on
       // purpose — the case this exists for is telling people the domain is
       // moving, and someone who never signs in has to see that too.
       if (url.pathname === '/api/notice' && request.method === 'GET') {
-        // CF-Connecting-IP only, for the reason spelled out on /api/transparency.
+        // CF-Connecting-IP only: X-Forwarded-For / X-Real-IP are attacker-controlled
+        // on a public endpoint, so trusting one buys a fresh bucket per request and
+        // the limiter stops existing.
         const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
         if (!(await checkRateLimit(env, `notice:${clientIP}`, 60, 60000))) {
           return withSecurityHeaders(new Response('Too many requests. Please try again later.', {
@@ -1139,7 +913,6 @@ export default {
 
         // 2FA check
         await ensureTotpColumn(env);
-        await ensurePasskeys(env);
         const userWithTotp = await env.DB.prepare('SELECT totp_secret FROM users WHERE id = ?').bind(user.id).first() as any;
         let twoFAVerified = false;
         if (userWithTotp?.totp_secret) {
@@ -1158,22 +931,6 @@ export default {
             if (!totpValid) return withSecurityHeaders(new Response('Invalid 2FA code', { status: 401, headers: corsHeaders }));
           }
           twoFAVerified = true;
-        } else {
-          // No TOTP: check if user has any passkeys registered
-          const pkRow = await env.DB.prepare('SELECT COUNT(*) as cnt FROM passkeys WHERE user_id = ?').bind(user.id).first() as any;
-          if ((pkRow?.cnt ?? 0) > 0) {
-            // Passkey-only 2FA — accept backup_code as fallback
-            if (backup_code) {
-              const backupValid = await verifyAndConsumeBackupCode(env, user.id, String(backup_code), jwtSecret);
-              if (!backupValid) return withSecurityHeaders(new Response('Invalid or already-used backup code', { status: 401, headers: corsHeaders }));
-            } else {
-              return withSecurityHeaders(new Response(JSON.stringify({ needs2FA: true, method: 'passkey' }), {
-                status: 401,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-              }));
-            }
-            twoFAVerified = true;
-          }
         }
 
         // Create session
@@ -1215,99 +972,6 @@ export default {
           return genericNotFound();
         }
       }
-
-      // POST /api/auth/passkey-options — generate WebAuthn auth challenge (public, no JWT)
-      if (url.pathname === '/api/auth/passkey-options' && request.method === 'POST') {
-        const clientIP = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For')?.split(',')[0].trim() || 'unknown';
-        if (!(await checkRateLimit(env, `passkey-options:${clientIP}`, 10, 60000))) {
-          return withSecurityHeaders(new Response('Too many requests', { status: 429, headers: { ...corsHeaders, 'Retry-After': '60' } }));
-        }
-        await ensurePasskeys(env);
-        const { username } = (await request.json().catch(() => ({}))) as any;
-        const origin = request.headers.get('Origin') || `https://${url.hostname}`;
-        const challenge = b64urlEncode(crypto.getRandomValues(new Uint8Array(32)));
-        const secret = new TextEncoder().encode(jwtSecret);
-
-        let credentialIds: string[] = [];
-        if (username) {
-          const userRow = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(String(username).trim()).first() as any;
-          if (userRow) {
-            const rows = await env.DB.prepare('SELECT credential_id FROM passkeys WHERE user_id = ?').bind(userRow.id).all();
-            credentialIds = (rows.results || []).map((r: any) => r.credential_id);
-          }
-        }
-
-        const challengeToken = await new SignJWT({ challenge, purpose: 'passkey-auth', origin })
-          .setProtectedHeader({ alg: 'HS256' }).setExpirationTime('5m').sign(secret);
-        return withSecurityHeaders(new Response(JSON.stringify({ challengeToken, challenge, credentialIds }), {
-          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }));
-      }
-
-      // POST /api/auth/passkey-verify — verify WebAuthn assertion and issue session JWT (public)
-      if (url.pathname === '/api/auth/passkey-verify' && request.method === 'POST') {
-        const clientIP = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For')?.split(',')[0].trim() || 'unknown';
-        if (!(await checkRateLimit(env, `passkey-verify:${clientIP}`, 10, 60000))) {
-          return withSecurityHeaders(new Response('Too many requests', { status: 429, headers: { ...corsHeaders, 'Retry-After': '60' } }));
-        }
-        await ensurePasskeys(env);
-        const { challengeToken, credential } = await request.json() as any;
-        if (!challengeToken || !credential?.id || !credential?.response) {
-          return withSecurityHeaders(new Response('Missing data', { status: 400, headers: corsHeaders }));
-        }
-
-        const secret = new TextEncoder().encode(jwtSecret);
-        let challengePayload: any;
-        try {
-          const { payload } = await jwtVerify(challengeToken, secret);
-          challengePayload = payload;
-        } catch {
-          return withSecurityHeaders(new Response('Invalid or expired challenge', { status: 400, headers: corsHeaders }));
-        }
-        if (challengePayload.purpose !== 'passkey-auth') {
-          return withSecurityHeaders(new Response('Invalid challenge purpose', { status: 400, headers: corsHeaders }));
-        }
-
-        const passkeyRow = await env.DB.prepare('SELECT * FROM passkeys WHERE credential_id = ?').bind(credential.id as string).first() as any;
-        if (!passkeyRow) return withSecurityHeaders(new Response('Passkey not found', { status: 401, headers: corsHeaders }));
-
-        const userRow = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(passkeyRow.user_id).first() as any;
-        if (!userRow) return withSecurityHeaders(new Response('User not found', { status: 401, headers: corsHeaders }));
-
-        const expectedOrigin = challengePayload.origin as string;
-        const expectedRpId = (() => { try { return new URL(expectedOrigin).hostname; } catch { return url.hostname; } })();
-
-        try {
-          const newCounter = await verifyPasskeyAssertion(
-            credential.response.clientDataJSON,
-            credential.response.authenticatorData,
-            credential.response.signature,
-            passkeyRow.public_key_x,
-            passkeyRow.public_key_y,
-            passkeyRow.counter,
-            expectedOrigin,
-            expectedRpId,
-            challengePayload.challenge as string,
-          );
-          await env.DB.prepare('UPDATE passkeys SET counter = ? WHERE id = ?').bind(newCounter, passkeyRow.id).run();
-        } catch {
-          return withSecurityHeaders(new Response('Passkey verification failed', { status: 401, headers: corsHeaders }));
-        }
-
-        await ensureSessions(env);
-        const sessionId = crypto.randomUUID();
-        const userAgent = (request.headers.get('User-Agent') || 'Unknown').slice(0, 500);
-        const loginIP = clientIP;
-        await env.DB.prepare('INSERT INTO sessions (id, user_id, device_info, ip) VALUES (?, ?, ?, ?)')
-          .bind(sessionId, userRow.id, userAgent, loginIP).run();
-
-        const jwtToken = await new SignJWT({ sub: userRow.id, username: userRow.username, role: 'user', sid: sessionId })
-          .setProtectedHeader({ alg: 'HS256' }).setIssuedAt().setExpirationTime('7d').sign(secret);
-        return withSecurityHeaders(new Response(JSON.stringify({ token: jwtToken, user: { id: userRow.id, username: userRow.username, isAdmin: false } }), {
-          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }));
-      }
-
       // Fixed public endpoint: the bearer token stays in the JSON body, never
       // in a request URL (which infrastructure/observability commonly logs).
       // The browser-facing link stores it in the URL fragment for the same
@@ -1452,21 +1116,19 @@ export default {
         const { payload } = await jwtVerify(token, secret);
 
         // jwtVerify only proves "signed with JWT_SECRET" — it says nothing about
-        // what the token is FOR, and this worker signs several kinds with that
-        // one secret. The passkey challenge tokens minted by the *public*,
-        // credential-free /api/auth/passkey-options carry {challenge, purpose,
-        // origin} and nothing else, so without these checks they sailed through
-        // here: `sub` was undefined and, with no `sid`, the revocation and idle
-        // checks below were skipped wholesale. Reject anything that isn't a
-        // session token before it can be treated as one.
+        // what the token is FOR, and this worker signs more than one kind with
+        // that secret. A token carrying {purpose, ...} and no `sub` is not a
+        // session and must not be treated as one: without this check `sub` was
+        // undefined and, with no `sid`, the revocation and idle checks below
+        // were skipped wholesale. Reject anything that isn't a session token.
         const purpose = (payload as any).purpose;
         const sessionId = (payload as any).sid as string | undefined;
         if (typeof payload.sub !== 'string' || !payload.sub || purpose !== undefined) {
           return sessionInvalid('Invalid token');
         }
-        // Every session token minted by this worker carries a `sid` (login,
-        // register and passkey-verify all insert a sessions row first); the
-        // admin token is the one deliberate exception.
+        // Every session token minted by this worker carries a `sid` (login and
+        // register both insert a sessions row first); the admin token is the one
+        // deliberate exception.
         if (payload.role !== 'admin' && !sessionId) {
           return sessionInvalid('Invalid token');
         }
@@ -1834,14 +1496,12 @@ export default {
               if (!twoFAValid) return withSecurityHeaders(new Response('Invalid 2FA code', { status: 400, headers: corsHeaders }));
             }
 
-            await ensurePasskeys(env);
             await ensureBackupCodes(env);
             await ensureDosageShares(env);
             await env.DB.batch([
               env.DB.prepare('DELETE FROM dosage_shares WHERE user_id = ?').bind(userId),
               env.DB.prepare('DELETE FROM content WHERE user_id = ?').bind(userId),
               env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId),
-              env.DB.prepare('DELETE FROM passkeys WHERE user_id = ?').bind(userId),
               env.DB.prepare('DELETE FROM backup_codes WHERE user_id = ?').bind(userId),
               env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId)
             ]);
@@ -1866,10 +1526,9 @@ export default {
         if (url.pathname.startsWith('/api/admin/')) {
           if (payload.role !== 'admin') return withSecurityHeaders(new Response('Forbidden', { status: 403, headers: corsHeaders }));
           // The user list reports each account's 2FA posture and the /2fa routes
-          // below read and clear it, so the column and table both have to exist
-          // before any of those queries name them. Cached per isolate.
+          // below read and clear it, so the column has to exist before any of
+          // those queries name it. Cached per isolate.
           await ensureTotpColumn(env);
-          await ensurePasskeys(env);
 
           // --- Site notice ---
           // Reads back what is stored regardless of the schedule, so the editor
@@ -1972,15 +1631,11 @@ export default {
               ? await env.DB.prepare(countSql).bind(`%${query}%`).first<{ total: number }>()
               : await env.DB.prepare(countSql).first<{ total: number }>();
             const total = countResult?.total ?? 0;
-            // Passkeys come from a correlated subquery rather than a second
-            // LEFT JOIN: joining both tables would multiply the rows and inflate
-            // every content aggregate above by the passkey count.
             const sql = `SELECT u.id, u.username, u.created_at,
               COUNT(c.id) AS backup_count,
               MAX(c.created_at) AS last_backup_at,
               COALESCE(SUM(LENGTH(c.data)), 0) AS total_backup_size,
-              CASE WHEN u.totp_secret IS NOT NULL AND u.totp_secret != '' THEN 1 ELSE 0 END AS has_totp,
-              (SELECT COUNT(*) FROM passkeys p WHERE p.user_id = u.id) AS passkey_count
+              CASE WHEN u.totp_secret IS NOT NULL AND u.totp_secret != '' THEN 1 ELSE 0 END AS has_totp
               FROM users u LEFT JOIN content c ON u.id = c.user_id
               ${whereClause}
               GROUP BY u.id ORDER BY u.username ASC LIMIT ? OFFSET ?`;
@@ -2070,32 +1725,28 @@ export default {
             await ensureBackupCodes(env);
             const target = await env.DB.prepare('SELECT totp_secret FROM users WHERE id = ?').bind(targetId).first() as any;
             if (!target) return withSecurityHeaders(new Response('User not found', { status: 404, headers: corsHeaders }));
-            const pkRow = await env.DB.prepare('SELECT COUNT(*) AS n FROM passkeys WHERE user_id = ?').bind(targetId).first<{ n: number }>();
             const bcRow = await env.DB.prepare('SELECT COUNT(*) AS n FROM backup_codes WHERE user_id = ? AND used_at IS NULL').bind(targetId).first<{ n: number }>();
-            const passkeys = pkRow?.n ?? 0;
             // Deliberately never returns totp_secret itself — an admin needs to
             // know whether a factor exists, not to be handed the seed that
             // would let them mint codes as the user.
             return withSecurityHeaders(new Response(JSON.stringify({
               totp: !!target.totp_secret,
-              passkeys,
               backupCodes: bcRow?.n ?? 0,
-              enabled: !!target.totp_secret || passkeys > 0,
+              enabled: !!target.totp_secret,
             }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }));
           }
 
           // Admin disable / erase a user's 2FA.
           // This is the recovery path for someone who lost their authenticator:
           // the self-service DELETE /api/user/2fa demands a code from the very
-          // device they no longer have, and DELETE /api/user/passkeys/:id needs
-          // a login they can't complete, so without an admin route the account
+          // device they no longer have, so without an admin route the account
           // is stranded behind a factor nobody can present. `scope` defaults to
           // every factor; a narrower scope drops one without touching the rest.
           if (url.pathname.match(/^\/api\/admin\/users\/[^/]+\/2fa$/) && request.method === 'DELETE') {
             const targetId = url.pathname.split('/')[4];
             const { scope } = await request.json().catch(() => ({})) as any;
             const which = scope === undefined || scope === null ? 'all' : String(scope);
-            if (!['all', 'totp', 'passkeys', 'backup_codes'].includes(which)) {
+            if (!['all', 'totp', 'backup_codes'].includes(which)) {
               return withSecurityHeaders(new Response('Invalid scope', { status: 400, headers: corsHeaders }));
             }
             const target = await env.DB.prepare('SELECT totp_secret FROM users WHERE id = ?').bind(targetId).first() as any;
@@ -2104,7 +1755,6 @@ export default {
             await ensureSessions(env);
 
             const clearTotp = which === 'all' || which === 'totp';
-            const clearPasskeys = which === 'all' || which === 'passkeys';
             const clearBackupCodes = which === 'all' || which === 'backup_codes';
 
             // Stripping a factor weakens the account, so whoever currently holds
@@ -2112,11 +1762,10 @@ export default {
             // enrolled their own authenticator on a hijacked account keeps the
             // foothold that this very reset exists to evict. Clearing spent
             // backup codes alone is not a downgrade, so it leaves sessions be.
-            const revokeSessions = clearTotp || clearPasskeys;
+            const revokeSessions = clearTotp;
 
             // Counted before the batch — D1 exposes no portable per-statement
             // row count, and the admin UI reports exactly what was removed.
-            const pkRow = clearPasskeys ? await env.DB.prepare('SELECT COUNT(*) AS n FROM passkeys WHERE user_id = ?').bind(targetId).first<{ n: number }>() : null;
             const bcRow = clearBackupCodes ? await env.DB.prepare('SELECT COUNT(*) AS n FROM backup_codes WHERE user_id = ?').bind(targetId).first<{ n: number }>() : null;
             const sessRow = revokeSessions ? await env.DB.prepare('SELECT COUNT(*) AS n FROM sessions WHERE user_id = ?').bind(targetId).first<{ n: number }>() : null;
 
@@ -2125,7 +1774,6 @@ export default {
             // behind would reject the opening codes of whatever secret the user
             // enrols next, since consumeTOTP compares steps against it.
             if (clearTotp) statements.push(env.DB.prepare('UPDATE users SET totp_secret = NULL, totp_last_step = NULL WHERE id = ?').bind(targetId));
-            if (clearPasskeys) statements.push(env.DB.prepare('DELETE FROM passkeys WHERE user_id = ?').bind(targetId));
             if (clearBackupCodes) statements.push(env.DB.prepare('DELETE FROM backup_codes WHERE user_id = ?').bind(targetId));
             if (revokeSessions) statements.push(env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(targetId));
             await env.DB.batch(statements);
@@ -2135,7 +1783,6 @@ export default {
               scope: which,
               cleared: {
                 totp: clearTotp && !!target.totp_secret,
-                passkeys: pkRow?.n ?? 0,
                 backupCodes: bcRow?.n ?? 0,
                 sessions: sessRow?.n ?? 0,
               },
@@ -2149,14 +1796,12 @@ export default {
               return withSecurityHeaders(new Response('Cannot delete admin account', { status: 400, headers: corsHeaders }));
             }
             const target = await env.DB.prepare('SELECT created_at FROM users WHERE id = ?').bind(targetId).first() as any;
-            await ensurePasskeys(env);
             await ensureBackupCodes(env);
             await ensureDosageShares(env);
             await env.DB.batch([
               env.DB.prepare('DELETE FROM dosage_shares WHERE user_id = ?').bind(targetId),
               env.DB.prepare('DELETE FROM content WHERE user_id = ?').bind(targetId),
               env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(targetId),
-              env.DB.prepare('DELETE FROM passkeys WHERE user_id = ?').bind(targetId),
               env.DB.prepare('DELETE FROM backup_codes WHERE user_id = ?').bind(targetId),
               env.DB.prepare('DELETE FROM users WHERE id = ?').bind(targetId)
             ]);
@@ -2212,10 +1857,7 @@ export default {
           // GET /api/user/2fa/status
           if (url.pathname === '/api/user/2fa/status' && request.method === 'GET') {
             const row = await env.DB.prepare('SELECT totp_secret FROM users WHERE id = ?').bind(userId).first() as any;
-            await ensurePasskeys(env);
-            const pkRow = await env.DB.prepare('SELECT COUNT(*) as cnt FROM passkeys WHERE user_id = ?').bind(userId).first() as any;
-            const passkeyCount = pkRow?.cnt ?? 0;
-            return withSecurityHeaders(new Response(JSON.stringify({ enabled: !!(row?.totp_secret) || passkeyCount > 0, totp: !!row?.totp_secret, passkey: passkeyCount > 0 }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }));
+            return withSecurityHeaders(new Response(JSON.stringify({ enabled: !!row?.totp_secret, totp: !!row?.totp_secret }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }));
           }
 
           // POST /api/user/2fa/setup — generate a new TOTP secret (not saved yet)
@@ -2223,7 +1865,7 @@ export default {
             const userRow = await env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(userId).first() as any;
             const username = userRow?.username ?? userId;
             const totpSecret = generateTOTPSecret();
-            const issuer = 'HRT Tracker';
+            const issuer = 'Kira Tracker';
             const uri = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(username)}?secret=${totpSecret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
             return withSecurityHeaders(new Response(JSON.stringify({ secret: totpSecret, uri }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }));
           }
@@ -2247,11 +1889,10 @@ export default {
             // below proves nothing about the caller), and take the account for
             // good. The victim's own password login then demands a code from
             // the attacker's authenticator, and so does every route that would
-            // undo it. The same request also wipes every backup code, including
-            // the ones passkey registration issues, so a passkey-protected
+            // undo it. The same request also wipes every backup code, so an
             // account lost its recovery path in the bargain. Require the
             // password the strictly weaker operations already ask for — see
-            // DELETE /api/user/passkeys/:id and the backup-code regenerate.
+            // the backup-code regenerate.
             if (!password) {
               return withSecurityHeaders(new Response('Current password is required', { status: 400, headers: corsHeaders }));
             }
@@ -2316,152 +1957,6 @@ export default {
             }
             const codes = await generateAndStoreBackupCodes(env, userId, jwtSecret);
             return withSecurityHeaders(new Response(JSON.stringify({ codes }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }));
-          }
-        }
-
-        // --- Passkeys (WebAuthn) ---
-        if (url.pathname.startsWith('/api/user/passkeys') || url.pathname.startsWith('/api/user/passkey')) {
-          await ensurePasskeys(env);
-
-          // GET /api/user/passkeys — list user's registered passkeys
-          if (url.pathname === '/api/user/passkeys' && request.method === 'GET') {
-            const rows = await env.DB.prepare(
-              'SELECT id, credential_id, device_name, created_at FROM passkeys WHERE user_id = ? ORDER BY created_at DESC'
-            ).bind(userId).all();
-            return withSecurityHeaders(new Response(JSON.stringify(rows.results || []), {
-              status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            }));
-          }
-
-          // POST /api/user/passkey/register-options — generate registration challenge
-          if (url.pathname === '/api/user/passkey/register-options' && request.method === 'POST') {
-            const userRow = await env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(userId).first() as any;
-            const origin = request.headers.get('Origin') || `https://${url.hostname}`;
-            const rpId = (() => { try { return new URL(origin).hostname; } catch { return url.hostname; } })();
-            const challenge = b64urlEncode(crypto.getRandomValues(new Uint8Array(32)));
-            const secret = new TextEncoder().encode(jwtSecret);
-            const challengeToken = await new SignJWT({ challenge, purpose: 'passkey-register', uid: userId, origin })
-              .setProtectedHeader({ alg: 'HS256' }).setExpirationTime('5m').sign(secret);
-            const userIdEncoded = b64urlEncode(new TextEncoder().encode(userId));
-            // The client reads this to fill `excludeCredentials`, which stops an
-            // authenticator silently replacing a credential it already holds for
-            // this account. It was reading a key the response never contained,
-            // so the list was always empty.
-            const enrolled = await env.DB.prepare('SELECT credential_id FROM passkeys WHERE user_id = ?').bind(userId).all();
-            return withSecurityHeaders(new Response(JSON.stringify({
-              challengeToken,
-              challenge,
-              rp: { id: rpId, name: 'HRT Tracker' },
-              user: { id: userIdEncoded, name: userRow?.username || userId, displayName: userRow?.username || userId },
-              pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
-              timeout: 60000,
-              authenticatorSelection: { residentKey: 'preferred', userVerification: 'preferred' },
-              attestation: 'none',
-              excludeCredentialIds: (enrolled.results || []).map((r: any) => r.credential_id),
-            }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }));
-          }
-
-          // POST /api/user/passkey/register — verify attestation and save passkey
-          if (url.pathname === '/api/user/passkey/register' && request.method === 'POST') {
-            const { challengeToken, credential, deviceName, password: pkRegPassword } = await request.json() as any;
-            if (!challengeToken || !credential?.response) {
-              return withSecurityHeaders(new Response('Missing data', { status: 400, headers: corsHeaders }));
-            }
-            const secret = new TextEncoder().encode(jwtSecret);
-            let challengePayload: any;
-            try {
-              const { payload } = await jwtVerify(challengeToken, secret);
-              challengePayload = payload;
-            } catch {
-              return withSecurityHeaders(new Response('Invalid or expired challenge', { status: 400, headers: corsHeaders }));
-            }
-            if (challengePayload.purpose !== 'passkey-register' || challengePayload.uid !== userId) {
-              return withSecurityHeaders(new Response('Invalid challenge', { status: 400, headers: corsHeaders }));
-            }
-            const expectedOrigin = challengePayload.origin as string;
-            const expectedRpId = (() => { try { return new URL(expectedOrigin).hostname; } catch { return url.hostname; } })();
-
-            // Verify clientDataJSON
-            const clientData = JSON.parse(new TextDecoder().decode(b64urlDecode(credential.response.clientDataJSON)));
-            if (clientData.type !== 'webauthn.create') return withSecurityHeaders(new Response('Wrong type', { status: 400, headers: corsHeaders }));
-            const receivedChallenge = clientData.challenge.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-            if (receivedChallenge !== (challengePayload.challenge as string).replace(/=/g, '')) {
-              return withSecurityHeaders(new Response('Challenge mismatch', { status: 400, headers: corsHeaders }));
-            }
-            if (clientData.origin !== expectedOrigin) return withSecurityHeaders(new Response('Origin mismatch', { status: 400, headers: corsHeaders }));
-
-            // Verify attestationObject (CBOR)
-            const attObj = decodeCBOR(b64urlDecode(credential.response.attestationObject));
-            const authData = attObj['authData'] as Uint8Array;
-            const rpHash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(expectedRpId)));
-            const { rpIdHash, flags, signCount, credentialId, publicKeyX, publicKeyY } = parseAuthData(authData);
-            if (!rpIdHash.every((v: number, i: number) => v === rpHash[i])) return withSecurityHeaders(new Response('RP ID mismatch', { status: 400, headers: corsHeaders }));
-            if (!(flags & 1)) return withSecurityHeaders(new Response('User presence not set', { status: 400, headers: corsHeaders }));
-            if (!credentialId || !publicKeyX || !publicKeyY) return withSecurityHeaders(new Response('No credential data in authData', { status: 400, headers: corsHeaders }));
-
-            const credentialIdStr = b64urlEncode(credentialId);
-            const existing = await env.DB.prepare('SELECT id FROM passkeys WHERE credential_id = ?').bind(credentialIdStr).first();
-            if (existing) return withSecurityHeaders(new Response('Credential already registered', { status: 409, headers: corsHeaders }));
-
-            // Enrolling a passkey grants a standing, password-independent
-            // credential: /api/auth/passkey-verify is a full passwordless login
-            // that mints a fresh 7-day session from the key alone, and nothing
-            // else — not a password change, not a session purge — revokes it.
-            // So a bearer token borrowed once bought permanent access. That is
-            // strictly more damaging than *deleting* a passkey, which this file
-            // already gates on the password, so enrolment takes the same proof.
-            // Placed after the duplicate check so a replayed credential still
-            // 409s without paying for a bcrypt round.
-            if (!pkRegPassword) return withSecurityHeaders(new Response('Current password is required', { status: 400, headers: corsHeaders }));
-            const pkOwner = await env.DB.prepare('SELECT password_hash FROM users WHERE id = ?').bind(userId).first() as any;
-            const pkRegDummy = '$2a$10$CCCCCCCCCCCCCCCCCCCCC.O0D3I6./CCCCCCCCCCCCCCCCCCCCCCC';
-            if (!(await bcrypt.compare(pkRegPassword, pkOwner?.password_hash ?? pkRegDummy))) {
-              return withSecurityHeaders(new Response('Incorrect password', { status: 401, headers: corsHeaders }));
-            }
-
-            // Check if this is the first passkey (to auto-generate backup codes)
-            const pkCountRow = await env.DB.prepare('SELECT COUNT(*) as cnt FROM passkeys WHERE user_id = ?').bind(userId).first() as any;
-            const isFirstPasskey = (pkCountRow?.cnt ?? 0) === 0;
-
-            const id = crypto.randomUUID();
-            await env.DB.prepare(
-              'INSERT INTO passkeys (id, user_id, credential_id, public_key_x, public_key_y, counter, device_name) VALUES (?, ?, ?, ?, ?, ?, ?)'
-            ).bind(id, userId, credentialIdStr, b64urlEncode(publicKeyX), b64urlEncode(publicKeyY), signCount, deviceName || null).run();
-
-            let backupCodes: string[] | undefined;
-            if (isFirstPasskey) {
-              // Check if user already has backup codes (e.g. from TOTP setup)
-              await ensureBackupCodes(env);
-              const bcRow = await env.DB.prepare('SELECT COUNT(*) as cnt FROM backup_codes WHERE user_id = ?').bind(userId).first() as any;
-              if ((bcRow?.cnt ?? 0) === 0) {
-                backupCodes = await generateAndStoreBackupCodes(env, userId, jwtSecret);
-              }
-            }
-
-            return withSecurityHeaders(new Response(JSON.stringify({ message: 'Passkey registered', id, backupCodes }), {
-              status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            }));
-          }
-
-          // DELETE /api/user/passkeys/:id — remove a passkey
-          if (url.pathname.match(/^\/api\/user\/passkeys\/[^/]+$/) && request.method === 'DELETE') {
-            const passkeyId = url.pathname.split('/').pop();
-            // Deleting the last passkey drops a passkey-only account back to
-            // username+password (the login path demands an assertion purely
-            // because the passkeys table is non-empty), so this weakens
-            // authentication and needs the password — the same bar DELETE
-            // /api/user/2fa sets for the equivalent TOTP action.
-            const { password: pkPassword } = await request.json().catch(() => ({})) as any;
-            if (!pkPassword) return withSecurityHeaders(new Response('Current password is required', { status: 400, headers: corsHeaders }));
-            const pkUser = await env.DB.prepare('SELECT password_hash FROM users WHERE id = ?').bind(userId).first() as any;
-            const pkDummy = '$2a$10$CCCCCCCCCCCCCCCCCCCCC.O0D3I6./CCCCCCCCCCCCCCCCCCCCCCC';
-            if (!(await bcrypt.compare(pkPassword, pkUser?.password_hash ?? pkDummy))) {
-              return withSecurityHeaders(new Response('Incorrect password', { status: 401, headers: corsHeaders }));
-            }
-            await env.DB.prepare('DELETE FROM passkeys WHERE id = ? AND user_id = ?').bind(passkeyId, userId).run();
-            return withSecurityHeaders(new Response(JSON.stringify({ message: 'Passkey deleted' }), {
-              status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            }));
           }
         }
 

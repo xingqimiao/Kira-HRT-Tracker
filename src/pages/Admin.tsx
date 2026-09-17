@@ -199,11 +199,9 @@ const Admin: React.FC = () => {
                 setUsers(prev => prev.map(u => u.id === user.id ? {
                     ...u,
                     has_totp: cleared.totp ? 0 : u.has_totp,
-                    passkey_count: cleared.passkeys > 0 ? 0 : u.passkey_count,
                 } : u));
                 const parts = [
                     cleared.totp && 'authenticator app',
-                    cleared.passkeys > 0 && `${cleared.passkeys} passkey${cleared.passkeys === 1 ? '' : 's'}`,
                     cleared.backupCodes > 0 && `${cleared.backupCodes} backup code${cleared.backupCodes === 1 ? '' : 's'}`,
                 ].filter(Boolean) as string[];
                 const sessions = cleared.sessions > 0
@@ -344,20 +342,6 @@ const Admin: React.FC = () => {
                                         </button>
                                     </div>
 
-                                    <div className={`flex items-center justify-between gap-3 py-3.5 ${divider}`}>
-                                        <div className="min-w-0">
-                                            <p className={`text-sm ${settingsOn}`}>Passkeys</p>
-                                            <p className={`text-xs ${settingsMuted} mt-0.5`}>{twoFA.passkeys === 0 ? 'None registered.' : `${twoFA.passkeys} registered.`}</p>
-                                        </div>
-                                        <button
-                                            onClick={() => clearTwoFA(panel.user, 'passkeys', `Remove all ${twoFA.passkeys} passkey(s) for "${panel.user.username}"? Every active session is signed out.`)}
-                                            disabled={twoFA.passkeys === 0}
-                                            className={dangerTextBtn}
-                                        >
-                                            Remove All
-                                        </button>
-                                    </div>
-
                                     <div className="flex items-center justify-between gap-3 py-3.5">
                                         <div className="min-w-0">
                                             <p className={`text-sm ${settingsOn}`}>Backup codes</p>
@@ -377,7 +361,7 @@ const Admin: React.FC = () => {
                                             Erasing a factor drops this account back to its password alone. Confirm who is asking before you do it.
                                         </p>
                                         <button
-                                            onClick={() => clearTwoFA(panel.user, 'all', `Erase ALL two-factor authentication for "${panel.user.username}"? This removes the authenticator secret, every passkey and every backup code, and signs out all of their sessions.`)}
+                                            onClick={() => clearTwoFA(panel.user, 'all', `Erase ALL two-factor authentication for "${panel.user.username}"? This removes the authenticator secret and every backup code, and signs out all of their sessions.`)}
                                             disabled={!twoFA.enabled && twoFA.backupCodes === 0}
                                             className="btn-secondary text-cos-error  shrink-0 disabled:opacity-40 disabled:pointer-events-none"
                                         >
@@ -487,13 +471,10 @@ const Admin: React.FC = () => {
                                                 {u.backup_count} · {formatBytes(u.total_backup_size || 0)} · {timeAgo(u.last_backup_at)}
                                             </span>
                                         )}
-                                        {((u.has_totp ?? 0) > 0 || (u.passkey_count ?? 0) > 0) && (
+                                        {(u.has_totp ?? 0) > 0 && (
                                             <span className={`inline-flex items-center gap-1 text-xs ${settingsMuted}`} title="Two-factor authentication enabled">
                                                 <Icon icon={ShieldCheck} size={11} strokeWidth={1.5} />
-                                                {[
-                                                    (u.has_totp ?? 0) > 0 && 'TOTP',
-                                                    (u.passkey_count ?? 0) > 0 && `${u.passkey_count} passkey${u.passkey_count === 1 ? '' : 's'}`,
-                                                ].filter(Boolean).join(' · ')}
+                                                TOTP
                                             </span>
                                         )}
                                     </div>
@@ -821,7 +802,7 @@ const Admin: React.FC = () => {
     const catContent = (id: AdminCat) => (id === 'users' ? renderUsers() : id === 'notice' ? renderNotice() : renderSystem());
 
     return (
-        <div className="flex pt-8 pb-32 min-h-full">
+        <div className="mx-auto flex w-full max-w-[64rem] pt-8 pb-32 min-h-full">
 
             {/* ── Left category nav (desktop) ─────────────────────────── */}
             <nav className="hidden md:flex flex-col w-52 shrink-0 px-3 gap-0.5 border-r border-[var(--color-m3-outline-variant)] ">
@@ -859,7 +840,7 @@ const Admin: React.FC = () => {
             <div className="md:hidden flex-1 self-start px-6 pb-32">
                 {mobileView === 'list' ? (
                     <>
-                        <h1 className={`sticky top-0 md:top-[var(--m3-navbar-height)] z-20 -mx-6 px-6 pt-2 pb-3 mb-3 bg-[var(--color-m3-surface-dim)]  text-xl font-semibold ${settingsOn}`}>Admin</h1>
+                        <h1 className={`sticky top-0 z-20 -mx-6 px-6 pt-2 pb-3 mb-3 bg-[var(--color-m3-surface-dim)]  text-xl font-semibold ${settingsOn}`}>Admin</h1>
                         {cats.map(({ id, label, icon, hint }) => (
                             <button
                                 key={id}
@@ -881,7 +862,7 @@ const Admin: React.FC = () => {
                     </>
                 ) : (
                     <>
-                        <div className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 -mx-6 px-6 pt-2 pb-3 mb-3 bg-[var(--color-m3-surface-dim)] ">
+                        <div className="sticky top-0 z-20 -mx-6 px-6 pt-2 pb-3 mb-3 bg-[var(--color-m3-surface-dim)] ">
                             <button
                                 onClick={exitMobileCat}
                                 className="flex items-center gap-2 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] "

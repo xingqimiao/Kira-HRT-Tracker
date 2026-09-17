@@ -558,9 +558,41 @@ html {
     --color-m3-fill-soft: #0000000A;
 }
 
-/* Black & white theme — the palette rendered fully grayscale */
-html.mono {
-    filter: grayscale(1);
+/* ── Key colour: blue, instead of the default pink ───────────────────────────
+   Not a second palette — the same two tuned families with the roles swapped, so
+   pink becomes the secondary accent and blue the primary. That keeps every
+   contrast ratio the palette was checked against: these are the exact values
+   already in the two blocks above, just signed to the other role.
+
+   `:root.key-blue` rather than `html.key-blue` so it ties with
+   `:root:not(.dark)` on specificity and wins on source order, which is why this
+   has to stay below it. */
+:root.key-blue {
+    --color-m3-primary: #5BCEFA;
+    --color-m3-primary-light: #93DEFB;
+    --color-m3-primary-container: #16333F;
+    --color-m3-on-primary: #08202B;
+    --color-m3-on-primary-container: #C4EAFD;
+
+    --color-m3-accent: #F5A9B8;
+    --color-m3-accent-light: #F8C3CD;
+    --color-m3-accent-container: #3A1F27;
+    --color-m3-on-accent: #211016;
+    --color-m3-on-accent-container: #FBD9E0;
+}
+
+:root:not(.dark).key-blue {
+    --color-m3-primary: #0B6E96;
+    --color-m3-primary-light: #1A85AE;
+    --color-m3-primary-container: #DDEEF6;
+    --color-m3-on-primary: #FFFFFF;
+    --color-m3-on-primary-container: #04222E;
+
+    --color-m3-accent: #A8405A;
+    --color-m3-accent-light: #C25570;
+    --color-m3-accent-container: #FCE4EA;
+    --color-m3-on-accent: #FFFFFF;
+    --color-m3-on-accent-container: #3A101C;
 }
 
 /* The page is painted from the role tokens in both themes, so there is never a
@@ -931,11 +963,33 @@ body {
 /* ── Nav ───────────────────────────────────────────────────────────────────
    64px, the page colour at 88%, and a blur. The blur is not decoration: content
    scrolling under a bar that is only 88% opaque otherwise reads as a smear, and
-   blurring it keeps the bar legible without making it a solid block. */
+   blurring it keeps the bar legible without making it a solid block.
+
+   `position: fixed` is what makes that sentence true, and leaving it out was a
+   real bug rather than a style preference. The bar was an in-flow flex child, so
+   nothing ever scrolled under it — and worse, the two places that *assume* it
+   floats were then each adding a second 64px offset:
+
+     .scroll-pb-nav   padding-top: 64px   (content already started below the bar)
+     every page       md:top-[64px]       (sticky pinned 64px below the scroller top)
+
+   Stacked, that put a page's sticky header 128px down the viewport with live
+   content scrolling through the gap above it — which is what "the header moves
+   with the scroll" looked like on the MCP page. It was true on every page with a
+   sticky header; that page was just tall enough to show it.
+
+   Fixed rather than left in flow so the compensation stays where it already is:
+   one declaration here, and the padding and the sticky offsets both become
+   correct as written. `z-index: 30` sits above the pages' `z-20` sticky headers
+   (so they slide *under* the bar) and below the bottom bar and dialogs. */
 .m3-navbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 30;
     align-items: center;
     height: var(--m3-navbar-height);
-    flex-shrink: 0;
     background-color: color-mix(in srgb, var(--color-m3-surface) 88%, transparent);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -1097,8 +1151,88 @@ select,
                 opacity var(--duration-quick) var(--ease-standard);
 }
 
-/* Toggle switches: the knob slid instantly between its two offsets and the
-   track colour cut over with it. */
+/* ── Switch ────────────────────────────────────────────────────────────────
+   The MD3 switch primitive. Replaces an inline `h-6 w-11` track with a 16px
+   knob that never changed size, which was wrong on three counts against the
+   spec: the track was 44x24 where MD3 says 52x32, the knob stayed 16dp instead
+   of growing to 24dp when on, and the knob was a neutral grey in both states
+   where the spec wants `on-primary` against the filled track.
+
+   The state rides on `[aria-checked]` rather than a class, because the element
+   is already a `role="switch"` with `aria-checked` for accessibility — reading
+   the same attribute in CSS means the visual state cannot drift from the
+   announced one, which is exactly how the old version ended up disagreeing with
+   itself.
+
+   `outline` rather than `border` for the off state: a border would join the box
+   model and shrink the 52x32 content box, so the knob's travel would depend on
+   whether the switch happened to be on. `outline-offset: -2px` draws the ring
+   inside the same box instead. */
+.m3-switch {
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+    width: 52px;
+    height: 32px;
+    padding: 0;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    background-color: var(--color-m3-surface-container-highest);
+    outline: 2px solid var(--color-m3-outline);
+    outline-offset: -2px;
+    transition: background-color var(--duration-base) var(--ease-standard),
+                outline-color var(--duration-base) var(--ease-standard);
+}
+
+.m3-switch[aria-checked="true"] {
+    background-color: var(--color-m3-primary);
+    outline-color: var(--color-m3-primary);
+}
+
+/* The knob is centred on `left` and pulled back by half its own size, so the two
+   states differ only in centre and diameter — no per-state transform to keep in
+   sync with the size. Centres: an 16px knob sits at 26 in a 52px track, a 24px
+   one at 36, which leaves the spec's 4dp inset on the right when on. */
+.m3-switch__thumb {
+    position: absolute;
+    top: 50%;
+    left: 26px;
+    width: 16px;
+    height: 16px;
+    border-radius: var(--radius-full);
+    background-color: var(--color-m3-outline);
+    translate: -50% -50%;
+    transition: left var(--duration-base) var(--ease-standard),
+                width var(--duration-base) var(--ease-standard),
+                height var(--duration-base) var(--ease-standard),
+                background-color var(--duration-base) var(--ease-standard);
+}
+
+.m3-switch[aria-checked="true"] .m3-switch__thumb {
+    left: 36px;
+    width: 24px;
+    height: 24px;
+    background-color: var(--color-m3-on-primary);
+}
+
+/* The interaction state layer, as a soft ring under the knob. MD3 draws this
+   over the whole track; a ring is the same idea without a second element. */
+.m3-switch:hover .m3-switch__thumb {
+    box-shadow: 0 0 0 4px var(--color-m3-fill-soft);
+}
+
+.m3-switch:focus-visible {
+    outline-color: var(--color-m3-primary);
+    outline-width: 3px;
+}
+
+.m3-switch:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+}
+
+/* The knob slid instantly between its two offsets and the track colour cut over
+   with it. */
 .switch-track {
     transition: background-color var(--duration-base) var(--ease-standard);
 }
@@ -1143,6 +1277,142 @@ select,
     overflow: hidden;
 }
 
+/* ── Blood vial (empty states) ────────────────────────────────── */
+/* The liquid is its own colour rather than a role token: it stands for blood, and
+   it must not change when the key colour does. Purple by choice — the sample in
+   the intro's vial (PixelMark) is terracotta because that one is the drawn prop,
+   while this one is a gauge, and a gauge that changed hue with the theme's
+   primary would read as a status indicator it is not.
+
+   Nothing here changes when the reading goes over the ceiling. The vial shows that
+   by spilling and by raising the warning badge; recolouring the contents would make
+   it look like a different instrument and would move the meaning out of the level,
+   where it belongs, and into a hue the reader has to remember. */
+:root {
+    --color-m3-vial-liquid: #B191DB;
+    --color-m3-vial-liquid-surface: #C9B0E8;
+    --color-m3-vial-sheen: #F0E9FA;
+    --color-m3-vial-spec: #8A63C4;
+    /* The badge. Not `--color-m3-warning`: that role is the warning *text* colour, so on
+       the light theme it is a dark brown (#7A5B14) — correct for a sentence, wrong for a
+       badge, where it reads as mud. The badge is an icon, so it wants the amber itself in
+       both themes; the exclamation is a hole punched through the glyph, so it shows
+       whatever surface is behind and needs no second colour. */
+    --color-m3-vial-warn: #E9A23B;
+}
+
+.dark {
+    --color-m3-vial-liquid: #8E6FC0;
+    --color-m3-vial-liquid-surface: #A98BD6;
+    --color-m3-vial-sheen: #C6AEE8;
+    --color-m3-vial-spec: #D9C8F2;
+    --color-m3-vial-warn: #F2B84B;
+}
+
+/* The liquid slides to its new level instead of jumping.
+ *
+ * `currentLevel` arrives once a minute and in discrete steps, so without this the
+ * vial would tick like a clock. The duration is shorter than that minute with room
+ * to spare, so a rise always settles before the next reading lands.
+ *
+ * `transform` specifically, not `y`/`height`: those are SVG *attributes*, and
+ * animating them from CSS is an SVG 2 feature older Safari ignores — there the
+ * level would just snap. */
+.vial-fill {
+    transition: transform var(--md-sys-motion-duration-extra-long2, 800ms)
+                var(--md-sys-motion-easing-emphasized, cubic-bezier(0.2, 0, 0, 1));
+}
+
+/* Two sparkles flash when a new reading arrives. Scale and fade only — nothing
+   moves position, so this cannot be mistaken for the liquid rising. */
+@keyframes vial-sparkle {
+    0%   { opacity: 0; transform: scale(0.2); }
+    35%  { opacity: 1; transform: scale(1); }
+    70%  { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(0.6); }
+}
+
+.vial-sparkle {
+    /* Around the sparkles' own box, not the SVG's origin — without `fill-box` the
+       scale would pivot on the viewBox corner and slide them across the tube. */
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: vial-sparkle 900ms var(--md-sys-motion-easing-standard, cubic-bezier(0.2, 0, 0, 1)) both;
+}
+
+/* ── The warning badge ──────────────────────────────────────────────────────
+   Two nested elements because one cannot do both jobs: the slot owns the centring
+   translate, the badge owns the animation's transform. On a single element the
+   keyframes overwrite `translateX(-50%)` and the badge jumps sideways on frame one. */
+
+.vial-badge-slot {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% - 2px);
+    transform: translateX(-50%);
+    color: var(--color-m3-vial-warn);
+    line-height: 0;
+}
+
+/* Drops in from above, then hops on a slow cycle.
+ *
+ * The hop is a still-then-twice pattern rather than a constant bounce: a permanent
+ * vibration beside a number people read often is noise. `steps(1, end)` is what keeps
+ * it reading as pixel art — the badge sits on one row or the next, never between. */
+@keyframes vial-badge-drop {
+    0%   { transform: translateY(-16px) scale(0.5); opacity: 0; }
+    62%  { transform: translateY(2px) scale(1.12); opacity: 1; }
+    100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes vial-badge-hop {
+    0%, 72%   { transform: translateY(0); }
+    76%       { transform: translateY(-2px); }
+    80%       { transform: translateY(0); }
+    84%       { transform: translateY(-2px); }
+    88%, 100% { transform: translateY(0); }
+}
+
+.vial-badge {
+    display: block;
+    animation:
+        vial-badge-drop var(--md-sys-motion-duration-long4, 600ms)
+            var(--md-sys-motion-easing-emphasized-decelerate, cubic-bezier(0.05, 0.7, 0.1, 1)) both,
+        vial-badge-hop 3.4s 600ms steps(1, end) infinite;
+}
+
+/* ── The splash ─────────────────────────────────────────────────────────────
+   Droplets thrown when a reading crosses the ceiling. Rendered by VialSpray into a
+   portal, so these move in viewport coordinates.
+
+   Two keyframes, and the difference between them is the whole flourish: a flyer arcs
+   out and fades in the air, while a clinger flies to a piece of neighbouring text and
+   then holds and fades *slowly*, which is what reads as liquid hanging on the text. */
+
+@keyframes vial-drop-fly {
+    0%   { transform: translate(0, 0) scale(1); opacity: 1; }
+    55%  { transform: translate(calc(var(--dx) * 0.7), calc(var(--dy) * 0.7 - var(--lift))) scale(1); opacity: 1; }
+    100% { transform: translate(var(--dx), var(--dy)) scale(0.8); opacity: 0; }
+}
+
+@keyframes vial-drop-cling {
+    0%   { transform: translate(0, 0) scale(1); opacity: 1; }
+    28%  { transform: translate(calc(var(--dx) * 0.55), calc(var(--dy) * 0.55 - var(--lift))) scale(1); opacity: 1; }
+    46%  { transform: translate(var(--dx), var(--dy)) scale(1); opacity: 1; }
+    72%  { transform: translate(var(--dx), var(--dy)) scale(0.9); opacity: 0.9; }
+    100% { transform: translate(var(--dx), var(--dy)) scale(0.6); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .vial-fill { transition: none; }
+    /* Still shown — the glint says a reading landed and the badge says it went over;
+       neither is decoration — just not animated. The splash is not rendered at all in
+       this mode (see BloodVial), so it needs no rule here. */
+    .vial-sparkle { animation-duration: 1ms; }
+    .vial-badge { animation: none; }
+}
+
+
 /* ── Pixel cat (empty states) ─────────────────────────────────── */
 :root {
     --pixel-blue: #9FD4EE;
@@ -1176,6 +1446,12 @@ select,
        in light mode, but on a dark surface it vanishes and a padlock becomes a
        brown square, so this one flips with the theme. */
     --pixel-ink: #4A3E44;
+
+    /* Fixed identity colours for the key-colour picker. Unlike the role tokens
+       these must NOT swap when the choice is applied — they name the options, so
+       a swatch that changed with the selection would misreport itself. */
+    --color-m3-key-pink: #F5A9B8;
+    --color-m3-key-blue: #5BCEFA;
 }
 
 /* Pastels this light glare against a dark surface, so knock them back. */

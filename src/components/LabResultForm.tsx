@@ -12,14 +12,29 @@ interface LabResultFormProps {
     onSave: (result: LabResult) => void;
     onCancel: () => void;
     onDelete?: (id: string) => void;
+    /**
+     * Values to start the add-form with, from a scanned report.
+     *
+     * Prefills only. The user still edits and presses save — see `LabScan` for why
+     * nothing reaches a record from recognition alone. Applied when the form opens,
+     * so a scan that arrives while the form is already open still lands.
+     */
+    initialValues?: { E2?: { value: number; unit: LabUnit }; T?: { value: number; unit: LabUnit } } | null;
 }
 
 type LabUnit = 'pg/ml' | 'pmol/l' | 'ng/dl' | 'nmol/l';
 
+// pg/mL is the app's canonical estradiol unit (convertToPgMl treats it as the
+// identity; Home and the chart are drawn in it) and ng/dL the canonical
+// testosterone unit, so a fresh reading must default to those to agree with
+// every other view before the user toggles the unit.
+const DEFAULT_E2_UNIT: LabUnit = 'pg/ml';
+const DEFAULT_T_UNIT: LabUnit = 'ng/dl';
+
 const divider = "border-b border-[var(--color-m3-outline-variant)] ";
 
-const E2_UNITS: LabUnit[] = ['pmol/l', 'pg/ml'];
-const T_UNITS: LabUnit[] = ['ng/dl', 'nmol/l'];
+const E2_UNITS: LabUnit[] = [DEFAULT_E2_UNIT, 'pmol/l'];
+const T_UNITS: LabUnit[] = [DEFAULT_T_UNIT, 'nmol/l'];
 const UNIT_LABELS: Record<LabUnit, string> = {
     'pmol/l': 'pmol/L',
     'pg/ml': 'pg/mL',
@@ -70,22 +85,22 @@ const HormoneValueField: React.FC<{
     </div>
 );
 
-const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onCancel, onDelete }) => {
+const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onCancel, onDelete, initialValues }) => {
     const { t, lang } = useTranslation();
     const [dateStr, setDateStr] = useState("");
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
 
     // Editing an existing record: single value tied to that record's hormone.
-    const [editUnit, setEditUnit] = useState<LabUnit>('pmol/l');
+    const [editUnit, setEditUnit] = useState<LabUnit>(DEFAULT_E2_UNIT);
     const [editValue, setEditValue] = useState("");
 
     // Adding new: estradiol and testosterone are independent fields, so one
     // blood draw covering both markers can be logged as a single entry at a
     // single timestamp instead of two separate saves.
-    const [e2Unit, setE2Unit] = useState<LabUnit>('pmol/l');
+    const [e2Unit, setE2Unit] = useState<LabUnit>(DEFAULT_E2_UNIT);
     const [e2Value, setE2Value] = useState("");
-    const [tUnit, setTUnit] = useState<LabUnit>('ng/dl');
+    const [tUnit, setTUnit] = useState<LabUnit>(DEFAULT_T_UNIT);
     const [tValue, setTValue] = useState("");
 
     useEffect(() => {
@@ -99,12 +114,17 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
             const now = new Date();
             const iso = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
             setDateStr(iso);
-            setE2Value("");
-            setTValue("");
-            setE2Unit('pmol/l');
-            setTUnit('ng/dl');
+            // A scanned report prefills the two fields; anything it did not read is
+            // left empty rather than defaulted, so the user can see at a glance what
+            // the scan actually produced.
+            setE2Value(initialValues?.E2 ? String(initialValues.E2.value) : "");
+            setTValue(initialValues?.T ? String(initialValues.T.value) : "");
+            setE2Unit(initialValues?.E2?.unit ?? DEFAULT_E2_UNIT);
+            setTUnit(initialValues?.T?.unit ?? DEFAULT_T_UNIT);
         }
-    }, [resultToEdit]);
+        // `initialValues` is in the dependency list so a scan handed to an already-open
+        // form applies, rather than being silently dropped until the next reopen.
+    }, [resultToEdit, initialValues]);
 
     const handleSave = () => {
         if (!dateStr) return;

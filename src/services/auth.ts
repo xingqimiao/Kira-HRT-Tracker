@@ -25,35 +25,11 @@ export interface Session {
 export interface TwoFAStatus {
     enabled: boolean;
     totp?: boolean;
-    passkey?: boolean;
 }
 
 export interface TwoFASetup {
     secret: string;
     uri: string;
-}
-
-export interface Passkey {
-    id: string;
-    credential_id: string;
-    device_name: string | null;
-    created_at: number;
-}
-
-// Serialise an ArrayBuffer (or BufferSource) to base64url without padding
-function ab2b64url(buf: ArrayBuffer): string {
-    return btoa(String.fromCharCode(...new Uint8Array(buf)))
-        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
-
-// Decode a base64url string to an ArrayBuffer
-function b64url2ab(s: string): ArrayBuffer {
-    const b64 = s.replace(/-/g, '+').replace(/_/g, '/');
-    const pad = (4 - b64.length % 4) % 4;
-    const binary = atob(b64 + '='.repeat(pad));
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return bytes.buffer;
 }
 
 /**
@@ -75,36 +51,6 @@ export function sessionIdFromToken(token: string | null): string | null {
         return null;
     }
 }
-
-export function serializeAttestationCredential(credential: PublicKeyCredential): object {
-    const r = credential.response as AuthenticatorAttestationResponse;
-    return {
-        id: credential.id,
-        rawId: ab2b64url(credential.rawId),
-        response: {
-            clientDataJSON: ab2b64url(r.clientDataJSON),
-            attestationObject: ab2b64url(r.attestationObject),
-        },
-        type: credential.type,
-    };
-}
-
-export function serializeAssertionCredential(credential: PublicKeyCredential): object {
-    const r = credential.response as AuthenticatorAssertionResponse;
-    return {
-        id: credential.id,
-        rawId: ab2b64url(credential.rawId),
-        response: {
-            clientDataJSON: ab2b64url(r.clientDataJSON),
-            authenticatorData: ab2b64url(r.authenticatorData),
-            signature: ab2b64url(r.signature),
-            userHandle: r.userHandle ? ab2b64url(r.userHandle) : null,
-        },
-        type: credential.type,
-    };
-}
-
-export { b64url2ab };
 
 export const authService = {
     async login(username: string, password: string, totpCode?: string, backupCode?: string): Promise<AuthResponse> {
@@ -272,67 +218,5 @@ export const authService = {
             body: JSON.stringify({ password, code })
         });
         if (!res.ok) throw new Error(await res.text());
-    },
-
-    async listPasskeys(token: string): Promise<Passkey[]> {
-        const res = await apiFetch('/api/user/passkeys', {
-            headers: { 'Authorization': `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error(await res.text());
-        return await res.json() as Passkey[];
-    },
-
-    async registerPasskeyOptions(token: string): Promise<any> {
-        const res = await apiFetch('/api/user/passkey/register-options', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error(await res.text());
-        return await res.json();
-    },
-
-    /**
-     * A passkey is a standing passwordless credential, so enrolling one is at
-     * least as sensitive as deleting one — the worker requires the password for
-     * both.
-     */
-    async registerPasskey(token: string, challengeToken: string, credential: object, deviceName: string | undefined, password: string): Promise<{ backupCodes?: string[] }> {
-        const res = await apiFetch('/api/user/passkey/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ challengeToken, credential, deviceName, password }),
-        });
-        if (!res.ok) throw new Error(await res.text());
-        return await res.json() as { backupCodes?: string[] };
-    },
-
-    /** Removing a passkey weakens the account, so the worker requires the password. */
-    async deletePasskey(token: string, id: string, password: string): Promise<void> {
-        const res = await apiFetch(`/api/user/passkeys/${id}`, {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ password }),
-        });
-        if (!res.ok) throw new Error(await res.text());
-    },
-
-    async passkeyAuthOptions(username?: string): Promise<{ challengeToken: string; challenge: string; credentialIds: string[] }> {
-        const res = await apiFetch('/api/auth/passkey-options', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(username ? { username } : {}),
-        });
-        if (!res.ok) throw new Error(await res.text());
-        return await res.json();
-    },
-
-    async passkeyAuthVerify(challengeToken: string, credential: object): Promise<AuthResponse> {
-        const res = await apiFetch('/api/auth/passkey-verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ challengeToken, credential }),
-        });
-        if (!res.ok) throw new Error(await res.text());
-        return await res.json() as AuthResponse;
     },
 };

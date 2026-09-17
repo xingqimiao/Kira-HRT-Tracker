@@ -50,8 +50,8 @@ export async function deriveAndCacheCloudKey(password: string, userId: string): 
  * Encrypt an export payload for cloud storage. Throws when this device holds no
  * key, rather than uploading the record in the clear.
  *
- * Returning the payload as-is was a silent downgrade: on a passwordless passkey
- * login, or on a non-secure origin where `deriveCloudKey` cannot run at all, no
+ * Returning the payload as-is was a silent downgrade: on a non-secure origin
+ * where `deriveCloudKey` cannot run at all, no
  * key is ever cached — so the full dose/lab history went to the server as
  * plaintext JSON while the UI reported a successful sync. The read path already
  * refuses to act without a key (`locked`); the write path has to fail the same
@@ -73,9 +73,8 @@ export interface BackupSummary {
 // Outcome of trying to read a cloud backup:
 //  - ok:      decrypted (or plaintext) and ready to use
 //  - corrupt: not valid JSON / unexpected shape
-//  - locked:  encrypted, but this device has no working key (e.g. signed in
-//             with a passkey, or the key was cleared) — the user must unlock
-//             with their password.
+//  - locked:  encrypted, but this device has no working key (e.g. the key was
+//             cleared) — the user must unlock with their password.
 export type CloudBackupResult =
     | { status: 'ok'; data: any }
     | { status: 'corrupt' }

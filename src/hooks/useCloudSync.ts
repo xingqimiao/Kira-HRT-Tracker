@@ -37,7 +37,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { cloudService } from '../services/cloud';
 import { CLOUD_KEY_CHANGED_EVENT, hasCloudKey, prepareCloudPayload, readCloudBackup } from '../utils/cloudBackup';
-import { fingerprintState, hasContent, mergeSyncStates, normalizeSyncState, SyncState } from '../utils/syncMerge';
+import { fingerprintState, hasContent, mergeSyncStates, normalizeSyncState, toAppState, SyncState } from '../utils/syncMerge';
 
 export type SyncStatus =
     /** Signed out, or the user turned sync off. */
@@ -263,7 +263,7 @@ export const useCloudSync = ({
 
             // `locked` covers a cloud copy this device cannot read. The
             // `!hasCloudKey()` half covers the mirror case the write path used to
-            // paper over: no key at all — a passwordless passkey login, or a
+            // paper over: no key at all — a
             // non-secure origin where the key cannot be derived. Uploading then
             // meant sending the record in the clear, and because an account with
             // an empty cloud reports `empty` rather than `locked`, that path fell
@@ -491,6 +491,10 @@ function toPayload(localPayload: any, merged: SyncState): any {
         events: active.events,
         labResults: active.labResults,
         doseTemplates: active.doseTemplates,
+        // Rebuilt from the merged state, not spread from `localPayload`: the blob
+        // is written whole, so carrying the pre-merge value through would let this
+        // device overwrite the account's settings with its own on every upload.
+        appState: toAppState(merged),
         pkParams: merged.pkParams ?? null,
         pkParamsUpdatedAt: merged.pkParamsUpdatedAt || undefined,
     };

@@ -117,11 +117,17 @@ CREATE TABLE IF NOT EXISTS oauth_links (
     provider          text NOT NULL CHECK (provider IN ('x')),
     provider_user_id  text NOT NULL,
     handle            text,
+    -- The provider's avatar, captured when the link is made or used, so the account
+    -- page can show it without calling X on every render. Cosmetic: null just means
+    -- no picture, which is why nothing here depends on it being present.
+    avatar_url        text,
     linked_at         timestamptz NOT NULL DEFAULT now(),
     last_login_at     timestamptz,
     UNIQUE (provider, provider_user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_oauth_links_user ON oauth_links(user_id);
+-- Added after the first release, so a database created by that revision needs it too.
+ALTER TABLE oauth_links ADD COLUMN IF NOT EXISTS avatar_url text;
 
 -- In-flight OAuth authorizations, keyed by the `state` value.
 --

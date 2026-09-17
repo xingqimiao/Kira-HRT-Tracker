@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { HRTMode } from '../../logic';
+import { onAppSettingsApplied } from '../utils/appSettings';
 
 interface HRTModeContextValue {
     mode: HRTMode;
@@ -26,6 +27,12 @@ export const HRTModeProvider: React.FC<{ children: React.ReactNode }> = ({ child
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY, mode);
     }, [mode]);
+
+    // Adopt a mode the account says this device should be using.
+    useEffect(() => onAppSettingsApplied(() => {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved === 'transmasc' || saved === 'transfem') setModeState(saved);
+    }), []);
 
     const setMode = (m: HRTMode) => setModeState(m);
 

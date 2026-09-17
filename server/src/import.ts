@@ -352,3 +352,60 @@ export async function accountRecordCounts(userId: string): Promise<{ doses: numb
   );
   return { doses: Number(rows[0].doses), labs: Number(rows[0].labs) };
 }
+
+/**
+ * The public aggregate the status page publishes.
+ *
+ * Counts only, and deliberately so: every number is a `COUNT(*)` over a table that
+ * holds no readable value (record bodies are ciphertext the server cannot open),
+ * plus the deletion log, which by construction names nobody — see its schema
+ * comment. The one thing worth stating plainly is what is *absent*: no ids, no
+ * usernames, no timestamps tied to an account, nothing joinable, and no per-record
+ * data of any kind. Re-identification needs a row that points at a person, and
+ * there is none here.
+ *
+ * This is the same *class* of aggregate the app's own Transparency Centre used to
+ * publish; that page read the legacy Worker, and this is the Core's equivalent.
+ */
+export async function publicStats(now = new Date()): Promise<{
+  ok: true;
+  users: { total: number; new_24h: number; new_7d: number };
+  records: { doses: number; labs: number };
+  deletions: { self: number; admin: number };
+  generated_at: string;
+}> {
+  const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  const { rows } = await getPool().query<{
+    total_users: string; new_24h: string; new_7d: string;
+    doses: string; labs: string; self_deletions: string; admin_deletions: string;
+  }>(
+    // `users` needs no soft-delete filter — unlinking and deletion both remove the
+    // row outright, so every row in the table is a live account. The record tables
+    // do carry `deleted_at`, and counting those rows would report data the user has
+    // already removed from their own view.
+    `SELECT
+       (SELECT count(*) FROM users)                                                 AS total_users,
+       (SELECT count(*) FROM users WHERE created_at >= $1)                          AS new_24h,
+       (SELECT count(*) FROM users WHERE created_at >= $2)                          AS new_7d,
+       (SELECT count(*) FROM medication_events WHERE deleted_at IS NULL)            AS doses,
+       (SELECT count(*) FROM lab_results      WHERE deleted_at IS NULL)             AS labs,
+       (SELECT count(*) FROM deletion_log WHERE reason = 'self')                    AS self_deletions,
+       (SELECT count(*) FROM deletion_log WHERE reason = 'admin')                   AS admin_deletions`,
+    [dayAgo, weekAgo],
+  );
+
+  const row = rows[0];
+  return {
+    ok: true,
+    users: {
+      total: Number(row.total_users),
+      new_24h: Number(row.new_24h),
+      new_7d: Number(row.new_7d),
+    },
+    records: { doses: Number(row.doses), labs: Number(row.labs) },
+    deletions: { self: Number(row.self_deletions), admin: Number(row.admin_deletions) },
+    generated_at: now.toISOString(),
+  };
+}

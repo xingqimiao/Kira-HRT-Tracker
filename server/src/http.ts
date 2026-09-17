@@ -28,7 +28,7 @@ import { MedicationService, LabService, TimelineService, PKSimulationService } f
 import { AccountService } from './accounts.ts';
 import type { AuthContext } from './types.ts';
 import { findUserSession, lookupSession, closeSession, openSession } from './session.ts';
-import { importPayload, buildExportPayload } from './import.ts';
+import { importPayload, buildExportPayload, publicStats } from './import.ts';
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
@@ -280,6 +280,22 @@ export function createRequestHandler() {
           x_login: AccountService.xLoginAvailable(),
         });
         return;
+      }
+
+      // --- Public aggregate -------------------------------------------------
+      if (path === '/stats' && req.method === 'GET') {
+        // Public and unauthenticated, so it needs its own ceiling: it costs a
+        // handful of sequential scans, and an unthrottled endpoint that counts
+        // every row in the table is a cheap way to load the database. Generous
+        // enough that the status page's polling is nowhere near it.
+        if (rateLimited(`stats:${clientIp(req)}`, 60, 60_000)) {
+          return send(res, 429, { error: 'too many requests; try again shortly' });
+        }
+        // No identifiers leave this route — see `publicStats` for what is and is
+        // not in the body. The short cache is what keeps a status page's polling
+        // from turning into a scan each time.
+        res.setHeader('Cache-Control', 'public, max-age=60');
+        return send(res, 200, await publicStats());
       }
 
       // --- Auth: registration and enrolment --------------------------------
@@ -664,13 +680,34 @@ export function createRequestHandler() {
       }
 
       // --- Agent tokens ----------------------------------------------------
+      //
+      // Tokens are permanent by default; the user manages the set rather than
+      // waiting for an expiry. See `mintApiToken` for why an expiry is the wrong
+      // default for a credential pasted into an agent's config.
+      if (path === '/api/tokens' && req.method === 'GET') {
+        const ctx = await requireCtx();
+        if (!ctx) return;
+        return send(res, 200, { tokens: await AccountService.listApiTokens(ctx.userId) });
+      }
       if (path === '/api/tokens' && req.method === 'POST') {
         const ctx = await requireCtx();
         if (!ctx) return;
         const body = (await readBody(req)) as { name?: unknown } | undefined;
-        const name = typeof body?.name === 'string' && body.name.length <= 64 ? body.name : 'agent';
+        const name = typeof body?.name === 'string' && body.name.trim() !== '' && body.name.length <= 64
+          ? body.name.trim()
+          : 'agent';
         const token = await AccountService.mintApiToken(ctx.userId, name);
+        // The plaintext is returned exactly once, here. Nothing can read it back
+        // afterwards — only its hash is stored.
         return send(res, 201, { token, name });
+      }
+      const tokenRevoke = path.match(/^\/api\/tokens\/([0-9a-f-]{36})$/);
+      if (tokenRevoke && req.method === 'DELETE') {
+        const ctx = await requireCtx();
+        if (!ctx) return;
+        const removed = await AccountService.revokeApiToken(ctx.userId, tokenRevoke[1]);
+        if (!removed) return send(res, 404, { error: 'no such token' });
+        return send(res, 200, { ok: true });
       }
 
       send(res, 404, { error: 'not found' });

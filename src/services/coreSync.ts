@@ -129,6 +129,10 @@ export function toLocalPayload(state: SyncPayload): SyncPayload {
     version: state.version ?? 2,
     ...(typeof state.weight === 'number' ? { weight: state.weight } : {}),
     modes: state.modes ?? {},
+    // `appState` must survive this hop in both directions: it is where the Core
+    // keeps dose templates, quick doses and the app-only settings, and dropping
+    // it on the way out is what made them look like they synced while never
+    // reaching the server.
     ...(state.appState ? { appState: state.appState } : {}),
   };
 }

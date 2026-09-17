@@ -2,7 +2,7 @@
  * Client for the Application Core's authentication API.
  *
  * Separate from `services/auth.ts`, which speaks to the legacy Worker API
- * (passkeys, session list, admin). The Core has a different model — password plus a
+ * (session list, admin). The Core has a different model — password plus a
  * *mandatory* second factor — so mixing the two into one module would hide which
  * backend each call reaches, and they are reached at different origins.
  *
@@ -151,8 +151,25 @@ export interface AccountSummary {
 
 export interface XLink {
   handle: string | null;
+  /** X avatar, captured server-side at link/login time. Null when X sent none. */
+  avatarUrl: string | null;
   linkedAt: string;
   lastLoginAt: string | null;
+}
+
+/**
+ * One agent token, as the server describes it.
+ *
+ * There is no `token` field and there never will be: the plaintext is shown once at
+ * mint time and only its hash is stored, so the list is metadata by construction
+ * rather than by choice. `expiresAt: null` means permanent, which is the default.
+ */
+export interface ApiToken {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -370,6 +387,7 @@ export const coreAuth = {
     const raw = await request<any>('/auth/x/links', { token });
     return (raw.links ?? []).map((l: any) => ({
       handle: l.handle,
+      avatarUrl: l.avatar_url ?? null,
       linkedAt: l.linked_at,
       lastLoginAt: l.last_login_at,
     }));
@@ -377,6 +395,30 @@ export const coreAuth = {
 
   async unlinkX(token: string, code: string): Promise<void> {
     await request('/auth/x/unlink', { method: 'POST', token, body: JSON.stringify({ code }) });
+  },
+
+  // --- Agent tokens ---------------------------------------------------------
+
+  /**
+   * Mint a token. The plaintext comes back here and only here.
+   *
+   * `name` is a label the user chooses so a stale token can be identified later —
+   * "Claude Desktop", "my laptop". It has no security meaning.
+   */
+  async mintToken(token: string, name: string): Promise<{ token: string; name: string }> {
+    const raw = await request<{ token: string; name: string }>('/api/tokens', {
+      method: 'POST', token, body: JSON.stringify({ name }),
+    });
+    return raw;
+  },
+
+  async listTokens(token: string): Promise<ApiToken[]> {
+    const raw = await request<{ tokens: ApiToken[] }>('/api/tokens', { token });
+    return raw.tokens ?? [];
+  },
+
+  async revokeToken(token: string, id: string): Promise<void> {
+    await request(`/api/tokens/${id}`, { method: 'DELETE', token });
   },
 };
 

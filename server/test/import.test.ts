@@ -364,6 +364,52 @@ test('app-only collections survive a sync round trip', async () => {
   assert.deepEqual(state.modes.transfem.quickDoses, [{ id: 'q1', mg: 5 }]);
 });
 
+test('app settings survive a sync round trip, stamp included', async () => {
+  // The app never sent this blob, so the settings it carries — theme, language,
+  // HRT mode — silently stayed behind on whichever device last set them. The
+  // stamp has to come back too: the app resolves settings newest-wins on it, and
+  // a round trip that dropped it would read every sync as "never edited".
+  const { importPayload, buildExportPayload } = await import('../src/import.ts');
+  const account = await freshAccount();
+
+  const settings = {
+    theme: 'light', keyColor: 'blue', lang: 'ja', hrtMode: 'transmasc',
+    showVial: false, calMethod: 'mipd', calHistoryMode: 'forward',
+  };
+  const payload: any = sampleExport();
+  payload.appState = { modes: {}, settings, settingsUpdatedAt: 1712345678000 };
+  await importPayload(account, payload, { updateExisting: true });
+
+  const state: any = await buildExportPayload(account);
+  assert.deepEqual(state.appState.settings, settings, 'every setting comes back verbatim');
+  assert.equal(state.appState.settingsUpdatedAt, 1712345678000, 'the stamp survives');
+  assert.equal(
+    normalizeSyncState(state).appSettings?.theme,
+    'light',
+    "the app's own reader finds them in the returned payload",
+  );
+});
+
+test('a later sync replaces the settings blob rather than merging into it', async () => {
+  // The blob is written whole. If an upsert merged keys instead of replacing,
+  // clearing a setting would be impossible and an old value would outlive the
+  // edit that removed it.
+  const { importPayload, buildExportPayload } = await import('../src/import.ts');
+  const account = await freshAccount();
+
+  const first: any = sampleExport();
+  first.appState = { modes: {}, settings: { theme: 'light', lang: 'ja' }, settingsUpdatedAt: 1000 };
+  await importPayload(account, first, { updateExisting: true });
+
+  const second: any = sampleExport();
+  second.appState = { modes: {}, settings: { theme: 'dark' }, settingsUpdatedAt: 2000 };
+  await importPayload(account, second, { updateExisting: true });
+
+  const state: any = await buildExportPayload(account);
+  assert.deepEqual(state.appState.settings, { theme: 'dark' });
+  assert.equal(state.appState.settingsUpdatedAt, 2000);
+});
+
 test('a sync is scoped to its own account', async () => {
   const { importPayload, buildExportPayload } = await import('../src/import.ts');
   const a = await freshAccount();

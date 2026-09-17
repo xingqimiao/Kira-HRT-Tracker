@@ -6,7 +6,8 @@ import { DoseEvent, Route, Ester, ExtraKey, getToE2Factor, isTestosteroneEster }
 import { formatTime } from '../utils/helpers';
 import { useDialog } from '../contexts/DialogContext';
 import DoseForm from '../components/DoseForm';
-import PixelCat from '../components/PixelCat';
+import BloodVial from '../components/BloodVial';
+import { useHRTMode } from '../contexts/HRTModeContext';
 import { DoseTemplate } from '../components/DoseFormModal';
 import { DoseDayGroup } from '../hooks/useAppData';
 
@@ -48,6 +49,7 @@ const History: React.FC<HistoryProps> = ({
     onDeleteTemplate,
     groupedEvents
 }) => {
+    const { isTransmasc } = useHRTMode();
     const { showDialog } = useDialog();
     const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -126,7 +128,7 @@ const History: React.FC<HistoryProps> = ({
 
     return (
         <div className="relative pb-32">
-            <div className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3 flex items-center justify-between max-w-2xl">
+            <div className="mx-auto w-full sticky top-0 z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3 flex items-center justify-between max-w-2xl">
                 <div>
                     <h1 className={`text-xl font-semibold ${on}`}>
                         {t('timeline.title')}
@@ -174,7 +176,7 @@ const History: React.FC<HistoryProps> = ({
 
             <div className={`mt-4 grid ${isQuickAddOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                 <div className="overflow-hidden">
-                    <div className="px-4 md:px-8 mb-6 max-w-2xl">
+                    <div className="mx-auto w-full px-4 md:px-8 mb-6 max-w-2xl">
                         <div className="flex items-center justify-between py-3">
                             <div>
                                 <p className={`text-sm font-medium ${on}`}>{t('timeline.batch')}</p>
@@ -237,14 +239,15 @@ const History: React.FC<HistoryProps> = ({
             </div>
 
             {groupedEvents.length === 0 && (
-                <div className="px-6 md:px-8 flex flex-col items-center text-center py-20 max-w-2xl text-[var(--color-m3-on-surface-variant)] ">
-                    <PixelCat pose="donut" className="mb-4" />
+                <div className="mx-auto w-full px-6 md:px-8 flex flex-col items-center text-center py-20 max-w-2xl text-[var(--color-m3-on-surface-variant)] ">
+                    {/* Empty, because it is: no doses logged, nothing in the tube. */}
+                    <BloodVial level={0} mode={isTransmasc ? 'transmasc' : 'transfem'} size={64} className="mb-4" />
                     <p className="text-sm">{t('timeline.empty')}</p>
                 </div>
             )}
 
             {groupedEvents.length > 0 && (
-            <div className="px-6 md:px-8 max-w-2xl">
+            <div className="mx-auto w-full px-6 md:px-8 max-w-2xl">
                 {groupedEvents.map(({ key, label, events: dayEvents }) => (
                     <div key={key} className="mb-6 last:mb-0">
                         <div className="sticky top-[94px] z-10 bg-[var(--color-m3-surface-dim)]  py-2">

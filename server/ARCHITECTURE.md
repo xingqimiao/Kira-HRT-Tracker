@@ -229,7 +229,7 @@ lines) and the Core has its own model. They do not overlap:
 |---|---|---|
 | Password login | yes | yes (scrypt) |
 | TOTP 2FA + backup codes | yes | no |
-| Passkeys / WebAuthn | yes | no |
+| Passkeys / WebAuthn | removed | no |
 | Session list & revoke | yes | no (unlock TTL only) |
 | Admin | yes | no |
 | Unlock token | n/a | yes (`ks_…`) |
@@ -243,10 +243,11 @@ that this should not be chosen by accident:
 1. **Port TOTP to the Core, drop passkeys.** TOTP is genuinely small — the
    `totp_secret` and `backup_codes` columns already exist in `schema.sql`
    (inherited from the original design), and verification is an HMAC over a time
-   step in `node:crypto`. Dropping passkeys is a security *regression*, so this
-   needs an explicit yes.
-2. **Port both.** TOTP plus a WebAuthn library and the passkey tables. The most
-   complete, and the most work.
+   step in `node:crypto`. Passkeys have since been removed from the Worker
+   altogether (the intended login model is password/TOTP plus X one-tap), so
+   this is now just "port what remains".
+2. **Port TOTP plus a WebAuthn library.** Would re-introduce passkey tables and
+   a WebAuthn dependency the app has deliberately dropped; not the current plan.
 3. **Keep the Worker as the identity provider and let the Core trust it.** Smallest
    change to the app, but it moves where the DEK can be unwrapped: the Core would
    have to accept identity asserted by another service, which weakens the "the
@@ -392,6 +393,39 @@ header at all and fails the preflight with 403.
 2. **Recovery codes were written before the user row existed**, violating the foreign
    key, so every registration 500'd. The writes now happen inside the same transaction
    as the user row, which is also what prevents an account with no recovery codes.
+
+## The public aggregate (`GET /stats`)
+
+`GET /stats` is unauthenticated, because the status page that consumes it has no
+account. It returns counts and one timestamp:
+
+```json
+{ "ok": true,
+  "users":     { "total": 12, "new_24h": 1, "new_7d": 3 },
+  "records":   { "doses": 410, "labs": 22 },
+  "deletions": { "self": 2, "admin": 0 },
+  "generated_at": "2026-09-17T12:00:00.000Z" }
+```
+
+**The privacy boundary, stated honestly.** This publishes the same *class* of
+aggregate the app's own Transparency Centre used to publish, and no more. Every
+figure is a `COUNT(*)` over a table the server cannot read: `medication_events`
+and `lab_results` hold ciphertext (see "Records are encrypted at rest" above), so
+a count says how many rows exist and nothing about their values. The `deletion_log`
+is included because it is built to name nobody — no id, no username, no IP, no
+timestamp tied to an account.
+
+What is absent is the part worth asserting, and `test/stats.test.ts` does assert
+it: it registers a real, identifiable account, walks every leaf of the live
+response against an allow-list of count-shaped fields, and fails on any value that
+is not a number or the timestamp. It also checks the serialised body contains
+neither the username nor a UUID. A screenshot cannot show a leak in a payload, so
+the check is on the bytes.
+
+Two operational properties: the route is rate-limited per IP (60/min) because an
+unauthenticated endpoint that counts every row is a cheap way to load the
+database, and it sends `Cache-Control: max-age=60` so a status page polling it
+does not scan the tables on every request.
 
 ## Not yet done
 

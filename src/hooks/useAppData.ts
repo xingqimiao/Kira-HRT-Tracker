@@ -11,6 +11,7 @@ import {
     MODE_KEYS, RecordKind, SyncState, Tombstones,
     pruneTombstones, sanitizeTombstones,
 } from '../utils/syncMerge';
+import { applyAppSettings, appSettingsStamp, readAppSettings, touchAppSettings } from '../utils/appSettings';
 
 /** Namespace used while signed out. Its keys are the original, un-prefixed ones. */
 const LOCAL_OWNER = 'local';
@@ -204,6 +205,7 @@ export const useAppData = (
     const setCalibrationMethod = (m: CalibrationMethod) => {
         setCalibrationMethodState(m);
         localStorage.setItem(sharedKey('cal-method'), m);
+        touchAppSettings();
     };
     const [calibrationHistoryMode, setCalibrationHistoryModeState] = useState<CalibrationHistoryMode>(() => {
         const saved = localStorage.getItem(sharedKey('cal-history-mode'));
@@ -212,6 +214,7 @@ export const useAppData = (
     const setCalibrationHistoryMode = (m: CalibrationHistoryMode) => {
         setCalibrationHistoryModeState(m);
         localStorage.setItem(sharedKey('cal-history-mode'), m);
+        touchAppSettings();
     };
     const [doseTemplates, setDoseTemplates] = useState<DoseTemplate[]>(() => loadJSON(keyFor(mode, 'dose-templates'), [] as DoseTemplate[]));
     const [quickDoses, setQuickDoses] = useState<QuickDose[]>(() => loadJSON(keyFor(mode, 'quick-doses'), [] as QuickDose[]));
@@ -883,6 +886,7 @@ export const useAppData = (
             events: loadJSON<DoseEvent[]>(keyFor(m, 'events'), []),
             labResults: loadJSON<LabResult[]>(keyFor(m, 'lab-results'), []),
             doseTemplates: loadJSON<DoseTemplate[]>(keyFor(m, 'dose-templates'), []),
+            quickDoses: loadJSON<QuickDose[]>(keyFor(m, 'quick-doses'), []),
             deletions: readTombstones(m),
         });
         const modes = {
@@ -890,7 +894,10 @@ export const useAppData = (
             transmasc: readMode('transmasc'),
         };
         // Overlay current in-memory state for the active mode.
-        modes[mode] = { events, labResults, doseTemplates, deletions: readTombstones(mode) };
+        modes[mode] = {
+            events, labResults, doseTemplates, quickDoses,
+            deletions: readTombstones(mode),
+        };
 
         return {
             meta: { version: 2, exportedAt: new Date().toISOString() },
@@ -910,6 +917,33 @@ export const useAppData = (
             // about PK params", and the cleared state would never propagate.
             pkParams: pkParams ?? null,
             pkParamsUpdatedAt: Number(localStorage.getItem(sharedKey('pk-params-at'))) || undefined,
+            // App-only collections. The Core stores this verbatim in
+            // `user_settings.app_state` and is the *only* place templates and
+            // quick doses persist — it does not read them out of `modes` — so
+            // omitting this key silently dropped them on every Core sync. The
+            // calibration settings ride along for the same reason: they are
+            // account-scoped, and nothing else moves them between devices.
+            appState: {
+                modes: {
+                    transfem: {
+                        doseTemplates: modes.transfem.doseTemplates,
+                        quickDoses: modes.transfem.quickDoses,
+                    },
+                    transmasc: {
+                        doseTemplates: modes.transmasc.doseTemplates,
+                        quickDoses: modes.transmasc.quickDoses,
+                    },
+                },
+                settings: {
+                    ...readAppSettings(),
+                    calMethod: calibrationMethod,
+                    calHistoryMode: calibrationHistoryMode,
+                },
+                // The stamp lives inside the blob because `appState` is the only
+                // part the Core stores verbatim — a sibling top-level field would
+                // be dropped on the way in and read back as "never edited".
+                settingsUpdatedAt: appSettingsStamp() || undefined,
+            },
         };
     };
 
@@ -932,6 +966,7 @@ export const useAppData = (
             events: sanitizeImportedEvents(state.modes[m].events),
             labResults: sanitizeImportedLabResults(state.modes[m].labResults),
             doseTemplates: sanitizeImportedTemplates(state.modes[m].doseTemplates),
+            quickDoses: state.modes[m].quickDoses ?? [],
             deletions: state.modes[m].deletions,
         }));
 
@@ -940,10 +975,35 @@ export const useAppData = (
             localStorage.setItem(keyFor(block.m, 'events'), JSON.stringify(block.events));
             localStorage.setItem(keyFor(block.m, 'lab-results'), JSON.stringify(block.labResults));
             localStorage.setItem(keyFor(block.m, 'dose-templates'), JSON.stringify(block.doseTemplates));
+            localStorage.setItem(keyFor(block.m, 'quick-doses'), JSON.stringify(block.quickDoses));
             if (block.m === mode) {
                 setEvents(block.events);
                 setLabResults(block.labResults);
                 setDoseTemplates(block.doseTemplates);
+                setQuickDoses(block.quickDoses);
+            }
+        }
+
+        // App-only settings, including whichever ones the merge decided this
+        // device should adopt. Writing the storage keys is only half of it — the
+        // contexts that own them have to be told, or the theme on screen stays
+        // the one this device booted with until the next reload.
+        if (state.appSettings) {
+            const { calMethod, calHistoryMode, ...global } = state.appSettings;
+            // The merge's stamp is handed to `applyAppSettings` so this device
+            // records the account's settings as *adopted*, not as an edit of its
+            // own — otherwise it would immediately look newer and push the same
+            // values straight back.
+            applyAppSettings(global, state.appSettingsUpdatedAt);
+            if (calMethod) {
+                const normalized = normalizeCalibrationMethod(calMethod);
+                setCalibrationMethodState(normalized);
+                localStorage.setItem(sharedKey('cal-method'), normalized);
+            }
+            if (calHistoryMode) {
+                const normalized: CalibrationHistoryMode = calHistoryMode === 'forward' ? 'forward' : 'retrospective';
+                setCalibrationHistoryModeState(normalized);
+                localStorage.setItem(sharedKey('cal-history-mode'), normalized);
             }
         }
 

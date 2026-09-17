@@ -109,16 +109,16 @@ test('secrets are encrypted at rest and fail closed on a wrong key', async () =>
 });
 
 test('the otpauth URI carries what an authenticator app needs', () => {
-  const uri = otpauthUri({ secretBase32: 'MZXW6YTBOI', accountLabel: 'alice', issuer: 'HRT Tracker' });
+  const uri = otpauthUri({ secretBase32: 'MZXW6YTBOI', accountLabel: 'alice', issuer: 'Kira Tracker' });
   assert.ok(uri.startsWith('otpauth://totp/'), `wrong scheme: ${uri}`);
   const parsed = new URL(uri);
   assert.equal(parsed.searchParams.get('secret'), 'MZXW6YTBOI');
-  assert.equal(parsed.searchParams.get('issuer'), 'HRT Tracker');
+  assert.equal(parsed.searchParams.get('issuer'), 'Kira Tracker');
   assert.equal(parsed.searchParams.get('algorithm'), 'SHA1');
   assert.equal(parsed.searchParams.get('digits'), '6');
   assert.equal(parsed.searchParams.get('period'), '30');
   // The label is `issuer:account`, percent-encoded.
-  assert.ok(decodeURIComponent(parsed.pathname).includes('HRT Tracker:alice'));
+  assert.ok(decodeURIComponent(parsed.pathname).includes('Kira Tracker:alice'));
 });
 
 test('generated secrets are long enough to be worth anything', () => {

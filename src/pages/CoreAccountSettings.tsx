@@ -10,7 +10,7 @@ import type { CoreSession } from '../hooks/useCoreSession';
  * Account security for an Application Core session.
  *
  * A separate screen from the legacy `Account.tsx`, which manages the Worker-backed
- * session (cloud backup, passkeys, sessions, profile). Merging the two would produce a
+ * session (cloud backup, sessions, profile). Merging the two would produce a
  * page where some rows talk to one backend and some to the other, with no way for a
  * reader — or a debugger — to tell which.
  *
@@ -110,7 +110,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
 
   return (
     <div className="pt-4 pb-32 min-h-full flex justify-start md:justify-center">
-      <div className="w-full max-w-[36rem] px-4">
+      <div className="mx-auto w-full max-w-[36rem] px-4">
         <button
           onClick={onBack}
           className={`text-sm mb-4 inline-flex items-center gap-1.5 ${muted} hover:underline`}
@@ -206,7 +206,20 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
                 links.map((l) => (
                   <Row
                     key={l.handle ?? l.linkedAt}
-                    icon={<span className="text-[15px] font-semibold">𝕏</span>}
+                    icon={l.avatarUrl ? (
+                      // The real avatar once we have one. The provider’s own image is the honest
+                      // marker that a *specific* X account is linked, which the generic glyph cannot say.
+                      <img
+                        src={l.avatarUrl}
+                        alt=""
+                        className="w-6 h-6 rounded-full object-cover"
+                        // A broken image must not leave a torn-icon in the row; hiding it degrades to
+                        // the empty slot rather than a broken glyph.
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                      />
+                    ) : (
+                      <span className="text-[15px] font-semibold">𝕏</span>
+                    )}
                     title={l.handle ? `@${l.handle}` : t('core.acct.x_section')}
                     subtitle={
                       l.lastLoginAt

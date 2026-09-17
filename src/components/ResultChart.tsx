@@ -138,7 +138,6 @@ const ResultChart = ({
     calibrationFn = (_t: number) => 1,
     onPointClick,
     isDarkMode = false,
-    isMono = false,
     mode,
     title,
     timeZone,
@@ -149,7 +148,6 @@ const ResultChart = ({
     calibrationFn?: (timeH: number) => number;
     onPointClick?: (e: DoseEvent) => void;
     isDarkMode?: boolean;
-    isMono?: boolean;
     mode?: HRTMode;
     title?: string;
     timeZone?: string;
@@ -583,11 +581,7 @@ const ResultChart = ({
                     <span className="flex items-center gap-1.5">
                         <span
                             className="w-3.5 h-[2px] rounded-full"
-                            style={{
-                                background: isMono
-                                    ? `repeating-linear-gradient(90deg, ${c.second} 0, ${c.second} 2px, transparent 2px, transparent 5px)`
-                                    : c.second,
-                            }}
+                            style={{ background: c.second }}
                         />
                         {t('label.cpa_chart')}
                     </span>
@@ -702,12 +696,12 @@ const ResultChart = ({
 
                         <g clipPath={`url(#clip-${clipId})`}>
                             <g clipPath={`url(#sweep-${clipId})`}>
-                                {/* Primary curve — dotted in mono when it's the CPA series */}
-                                <path d={linePath('p')} fill="none" stroke={c.primary} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={isMono && primaryIsCPA ? '2 5' : undefined} />
+                                {/* Primary curve */}
+                                <path d={linePath('p')} fill="none" stroke={c.primary} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />
 
-                                {/* Secondary curve (CPA) — kept quiet so E2 stays the focus; dotted in mono so the curves stay distinguishable */}
+                                {/* Secondary curve (CPA) — kept quiet so E2 stays the focus */}
                                 {hasSecondary && (
-                                    <path d={linePath('s')} fill="none" stroke={c.second} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={isMono ? '2 5' : undefined} />
+                                    <path d={linePath('s')} fill="none" stroke={c.second} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
                                 )}
                             </g>
 

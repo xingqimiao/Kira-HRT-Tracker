@@ -87,7 +87,7 @@ const TotpEnrollment: React.FC<TotpEnrollmentProps> = ({
 
   function downloadCodes() {
     const body = [
-      'HRT Tracker — recovery codes',
+      'Kira Tracker — recovery codes',
       '',
       'Each code works once, in place of your authenticator code.',
       'If you lose your authenticator, one of these gets you back in.',

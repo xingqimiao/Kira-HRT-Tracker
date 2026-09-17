@@ -35,12 +35,17 @@ and friends.
 
 - **One bar, across the top.** `Sidebar.tsx` renders a 64px bar (`.m3-navbar`):
   the page colour at 88% with a blur, pill-shaped links, the current one *filled*.
-  It is desktop-only; mobile keeps the floating bottom bar in `App.tsx`.
+  It is `position: fixed` and desktop-only; mobile keeps the floating bottom bar in
+  `App.tsx`. `.scroll-pb-nav` reserves its height with `padding-top` at `md`.
 - **Pages own their own measure.** The shell is full-bleed. Most pages cap at
   `max-w-2xl`; the dashboard widens to a two-column chart layout once there is data.
-- **Sticky page headers** pin at `top-0` on mobile and
-  `md:top-[var(--m3-navbar-height)]` on desktop, because content scrolls *under*
-  the bar there.
+- **Sticky page headers** use a plain `top-0`, and pin correctly under the bar at
+  both breakpoints with no desktop override. That is not an oversight: a sticky
+  offset is measured from the scroller's *content* edge, which the bar's reserved
+  `padding-top` has already moved 64px down. So `top-0` lands 64px on desktop and
+  0 on mobile, where there is no bar. Adding `md:top-[var(--m3-navbar-height)]` on
+  top of that padding counted the bar twice and pinned every header 128px down,
+  with content scrolling through the gap above it.
 - **The reading column** is capped and centred inside each page. It is what makes a
   dark page with hairlines feel composed rather than merely wide.
 

@@ -1,21 +1,15 @@
 import React, { useState } from 'react';
 import Icon from '../components/Icon';
+import Switch from '../components/Switch';
 import { ChevronRight, Settings2, Database, Info, ArrowLeft, Globe, ShieldCheck } from '../icons';
 import type { IconComponent } from '../icons';
 import { Lang } from '../i18n/translations';
 import { AppTheme } from '../constants';
 import { DoseEvent, PKCustomParams } from '../../logic';
 import { useHRTMode } from '../contexts/HRTModeContext';
-import { usePixelCats, CatStyle } from '../contexts/PixelCatContext';
+import { useVial } from '../contexts/VialContext';
 
 interface SettingsProps {
-    /**
-     * Open the Application Core account-security page — or start the sign-in that
-     * creates a session, when there is not one yet.
-     */
-    onNavigateToSecurity?: () => void;
-    /** Whether a Core session exists, so the row can describe what it will do. */
-    coreSignedIn?: boolean;
     t: (key: string) => string;
     lang: Lang;
     setLang: (lang: Lang) => void;
@@ -31,7 +25,8 @@ interface SettingsProps {
     showDialog: (type: 'alert' | 'confirm', message: string, onConfirm?: () => void) => void;
     setIsDisclaimerOpen: (isOpen: boolean) => void;
     onShowIntro: () => void;
-    onNavigateToTransparency: () => void;
+    /** Opens the open-source licence notice. */
+    onOpenLicences?: () => void;
     appVersion: string;
     weight: number;
     setIsWeightModalOpen: (isOpen: boolean) => void;
@@ -46,10 +41,6 @@ interface SettingsProps {
     autoSync: boolean;
     setAutoSync: (v: boolean) => void;
     isLoggedIn: boolean;
-    devMode: boolean;
-    setDevMode: (v: boolean) => void;
-    onNavigateToMilkTea: () => void;
-    onNavigateToCatStates: () => void;
     isAdmin: boolean;
     onNavigateToAdmin: () => void;
 }
@@ -63,32 +54,20 @@ const rowValue = "flex items-center gap-1 text-[0.9375rem] text-[var(--color-m3-
 const muted = "text-[var(--color-m3-on-surface-variant)] ";
 const on = "text-[var(--color-m3-on-surface)] ";
 
-// Hard stops rather than a smooth blend, in equal fifths — the flag's stripes
-// are even, and anything else reads as a lopsided swatch.
-const CAT_STYLE_SWATCHES: { id: CatStyle; background: string }[] = [
-    {
-        id: 'flag',
-        background:
-            'linear-gradient(180deg, var(--pixel-blue) 0 20%, var(--pixel-pink) 20% 40%, var(--pixel-white) 40% 60%, var(--pixel-pink) 60% 80%, var(--pixel-blue) 80% 100%)',
-    },
-    { id: 'blue', background: 'var(--pixel-blue)' },
-    { id: 'pink', background: 'var(--pixel-pink)' },
-];
-
 let _savedCat: SettingsCat = 'general';
 let _savedMobileView: MobileView = 'list';
 
 const Settings: React.FC<SettingsProps> = ({
     t, lang, theme, languageOptions, onClearAllEvents, events,
-    showDialog, setIsDisclaimerOpen, onShowIntro, onNavigateToTransparency, appVersion,
+    showDialog, setIsDisclaimerOpen, onShowIntro, appVersion,
+    onOpenLicences,
     weight, pkParams, onNavigateToPKParams, onNavigateToHRTMode,
     onNavigateToLanguage, onNavigateToAppearance, onNavigateToWeight,
     onNavigateToExport, onNavigateToImport, autoSync, setAutoSync, isLoggedIn,
-    devMode, setDevMode, onNavigateToMilkTea, onNavigateToCatStates, isAdmin, onNavigateToAdmin,
-    onNavigateToSecurity, coreSignedIn,
+    isAdmin, onNavigateToAdmin,
 }) => {
     const { mode } = useHRTMode();
-    const { showCats, setShowCats, catStyle, setCatStyle } = usePixelCats();
+    const { showVial, setShowVial } = useVial();
     const [cat, setCat] = useState<SettingsCat>(_savedCat);
     const [mobileView, setMobileView] = useState<MobileView>(_savedMobileView);
 
@@ -118,7 +97,7 @@ const Settings: React.FC<SettingsProps> = ({
     const cats: { id: SettingsCat; label: string; icon: IconComponent; hint: string }[] = [
         { id: 'general', label: t('settings.group.general'), icon: Settings2, hint: [t('settings.hrt_mode'), t('drawer.lang'), t('settings.theme')].join(' · ') },
         { id: 'data',    label: t('settings.group.data'),    icon: Database,  hint: [t('export.title'), t('import.title')].join(' · ') },
-        { id: 'about',   label: t('settings.group.about'),   icon: Info,      hint: [t('drawer.model_title'), t('transparency.title')].join(' · ') },
+        { id: 'about',   label: t('settings.group.about'),   icon: Info,      hint: [t('drawer.algorithm_credits'), t('licence.title')].join(' · ') },
     ];
 
     const GeneralContent = () => (
@@ -162,55 +141,17 @@ const Settings: React.FC<SettingsProps> = ({
                         <p className={rowLabel}>{t('settings.auto_sync')}</p>
                         <p className={`text-xs ${muted} mt-0.5`}>{t('settings.auto_sync_desc')}</p>
                     </div>
-                    <button
-                        onClick={() => setAutoSync(!autoSync)}
-                        className={`relative inline-flex switch-track h-6 w-11 shrink-0 items-center rounded-full ${autoSync ? 'bg-[var(--color-m3-primary)]' : 'bg-[var(--color-m3-outline-variant)] '}`}
-                        role="switch"
-                        aria-checked={autoSync}
-                    >
-                        <span className={`inline-block switch-knob h-4 w-4 rounded-full bg-cos-surface-container shadow ${autoSync ? 'translate-x-6' : 'translate-x-1'}`} />
-                    </button>
+                    <Switch checked={autoSync} onChange={setAutoSync} />
                 </div>
             )}
 
             <div className={`${rowBase} cursor-default`}>
                 <div>
-                    <p className={rowLabel}>{t('settings.pixel_cats')}</p>
-                    <p className={`text-xs ${muted} mt-0.5`}>{t('settings.pixel_cats_desc')}</p>
+                    <p className={rowLabel}>{t('settings.blood_vial')}</p>
+                    <p className={`text-xs ${muted} mt-0.5`}>{t('settings.blood_vial_desc')}</p>
                 </div>
-                <button
-                    onClick={() => setShowCats(!showCats)}
-                    className={`relative inline-flex switch-track h-6 w-11 shrink-0 items-center rounded-full ${showCats ? 'bg-[var(--color-m3-primary)]' : 'bg-[var(--color-m3-outline-variant)] '}`}
-                    role="switch"
-                    aria-checked={showCats}
-                >
-                    <span className={`inline-block switch-knob h-4 w-4 rounded-full bg-cos-surface-container shadow ${showCats ? 'translate-x-6' : 'translate-x-1'}`} />
-                </button>
+                <Switch checked={showVial} onChange={setShowVial} />
             </div>
-
-            {/* Only worth showing once the cats themselves are on. */}
-            {showCats && (
-                <div className={`${rowBase} cursor-default`}>
-                    <span className={rowLabel}>{t('settings.cat_style')}</span>
-                    <div className="flex items-center gap-2.5">
-                        {CAT_STYLE_SWATCHES.map(({ id, background }) => (
-                            <button
-                                key={id}
-                                onClick={() => setCatStyle(id)}
-                                aria-label={t(`settings.cat_style.${id}`)}
-                                title={t(`settings.cat_style.${id}`)}
-                                aria-pressed={catStyle === id}
-                                className={`h-6 w-6 shrink-0 rounded-full border border-[var(--color-m3-outline-variant)]  ${
-                                    catStyle === id
-                                        ? 'ring-2 ring-[var(--color-m3-primary)] ring-offset-2 ring-offset-[var(--color-m3-surface-dim)] '
-                                        : ''
-                                }`}
-                                style={{ background }}
-                            />
-                        ))}
-                    </div>
-                </div>
-            )}
 
             <button
                 onClick={() => navTo(onNavigateToPKParams, 'general')}
@@ -288,23 +229,10 @@ const Settings: React.FC<SettingsProps> = ({
             </button>
 
             <button
-                onClick={() => showDialog('confirm', t('drawer.model_confirm'), () => window.open('https://mahiro.uk/articles/estrogen-model-summary', '_blank'))}
-                className={rowBase}
-            >
-                <span className={rowLabel}>{t('drawer.model_title')}</span>
-                <Icon icon={ChevronRight} size={15} className={muted} />
-            </button>
-
-            <button
                 onClick={() => showDialog('confirm', t('drawer.github_confirm'), () => window.open('https://github.com/SmirnovaOyama/Oyama-s-HRT-recorder', '_blank'))}
                 className={rowBase}
             >
                 <span className={rowLabel}>{t('drawer.github')}</span>
-                <Icon icon={ChevronRight} size={15} className={muted} />
-            </button>
-
-            <button onClick={() => navTo(onNavigateToTransparency, 'about')} className={rowBase}>
-                <span className={rowLabel}>{t('transparency.title')}</span>
                 <Icon icon={ChevronRight} size={15} className={muted} />
             </button>
 
@@ -313,18 +241,17 @@ const Settings: React.FC<SettingsProps> = ({
                 <Icon icon={ChevronRight} size={15} className={muted} />
             </button>
 
-            {/* Account security against the Application Core: password, second factor,
-                X linking, deletion. Separate from the legacy "Account" row because it
-                is a different backend and a different set of credentials. */}
-            {onNavigateToSecurity && (
-                <button onClick={onNavigateToSecurity} className={rowBase}>
+            {/* Open-source licence notice. This is the row "About" was missing: the
+                algorithm, the model and the app we forked are all other people's
+                work, and until now the only acknowledgement was a credits row that
+                linked out. A licence notice is the formal statement of that, and it
+                belongs in About rather than in Settings → Data, which is about the
+                user's records rather than about the software. */}
+            {onOpenLicences && (
+                <button onClick={onOpenLicences} className={rowBase}>
                     <div>
-                        <p className={rowLabel}>{t('settings.security')}</p>
-                        <p className={`text-xs ${muted} mt-0.5`}>
-                            {coreSignedIn
-                                ? t('settings.security_desc')
-                                : t('settings.security_signin_desc')}
-                        </p>
+                        <p className={rowLabel}>{t('licence.title')}</p>
+                        <p className={`text-xs ${muted} mt-0.5`}>{t('licence.row_desc')}</p>
                     </div>
                     <Icon icon={ChevronRight} size={15} className={muted} />
                 </button>
@@ -337,35 +264,6 @@ const Settings: React.FC<SettingsProps> = ({
                 <Icon icon={ChevronRight} size={15} className={muted} />
             </button>
 
-            <div className={`${rowBase} cursor-default`}>
-                <div>
-                    <p className={rowLabel}>{t('settings.developer_mode')}</p>
-                    <p className={`text-xs ${muted} mt-0.5`}>{t('settings.developer_mode_desc')}</p>
-                </div>
-                <button
-                    onClick={() => setDevMode(!devMode)}
-                    className={`relative inline-flex switch-track h-6 w-11 shrink-0 items-center rounded-full ${devMode ? 'bg-[var(--color-m3-primary)]' : 'bg-[var(--color-m3-outline-variant)] '}`}
-                    role="switch"
-                    aria-checked={devMode}
-                >
-                    <span className={`inline-block switch-knob h-4 w-4 rounded-full bg-cos-surface-container shadow ${devMode ? 'translate-x-6' : 'translate-x-1'}`} />
-                </button>
-            </div>
-
-            {devMode && (
-                <button onClick={() => navTo(onNavigateToCatStates, 'about')} className={rowBase}>
-                    <span className={rowLabel}>{t('settings.cat_states')}</span>
-                    <Icon icon={ChevronRight} size={15} className={muted} />
-                </button>
-            )}
-
-            {devMode && (
-                <button onClick={() => navTo(onNavigateToMilkTea, 'about')} className={`${rowBase} border-b-0`}>
-                    <span className={rowLabel}>{t('settings.milk_tea_egg')}</span>
-                    <Icon icon={ChevronRight} size={15} className={muted} />
-                </button>
-            )}
-
             <p className={`mt-10 text-xs ${muted}`}>{appVersion}</p>
         </div>
     );
@@ -377,7 +275,7 @@ const Settings: React.FC<SettingsProps> = ({
     };
 
     return (
-        <div className="flex pt-8 pb-32 min-h-full">
+        <div className="mx-auto flex w-full max-w-[64rem] pt-8 pb-32 min-h-full">
 
             {/* ── Left category nav (desktop) ─────────────────────────── */}
             <nav className="hidden md:flex flex-col w-52 shrink-0 px-3 gap-0.5 border-r border-[var(--color-m3-outline-variant)] ">
@@ -414,7 +312,7 @@ const Settings: React.FC<SettingsProps> = ({
             <div className="md:hidden flex-1 self-start px-6 pb-32">
                 {mobileView === 'list' ? (
                     <>
-                        <h1 className={`sticky top-0 md:top-[var(--m3-navbar-height)] z-20 -mx-6 px-6 pt-2 pb-3 mb-3 bg-[var(--color-m3-surface-dim)]  text-xl font-semibold ${on}`}>{t('nav.settings')}</h1>
+                        <h1 className={`sticky top-0 z-20 -mx-6 px-6 pt-2 pb-3 mb-3 bg-[var(--color-m3-surface-dim)]  text-xl font-semibold ${on}`}>{t('nav.settings')}</h1>
                         {cats.map(({ id, label, icon, hint }) => (
                             <button
                                 key={id}
@@ -436,7 +334,7 @@ const Settings: React.FC<SettingsProps> = ({
                     </>
                 ) : (
                     <>
-                        <div className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 -mx-6 px-6 pt-2 pb-3 mb-3 bg-[var(--color-m3-surface-dim)] ">
+                        <div className="sticky top-0 z-20 -mx-6 px-6 pt-2 pb-3 mb-3 bg-[var(--color-m3-surface-dim)] ">
                             <button
                                 onClick={exitMobileCat}
                                 className="flex items-center gap-2 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] "

@@ -32,9 +32,9 @@ We strictly adhere to the `PKcore.swift` and `PKparameter.swift` logic provided 
 
   **舌下服用指导**：基于严格的医学建模，提供详细的"含服时间（Hold Time）"与吸收参数（θ）参考。
 
-- **Privacy by Default**: Dosage data stays in your browser unless you explicitly use cloud backup or create a share link. Cloud backups are end-to-end encrypted. A share link uploads a read-only copy of the dosage history, modelled curve, and timezone until its expiration; optional live links refresh that copy when the signed-in app is open. Share links never include lab results, weight, profile details, or account data.
+- **Privacy by Default**: Dosage data stays in your browser unless you explicitly use cloud backup or create a share link. Cloud backups are **encrypted at rest and decrypted in server memory only while you have an active session** — this is not end-to-end encryption, and the server can read your records while you are unlocked. A share link uploads a read-only copy of the dosage history, modelled curve, and timezone until its expiration; optional live links refresh that copy when the signed-in app is open. Share links never include lab results, weight, profile details, or account data.
 
-  **默认保护隐私**：用药数据默认保存在浏览器中，只有在你主动使用云备份或创建分享链接时才会上传。云备份采用端到端加密。分享链接会保存一份只读的用药记录、模型曲线和时区副本，直到链接过期；其中不会包含检查结果、体重、个人资料或账户数据。
+  **默认保护隐私**：用药数据默认保存在浏览器中，只有在你主动使用云备份或创建分享链接时才会上传。云备份**静态加密，仅在你有活跃会话期间于服务器内存中解密**——这不是端到端加密，服务器在你解锁期间可以读取你的记录。分享链接会保存一份只读的用药记录、模型曲线和时区副本，直到链接过期；其中不会包含检查结果、体重、个人资料或账户数据。
 
 - **Internationalization**: Native support for **Simplified Chinese**, **English**, **Cantonese**, **Russian**, **Ukrainian**, and more.
 
@@ -173,3 +173,13 @@ At the same time, I wish good health to all the women using this web app who are
 ## License 许可
 
 本项目遵守 MIT License。See [LICENSE](./LICENSE) for details.
+
+**这不覆盖全部内容。** 药代动力学模型并非 MIT 授权，而是由版权持有人单独授予的
+**非商业** 许可 —— 详见 [THIRD-PARTY-LICENSES.md](./THIRD-PARTY-LICENSES.md)。
+
+The MIT licence covers the web application, which is forked from an MIT-licensed
+project. **It does not cover everything in this repository:** the pharmacokinetic
+model is used under a separate **non-commercial** grant from its author, so this
+project may not be sold or monetised on the strength of MIT alone. See
+[THIRD-PARTY-LICENSES.md](./THIRD-PARTY-LICENSES.md) for the terms and what they
+cover.

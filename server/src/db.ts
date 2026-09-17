@@ -9,11 +9,21 @@
  */
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, isAbsolute } from 'node:path';
 
 import pg from 'pg';
 
-const here = dirname(fileURLToPath(import.meta.url));
+/**
+ * The directory this module runs from.
+ *
+ * Handles both module formats because this file ships both ways: the dev script runs
+ * it as ESM, where `import.meta.url` is a `file://` URL, and the production bundle is
+ * CJS, where esbuild rewrites it to `__filename` — a plain path that
+ * `fileURLToPath` rejects with ERR_INVALID_URL_SCHEME. Checking first is cheaper than
+ * maintaining two entry points over one path.
+ */
+const modulePath = import.meta.url;
+const here = dirname(isAbsolute(modulePath) ? modulePath : fileURLToPath(modulePath));
 
 export interface DbConfig {
   /** Postgres connection string, e.g. postgres://user:pass@host:5432/hrt */

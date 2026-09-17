@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
 import Icon from './Icon';
-import { X, Loader2, Fingerprint } from '../icons';
+import { X, Loader2 } from '../icons';
 import ShieldIcon from './ShieldIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from '../contexts/LanguageContext';
-import { authService, serializeAssertionCredential, b64url2ab } from '../services/auth';
 
 interface AuthModalProps {
     isOpen: boolean;
@@ -18,57 +17,14 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [needsTOTP, setNeedsTOTP] = useState(false);
-    const [twoFAMethod, setTwoFAMethod] = useState<'totp' | 'passkey' | null>(null);
     const [totpCode, setTotpCode] = useState('');
     const [useBackupCode, setUseBackupCode] = useState(false);
     const [backupCode, setBackupCode] = useState('');
-    const [passkeyLoading, setPasskeyLoading] = useState(false);
 
-    const { login, register, loginWithToken } = useAuth();
+    const { login, register } = useAuth();
     const { t } = useTranslation();
 
     if (!isOpen) return null;
-
-    // `verifiedPassword` is set only when the passkey is the second factor: the
-    // server has already accepted that password, and passing it on lets the
-    // cloud key be derived from it. A standalone passkey sign-in passes nothing.
-    const handlePasskeyLogin = async (verifiedPassword?: string) => {
-        // Never let anything but a real password through: wired straight to an
-        // onClick this would receive the click event, and a key derived from
-        // that stringified object encrypts uploads no other device can read.
-        const verified = typeof verifiedPassword === 'string' ? verifiedPassword : undefined;
-        if (!window.PublicKeyCredential) {
-            setError(t('auth.passkey_unsupported'));
-            return;
-        }
-        setPasskeyLoading(true);
-        setError(null);
-        try {
-            const opts = await authService.passkeyAuthOptions(username || undefined);
-            const credential = await navigator.credentials.get({
-                publicKey: {
-                    rpId: window.location.hostname,
-                    challenge: b64url2ab(opts.challenge),
-                    allowCredentials: opts.credentialIds.map(id => ({
-                        type: 'public-key' as const,
-                        id: b64url2ab(id),
-                    })),
-                    timeout: 60000,
-                    userVerification: 'preferred',
-                },
-            }) as PublicKeyCredential | null;
-            if (!credential) return;
-            const result = await authService.passkeyAuthVerify(opts.challengeToken, serializeAssertionCredential(credential));
-            await loginWithToken(result, verified);
-            onClose();
-        } catch (e: any) {
-            if (e.name !== 'NotAllowedError') {
-                setError(e.message || t('auth.passkey_failed'));
-            }
-        } finally {
-            setPasskeyLoading(false);
-        }
-    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -78,7 +34,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             if (isLogin) {
                 await login(
                     username, password,
-                    needsTOTP && twoFAMethod === 'totp' && !useBackupCode ? totpCode : undefined,
+                    needsTOTP && !useBackupCode ? totpCode : undefined,
                     needsTOTP && useBackupCode ? backupCode : undefined,
                 );
             } else {
@@ -91,19 +47,13 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             setUsername('');
             setPassword('');
             setNeedsTOTP(false);
-            setTwoFAMethod(null);
             setTotpCode('');
             setUseBackupCode(false);
             setBackupCode('');
         } catch (err: any) {
             if (err.needs2FA) {
-                const method: 'totp' | 'passkey' = err.method ?? 'totp';
                 setNeedsTOTP(true);
-                setTwoFAMethod(method);
                 setError(null);
-                if (method === 'passkey') {
-                    setTimeout(() => handlePasskeyLogin(password), 100);
-                }
             } else {
                 setError(err.message || t('error.generic'));
             }
@@ -177,52 +127,27 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                                     />
                                     <button type="button" onClick={() => { setUseBackupCode(false); setBackupCode(''); }}
                                         className="text-xs text-[var(--color-m3-primary)] hover:underline">
-                                        ← {twoFAMethod === 'totp' ? t('auth.totp_code') : t('auth.passkey_as_2fa')}
+                                        ← {t('auth.totp_code')}
                                     </button>
                                 </div>
                             ) : (
                                 <>
-                                    {twoFAMethod !== 'passkey' && (
-                                        <div className="space-y-1.5">
-                                            <label className="text-sm text-muted">{t('auth.totp_code')}</label>
-                                            <input
-                                                type="text"
-                                                inputMode="numeric"
-                                                pattern="[0-9]{6}"
-                                                maxLength={6}
-                                                value={totpCode}
-                                                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                                className="input-base font-mono text-center tracking-widest"
-                                                placeholder={t('auth.totp_placeholder')}
-                                                autoComplete="one-time-code"
-                                                autoFocus
-                                                required={needsTOTP && !useBackupCode}
-                                            />
-                                        </div>
-                                    )}
-                                    {twoFAMethod === 'passkey' && typeof window !== 'undefined' && !window.PublicKeyCredential && (
-                                        <p className="text-xs text-cos-error text-center">{t('auth.passkey_unsupported')}</p>
-                                    )}
-                                    {typeof window !== 'undefined' && !!window.PublicKeyCredential && (
-                                        <>
-                                            {twoFAMethod !== 'passkey' && (
-                                                <div className="flex items-center gap-2">
-                                                    <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] " />
-                                                    <span className="text-xs text-muted">{t('common.or')}</span>
-                                                    <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] " />
-                                                </div>
-                                            )}
-                                            <button
-                                                type="button"
-                                                onClick={() => handlePasskeyLogin()}
-                                                disabled={passkeyLoading}
-                                                className="btn-secondary w-full"
-                                            >
-                                                {passkeyLoading ? <Icon icon={Loader2} size={16} className="animate-spin" /> : <Icon icon={Fingerprint} size={16} />}
-                                                {t('auth.passkey_as_2fa')}
-                                            </button>
-                                        </>
-                                    )}
+                                    <div className="space-y-1.5">
+                                        <label className="text-sm text-muted">{t('auth.totp_code')}</label>
+                                        <input
+                                            type="text"
+                                            inputMode="numeric"
+                                            pattern="[0-9]{6}"
+                                            maxLength={6}
+                                            value={totpCode}
+                                            onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                            className="input-base font-mono text-center tracking-widest"
+                                            placeholder={t('auth.totp_placeholder')}
+                                            autoComplete="one-time-code"
+                                            autoFocus
+                                            required={needsTOTP && !useBackupCode}
+                                        />
+                                    </div>
                                     <button type="button" onClick={() => setUseBackupCode(true)}
                                         className="w-full text-xs text-muted hover:text-body text-center py-1">
                                         {t('auth.use_backup_code')}
@@ -232,7 +157,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                         </div>
                     )}
 
-                    {!(needsTOTP && twoFAMethod === 'passkey' && !useBackupCode) && (
                     <button
                         type="submit"
                         disabled={loading}
@@ -241,7 +165,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                         {loading && <Icon icon={Loader2} size={16} className="animate-spin" />}
                         {isLogin ? t('auth.sign_in') : t('auth.sign_up')}
                     </button>
-                    )}
 
                     <div className="pt-2 text-center text-sm text-muted">
                         {isLogin ? t('auth.no_account') : t('auth.has_account')}{' '}

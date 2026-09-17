@@ -2,16 +2,16 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTranslation, LanguageProvider } from './contexts/LanguageContext';
 import { useDialog, DialogProvider } from './contexts/DialogContext';
 import { HRTModeProvider, useHRTMode } from './contexts/HRTModeContext';
-import { PixelCatProvider } from './contexts/PixelCatContext';
+import { VialProvider } from './contexts/VialContext';
 import ErrorBoundary from './components/ErrorBoundary';
-import { APP_VERSION, AppTheme } from './constants';
+import { APP_VERSION, AppTheme, KeyColor } from './constants';
 import { DoseEvent, decompressData, encryptData, decryptData } from '../logic';
-import { parseCloudBackup } from './utils/cloudBackup';
 import { useAppData } from './hooks/useAppData';
 import { useAppNavigation, ViewKey } from './hooks/useAppNavigation';
 import { useLiveShareSync } from './hooks/useLiveShareSync';
 import { useCloudSync } from './hooks/useCloudSync';
 import { useCoreSync } from './hooks/useCoreSync';
+import { onAppSettingsApplied } from './utils/appSettings';
 
 import WeightEditorModal from './components/WeightEditorModal';
 import DoseFormModal from './components/DoseFormModal';
@@ -24,7 +24,6 @@ import AuthModal from './components/AuthModal';
 import CoreAuthModal from './components/CoreAuthModal';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { useCoreSession, CoreSessionProvider } from './hooks/useCoreSession';
-import { cloudService } from './services/cloud';
 
 // Pages
 import Home from './pages/Home';
@@ -36,12 +35,6 @@ import Account from './pages/Account';
 import Admin from './pages/Admin';
 import CoreAccountSettings from './pages/CoreAccountSettings';
 import XAuthLanding from './pages/XAuthLanding';
-import SessionsPage from './pages/Sessions';
-import TwoFactorPage from './pages/TwoFactor';
-import ChangePasswordPage from './pages/ChangePassword';
-import DeleteAccountPage from './pages/DeleteAccount';
-import EditProfilePage from './pages/EditProfile';
-import EditAvatarPage from './pages/EditAvatar';
 import PKParamsPage from './pages/PKParams';
 import HRTModeSettings from './pages/HRTModeSettings';
 import LanguageSettings from './pages/LanguageSettings';
@@ -49,9 +42,8 @@ import AppearanceSettings from './pages/AppearanceSettings';
 import WeightSettings from './pages/WeightSettings';
 import ExportSettings from './pages/ExportSettings';
 import ImportSettings from './pages/ImportSettings';
-import TransparencySettings from './pages/TransparencySettings';
-import MilkTeaEasterEgg from './pages/MilkTeaEasterEgg';
-import CatStates from './pages/CatStates';
+import LicenceSettings from './pages/LicenceSettings';
+import McpSettings from './pages/McpSettings';
 import PublicShare from './pages/PublicShare';
 import ShareSettings from './pages/ShareSettings';
 import Onboarding, { markOnboardingSeen, shouldShowOnboarding } from './pages/Onboarding';
@@ -61,13 +53,13 @@ const AppContent = () => {
     const { t, lang, setLang } = useTranslation();
     const { showDialog } = useDialog();
     const { mode } = useHRTMode();
-    const { user, token, logout, needsSetup2FA, clearSetup2FA } = useAuth();
+    const { user, token } = useAuth();
 
     /**
      * The Application Core session, alongside the legacy Worker one.
      *
      * Both exist during the migration and they are not the same thing: the Core holds
-     * the key to the records, the Worker session drives cloud backup and passkeys.
+     * the key to the records, the Worker session drives cloud backup.
      * The Core is now the primary way in — it is what the server actually protects
      * records with — and the data layer below is scoped to whichever identity is
      * present, preferring Core.
@@ -75,7 +67,6 @@ const AppContent = () => {
     const coreSession = useCoreSession();
     const [isCoreAuthOpen, setIsCoreAuthOpen] = useState(false);
     const [prefillUsername, setPrefillUsername] = useState('');
-    const [twoFAEnabled, setTwoFAEnabled] = useState(false);
 
     // Use Custom Hooks
     const {
@@ -100,7 +91,6 @@ const AppContent = () => {
         quickDoses,
         pkParams, setPkParams, clearPkParams,
         processImportedData,
-        mergeImportedData,
         buildExportPayload,
         applySyncedState,
         scope,
@@ -146,22 +136,35 @@ const AppContent = () => {
     // --- First run ---
     const [showOnboarding, setShowOnboarding] = useState(shouldShowOnboarding);
 
-    // --- Developer mode (unlocks the milk tea easter egg) ---
-    const [devMode, setDevMode] = useState<boolean>(() =>
-        localStorage.getItem('app-dev-mode') === 'true'
-    );
-    useEffect(() => {
-        localStorage.setItem('app-dev-mode', String(devMode));
-    }, [devMode]);
-
     const [theme, setTheme] = useState<AppTheme>(() => {
         const saved = localStorage.getItem('app-theme');
-        // Dark is the default, not "follow the OS". The interface is designed against
-        // the dark palette — near-black surfaces and hairline separators — and that is
-        // what a first visit should show. Light is one tap away in Appearance, and a
-        // stored choice always wins.
-        return (saved as AppTheme) || 'dark';
+        // Follow the OS by default: someone who has their phone in light mode all day
+        // should not have to be told this app disagrees. A stored choice always wins,
+        // and 'mono' is a value older builds wrote — it falls through to 'system'
+        // rather than being honoured, since the palette is gone.
+        return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system';
     });
+
+    const [keyColor, setKeyColor] = useState<KeyColor>(() =>
+        localStorage.getItem('app-key-color') === 'blue' ? 'blue' : 'pink',
+    );
+
+    useEffect(() => {
+        localStorage.setItem('app-key-color', keyColor);
+        // A class rather than inline variables: the light/dark readings live in
+        // stylesheet blocks, and this only has to select which pair is in force.
+        window.document.documentElement.classList.toggle('key-blue', keyColor === 'blue');
+    }, [keyColor]);
+
+    // Adopt theme and key colour when a sync brings the account's choices in.
+    // Each value is validated against what this build understands before being
+    // taken, so a payload from a newer version cannot set a theme it has no
+    // palette for.
+    useEffect(() => onAppSettingsApplied(() => {
+        const savedTheme = localStorage.getItem('app-theme');
+        if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') setTheme(savedTheme);
+        setKeyColor(localStorage.getItem('app-key-color') === 'blue' ? 'blue' : 'pink');
+    }), []);
 
     useEffect(() => {
         localStorage.setItem('app-auto-backup', String(autoSync));
@@ -171,7 +174,11 @@ const AppContent = () => {
     // the upload-only auto-backup and the startup "your data differs" prompt —
     // the prompt could only add records the cloud had and this device lacked, so
     // edits and deletions stayed unresolved and it reappeared every launch.
-    const syncState = useCloudSync({
+    // The legacy Worker cloud backup. Still runs, but has no UI surface now that the
+    // account page is Core-only — see the note in Account.tsx. Kept rather than
+    // removed so an existing backup keeps being maintained; unbind the result to say
+    // so honestly, instead of deleting the user data path silently.
+    useCloudSync({
         token,
         userId: user?.id ?? null,
         enabled: autoSync,
@@ -215,14 +222,9 @@ const AppContent = () => {
         doseTemplates,
         weight,
         pkParams,
+        calibrationMethod,
+        calibrationHistoryMode,
     });
-
-    // --- Theme Effect ---
-    useEffect(() => {
-        if (needsSetup2FA && user && currentView !== 'two-factor') {
-            handleViewChange('two-factor');
-        }
-    }, [needsSetup2FA, user]);
 
     useEffect(() => {
         localStorage.setItem('app-theme', theme);
@@ -232,9 +234,6 @@ const AppContent = () => {
             root.classList.remove('light', 'dark');
             root.classList.add(isDark ? 'dark' : 'light');
         };
-
-        // Mono renders as light with a grayscale filter (see html.mono in index.css)
-        root.classList.toggle('mono', theme === 'mono');
 
         if (theme === 'system') {
             const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -362,67 +361,6 @@ const AppContent = () => {
     // first would let one device's press erase a dose another device deleted.
     // Works with auto-sync switched off; refuses when the cloud copy is
     // encrypted and unreadable here, rather than replacing it with plaintext.
-    const handleCloudSave = async () => {
-        if (!token) { setIsAuthModalOpen(true); return; }
-        const outcome = await syncState.syncNow();
-        // A locked cloud copy is not a failure to retry — it is a password this
-        // device hasn't been given. Say so, rather than the flat "save failed"
-        // that sent people pressing the button again to no effect.
-        showDialog('alert', t(
-            outcome === 'synced' ? 'account.cloud_save_success'
-                : outcome === 'locked' ? 'account.cloud_save_locked'
-                    : 'account.cloud_save_failed'));
-    };
-
-    const handleCloudLoad = async (backupId?: string) => {
-        if (!token) { setIsAuthModalOpen(true); return; }
-        try {
-            let parsed: any;
-            let timestamp: number;
-            if (backupId) {
-                const backup = await cloudService.loadOne(token, backupId);
-                parsed = await parseCloudBackup(backup.data);
-                timestamp = backup.created_at;
-            } else {
-                // Metadata first, then fetch only the newest body — the same
-                // reason as the startup check: the plain list endpoint is
-                // SELECT * and would ship every retained backup to read one.
-                const metas = await cloudService.listMeta(token);
-                if (!metas || metas.length === 0) {
-                    showDialog('alert', t('account.no_cloud_backups'));
-                    return;
-                }
-                const newest = metas.reduce((a, b) => (b.created_at > a.created_at ? b : a));
-                const latest = await cloudService.loadOne(token, newest.id);
-                parsed = await parseCloudBackup(latest.data);
-                timestamp = latest.created_at;
-            }
-            if (!parsed) {
-                showDialog('alert', t('account.cloud_load_failed'));
-                return;
-            }
-            showDialog('confirm', (t('account.load_confirm') as string).replace('{time}', new Date(timestamp * 1000).toLocaleString()), () => {
-                processImportedData(parsed);
-            });
-        } catch (e) {
-            showDialog('alert', t('account.cloud_load_failed'));
-        }
-    };
-
-    const handleCloudMerge = async (backupId: string) => {
-        if (!token) { setIsAuthModalOpen(true); return; }
-        try {
-            const backup = await cloudService.loadOne(token, backupId);
-            const parsed = await parseCloudBackup(backup.data);
-            if (!parsed) {
-                showDialog('alert', t('account.merge_cloud_failed'));
-                return;
-            }
-            mergeImportedData(parsed);
-        } catch (e) {
-            showDialog('alert', t('account.merge_cloud_failed'));
-        }
-    };
 
     // Construct Nav Items again just for Sidebar prop, or reuse from hook if we exported it
     // Actually we exported navItems from useAppNavigation
@@ -435,7 +373,7 @@ const AppContent = () => {
     // intro is where language and HRT mode get chosen, and leaving the nav up
     // would let someone tab away with both still on their defaults. Yields to a
     // forced 2FA setup, which is the one thing that can't wait behind a tour.
-    if (showOnboarding && !needsSetup2FA) {
+    if (showOnboarding) {
         return (
             <Onboarding
                 languageOptions={languageOptions}
@@ -449,7 +387,7 @@ const AppContent = () => {
             <Sidebar
                 navItems={navItems}
                 currentView={currentView}
-                onViewChange={(v) => !needsSetup2FA && handleViewChange(v)}
+                onViewChange={(v) => handleViewChange(v)}
             />
             <div className="flex-1 flex flex-col overflow-hidden w-full bg-[var(--color-m3-surface-dim)]  relative">
 
@@ -574,7 +512,7 @@ const AppContent = () => {
                             showDialog={showDialog}
                             setIsDisclaimerOpen={setIsDisclaimerOpen}
                             onShowIntro={() => setShowOnboarding(true)}
-                            onNavigateToTransparency={() => handleViewChange('settings-transparency')}
+                            onOpenLicences={() => handleViewChange('settings-licences')}
                             appVersion={APP_VERSION}
                             weight={weight}
                             setIsWeightModalOpen={setIsWeightModalOpen}
@@ -589,18 +527,6 @@ const AppContent = () => {
                             autoSync={autoSync}
                             setAutoSync={setAutoSync}
                             isLoggedIn={!!user}
-                            devMode={devMode}
-                            setDevMode={setDevMode}
-                            onNavigateToMilkTea={() => handleViewChange('settings-milk-tea')}
-                            onNavigateToCatStates={() => handleViewChange('settings-cat-states')}
-                            onNavigateToSecurity={() => {
-                                // One entry point either way: with a Core session it
-                                // opens the security page, without one it starts the
-                                // sign-in that creates the session.
-                                if (coreSession.isSignedIn) handleViewChange('settings-security');
-                                else setIsCoreAuthOpen(true);
-                            }}
-                            coreSignedIn={coreSession.isSignedIn}
                             isAdmin={!!user?.isAdmin}
                             onNavigateToAdmin={() => handleViewChange('admin')}
                         />
@@ -609,7 +535,7 @@ const AppContent = () => {
                     {currentView === 'settings-security' && (
                         <CoreAccountSettings
                             session={coreSession}
-                            onBack={() => handleViewChange('settings')}
+                            onBack={() => handleViewChange('account')}
                             onDeleted={() => handleViewChange('home')}
                         />
                     )}
@@ -633,6 +559,8 @@ const AppContent = () => {
                         <AppearanceSettings
                             theme={theme}
                             setTheme={setTheme}
+                            keyColor={keyColor}
+                            setKeyColor={setKeyColor}
                             onBack={() => handleViewChange('settings')}
                         />
                     )}
@@ -665,79 +593,28 @@ const AppContent = () => {
 
                     {currentView === 'account' && (
                         <Account
-                            t={t}
-                            user={user}
-                            token={token}
-                            onLogout={logout}
-                            onCloudSave={handleCloudSave}
-                            onCloudLoad={handleCloudLoad}
-                            onCloudMerge={handleCloudMerge}
-                            localData={{ events, labResults, doseTemplates, weight }}
+                            session={coreSession}
+                            onNavigateToSecurity={() => handleViewChange('settings-security')}
                             onNavigate={(v) => handleViewChange(v as ViewKey)}
-                            twoFAEnabled={twoFAEnabled}
-                            onTwoFAStatusChange={setTwoFAEnabled}
-                            syncStatus={syncState.status}
-                            lastSyncedAt={syncState.lastSyncedAt}
+                            syncStatus={coreSyncState.status}
+                            lastSyncedAt={coreSyncState.lastSyncedAt}
+                            onSyncNow={() => void coreSyncState.syncNow()}
                         />
                     )}
 
-                    {currentView === 'sessions' && token && (
-                        <SessionsPage
-                            token={token}
-                            onBack={() => handleViewChange('account')}
-                        />
-                    )}
-
-                    {currentView === 'two-factor' && token && (
-                        <TwoFactorPage
-                            token={token}
-                            enabled={twoFAEnabled}
-                            onStatusChange={(v) => { setTwoFAEnabled(v); if (v) clearSetup2FA(); }}
-                            onBack={() => handleViewChange('account')}
-                            setupRequired={needsSetup2FA}
-                        />
-                    )}
-
-                    {currentView === 'change-password' && (
-                        <ChangePasswordPage
-                            onBack={() => handleViewChange('account')}
-                        />
-                    )}
-
-                    {currentView === 'delete-account' && (
-                        <DeleteAccountPage
-                            onBack={() => handleViewChange('account')}
-                        />
-                    )}
-
-                    {currentView === 'edit-profile' && (
-                        <EditProfilePage
-                            onBack={() => handleViewChange('account')}
-                        />
-                    )}
-
-                    {currentView === 'edit-avatar' && user && token && (
-                        <EditAvatarPage
-                            username={user.username}
-                            token={token}
-                            onBack={() => handleViewChange('account')}
-                        />
-                    )}
-
-                    {currentView === 'settings-transparency' && (
-                        <TransparencySettings
+                    {currentView === 'settings-licences' && (
+                        <LicenceSettings
+                            appVersion={APP_VERSION}
                             onBack={() => handleViewChange('settings')}
                         />
                     )}
 
-                    {currentView === 'settings-milk-tea' && devMode && (
-                        <MilkTeaEasterEgg
-                            onBack={() => handleViewChange('settings')}
+                    {currentView === 'settings-mcp' && (
+                        <McpSettings
+                            session={coreSession}
+                            onBack={() => handleViewChange('account')}
+                            onSignIn={() => setIsCoreAuthOpen(true)}
                         />
-                    )}
-
-                    {currentView === 'settings-cat-states' && devMode && (
-                        <CatStates onBack={() => handleViewChange('settings')} />
                     )}
 
                     {currentView === 'pk-params' && (
@@ -771,9 +648,8 @@ const AppContent = () => {
                                 'settings-weight': 'settings',
                                 'settings-export': 'settings',
                                 'settings-import': 'settings',
-                                'settings-transparency': 'settings',
-                                'settings-milk-tea': 'settings',
-                                'settings-cat-states': 'settings',
+                                'settings-mcp': 'account',
+                                'settings-licences': 'settings',
                                 'pk-params': 'settings',
                                 'account': 'account',
                                 'sessions': 'account',
@@ -783,7 +659,7 @@ const AppContent = () => {
                                 'admin': 'settings',
                             } as Record<string, string>)[currentView] ?? currentView;
                             const isActive = activeTab === id;
-                            const isDisabled = needsSetup2FA && id !== 'two-factor';
+                            const isDisabled = false;
                             return (
                                 <button
                                     key={id}
@@ -951,11 +827,11 @@ const App = () => {
                     ) : (
                         <DialogProvider>
                             <AuthProvider>
-                                <PixelCatProvider>
+                                <VialProvider>
                                     <ErrorBoundary>
                                         <AppContent />
                                     </ErrorBoundary>
-                                </PixelCatProvider>
+                                </VialProvider>
                             </AuthProvider>
                         </DialogProvider>
                     )}

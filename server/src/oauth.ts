@@ -26,14 +26,23 @@ const TOKEN_ENDPOINT = 'https://api.twitter.com/2/oauth2/token';
 const PROFILE_ENDPOINT = 'https://api.twitter.com/2/users/me';
 
 /**
- * Minimum scope that yields an identity.
+ * The scope this app requests.
  *
- * `users.read` returns the id, name and handle. Deliberately nothing more: `tweet.read`
- * and `follows.read` are not needed to log someone in, and requesting access the app
- * never uses is how an OAuth consent screen starts looking untrustworthy — as well
- * as being the kind of scope creep that gets an app rate-limited.
+ * `users.read` is what yields an identity: the id, name and handle.
+ *
+ * `tweet.read` is NOT used to read anything — this app never fetches a post. It is
+ * required *alongside* `users.read` or `GET /2/users/me` answers **403**, which
+ * fails the sign-in after X has already granted the code: the user sees a generic
+ * "could not complete" and the log shows a 403 from the profile fetch. It was
+ * absent here at first, and the flow looked broken for a reason that had nothing to
+ * do with the credentials. The comment service on the same box hit the same wall
+ * and documents it in `lib/auth.mjs`.
+ *
+ * Verified against a real login on 2026-09-18. If this is ever narrowed, re-test the
+ * whole round trip — the authorize step alone will not catch it, because X accepts
+ * the request and the failure lands one call later.
  */
-const SCOPE = 'users.read';
+const SCOPE = 'users.read tweet.read';
 
 export class XOAuthError extends Error {
   constructor(
@@ -142,10 +151,15 @@ export interface XProfile {
   id: string;
   handle: string | null;
   displayName: string | null;
+  /** The account's avatar at the largest size X serves. Null if X sent none. */
+  avatarUrl: string | null;
 }
 
 export async function fetchProfile(accessToken: string): Promise<XProfile> {
-  const url = `${PROFILE_ENDPOINT}?user.fields=username,name`;
+  // `profile_image_url` is what makes the avatar available. Nothing wider is
+  // requested — see the scope note above on asking only for what identifies an
+  // account.
+  const url = `${PROFILE_ENDPOINT}?user.fields=username,name,profile_image_url`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   const text = await res.text();
 
@@ -153,7 +167,7 @@ export async function fetchProfile(accessToken: string): Promise<XProfile> {
     throw new XOAuthError(`X profile fetch failed (${res.status})`, 'profile_failed', text.slice(0, 500));
   }
 
-  let payload: { data?: { id?: string; username?: string; name?: string } };
+  let payload: { data?: { id?: string; username?: string; name?: string; profile_image_url?: string } };
   try {
     payload = JSON.parse(text);
   } catch {
@@ -168,7 +182,24 @@ export async function fetchProfile(accessToken: string): Promise<XProfile> {
     id: String(data.id),
     handle: data.username ? String(data.username) : null,
     displayName: data.name ? String(data.name) : null,
+    avatarUrl: upgradeAvatarSize(data.profile_image_url),
   };
+}
+
+/**
+ * X serves avatars as `..._normal.jpg` — 48px, which reads as a blur anywhere but a
+ * 48px slot. The same file is available at other sizes by changing that suffix, so
+ * `_400x400` is the same picture at a usable resolution rather than a second upload.
+ *
+ * Defensive about the shape: an avatar is cosmetic, and a URL that does not end the way
+ * X documents should be passed through or dropped rather than mangled into a broken
+ * link. Anything not http(s) is refused outright, since this value reaches an `<img
+ * src>` and a `javascript:` URL there would be an injection.
+ */
+function upgradeAvatarSize(raw: unknown): string | null {
+  if (typeof raw !== 'string' || raw === '') return null;
+  const upgraded = raw.replace(/_(normal|bigger|mini|200x200)\.(jpg|jpeg|png|gif)$/i, '_400x400.$2');
+  return /^https:\/\//i.test(upgraded) ? upgraded : null;
 }
 
 /**

@@ -224,9 +224,9 @@ const SetupForm: React.FC<{
 
   const otpauthUri = useMemo(
     () =>
-      `otpauth://totp/${encodeURIComponent(`HRT Tracker:${username}`)}?${new URLSearchParams({
+      `otpauth://totp/${encodeURIComponent(`Kira Tracker:${username}`)}?${new URLSearchParams({
         secret,
-        issuer: 'HRT Tracker',
+        issuer: 'Kira Tracker',
         algorithm: 'SHA1',
         digits: '6',
         period: '30',

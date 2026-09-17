@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Home, ListTodo, Settings as SettingsIcon, UserCircle, ShieldCheck, CalibrationCurve } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 
-export type ViewKey = 'home' | 'share' | 'history' | 'lab' | 'lab-calibration' | 'settings' | 'account' | 'admin' | 'sessions' | 'two-factor' | 'change-password' | 'delete-account' | 'edit-profile' | 'edit-avatar' | 'pk-params' | 'settings-hrt-mode' | 'settings-language' | 'settings-appearance' | 'settings-weight' | 'settings-export' | 'settings-import' | 'settings-transparency' | 'settings-milk-tea' | 'settings-cat-states' | 'settings-security';
+export type ViewKey = 'home' | 'share' | 'history' | 'lab' | 'lab-calibration' | 'settings' | 'account' | 'admin' | 'sessions' | 'two-factor' | 'change-password' | 'delete-account' | 'edit-profile' | 'edit-avatar' | 'pk-params' | 'settings-hrt-mode' | 'settings-language' | 'settings-appearance' | 'settings-weight' | 'settings-export' | 'settings-import' | 'settings-security' | 'settings-mcp' | 'settings-licences';
 
 export const useAppNavigation = (user: any) => {
     const { t } = useTranslation();
@@ -12,7 +12,7 @@ export const useAppNavigation = (user: any) => {
     const [transitionDirection, setTransitionDirection] = useState<'forward' | 'backward'>('forward');
     const mainScrollRef = useRef<HTMLDivElement>(null);
 
-    const viewOrder: ViewKey[] = ['home', 'share', 'history', 'lab', 'lab-calibration', 'settings', 'account', 'sessions', 'two-factor', 'change-password', 'delete-account', 'edit-profile', 'edit-avatar', 'pk-params', 'settings-hrt-mode', 'settings-language', 'settings-appearance', 'settings-weight', 'settings-export', 'settings-import', 'settings-transparency', 'settings-milk-tea', 'settings-cat-states', 'settings-security', 'admin'];
+    const viewOrder: ViewKey[] = ['home', 'share', 'history', 'lab', 'lab-calibration', 'settings', 'account', 'sessions', 'two-factor', 'change-password', 'delete-account', 'edit-profile', 'edit-avatar', 'pk-params', 'settings-hrt-mode', 'settings-language', 'settings-appearance', 'settings-weight', 'settings-export', 'settings-import', 'settings-security', 'settings-mcp', 'settings-licences', 'admin'];
 
     // --- Actions ---
     const handleViewChange = (view: ViewKey) => {

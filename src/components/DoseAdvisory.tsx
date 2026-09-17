@@ -36,8 +36,10 @@ const DoseAdvisoryNotice: React.FC<{
 }> = ({ advisory, hormoneAdvisory, showCalibrate, onCalibrate, t }) => {
     if (!advisory && !hormoneAdvisory && !showCalibrate) return null;
 
+    // Marked as a splash target: this line sits right below the readings, so it is where a
+    // droplet from the vial most plausibly lands.
     return (
-        <div className="space-y-1.5">
+        <div className="space-y-1.5" data-vial-sprayable>
             {advisory && <DoseAdvisoryLine advisory={advisory} t={t} />}
             {hormoneAdvisory && <HormoneLevelAdvisoryLine advisory={hormoneAdvisory} t={t} />}
             {showCalibrate && (

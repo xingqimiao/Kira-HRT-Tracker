@@ -49,6 +49,8 @@ export {
     Radar,
     Rewind,
     Save,
+    Scale,
+    Scan,
     Search,
     Server,
     Settings,

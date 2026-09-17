@@ -461,7 +461,11 @@ test('the authorize URL is a correct PKCE authorization request', async () => {
   assert.equal(url.searchParams.get('redirect_uri'), X_REDIRECT_URI);
   assert.equal(url.searchParams.get('response_type'), 'code');
   assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
-  assert.equal(url.searchParams.get('scope'), 'users.read', 'only the scope needed to identify');
+  // `tweet.read` looks like scope creep next to a login that only needs an identity,
+  // but it is load-bearing: /2/users/me answers 403 without it, so the flow completes
+  // at X and only then fails at the profile fetch. The comment service next door hit
+  // the same wall and documents it. Pinned here so it is not "tidied away" later.
+  assert.equal(url.searchParams.get('scope'), 'users.read tweet.read', 'tweet.read is required or /users/me 403s');
   assert.ok(url.searchParams.get('state'), 'state is present');
   // 43 chars of base64url is a 32-byte verifier — the PKCE requirement.
   assert.ok(url.searchParams.get('code_challenge'), 'the challenge is present');

@@ -129,7 +129,7 @@ const PKParamsPage: React.FC<PKParamsPageProps> = ({ pkParams, onSave, onReset, 
 
     return (
         <div className="relative pb-32">
-            <div className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3 flex items-center">
+            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3 flex items-center">
                 <button
                     onClick={onBack}
                     className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] "
@@ -146,7 +146,7 @@ const PKParamsPage: React.FC<PKParamsPageProps> = ({ pkParams, onSave, onReset, 
                 )}
             </div>
 
-            <div className="px-6 md:px-8 mt-4 max-w-2xl">
+            <div className="mx-auto w-full px-6 md:px-8 mt-4 max-w-2xl">
                 {/* Warning */}
                 <div className="flex items-start gap-2 mb-6 pb-4 border-b border-[var(--color-m3-outline-variant)] ">
                     <Icon icon={AlertTriangle} size={13} className="text-cos-warning  mt-0.5 shrink-0" />

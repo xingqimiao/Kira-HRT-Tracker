@@ -1,13 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Icon from '../components/Icon';
-import { ArrowLeft, Loader2, Check, AlertCircle, Eye, EyeOff, Copy, Fingerprint, X, Plus, KeyRound, Download, RefreshCw } from '../icons';
+import { ArrowLeft, Loader2, Check, AlertCircle, Eye, EyeOff, Copy, KeyRound, Download, RefreshCw } from '../icons';
 import ShieldIcon from '../components/ShieldIcon';
 import { QRCodeSVG } from 'qrcode.react';
-import {
-    authService, Passkey,
-    serializeAttestationCredential, b64url2ab,
-} from '../services/auth';
-import { formatRelative } from '../utils/helpers';
+import { authService } from '../services/auth';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
 import { SettingsIconBox, settingsMuted, settingsOn } from '../components/SettingsListItem';
@@ -22,18 +18,6 @@ interface TwoFactorPageProps {
 }
 
 type SetupStep = 'scan' | 'verify';
-type ActiveTab = 'totp' | 'passkey';
-
-function detectDeviceName(): string {
-    const ua = navigator.userAgent;
-    if (ua.includes('iPhone')) return 'iPhone';
-    if (ua.includes('iPad')) return 'iPad';
-    if (/Android/.test(ua)) return 'Android';
-    if (ua.includes('Mac OS X')) return 'Mac';
-    if (ua.includes('Windows')) return 'Windows';
-    if (ua.includes('Linux')) return 'Linux';
-    return '';   // the caller substitutes a translated fallback
-}
 
 const divider = "border-b border-[var(--color-m3-outline-variant)] ";
 const muted = settingsMuted;
@@ -79,8 +63,6 @@ const TwoFactorPage: React.FC<TwoFactorPageProps> = ({ token, enabled, onStatusC
     const { t } = useTranslation();
     const { showDialog } = useDialog();
 
-    const [activeTab, setActiveTab] = useState<ActiveTab>('totp');
-
     // TOTP
     const [step, setStep] = useState<SetupStep>('scan');
     const [secret, setSecret] = useState('');
@@ -97,21 +79,10 @@ const TwoFactorPage: React.FC<TwoFactorPageProps> = ({ token, enabled, onStatusC
     const [disableCode, setDisableCode] = useState('');
     const [disableLoading, setDisableLoading] = useState(false);
     const [disableError, setDisableError] = useState<string | null>(null);
-    // The `enabled` prop is the OR of every factor, so a passkey-only account
-    // arrives here with enabled=true and this tab used to render its "disable"
-    // form — demanding an authenticator code from someone who never enrolled an
-    // authenticator, with no way to reach setup. The TOTP tab keys off the TOTP
-    // flag alone; null means the status is still loading.
+    // Whether an authenticator app is enrolled. The page keys its disable form
+    // off this rather than the combined `enabled` prop; null means the status is
+    // still loading.
     const [totpEnabled, setTotpEnabled] = useState<boolean | null>(null);
-
-    // Passkey
-    const [passkeys, setPasskeys] = useState<Passkey[]>([]);
-    const [passkeyLoading, setPasskeyLoading] = useState(false);
-    const [passkeyError, setPasskeyError] = useState<string | null>(null);
-    const [registerLoading, setRegisterLoading] = useState(false);
-    const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
-    const [passkeySuccess, setPasskeySuccess] = useState(false);
-    const webauthnSupported = typeof window !== 'undefined' && !!window.PublicKeyCredential;
 
     // Backup codes
     const [backupCodes, setBackupCodes] = useState<string[]>([]);
@@ -126,10 +97,8 @@ const TwoFactorPage: React.FC<TwoFactorPageProps> = ({ token, enabled, onStatusC
     // it, which is why these actions came back "Current password is required".
     const [pwPrompt, setPwPrompt] = useState<
         | null
-        | { kind: 'passkey'; passkey: Passkey }
         | { kind: 'backup' }
         | { kind: 'enable'; secret: string; code: string }
-        | { kind: 'register'; challengeToken: string; credential: object; deviceName: string }
     >(null);
     const [pwError, setPwError] = useState<string | null>(null);
     const [pwLoading, setPwLoading] = useState(false);
@@ -142,13 +111,12 @@ const TwoFactorPage: React.FC<TwoFactorPageProps> = ({ token, enabled, onStatusC
             if (cancelled) return;
             setTotpEnabled(s.totp);
             if (!s.totp) initSetup();
-            if (s.totp || s.passkey) fetchBackupRemaining();
+            if (s.totp) fetchBackupRemaining();
         }).catch(() => {
             if (cancelled) return;
             setTotpEnabled(false);
             initSetup();
         });
-        fetchPasskeys();
         return () => {
             cancelled = true;
             if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
@@ -213,37 +181,13 @@ const TwoFactorPage: React.FC<TwoFactorPageProps> = ({ token, enabled, onStatusC
                 const codes = await authService.generateBackupCodes(token, password);
                 setBackupCodes(codes);
                 setBackupRemaining(codes.length);
-            } else if (pwPrompt.kind === 'enable') {
+            } else {
                 setLoading(true);
                 const result = await authService.enable2FA(token, pwPrompt.secret, pwPrompt.code, password);
                 setBackupCodes(result.backupCodes ?? []);
                 setBackupRemaining(result.backupCodes?.length ?? 0);
                 setTotpEnabled(true);
                 setSuccess(true);
-            } else if (pwPrompt.kind === 'register') {
-                setRegisterLoading(true);
-                const result = await authService.registerPasskey(
-                    token, pwPrompt.challengeToken, pwPrompt.credential, pwPrompt.deviceName, password,
-                );
-                // Registering the first passkey mints backup codes that exist
-                // only in this response. Dropping them left a passkey-only user
-                // with no recovery path at all if the authenticator was lost.
-                if (result.backupCodes?.length) {
-                    setBackupCodes(result.backupCodes);
-                    setBackupRemaining(result.backupCodes.length);
-                }
-                setPasskeySuccess(true);
-                await fetchPasskeys();
-                onStatusChange(true);
-            } else {
-                const pk = pwPrompt.passkey;
-                setDeleteLoadingId(pk.id);
-                await authService.deletePasskey(token, pk.id, password);
-                const left = passkeys.filter(p => p.id !== pk.id);
-                setPasskeys(left);
-                // Dropping the last passkey can take the account back to a
-                // single factor, so the parent's badge has to hear about it.
-                onStatusChange(totpEnabled === true || left.length > 0);
             }
             setPwPrompt(null);
         } catch (e: any) {
@@ -253,15 +197,12 @@ const TwoFactorPage: React.FC<TwoFactorPageProps> = ({ token, enabled, onStatusC
             } else {
                 setPwPrompt(null);
                 if (pwPrompt.kind === 'backup') setBackupError(msg || t('account.backup_codes_generate'));
-                else if (pwPrompt.kind === 'enable') setError(msg.includes('Invalid') ? t('account.2fa_verify_failed') : t('account.2fa_setup_failed'));
-                else setPasskeyError(msg || t('auth.passkey_failed'));
+                else setError(msg.includes('Invalid') ? t('account.2fa_verify_failed') : t('account.2fa_setup_failed'));
             }
         } finally {
             setPwLoading(false);
             setBackupLoading(false);
             setLoading(false);
-            setRegisterLoading(false);
-            setDeleteLoadingId(null);
         }
     };
 
@@ -274,7 +215,7 @@ const TwoFactorPage: React.FC<TwoFactorPageProps> = ({ token, enabled, onStatusC
     };
 
     const handleDownloadBackupCodes = () => {
-        const text = `HRT Tracker - Backup Codes\nGenerated: ${new Date().toISOString()}\n\n${backupCodes.join('\n')}\n\nEach code can only be used once. Store these securely.`;
+        const text = `Kira Tracker - Backup Codes\nGenerated: ${new Date().toISOString()}\n\n${backupCodes.join('\n')}\n\nEach code can only be used once. Store these securely.`;
         const blob = new Blob([text], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -292,8 +233,7 @@ const TwoFactorPage: React.FC<TwoFactorPageProps> = ({ token, enabled, onStatusC
         try {
             await authService.disable2FA(token, disablePassword, disableCode);
             setTotpEnabled(false);
-            // Any remaining passkey still makes this a two-factor account.
-            onStatusChange(passkeys.length > 0);
+            onStatusChange(false);
             showDialog('alert', t('account.2fa_disabled_success'));
             onBack();
         } catch (e: any) {
@@ -308,86 +248,10 @@ const TwoFactorPage: React.FC<TwoFactorPageProps> = ({ token, enabled, onStatusC
         }
     };
 
-    const fetchPasskeys = async () => {
-        setPasskeyLoading(true);
-        setPasskeyError(null);
-        try {
-            const list = await authService.listPasskeys(token);
-            setPasskeys(list);
-        } catch (e: any) {
-            setPasskeyError(e.message);
-        } finally {
-            setPasskeyLoading(false);
-        }
-    };
-
-    const handleRegisterPasskey = async () => {
-        if (!webauthnSupported) return;
-        setRegisterLoading(true);
-        setPasskeyError(null);
-        setPasskeySuccess(false);
-        try {
-            const opts = await authService.registerPasskeyOptions(token);
-            const credential = await navigator.credentials.create({
-                publicKey: {
-                    // Use the server's values rather than locally invented ones.
-                    // `user.id` was a fixed 16 zero bytes for every account, and
-                    // an authenticator REPLACES a discoverable credential that
-                    // shares (rpId, userHandle) — so enrolling a second account
-                    // on the same device silently destroyed the first account's
-                    // passkey, while its row lived on server-side and kept
-                    // demanding a passkey the authenticator no longer held.
-                    rp: { id: opts.rp.id, name: opts.rp.name },
-                    user: {
-                        id: b64url2ab(opts.user.id),
-                        name: opts.user.name,
-                        displayName: opts.user.displayName,
-                    },
-                    challenge: b64url2ab(opts.challenge),
-                    // Server-advertised only: the worker verifies ES256 (COSE -7)
-                    // and nothing else, so offering RS256 just yielded a 400 for
-                    // any authenticator that picked it.
-                    pubKeyCredParams: opts.pubKeyCredParams,
-                    authenticatorSelection: opts.authenticatorSelection,
-                    timeout: opts.timeout ?? 60000,
-                    excludeCredentials: (opts.excludeCredentialIds ?? []).map((id: string) => ({
-                        type: 'public-key' as const,
-                        id: b64url2ab(id),
-                    })),
-                },
-            }) as PublicKeyCredential | null;
-            if (!credential) return;
-            // The ceremony runs first so a mistyped password can be retried in
-            // the modal without touching the authenticator again; the challenge
-            // token stays valid for five minutes.
-            setPwError(null);
-            setPwPrompt({
-                kind: 'register',
-                challengeToken: opts.challengeToken,
-                credential: serializeAttestationCredential(credential),
-                deviceName: detectDeviceName(),
-            });
-        } catch (e: any) {
-            if (e.name !== 'NotAllowedError') {
-                setPasskeyError(e.message || t('auth.passkey_failed'));
-            }
-        } finally {
-            setRegisterLoading(false);
-        }
-    };
-
-    const handleDeletePasskey = (pk: Passkey) => {
-        showDialog('confirm', t('account.passkey_delete_confirm'), () => {
-            setPasskeyError(null);
-            setPwError(null);
-            setPwPrompt({ kind: 'passkey', passkey: pk });
-        });
-    };
-
     return (
         <div className="relative pb-32">
             {/* Header */}
-            <div className="sticky top-0 md:top-[var(--m3-navbar-height)] z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-10 pt-8 pb-3">
+            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-10 pt-8 pb-3">
                 <button
                     onClick={setupRequired ? undefined : onBack}
                     disabled={setupRequired}
@@ -406,28 +270,8 @@ const TwoFactorPage: React.FC<TwoFactorPageProps> = ({ token, enabled, onStatusC
                 </div>
             )}
 
-            <div className="px-6 md:px-10 max-w-2xl">
-                {/* Tab switcher — underline style */}
-                <div className="flex gap-6 mb-6 border-b border-[var(--color-m3-outline-variant)] ">
-                    {(['totp', 'passkey'] as ActiveTab[]).map(tab => (
-                        <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`flex items-center gap-2 pb-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                                activeTab === tab
-                                    ? `${on} border-[var(--color-m3-on-surface)] `
-                                    : `${muted} border-transparent hover:text-[var(--color-m3-on-surface)] `
-                            }`}
-                        >
-                            {tab === 'totp' ? <Icon icon={KeyRound} size={14} strokeWidth={1.5} /> : <Icon icon={Fingerprint} size={14} strokeWidth={1.5} />}
-                            {tab === 'totp' ? 'TOTP' : t('account.passkey')}
-                        </button>
-                    ))}
-                </div>
-
-                {/* ===== TOTP TAB ===== */}
-                {activeTab === 'totp' && (
-                    <div className="space-y-5">
+            <div className="mx-auto w-full px-6 md:px-10 max-w-2xl">
+                <div className="space-y-5">
                         {totpEnabled === null && (
                             <div className="flex justify-center py-10"><Icon icon={Loader2} className={`animate-spin ${muted}`} size={20} /></div>
                         )}
@@ -561,63 +405,6 @@ const TwoFactorPage: React.FC<TwoFactorPageProps> = ({ token, enabled, onStatusC
                             </>
                         )}
                     </div>
-                )}
-
-                {/* ===== PASSKEY TAB ===== */}
-                {activeTab === 'passkey' && (
-                    <div className="space-y-5">
-                        <p className={`text-xs ${muted}`}>{t('account.passkey_desc')}</p>
-
-                        <ErrLine msg={passkeyError} />
-                        {passkeySuccess && (
-                            <p className={`flex items-center gap-1.5 text-xs ${muted}`}>
-                                <Icon icon={Check} size={12} strokeWidth={1.5} className="shrink-0" />{t('account.passkey_registered')}
-                            </p>
-                        )}
-
-                        {backupCodes.length > 0 && (
-                            <BackupCodesBlock codes={backupCodes} copied={backupCopied} onCopy={handleCopyBackupCodes} onDownload={handleDownloadBackupCodes} t={t} />
-                        )}
-
-                        {passkeyLoading ? (
-                            <div className="flex justify-center py-6"><Icon icon={Loader2} className={`animate-spin ${muted}`} size={20} /></div>
-                        ) : passkeys.length === 0 ? (
-                            <div className={`flex flex-col items-center gap-2 py-10 text-center ${muted}`}>
-                                <SettingsIconBox icon={Fingerprint} />
-                                <p className={`text-sm font-medium mt-2 ${on}`}>{t('account.passkey_empty')}</p>
-                                <p className="text-xs max-w-xs leading-relaxed">{t('account.passkey_empty_hint')}</p>
-                            </div>
-                        ) : (
-                            <div>
-                                {passkeys.map(pk => (
-                                    <div key={pk.id} className={`flex items-center gap-3 py-3.5 ${divider}`}>
-                                        <SettingsIconBox icon={Fingerprint} />
-                                        <div className="flex-1 min-w-0">
-                                            <p className={`text-sm font-medium ${on} truncate`}>{pk.device_name || t('session.unknown_device')}</p>
-                                            <p className={`text-xs ${muted}`}>{formatRelative(pk.created_at, Math.floor(Date.now() / 1000), t)}</p>
-                                        </div>
-                                        <button
-                                            onClick={() => handleDeletePasskey(pk)}
-                                            disabled={deleteLoadingId === pk.id}
-                                            className={`shrink-0 p-1.5 rounded-md ${muted} hover:text-[var(--color-m3-on-surface)]  hover:bg-[var(--color-m3-surface-container)]  disabled:opacity-40 transition-colors`}
-                                        >
-                                            {deleteLoadingId === pk.id ? <Icon icon={Loader2} size={14} strokeWidth={1.5} className="animate-spin" /> : <Icon icon={X} size={14} strokeWidth={1.5} />}
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        {!webauthnSupported ? (
-                            <p className={`text-xs text-center ${muted}`}>{t('auth.passkey_unsupported')}</p>
-                        ) : (
-                            <button onClick={handleRegisterPasskey} disabled={registerLoading} className={primaryBtn}>
-                                {registerLoading ? <Icon icon={Loader2} size={14} className="animate-spin" /> : <Icon icon={Plus} size={14} />}
-                                {passkeys.length === 0 ? t('account.passkey_add') : t('account.passkey_add_another')}
-                            </button>
-                        )}
-                    </div>
-                )}
 
                 {/* ===== BACKUP CODES SECTION (enabled) ===== */}
                 {enabled && (
@@ -659,10 +446,8 @@ const TwoFactorPage: React.FC<TwoFactorPageProps> = ({ token, enabled, onStatusC
                 onConfirm={submitPasswordPrompt}
                 title={t('account.current_password')}
                 description={
-                    pwPrompt?.kind === 'passkey' ? t('account.passkey_delete_password_desc')
-                        : pwPrompt?.kind === 'enable' ? t('account.2fa_enable_password_desc')
-                            : pwPrompt?.kind === 'register' ? t('account.passkey_add_password_desc')
-                                : t('account.backup_codes_password_desc')
+                    pwPrompt?.kind === 'enable' ? t('account.2fa_enable_password_desc')
+                        : t('account.backup_codes_password_desc')
                 }
                 error={pwError}
                 loading={pwLoading}

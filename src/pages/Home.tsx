@@ -7,9 +7,8 @@ import DoseHeatmap from '../components/DoseHeatmap';
 import EstimateInfoModal from '../components/EstimateInfoModal';
 import DoseAdvisoryNotice from '../components/DoseAdvisory';
 import AnimatedNumber from '../components/AnimatedNumber';
-import PixelCat from '../components/PixelCat';
+import BloodVial from '../components/BloodVial';
 import { useHRTMode } from '../contexts/HRTModeContext';
-import { usePixelCats } from '../contexts/PixelCatContext';
 import { AppTheme } from '../constants';
 import { useTranslation } from '../contexts/LanguageContext';
 import { getShareCopy } from '../i18n/share';
@@ -52,10 +51,8 @@ const Home: React.FC<HomeProps> = ({
     onAuthRequired,
 }) => {
     const isDarkMode = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    const isMono = theme === 'mono';
     const [isEstimateInfoOpen, setIsEstimateInfoOpen] = React.useState(false);
     const { isTransmasc } = useHRTMode();
-    const { showCats } = usePixelCats();
     const { lang } = useTranslation();
     const shareCopy = getShareCopy(lang);
 
@@ -66,17 +63,24 @@ const Home: React.FC<HomeProps> = ({
     const hasLabForMode = labResults.some(l => (isTransmasc ? isT_LabUnit(l.unit) : !isT_LabUnit(l.unit)));
     const showCalibrate = events.length > 0 && !hasLabForMode;
 
-    // A cat turns up for each kind of record that's been logged: the donut for
-    // doses, the loaf for labs. Sits in the gap between the two readings, so it
-    // has to be rendered inside whichever mode branch is active.
-    // Sits inline right after the reading so it costs a bit of the number's own
-    // line rather than a block of its own. On a narrow screen two cats and two
-    // long readings don't fit across; the line wraps and the cats drop under the
-    // number rather than shoving the second reading off the edge.
-    const cats = showCats && (events.length > 0 || labResults.length > 0) ? (
-        <span className="flex shrink-0 items-end gap-1 self-end pb-1">
-            {events.length > 0 && <PixelCat pose="donut" size={44} />}
-            {labResults.length > 0 && <PixelCat pose="loaf" size={44} />}
+    // The vial stands in the gap between the two readings, so it has to be
+    // rendered inside whichever mode branch is active. It shows the current
+    // estimate, which is the number printed directly beside it — the drawing is a
+    // second reading of one value, not a summary of two.
+    // Inline right after the reading so it costs a bit of the number's own line
+    // rather than a block of its own; on a narrow screen the line wraps and the
+    // vial drops under the number rather than shoving the second reading off.
+    const vial = (events.length > 0 || labResults.length > 0) ? (
+        <span className="flex shrink-0 items-end self-end pb-1">
+            {/* Sized against the reading beside it. The canvas is 26 wide but the tube is
+                only 14 of those columns (the rest is spill room), so the drawn vial is
+                about half the nominal size — at 30 the spill stops being legible, which is
+                the whole reason for drawing it. */}
+            <BloodVial
+                level={isTransmasc ? currentT : currentLevel}
+                mode={isTransmasc ? 'transmasc' : 'transfem'}
+                size={44}
+            />
         </span>
     ) : null;
 
@@ -85,7 +89,7 @@ const Home: React.FC<HomeProps> = ({
     const dim = "text-[var(--color-m3-outline-variant)] ";
 
     return (
-        <div className="mx-auto w-full max-w-[1200px] px-4 sm:px-6 md:px-8">
+        <div className="mx-auto w-full max-w-[1040px] px-4 sm:px-6 md:px-8">
             <EstimateInfoModal isOpen={isEstimateInfoOpen} onClose={() => setIsEstimateInfoOpen(false)} />
 
             <header className="pt-8 pb-6">
@@ -128,14 +132,14 @@ const Home: React.FC<HomeProps> = ({
                 </div>
 
                 {/* Blood level grid — first reading left, second flush right.
-                    On a 375px screen two cats plus two four-digit readings don't
+                    On a 375px screen the vial plus two four-digit readings don't
                     fit across, and the second column was being pushed clean off
                     the right edge. The left column is the one that gives: min-w-0
-                    lets it shrink and its number line wraps, so the cats drop
+                    lets it shrink and its number line wraps, so the vial drops
                     under the reading. The right column is shrink-0 so it keeps its
                     number and unit together on one line instead of both sides
                     wrapping at once. */}
-                <div className="flex items-start justify-between gap-4 sm:gap-8 md:gap-12">
+                <div className="grid max-w-lg grid-cols-2 gap-4 sm:gap-8 md:gap-12">
                     {isTransmasc ? (
                         <>
                             <div className="min-w-0">
@@ -145,13 +149,13 @@ const Home: React.FC<HomeProps> = ({
                                 <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
                                     {currentT > 0 ? (
                                         <>
-                                            <span className={`text-4xl md:text-5xl font-light tabular-nums ${on}`}><AnimatedNumber value={currentT} decimals={0} /></span>
+                                            <span data-vial-sprayable className={`text-4xl md:text-5xl font-light tabular-nums ${on}`}><AnimatedNumber value={currentT} decimals={0} /></span>
                                             <span className={`text-xs lowercase ${muted}`}>ng/dl</span>
                                         </>
                                     ) : (
                                         <span className={`text-4xl md:text-5xl font-light ${dim}`}>--</span>
                                     )}
-                                    {cats}
+                                    {vial}
                                 </div>
                             </div>
                             <div className="shrink-0 text-right">
@@ -161,7 +165,7 @@ const Home: React.FC<HomeProps> = ({
                                 <div className="flex flex-wrap items-baseline justify-end gap-x-1.5 gap-y-1">
                                     {currentT > 0 ? (
                                         <>
-                                            <span className={`text-4xl md:text-5xl font-light tabular-nums ${on}`}><AnimatedNumber value={currentT / 28.842} decimals={1} /></span>
+                                            <span data-vial-sprayable className={`text-4xl md:text-5xl font-light tabular-nums ${on}`}><AnimatedNumber value={currentT / 28.842} decimals={1} /></span>
                                             <span className={`text-xs lowercase ${muted}`}>nmol/l</span>
                                         </>
                                     ) : (
@@ -177,13 +181,13 @@ const Home: React.FC<HomeProps> = ({
                                 <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
                                     {currentLevel > 0 ? (
                                         <>
-                                            <span className={`text-4xl md:text-5xl font-light tabular-nums ${on}`}><AnimatedNumber value={currentLevel} decimals={1} /></span>
+                                            <span data-vial-sprayable className={`text-4xl md:text-5xl font-light tabular-nums ${on}`}><AnimatedNumber value={currentLevel} decimals={1} /></span>
                                             <span className={`text-xs lowercase ${muted}`}>pg/ml</span>
                                         </>
                                     ) : (
                                         <span className={`text-4xl md:text-5xl font-light ${dim}`}>--</span>
                                     )}
-                                    {cats}
+                                    {vial}
                                 </div>
                             </div>
                             <div className="shrink-0 text-right">
@@ -191,7 +195,7 @@ const Home: React.FC<HomeProps> = ({
                                 <div className="flex flex-wrap items-baseline justify-end gap-x-1.5 gap-y-1">
                                     {currentCPA > 0 ? (
                                         <>
-                                            <span className={`text-4xl md:text-5xl font-light tabular-nums ${on}`}><AnimatedNumber value={currentCPA} decimals={1} /></span>
+                                            <span data-vial-sprayable className={`text-4xl md:text-5xl font-light tabular-nums ${on}`}><AnimatedNumber value={currentCPA} decimals={1} /></span>
                                             <span className={`text-xs lowercase ${muted}`}>ng/ml</span>
                                         </>
                                     ) : (
@@ -236,7 +240,6 @@ const Home: React.FC<HomeProps> = ({
                                 labResults={labResults}
                                 calibrationFn={calibrationFn}
                                 isDarkMode={isDarkMode}
-                                isMono={isMono}
                             />
                         </div>
                         <DoseHeatmap

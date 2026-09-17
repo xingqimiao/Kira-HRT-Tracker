@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import PixelCat from '../components/PixelCat';
+import BloodVial from '../components/BloodVial';
+import { vialLevelForFill } from '../utils/vialLevel';
 import PixelMark, { MarkName, MarkState } from '../components/PixelMark';
 import OnboardingCurve, { useOnboardingCurve, BEATS, type Beat, type CurveData } from '../components/OnboardingCurve';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { Lang, TRANSLATIONS } from '../i18n/translations';
+import { MCP_ENDPOINT } from '../constants';
 
 const ONBOARDING_KEY = 'app-onboarded';
 
@@ -333,12 +335,23 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, onDone }) => {
         // them jumped the page. Sized to its content it centres like the rest.
         <div key="welcome" className="flex h-full flex-col pt-6 text-center lg:h-auto">
             {/* The greeting holds its place; only the list below it travels.
-                Seven languages don't fit under the cat on a short screen, and
+                Seven languages don't fit under the vial on a short screen, and
                 scrolling the whole step would carry away the one sentence
                 explaining what is being chosen. */}
             <div className="shrink-0">
                 <div className="flex justify-center">
-                    <PixelCat pose="donut" size={176} />
+                    {/* Deliberately not a reading — this runs before any record exists. It is
+                        an illustration of what the app is for, so it sits at a fixed illustrative
+                        *fill* rather than an empty tube, which would read as "your data is
+                        missing" on a first visit. Expressed as a fraction rather than a
+                        concentration: inventing a plausible pg/mL number to show in an
+                        illustration would be a small lie, and with the curve non-linear the
+                        fraction is the only thing that means what it says. */}
+                    <BloodVial
+                        level={vialLevelForFill(0.45, isTransmasc ? 'transmasc' : 'transfem')}
+                        mode={isTransmasc ? 'transmasc' : 'transfem'}
+                        size={96}
+                    />
                 </div>
                 <h1 className="mt-6 text-2xl font-semibold text-body">{t('onboarding.welcome_title')}</h1>
                 {/* Every translation of the sentence stacked into one grid cell,
@@ -422,6 +435,24 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, onDone }) => {
         </div>,
 
         <HowStep key="how" curve={curve} />,
+
+        /* Inserted after the chart step rather than before it, so the chart keeps
+           index 2 and `CHART_STEP` needs no change — the warning about
+           incrementing it only applies to a step placed ahead of the chart. */
+        <div key="mcp" className="pt-8">
+            <h1 className="text-2xl font-semibold text-body">{t('onboarding.mcp_title')}</h1>
+            <p className="mt-3 text-sm leading-relaxed text-muted">{t('onboarding.mcp_subtitle')}</p>
+            <div className="mt-5 rounded-md bg-[var(--color-m3-surface-container)]  px-3 py-2">
+                <code className="font-mono text-xs leading-relaxed text-body">
+                    {MCP_ENDPOINT}
+                </code>
+            </div>
+            <div className="mt-4">
+                <Point mark="lock" title={t('onboarding.mcp_unlock')} desc={t('onboarding.mcp_unlock_desc')} />
+                <Point mark="check" title={t('onboarding.mcp_confirm')} desc={t('onboarding.mcp_confirm_desc')} />
+            </div>
+            <p className="mt-4 text-[0.8125rem] leading-relaxed text-muted">{t('onboarding.mcp_more')}</p>
+        </div>,
 
         <div key="privacy" className="pt-8">
             <h1 className="text-2xl font-semibold text-body">{t('onboarding.privacy_title')}</h1>

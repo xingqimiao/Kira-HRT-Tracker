@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { TRANSLATIONS, Lang } from '../i18n/translations';
+import { onAppSettingsApplied } from '../utils/appSettings';
 
 const LanguageContext = createContext<{ lang: Lang; setLang: (l: Lang) => void; t: (k: string) => string } | null>(null);
 
@@ -47,9 +48,17 @@ const FALLBACK: Record<Lang, readonly Lang[]> = {
 export const LanguageProvider = ({ children }: { children: React.ReactNode }) => {
     const [lang, setLang] = useState<Lang>(() => (localStorage.getItem('hrt-lang') as Lang) || 'zh');
 
+    // Adopt a language the account says this device should be using. Guarded by
+    // the key actually holding a language this build knows, so a payload from a
+    // newer version cannot put the UI into a pack that does not exist.
+    useEffect(() => onAppSettingsApplied(() => {
+        const saved = localStorage.getItem('hrt-lang') as Lang | null;
+        if (saved && saved in TRANSLATIONS) setLang(saved);
+    }), []);
+
     useEffect(() => {
         localStorage.setItem('hrt-lang', lang);
-        document.title = (lang.startsWith('zh') || lang === 'yue') ? "HRT 记录" : "HRT Tracker";
+        document.title = (lang.startsWith('zh') || lang === 'yue') ? "Kira 记录" : "Kira Tracker";
         document.documentElement.lang = LANG_LOCALE[lang] ?? lang;
         document.documentElement.dir = RTL_LANGS.has(lang) ? 'rtl' : 'ltr';
     }, [lang]);

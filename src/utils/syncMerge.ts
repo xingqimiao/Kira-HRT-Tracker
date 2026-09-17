@@ -44,8 +44,43 @@ export interface ModeBlock {
     events: any[];
     labResults: any[];
     doseTemplates: any[];
+    /**
+     * Quick-add buttons. An app convenience rather than a clinical record, but it
+     * still has to round-trip: they live per mode on the client, and the Core
+     * carries them in `app_state.modes[mode].quickDoses`.
+     */
+    quickDoses: any[];
     deletions: Tombstones;
 }
+
+/**
+ * The app-only settings a user configures once and expects on every device:
+ * theme, key colour, language, HRT mode, vial visibility, and the calibration
+ * method and history window.
+ *
+ * These are not clinical records and nothing here validates them beyond their
+ * type — but they are the difference between a new device being ready to use and
+ * the user configuring everything again by hand. They travel in the Core's
+ * `user_settings.app_state` blob.
+ *
+ * Settings alone never count as "content" for the first upload (see
+ * `hasContent`), matching how the default body weight is treated: they ride along
+ * with the first record rather than minting an otherwise-empty backup.
+ */
+export interface AppSettings {
+    theme?: string;
+    keyColor?: string;
+    lang?: string;
+    hrtMode?: string;
+    showVial?: boolean;
+    calMethod?: string;
+    calHistoryMode?: string;
+}
+
+/** Every key `sanitizeAppSettings` will carry. An unknown key is dropped. */
+export const APP_SETTING_KEYS: readonly (keyof AppSettings)[] = [
+    'theme', 'keyColor', 'lang', 'hrtMode', 'showVial', 'calMethod', 'calHistoryMode',
+];
 
 export interface SyncState {
     modes: Record<ModeKey, ModeBlock>;
@@ -55,6 +90,19 @@ export interface SyncState {
     /** `undefined` = unstated; `null` = explicitly "no overrides". */
     pkParams?: any;
     pkParamsUpdatedAt: number;
+    /**
+     * App-only configuration, carried in `app_state.settings`.
+     *
+     * Resolved as a *whole bag* on its stamp, like the two scalars above, rather
+     * than per key. Per-key "local wins" cannot be used here: it is not
+     * symmetric, so two configured devices would each decide the other was wrong
+     * and rewrite the account forever — the same flip-flop the scalar rule's
+     * deterministic tiebreak exists to stop. A whole-bag rule is sound because
+     * every key is written on first boot, so a device that has run the app at all
+     * holds a complete bag.
+     */
+    appSettings?: AppSettings;
+    appSettingsUpdatedAt: number;
 }
 
 export interface MergeStats {
@@ -98,7 +146,7 @@ export function emptyTombstones(): Tombstones {
 }
 
 function emptyModeBlock(): ModeBlock {
-    return { events: [], labResults: [], doseTemplates: [], deletions: emptyTombstones() };
+    return { events: [], labResults: [], doseTemplates: [], quickDoses: [], deletions: emptyTombstones() };
 }
 
 export function emptySyncState(): SyncState {
@@ -106,6 +154,7 @@ export function emptySyncState(): SyncState {
         modes: { transfem: emptyModeBlock(), transmasc: emptyModeBlock() },
         weightUpdatedAt: 0,
         pkParamsUpdatedAt: 0,
+        appSettingsUpdatedAt: 0,
     };
 }
 
@@ -136,6 +185,43 @@ export function sanitizeTombstones(raw: unknown): Tombstones {
         labResults: sanitizeTombstoneMap(src.labResults),
         doseTemplates: sanitizeTombstoneMap(src.doseTemplates),
     };
+}
+
+/**
+ * Keep only known settings keys with a usable value.
+ *
+ * A payload from a future build (or a hand-edited file) must not be able to put
+ * this build into a state its own readers do not understand, so an unrecognised
+ * key is dropped rather than stored. The value is carried as-is otherwise: these
+ * are the user's choices in their own language, not enumerations this module
+ * ought to police.
+ */
+/**
+ * Post-upgrade compatibility: `showVial` is the one non-string setting, so the
+ * per-key value type is decided by the key rather than by the value. Accepting a
+ * string for every key (the obvious `typeof value === 'string'` check) would let a
+ * payload put `showVial: 'false'` into state, where its own reader — which
+ * compares against the string 'false' — would read it as *true*.
+ */
+const BOOLEAN_SETTING_KEYS: ReadonlySet<keyof AppSettings> = new Set(['showVial']);
+
+export function sanitizeAppSettings(raw: unknown): AppSettings {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const src = raw as Record<string, unknown>;
+    // Accumulated as `unknown` and cast once: under the key union the write type
+    // is the *intersection* of the member types, so `showVial`'s boolean and the
+    // rest's string collapse to `never` and no per-key assignment type-checks —
+    // even though each branch here has just checked the value's type.
+    const out: Record<string, unknown> = {};
+    for (const key of APP_SETTING_KEYS) {
+        const value = src[key];
+        if (BOOLEAN_SETTING_KEYS.has(key)) {
+            if (typeof value === 'boolean') out[key] = value;
+        } else if (typeof value === 'string' && value !== '') {
+            out[key] = value;
+        }
+    }
+    return out as AppSettings;
 }
 
 /** Drop expired entries, then the oldest ones once the per-kind ceiling is hit. */
@@ -175,8 +261,7 @@ function mergeTombstoneMaps(a: TombstoneMap, b: TombstoneMap): TombstoneMap {
  * is what the import path already uses to keep testosterone records out of the
  * transfem log, and it answers per record rather than per file.
  */
-function routeFlatPayload(payload: any, modes: Record<ModeKey, ModeBlock>): void {
-    for (const ev of asArray(payload.events)) {
+function routeFlatPayload(payload: any, modes: Record<ModeKey, ModeBlock>): void {    for (const ev of asArray(payload.events)) {
         if (!ev || typeof ev !== 'object') continue;
         modes[isTestosteroneEster(ev.ester) ? 'transmasc' : 'transfem'].events.push(ev);
     }
@@ -212,6 +297,7 @@ export function normalizeSyncState(payload: unknown): SyncState {
                 events: asArray(block.events),
                 labResults: asArray(block.labResults),
                 doseTemplates: asArray(block.doseTemplates),
+                quickDoses: asArray(block.quickDoses),
                 deletions: sanitizeTombstones(block.deletions),
             };
         }
@@ -228,6 +314,18 @@ export function normalizeSyncState(payload: unknown): SyncState {
     if (p.pkParams !== undefined) {
         state.pkParams = p.pkParams ?? null;
         state.pkParamsUpdatedAt = asTimestamp(p.pkParamsUpdatedAt) || 1;
+    }
+
+    // App-only settings ride in the Core's `app_state.settings`, read here rather
+    // than at the call site so every surface that consumes a payload — sync, a
+    // file import, a hand-written file — applies them the same way.
+    const settings = sanitizeAppSettings((p.appState as any)?.settings);
+    if (Object.keys(settings).length > 0) {
+        state.appSettings = settings;
+        // A payload from a build that predates the stamp still has to lose to a
+        // stamped one, and beat "nothing at all" — the same floor of 1 the other
+        // scalars use.
+        state.appSettingsUpdatedAt = asTimestamp((p.appState as any)?.settingsUpdatedAt) || 1;
     }
 
     return state;
@@ -269,6 +367,33 @@ function recordId(record: any): string | null {
 
 function recordStamp(record: any): number {
     return asTimestamp(record?.updatedAt);
+}
+
+/**
+ * Union quick-add buttons by id.
+ *
+ * These carry no `updatedAt`, so newest-wins is not available. The tiebreak is
+ * the content fingerprint — the same device-independent choice `resolveScalar`
+ * makes for its ties, and for the same reason: "prefer local" has two devices
+ * each decide the other is wrong and rewrite the account forever.
+ */
+function mergeQuickDoses(local: any[], remote: any[]): any[] {
+    const out = new Map<string, any>();
+    for (const record of local) {
+        const id = recordId(record);
+        if (id) out.set(id, record);
+    }
+    for (const record of remote) {
+        const id = recordId(record);
+        if (!id) continue;
+        const mine = out.get(id);
+        if (mine === undefined) {
+            out.set(id, record);
+            continue;
+        }
+        if (stableString(record) > stableString(mine)) out.set(id, record);
+    }
+    return [...out.values()];
 }
 
 // --- Merge ------------------------------------------------------------------
@@ -362,6 +487,43 @@ function resolveScalar<T>(
         : { value: localValue, at: localAt };
 }
 
+/**
+ * Settings are resolved as one bag on their stamp, by the same rule and for the
+ * same reason as the two scalars above (see `resolveScalar`) — hence the direct
+ * call at the call site rather than a bespoke rule here.
+ */
+
+/**
+ * Build the `appState` blob the Core stores, from a merged state.
+ *
+ * The Core keeps two different things in one column: `modes` (templates and
+ * quick doses, which the server surfaces back under `modes`) and `settings`
+ * (app-only preferences, which only the app reads). Both directions live here so
+ * the shape has one definition rather than one per call site — the previous
+ * arrangement had the build side and the read side disagreeing, which is exactly
+ * how the blob came to be written by nothing.
+ */
+export function toAppState(state: SyncState): Record<string, unknown> {
+    const modes: Record<string, unknown> = {};
+    for (const m of MODE_KEYS) {
+        modes[m] = {
+            doseTemplates: state.modes[m].doseTemplates,
+            quickDoses: state.modes[m].quickDoses,
+        };
+    }
+    return {
+        modes,
+        ...(state.appSettings && Object.keys(state.appSettings).length > 0
+            ? { settings: state.appSettings }
+            : {}),
+        // Inside the blob: the Core stores `appState` verbatim and returns only
+        // that, so a stamp kept outside it would not survive the round trip.
+        ...(state.appSettingsUpdatedAt > 0
+            ? { settingsUpdatedAt: state.appSettingsUpdatedAt }
+            : {}),
+    };
+}
+
 export function mergeSyncStates(local: SyncState, remote: SyncState | null): MergeResult {
     const stats: MergeStats = { added: 0, updated: 0, removed: 0 };
 
@@ -387,6 +549,7 @@ export function mergeSyncStates(local: SyncState, remote: SyncState | null): Mer
             events: mergeKind('events', local.modes[m].events, remote.modes[m].events, deletions.events, stats),
             labResults: mergeKind('labResults', local.modes[m].labResults, remote.modes[m].labResults, deletions.labResults, stats),
             doseTemplates: mergeKind('doseTemplates', local.modes[m].doseTemplates, remote.modes[m].doseTemplates, deletions.doseTemplates, stats),
+            quickDoses: mergeQuickDoses(local.modes[m].quickDoses, remote.modes[m].quickDoses),
             deletions,
         };
     }
@@ -398,6 +561,13 @@ export function mergeSyncStates(local: SyncState, remote: SyncState | null): Mer
     const pk = resolveScalar(local.pkParams, local.pkParamsUpdatedAt, remote.pkParams, remote.pkParamsUpdatedAt);
     merged.pkParams = pk.value;
     merged.pkParamsUpdatedAt = pk.at;
+
+    const appSettings = resolveScalar(
+        local.appSettings, local.appSettingsUpdatedAt,
+        remote.appSettings, remote.appSettingsUpdatedAt,
+    );
+    merged.appSettings = appSettings.value;
+    merged.appSettingsUpdatedAt = appSettings.at;
 
     const mergedFp = fingerprintState(merged);
     return {
@@ -451,8 +621,22 @@ export function fingerprintState(state: SyncState): string {
             parts.push(`${m}.${kind}:${rows.join(';')}`);
             parts.push(`${m}.${kind}.del:${Object.keys(block.deletions[kind]).sort().join(';')}`);
         }
+        // Sorted by id so two devices holding the same buttons in a different
+        // order do not read as a change and push to each other in a loop.
+        const quick = block.quickDoses
+            .map(r => {
+                const id = recordId(r);
+                return id ? `${id}=${stableString(r)}` : null;
+            })
+            .filter((r): r is string => r !== null)
+            .sort();
+        parts.push(`${m}.quickDoses:${quick.join(';')}`);
     }
     parts.push(`weight:${state.weight === undefined ? '' : stableString(state.weight)}`);
     parts.push(`pkParams:${state.pkParams === undefined ? '' : stableString(state.pkParams)}`);
+    // Settings participate: changing the theme is a change worth pushing, and
+    // omitting them here would have the change sit locally until some unrelated
+    // record edit happened to make the fingerprint differ.
+    parts.push(`appSettings:${state.appSettings === undefined ? '' : stableString(state.appSettings)}`);
     return parts.join('\n');
 }

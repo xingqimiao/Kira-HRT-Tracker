@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { authService, User, AuthResponse, sessionIdFromToken } from '../services/auth';
+import { authService, User, sessionIdFromToken } from '../services/auth';
 import { cacheCloudKey, deriveAndCacheCloudKey } from '../utils/cloudBackup';
 import { UNAUTHORIZED_EVENT } from '../services/apiClient';
 import { useDialog } from './DialogContext';
@@ -9,13 +9,6 @@ interface AuthContextType {
     user: User | null;
     token: string | null;
     login: (username: string, password: string, totpCode?: string, backupCode?: string) => Promise<void>;
-    /**
-     * Adopt a session issued by something other than the password form — today
-     * that is a passkey assertion. `verifiedPassword` is the password the server
-     * has just accepted in the same sign-in, passed so the cloud key can be
-     * derived from it; omit it and this device gets no key.
-     */
-    loginWithToken: (data: AuthResponse, verifiedPassword?: string) => Promise<void>;
     register: (username: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
     isLoading: boolean;
@@ -79,24 +72,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setNeedsSetup2FA(false);
             localStorage.removeItem('needs_setup_2fa');
         }
-    };
-
-    const loginWithToken = async (data: AuthResponse, verifiedPassword?: string) => {
-        setToken(data.token);
-        setUser(data.user);
-        localStorage.setItem('auth_token', data.token);
-        localStorage.setItem('auth_user', JSON.stringify(data.user));
-        // Passkey login always counts as completing 2FA
-        setNeedsSetup2FA(false);
-        localStorage.removeItem('needs_setup_2fa');
-        // A passkey proves who you are; it does not hand this device the
-        // password the cloud key is derived from. When the passkey was only the
-        // *second* factor the password is right here and the server has just
-        // accepted it, so derive from it — otherwise every such sign-in left the
-        // device keyless, sync stuck on `locked`, and the manual backup button
-        // failing with nothing to explain why. A genuinely passwordless sign-in
-        // has nothing to derive from and unlocks from the Account page instead.
-        if (verifiedPassword) await deriveAndCacheCloudKey(verifiedPassword, data.user.id);
     };
 
     const register = async (username: string, password: string) => {
@@ -191,7 +166,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     return (
-        <AuthContext.Provider value={{ user, token, login, loginWithToken, register, logout, isLoading, updateProfile, changePassword, deleteAccount, needsSetup2FA, clearSetup2FA }}>
+        <AuthContext.Provider value={{ user, token, login, register, logout, isLoading, updateProfile, changePassword, deleteAccount, needsSetup2FA, clearSetup2FA }}>
             {children}
         </AuthContext.Provider>
     );

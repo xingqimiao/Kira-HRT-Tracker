@@ -14,6 +14,7 @@ https://api.kiramyao.com
 ├── /comments/*      ← the existing comment service (health, api, auth/x, admin)
 └── /hrt/*           ← this service
     ├── /hrt/health
+    ├── /hrt/stats            ← public aggregate counts, no identifiers
     ├── /hrt/auth/register, /hrt/auth/login, /hrt/auth/totp/*, /hrt/auth/x/*
     ├── /hrt/api/settings, /hrt/api/medications, /hrt/api/labs, /hrt/api/timeline,
     │   /hrt/api/predict, /hrt/api/sync, /hrt/api/tokens
@@ -22,7 +23,8 @@ https://api.kiramyao.com
 
 Note the shape: `/<service>/auth/...` and `/<service>/api/...`, with no bare
 `/healthz`. That mirrors the comment service's own layout, so the two read the same
-way.
+way. `/hrt/stats` is deliberately outside `/api/`: it takes no token and belongs
+with `/health` as a public read.
 
 ---
 
@@ -82,8 +84,14 @@ Served as a directory index, so the page inherits `hrt.kiramyao.com`'s security
 headers — including `frame-ancestors 'none'`, which keeps the document from being
 embedded somewhere it could be misrepresented.
 
-**Scopes:** `users.read` only — the minimum that returns an identity. Set in code
-(`src/oauth.ts`), not in the portal.
+**Scopes:** `users.read tweet.read`, set in code (`src/oauth.ts`), not in the portal.
+
+`tweet.read` is not used to read a post — this app never fetches one — but
+`GET /2/users/me` answers **403** without it, so sign-in completes at X and then
+fails at the profile fetch. The pair is the minimum that actually works, verified
+against a real login on 2026-09-18. Do not narrow it on the reasoning that a login
+only needs an identity: the authorize step still succeeds, so the failure appears
+one call later and reads as a broken credential.
 
 **Permissions:** "Read" is enough. Login never needs write access.
 
@@ -131,7 +139,7 @@ Verified working end to end — the server boots with them and reports X login e
 boot    -> hrt-server: public=... x_login=on
 health  -> {"ok":true,"service":"hrt","mount":"/","x_login":true}
 /auth/x/start -> 200, authorize URL at https://twitter.com/i/oauth2/authorize
-             client_id matches .env, scope=users.read, PKCE=S256, secret not in the URL
+             client_id matches .env, scope=users.read tweet.read, PKCE=S256, secret not in the URL
 ```
 
 **For production, change `X_REDIRECT_URI`** in `/srv/hrt/.env`:
@@ -396,6 +404,12 @@ curl -sI https://api.kiramyao.com/hrt/health -H 'Origin: https://evil.example' |
 curl -s https://api.kiramyao.com/hrt/auth/register \
   -H 'Content-Type: application/json' \
   -d '{"username":"smoketest","password":"a-smoke-test-password"}'
+
+# 6. The public aggregate. Needs no token, and the body must be counts only —
+#    no ids, no usernames, nothing per-account. If this ever returns a row-shaped
+#    value, the privacy claim in ARCHITECTURE.md is false.
+curl -s https://api.kiramyao.com/hrt/stats
+#  -> {"ok":true,"users":{...},"records":{...},"deletions":{...},"generated_at":"..."}
 
 # 6. The callback path reaches this service, not the comment service.
 curl -sI 'https://api.kiramyao.com/hrt/auth/x/callback?code=x&state=y' | head -3
