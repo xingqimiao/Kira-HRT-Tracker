@@ -1,6 +1,6 @@
 import React from 'react';
 import Icon from '../components/Icon';
-import { ArrowLeft, ExternalLink, Scale } from '../icons';
+import { ArrowLeft, CodeFile, ExternalLink } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 
 interface LicenceSettingsProps {
@@ -61,7 +61,7 @@ const LicenceSettings: React.FC<LicenceSettingsProps> = ({ onBack, appVersion })
             <div className="mx-auto w-full px-6 md:px-8 mt-4 max-w-2xl">
                 <div className="flex items-start gap-3 pb-4">
                     <div className="p-2 rounded-lg bg-[var(--color-m3-surface-container)] shrink-0">
-                        <Icon icon={Scale} size={18} strokeWidth={1.75} className={muted} />
+                        <Icon icon={CodeFile} size={18} strokeWidth={1.75} className={muted} />
                     </div>
                     <p className={muted}>{t('licence.intro')}</p>
                 </div>
@@ -82,6 +82,16 @@ const LicenceSettings: React.FC<LicenceSettingsProps> = ({ onBack, appVersion })
                                 {work.noLicence && (
                                     <p className="mt-1.5 text-xs leading-relaxed text-cos-warning ">
                                         {t('licence.no_licence_note')}
+                                    </p>
+                                )}
+                                {/* A grant is not a public licence: it exists because the
+                                    copyright holder said yes, and it is narrower than one
+                                    (non-commercial). Neither fact is visible from their
+                                    repository, so both are stated here rather than left to
+                                    the `licence` column, which can carry four words. */}
+                                {work.granted && (
+                                    <p className="mt-1.5 text-xs leading-relaxed text-cos-success">
+                                        {t('licence.granted_note')}
                                     </p>
                                 )}
                                 {work.url && (

@@ -14,6 +14,12 @@ export interface UpstreamWork {
     /** `none declared` is a real answer — see the note in the generator. */
     licence: string;
     noLicence: boolean;
+    /**
+     * Permission exists by correspondence rather than by a file in the upstream
+     * repository. Rendered as a note explaining the grant and its non-commercial
+     * limit, because neither is visible from that repository.
+     */
+    granted?: boolean;
     copyright?: string;
 }
 
@@ -29,8 +35,10 @@ export const UPSTREAM_WORKS: UpstreamWork[] = [
         "name": "HRT-Recorder-PKcomponent-Test",
         "url": "https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test",
         "roleKey": "licence.upstream_algorithm",
-        "licence": "none declared",
-        "noLicence": true
+        "licence": "non-commercial, granted",
+        "noLicence": false,
+        "granted": true,
+        "copyright": "Copyright © Mihari."
     },
     {
         "name": "HRT-Recorder-online",

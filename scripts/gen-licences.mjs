@@ -24,19 +24,34 @@ const ROOT = process.cwd();
 /**
  * The works this app is built from, none of which is a dependency.
  *
- * `licence: 'none declared'` is deliberate and load-bearing for
- * `LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test`. Its repository has no LICENCE
- * file and its README states no terms — verified against the GitHub API, where
- * `/license` returns 404 and the `license` field is null. Writing a permissive
- * licence here would assert a permission nobody granted.
+ * Three states, and the difference is the point:
+ *
+ *   - **`licence: 'none declared'`** — the repository has no LICENCE file and its
+ *     README states no terms. Verified against the GitHub API, where `/license`
+ *     returns 404 and the `license` field is null. Writing a permissive licence
+ *     here would assert a permission nobody granted.
+ *   - **`granted: true`** — permission exists, but by correspondence with the
+ *     copyright holder rather than by a file in their repository. The grant is
+ *     narrower than a public licence (non-commercial) and its evidence is the
+ *     exchange, not a file anyone can read. Say both.
+ *   - **a named licence** — a file in the upstream repository.
+ *
+ * A work is never both: a grant supersedes "none declared" for that work, because
+ * the permission now exists even though the repository still has no LICENCE file.
  */
 const UPSTREAM_WORKS = [
     {
         name: 'HRT-Recorder-PKcomponent-Test',
         url: 'https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test',
         roleKey: 'licence.upstream_algorithm',
-        licence: 'none declared',
-        noLicence: true,
+        // Non-commercial, by permission of the copyright holder (2026-09-18). The
+        // repository still has no LICENCE file — hence `granted` — but permission
+        // exists, so "none declared" would now understate the position rather than
+        // state it honestly.
+        licence: 'non-commercial, granted',
+        noLicence: false,
+        granted: true,
+        copyright: 'Copyright © Mihari.',
     },
     {
         name: 'HRT-Recorder-online',
@@ -118,6 +133,12 @@ const out = [
     '    /** `none declared` is a real answer — see the note in the generator. */',
     '    licence: string;',
     '    noLicence: boolean;',
+    '    /**',
+    '     * Permission exists by correspondence rather than by a file in the upstream',
+    '     * repository. Rendered as a note explaining the grant and its non-commercial',
+    '     * limit, because neither is visible from that repository.',
+    '     */',
+    '    granted?: boolean;',
     '    copyright?: string;',
     '}',
     '',
