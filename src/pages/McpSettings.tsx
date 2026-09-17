@@ -35,6 +35,11 @@ const MCP_TOOLS: { name: string; input: string; returns: string }[] = [
     { name: 'hrt_delete_record', input: 'kind, id', returns: 'Confirmation' },
     { name: 'hrt_sync_state', input: '—', returns: 'Full record state' },
     { name: 'hrt_reference', input: '—', returns: 'Routes, esters and units the app accepts' },
+    // The share tools, grouped at the end because they are the only ones whose effect
+    // is visible outside the account — a link anyone can open.
+    { name: 'hrt_create_share', input: 'expires_in_hours, password?, live?, limit?', returns: 'A URL, shown once' },
+    { name: 'hrt_list_shares', input: '—', returns: 'What is currently published' },
+    { name: 'hrt_revoke_share', input: 'id', returns: 'Confirmation' },
 ];
 
 const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
@@ -259,6 +264,55 @@ const McpSettings: React.FC<McpSettingsProps> = ({ session, onBack, onSignIn }) 
   }
 }`;
 
+    /**
+     * The install prompt: paste this into an AI assistant and it configures itself.
+     *
+     * Written to be self-contained, because the reader is an assistant that has never
+     * heard of this service. So it states the transport, the auth header, where the
+     * config lives per client, how to tell it worked, and — importantly — the one
+     * outcome that looks like a failure but is not: record tools refuse until the account
+     * is unlocked in the web UI, because the server holds no key at rest.
+     *
+     * The token is left as a placeholder on purpose. A prompt is often pasted into a chat
+     * that keeps history, and a real token in a transcript is a leaked token.
+     */
+    const installPrompt = [
+        'Add an MCP server to my AI client by editing its configuration file yourself.',
+        '',
+        `Server name: kira-tracker`,
+        `Transport:  Streamable HTTP (POST only)`,
+        `URL:        ${MCP_ENDPOINT}`,
+        'Auth:       header \`Authorization: Bearer <TOKEN>\`',
+        '',
+        'Steps:',
+        '1. Find my client\'s MCP config file and show me the path before you change it.',
+        '   Common locations: claude_desktop_config.json for Claude Desktop,',
+        '   .cursor/mcp.json for Cursor, .vscode/mcp.json for VS Code.',
+        '2. Add this entry under "mcpServers":',
+        '',
+        '   {',
+        '     "kira-tracker": {',
+        '       "type": "http",',
+        `       "url": "${MCP_ENDPOINT}",`,
+        '       "headers": { "Authorization": "Bearer <TOKEN>" }',
+        '     }',
+        '   }',
+        '',
+        '3. Replace <TOKEN> with the token I give you. Ask me for it if I have not.',
+        '4. Restart the client, then call hrt_reference to confirm it works. That tool',
+        '   needs no records and no unlock, so it is the right one to test with.',
+        '',
+        'Two things to expect:',
+        '- Record tools answer "the account is locked" until I unlock it in the web app at',
+        '  hrt.kiramyao.com. That is deliberate — the decryption key is never stored, so',
+        '  the server cannot read anything while the account is locked.',
+        '- hrt_create_share publishes a link that anyone can open. Confirm with me before',
+        '  calling it, and propose an expiry rather than picking one silently.',
+        '',
+        'Start with hrt_reference to learn the accepted routes, esters and units, then',
+        'hrt_get_timeline to see what I have already logged.',
+    ].join('\n');
+
     return (
         <div className="relative pb-32">
             <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)] px-6 md:px-8 pt-8 pb-3">
@@ -291,9 +345,17 @@ const McpSettings: React.FC<McpSettingsProps> = ({ session, onBack, onSignIn }) 
                     <CopyRow value={MCP_ENDPOINT} hint={t('mcp.endpoint_hint')} />
                 </section>
 
+                {/* 3 — the config. The prompt first, because it is the path that works
+                    without the reader knowing where their client keeps its files. */}
+                <section className={`py-4 ${divider}`}>
+                    <p className={sectionLabel}>{t('mcp.step_install')}</p>
+                    <p className={`mt-1 ${muted}`}>{t('mcp.install_desc')}</p>
+                    <CopyRow value={installPrompt} hint={t('mcp.install_hint')} />
+                </section>
+
                 {/* 3 — the config. */}
                 <section className={`py-4 ${divider}`}>
-                    <p className={sectionLabel}>{t('mcp.step_config')}</p>
+                    <p className={sectionLabel}>{t('mcp.step_config_manual')}</p>
                     <p className={`mt-1 ${muted}`}>{t('mcp.config_desc')}</p>
                     <CopyRow value={clientConfig} hint={t('mcp.config_hint')} />
                 </section>

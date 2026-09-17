@@ -64,7 +64,12 @@ test('an MCP client can list and call tools', async () => {
   const names = tools.map((t) => t.name).sort();
   assert.ok(names.includes('hrt_predict_levels'), `expected predict tool, got ${names}`);
   assert.ok(names.includes('hrt_add_medication'), 'expected add_medication tool');
-  assert.ok(names.length >= 10, `expected the full tool surface, got ${names.length}`);
+  // The share tools, named rather than counted: they are the only ones whose effect is
+  // visible to someone without an account, so their absence should fail loudly.
+  for (const required of ['hrt_create_share', 'hrt_list_shares', 'hrt_revoke_share']) {
+    assert.ok(names.includes(required), `expected ${required}, got ${names}`);
+  }
+  assert.ok(names.length >= 15, `expected the full tool surface, got ${names.length}`);
 
   // Every tool must describe itself — an agent picks tools from descriptions.
   for (const tool of tools) {

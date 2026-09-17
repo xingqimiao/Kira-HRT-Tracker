@@ -31,6 +31,7 @@ import {
 import type { AuthContext } from './types.ts';
 import { findUserSession, lookupSession } from './session.ts';
 import { buildExportPayload } from './import.ts';
+import { ShareService } from './shares.ts';
 import { SL_TIER_ORDER, GEL_SITE_ORDER, PK_PARAM_RANGES } from './engine.ts';
 
 /** How an adapter obtains the caller's identity and key. */
@@ -381,6 +382,117 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         analyte_units: { e2: ['pg/ml', 'pmol/l'], t: ['ng/dl', 'nmol/l'] },
         safety: SAFETY_NOTE,
       }),
+  );
+
+  // --- Shares --------------------------------------------------------------
+  //
+  // The one pair of tools that publishes data outside the account. `hrt_create_share`
+  // is the only call in this server whose effect is visible to someone who is not the
+  // user, which is why its description leads with that rather than with the arguments.
+
+  server.registerTool(
+    'hrt_create_share',
+    {
+      title: 'Create a share link',
+      description:
+        'Publish a read-only link to the user\'s dose history and modelled curve. Anyone with '
+        + 'the URL can read it until it expires, so confirm with the user before calling this. '
+        + 'Lab results, body weight and profile details are never included — the server refuses '
+        + 'a payload carrying them. The URL is returned once and cannot be retrieved again.',
+      inputSchema: {
+        password: z.string().min(8).optional()
+          .describe('Require this password to open the link. Omit for a link anyone can read.'),
+        expires_in_hours: z.number().positive().max(2160).optional()
+          .describe('How long the link lives, in hours (default 24, maximum 2160 = 90 days)'),
+        live: z.boolean().optional()
+          .describe('Keep the snapshot current as records change. Default false: a frozen link.'),
+        limit: z.number().int().min(1).max(500).optional()
+          .describe('How many recent doses to include (default 100)'),
+      },
+    },
+    async ({ password, expires_in_hours, live, limit }) => {
+      const r = await withContext(async (ctx) => {
+        const events = await TimelineService.get(ctx, { limit: limit ?? 100 });
+        // Only doses. A share is a dosage record by design; the exclusion list on the
+        // server is the real guarantee, and this avoids constructing what it would refuse.
+        const doses = events
+          .filter((e) => e.kind === 'dose')
+          .map((e) => ({
+            id: e.id,
+            ester: (e as { event: { ester: unknown } }).event.ester,
+            route: (e as { event: { route: unknown } }).event.route,
+            doseMG: (e as { event: { doseMG: unknown } }).event.doseMG,
+            at: e.at,
+          }));
+
+        return await ShareService.create(ctx.userId, {
+          snapshot: {
+            version: 1,
+            mode: (ctx as { mode?: unknown }).mode ?? 'transfem',
+            timezone: 'UTC',
+            createdAt: Date.now(),
+            events: doses,
+            simulation: null,
+          },
+          password,
+          expiresAt: Date.now() + (expires_in_hours ?? 24) * 3_600_000,
+          live: live ?? false,
+        });
+      });
+      if ('error' in r) return toolError(r.error);
+      if (!r.value.ok) return toolError(r.value.error);
+      return toolResult({
+        url: r.value.value.url,
+        expires_at: new Date(r.value.value.expiresAt).toISOString(),
+        password_required: r.value.value.passwordRequired,
+        live: r.value.value.live,
+        included: 'dose history and the modelled curve',
+        not_included: 'lab results, body weight, account details',
+        note: 'The URL is shown once. It cannot be retrieved again — only revoked.',
+      });
+    },
+  );
+
+  server.registerTool(
+    'hrt_list_shares',
+    {
+      title: 'List active share links',
+      description:
+        'What the user currently has published, including whether each link has expired. '
+        + 'Check this before creating another, and to get the id for hrt_revoke_share.',
+      inputSchema: {},
+    },
+    async () => {
+      const r = await withContext((ctx) => ShareService.list(ctx.userId));
+      if ('error' in r) return toolError(r.error);
+      return toolResult(r.value.map((share) => ({
+        id: share.id,
+        created_at: new Date(share.createdAt).toISOString(),
+        expires_at: new Date(share.expiresAt).toISOString(),
+        expired: share.expired,
+        password_required: share.passwordRequired,
+        live: share.live,
+      })));
+    },
+  );
+
+  server.registerTool(
+    'hrt_revoke_share',
+    {
+      title: 'Revoke a share link',
+      description:
+        'Delete a share so its URL stops working immediately. Takes the id from '
+        + 'hrt_list_shares — the token itself is never stored and cannot be passed here.',
+      inputSchema: {
+        id: z.string().uuid().describe('The share id, from hrt_list_shares'),
+      },
+    },
+    async ({ id }) => {
+      const r = await withContext((ctx) => ShareService.revoke(ctx.userId, id));
+      if ('error' in r) return toolError(r.error);
+      if (!r.value) return toolError('no share with that id on this account');
+      return toolResult({ revoked: true, id });
+    },
   );
 
   return server;
