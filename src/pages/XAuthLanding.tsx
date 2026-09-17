@@ -99,7 +99,7 @@ const XAuthLanding: React.FC<XAuthLandingProps> = ({
   if (phase === 'working') {
     return (
       <Page>
-        <p className="flex items-center gap-2.5 text-sm">
+        <p className="flex items-center gap-2.5 text-sm text-[var(--color-m3-on-surface-variant)]">
           <Icon icon={Loader2} size={17} className="animate-spin" />
           {t('core.x.working')}
         </p>
@@ -110,14 +110,12 @@ const XAuthLanding: React.FC<XAuthLandingProps> = ({
   if (phase === 'linked') {
     return (
       <Page>
-        <Headline
-          icon={<Icon icon={CheckCircle2} size={19} className="text-[var(--color-m3-primary)]" />}
-          title={t('core.x.linked_title')}
-          body={
-            (params.handle ? `@${params.handle}. ` : '') + t('core.x.linked_body')
-          }
+        <PageHeader title={t('core.x.linked_title')} />
+        <StatusLine
+          icon={<Icon icon={CheckCircle2} size={18} className="text-[var(--color-m3-primary)]" />}
+          body={(params.handle ? `@${params.handle}. ` : '') + t('core.x.linked_body')}
         />
-        <button type="button" onClick={() => navigate('settings')} className="btn-primary w-full mt-4">
+        <button type="button" onClick={() => navigate('settings')} className="btn-primary mt-6 w-full">
           {t('core.x.back_settings')}
         </button>
       </Page>
@@ -127,12 +125,12 @@ const XAuthLanding: React.FC<XAuthLandingProps> = ({
   if (phase === 'failed') {
     return (
       <Page>
-        <Headline
-          icon={<Icon icon={AlertTriangle} size={19} className="text-[#B3261E]" />}
-          title={t('core.x.failed_title')}
+        <PageHeader title={t('core.x.failed_title')} />
+        <StatusLine
+          icon={<Icon icon={AlertTriangle} size={18} className="text-[var(--color-m3-error)]" />}
           body={message}
         />
-        <div className="flex gap-2 mt-4">
+        <div className="mt-6 flex gap-2">
           <button type="button" onClick={() => navigate('home')} className="btn-secondary flex-1">
             {t('core.x.back')}
           </button>
@@ -154,20 +152,17 @@ const XAuthLanding: React.FC<XAuthLandingProps> = ({
   if (phase === 'needs_password') {
     return (
       <Page>
-        <Headline
-          icon={null}
-          title={t('core.x.identified_title')}
-          /* The single most important thing to explain in this flow, and the thing a
-             user is most likely to find surprising. Given as a reason, not an apology. */
-          body={t('core.x.identified_body')}
-        />
+        <PageHeader title={t('core.x.identified_title')} />
+        {/* The single most important thing to explain in this flow, and the thing a
+            user is most likely to find surprising. Given as a reason, not an apology. */}
+        <StatusLine body={t('core.x.identified_body')} />
         <button
           type="button"
           onClick={() => {
             onPrefillSignIn?.(username);
             navigate('home');
           }}
-          className="btn-primary w-full mt-4"
+          className="btn-primary mt-6 w-full"
         >
           {username ? t('core.x.sign_in_as').replace('{username}', username) : t('core.x.go_signin')}
         </button>
@@ -178,12 +173,7 @@ const XAuthLanding: React.FC<XAuthLandingProps> = ({
   // phase === 'setup'
   return (
     <Page wide>
-      <div className="space-y-2 mb-4">
-        <h2 className="text-base font-semibold">{t('core.x.setup_title')}</h2>
-        <p className="text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)] ">
-          {t('core.x.setup_body')}
-        </p>
-      </div>
+      <PageHeader title={t('core.x.setup_title')} intro={t('core.x.setup_body')} />
 
       <SetupForm
         setupToken={params.setupToken ?? ''}
@@ -235,14 +225,18 @@ const SetupForm: React.FC<{
   );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <section className="space-y-3">
-        <p className="text-sm font-medium">1. {t('core.x.setup_step1')}</p>
+        {/* An eyebrow, not a heading: the page's `h1` is the title, and a second
+            heading at the same visual weight competed with it. */}
+        <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-m3-on-surface-variant)]">
+          1 · {t('core.x.setup_step1')}
+        </p>
         <TotpSecretDisplay otpauthUri={otpauthUri} secret={secret} />
       </section>
 
       <form
-        className="space-y-3 pt-5 border-t border-[var(--color-m3-outline-variant)] "
+        className="space-y-4 border-t border-[var(--color-m3-outline-variant)] pt-6"
         onSubmit={async (e) => {
           e.preventDefault();
           if (busy) return;
@@ -260,7 +254,9 @@ const SetupForm: React.FC<{
           }
         }}
       >
-        <p className="text-sm font-medium">2. {t('core.x.setup_step2')}</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-m3-on-surface-variant)]">
+          2 · {t('core.x.setup_step2')}
+        </p>
 
         <div className="space-y-1.5">
           <label className="text-sm" htmlFor="xsetup-password">{t('core.x.setup_password')}</label>
@@ -295,7 +291,10 @@ const SetupForm: React.FC<{
         </div>
 
         {error && (
-          <p className="text-xs flex items-start gap-1.5 text-[#B3261E]" role="alert">
+          <p
+            className="flex items-start gap-1.5 text-xs text-[var(--color-m3-error)]"
+            role="alert"
+          >
             <Icon icon={AlertTriangle} size={13} className="mt-0.5 shrink-0" />
             <span>{error}</span>
           </p>
@@ -310,30 +309,55 @@ const SetupForm: React.FC<{
   );
 };
 
+/**
+ * The X landing's shell.
+ *
+ * Built to the same shape as the app's other pages: a content column centred on a
+ * wide window, a left-aligned header, and the whole thing inside the scrolling
+ * region. It previously used `modal-card`, which is why it read as a different
+ * product — that class is a dialog (elevated, bordered, 88vh, its own scrollbar),
+ * so a full page appeared as one floating box pinned to the left with none of the
+ * app's page rhythm. `wide` now means "this column also holds the larger content",
+ * not "a bigger dialog".
+ *
+ * No `scroll-pb-nav`: the bottom tab bar is part of `AppContent`'s shell, and this
+ * route renders before that shell exists.
+ */
 const Page: React.FC<{ children: React.ReactNode; wide?: boolean }> = ({ children, wide }) => (
-  <div className="pt-8 pb-32 min-h-full flex justify-start md:justify-center">
-    <div
-      className={`modal-card w-full ${wide ? 'max-w-[36rem]' : 'max-w-[26rem]'}`}
-      style={{ animation: 'm3-dialog-enter var(--md-sys-motion-transition-enter) both' }}
-    >
-      {children}
+  <div className="flex min-h-[100dvh] flex-col bg-[var(--color-m3-surface-dim)]">
+    <div className="flex-1 overflow-y-auto scrollbar-hide">
+      <div
+        className={`mx-auto w-full px-6 pb-20 pt-8 md:px-8 md:pt-10 ${wide ? 'max-w-[36rem]' : 'max-w-[32rem]'}`}
+      >
+        {children}
+      </div>
     </div>
   </div>
 );
 
-const Headline: React.FC<{ icon: React.ReactNode; title: string; body: string }> = ({
-  icon,
-  title,
-  body,
-}) => (
+/** The page heading, matching the app's other pages rather than a dialog's. */
+const PageHeader: React.FC<{ title: string; intro?: string }> = ({ title, intro }) => (
+  <header className="mb-6">
+    <h1 className="text-xl font-semibold">{title}</h1>
+    {intro && (
+      <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)]">
+        {intro}
+      </p>
+    )}
+  </header>
+);
+
+/**
+ * A status paragraph under the page title — the body copy for the short phases.
+ *
+ * The title is now the page's `h1` rather than a line inside this component, so
+ * these phases read like a page that happens to be short instead of a dialog with
+ * its heading in the wrong place.
+ */
+const StatusLine: React.FC<{ icon?: React.ReactNode; body: string }> = ({ icon, body }) => (
   <div className="flex items-start gap-2.5">
     {icon && <span className="mt-0.5 shrink-0">{icon}</span>}
-    <div className="space-y-1">
-      <p className="text-sm font-medium">{title}</p>
-      <p className="text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)] ">
-        {body}
-      </p>
-    </div>
+    <p className="text-sm leading-relaxed text-[var(--color-m3-on-surface-variant)]">{body}</p>
   </div>
 );
 
