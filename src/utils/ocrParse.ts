@@ -57,24 +57,23 @@ export interface HormoneCandidate {
  *
  * ── The trade-off, stated honestly ───────────────────────────────────────────
  *
- * Only `eng` is loaded (see `scripts/sync-ocr-assets.mjs` for why: 2.9 MB against
- * another 10-20 MB for `chi_sim`). **The consequence is that Chinese labels come
- * back as noise.** Run against a real Chinese report, `雌二醇 (E2) 45.2 pg/mL`
- * recognises as `1 —F% (E2) 45.2 pg/mL` — the digits and the unit are perfect, the
- * Chinese is garbage.
+ * **Both engines are loaded now** (see `scripts/sync-ocr-assets.mjs`): `eng` for the
+ * digits and the unit, `chi_sim` for the Chinese label. What used to be written here is
+ * worth keeping as the history of a real failure: the plan was that Chinese labels are
+ * noise to be discarded, so only the Latin abbreviation had to survive. On a report that
+ * prints `雌二醇` with no bracketed abbreviation anywhere on the row, that plan produced
+ * **no candidates at all** — `*雌二醇 396.53 ↑ <143 pmol/L` came back as
+ * `1 —F% 396.53 <143 pmol/L`, the digits and the unit perfect, nothing matching a label,
+ * and the scan reported "no usable values" on a row that was perfectly legible.
  *
- * So the Chinese names below are retained but are effectively *inert* on a
- * Chinese-only report; they exist because they cost nothing, they keep the intent
- * documented, and they would start working the day `chi_sim` is added. What
- * actually carries the recognition is the **Latin abbreviation in brackets**, which
- * is why `e2` and a bare `t` are in the lists and why the bracketed form is the one
- * the tests pin.
+ * So the Chinese names below are live, and the **Latin abbreviation in brackets** is
+ * still the more robust of the two signals when a report prints both — which is why
+ * `e2` and a bare `t` are in the lists, and why `check-ocr-parse.mjs` pins both forms
+ * rather than assuming either.
  *
- * The saving grace is that a Chinese lab report nearly always prints the
- * international abbreviation beside the Chinese name — `雌二醇 (E2)`, `睾酮 (T)` —
- * because the analyser's own software is Western. That is the signal this parser
- * relies on, and `check-ocr-parse.mjs` tests against the real `eng` output rather
- * than against a wishful one.
+ * A Chinese lab report usually prints the international abbreviation beside the Chinese
+ * name — `雌二醇 (E2)`, `睾酮 (T)` — but not always, which is the whole reason both
+ * forms are accepted.
  */
 const LABELS = {
     E2: [

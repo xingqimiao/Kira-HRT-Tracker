@@ -311,6 +311,30 @@ check('the reference column does not make an SHBG row into a reading', () => {
     )
 })
 
+// --- labels without the bracketed abbreviation ------------------------------
+
+check('a Chinese-only label is enough', () => {
+    // The row from a real report that produced "no usable values": the label is Chinese
+    // with no `(E2)` anywhere, the value has two decimals, and the reference is a
+    // single-sided bound. Nothing here is ambiguous once the label is readable.
+    const found = findHormoneValues('*雌二醇      396.53 ↑   <143   pmol/L')
+    assert.equal(found.length, 1, 'exactly one reading')
+    assert.equal(found[0].value, 396.53, 'the patient value, not the 143 upper bound')
+    assert.equal(found[0].analyte, 'E2')
+    assert.equal(found[0].unit, 'pmol/l')
+})
+
+check('the same row with the bracketed label still resolves', () => {
+    const found = findHormoneValues('雌二醇 (E2)   396.53    <143    pmol/L')
+    assert.equal(found[0]?.value, 396.53)
+})
+
+check('a Chinese-only testosterone label resolves too', () => {
+    const found = findHormoneValues('睾酮   512   264-916   ng/dL')
+    assert.equal(found[0]?.value, 512, 'not the 916 upper bound')
+    assert.equal(found[0]?.analyte, 'T')
+})
+
 // --- report -----------------------------------------------------------------
 
 const failed = results.filter(([status]) => status === 'fail')

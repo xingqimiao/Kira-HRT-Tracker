@@ -169,7 +169,10 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
             // no-external-requests promise the app makes (see the font note in
             // src/index.css). With these set, the scan cannot reach a CDN even if a
             // file is missing — it fails locally instead, which is detectable.
-            const worker = await createWorker('eng', 1, {
+            // Both languages: `eng` for the digits and the unit, `chi_sim` for the
+            // Chinese label. Without the second one a report that prints only `雌二醇`
+            // reads as noise and the row is lost — see scripts/sync-ocr-assets.mjs.
+            const worker = await createWorker('eng+chi_sim', 1, {
                 workerPath: '/ocr/worker.min.js',
                 corePath: '/ocr/core',
                 langPath: '/ocr',
