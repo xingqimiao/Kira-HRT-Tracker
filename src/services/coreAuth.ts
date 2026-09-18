@@ -514,7 +514,7 @@ export const coreAuth = {
   async listXLinks(token: string): Promise<XLink[]> {
     const raw = await request<any>('/auth/x/links', { token });
     // The Core serialises these itself (`listXLinks` maps its rows), so they arrive
-    // camelCase — not as the `oauth_links` column names. Reading `l.avatar_url` here
+    // camelCase — not as the `oauth_accounts` column names. Reading `l.avatar_url` here
     // yielded undefined for every field, which is why the account page showed a
     // generic glyph and "Invalid Date": nothing was ever populated to render.
     return (raw.links ?? []).map((l: any) => ({

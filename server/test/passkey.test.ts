@@ -260,6 +260,10 @@ test('the RP ID is derived from the API origin and suffixes every origin', () =>
     DATABASE_URL: 'postgres://x/y',
     TOTP_ENC_KEY: 'a'.repeat(40),
     SERVER_DEK_KEY: 'b'.repeat(40),
+            // 32 bytes base64 — the record-payload key is required in production, so a
+            // fixture claiming production has to carry one. Fixed, not random: a
+            // generated key would make a failure unreproducible.
+            ENCRYPTION_KEY: 'AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=',
   });
   assert.equal(config.webauthn?.rpId, 'kiramyao.com', 'the registrable domain, not a host');
   assert.deepEqual(config.webauthn?.origins, ['https://hrt.kiramyao.com', 'https://api.kiramyao.com']);
@@ -275,6 +279,10 @@ test('an RP ID that does not suffix the host is refused at boot', () => {
         DATABASE_URL: 'postgres://x/y',
         TOTP_ENC_KEY: 'a'.repeat(40),
         SERVER_DEK_KEY: 'b'.repeat(40),
+            // 32 bytes base64 — the record-payload key is required in production, so a
+            // fixture claiming production has to carry one. Fixed, not random: a
+            // generated key would make a failure unreproducible.
+            ENCRYPTION_KEY: 'AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=',
         WEBAUTHN_RP_ID: 'example.com',
       }),
     /must be a suffix/,
@@ -290,6 +298,10 @@ test('passkeys can be switched off entirely', () => {
     DATABASE_URL: 'postgres://x/y',
     TOTP_ENC_KEY: 'a'.repeat(40),
     SERVER_DEK_KEY: 'b'.repeat(40),
+            // 32 bytes base64 — the record-payload key is required in production, so a
+            // fixture claiming production has to carry one. Fixed, not random: a
+            // generated key would make a failure unreproducible.
+            ENCRYPTION_KEY: 'AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=',
     WEBAUTHN_ENABLED: 'false',
   });
   assert.equal(config.webauthn, null);

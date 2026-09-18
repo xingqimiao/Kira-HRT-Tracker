@@ -723,14 +723,14 @@ export function createRequestHandler() {
              (SELECT count(*) FROM medication_events WHERE user_id = $1 AND deleted_at IS NULL) AS doses,
              (SELECT count(*) FROM lab_results      WHERE user_id = $1 AND deleted_at IS NULL) AS labs,
              (SELECT count(*) FROM totp_backup_codes WHERE user_id = $1 AND used_at IS NULL)  AS backups,
-             (SELECT count(*) FROM oauth_links       WHERE user_id = $1)                      AS x_links,
+             (SELECT count(*) FROM oauth_accounts       WHERE user_id = $1)                      AS x_links,
              (SELECT created_at FROM users WHERE id = $1)                                     AS created_at,
              (SELECT privacy_mode FROM users WHERE id = $1)                                   AS privacy_mode,
              (SELECT encryption_metadata FROM users WHERE id = $1)                            AS encryption_metadata,
              -- The linked X avatar, for the account header. It is already stored; the
              -- summary simply never surfaced it, so the page had nothing but a generic
              -- glyph to draw. Null when no X account is linked.
-             (SELECT avatar_url FROM oauth_links
+             (SELECT avatar_url FROM oauth_accounts
                WHERE user_id = $1 AND provider = 'x' AND avatar_url IS NOT NULL
                ORDER BY linked_at ASC LIMIT 1)                                                 AS x_avatar_url`,
           [ctx.userId],

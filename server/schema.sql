@@ -46,7 +46,19 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 --   `failed_unlocks` / `locked_until` throttle password guessing per account.
 CREATE TABLE IF NOT EXISTS users (
     id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    username            text NOT NULL UNIQUE,
+    -- The login identifier: a self-chosen account name, NOT an email address.
+    --
+    -- Required for an account that signs in with a password. An account created
+    -- through X or Google is still given one at signup (generated from the handle, so
+    -- it has something to show and can be renamed later) — see the note on
+    -- `password_hash` below for why a social-only account is never left unusable.
+    --
+    -- There is no verification mail and no address-recovery flow by design: nothing
+    -- here should let a mail provider become the gate on someone's medication history.
+    -- 64 is the storage ceiling; the application is stricter (3–30, letters, digits,
+    -- underscore, hyphen), and both exist so the database cannot hold a name no
+    -- validation would ever have produced.
+    username            varchar(64) NOT NULL UNIQUE,
     display_name        text,
     password_hash       text,
     password_set_at     timestamptz,
@@ -74,6 +86,22 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_unlocks     integer NOT NULL D
 ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until       timestamptz;
 -- Password became optional for X-created accounts.
 ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+
+-- `username` is the login identifier, so its width and non-emptiness are enforced by
+-- the database and not only by the request validator. Widen from `text` to
+-- `varchar(64)` (a no-op for existing rows) and refuse a blank name — an account
+-- whose identifier is the empty string can be created but never signed into.
+ALTER TABLE users ALTER COLUMN username TYPE varchar(64);
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_username_shape;
+ALTER TABLE users ADD CONSTRAINT users_username_shape
+    CHECK (username = btrim(username) AND length(username) BETWEEN 1 AND 64);
+
+-- A previous revision added an `email` column here. Removed on purpose: the product
+-- signs people in with a self-chosen account name, and carrying a second, half-used
+-- identity column invites code to start depending on it. Dropped unconditionally —
+-- it is only ever added by that one revision, and no code has ever written to it.
+ALTER TABLE users DROP COLUMN IF EXISTS email;
+DROP INDEX IF EXISTS idx_users_email_unique;
 -- The pre-encryption column, if it exists, is left in place but unused: dropping
 -- a column that might hold the only copy of someone's 2FA secret is not a
 -- migration this file should perform unattended.
@@ -206,31 +234,65 @@ CREATE TABLE IF NOT EXISTS totp_backup_codes (
 CREATE INDEX IF NOT EXISTS idx_totp_backup_codes_user
     ON totp_backup_codes(user_id) WHERE used_at IS NULL;
 
--- A linked external identity. One row per (provider, external account), so the
--- same X account cannot be attached to two users, and one user can rebind to a
--- different X account only after unlinking the old one.
+-- A linked external identity. One row per (provider, external account), so the same
+-- X or Google account cannot be attached to two users, and one user can rebind to a
+-- different external account only after unlinking the old one.
 --
--- `provider_user_id` is X's immutable numeric id, never the @handle: handles are
--- changeable and can be released and re-registered by someone else, so keying a
--- login on one would let a handle change transfer access.
-CREATE TABLE IF NOT EXISTS oauth_links (
-    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id           uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    provider          text NOT NULL CHECK (provider IN ('x')),
-    provider_user_id  text NOT NULL,
-    handle            text,
-    -- The provider's avatar, captured when the link is made or used, so the account
-    -- page can show it without calling X on every render. Cosmetic: null just means
-    -- no picture, which is why nothing here depends on it being present.
-    avatar_url        text,
-    linked_at         timestamptz NOT NULL DEFAULT now(),
-    last_login_at     timestamptz,
-    UNIQUE (provider, provider_user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_oauth_links_user ON oauth_links(user_id);
--- Added after the first release, so a database created by that revision needs it too.
-ALTER TABLE oauth_links ADD COLUMN IF NOT EXISTS avatar_url text;
+-- ── Why this table is the anti-ban insurance ──────────────────────────────────
+-- Identity and credentials are deliberately decoupled: `users` holds the account and
+-- its optional password, this table holds *how else* you can get in. So a social
+-- account being banned, deleted, or having its API credentials revoked costs the user
+-- one button on the sign-in screen — never their medication history. They fall back to
+-- the account name and password they set while the social login still worked.
+--
+-- `provider_user_id` is the provider's immutable id, never the @handle: handles are
+-- changeable and can be released and re-registered by someone else, so keying a login
+-- on one would let a handle change transfer access.
+-- ── Create-or-rename, never both ──────────────────────────────────────────────
+--
+-- This has to be one conditional block rather than a `CREATE TABLE IF NOT EXISTS`
+-- followed by a rename. Written the obvious way, a database that still has
+-- `oauth_links` gets a *new empty* `oauth_accounts` from the CREATE, which then makes
+-- the rename's "target does not exist" guard false — so the real rows stay behind in
+-- the old table and every existing social login is silently orphaned. Found by running
+-- this file against a restored copy of production; the naive version did exactly that.
+DO $$
+BEGIN
+  IF to_regclass('public.oauth_accounts') IS NULL
+     AND to_regclass('public.oauth_links') IS NOT NULL THEN
+    -- Older database: take the table, and its contents, over to the current name.
+    ALTER TABLE oauth_links RENAME TO oauth_accounts;
+    ALTER INDEX IF EXISTS idx_oauth_links_user RENAME TO idx_oauth_accounts_user;
+  ELSIF to_regclass('public.oauth_accounts') IS NULL THEN
+    -- Fresh database: create it in the current shape.
+    CREATE TABLE oauth_accounts (
+      id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id           uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider          varchar(32) NOT NULL,
+      provider_user_id  varchar(255) NOT NULL,
+      handle            text,
+      avatar_url        text,
+      linked_at         timestamptz NOT NULL DEFAULT now(),
+      last_login_at     timestamptz,
+      UNIQUE (provider, provider_user_id)
+    );
+    CREATE INDEX idx_oauth_accounts_user ON oauth_accounts(user_id);
+  END IF;
 
+  -- Only present on tables that predate the column.
+  IF to_regclass('public.oauth_accounts') IS NOT NULL THEN
+    ALTER TABLE oauth_accounts ADD COLUMN IF NOT EXISTS avatar_url text;
+  END IF;
+END $$;
+
+-- Widen the provider allowlist. The original constraint admitted only 'x', which would
+-- make a Google link fail at insert time with a constraint error rather than a clear
+-- "unsupported provider" — the app-level check gives the better message, but the
+-- database should not be the thing that decides which providers exist.
+ALTER TABLE oauth_accounts DROP CONSTRAINT IF EXISTS oauth_links_provider_check;
+ALTER TABLE oauth_accounts DROP CONSTRAINT IF EXISTS oauth_accounts_provider_check;
+ALTER TABLE oauth_accounts ADD CONSTRAINT oauth_accounts_provider_check
+    CHECK (provider IN ('x', 'google'));
 -- In-flight OAuth authorizations, keyed by the `state` value.
 --
 -- Server-side rather than a signed cookie because the PKCE `code_verifier` must
@@ -402,3 +464,58 @@ CREATE TABLE IF NOT EXISTS shares (
 CREATE INDEX IF NOT EXISTS idx_shares_user ON shares(user_id);
 -- Expiry is per-row and short, so the token hash is the only lookup that needs help.
 -- The unique constraint above already serves it.
+
+-- ---------------------------------------------------------------------------
+-- Records — the encrypted business payload
+-- ---------------------------------------------------------------------------
+--
+-- One row per dose / lab result / note. What the server may look at is deliberate
+-- and small: *who*, *when*, and a coarse *category*, which is what pagination and
+-- retention need. Everything a person typed — medication name, dose, lab values,
+-- free-text notes — is JSON, sealed as one AES-256-GCM blob in `payload_encrypted`.
+--
+-- Per-field encryption was rejected on purpose: it would leak the shape of every
+-- record (which fields exist, how many of each) while buying nothing, because the
+-- same process holds the key either way. One blob per record leaks nothing but size.
+--
+-- This is encryption at rest, NOT end-to-end. The server decrypts on read, because
+-- it is the server that renders nothing and the API that answers. The honest claim is
+-- "a stolen database dump is useless without ENCRYPTION_KEY", and that is all this
+-- table is designed to deliver.
+--
+--   `taken_at` is plaintext because the timeline is ordered and paged by it. It is a
+--   real privacy cost — the server learns when someone doses — and it is the price of
+--   not pulling the entire history to the client to sort it there.
+--
+--   `payload_encrypted` is TEXT holding "iv:tag:ciphertext" in base64 (see
+--   src/payloadCrypto.ts). TEXT rather than bytea so the column is readable in a
+--   psql session during an incident, at a 33% storage cost.
+CREATE TABLE IF NOT EXISTS records (
+    id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id            uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    taken_at           timestamptz NOT NULL,
+    category           varchar(32) NOT NULL DEFAULT 'dose',
+    payload_encrypted  text NOT NULL,
+    created_at         timestamptz NOT NULL DEFAULT now(),
+    updated_at         timestamptz NOT NULL DEFAULT now(),
+    -- A client-supplied id, so a record created offline can be pushed twice without
+    -- duplicating. Null for rows written before this column existed.
+    client_id          text
+);
+
+-- The timeline query: one user's records, newest first, paged. Descending to match
+-- the read, so the index serves the order with no sort step.
+CREATE INDEX IF NOT EXISTS idx_records_user_taken_at
+    ON records(user_id, taken_at DESC);
+
+-- Category filtering (the lab list vs the dose list) alongside the same ordering.
+CREATE INDEX IF NOT EXISTS idx_records_user_category_taken_at
+    ON records(user_id, category, taken_at DESC);
+
+-- Idempotent client pushes. Partial, so the many rows without a client id do not
+-- all collide on NULL.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_records_user_client_id
+    ON records(user_id, client_id)
+    WHERE client_id IS NOT NULL;
+
+ALTER TABLE records ADD COLUMN IF NOT EXISTS client_id text;

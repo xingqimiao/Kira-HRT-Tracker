@@ -85,7 +85,7 @@ const USER_SCOPED_TABLES = [
   'user_settings',
   'api_tokens',
   'totp_backup_codes',
-  'oauth_links',
+  'oauth_accounts',
   'auth_events',
 ] as const;
 
@@ -138,7 +138,7 @@ test('the account summary carries the linked X avatar for the header', async () 
   const userId = await userIdFor(account.username);
   const pool = await getPool();
   await pool.query(
-    `INSERT INTO oauth_links (user_id, provider, provider_user_id, handle, avatar_url)
+    `INSERT INTO oauth_accounts (user_id, provider, provider_user_id, handle, avatar_url)
      VALUES ($1, 'x', '12345', 'somebody', $2)`,
     [userId, 'https://example.test/avatar.jpg'],
   );

@@ -1454,7 +1454,7 @@ export const AccountService = {
     if (pending.purpose === 'link') {
       if (!pending.user_id) return { ok: false, error: 'link authorization had no account' };
       const existing = await getPool().query(
-        `SELECT id, user_id FROM oauth_links WHERE provider = 'x' AND provider_user_id = $1`,
+        `SELECT id, user_id FROM oauth_accounts WHERE provider = 'x' AND provider_user_id = $1`,
         [profile.id],
       );
       if (existing.rows.length > 0) {
@@ -1464,7 +1464,7 @@ export const AccountService = {
         return { ok: false, error: 'that X account is already linked to a different account' };
       }
       await getPool().query(
-        `INSERT INTO oauth_links (user_id, provider, provider_user_id, handle, avatar_url)
+        `INSERT INTO oauth_accounts (user_id, provider, provider_user_id, handle, avatar_url)
          VALUES ($1, 'x', $2, $3, $4)`,
         [pending.user_id, profile.id, profile.handle, profile.avatarUrl],
       );
@@ -1474,7 +1474,7 @@ export const AccountService = {
 
     // --- Logging in ---
     const link = await getPool().query<{ user_id: string }>(
-      `SELECT user_id FROM oauth_links WHERE provider = 'x' AND provider_user_id = $1`,
+      `SELECT user_id FROM oauth_accounts WHERE provider = 'x' AND provider_user_id = $1`,
       [profile.id],
     );
 
@@ -1485,7 +1485,7 @@ export const AccountService = {
       // stored one when X sends nothing this time, so a transient omission cannot
       // erase a picture that was working.
       await getPool().query(
-        `UPDATE oauth_links
+        `UPDATE oauth_accounts
             SET handle = $1, avatar_url = COALESCE($2, avatar_url), last_login_at = now()
           WHERE provider = 'x' AND provider_user_id = $3`,
         [profile.handle, profile.avatarUrl, profile.id],
@@ -1549,7 +1549,7 @@ export const AccountService = {
         );
         const user = rows[0];
         await getPool().query(
-          `INSERT INTO oauth_links (user_id, provider, provider_user_id, handle, avatar_url)
+          `INSERT INTO oauth_accounts (user_id, provider, provider_user_id, handle, avatar_url)
            VALUES ($1, 'x', $2, $3, $4)`,
           [user.id, profile.id, profile.handle, profile.avatarUrl],
         );
@@ -1731,7 +1731,7 @@ export const AccountService = {
         reason,
         user.created_at,
       ]);
-      // Cascades to api_tokens, totp_backup_codes, oauth_links, oauth_states,
+      // Cascades to api_tokens, totp_backup_codes, oauth_accounts, oauth_states,
       // medication_events, lab_results and user_settings.
       await client.query(`DELETE FROM users WHERE id = $1`, [user.id]);
     });
@@ -1807,7 +1807,7 @@ export const AccountService = {
       }
     }
 
-    const { rowCount } = await getPool().query(`DELETE FROM oauth_links WHERE user_id = $1 AND provider = 'x'`, [
+    const { rowCount } = await getPool().query(`DELETE FROM oauth_accounts WHERE user_id = $1 AND provider = 'x'`, [
       ctx.userId,
     ]);
     await this.recordAuthEvent(ctx.userId, rowCount ? 'x_unlinked' : 'x_unlink_noop');
@@ -1822,7 +1822,7 @@ export const AccountService = {
     const { rows } = await getPool().query<{
       handle: string | null; avatar_url: string | null; linked_at: Date; last_login_at: Date | null;
     }>(
-      `SELECT handle, avatar_url, linked_at, last_login_at FROM oauth_links WHERE user_id = $1 AND provider = 'x'`,
+      `SELECT handle, avatar_url, linked_at, last_login_at FROM oauth_accounts WHERE user_id = $1 AND provider = 'x'`,
       [userId],
     );
     return rows.map((r) => ({

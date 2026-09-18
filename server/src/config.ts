@@ -13,6 +13,7 @@
  */
 
 import { isIP } from 'node:net';
+import { keyFromEnv } from './payloadCrypto.ts';
 
 export interface XOAuthConfig {
   clientId: string;
@@ -84,6 +85,14 @@ export interface Config {
    * choose Standard and then could not recover them would be lying.
    */
   serverDekKey: string | null;
+  /**
+   * The master key for record payloads, or null outside production.
+   *
+   * Not end-to-end encryption: the server decrypts on read. What it buys is that a
+   * stolen database dump is useless on its own. `null` means no record can be written,
+   * which is why production requires it rather than degrading silently.
+   */
+  encryptionKey: Buffer | null;
   /** Human-verification on the register and X-setup entry points. Absent = off. */
   turnstile: TurnstileConfig | null;
   /**
@@ -286,6 +295,33 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     );
   }
 
+  // The record-payload key. Required in production: every business field is stored as
+  // one AES-256-GCM blob under this key, so a deployment without it cannot store a
+  // single record. Validated here rather than at the first write so a bad paste fails
+  // at startup, where it is obvious, instead of as "nothing saves".
+  //
+  // Note this is NOT end-to-end encryption: the server decrypts on read. The guarantee
+  // is "a database dump is useless without this key", nothing stronger.
+  const encryptionKeyRaw = env.ENCRYPTION_KEY?.trim();
+  if (env.NODE_ENV === 'production' && !encryptionKeyRaw) {
+    throw new ConfigError(
+      'ENCRYPTION_KEY is required in production: record payloads are encrypted under it. '
+      + 'Generate one with: openssl rand -base64 32',
+    );
+  }
+  const encryptionKey = encryptionKeyRaw
+    ? (() => {
+      // Delegated to the crypto module so the format rules live in one place: this is
+      // the same function the check script exercises, not a second parser that could
+      // accept a key the cipher would then refuse.
+      try {
+        return keyFromEnv(encryptionKeyRaw);
+      } catch (error) {
+        throw new ConfigError(`ENCRYPTION_KEY is invalid: ${(error as Error).message}`);
+      }
+    })()
+    : null;
+
   // Turnstile is optional as a unit. Half-configured is the failure worth catching:
   // a secret with no hostname allowlist would accept a token minted on any site.
   const turnstileSecret = env.TURNSTILE_SECRET?.trim();
@@ -364,6 +400,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     turnstile,
     webauthn,
     sessionTtlMinutes,
+    encryptionKey,
     rateLimits,
   };
 }
