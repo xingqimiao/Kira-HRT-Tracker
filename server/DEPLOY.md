@@ -387,6 +387,14 @@ VITE_API_ORIGIN=https://api.kiramyao.com/hrt npm run build
 sudo rsync -a --delete dist/ /srv/hrt-web/
 ```
 
+**Take a rollback copy of both halves before you replace them.** The web root is
+cheap (`tar -czf /srv/backup/hrt-web-$(date -u +%Y%m%d-%H%M%S).tar.gz -C /srv/hrt-web .`)
+and so is the server bundle, but only if you make it *first* — and the bundle is the
+one that gets forgotten, because `/srv/hrt/dist/` already looks like it is full of
+backups. It is: the convention is `index.cjs.bak-<label>-<timestamp>`, written before
+the install that replaced it. Overwriting `index.cjs` without adding one leaves no
+staged way back, and rebuilding an old commit is a slower path than a `cp`.
+
 `VITE_API_ORIGIN` is read by `src/services/apiClient.ts`. Without it the requests go
 same-origin and every API call from `hrt.` would 404 against the static host.
 
