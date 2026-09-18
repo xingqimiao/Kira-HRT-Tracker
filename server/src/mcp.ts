@@ -28,18 +28,32 @@ import {
   TimelineService,
   PKSimulationService,
 } from './core.ts';
-import type { AuthContext } from './types.ts';
+import type { AuthContext, ContextDenial } from './types.ts';
 
 import { buildExportPayload } from './import.ts';
 import { ShareService } from './shares.ts';
 import { SL_TIER_ORDER, GEL_SITE_ORDER, PK_PARAM_RANGES } from './engine.ts';
 
 /** How an adapter obtains the caller's identity and key. */
-export type ContextResolver = () => Promise<AuthContext | null>;
+export type ContextResolver = () => Promise<AuthContext | ContextDenial | null>;
 
 const NOT_UNLOCKED =
   'This account is locked. Ask the user to unlock it at the web UI (they enter their ' +
   'password there); the server holds no key at rest, so no agent can open it for them.';
+
+/**
+ * Said instead of "unlock", because the fix is different.
+ *
+ * An advanced account with a passkey deliberately refuses to act on a stored token: a
+ * previous unlock is not proof that the user is present now. Telling them to "unlock
+ * with your password" would send them to do something that will not help. The action
+ * is a passkey prompt, and this is what an agent should relay.
+ */
+const NEEDS_STEP_UP =
+  'This account requires a passkey confirmation for agent access. Ask the user to open the ' +
+  'HRT web UI and approve the agent request with their passkey (Touch ID, Windows Hello, or ' +
+  'a security key). A previous unlock or the access token alone is deliberately not enough ' +
+  'for an advanced-privacy account.';
 
 /** Wrap a tool body so failures arrive as readable results instead of protocol errors. */
 function toolResult(value: unknown) {
@@ -74,6 +88,7 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
   ): Promise<{ value: T } | { error: string }> {
     const ctx = await resolveContext();
     if (!ctx) return { error: NOT_UNLOCKED };
+    if ('denied' in ctx) return { error: ctx.denied === 'step_up' ? NEEDS_STEP_UP : NOT_UNLOCKED };
     return { value: await fn(ctx) };
   }
 

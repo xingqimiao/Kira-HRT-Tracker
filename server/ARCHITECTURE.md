@@ -94,12 +94,33 @@ Two consequences follow, both accepted deliberately:
 Password change re-wraps the DEK rather than re-encrypting records, so it is one
 row and cannot half-fail. A mode switch is the same operation twice over.
 
-**Passkeys are not implemented.** The spec allows a passkey to unwrap the DEK, but
-only if it is real client-side key protection. The browser only offers that through
-the WebAuthn PRF extension, which is not universally available, and an earlier passkey
-feature here was removed on purpose. Rather than ship a passkey button that does not
-actually guard the key, the `passkey` slot exists in the metadata shape and the UI
-says it is unavailable.
+**Passkeys are implemented, and the distinction that makes them real.** A passkey here
+is not a second login factor wearing a data-credential costume: its **PRF extension
+output** is what derives the KEK that wraps the DEK. Registration refuses a credential
+that did not return a PRF output, because accepting one would store a credential that
+can never open the data — and the UI hides the whole feature on a browser that cannot
+do PRF, rather than offering a button that fails at the OS prompt.
+
+Two design points are load-bearing:
+
+- **The PRF salt is a fixed application-wide constant.** It has to be, because a
+  discoverable sign-in evaluates PRF *before* the server knows which account is asking.
+  It is an input, not a secret; the PRF output over it is the key. Storing a
+  per-account salt is the intuitive design and it breaks the usernameless flow.
+- **Wrappers are a map keyed by credential id**, not a single slot, so a second
+  authenticator does not orphan the first.
+
+The server unwraps, as it does for passwords — the product's claim is that the server
+cannot unlock *on its own*, not that it never decrypts during an unlock.
+
+**Step-up for agents.** An advanced account that has a passkey refuses a durable `hrt_`
+token unless a *passkey-proven* unlock is live (`session.passkeyVerifiedAt`). A password
+session opened hours earlier is deliberately not enough: the point is that an agent
+should not act on the strength of a stored token, and a passkey assertion proves someone
+is present now. The MCP layer reports this as its own message — telling the user to
+"unlock with your password" would be wrong advice, since a password alone will not
+satisfy it. An advanced account with *no* passkey keeps the older behaviour, so a
+password-only user is not locked out of their own agents.
 
 ### Record ids are opaque client strings, scoped per account
 
@@ -253,7 +274,7 @@ lines) and the Core has its own model. They do not overlap:
 |---|---|---|
 | Password login | yes | yes (scrypt) |
 | TOTP 2FA + backup codes | yes | no |
-| Passkeys / WebAuthn | removed | no (slot reserved, not built) |
+| Passkeys / WebAuthn | removed | yes (PRF-derived key) |
 | Session list & revoke | yes | no (unlock TTL only) |
 | Admin | yes | no |
 | Unlock token | n/a | yes (`ks_…`) |

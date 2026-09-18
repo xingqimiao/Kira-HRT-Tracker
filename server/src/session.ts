@@ -27,7 +27,7 @@
  */
 import { createHmac } from 'node:crypto';
 
-import { deriveCloudKey, encryptCloudPayload, decryptCloudPayload, isCloudEncrypted } from './engine.ts';
+import { deriveCloudKey, derivePasskeyKey, encryptCloudPayload, decryptCloudPayload, isCloudEncrypted } from './engine.ts';
 
 /** A wrapped DEK as stored server-side. Identical envelope to a cloud backup. */
 export type WrappedKey = { cloud: 1; iv: string; data: string };
@@ -128,19 +128,42 @@ export interface WrapperEnvelope {
 export interface EncryptionMetadata {
   /** Explicit, never inferred from which wrappers are present. */
   version: number;
-  dek?: { alg: string; createdAt: string };
+  dek?: {
+    alg: string;
+    createdAt: string;
+  };
   wrappers: {
     password?: WrapperEnvelope;
     server?: WrapperEnvelope;
     recovery?: WrapperEnvelope;
-    /** Reserved. WebAuthn-PRF wrappers would go here; not implemented yet. */
-    passkey?: WrapperEnvelope;
+    /**
+     * One entry per registered passkey, keyed by credential id.
+     *
+     * A map rather than a single slot because a user may register several authenticators
+     * (a laptop, a phone, a backup key), and each one must be able to open the *same*
+     * DEK. One slot would mean registering a second passkey silently orphaned the first,
+     * which is the opposite of what "add another passkey" should do.
+     */
+    passkeys?: Record<string, WrapperEnvelope>;
   };
 }
 
 export const ENCRYPTION_VERSION = 2;
 const PASSWORD_KDF = 'pbkdf2-sha256-600k';
 const SERVER_SCHEME = 'server-hmac-sha256-v1';
+
+const PRF_INFO = 'hrt-passkey-v1';
+
+/**
+ * The PRF evaluation input, fixed application-wide.
+ *
+ * It must be the same value at registration and at sign-in, and for a discoverable
+ * sign-in the browser has to evaluate it *before* the server knows which account is
+ * involved — so it cannot be per-account. Storing it would add nothing: it is an
+ * input, not a secret, and the PRF output over it is what becomes the key. This is
+ * the standard RP-uses-a-constant-salt approach.
+ */
+export const PRF_SALT = 'hrt-passkey-salt-v1';
 
 /** Coerce whatever the jsonb column holds into a well-formed document. */
 export function readMetadata(raw: unknown): EncryptionMetadata {
@@ -306,6 +329,56 @@ export async function addServerWrapper(
 }
 
 /**
+ * Add a wrapper for one passkey.
+ *
+ * The KEK is derived from the authenticator's PRF output, which the browser produced
+ * and sent — over TLS, to be used once and discarded. That is the honest bound on what
+ * this protects: the *server* holds the key only transiently, during the request that
+ * already proved possession of the authenticator. It is deliberately stricter than the
+ * password path in one respect — a passkey unlock cannot be replayed from a stored
+ * secret the way a password could be, because each ceremony mints a fresh challenge.
+ */
+export async function addPasskeyWrapper(
+  metadata: EncryptionMetadata,
+  dek: string,
+  credentialId: string,
+  prfOutputB64: string,
+): Promise<EncryptionMetadata> {
+  const kek = await derivePasskeyKey(prfOutputB64, credentialId);
+  const wrapped = (await encryptCloudPayload(dek, kek)) as WrappedKey;
+  return {
+    ...metadata,
+    wrappers: {
+      ...metadata.wrappers,
+      passkeys: {
+        ...(metadata.wrappers.passkeys ?? {}),
+        [credentialId]: { ...wrapped, kdf: 'webauthn-prf-hkdf-sha256' },
+      },
+    },
+  };
+}
+
+/** Recover the DEK from a passkey's PRF output. */
+export async function unwrapWithPasskey(
+  metadata: EncryptionMetadata,
+  credentialId: string,
+  prfOutputB64: string,
+): Promise<string | null> {
+  const wrapper = metadata.wrappers.passkeys?.[credentialId];
+  return unwrapEnvelope(wrapper, () => derivePasskeyKey(prfOutputB64, credentialId));
+}
+
+/** Drop one passkey's wrapper, when its credential is removed. */
+export function removePasskeyWrapper(
+  metadata: EncryptionMetadata,
+  credentialId: string,
+): EncryptionMetadata {
+  if (!metadata.wrappers.passkeys) return metadata;
+  const { [credentialId]: _dropped, ...rest } = metadata.wrappers.passkeys;
+  return { ...metadata, wrappers: { ...metadata.wrappers, passkeys: rest } };
+}
+
+/**
  * Drop the server wrapper — the step that turns an account into advanced mode.
  *
  * Pure: the caller persists the result. Dropping it makes the server unable to
@@ -353,6 +426,16 @@ interface UnlockedSession {
   userId: string;
   dek: string;
   expiresAt: number;
+  /**
+   * When this session's key was opened by a passkey with user verification.
+   *
+   * The MCP step-up requirement reads this: a durable agent token normally needs an
+   * open unlock, but for an advanced account it needs an unlock that was proven with
+   * a passkey — not just any session. Recording *when* rather than *whether* lets a
+   * future policy bound the freshness ("a step-up counts for N minutes") without a
+   * schema change, and is the input `hasFreshPasskeyVerification` is written against.
+   */
+  passkeyVerifiedAt?: number;
 }
 
 /**
@@ -373,12 +456,22 @@ function sweep(now: number): void {
   }
 }
 
-export function openSession(userId: string, dek: string, ttlMinutes?: number): string {
+export function openSession(
+  userId: string,
+  dek: string,
+  ttlMinutes?: number,
+  opts: { passkeyVerified?: boolean } = {},
+): string {
   const now = Date.now();
   sweep(now);
   const token = `ks_${randomKeyB64().replace(/[+/=]/g, '').slice(0, 32)}`;
   const ttl = ttlMinutes !== undefined ? ttlMinutes * 60 * 1000 : SESSION_TTL_MS;
-  sessions.set(token, { userId, dek, expiresAt: now + ttl });
+  sessions.set(token, {
+    userId,
+    dek,
+    expiresAt: now + ttl,
+    ...(opts.passkeyVerified ? { passkeyVerifiedAt: now } : {}),
+  });
   return token;
 }
 
@@ -445,6 +538,48 @@ export function closeUserSessions(userId: string): void {
   for (const [token, session] of sessions) {
     if (session.userId === userId) sessions.delete(token);
   }
+}
+
+/**
+ * Record that a live session has now been proven with a passkey.
+ *
+ * This is the step-up: an existing unlock (from a password) is upgraded in place
+ * rather than replaced, so the caller keeps its token and anything bound to it. Used
+ * when an agent asks for authorisation and the user satisfies it with their
+ * authenticator instead of handing over their password again.
+ */
+export function markSessionPasskeyVerified(token: string): boolean {
+  const now = Date.now();
+  sweep(now);
+  const session = sessions.get(token);
+  if (!session) return false;
+  session.passkeyVerifiedAt = now;
+  session.expiresAt = now + SESSION_TTL_MS;
+  return true;
+}
+
+/**
+ * Whether a user has a live unlock that was proven with a passkey.
+ *
+ * This is the step-up check the MCP layer makes for an advanced account: an agent
+ * holding a durable token is not enough on its own there, because advanced mode's
+ * whole point is that a stored credential cannot reach the data. Requiring a
+ * passkey-verified unlock means the person is present with their authenticator, and
+ * a leaked token cannot manufacture that.
+ *
+ * `maxAgeMs` bounds how old the proof may be. Omitted means "any live unlock counts",
+ * which is right while the unlock TTL is the only bound; passing it is how a stricter
+ * window would be applied later.
+ */
+export function hasPasskeyVerification(userId: string, maxAgeMs?: number): boolean {
+  const now = Date.now();
+  sweep(now);
+  for (const session of sessions.values()) {
+    if (session.userId !== userId || session.passkeyVerifiedAt === undefined) continue;
+    if (maxAgeMs !== undefined && now - session.passkeyVerifiedAt > maxAgeMs) continue;
+    return true;
+  }
+  return false;
 }
 
 /** Test/diagnostic surface; not a public API. */

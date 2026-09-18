@@ -7,6 +7,7 @@ import TurnstileWidget from './TurnstileWidget';
 import { coreAuth, CoreAuthError, type PrivacyMode, type RegistrationResponse } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
 import { useTranslation } from '../contexts/LanguageContext';
+import { passkeysSupported, prfAvailable } from '../utils/passkeys';
 
 /**
  * Sign in or sign up against the Application Core — the credentials, the second
@@ -82,6 +83,10 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
     const [unlockFactor, setUnlockFactor] = useState<'password' | 'recovery'>('password');
     const [unlockSecret, setUnlockSecret] = useState('');
 
+    // Passkeys, probed rather than assumed. `null` means "still checking", so the
+    // button does not flash in and out on load.
+    const [passkeyReady, setPasskeyReady] = useState<boolean | null>(null);
+
     React.useEffect(() => {
         if (active && initialUsername) setUsername(initialUsername);
     }, [active, initialUsername]);
@@ -124,6 +129,39 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                 return t('core.err.network');
             default:
                 return error.message || t('core.err.generic');
+        }
+    }
+
+    // Probe passkey support once. `prfAvailable()` creates and discards a throwaway
+    // credential, which is the only honest way to know whether the extension actually
+    // works — a browser can expose the API and still not honour PRF, and offering the
+    // button there would fail at the OS prompt.
+    React.useEffect(() => {
+        if (!active) return;
+        let cancelled = false;
+        if (!passkeysSupported()) {
+            setPasskeyReady(false);
+            return;
+        }
+        void prfAvailable().then((ok) => {
+            if (!cancelled) setPasskeyReady(ok);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [active]);
+
+    /** Sign in with a passkey alone. No username, no password, no TOTP. */
+    async function handlePasskey() {
+        setError(null);
+        setBusy(true);
+        try {
+            await session.signInWithPasskey();
+            finish({});
+        } catch (err) {
+            setError(err instanceof CoreAuthError ? err.message : t('core.err.generic'));
+        } finally {
+            setBusy(false);
         }
     }
 
@@ -334,6 +372,14 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                         {t('core.privacy.unlock_action')}
                     </button>
 
+                    {/* A passkey opens the same data without any secret typed, so it is
+                        offered here beside the two secret-based factors. */}
+                    {passkeyReady === true && (
+                        <button type="button" onClick={handlePasskey} disabled={busy} className="btn-secondary w-full">
+                            {t('core.passkey.unlock')}
+                        </button>
+                    )}
+
                     <div className="flex flex-col items-center gap-1.5 pt-1">
                         <button
                             type="button"
@@ -537,6 +583,15 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                         {busy && <Icon icon={Loader2} size={16} className="animate-spin" />}
                         {isLogin ? t('core.sign_in') : t('core.create_account')}
                     </button>
+
+                    {/* Passkey sign-in sits above the X divider and is offered on the
+                        sign-in side only: registering does not have a session to
+                        attach a credential to yet. */}
+                    {isLogin && passkeyReady === true && (
+                        <button type="button" onClick={handlePasskey} disabled={busy} className="btn-secondary w-full">
+                            {t('core.passkey.sign_in')}
+                        </button>
+                    )}
 
                     {xAvailable && (
                         <>

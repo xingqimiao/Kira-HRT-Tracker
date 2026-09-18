@@ -135,6 +135,42 @@ CREATE TABLE IF NOT EXISTS api_tokens (
 );
 CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
 
+-- Passkeys (WebAuthn credentials).
+--
+-- One row per registered credential. `public_key` is the COSE key the authenticator
+-- issued at registration, and it is what every later assertion is verified against —
+-- so this column is *not* secret, and it cannot create a key: the row alone opens
+-- nothing. `credential_id` is the browser-facing handle and is the lookup key for a
+-- discoverable sign-in, where the server does not know who is signing in until the
+-- assertion names the credential.
+--
+-- `sign_count` is the authenticator's monotonic counter. It is nullable and its
+-- usefulness is genuinely limited — passkeys that sync between devices (iCloud
+-- Keychain, Google Password Manager) report a constant 0, so a non-increase means
+-- nothing there. It is recorded because some authenticators do report it and a
+-- decrease is a real cloning signal; the check is "refuse a *decrease*", never
+-- "require an increase".
+--
+-- The data-key wrapper for this credential lives in `users.encryption_metadata`
+-- (`wrappers.passkeys[credential_id]`), not here. Key material stays in one document
+-- so a mode switch rewraps in one place.
+CREATE TABLE IF NOT EXISTS webauthn_credentials (
+    credential_id   text PRIMARY KEY,
+    user_id         uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    public_key      bytea NOT NULL,
+    sign_count      bigint NOT NULL DEFAULT 0,
+    transports      text,
+    device_type     text,
+    backed_up       boolean NOT NULL DEFAULT false,
+    name            text,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    last_used_at    timestamptz
+);
+CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user ON webauthn_credentials(user_id);
+-- One credential id maps to one account. The primary key enforces it; this index
+-- exists because the discoverable-sign-in path looks the row up by id before it has
+-- any user context, which is the primary key's job, so no second index is needed.
+
 -- Recovery codes for the second factor. Hashed with scrypt, not stored
 -- reversibly: each code bypasses 2FA, so the set is equivalent to ten spare
 -- passwords and deserves the same treatment. `used_at` enforces single use.

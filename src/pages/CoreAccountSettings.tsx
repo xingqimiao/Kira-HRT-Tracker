@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Icon from '../components/Icon';
 import { useTranslation } from '../contexts/LanguageContext';
-import { AlertTriangle, Check, Copy, KeyRound, Loader2, LogOut, Lock, RefreshCw, ShieldCheck, Trash2, Unlink } from '../icons';
+import { AlertTriangle, Check, Copy, Fingerprint, KeyRound, Loader2, LogOut, Lock, RefreshCw, ShieldCheck, Trash2, Unlink } from '../icons';
 
-import { coreAuth, CoreAuthError, type AccountSummary, type PrivacyMode, type XLink } from '../services/coreAuth';
+import { coreAuth, CoreAuthError, type AccountSummary, type PasskeyInfo, type PrivacyMode, type XLink } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
+import { passkeysSupported, prfAvailable } from '../utils/passkeys';
 
 /**
  * Account security for an Application Core session.
@@ -31,7 +32,7 @@ interface CoreAccountSettingsProps {
   onDeleted: () => void;
 }
 
-type Dialog = null | 'password' | 'recovery' | 'unlink' | 'delete' | 'privacy' | 'recoveryKey';
+type Dialog = null | 'password' | 'recovery' | 'unlink' | 'delete' | 'privacy' | 'recoveryKey' | 'passkey';
 
 /** What each mode actually does, in the words the spec asked for. */
 function privacyCopy(t: (k: string) => string, mode: PrivacyMode) {
@@ -75,6 +76,8 @@ function xLinkSubtitle(
 const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBack, onDeleted }) => {
   const [summary, setSummary] = useState<AccountSummary | null>(null);
   const [links, setLinks] = useState<XLink[]>([]);
+  const [passkeys, setPasskeys] = useState<PasskeyInfo[]>([]);
+  const [passkeyReady, setPasskeyReady] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,14 +90,32 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
   const refresh = useCallback(async () => {
     if (!token) return;
     try {
-      const [s, l] = await Promise.all([coreAuth.summary(token), coreAuth.listXLinks(token)]);
+      const [s, l, p] = await Promise.all([
+        coreAuth.summary(token),
+        coreAuth.listXLinks(token),
+        coreAuth.listPasskeys(token).catch(() => [] as PasskeyInfo[]),
+      ]);
       setSummary(s);
       setLinks(l);
+      setPasskeys(p);
     } catch {
       // Leave the previous values rather than blanking the page on a transient
       // failure; the next refresh will correct them.
     }
   }, [token]);
+
+  // Probe passkey support once, the same way the sign-in form does — the button is
+  // only honest where PRF actually works.
+  useEffect(() => {
+    if (!passkeysSupported()) return;
+    let cancelled = false;
+    void prfAvailable().then((ok) => {
+      if (!cancelled) setPasskeyReady(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     void refresh();
@@ -313,6 +334,48 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
           </p>
         </section>
 
+        {/* ── Passkeys ─────────────────────────────────────────────────────── */}
+        {(passkeyReady || passkeys.length > 0) && (
+          <section className="mb-6">
+            <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{t('core.passkey.section')}</span>
+
+            <div className="mt-2 flex flex-col">
+              {passkeys.map((p) => (
+                <Row
+                  key={p.id}
+                  icon={<Icon icon={Fingerprint} size={17} />}
+                  title={p.name || t('core.passkey.unnamed')}
+                  subtitle={
+                    p.lastUsedAt
+                      ? t('core.passkey.last_used').replace('{date}', formatDate(p.lastUsedAt) ?? '')
+                      : t('core.passkey.never_used')
+                  }
+                  right={<Icon icon={Trash2} size={15} className={muted} />}
+                  onClick={() => {
+                    void run(async () => {
+                      await coreAuth.removePasskey(token!, p.id);
+                      await refresh();
+                    }, t('core.passkey.notice_removed'));
+                  }}
+                  disabled={busy}
+                />
+              ))}
+
+              {passkeyReady && (
+                <Row
+                  icon={<Icon icon={Fingerprint} size={17} />}
+                  title={t('core.passkey.add')}
+                  subtitle={t('core.passkey.add_sub')}
+                  onClick={() => setDialog('passkey')}
+                  disabled={busy}
+                />
+              )}
+            </div>
+
+            <p className={`text-xs mt-2 ${muted}`}>{t('core.passkey.note')}</p>
+          </section>
+        )}
+
         {/* ── Delete ───────────────────────────────────────────────────────── */}
         <section>
           <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{t('core.acct.delete_section')}</span>
@@ -408,6 +471,21 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
               await refresh();
             });
             return key;
+          }}
+          describeError={describe}
+        />
+      )}
+
+      {dialog === 'passkey' && (
+        <PasskeyDialog
+          busy={busy}
+          onClose={() => { setDialog(null); setError(null); }}
+          onSubmit={async (currentPassword, name) => {
+            await run(async () => {
+              await session.addPasskey(currentPassword, name);
+              await refresh();
+            }, t('core.passkey.notice_added'));
+            setDialog(null);
           }}
           describeError={describe}
         />
@@ -784,6 +862,51 @@ const RecoveryKeyDialog: React.FC<{
           </button>
         </div>
       )}
+    </Dialog>
+  );
+};
+
+/**
+ * Add a passkey.
+ *
+ * Asks for the current password because a passkey is another way into the account's
+ * data — adding one is as sensitive as changing the password, so a session alone must
+ * not be enough. The name is free text so a user with two authenticators can tell them
+ * apart later.
+ */
+const PasskeyDialog: React.FC<{
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (currentPassword: string, name?: string) => Promise<void>;
+  describeError: (e: unknown) => string;
+}> = ({ busy, onClose, onSubmit, describeError }) => {
+  const { t } = useTranslation();
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  return (
+    <Dialog title={t('core.passkey.add')} onClose={onClose}>
+      <form
+        className="space-y-3 mt-1"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setLocalError(null);
+          try {
+            await onSubmit(password, name.trim() || undefined);
+          } catch (err) {
+            setLocalError(describeError(err));
+          }
+        }}
+      >
+        <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">
+          {t('core.passkey.add_intro')}
+        </p>
+        <Field label={t('core.pw.current')} type="password" value={password} onChange={setPassword} autoFocus />
+        <Field label={t('core.passkey.name')} value={name} onChange={setName} hint={t('core.passkey.name_hint')} />
+        {localError && <p className="text-xs text-[#B3261E]" role="alert">{localError}</p>}
+        <Submit busy={busy} disabled={!password}>{t('core.passkey.add_submit')}</Submit>
+      </form>
     </Dialog>
   );
 };

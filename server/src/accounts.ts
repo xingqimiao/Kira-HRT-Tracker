@@ -54,6 +54,11 @@ import {
   unwrapWithServer,
   addServerWrapper,
   addRecoveryWrapper,
+  addPasskeyWrapper,
+  unwrapWithPasskey,
+  removePasskeyWrapper,
+  markSessionPasskeyVerified,
+  hasPasskeyVerification,
   stripServerWrapper,
   setPasswordWrapper,
   generateRecoveryKey,
@@ -86,7 +91,15 @@ import {
 } from './oauth.ts';
 import { parseBodyWeight, parsePKParams } from './domain.ts';
 import type { Result } from './domain.ts';
-import type { AuthContext } from './types.ts';
+import {
+  webauthnAvailable,
+  registrationOptions,
+  verifyRegistration,
+  authenticationOptions,
+  verifyAuthentication,
+} from './webauthn.ts';
+import type { RegistrationResponseJSON, AuthenticationResponseJSON } from '@simplewebauthn/server';
+import type { AuthContext, ContextDenial } from './types.ts';
 import { CALIBRATION_METHODS } from './engine.ts';
 import type { PKCustomParams } from './engine.ts';
 
@@ -257,6 +270,33 @@ async function saveMetadata(userId: string, metadata: EncryptionMetadata): Promi
 async function serverDekFor(user: AccountRow): Promise<string | null> {
   if (user.privacy_mode !== 'standard') return null;
   return await unwrapWithServer(metadataFor(user), user.id, getConfig().serverDekKey);
+}
+
+interface CredentialRow {
+  credential_id: string;
+  user_id: string;
+  public_key: Buffer;
+  sign_count: string | number;
+  transports: string | null;
+}
+
+/** Load a passkey by its credential id — the discoverable sign-in's entry point. */
+async function loadCredential(credentialId: string): Promise<CredentialRow | null> {
+  const { rows } = await getPool().query<CredentialRow>(
+    `SELECT credential_id, user_id, public_key, sign_count, transports
+       FROM webauthn_credentials WHERE credential_id = $1`,
+    [credentialId],
+  );
+  return rows[0] ?? null;
+}
+
+/** Whether an account has any passkey registered. */
+async function hasPasskeys(userId: string): Promise<boolean> {
+  const { rows } = await getPool().query<{ one: number }>(
+    `SELECT 1 AS one FROM webauthn_credentials WHERE user_id = $1 LIMIT 1`,
+    [userId],
+  );
+  return rows.length > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -806,6 +846,275 @@ export const AccountService = {
     return { ok: true, value: { recoveryKey } };
   },
 
+  // --- Passkeys ------------------------------------------------------------
+
+  /**
+   * Whether this deployment offers passkeys at all.
+   *
+   * The UI hides the whole feature when it does not, rather than showing a button that
+   * fails at the OS prompt — the same posture as X login.
+   */
+  passkeysAvailable(): boolean {
+    return webauthnAvailable();
+  },
+
+  /** Credentials registered for an account, for the settings list. */
+  async listPasskeys(userId: string): Promise<
+    { id: string; name: string | null; createdAt: string; lastUsedAt: string | null; deviceType: string | null }[]
+  > {
+    const { rows } = await getPool().query<{
+      credential_id: string; name: string | null; created_at: Date; last_used_at: Date | null; device_type: string | null;
+    }>(
+      `SELECT credential_id, name, created_at, last_used_at, device_type
+         FROM webauthn_credentials WHERE user_id = $1 ORDER BY created_at ASC`,
+      [userId],
+    );
+    return rows.map((r) => ({
+      id: r.credential_id,
+      name: r.name,
+      createdAt: r.created_at.toISOString(),
+      lastUsedAt: r.last_used_at ? r.last_used_at.toISOString() : null,
+      deviceType: r.device_type,
+    }));
+  },
+
+  /**
+   * Begin registering a passkey.
+   *
+   * Requires the current password. A passkey is another way into the account's data,
+   * so adding one is as sensitive as changing the password — a session alone must not
+   * be enough, or a stolen session could plant a permanent credential.
+   */
+  async startPasskeyRegistration(
+    ctx: AuthContext,
+    currentPasswordRaw: unknown,
+  ): Promise<Result<{ options: unknown }>> {
+    if (!webauthnAvailable()) return { ok: false, error: 'passkeys are not configured on this server' };
+
+    const user = await loadUser({ id: ctx.userId });
+    if (!user) return { ok: false, error: 'account not found' };
+    if (!(await verifyPassword(String(currentPasswordRaw), user.password_hash))) {
+      await this.noteFailedUnlock(user.id);
+      return { ok: false, error: 'current password is incorrect' };
+    }
+
+    const { rows } = await getPool().query<{ credential_id: string }>(
+      `SELECT credential_id FROM webauthn_credentials WHERE user_id = $1`,
+      [user.id],
+    );
+
+    const options = await registrationOptions({
+      userId: user.id,
+      username: user.username,
+      excludeCredentialIds: rows.map((r) => r.credential_id),
+    });
+    if (!options.ok) return options;
+    return { ok: true, value: { options: options.value } };
+  },
+
+  /**
+   * Finish registering a passkey.
+   *
+   * The PRF output is the account's data key unlock, so it is required: a credential
+   * that registered without it would have no wrapper and could never open the data,
+   * and accepting it would be storing a credential that does nothing.
+   */
+  async finishPasskeyRegistration(
+    ctx: AuthContext,
+    responseRaw: unknown,
+    prfOutputRaw: unknown,
+    opts: { name?: unknown } = {},
+  ): Promise<Result<{ credentialId: string }>> {
+    if (!webauthnAvailable()) return { ok: false, error: 'passkeys are not configured on this server' };
+
+    const response = responseRaw as RegistrationResponseJSON;
+    if (!response || typeof response !== 'object' || !response.id) {
+      return { ok: false, error: 'response: required' };
+    }
+    if (typeof prfOutputRaw !== 'string' || prfOutputRaw.length === 0) {
+      return {
+        ok: false,
+        error: 'this authenticator did not provide the PRF output a passkey needs; try another device',
+      };
+    }
+
+    const verified = await verifyRegistration({ response, userId: ctx.userId });
+    if (!verified.ok) return verified;
+
+    const user = await loadUser({ id: ctx.userId });
+    if (!user) return { ok: false, error: 'account not found' };
+    const metadata = metadataFor(user);
+
+    // Wrap the same DEK the session already holds. The wrapper is what makes this
+    // credential an *unlock* rather than just a login.
+    const next = await addPasskeyWrapper(metadata, ctx.dek, verified.value.credentialId, prfOutputRaw);
+
+    const name = typeof opts.name === 'string' && opts.name.trim() ? opts.name.trim().slice(0, 60) : null;
+    await withTransaction(async (client) => {
+      await client.query(
+        `INSERT INTO webauthn_credentials
+           (credential_id, user_id, public_key, sign_count, transports, device_type, backed_up, name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (credential_id) DO NOTHING`,
+        [
+          verified.value.credentialId,
+          user.id,
+          Buffer.from(verified.value.publicKey),
+          verified.value.counter,
+          verified.value.transports ? verified.value.transports.join(',') : null,
+          verified.value.deviceType ?? null,
+          verified.value.backedUp,
+          name,
+        ],
+      );
+      await client.query(
+        `UPDATE users SET encryption_metadata = $2, updated_at = now() WHERE id = $1`,
+        [user.id, JSON.stringify(next)],
+      );
+    });
+    // Mirror the password wrapper into the legacy column, as every other metadata
+    // write does, so the two never disagree.
+    await saveMetadata(user.id, next);
+    await this.recordAuthEvent(user.id, 'passkey_registered');
+    return { ok: true, value: { credentialId: verified.value.credentialId } };
+  },
+
+  /**
+   * Begin an authentication ceremony.
+   *
+   * With no username this is discoverable: the authenticator chooses a credential for
+   * this RP and the assertion names it. That is what makes "passkey only, no account"
+   * sign-in possible, and it is why the challenge is stored ownerless.
+   */
+  async startPasskeyAuthentication(
+    usernameRaw: unknown,
+  ): Promise<Result<{ options: unknown }>> {
+    if (!webauthnAvailable()) return { ok: false, error: 'passkeys are not configured on this server' };
+
+    let userId: string | null = null;
+    let allowCredentialIds: string[] | undefined;
+
+    if (typeof usernameRaw === 'string' && usernameRaw.length > 0) {
+      const username = validateUsername(usernameRaw);
+      if (!username.ok) return { ok: false, error: 'invalid credentials' };
+      userId = (await loadUser({ username: username.value }))?.id ?? null;
+      // A username that exists but has no passkey, or one that does not exist at all,
+      // are answered the same way — with the discoverable flow and no allow-list —
+      // so this endpoint cannot be used to learn which accounts have passkeys.
+      if (userId) {
+        const { rows } = await getPool().query<{ credential_id: string }>(
+          `SELECT credential_id FROM webauthn_credentials WHERE user_id = $1`,
+          [userId],
+        );
+        if (rows.length > 0) allowCredentialIds = rows.map((r) => r.credential_id);
+      }
+    }
+
+    const options = await authenticationOptions({ userId, allowCredentialIds });
+    if (!options.ok) return options;
+    return { ok: true, value: { options: options.value } };
+  },
+
+  /**
+   * Finish an authentication ceremony and open the data.
+   *
+   * This is the usernameless path end to end: the credential id in the response names
+   * the account, the PRF output opens its DEK, and a normal session comes back. No
+   * username, no password, no TOTP — the authenticator's user verification is the
+   * proof of presence, and its PRF output is the key.
+   */
+  async finishPasskeyAuthentication(
+    responseRaw: unknown,
+    prfOutputRaw: unknown,
+    opts: { stepUpToken?: string } = {},
+  ): Promise<Result<UnlockedAccount>> {
+    if (!webauthnAvailable()) return { ok: false, error: 'passkeys are not configured on this server' };
+
+    const response = responseRaw as AuthenticationResponseJSON;
+    if (!response || typeof response !== 'object' || !response.id) {
+      return { ok: false, error: 'response: required' };
+    }
+    if (typeof prfOutputRaw !== 'string' || prfOutputRaw.length === 0) {
+      return { ok: false, error: 'this authenticator did not provide the PRF output a passkey needs' };
+    }
+
+    const credential = await loadCredential(response.id);
+    if (!credential) return { ok: false, error: 'that passkey is not registered here' };
+
+    const verified = await verifyAuthentication({
+      response,
+      stored: {
+        credentialId: credential.credential_id,
+        publicKey: credential.public_key,
+        counter: Number(credential.sign_count),
+        ...(credential.transports ? { transports: credential.transports.split(',') } : {}),
+      },
+      // A discoverable ceremony minted the challenge ownerless, so the credential is
+      // what decides the account. A scoped one is checked against the credential's owner.
+      expectedUserId: null,
+      expectedUserIdOfCredential: credential.user_id,
+    });
+    if (!verified.ok) return verified;
+
+    const user = await loadUser({ id: credential.user_id });
+    if (!user) return { ok: false, error: 'account not found' };
+
+    const metadata = metadataFor(user);
+    const dek = await unwrapWithPasskey(metadata, credential.credential_id, prfOutputRaw);
+    if (dek === null) {
+      await this.noteFailedUnlock(user.id);
+      return { ok: false, error: 'that passkey could not open this account on this device' };
+    }
+
+    await getPool().query(
+      `UPDATE webauthn_credentials SET sign_count = $2, last_used_at = now() WHERE credential_id = $1`,
+      [credential.credential_id, verified.value.newCounter],
+    );
+    await getPool().query(`UPDATE users SET failed_unlocks = 0, locked_until = NULL WHERE id = $1`, [user.id]);
+    await this.recordAuthEvent(user.id, 'unlock_passkey');
+
+    const token = openSession(user.id, requireKey(dek, 'passkeyUnlock'), getConfig().sessionTtlMinutes, {
+      passkeyVerified: true,
+    });
+
+    // A step-up: the browser had a locked session for an agent's request, and this
+    // ceremony is the authorisation. Mark it so the MCP layer sees a passkey-proven
+    // unlock without the user having to hold a second token.
+    if (typeof opts.stepUpToken === 'string' && opts.stepUpToken.length > 0) {
+      markSessionPasskeyVerified(opts.stepUpToken);
+    }
+
+    return { ok: true, value: { userId: user.id, username: user.username, token } };
+  },
+
+  /** Remove a passkey: its wrapper goes with it, so it can no longer open the data. */
+  async removePasskey(ctx: AuthContext, credentialIdRaw: unknown): Promise<Result<void>> {
+    const credentialId = String(credentialIdRaw ?? '');
+    if (!credentialId) return { ok: false, error: 'id: required' };
+
+    const user = await loadUser({ id: ctx.userId });
+    if (!user) return { ok: false, error: 'account not found' };
+
+    const { rowCount } = await getPool().query(
+      `DELETE FROM webauthn_credentials WHERE credential_id = $1 AND user_id = $2`,
+      [credentialId, ctx.userId],
+    );
+    if (!rowCount) return { ok: false, error: 'that passkey is not on this account' };
+
+    await saveMetadata(ctx.userId, removePasskeyWrapper(metadataFor(user), credentialId));
+    await this.recordAuthEvent(ctx.userId, 'passkey_removed');
+    return { ok: true, value: undefined };
+  },
+
+  /**
+   * Whether this account currently has a passkey-proven unlock.
+   *
+   * Read by the MCP resolver: an advanced account's durable token requires one.
+   */
+  hasPasskeyStepUp(userId: string): boolean {
+    return hasPasskeyVerification(userId);
+  },
+
   /**
    * Resolve a bearer token to an auth context, honouring the privacy mode.
    *
@@ -819,7 +1128,7 @@ export const AccountService = {
    *     case); in advanced mode it still requires a live unlock, because no server
    *     key exists to supply one.
    */
-  async resolveApiContext(token: string): Promise<AuthContext | null> {
+  async resolveApiContext(token: string): Promise<AuthContext | ContextDenial | null> {
     if (token.startsWith('ks_')) {
       const session = lookupSession(token);
       return session ? { userId: session.userId, dek: session.dek } : null;
@@ -832,8 +1141,23 @@ export const AccountService = {
     const serverDek = await serverDekFor(user);
     if (serverDek) return { userId, dek: serverDek };
 
+    // Advanced mode: no key at rest, so the key has to come from a live unlock. When
+    // the account has passkeys, "a live unlock" is not enough — a durable token must
+    // be matched by a *passkey*-proven presence, which is the step-up the requirement
+    // asks for: an agent should not be able to act on the strength of a stored token
+    // alone, and a password session opened hours ago is not proof that anyone is there
+    // now. An advanced account with no passkey keeps the older behaviour, so a
+    // password-only user is not locked out of their own agents.
+    if (await hasPasskeys(userId)) {
+      if (hasPasskeyVerification(userId)) {
+        const dek = findUserSessionFor(userId);
+        if (dek) return { userId, dek };
+      }
+      return { denied: 'step_up' };
+    }
+
     const dek = findUserSessionFor(userId);
-    return dek ? { userId, dek } : null;
+    return dek ? { userId, dek } : { denied: 'locked' };
   },
 
   async lock(token: string): Promise<void> {

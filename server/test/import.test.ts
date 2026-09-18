@@ -38,6 +38,7 @@ before(async () => {
     totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
     turnstile: null,
+    webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: null,
     sessionTtlMinutes: 30,
     rateLimits: { register: 1000, login: 1000, resume: 1000, windowMs: 60_000 },

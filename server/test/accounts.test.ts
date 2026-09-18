@@ -50,6 +50,7 @@ before(async () => {
     totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
     turnstile: null,
+    webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
     sessionTtlMinutes: 30,
     // Generous, so one test's attempts never consume another's budget. The limits
@@ -791,6 +792,7 @@ test('the per-IP limiter refuses a burst of sign-in attempts', async () => {
     totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
     turnstile: null,
+    webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
     sessionTtlMinutes: 30,
     rateLimits: { register: 3, login: 3, resume: 3, windowMs: 60_000 },
@@ -817,6 +819,7 @@ test('the per-IP limiter refuses a burst of sign-in attempts', async () => {
       totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
       serverDekKey: 'test-server-dek-key-0123456789abcdef',
       turnstile: null,
+      webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
       x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
       sessionTtlMinutes: 30,
       rateLimits: { register: 1000, login: 1000, resume: 1000, windowMs: 60_000 },

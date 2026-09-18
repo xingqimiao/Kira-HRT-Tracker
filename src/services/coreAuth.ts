@@ -185,6 +185,15 @@ export interface ApiToken {
   expiresAt: string | null;
 }
 
+/** One registered passkey, as the settings list shows it. */
+export interface PasskeyInfo {
+  id: string;
+  name: string | null;
+  createdAt: string | null;
+  lastUsedAt: string | null;
+  deviceType: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Wire decoding: snake_case in, camelCase out, in one place
 // ---------------------------------------------------------------------------
@@ -516,6 +525,79 @@ export const coreAuth = {
 
   async revokeToken(token: string, id: string): Promise<void> {
     await request(`/api/tokens/${id}`, { method: 'DELETE', token });
+  },
+
+  // --- Passkeys -------------------------------------------------------------
+
+  /** Begin adding a passkey. Returns the WebAuthn creation options verbatim. */
+  async startPasskeyRegistration(token: string, currentPassword: string): Promise<unknown> {
+    const raw = await request<{ options: unknown }>('/auth/passkeys/register/start', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ current_password: currentPassword }),
+    });
+    return raw.options;
+  },
+
+  /** Finish adding a passkey. The PRF output is what wraps the data key. */
+  async finishPasskeyRegistration(
+    token: string,
+    response: unknown,
+    prfOutput: string,
+    name?: string,
+  ): Promise<{ credentialId: string }> {
+    const raw = await request<{ credential_id: string }>('/auth/passkeys/register/finish', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ response, prf_output: prfOutput, ...(name ? { name } : {}) }),
+    });
+    return { credentialId: raw.credential_id };
+  },
+
+  /**
+   * Begin a passkey sign-in.
+   *
+   * No username means discoverable: the authenticator picks a credential for this site
+   * and the assertion names it. That is the "no password, no account" path.
+   */
+  async startPasskeyAuthentication(username?: string): Promise<unknown> {
+    const raw = await request<{ options: unknown }>('/auth/passkeys/authenticate/start', {
+      method: 'POST',
+      body: JSON.stringify(username ? { username } : {}),
+    });
+    return raw.options;
+  },
+
+  async finishPasskeyAuthentication(
+    response: unknown,
+    prfOutput: string,
+    opts: { stepUpToken?: string } = {},
+  ): Promise<SessionResponse> {
+    return toSession(
+      await request('/auth/passkeys/authenticate/finish', {
+        method: 'POST',
+        body: JSON.stringify({
+          response,
+          prf_output: prfOutput,
+          ...(opts.stepUpToken ? { step_up_token: opts.stepUpToken } : {}),
+        }),
+      }),
+    );
+  },
+
+  async listPasskeys(token: string): Promise<PasskeyInfo[]> {
+    const raw = await request<{ passkeys: any[] }>('/auth/passkeys', { token });
+    return (raw.passkeys ?? []).map((p) => ({
+      id: p.id,
+      name: p.name ?? null,
+      createdAt: p.createdAt ?? null,
+      lastUsedAt: p.lastUsedAt ?? null,
+      deviceType: p.deviceType ?? null,
+    }));
+  },
+
+  async removePasskey(token: string, id: string): Promise<void> {
+    await request('/auth/passkeys', { method: 'DELETE', token, body: JSON.stringify({ id }) });
   },
 };
 
