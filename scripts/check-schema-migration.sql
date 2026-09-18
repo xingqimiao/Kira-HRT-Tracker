@@ -90,11 +90,16 @@ SELECT 'cascade declared' AS check,
             AND confdeltype = 'c'
        ) AS ok;
 
-\echo '--- 8. second-factor leftovers are nullable, so trimmed inserts still work ---'
-SELECT 'totp columns nullable' AS check, bool_and(is_nullable = 'YES') AS ok
-  FROM information_schema.columns
- WHERE table_schema = 'public' AND table_name = 'users'
-   AND column_name IN ('totp_secret_sealed', 'totp_enabled_at', 'totp_last_step');
+\echo '--- 8. the second factor is gone, columns and table alike ---'
+-- This used to assert the three `totp_*` columns were *nullable*, which was the
+-- weaker claim that let an older release keep working mid-migration. They are now
+-- dropped outright along with `totp_backup_codes`, so the check is absence: a
+-- column that came back would mean schema.sql stopped carrying the DROP.
+SELECT 'totp columns dropped' AS check, NOT EXISTS (
+  SELECT 1 FROM information_schema.columns
+   WHERE table_schema = 'public' AND table_name = 'users' AND column_name LIKE 'totp%'
+) AS ok
+UNION ALL SELECT 'totp_backup_codes dropped', to_regclass('public.totp_backup_codes') IS NULL;
 
 -- Clean up the rows this file inserted, so re-running it is not a surprise later.
 DELETE FROM records WHERE id IN ('dose:transfem:migration-check', 'dose:transfem:null-check');

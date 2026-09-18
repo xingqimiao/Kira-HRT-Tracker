@@ -24,14 +24,20 @@ SELECT c.relkind AS kind, c.relname AS object, r.rolname AS owner
    AND r.rolname <> 'hrt'
  ORDER BY c.relname;
 
--- Second-factor leftovers. TOTP is gone from the code, so nothing reads or writes
--- these; all three are nullable, so inserts that no longer mention them still work.
--- Drop them only AFTER the release that removed the code is live and verified —
--- dropping first means a rollback to the previous release fails at startup.
-\echo '=== second-factor leftovers (droppable once the new release is live) ==='
-SELECT table_name, column_name
+-- Tables and columns that the code no longer references, kept as a positive check
+-- that the DROPs in schema.sql actually ran. A row from the first list means a
+-- dropped table is still there; a row from the second means a dropped column is.
+\echo '=== retired tables that must be absent ==='
+SELECT tablename AS still_present
+  FROM pg_tables
+ WHERE schemaname = 'public'
+   AND tablename IN ('totp_backup_codes', 'medication_events', 'lab_results',
+                     'webauthn_credentials', 'webauthn_challenges')
+ ORDER BY tablename;
+
+\echo '=== retired users columns that must be absent ==='
+SELECT column_name AS still_present
   FROM information_schema.columns
- WHERE table_schema = 'public'
-   AND column_name IN ('totp_secret_sealed', 'totp_enabled_at', 'totp_last_step')
- ORDER BY table_name, column_name;
+ WHERE table_schema = 'public' AND table_name = 'users' AND column_name LIKE 'totp%';
+
 
