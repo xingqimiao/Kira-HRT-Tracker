@@ -10,7 +10,7 @@ refuse to publish any row you cannot confirm.
 | Claim | Where to check |
 |---|---|
 | Records encrypted, DEK wrapped per credential | `server/src/session.ts`, `createKeyMaterial` / `unwrapWithPassword` / `unwrapWithServer` / `unwrapWithRecovery` |
-| Only `occurred_at` and `user_id` are clear | `server/schema.sql` comments on `medication_events`, and `server/scripts/check-records.mjs` (reads the column directly) |
+| Only `user_id`, `taken_at` and `category` are clear | `server/schema.sql` comments on `records`, and `server/scripts/check-records.mjs` (reads the column directly, so a plaintext body fails the check rather than passing an API round-trip) |
 | Record payloads are sealed with AES-256-GCM | `server/src/payloadCrypto.ts`; wire format is `iv:tag:ciphertext` |
 | Session key lifetime | `server/src/session.ts`, `MAX_SESSION_AGE_MS` and `SESSION_TTL_MINUTES` |
 | Password hashing (scrypt) | `server/src/accounts.ts`, `hashPassword` |
@@ -21,11 +21,11 @@ refuse to publish any row you cannot confirm.
 | **An agent token does not permit remote access** | `server/src/session.ts`, `openSession` — a session is only created by a password unlock; no token path creates one |
 | Deletion removes everything user-scoped | `server/test/deleteAccount.test.ts` — asserts each table is empty |
 | The deletion tombstone carries no identifier | `server/schema.sql`, `deletion_log`, and the tombstone test |
-| Individual record deletes are soft | `server/src/store.ts`, `softDelete` |
+| Individual record deletes are **physical**, with no tombstone | `server/src/records.ts`, `RecordService.remove` — unlike account deletion, which writes one identifier-free `deletion_log` row |
 | **We receive no Google data except the account id** | `server/src/oauth.ts`, `GOOGLE_SCOPE = 'openid'` and `parseGoogleIdToken` — `handle`/`displayName`/`avatarUrl` are `null` by construction; `server/test/accounts.test.ts` feeds it a token that carries `email`/`name`/`picture` and asserts they are ignored |
 | X receives no data from us | `server/src/oauth.ts` — the only X calls are token exchange and profile fetch |
-| No third-party requests in the app | `grep -rn "https://" src/ index.html` — links only |
-| Share links exclude labs and weight | `worker.ts` snapshot sanitiser, and `README.md` |
+| No analytics, no tracking, and only one third-party request | `grep -rn "https://" src/ index.html`: the app ships no analytics or advertising script. The single third-party request is Cloudflare **Turnstile**, loaded from `challenges.cloudflare.com` by `index.html` and rendered on the register form — an earlier version of this row read "links only", which was never true once Turnstile was added. Any policy claim has to name it |
+| Share links exclude labs and weight | `server/src/shares.ts`, `assertShareable` — a category blocklist, and `expires_at` is `NOT NULL` in `schema.sql` |
 | What a predicted level is | `server/src/core.ts`, `PKSimulationService` |
 | The medical disclaimer, and where it lives | `index.html` (the line under the feature list, which a client that runs no JavaScript still sees) and `src/components/DisclaimerModal.tsx` / `src/i18n/share.ts` for the in-app text. There is no `/terms` page — one was removed on purpose, because everything left after the disclaimer was a guess about an operator that is not a legal entity |
 

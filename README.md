@@ -32,9 +32,9 @@ We strictly adhere to the `PKcore.swift` and `PKparameter.swift` logic provided 
 
   **舌下服用指导**：基于严格的医学建模，提供详细的"含服时间（Hold Time）"与吸收参数（θ）参考。
 
-- **Privacy by Default**: Dosage data stays in your browser unless you explicitly use cloud backup or create a share link. Cloud backups are **encrypted at rest and decrypted in server memory only while you have an active session** — this is not end-to-end encryption, and the server can read your records while you are unlocked. A share link uploads a read-only copy of the dosage history, modelled curve, and timezone until its expiration; optional live links refresh that copy when the signed-in app is open. Share links never include lab results, weight, profile details, or account data.
+- **Privacy by Default**: The app works offline-first — what you enter is kept in your browser and shown immediately. Once you are signed in your records are also stored on the server, **encrypted as a whole AES-256-GCM payload**, with only the timestamp and category left readable for paging. This is not end-to-end encryption: the key lives on the server, so the honest claim is that a stolen database dump is useless without it — not that the operator cannot see your data. A share link uploads a read-only copy of the dosage history, modelled curve, and timezone until its expiration; optional live links refresh that copy when the signed-in app is open. Share links never include lab results, weight, profile details, or account data.
 
-  **默认保护隐私**：用药数据默认保存在浏览器中，只有在你主动使用云备份或创建分享链接时才会上传。云备份**静态加密，仅在你有活跃会话期间于服务器内存中解密**——这不是端到端加密，服务器在你解锁期间可以读取你的记录。分享链接会保存一份只读的用药记录、模型曲线和时区副本，直到链接过期；其中不会包含检查结果、体重、个人资料或账户数据。
+  **默认保护隐私**：应用可以离线优先使用——你录入的内容保存在浏览器中并立即显示。登录之后记录同时保存在服务器上，并以**整包 AES-256-GCM 密文**存储，只有时间戳与类别保持明文以便分页。这**不是**端到端加密：密钥在服务器上，所以诚实的说法是「数据库被拖走、没有这把密钥则读不出来」，而**不是**「运营方看不到你的数据」。分享链接会保存一份只读的用药记录、模型曲线和时区副本，直到链接过期；其中不会包含检查结果、体重、个人资料或账户数据。
 
 - **Agent Access Tokens**: Connecting an AI assistant (MCP) uses a long-lived token you paste into its config. The token cannot unlock your account by itself — it carries no decryption key, so the assistant is told "locked" unless you have an active session. But while you are signed in, a leaked token *can* read your records, and each read keeps that session alive, so revoke it in Settings once you stop using it. Anything the assistant reads leaves this system and is governed by that provider's privacy policy.
 
@@ -82,61 +82,43 @@ This project is built with **React** and **TypeScript**, bundled with [Vite](htt
 
 ---
 
-## Docker
+## Self-hosting 自行托管
 
-The Docker image runs the complete app locally, including the Worker API, D1
-database, and R2-compatible avatar storage. Data is kept in the project's `./data`
-directory and survives container restarts.
+The app is a static React build served by any web server, talking to the Node service
+in `server/`. That service owns all persistent state: one Postgres database, records
+stored as whole-payload AES-256-GCM ciphertext, and OAuth credentials for whichever
+providers you configure.
 
-Docker 镜像会在本地运行完整应用，包括 Worker API、D1 数据库和兼容 R2 的头像存储。
-数据直接保存在项目目录的 `./data` 中，容器重启不会丢失。
+本应用是一个静态 React 构建产物，用任何 web 服务器托管即可，后端是 `server/` 里的
+Node 服务。所有持久状态都在它这里：一个 Postgres 数据库（记录以整包 AES-256-GCM
+密文保存），以及你自己配置的 OAuth 凭据。
 
-```bash
-cp .env.docker.example .env
-# Replace JWT_SECRET in .env with the output of:
-openssl rand -base64 48
-mkdir -p ./data
-sudo chown 1000:1000 ./data
-docker compose pull
-docker compose up -d
-```
+`server/DEPLOY.md` is the runbook: database and role, the environment variables (at
+minimum `DATABASE_URL`, `ENCRYPTION_KEY`, `SERVER_DEK_KEY`, `PUBLIC_ORIGIN`,
+`API_ORIGIN`, `BASE_PATH`), the systemd unit, the Caddy site block, and the pre-deploy
+ownership check that a hand-run migration will otherwise trip. Read it before your
+first deploy — three of its warnings come from outages this project actually had.
 
-Then open <http://localhost:8787>. / 然后访问 <http://localhost:8787>。
+`server/DEPLOY.md` 是部署手册：数据库与角色、环境变量（至少 `DATABASE_URL`、
+`ENCRYPTION_KEY`、`SERVER_DEK_KEY`、`PUBLIC_ORIGIN`、`API_ORIGIN`、`BASE_PATH`）、
+systemd 单元、Caddy 站点配置，以及「手工迁移会踩到」的部署前属主检查。首次部署前请
+先读它——其中三条警告都来自这个项目真实发生过的事故。
 
-Web and Docker builds use same-origin `/api` requests by default. Desktop and
-other custom-protocol builds should set `VITE_API_ORIGIN` to their Worker/API
-origin at build time; the official Tauri workflow supplies the hosted origin.
+Build the web app **with the API origin set**, or every request goes same-origin and
+the OAuth buttons silently disappear:
 
-To stop the app without deleting its data: / 停止应用但保留数据：
-
-```bash
-docker compose down
-```
-
-To use the image published by GitHub Actions: / 使用 GitHub Actions 发布的镜像：
+构建前端时**必须指定 API 源**，否则所有请求都会打到同源地址，OAuth 按钮会无声消失：
 
 ```bash
-docker run -d --name hrt-tracker \
-  -p 8787:8787 \
-  --env-file .env \
-  -v "$(pwd)/data:/data" \
-  ghcr.io/xunxunProjects/oyama-s-hrt-tracker-docker:latest
+VITE_API_ORIGIN=https://your-api-host/hrt npm run build
 ```
 
-`ADMIN_USERNAME` and `ADMIN_PASSWORD` are optional. When used, set both. The
-container uses Wrangler's local workerd runtime and local persistent D1/R2
-resources; it does not connect to the Cloudflare production database or bucket.
+There is no Docker image and no Cloudflare Worker any more. This repository used to
+ship a Worker + D1 + R2 stack with a published container image; both were removed when
+the service moved to the Node backend above.
 
-`ADMIN_USERNAME` 与 `ADMIN_PASSWORD` 是可选项；如需管理员账号，请同时设置。
-容器使用 Wrangler 的本地 workerd 运行时以及本地持久化 D1/R2 资源，不会连接
-Cloudflare 生产数据库或存储桶。
-
-The workflow in `.github/workflows/docker-publish.yml` validates pull requests
-and publishes `linux/amd64` and `linux/arm64` images to GitHub Container Registry
-for `main`, version tags, and manual runs.
-
-`.github/workflows/docker-publish.yml` 会在 PR 中验证构建，并在 `main`、版本标签或
-手动运行时向 GitHub Container Registry 发布 `linux/amd64` 与 `linux/arm64` 镜像。
+本仓库不再提供 Docker 镜像与 Cloudflare Worker。此前曾有一套 Worker + D1 + R2 以及
+发布到镜像仓库的容器镜像，在服务迁移到上面的 Node 后端时一并删除。
 
 ---
 

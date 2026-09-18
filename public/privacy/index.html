@@ -169,6 +169,14 @@
             Your health records are never sent to Google, X, or any analytics or advertising
             service. We run no third-party analytics or tracking scripts in the app.
         </p>
+        <p>
+            <strong>If you connect an AI assistant.</strong> The app offers an access token for
+            connecting an assistant to your records over MCP. That token carries no decryption key,
+            so on its own it cannot open your account — but while you are signed in it can read your
+            records, and each read keeps the session alive. Anything the assistant reads leaves this
+            system and is then governed by that provider's own privacy policy, not by this one.
+            Revoke the token in Settings when you stop using it.
+        </p>
 
         <h2>6. Retention and deletion</h2>
         <p>
@@ -176,6 +184,15 @@
             from Settings inside the app; deleting it removes your account, your sign-in links and
             your records from our database. You can also email us to request a copy of your data or
             its deletion.
+        </p>
+        <p>
+            Two limits we would rather state than leave you to discover. <strong>Deletion is
+            immediate and complete in the live database, but it cannot reach a backup that has
+            already been taken.</strong> Database backups are retained on a rolling basis and age out,
+            so a deleted record can persist inside an older backup until that backup expires; backups
+            exist only for disaster recovery and are not used to serve or analyse your data. And
+            <strong>individual records you delete in the app are deleted outright</strong> — there is no
+            hidden tombstone holding the content.
         </p>
 
         <h2>7. Your rights and contact</h2>
@@ -240,10 +257,16 @@
             <p>
                 你的健康记录不会被发送给 Google、X，也不会进入任何统计或广告服务。应用中不包含第三方统计脚本。
             </p>
+            <p>
+                <strong>如果你连接了 AI 助手。</strong>应用提供访问令牌，可通过 MCP 让助手读取你的记录。该令牌不携带解密密钥，本身无法解锁你的账号；但<strong>在你登录期间</strong>它可以读取记录，且每次读取都会延长会话。助手读到的内容会离开本系统，此后受该服务商的隐私政策约束，而不是本说明。不再使用时请在「设置」中吊销令牌。
+            </p>
 
             <h2>6. 保存期限与删除</h2>
             <p>
                 账号存在期间我们会保存这些数据。你可以随时在应用内的「设置」中删除账号；删除后，账号、登录绑定关系与记录会从数据库中移除。你也可以通过邮件请求导出或删除数据。
+            </p>
+            <p>
+                有两个限制我们宁愿直接说明，而不是让你自己发现。<strong>删除在实时数据库中立即且彻底，但无法触及已经生成的备份。</strong>数据库备份按滚动周期保留并会过期，因此被删除的记录可能在一份较旧的备份里继续存在，直到该备份过期；备份仅用于灾难恢复，不会被用来提供或分析你的数据。另外，<strong>你在应用内删除的单条记录是直接删除的</strong>——没有隐藏的墓碑保留其内容。
             </p>
 
             <h2>7. 你的权利与联系方式</h2>
