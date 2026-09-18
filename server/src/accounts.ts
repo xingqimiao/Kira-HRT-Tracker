@@ -93,6 +93,7 @@ import { parseBodyWeight, parsePKParams } from './domain.ts';
 import type { Result } from './domain.ts';
 import {
   webauthnAvailable,
+  MAX_PASSKEYS_PER_ACCOUNT,
   registrationOptions,
   verifyRegistration,
   authenticationOptions,
@@ -112,6 +113,18 @@ const MAX_FAILED_UNLOCKS = 5;
 const LOCKOUT_MS = 15 * 60 * 1000;
 /** In-flight OAuth authorizations. Long enough to scan a QR / read a consent screen. */
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * How recent a passkey unlock has to be to authorise an agent.
+ *
+ * The requirement is not "a passkey has been used at some point today" — that a durable
+ * token plus any passkey unlock grants access for the whole 30-minute session, which is
+ * exactly the "a stored token is enough" property advanced mode exists to refuse. The
+ * proof has to correspond to *now*, so the window is small: long enough to cover the
+ * prompt-then-confirm round trip, short enough that it cannot be a residue of an earlier
+ * sign-in.
+ */
+const PASSKEY_STEP_UP_MAX_AGE_MS = 5 * 60 * 1000;
 
 const ISSUER = 'Kira Tracker';
 
@@ -902,6 +915,15 @@ export const AccountService = {
       `SELECT credential_id FROM webauthn_credentials WHERE user_id = $1`,
       [user.id],
     );
+    // Refuse before minting options, so the user is not walked through a system prompt
+    // that can only end in a rejection. Existing credentials above the limit are left
+    // alone: this is a ceiling on *adding*, not a reason to remove one that works.
+    if (rows.length >= MAX_PASSKEYS_PER_ACCOUNT) {
+      return {
+        ok: false,
+        error: `maximum of ${MAX_PASSKEYS_PER_ACCOUNT} passkeys reached; remove one before adding another`,
+      };
+    }
 
     const options = await registrationOptions({
       userId: user.id,
@@ -1081,7 +1103,15 @@ export const AccountService = {
     // ceremony is the authorisation. Mark it so the MCP layer sees a passkey-proven
     // unlock without the user having to hold a second token.
     if (typeof opts.stepUpToken === 'string' && opts.stepUpToken.length > 0) {
-      markSessionPasskeyVerified(opts.stepUpToken);
+      // The token is the agent's outstanding request, and it can expire between the
+      // prompt and the ceremony. Reporting success regardless would tell the user the
+      // step-up happened while the agent stays refused — the one outcome the user
+      // cannot see for themselves. Close the session too: it was opened for a request
+      // that no longer exists, and leaving it live would keep an unlock nobody holds.
+      if (!markSessionPasskeyVerified(opts.stepUpToken)) {
+        closeSession(token);
+        return { ok: false, error: 'this passkey request expired; ask the agent for a new one' };
+      }
     }
 
     return { ok: true, value: { userId: user.id, username: user.username, token } };
@@ -1112,7 +1142,7 @@ export const AccountService = {
    * Read by the MCP resolver: an advanced account's durable token requires one.
    */
   hasPasskeyStepUp(userId: string): boolean {
-    return hasPasskeyVerification(userId);
+    return hasPasskeyVerification(userId, PASSKEY_STEP_UP_MAX_AGE_MS);
   },
 
   /**
@@ -1146,10 +1176,12 @@ export const AccountService = {
     // be matched by a *passkey*-proven presence, which is the step-up the requirement
     // asks for: an agent should not be able to act on the strength of a stored token
     // alone, and a password session opened hours ago is not proof that anyone is there
-    // now. An advanced account with no passkey keeps the older behaviour, so a
-    // password-only user is not locked out of their own agents.
+    // now — nor is a passkey unlock from an hour ago, which is why the proof has a
+    // freshness window and not merely a liveness requirement. An advanced account with
+    // no passkey keeps the older behaviour, so a password-only user is not locked out
+    // of their own agents.
     if (await hasPasskeys(userId)) {
-      if (hasPasskeyVerification(userId)) {
+      if (hasPasskeyVerification(userId, PASSKEY_STEP_UP_MAX_AGE_MS)) {
         const dek = findUserSessionFor(userId);
         if (dek) return { userId, dek };
       }

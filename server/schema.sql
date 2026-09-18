@@ -171,6 +171,28 @@ CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user ON webauthn_credentials
 -- exists because the discoverable-sign-in path looks the row up by id before it has
 -- any user context, which is the primary key's job, so no second index is needed.
 
+-- In-flight WebAuthn challenges.
+--
+-- A challenge is a single-use nonce: the server mints one, the authenticator signs it,
+-- and the server refuses anything it did not just issue. It lives in a table rather
+-- than in process memory because a ceremony can start on one instance and finish on
+-- another — `webauthn.ts` kept these in a `Map` first, which works on exactly one
+-- instance and then fails *sometimes*, the kind of failure that gets blamed on the
+-- user's authenticator. A row also outlives a restart, so deploying between "tap to
+-- add" and "tap to confirm" no longer discards the attempt.
+--
+-- `user_id` is nullable on purpose: a discoverable sign-in has no account yet, so its
+-- challenge is minted ownerless and the credential naming the account afterwards. The
+-- row is deleted the moment it is consumed, which is the replay guard; `expires_at` is
+-- checked on read, so a lapsed challenge is refused even if no sweep has run.
+CREATE TABLE IF NOT EXISTS webauthn_challenges (
+    challenge   text PRIMARY KEY,
+    user_id     uuid REFERENCES users(id) ON DELETE CASCADE,
+    expires_at  timestamptz NOT NULL,
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_webauthn_challenges_expiry ON webauthn_challenges(expires_at);
+
 -- Recovery codes for the second factor. Hashed with scrypt, not stored
 -- reversibly: each code bypasses 2FA, so the set is equivalent to ten spare
 -- passwords and deserves the same treatment. `used_at` enforces single use.

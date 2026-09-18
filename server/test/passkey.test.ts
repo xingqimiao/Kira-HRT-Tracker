@@ -42,6 +42,7 @@ import {
   hasPasskeyVerification,
   closeUserSessions,
 } from '../src/session.ts';
+import { MAX_PASSKEYS_PER_ACCOUNT, __clearChallengesForTest } from '../src/webauthn.ts';
 
 let pg: PostgresHandle;
 let server: Server | undefined;
@@ -90,6 +91,29 @@ const auth = (token: string) => ({ headers: { Authorization: `Bearer ${token}` }
 /** A stand-in for a PRF output: 32 bytes of "authenticator output". */
 function fakePrf(seed: string): string {
   return Buffer.alloc(32, seed).toString('base64');
+}
+
+/**
+ * A registration response whose only real content is the challenge.
+ *
+ * The server reads `challenge` out of `clientDataJSON` before it verifies anything, which
+ * is what lets these tests drive the challenge storage directly: the attestation is
+ * deliberately garbage, so reaching "could not be verified" proves the challenge was
+ * accepted, and reaching "expired or was already used" proves it was not.
+ */
+function fakeRegistration(challenge: string) {
+  return {
+    id: 'not-a-credential',
+    rawId: 'not-a-credential',
+    type: 'public-key' as const,
+    clientExtensionResults: {},
+    response: {
+      clientDataJSON: Buffer.from(
+        JSON.stringify({ type: 'webauthn.create', challenge }),
+      ).toString('base64url'),
+      attestationObject: 'AAAA',
+    },
+  };
 }
 
 // --- the key path -----------------------------------------------------------
@@ -360,6 +384,140 @@ test('a signed-in account can still sign in with its password after registering 
   const again = await signIn(base, account, 1);
   assert.equal(again.status, 200, JSON.stringify(again.body));
   assert.ok(again.body.token, 'the password path is untouched');
+});
+
+// --- the challenge store ----------------------------------------------------
+
+test('a challenge is a row another instance could read, and spending it deletes it', async () => {
+  resetRateLimits();
+  await __clearChallengesForTest();
+  const account = await registerAccount(base, { privacyMode: 'advanced' });
+
+  const started = await call(
+    base,
+    '/auth/passkeys/register/start',
+    json({ current_password: account.password }, account.token),
+  );
+  assert.equal(started.status, 200, JSON.stringify(started.body));
+  const challenge: string = started.body.options.challenge;
+
+  const stored = await getPool().query<{ user_id: string }>(
+    `SELECT user_id FROM webauthn_challenges WHERE challenge = $1`,
+    [challenge],
+  );
+  assert.equal(stored.rowCount, 1, 'the challenge is in the table, not in this process');
+  assert.equal(stored.rows[0].user_id, account.userId, 'and is scoped to the account');
+
+  const spent = await call(
+    base,
+    '/auth/passkeys/register/finish',
+    json({ response: fakeRegistration(challenge), prf_output: fakePrf('z') }, account.token),
+  );
+  assert.equal(spent.status, 400, JSON.stringify(spent.body));
+  assert.match(String(spent.body.error), /could not be verified/, 'the challenge was accepted');
+
+  const after = await getPool().query(`SELECT 1 FROM webauthn_challenges WHERE challenge = $1`, [
+    challenge,
+  ]);
+  assert.equal(after.rowCount, 0, 'single use: consuming it removes the row');
+
+  // Replaying the same value is refused, which is the property the row exists for.
+  const replay = await call(
+    base,
+    '/auth/passkeys/register/finish',
+    json({ response: fakeRegistration(challenge), prf_output: fakePrf('z') }, account.token),
+  );
+  assert.equal(replay.status, 400);
+  assert.match(String(replay.body.error), /expired or was already used/);
+});
+
+test('one account cannot spend a challenge minted for another', async () => {
+  resetRateLimits();
+  await __clearChallengesForTest();
+  const alice = await registerAccount(base, { privacyMode: 'advanced' });
+  const bob = await registerAccount(base, { privacyMode: 'advanced' });
+
+  const started = await call(
+    base,
+    '/auth/passkeys/register/start',
+    json({ current_password: alice.password }, alice.token),
+  );
+  assert.equal(started.status, 200, JSON.stringify(started.body));
+  const challenge: string = started.body.options.challenge;
+  const body = json({ response: fakeRegistration(challenge), prf_output: fakePrf('y') });
+
+  // The scope check is the difference between "the row is there" and "the row is yours":
+  // without it, a credential registered to Bob could answer Alice's ceremony.
+  const stolen = await call(base, '/auth/passkeys/register/finish', { ...body, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${bob.token}` } });
+  assert.equal(stolen.status, 400, JSON.stringify(stolen.body));
+  assert.match(String(stolen.body.error), /expired or was already used/, 'Bob is refused');
+
+  // Alice gets past that check and fails on the bogus attestation instead, which is how
+  // this test knows the refusal above was the scope check and not a missing row.
+  const hers = await call(
+    base,
+    '/auth/passkeys/register/finish',
+    json({ response: fakeRegistration(challenge), prf_output: fakePrf('y') }, alice.token),
+  );
+  assert.equal(hers.status, 400);
+  assert.match(String(hers.body.error), /could not be verified/);
+});
+
+// --- the ceiling ------------------------------------------------------------
+
+test('an account stops at the passkey ceiling, and the list reports it', async () => {
+  resetRateLimits();
+  const account = await registerAccount(base, { privacyMode: 'advanced' });
+  const insert = (id: string) =>
+    getPool().query(
+      `INSERT INTO webauthn_credentials (credential_id, user_id, public_key, sign_count)
+       VALUES ($1, $2, $3, 0)`,
+      [id, account.userId, Buffer.from([1, 2, 3])],
+    );
+  const start = () =>
+    call(
+      base,
+      '/auth/passkeys/register/start',
+      json({ current_password: account.password }, account.token),
+    );
+
+  for (let i = 0; i < MAX_PASSKEYS_PER_ACCOUNT - 1; i++) await insert(`cap-cred-${i}`);
+  const room = await start();
+  assert.equal(room.status, 200, 'one below the ceiling still gets options');
+
+  await insert('cap-cred-last');
+  const full = await start();
+  assert.equal(full.status, 400, 'the ceiling is enforced');
+  assert.match(String(full.body.error), new RegExp(`maximum of ${MAX_PASSKEYS_PER_ACCOUNT} passkeys`));
+
+  // Refused before any challenge was minted, so no system prompt was wasted on it.
+  const left = await getPool().query(
+    `SELECT 1 FROM webauthn_challenges WHERE user_id = $1`,
+    [account.userId],
+  );
+  assert.equal(left.rowCount, 1, 'only the accepted attempt minted a challenge');
+
+  const listed = await call(base, '/auth/passkeys', auth(account.token));
+  assert.equal(listed.status, 200, JSON.stringify(listed.body));
+  assert.equal(listed.body.max, MAX_PASSKEYS_PER_ACCOUNT, 'the ceiling travels with the list');
+  assert.equal(listed.body.passkeys.length, MAX_PASSKEYS_PER_ACCOUNT);
+});
+
+// --- the step-up freshness window -------------------------------------------
+
+test('a passkey proof stops counting once it is older than the window', async () => {
+  const userId = 'user-window';
+  openSession(userId, 'a'.repeat(43), 30, { passkeyVerified: true });
+  assert.equal(hasPasskeyVerification(userId), true, 'a live proof counts');
+  assert.equal(hasPasskeyVerification(userId, 60 * 60 * 1000), true, 'an hour of slack still allows it');
+
+  // The window is what makes "someone is here now" different from "a passkey was used at
+  // some point in this session", which is the property advanced mode rests on.
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(hasPasskeyVerification(userId, 1), false, 'a millisecond of slack does not');
+
+  closeUserSessions(userId);
+  assert.equal(hasPasskeyVerification(userId, 60 * 60 * 1000), false, 'nothing survives logout');
 });
 
 /** Small local alias so the session assertions read clearly. */

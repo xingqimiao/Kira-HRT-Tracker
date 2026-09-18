@@ -60,10 +60,33 @@ function asPasskeyError(error: unknown): PasskeyError {
   if (error instanceof DOMException && error.name === 'NotAllowedError') {
     return new PasskeyError('cancelled', error.message);
   }
-  return new PasskeyError('failed', error instanceof Error ? error.message : String(error));
+  // Anything else is a platform refusal with no code we can translate. Its *name*
+  // (`InvalidStateError`, `InvalidCharacterError`, …) is what identifies it, so both go
+  // into the message, and the whole error goes to the console: a console line survives a
+  // bug report better than a screenshot of a banner.
+  if (typeof console !== 'undefined') console.error('[passkey] ceremony failed', error);
+  return new PasskeyError(
+    'failed',
+    error instanceof Error && error.message ? `${error.name}: ${error.message}` : String(error),
+  );
 }
 
-function fromB64url(value: string): Uint8Array<ArrayBuffer> {
+/**
+ * Decode base64url, naming the field when it will not decode.
+ *
+ * `atob` reports a bad argument as `InvalidCharacterError: Invalid character`, which
+ * names neither the value nor which side of the wire it came from — and every value here
+ * comes from the server, so a malformed one is a bug there, not something the user asked
+ * for. Naming the field is the difference between a report that can be acted on and one
+ * that cannot.
+ */
+function fromB64url(value: string, field: string): Uint8Array<ArrayBuffer> {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new PasskeyError('failed', `${field} is missing from the server's options`);
+  }
+  if (!/^[A-Za-z0-9_=-]+$/.test(value)) {
+    throw new PasskeyError('failed', `${field} from the server is not valid base64url`);
+  }
   const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
   const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
   const raw = atob(padded);
@@ -148,14 +171,14 @@ export async function createPasskey(optionsJson: unknown): Promise<PasskeyAssert
   };
 
   const publicKey: PublicKeyCredentialCreationOptions = {
-    challenge: fromB64url(options.challenge),
+    challenge: fromB64url(options.challenge, 'challenge'),
     rp: options.rp,
-    user: { ...options.user, id: fromB64url(options.user.id) },
+    user: { ...options.user, id: fromB64url(options.user.id, 'user.id') },
     pubKeyCredParams: options.pubKeyCredParams,
     ...(options.excludeCredentials
       ? {
           excludeCredentials: options.excludeCredentials.map((c) => ({
-            id: fromB64url(c.id),
+            id: fromB64url(c.id, 'excludeCredentials[].id'),
             type: 'public-key' as const,
             // The wire type is a plain string[]; the DOM wants the transport union.
             ...(c.transports ? { transports: c.transports as AuthenticatorTransport[] } : {}),
@@ -210,12 +233,12 @@ export async function getPasskeyAssertion(optionsJson: unknown): Promise<Passkey
   };
 
   const publicKey: PublicKeyCredentialRequestOptions = {
-    challenge: fromB64url(options.challenge),
+    challenge: fromB64url(options.challenge, 'challenge'),
     ...(options.rpId ? { rpId: options.rpId } : {}),
     ...(options.allowCredentials
       ? {
           allowCredentials: options.allowCredentials.map((c) => ({
-            id: fromB64url(c.id),
+            id: fromB64url(c.id, 'allowCredentials[].id'),
             type: 'public-key' as const,
             ...(c.transports ? { transports: c.transports as AuthenticatorTransport[] } : {}),
           })),

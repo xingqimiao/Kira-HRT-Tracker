@@ -34,6 +34,7 @@ import {
 } from '@simplewebauthn/server';
 
 import { getConfig } from './config.ts';
+import { getPool } from './db.ts';
 import { PRF_SALT } from './session.ts';
 import type { Result } from './domain.ts';
 
@@ -53,34 +54,27 @@ function prfSaltBytes(): Uint8Array {
   return new Uint8Array(Buffer.from(PRF_SALT, 'utf8'));
 }
 
-interface PendingChallenge {
-  challenge: string;
-  /**
-   * The account the ceremony belongs to, or null for a discoverable sign-in where the
-   * account is not known until the assertion names a credential.
-   */
-  userId: string | null;
-  expiresAt: number;
-}
-
 /**
- * In-flight challenges.
+ * In-flight challenges, kept in Postgres rather than in this process.
  *
- * `ponytail:` in-memory, single instance, same ceiling as the session store — with
- * more than one instance a ceremony could start on one and finish on another, which
- * sticky routing or a shared table would fix. The interface is these two functions.
+ * These were a `Map` here first. That is correct on exactly one instance and then
+ * fails *sometimes* on more than one — a ceremony started on A and finished on B looks
+ * like a broken authenticator, and a restart between "tap to add" and "tap to confirm"
+ * looks like a cancelled prompt. A row outlives any single instance, which is the
+ * point; nothing else about the ceremony changes.
+ *
+ * `user_id` is nullable because a discoverable sign-in has no account yet: its challenge
+ * is minted ownerless and the credential names the account afterwards.
  */
-const challenges = new Map<string, PendingChallenge>();
-
-function sweep(now: number): void {
-  for (const [key, entry] of challenges) {
-    if (entry.expiresAt <= now) challenges.delete(key);
-  }
-}
-
-function store(challenge: string, userId: string | null): void {
-  sweep(Date.now());
-  challenges.set(challenge, { challenge, userId, expiresAt: Date.now() + CHALLENGE_TTL_MS });
+async function store(challenge: string, userId: string | null): Promise<void> {
+  const pool = getPool();
+  // Opportunistic sweep instead of a timer: the table only ever holds ceremonies that
+  // are minutes old, so a delete against the expiry index is cheap and always runs.
+  await pool.query(`DELETE FROM webauthn_challenges WHERE expires_at <= now()`);
+  await pool.query(
+    `INSERT INTO webauthn_challenges (challenge, user_id, expires_at) VALUES ($1, $2, $3)`,
+    [challenge, userId, new Date(Date.now() + CHALLENGE_TTL_MS)],
+  );
 }
 
 /**
@@ -91,20 +85,34 @@ function store(challenge: string, userId: string | null): void {
  * reason: without it, a challenge minted for account A could be answered with a
  * credential registered to account B, which would let a user whose own passkey was
  * revoked still assert someone else's.
+ *
+ * The delete *is* the check, in one statement, so two submissions of one challenge
+ * cannot both win. Expiry is filtered here rather than left to the sweep above, so a
+ * lapsed challenge is refused even if no sweep has run.
  */
-function take(challenge: string, userId: string | null): boolean {
-  sweep(Date.now());
-  const entry = challenges.get(challenge);
-  if (!entry) return false;
-  if (entry.userId !== userId) return false;
-  challenges.delete(challenge);
-  return true;
+async function take(challenge: string, userId: string | null): Promise<boolean> {
+  const { rowCount } = await getPool().query(
+    `DELETE FROM webauthn_challenges
+       WHERE challenge = $1 AND user_id IS NOT DISTINCT FROM $2::uuid AND expires_at > now()`,
+    [challenge, userId],
+  );
+  return (rowCount ?? 0) > 0;
 }
 
-/** Test seam. */
-export function __clearChallengesForTest(): void {
-  challenges.clear();
+/** Test seam: drop every in-flight ceremony. */
+export async function __clearChallengesForTest(): Promise<void> {
+  await getPool().query(`DELETE FROM webauthn_challenges`);
 }
+
+/**
+ * How many passkeys one account may hold.
+ *
+ * Not a cryptographic limit — every credential is an independent wrapper over the same
+ * data key, so the Nth costs nothing to keep. It is a *blast radius* limit: each one is
+ * a permanent way into the account's records that a stolen session can plant with one
+ * password prompt, and a list nobody ever prunes is a list nobody ever audits.
+ */
+export const MAX_PASSKEYS_PER_ACCOUNT = 5;
 
 export function webauthnAvailable(): boolean {
   return getConfig().webauthn !== null;
@@ -141,7 +149,7 @@ export async function registrationOptions(opts: {
     extensions: { prf: { eval: { first: prfSaltBytes() } } } as never,
   });
 
-  store(options.challenge, opts.userId);
+  await store(options.challenge, opts.userId);
   return { ok: true, value: options };
 }
 
@@ -163,7 +171,7 @@ export async function verifyRegistration(opts: {
 
   const clientData = decodeClientData(opts.response.response.clientDataJSON);
   if (!clientData) return { ok: false, error: 'the passkey response was malformed' };
-  if (!take(clientData.challenge, opts.userId)) {
+  if (!(await take(clientData.challenge, opts.userId))) {
     return { ok: false, error: 'this passkey request expired or was already used' };
   }
 
@@ -220,7 +228,7 @@ export async function authenticationOptions(opts: {
       : {}),
   });
 
-  store(options.challenge, opts.userId);
+  await store(options.challenge, opts.userId);
   return { ok: true, value: options };
 }
 
@@ -242,7 +250,7 @@ export async function verifyAuthentication(opts: {
 
   const clientData = decodeClientData(opts.response.response.clientDataJSON);
   if (!clientData) return { ok: false, error: 'the passkey response was malformed' };
-  if (!take(clientData.challenge, opts.expectedUserId)) {
+  if (!(await take(clientData.challenge, opts.expectedUserId))) {
     return { ok: false, error: 'this passkey request expired or was already used' };
   }
 
