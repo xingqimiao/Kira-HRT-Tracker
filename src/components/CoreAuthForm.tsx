@@ -525,43 +525,61 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                     </div>
 
                     {!isLogin && (
-                        <div className="space-y-2">
-                            <p className="text-sm font-medium">{t('core.privacy.choose_title')}</p>
+                        <fieldset className="space-y-2 border-0 p-0 m-0">
+                            <legend className="text-sm font-medium mb-1">
+                                {t('core.privacy.choose_title')}
+                            </legend>
+                            {/* A radio group, not a pair of toggles: the two modes are one
+                                mutually exclusive choice, so `aria-pressed` on two buttons
+                                described it wrongly and left screen readers with no group
+                                label. Native inputs keep roving focus and arrow keys for
+                                free; the ring is what MD3 specifies — 2dp outline, 20dp,
+                                filled 10dp core when selected. */}
                             {(['standard', 'advanced'] as PrivacyMode[]).map((mode) => {
                                 const selected = privacyMode === mode;
                                 return (
-                                    <button
+                                    <label
                                         key={mode}
-                                        type="button"
-                                        onClick={() => setPrivacyMode(mode)}
-                                        aria-pressed={selected}
-                                        className={`w-full rounded-xl border p-3 text-left  transition-colors ${
+                                        className={`flex min-h-12 w-full cursor-pointer items-start gap-3 rounded-xl border p-3 text-left transition-colors ${
                                             selected
-                                                ? 'border-[var(--color-m3-primary)] bg-[var(--color-m3-surface-container)]'
-                                                : 'border-[var(--color-m3-outline-variant)]'
+                                                ? 'border-[var(--color-m3-primary)] bg-[var(--color-m3-primary-container)]'
+                                                : 'border-[var(--color-m3-outline-variant)] hover:bg-[var(--color-m3-surface-container)]'
                                         }`}
                                         style={{ transitionDuration: 'var(--md-sys-motion-duration-short3)' }}
                                     >
-                                        <span className="flex items-center gap-2">
-                                            <span
-                                                className={`h-4 w-4 shrink-0 rounded-full border-2 ${
-                                                    selected
-                                                        ? 'border-[var(--color-m3-primary)] bg-[var(--color-m3-primary)]'
-                                                        : 'border-[var(--color-m3-outline-variant)]'
-                                                }`}
-                                            />
-                                            <span className="text-sm font-medium">
+                                        <input
+                                            type="radio"
+                                            name="privacy-mode"
+                                            value={mode}
+                                            checked={selected}
+                                            onChange={() => setPrivacyMode(mode)}
+                                            className="peer sr-only"
+                                        />
+                                        <span
+                                            aria-hidden="true"
+                                            className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--color-m3-primary)] peer-focus-visible:ring-offset-2 ${
+                                                selected
+                                                    ? 'border-[var(--color-m3-primary)]'
+                                                    : 'border-[var(--color-m3-outline)]'
+                                            }`}
+                                        >
+                                            {selected && (
+                                                <span className="h-2.5 w-2.5 rounded-full bg-[var(--color-m3-primary)]" />
+                                            )}
+                                        </span>
+                                        <span className="min-w-0">
+                                            <span className="block text-sm font-medium text-[var(--color-m3-on-surface)]">
                                                 {mode === 'standard'
                                                     ? t('core.privacy.standard_name')
                                                     : t('core.privacy.advanced_name')}
                                             </span>
+                                            <span className="mt-1 block text-xs text-[var(--color-m3-on-surface-variant)]">
+                                                {mode === 'standard'
+                                                    ? t('core.privacy.standard_blurb')
+                                                    : t('core.privacy.advanced_blurb')}
+                                            </span>
                                         </span>
-                                        <span className="mt-1 block pl-6 text-xs text-[var(--color-m3-on-surface-variant)]">
-                                            {mode === 'standard'
-                                                ? t('core.privacy.standard_blurb')
-                                                : t('core.privacy.advanced_blurb')}
-                                        </span>
-                                    </button>
+                                    </label>
                                 );
                             })}
                             {privacyMode === 'advanced' && (
@@ -569,7 +587,7 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                                     {t('core.privacy.advanced_warning')}
                                 </p>
                             )}
-                        </div>
+                        </fieldset>
                     )}
 
                     {!isLogin && (
@@ -604,11 +622,12 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                     {xAvailable && (
                         <>
                             <div className="flex items-center gap-2">
-                                <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] " />
-                                <span className="text-xs text-[var(--color-m3-on-surface-variant)] ">
+                                {/* MD3 divider: 1dp of outline-variant, no shadow. */}
+                                <div className="h-px flex-1 bg-[var(--color-m3-outline-variant)]" />
+                                <span className="text-xs text-[var(--color-m3-on-surface-variant)]">
                                     {t('core.or')}
                                 </span>
-                                <div className="flex-1 h-px bg-[var(--color-m3-outline-variant)] " />
+                                <div className="h-px flex-1 bg-[var(--color-m3-outline-variant)]" />
                             </div>
                             <button type="button" onClick={handleX} disabled={busy} className="btn-secondary w-full">
                                 {t('core.x.continue')}

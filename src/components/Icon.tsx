@@ -36,7 +36,7 @@ const Icon: React.FC<IconProps> = ({ icon, size = 24, weight = 'Outline', classN
 
     return (
         <span
-            className={`inline-flex shrink-0 ${/w-|h-/.test(className ?? '') ? '' : 'items-center justify-center'}`}
+            className={`inline-flex shrink-0 ${/(?:^|\s)[wh]-/.test(className ?? '') ? '' : 'items-center justify-center'}`}
             // The svg carries the sizing class, so the wrapper must not clip it.
             style={{ lineHeight: 0 }}
             aria-hidden={title ? undefined : true}

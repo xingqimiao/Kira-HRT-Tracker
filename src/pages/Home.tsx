@@ -6,12 +6,17 @@ import ResultChart from '../components/ResultChart';
 import DoseHeatmap from '../components/DoseHeatmap';
 import EstimateInfoModal from '../components/EstimateInfoModal';
 import DoseAdvisoryNotice from '../components/DoseAdvisory';
+import HomeQuickAdd from '../components/HomeQuickAdd';
+import { DoseTemplate } from '../components/DoseFormModal';
 import AnimatedNumber from '../components/AnimatedNumber';
 import BloodVial from '../components/BloodVial';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { AppTheme } from '../constants';
 import { useTranslation } from '../contexts/LanguageContext';
 import { getShareCopy } from '../i18n/share';
+
+/** Drawn width of the vial, in px. Height follows the canvas' 18:42. */
+const VIAL_SIZE = 44;
 
 interface HomeProps {
     t: (key: string) => string;
@@ -30,6 +35,11 @@ interface HomeProps {
     onNavigateToShare: () => void;
     authToken: string | null;
     onAuthRequired: () => void;
+    /** Saved doses the overview can log in one tap — see HomeQuickAdd. */
+    doseTemplates: DoseTemplate[];
+    onAddEvent: (e: DoseEvent) => void;
+    /** The undo for a one-tap add, once the notice has closed. */
+    onRemoveEvent: (id: string) => void;
 }
 
 const Home: React.FC<HomeProps> = ({
@@ -49,6 +59,9 @@ const Home: React.FC<HomeProps> = ({
     onNavigateToShare,
     authToken,
     onAuthRequired,
+    doseTemplates,
+    onAddEvent,
+    onRemoveEvent,
 }) => {
     const isDarkMode = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     const [isEstimateInfoOpen, setIsEstimateInfoOpen] = React.useState(false);
@@ -67,11 +80,18 @@ const Home: React.FC<HomeProps> = ({
     // rendered inside whichever mode branch is active. It shows the current
     // estimate, which is the number printed directly beside it — the drawing is a
     // second reading of one value, not a summary of two.
-    // Inline right after the reading so it costs a bit of the number's own line
-    // rather than a block of its own; on a narrow screen the line wraps and the
-    // vial drops under the number rather than shoving the second reading off.
+    //
+    // Sits on the number's own line and hangs from its top edge: the row above is a
+    // label, and centring the tube against a 40-53px number floated it too low, so
+    // its rim read as belonging to the gap underneath rather than to the reading.
+    //
+    // Six of the canvas' 42 rows, which is what puts the glass rim level with the top
+    // of the digits beside it: rows 0..2 are empty, 3..5 are dome headroom above the
+    // rim. Measured at both type sizes (36px and 52.8px) — with `leading-none` on the
+    // number the rim lands within a pixel of the box top at each.
+    const vialOffset = -(VIAL_SIZE * 6) / 42;
     const vial = (events.length > 0 || labResults.length > 0) ? (
-        <span className="flex shrink-0 items-end self-end pb-1">
+        <span className="flex shrink-0 self-start" style={{ marginTop: vialOffset }}>
             {/* Sized against the reading beside it. The canvas is 26 wide but the tube is
                 only 14 of those columns (the rest is spill room), so the drawn vial is
                 about half the nominal size — at 30 the spill stops being legible, which is
@@ -79,7 +99,7 @@ const Home: React.FC<HomeProps> = ({
             <BloodVial
                 level={isTransmasc ? currentT : currentLevel}
                 mode={isTransmasc ? 'transmasc' : 'transfem'}
-                size={44}
+                size={VIAL_SIZE}
             />
         </span>
     ) : null;
@@ -115,6 +135,7 @@ const Home: React.FC<HomeProps> = ({
                         <button
                             type="button"
                             disabled={!events.length}
+                            aria-label={shareCopy.action}
                             onClick={() => {
                                 if (!authToken) {
                                     onAuthRequired();
@@ -126,50 +147,61 @@ const Home: React.FC<HomeProps> = ({
                             title={events.length ? shareCopy.modalDescription : shareCopy.noData}
                         >
                             <Icon icon={Share2} size={14} strokeWidth={1.75} />
-                            {shareCopy.action}
+                            {/* Same as the quick-add control beside it: the word is what
+                                overflows a 390px card, so it waits for `sm`. */}
+                            <span className="hidden sm:inline">{shareCopy.action}</span>
                         </button>
+                        {/* The card's corner slot. It reads as the card's own action here
+                            rather than as a page control, which is what it is — it adds to
+                            the same readings the card is showing. */}
+                        <HomeQuickAdd
+                            templates={doseTemplates}
+                            onAddEvent={onAddEvent}
+                            onRemoveEvent={onRemoveEvent}
+                        />
                     </div>
                 </div>
 
-                {/* Blood level grid — first reading left, second flush right.
-                    On a 375px screen the vial plus two four-digit readings don't
-                    fit across, and the second column was being pushed clean off
-                    the right edge. The left column is the one that gives: min-w-0
-                    lets it shrink and its number line wraps, so the vial drops
-                    under the reading. The right column is shrink-0 so it keeps its
-                    number and unit together on one line instead of both sides
-                    wrapping at once. */}
-                <div className="grid max-w-lg grid-cols-2 gap-4 sm:gap-8 md:gap-12">
+                {/* Blood level grid — two readings, each centred in its own half so the
+                    pair is symmetric instead of one column hugging the left edge and the
+                    other the right. The container stays narrow (max-w-xl) and centred:
+                    stretched across the card, the two numbers sit ~700px apart on a
+                    desktop and stop reading as a pair.
+                    On a 375px screen the vial plus two four-digit readings don't fit
+                    across, hence the wrapping number lines. */}
+                <div className={`mx-auto grid w-full grid-cols-2 gap-4 text-center sm:gap-8 ${isTransmasc ? 'max-w-md' : 'max-w-xl'}`}>
                     {isTransmasc ? (
                         <>
                             <div className="min-w-0">
-                <p className={`text-xs font-semibold ${muted} mb-2`}>
+                                <p className={`text-xs font-semibold ${muted} mb-2`}>
                                     {t('label.total_t')} <span className="opacity-60">(ng/dL)</span>
                                 </p>
-                                <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
-                                    {currentT > 0 ? (
-                                        <>
-                                            <span data-vial-sprayable className={`text-4xl md:text-5xl font-light tabular-nums ${on}`}><AnimatedNumber value={currentT} decimals={0} /></span>
-                                            <span className={`text-xs lowercase ${muted}`}>ng/dl</span>
-                                        </>
-                                    ) : (
-                                        <span className={`text-4xl md:text-5xl font-light ${dim}`}>--</span>
-                                    )}
+                                <div className="flex items-start justify-center gap-x-2">
+                                    <span className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
+                                        {currentT > 0 ? (
+                                            <>
+                                                <span data-vial-sprayable className={`text-4xl md:text-5xl font-light leading-none tabular-nums ${on}`}><AnimatedNumber value={currentT} decimals={0} /></span>
+                                                <span className={`text-xs lowercase ${muted}`}>ng/dl</span>
+                                            </>
+                                        ) : (
+                                            <span className={`text-4xl md:text-5xl font-light leading-none ${dim}`}>--</span>
+                                        )}
+                                    </span>
                                     {vial}
                                 </div>
                             </div>
-                            <div className="shrink-0 text-right">
-                <p className={`text-xs font-semibold ${muted} mb-2`}>
+                            <div className="min-w-0">
+                                <p className={`text-xs font-semibold ${muted} mb-2`}>
                                     {t('label.total_t')} <span className="opacity-60">(nmol/L)</span>
                                 </p>
-                                <div className="flex flex-wrap items-baseline justify-end gap-x-1.5 gap-y-1">
+                                <div className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
                                     {currentT > 0 ? (
                                         <>
-                                            <span data-vial-sprayable className={`text-4xl md:text-5xl font-light tabular-nums ${on}`}><AnimatedNumber value={currentT / 28.842} decimals={1} /></span>
+                                            <span data-vial-sprayable className={`text-4xl md:text-5xl font-light leading-none tabular-nums ${on}`}><AnimatedNumber value={currentT / 28.842} decimals={1} /></span>
                                             <span className={`text-xs lowercase ${muted}`}>nmol/l</span>
                                         </>
                                     ) : (
-                                        <span className={`text-4xl md:text-5xl font-light ${dim}`}>--</span>
+                                        <span className={`text-4xl md:text-5xl font-light leading-none ${dim}`}>--</span>
                                     )}
                                 </div>
                             </div>
@@ -177,29 +209,39 @@ const Home: React.FC<HomeProps> = ({
                     ) : (
                         <>
                             <div className="min-w-0">
-                <p className={`text-xs font-semibold ${muted} mb-2`}>{t('label.e2')}</p>
-                                <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
-                                    {currentLevel > 0 ? (
-                                        <>
-                                            <span data-vial-sprayable className={`text-4xl md:text-5xl font-light tabular-nums ${on}`}><AnimatedNumber value={currentLevel} decimals={1} /></span>
-                                            <span className={`text-xs lowercase ${muted}`}>pg/ml</span>
-                                        </>
-                                    ) : (
-                                        <span className={`text-4xl md:text-5xl font-light ${dim}`}>--</span>
-                                    )}
+                                <p className={`text-xs font-semibold ${muted} mb-2`}>{t('label.e2')}</p>
+                                <div className="flex items-start justify-center gap-x-2">
+                                    {/* `leading-none` is what makes "the top of the number" a
+                                        real edge: at the shared 1.4 line-height the box top sat
+                                        a few px above the ink, and the vial had nothing precise
+                                        to hang from. */}
+                                    <span className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
+                                        {currentLevel > 0 ? (
+                                            <>
+                                                <span data-vial-sprayable className={`text-4xl md:text-5xl font-light leading-none tabular-nums ${on}`}><AnimatedNumber value={currentLevel} decimals={1} /></span>
+                                                <span className={`text-xs lowercase ${muted}`}>pg/ml</span>
+                                            </>
+                                        ) : (
+                                            <span className={`text-4xl md:text-5xl font-light leading-none ${dim}`}>--</span>
+                                        )}
+                                    </span>
                                     {vial}
                                 </div>
                             </div>
-                            <div className="shrink-0 text-right">
-                <p className={`text-xs font-semibold ${muted} mb-2`}>{t('label.cpa_chart')}</p>
-                                <div className="flex flex-wrap items-baseline justify-end gap-x-1.5 gap-y-1">
+                            <div className="min-w-0">
+                                <p className={`text-xs font-semibold ${muted} mb-2`}>{t('label.cpa_chart')}</p>
+                                <div className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
                                     {currentCPA > 0 ? (
                                         <>
                                             <span data-vial-sprayable className={`text-4xl md:text-5xl font-light tabular-nums ${on}`}><AnimatedNumber value={currentCPA} decimals={1} /></span>
                                             <span className={`text-xs lowercase ${muted}`}>ng/ml</span>
                                         </>
                                     ) : (
-                                        <span className={`text-4xl md:text-5xl font-light ${dim}`}>--</span>
+                                        // Previously `outline-variant`, which is a *divider*
+                                        // colour: at 1dp it separates surfaces, at 53px it was
+                                        // near-invisible against the card. A missing reading is
+                                        // still a reading, so it uses the muted *text* role.
+                                        <span className={`text-4xl md:text-5xl font-light ${muted}`}>--</span>
                                     )}
                                 </div>
                             </div>
@@ -207,7 +249,7 @@ const Home: React.FC<HomeProps> = ({
                     )}
                 </div>
 
-                <div className="mt-2">
+                <div className="mt-3">
                     <DoseAdvisoryNotice advisory={doseAdvisory} hormoneAdvisory={hormoneAdvisory} showCalibrate={showCalibrate} onCalibrate={onNavigateToLab} t={t} />
                 </div>
                 </div>

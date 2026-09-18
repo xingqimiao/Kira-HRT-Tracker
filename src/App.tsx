@@ -406,14 +406,6 @@ const AppContent = () => {
             />
             <div className="flex-1 flex flex-col overflow-hidden w-full bg-[var(--color-m3-surface-dim)]  relative">
 
-                {/* The host, shown only where the browser chrome does not already say
-                    it: this app is reachable on more than one domain, and which one you
-                    are on decides where the data goes. On a phone that is worth 11px of
-                    vertical space; in a desktop window the address bar says it. */}
-                <div className="md:hidden shrink-0 pt-[env(safe-area-inset-top,0px)] pb-1 text-center text-[0.6875rem] font-medium tracking-wide text-muted select-none">
-                    {window.location.hostname}
-                </div>
-
                 {/* Operator banner. Outside the scroller and keyed off nothing in
                     this component, so it stays put across view changes. */}
                 <SiteNoticeBanner />
@@ -449,6 +441,9 @@ const AppContent = () => {
                                authenticates against the Core. */
                             authToken={coreSession.token}
                             onAuthRequired={() => setIsAuthModalOpen(true)}
+                            doseTemplates={doseTemplates}
+                            onAddEvent={addEvent}
+                            onRemoveEvent={deleteEvent}
                         />
                     )}
 

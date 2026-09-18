@@ -60,7 +60,7 @@ const LicenceSettings: React.FC<LicenceSettingsProps> = ({ onBack, appVersion })
 
             <div className="mx-auto w-full px-6 md:px-8 mt-4 max-w-2xl">
                 <div className="flex items-start gap-3 pb-4">
-                    <div className="p-2 rounded-lg bg-[var(--color-m3-surface-container)] shrink-0">
+                    <div className="w-10 h-10 flex items-center justify-center rounded-lg bg-[var(--color-m3-surface-container)] shrink-0">
                         <Icon icon={CodeFile} size={18} strokeWidth={1.75} className={muted} />
                     </div>
                     <p className={muted}>{t('licence.intro')}</p>

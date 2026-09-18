@@ -320,7 +320,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 className={`${rowBase} items-center`}
                             >
                                 <div className="flex items-center gap-3">
-                                    <div className={`p-2 rounded-lg bg-[var(--color-m3-surface-container)] `}>
+                                    <div className={`w-10 h-10 flex items-center justify-center rounded-lg bg-[var(--color-m3-surface-container)] `}>
                                         <Icon icon={icon} size={18} strokeWidth={1.75} className={muted} />
                                     </div>
                                     <div className="text-start">
