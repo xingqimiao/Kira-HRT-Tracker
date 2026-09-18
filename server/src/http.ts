@@ -26,9 +26,19 @@ import { getConfig } from './config.ts';
 import { buildServer, makeBearerResolver } from './mcp.ts';
 import { MedicationService, LabService, TimelineService, PKSimulationService } from './core.ts';
 import { AccountService } from './accounts.ts';
+import { MAX_PASSKEYS_PER_ACCOUNT } from './webauthn.ts';
 import { ShareService } from './shares.ts';
 import type { AuthContext } from './types.ts';
-import { findUserSession, lookupSession, closeSession, openSession } from './session.ts';
+import {
+  findUserSession,
+  lookupSession,
+  closeSession,
+  openSession,
+  touchSession,
+  listUserSessions,
+  revokeSessions,
+  revokeOtherSessions,
+} from './session.ts';
 import { verifyTurnstile } from './turnstile.ts';
 import { importPayload, buildExportPayload, publicStats } from './import.ts';
 
@@ -164,6 +174,17 @@ function redirect(res: ServerResponse, location: string): void {
   res.end();
 }
 
+/** The device a request came from, as the session list describes it. */
+function requestDevice(req: IncomingMessage): { userAgent: string | null; ip: string | null } {
+  const ua = req.headers['user-agent'];
+  return {
+    // Truncated, because this text is attacker-controlled and ends up rendered in a
+    // settings list: there is no reason to keep more than enough to name a browser.
+    userAgent: typeof ua === 'string' ? ua.slice(0, 200) : null,
+    ip: clientIp(req),
+  };
+}
+
 function bearer(req: IncomingMessage): string | undefined {
   const header = req.headers.authorization;
   if (typeof header === 'string' && header.startsWith('Bearer ')) return header.slice(7).trim();
@@ -182,7 +203,12 @@ async function contextFor(req: IncomingMessage): Promise<AuthContext | null> {
   // the user the right instruction. `mcp.ts` keeps the distinction because `http.ts`'s
   // MCP mount passes the resolver straight through, not through this helper.
   const ctx = await AccountService.resolveApiContext(token);
-  return ctx && !('denied' in ctx) ? ctx : null;
+  if (!ctx || 'denied' in ctx) return null;
+  // Where a live unlock is last seen. The session store cannot see requests, and this is
+  // the single point every authenticated REST call passes through; a durable `hrt_` agent
+  // token is not a session, and `touchSession` ignores it for exactly that reason.
+  if (token.startsWith('ks_')) touchSession(token, requestDevice(req));
+  return ctx;
 }
 
 /**
@@ -607,7 +633,12 @@ export function createRequestHandler() {
       if (path === '/auth/passkeys' && req.method === 'GET') {
         const ctx = await contextFor(req);
         if (!ctx) return send(res, 401, { error: 'authentication required' });
-        return send(res, 200, { passkeys: await AccountService.listPasskeys(ctx.userId) });
+        // `max` travels with the list so the settings page can disable "add" at the
+        // ceiling instead of letting the user complete a prompt the server will refuse.
+        return send(res, 200, {
+          passkeys: await AccountService.listPasskeys(ctx.userId),
+          max: MAX_PASSKEYS_PER_ACCOUNT,
+        });
       }
 
       if (path === '/auth/passkeys' && req.method === 'DELETE') {
@@ -617,6 +648,38 @@ export function createRequestHandler() {
         const result = await AccountService.removePasskey(ctx, body?.id);
         if (!result.ok) return send(res, 400, { error: result.error });
         return send(res, 200, { removed: true });
+      }
+
+      // --- Auth: live sessions ----------------------------------------------
+      //
+      // Listing and revocation, both scoped to the caller by `contextFor`. Nothing here
+      // returns a token or a key: the list names devices so a person can *end* access,
+      // not so anyone can resume it.
+      if (path === '/auth/sessions' && req.method === 'GET') {
+        const ctx = await contextFor(req);
+        if (!ctx) return send(res, 401, { error: 'authentication required' });
+        return send(res, 200, { sessions: listUserSessions(ctx.userId, bearer(req) ?? null) });
+      }
+
+      if (path === '/auth/sessions/revoke' && req.method === 'POST') {
+        const ctx = await contextFor(req);
+        if (!ctx) return send(res, 401, { error: 'authentication required' });
+        const token = bearer(req) ?? null;
+        const body = (await readBody(req)) as { ids?: unknown; all_others?: unknown } | undefined;
+
+        if (body?.all_others === true) {
+          return send(res, 200, { revoked: revokeOtherSessions(ctx.userId, token) });
+        }
+
+        // A row in the UI stands for a device, which can hold more than one unlock, so
+        // the request carries every id behind that row.
+        const ids = Array.isArray(body?.ids)
+          ? body.ids.filter((id): id is string => typeof id === 'string' && id.length > 0)
+          : [];
+        if (ids.length === 0) return send(res, 400, { error: 'ids: required' });
+        // Revoking the caller's own session is allowed rather than refused: a client that
+        // asked for it is a client that is about to drop its token anyway.
+        return send(res, 200, { revoked: revokeSessions(ctx.userId, ids) });
       }
 
       if (path === '/auth/account/delete' && req.method === 'POST') {

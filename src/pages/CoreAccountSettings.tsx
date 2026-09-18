@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Icon from '../components/Icon';
 import { useTranslation } from '../contexts/LanguageContext';
-import { AlertTriangle, Check, Copy, Fingerprint, KeyRound, Loader2, LogOut, Lock, RefreshCw, ShieldCheck, Trash2, Unlink } from '../icons';
+import { AlertTriangle, Check, Copy, Fingerprint, KeyRound, Loader2, LogOut, Lock, MonitorSmartphone, RefreshCw, ShieldCheck, Trash2, Unlink } from '../icons';
 
-import { coreAuth, CoreAuthError, type AccountSummary, type PasskeyInfo, type PrivacyMode, type XLink } from '../services/coreAuth';
+import { coreAuth, CoreAuthError, type AccountSummary, type PasskeyInfo, type PrivacyMode, type SessionInfo, type XLink } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
 import { passkeysSupported, PasskeyError } from '../utils/passkeys';
 
@@ -73,12 +73,36 @@ function xLinkSubtitle(
   return t('core.acct.x_linked_used').replace('{date}', linked).replace('{last}', last);
 }
 
+/** "Windows · Edge" from a user agent, or the caller's fallback when it says nothing. */
+function describeDevice(userAgent: string | null, fallback: string): string {
+  if (!userAgent) return fallback;
+  const os = /Windows NT/.test(userAgent) ? 'Windows'
+    : /Android/.test(userAgent) ? 'Android'
+    : /iPhone|iPad|iPod/.test(userAgent) ? 'iOS'
+    : /Mac OS X/.test(userAgent) ? 'macOS'
+    : /Linux/.test(userAgent) ? 'Linux' : '';
+  const browser = /Edg\//.test(userAgent) ? 'Edge'
+    : /OPR\//.test(userAgent) ? 'Opera'
+    : /Firefox\//.test(userAgent) ? 'Firefox'
+    : /Chrome\//.test(userAgent) ? 'Chrome'
+    : /Safari\//.test(userAgent) ? 'Safari' : '';
+  const parts = [os, browser].filter(Boolean);
+  return parts.length > 0 ? parts.join(' · ') : fallback;
+}
+
 const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBack, onDeleted }) => {
   const [summary, setSummary] = useState<AccountSummary | null>(null);
   const [links, setLinks] = useState<XLink[]>([]);
   const [passkeys, setPasskeys] = useState<PasskeyInfo[]>([]);
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  // Nothing paints until the first load lands — see the skeleton below.
+  const [loaded, setLoaded] = useState(false);
+  // Null until the server has said what its ceiling is; treated as "no ceiling known"
+  // so a missing field cannot hide the button.
+  const [passkeyMax, setPasskeyMax] = useState<number | null>(null);
   // A pure property test, safe to evaluate while rendering — it cannot prompt.
   const passkeysUsable = passkeysSupported();
+  const atPasskeyLimit = passkeyMax !== null && passkeys.length >= passkeyMax;
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,19 +113,28 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
   const createdDate = formatDate(summary?.createdAt);
 
   const refresh = useCallback(async () => {
-    if (!token) return;
+    if (!token) {
+      setLoaded(true);
+      return;
+    }
     try {
-      const [s, l, p] = await Promise.all([
+      const [s, l, p, d] = await Promise.all([
         coreAuth.summary(token),
         coreAuth.listXLinks(token),
-        coreAuth.listPasskeys(token).catch(() => [] as PasskeyInfo[]),
+        coreAuth.listPasskeys(token).catch(() => ({ passkeys: [] as PasskeyInfo[], max: null })),
+        // A server that has not learned the sessions route yet must not break the page.
+        coreAuth.listSessions(token).catch(() => [] as SessionInfo[]),
       ]);
       setSummary(s);
       setLinks(l);
-      setPasskeys(p);
+      setPasskeys(p.passkeys);
+      setPasskeyMax(p.max);
+      setSessions(d);
     } catch {
       // Leave the previous values rather than blanking the page on a transient
       // failure; the next refresh will correct them.
+    } finally {
+      setLoaded(true);
     }
   }, [token]);
 
@@ -121,7 +154,10 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
         case 'no_prf':
           return t('core.passkey.err_no_prf');
         default:
-          return error.message;
+          // A platform refusal we cannot translate. Its own text is the only clue there
+          // is, so it is kept inside a translated sentence — and `passkeys.ts` logs the
+          // whole error to the console, where a bug report can quote it.
+          return t('core.passkey.err_failed').replace('{detail}', error.message);
       }
     }
     if (error instanceof CoreAuthError) {
@@ -136,6 +172,8 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
           return 'X sign-in is not available on this server.';
         case 'network':
           return 'Could not reach the server.';
+        case 'passkey_limit':
+          return t('core.passkey.err_limit').replace('{max}', String(passkeyMax ?? ''));
         default:
           return error.message;
       }
@@ -171,6 +209,11 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
     }
   }
 
+  // Nothing paints until the first load lands: the page used to render only the parts
+  // that need no data and then grow as the summary, the X link and the passkeys arrived,
+  // which reads as a flicker on every visit.
+  if (!loaded) return <AccountSkeleton />;
+
   return (
     <div className="pt-4 pb-32 min-h-full flex justify-start md:justify-center">
       <div className="mx-auto w-full max-w-[36rem] px-4">
@@ -178,7 +221,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
           onClick={onBack}
           className={`text-sm mb-4 inline-flex items-center gap-1.5 ${muted} hover:underline`}
         >
-          ← Back
+          ← {t('core.back')}
         </button>
 
         <h1 className="text-xl font-semibold mb-1">{t('core.acct.title')}</h1>
@@ -370,14 +413,68 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
                 <Row
                   icon={<Icon icon={Fingerprint} size={17} />}
                   title={t('core.passkey.add')}
-                  subtitle={t('core.passkey.add_sub')}
+                  subtitle={
+                    atPasskeyLimit
+                      ? t('core.passkey.limit_reached').replace('{max}', String(passkeyMax))
+                      : t('core.passkey.add_sub')
+                  }
                   onClick={() => setDialog('passkey')}
-                  disabled={busy}
+                  disabled={busy || atPasskeyLimit}
                 />
               )}
             </div>
 
             <p className={`text-xs mt-2 ${muted}`}>{t('core.passkey.note')}</p>
+          </section>
+        )}
+
+        {/* ── Signed-in devices ────────────────────────────────────────────── */}
+        {/* Listed so a person can end access they no longer recognise. The list names
+            devices, never tokens — see `listUserSessions` on the server. */}
+        {sessions.length > 0 && (
+          <section className="mb-6">
+            <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{t('core.sessions.section')}</span>
+
+            <div className="mt-2 flex flex-col">
+              {sessions.map((s) => (
+                <Row
+                  key={s.id}
+                  icon={<Icon icon={MonitorSmartphone} size={17} />}
+                  title={`${describeDevice(s.userAgent, t('core.sessions.unknown_device'))}${
+                    s.sessions > 1 ? ` · ${t('core.sessions.count').replace('{n}', String(s.sessions))}` : ''
+                  }`}
+                  subtitle={t('core.sessions.last_seen').replace('{when}', formatDate(s.lastSeenAt) ?? '—')}
+                  right={s.current
+                    ? <span className={`text-xs ${muted}`}>{t('core.sessions.current')}</span>
+                    : <Icon icon={Trash2} size={15} className={muted} />}
+                  danger={!s.current}
+                  onClick={s.current ? undefined : () => {
+                    void run(async () => {
+                      await coreAuth.revokeSessions(token!, s.ids);
+                      await refresh();
+                    }, t('core.sessions.notice_revoked'));
+                  }}
+                  disabled={busy}
+                />
+              ))}
+
+              {sessions.some((s) => !s.current) && (
+                <Row
+                  icon={<Icon icon={LogOut} size={17} />}
+                  title={t('core.sessions.revoke_others')}
+                  danger
+                  onClick={() => {
+                    void run(async () => {
+                      await coreAuth.revokeOtherSessions(token!);
+                      await refresh();
+                    }, t('core.sessions.notice_revoked_others'));
+                  }}
+                  disabled={busy}
+                />
+              )}
+            </div>
+
+            <p className={`text-xs mt-2 ${muted}`}>{t('core.sessions.note')}</p>
           </section>
         )}
 
@@ -535,6 +632,20 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
 // ---------------------------------------------------------------------------
 // Small presentational pieces
 // ---------------------------------------------------------------------------
+
+/** The account page's shape before the first load lands, so nothing moves when it does. */
+const AccountSkeleton: React.FC = () => (
+  <div className="pt-4 pb-32 min-h-full flex justify-start md:justify-center" aria-busy="true">
+    <div className="mx-auto w-full max-w-[36rem] px-4 space-y-4">
+      {[0, 1, 2].map((row) => (
+        <div key={row} className="space-y-2">
+          <div className="h-3 w-28 rounded bg-[var(--color-m3-surface-container-high)] animate-pulse motion-reduce:animate-none" />
+          <div className="h-14 w-full rounded-[var(--radius-md)] bg-[var(--color-m3-surface-container-high)] animate-pulse motion-reduce:animate-none" />
+        </div>
+      ))}
+    </div>
+  </div>
+);
 
 const Stat: React.FC<{ label: string; value: number; warn?: boolean }> = ({ label, value, warn }) => (
   <div className={`flex items-center justify-between py-3 ${divider} last:border-b-0`}>

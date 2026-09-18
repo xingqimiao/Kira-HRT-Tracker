@@ -28,6 +28,7 @@ export type CoreErrorKind =
   | 'locked'
   | 'rate_limited'
   | 'not_configured'
+  | 'passkey_limit'
   | 'network'
   | 'unknown';
 
@@ -61,6 +62,10 @@ function classify(body: { error?: string } | undefined, status: number): CoreErr
   if (raw.includes('too many failed attempts')) return 'locked';
   if (raw.includes('too many attempts')) return 'rate_limited';
   if (raw.includes('not configured')) return 'not_configured';
+  // The ceiling is the one passkey failure with a fix the user can perform, so it gets
+  // its own kind rather than arriving as `unknown` and being shown in the server's
+  // English. Matched on both words so an unrelated sentence cannot claim it.
+  if (raw.includes('maximum of') && raw.includes('passkey')) return 'passkey_limit';
   if (raw.includes('invalid credentials')) return 'invalid_credentials';
   if (status === 429) return 'rate_limited';
   return 'unknown';
@@ -185,6 +190,24 @@ export interface ApiToken {
   createdAt: string;
   lastUsedAt: string | null;
   expiresAt: string | null;
+}
+
+/** One live unlock, as the account page's device list shows it. */
+export interface SessionInfo {
+  /** The handle for the newest unlock behind this row. */
+  id: string;
+  /** Every unlock behind this row, so revoking the row revokes all of them. */
+  ids: string[];
+  /** How many unlocks share this device. */
+  sessions: number;
+  current: boolean;
+  createdAt: string | null;
+  lastSeenAt: string | null;
+  expiresAt: string | null;
+  passkeyVerified: boolean;
+  /** The raw user agent; the page turns it into a readable name. */
+  userAgent: string | null;
+  ip: string | null;
 }
 
 /** One registered passkey, as the settings list shows it. */
@@ -588,19 +611,71 @@ export const coreAuth = {
     );
   },
 
-  async listPasskeys(token: string): Promise<PasskeyInfo[]> {
-    const raw = await request<{ passkeys: any[] }>('/auth/passkeys', { token });
-    return (raw.passkeys ?? []).map((p) => ({
-      id: p.id,
-      name: p.name ?? null,
-      createdAt: p.createdAt ?? null,
-      lastUsedAt: p.lastUsedAt ?? null,
-      deviceType: p.deviceType ?? null,
-    }));
+  /**
+   * The account's passkeys, and the ceiling the server enforces.
+   *
+   * The ceiling travels with the list so the settings page can stop at it. Sending the
+   * user through a system prompt the server will refuse teaches them the feature is
+   * broken, when the answer was one delete away.
+   */
+  async listPasskeys(token: string): Promise<{ passkeys: PasskeyInfo[]; max: number | null }> {
+    const raw = await request<{ passkeys?: any[]; max?: number }>('/auth/passkeys', { token });
+    return {
+      passkeys: (raw.passkeys ?? []).map((p) => ({
+        id: p.id,
+        name: p.name ?? null,
+        createdAt: p.createdAt ?? null,
+        lastUsedAt: p.lastUsedAt ?? null,
+        deviceType: p.deviceType ?? null,
+      })),
+      max: typeof raw.max === 'number' ? raw.max : null,
+    };
   },
 
   async removePasskey(token: string, id: string): Promise<void> {
     await request('/auth/passkeys', { method: 'DELETE', token, body: JSON.stringify({ id }) });
+  },
+
+  /**
+   * The account's live unlocks, grouped by device, with the caller's own marked.
+   *
+   * Carries no token: the server names sessions by an opaque id so that revoking one is
+   * possible without either side handling the credential itself.
+   */
+  async listSessions(token: string): Promise<SessionInfo[]> {
+    const raw = await request<{ sessions?: any[] }>('/auth/sessions', { token });
+    return (raw.sessions ?? []).map((s) => ({
+      id: String(s.id),
+      ids: Array.isArray(s.ids) ? s.ids.map(String) : [String(s.id)],
+      sessions: typeof s.sessions === 'number' ? s.sessions : 1,
+      current: s.current === true,
+      createdAt: s.createdAt ?? null,
+      lastSeenAt: s.lastSeenAt ?? null,
+      expiresAt: s.expiresAt ?? null,
+      passkeyVerified: s.passkeyVerified === true,
+      userAgent: typeof s.userAgent === 'string' ? s.userAgent : null,
+      ip: typeof s.ip === 'string' ? s.ip : null,
+    }));
+  },
+
+  /** End every unlock behind one row of that list. */
+  async revokeSessions(token: string, ids: string[]): Promise<number> {
+    const raw = await request<{ revoked?: number }>('/auth/sessions/revoke', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ ids }),
+    });
+    return typeof raw.revoked === 'number' ? raw.revoked : 0;
+  },
+
+  /** End every unlock except this one: "sign out everywhere else". */
+  async revokeOtherSessions(token: string): Promise<number> {
+    const raw = await request<{ revoked?: number }>('/auth/sessions/revoke', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ all_others: true }),
+    });
+    return typeof raw.revoked === 'number' ? raw.revoked : 0;
   },
 };
 

@@ -15,6 +15,10 @@ import {
   closeUserSessions,
   activeSessionCount,
   findUserSession,
+  touchSession,
+  listUserSessions,
+  revokeSessions,
+  revokeOtherSessions,
 } from '../src/session.ts';
 import { encryptCloudPayload, decryptCloudPayload } from '../src/engine.ts';
 
@@ -143,4 +147,116 @@ test('the DEK a token obtains is scoped to its own account', async () => {
 
   closeUserSessions('other-user');
   assert.equal(findUserSession(userId), null);
+});
+
+/**
+ * The account page's device list.
+ *
+ * The list exists so a person can *end* access they no longer recognise, so the two
+ * properties that matter are that it names unlocks without ever carrying a credential,
+ * and that revoking a row cannot reach another account. Both are pinned here.
+ *
+ * Each test uses its own user id: the store is module-level and shared with every other
+ * test in the run, so a shared id would make the assertions depend on their order.
+ */
+test('a session row is named by an id, and carries no token or key', async () => {
+  const user = 'sessions-row-shape';
+  const { dek } = await createUserKeyMaterial(password, user);
+  try {
+    const token = openSession(user, dek);
+    const rows = listUserSessions(user, token);
+
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].current, true);
+    assert.notEqual(rows[0].id, token, 'the handle must not be the credential');
+    assert.deepEqual(rows[0].ids, [rows[0].id]);
+
+    // Pretty-printed so a nested leak cannot hide behind escaping.
+    const serialised = JSON.stringify(rows, null, 2);
+    assert.ok(!serialised.includes(token), 'the token must never cross the wire');
+    assert.ok(!serialised.includes(dek), 'nor the key it carries');
+  } finally {
+    closeUserSessions(user);
+  }
+});
+
+test('two unlocks on one device read as one row that stands for both', async () => {
+  const user = 'sessions-grouping';
+  const { dek } = await createUserKeyMaterial(password, user);
+  try {
+    const first = openSession(user, dek);
+    const second = openSession(user, dek);
+    const device = { userAgent: 'TestAgent/1.0', ip: '203.0.113.7' };
+    touchSession(first, device);
+    touchSession(second, device);
+
+    const rows = listUserSessions(user, second);
+    assert.equal(rows.length, 1, 'the same device is one row');
+    assert.equal(rows[0].sessions, 2);
+    assert.equal(rows[0].ids.length, 2);
+    assert.equal(new Set(rows[0].ids).size, 2, 'both unlocks are named, with no duplicate');
+    assert.equal(rows[0].current, true, 'the caller is marked, not hidden');
+  } finally {
+    closeUserSessions(user);
+  }
+});
+
+test('the first sighting names the device and later requests do not relabel it', async () => {
+  const user = 'sessions-touch-once';
+  const { dek } = await createUserKeyMaterial(password, user);
+  try {
+    const token = openSession(user, dek);
+    touchSession(token, { userAgent: 'FirstAgent/1.0', ip: '198.51.100.4' });
+    touchSession(token, { userAgent: 'LaterAgent/9.9', ip: '198.51.100.99' });
+
+    const [row] = listUserSessions(user, token);
+    assert.equal(row.userAgent, 'FirstAgent/1.0');
+    assert.equal(row.ip, '198.51.100.4');
+  } finally {
+    closeUserSessions(user);
+  }
+});
+
+test('revocation by handle is scoped to its account', async () => {
+  const owner = 'sessions-revoke-owner';
+  const stranger = 'sessions-revoke-stranger';
+  const a = await createUserKeyMaterial(password, owner);
+  const b = await createUserKeyMaterial(password, stranger);
+  try {
+    openSession(owner, a.dek);
+    const victim = openSession(stranger, b.dek);
+    const strangerId = listUserSessions(stranger, victim)[0].id;
+
+    assert.equal(revokeSessions(owner, [strangerId]), 0, 'another account\'s id is not an authorization');
+    assert.equal(resolveSession(victim, stranger), b.dek, 'the other account is still unlocked');
+
+    const own = listUserSessions(owner, null)[0].id;
+    assert.equal(revokeSessions(owner, [own]), 1);
+    assert.equal(listUserSessions(owner, null).length, 0);
+  } finally {
+    closeUserSessions(owner);
+    closeUserSessions(stranger);
+  }
+});
+
+test('signing out everywhere else keeps the caller', async () => {
+  const user = 'sessions-revoke-others';
+  const { dek } = await createUserKeyMaterial(password, user);
+  try {
+    // Named devices, so the three unlocks are three rows and "two revoked" is visible
+    // as two rows going away rather than as arithmetic on a single grouped row.
+    touchSession(openSession(user, dek), { userAgent: 'Phone/1.0', ip: '203.0.113.1' });
+    touchSession(openSession(user, dek), { userAgent: 'Tablet/1.0', ip: '203.0.113.2' });
+    const keeper = openSession(user, dek);
+    touchSession(keeper, { userAgent: 'Laptop/1.0', ip: '203.0.113.3' });
+    assert.equal(listUserSessions(user, keeper).length, 3);
+
+    assert.equal(revokeOtherSessions(user, keeper), 2);
+    const rows = listUserSessions(user, keeper);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].current, true);
+    assert.equal(rows[0].userAgent, 'Laptop/1.0');
+  } finally {
+    closeUserSessions(user);
+  }
 });

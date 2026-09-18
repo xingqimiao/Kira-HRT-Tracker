@@ -427,6 +427,30 @@ interface UnlockedSession {
   dek: string;
   expiresAt: number;
   /**
+   * A non-secret handle for the account page.
+   *
+   * The token is the credential and never crosses back to the client, so a list of
+   * live unlocks needs something else to name them by. This is that: revoking is
+   * possible without the server or the browser handling anyone's token.
+   */
+  id: string;
+  createdAt: number;
+  /**
+   * When an authenticated request last carried this token.
+   *
+   * Recorded where the requests arrive, because this module has no request context of
+   * its own. It orders the list and it is also what makes "this device is still in use"
+   * visible, which is the thing a person checks before revoking something.
+   */
+  lastSeenAt: number;
+  /**
+   * Which device opened this unlock, filled in by `touchSession` on first sight.
+   *
+   * Null until a request arrives, because `openSession` is called from the unlock code,
+   * which has no business knowing about user agents.
+   */
+  device: { userAgent: string | null; ip: string | null } | null;
+  /**
    * When this session's key was opened by a passkey with user verification.
    *
    * The MCP step-up requirement reads this: a durable agent token normally needs an
@@ -470,6 +494,10 @@ export function openSession(
     userId,
     dek,
     expiresAt: now + ttl,
+    id: randomKeyB64().replace(/[+/=]/g, '').slice(0, 24),
+    createdAt: now,
+    lastSeenAt: now,
+    device: null,
     ...(opts.passkeyVerified ? { passkeyVerifiedAt: now } : {}),
   });
   return token;
@@ -538,6 +566,139 @@ export function closeUserSessions(userId: string): void {
   for (const [token, session] of sessions) {
     if (session.userId === userId) sessions.delete(token);
   }
+}
+
+/**
+ * One row of the account page's session list: a *device*, not an individual unlock.
+ *
+ * Grouped, because a session list is read by a person looking for "a machine I do not
+ * recognise", and the same browser signing in twice produces two identical-looking rows
+ * that answer no question. `sessions` says how many unlocks are behind the row.
+ *
+ * Deliberately not the token and not the key. This crosses the wire, and a list that
+ * leaked either would be a way to *become* the session it describes.
+ */
+export interface SessionInfo {
+  id: string;
+  /** Every session id this row stands for, so revoking the row revokes all of them. */
+  ids: string[];
+  /** How many live unlocks share this device signature. */
+  sessions: number;
+  current: boolean;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  passkeyVerified: boolean;
+  userAgent: string | null;
+  ip: string | null;
+}
+
+/**
+ * Record that a token was just used, and from where.
+ *
+ * Called from the HTTP layer for every authenticated request, since that is the only
+ * place that knows the request. A token that is not a live unlock (a durable `hrt_`
+ * agent token) is ignored — it has no session to describe.
+ *
+ * The device is written once and never replaced: the first sighting is the one that says
+ * which device opened this unlock, and a later request through the same token can
+ * legitimately come from elsewhere, which would mislabel it.
+ */
+export function touchSession(
+  token: string,
+  device: { userAgent?: string | null; ip?: string | null },
+): void {
+  const session = sessions.get(token);
+  if (!session) return;
+  session.lastSeenAt = Date.now();
+  if (!session.device) {
+    session.device = { userAgent: device.userAgent ?? null, ip: device.ip ?? null };
+  }
+}
+
+/**
+ * Live unlocks for one user, grouped by device, most recent first.
+ *
+ * The grouping key is the user agent plus the address the request came from. That is a
+ * proxy, stated plainly: the same browser on a phone that changed networks shows as two
+ * rows, and two identical machines behind one address show as one. Both are the safe
+ * direction for a list whose purpose is to let someone end access — a row that is too
+ * coarse still revokes, and a row that is too fine is only noise.
+ *
+ * The caller's own session is marked rather than hidden, so "is this device me?" is
+ * answerable without comparing addresses.
+ */
+export function listUserSessions(userId: string, currentToken: string | null): SessionInfo[] {
+  const now = Date.now();
+  sweep(now);
+  const groups = new Map<string, SessionInfo>();
+  for (const [token, session] of sessions) {
+    if (session.userId !== userId) continue;
+    const key = `${session.device?.userAgent ?? ''}\u0000${session.device?.ip ?? ''}`;
+    const seen = session.lastSeenAt;
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, {
+        id: session.id,
+        ids: [session.id],
+        sessions: 1,
+        current: token === currentToken,
+        createdAt: new Date(session.createdAt).toISOString(),
+        lastSeenAt: new Date(seen).toISOString(),
+        expiresAt: new Date(session.expiresAt).toISOString(),
+        passkeyVerified: session.passkeyVerifiedAt !== undefined,
+        userAgent: session.device?.userAgent ?? null,
+        ip: session.device?.ip ?? null,
+      });
+      continue;
+    }
+    existing.ids.push(session.id);
+    existing.sessions += 1;
+    // The row reports the newest unlock in the group, and stays "current" if any of them
+    // is the caller's — a device is not two devices because one of its tabs re-signed-in.
+    if (seen > Date.parse(existing.lastSeenAt)) {
+      existing.id = session.id;
+      existing.lastSeenAt = new Date(seen).toISOString();
+      existing.createdAt = new Date(session.createdAt).toISOString();
+      existing.expiresAt = new Date(session.expiresAt).toISOString();
+    }
+    if (token === currentToken) existing.current = true;
+    if (session.passkeyVerifiedAt !== undefined) existing.passkeyVerified = true;
+  }
+  return [...groups.values()].sort((a, b) =>
+    a.current === b.current ? b.lastSeenAt.localeCompare(a.lastSeenAt) : a.current ? -1 : 1,
+  );
+}
+
+/**
+ * Close sessions by handle, scoped to the user.
+ *
+ * Scoped, so an id belonging to one account cannot end a session belonging to another —
+ * the ids are random, but a random id is not an authorization.
+ */
+export function revokeSessions(userId: string, ids: string[]): number {
+  const wanted = new Set(ids);
+  let removed = 0;
+  for (const [token, session] of sessions) {
+    if (session.userId !== userId || !wanted.has(session.id)) continue;
+    sessions.delete(token);
+    removed++;
+  }
+  return removed;
+}
+
+/**
+ * Close every unlock for a user except the one making the request: "sign out everywhere
+ * else", which is what someone reaches for when a device is lost.
+ */
+export function revokeOtherSessions(userId: string, keepToken: string | null): number {
+  let removed = 0;
+  for (const [token, session] of sessions) {
+    if (session.userId !== userId || token === keepToken) continue;
+    sessions.delete(token);
+    removed++;
+  }
+  return removed;
 }
 
 /**
