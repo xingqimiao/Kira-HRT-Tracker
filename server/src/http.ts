@@ -26,6 +26,7 @@ import { getConfig } from './config.ts';
 import { buildServer, makeBearerResolver } from './mcp.ts';
 import { MedicationService, LabService, TimelineService, PKSimulationService } from './core.ts';
 import { AccountService } from './accounts.ts';
+import { RecordService } from './records.ts';
 import { MAX_PASSKEYS_PER_ACCOUNT } from './webauthn.ts';
 import { ShareService } from './shares.ts';
 import type { AuthContext } from './types.ts';
@@ -836,6 +837,56 @@ export function createRequestHandler() {
         }
         return resolved;
       };
+
+      // --- Records (encrypted payloads) ------------------------------------
+      //
+      // The client sends and receives plaintext JSON; sealing and opening happen here.
+      // `user_id` and `taken_at` are the only things the database can read.
+
+      if (path === '/api/records' && req.method === 'GET') {
+        const ctx = await requireCtx();
+        if (!ctx) return;
+        const beforeRaw = url.searchParams.get('before');
+        const before = beforeRaw ? Number(beforeRaw) : undefined;
+        const { records, unreadable } = await RecordService.list(ctx, {
+          limit: Number(url.searchParams.get('limit') ?? 200),
+          category: url.searchParams.get('category') ?? undefined,
+          before: Number.isFinite(before) ? before : undefined,
+        });
+        return send(res, 200, {
+          records: records.map((r) => ({
+            id: r.id,
+            taken_at: new Date(r.takenAt).toISOString(),
+            category: r.category,
+            data: r.data,
+            updated_at: new Date(r.updatedAt).toISOString(),
+            client_id: r.clientId,
+          })),
+          // Surfaced rather than swallowed: a client that ignores this is at least not
+          // being told its history is complete when it is not.
+          unreadable,
+        });
+      }
+
+      if (path === '/api/records' && req.method === 'POST') {
+        const ctx = await requireCtx();
+        if (!ctx) return;
+        const body = (await readBody(req)) as Record<string, unknown> | undefined;
+        const result = await RecordService.put(ctx, body ?? {});
+        if (!result.ok) return send(res, 400, { error: result.error });
+        return send(res, 201, { id: result.id });
+      }
+
+      const recordMatch = path.match(/^\/api\/records\/([^/]+)$/);
+      if (recordMatch) {
+        const ctx = await requireCtx();
+        if (!ctx) return;
+        const id = decodeURIComponent(recordMatch[1]);
+        if (req.method === 'DELETE') {
+          const removed = await RecordService.remove(ctx, id);
+          return send(res, removed ? 200 : 404, { removed });
+        }
+      }
 
       // --- Settings --------------------------------------------------------
       if (path === '/api/settings' && req.method === 'GET') {
