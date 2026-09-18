@@ -104,11 +104,11 @@ export async function unwrapDek(
 //
 //   standard — password + server. The `server` wrapper is wrapped under a
 //              process secret, so the server can recover the DEK on its own.
-//              That is the whole point of the mode: X + TOTP (or a live `hrt_`
+//              That is the whole point of the mode: X (or a live `hrt_`
 //              token) is enough to reach records again, and a forgotten password
 //              is recoverable rather than fatal.
 //   advanced — password + (optional) recovery, and never `server`. Nothing the
-//              server holds opens the DEK, so completing X + TOTP yields
+//              server holds opens the DEK, so signing in through X yields
 //              authentication and nothing else.
 //
 // Both are the same records under the same DEK. Switching modes rewraps the DEK
@@ -406,6 +406,40 @@ export async function createKeyMaterial(
   const wrappers: EncryptionMetadata['wrappers'] = {
     password: { ...passwordWrapper, kdf: PASSWORD_KDF },
   };
+  if (opts.serverKey) {
+    const serverWrapper = (await encryptCloudPayload(dek, serverKekFor(userId, opts.serverKey))) as WrappedKey;
+    wrappers.server = { ...serverWrapper, scheme: SERVER_SCHEME };
+  }
+  return {
+    metadata: {
+      version: ENCRYPTION_VERSION,
+      dek: { alg: 'AES-GCM', createdAt: new Date().toISOString() },
+      wrappers,
+    },
+    dek,
+  };
+}
+
+/**
+ * Key material for an account that has no password yet.
+ *
+ * A social signup has no password, so there is no KEK to wrap a DEK under — and the
+ * account would have no DEK at all, which is what made an X-created account unable to
+ * reach its own records. Under the hosted architecture the server holds the record key,
+ * so a server wrapper is enough to make the account work immediately, and binding a
+ * password later adds the password wrapper alongside it (`setPasswordWrapper`).
+ *
+ * When no server key is configured — an advanced-mode-only deployment — the caller gets
+ * a DEK with no wrappers. That is deliberate rather than a failure: the account exists
+ * and can bind a password, and until it does there is no key anyone can unwrap, which is
+ * exactly what advanced mode promises.
+ */
+export async function createPasswordlessKeyMaterial(
+  userId: string,
+  opts: { serverKey?: string | null } = {},
+): Promise<{ metadata: EncryptionMetadata; dek: string }> {
+  const dek = randomKeyB64();
+  const wrappers: EncryptionMetadata['wrappers'] = {};
   if (opts.serverKey) {
     const serverWrapper = (await encryptCloudPayload(dek, serverKekFor(userId, opts.serverKey))) as WrappedKey;
     wrappers.server = { ...serverWrapper, scheme: SERVER_SCHEME };
@@ -826,7 +860,7 @@ const lockedSessions = new Map<string, LockedSession>();
 /** Long enough to read a notice and type a password; short enough to matter little. */
 const LOCKED_TTL_MS = 10 * 60 * 1000;
 
-/** Start a locked session. One live token per user, like enrolment. */
+/** Start a locked session. One live token per user. */
 export function openLockedSession(userId: string, ttlMinutes?: number): string {
   const now = Date.now();
   sweepExpiring(lockedSessions, now);
@@ -858,34 +892,15 @@ export function redeemLockedSession(token: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Pending registrations and one-time codes
+// Short-lived credentials
 // ---------------------------------------------------------------------------
 //
-// Three short-lived credentials that are deliberately NOT sessions. Keeping them
-// separate is what makes each one's capability obvious from its type: an enrolment
-// token can finish setting up one account, a setup token can complete a
-// password-less account, and a one-time code can be redeemed once for a session.
-// Folding them into the session map with a flag would mean any code path that
-// forgot to check the flag would hand out full access.
+// A one-time code is a short-lived credential that is deliberately NOT a session.
+// Keeping it separate is what makes its capability obvious from its type: it can
+// be redeemed once for a session. Folding it into the session map with a flag
+// would mean any code path that forgot to check the flag would hand out full
+// access.
 
-interface PendingEnrollment {
-  userId: string;
-  /**
-   * The freshly minted data key, held only for the enrolment window.
-   *
-   * Kept here so confirming the second factor can open a real session without the
-   * password being retransmitted. The exposure is the same as an unlocked session
-   * and the window is short, which is a better trade than asking the client to hold
-   * the password across two requests.
-   */
-  dek: string;
-  expiresAt: number;
-}
-
-const enrollments = new Map<string, PendingEnrollment>();
-/** Long enough to scan a QR and save recovery codes; short enough to matter little. */
-const ENROLLMENT_TTL_MS = 15 * 60 * 1000;
-const SETUP_TTL_MS = 15 * 60 * 1000;
 const ONE_TIME_CODE_TTL_MS = 2 * 60 * 1000;
 
 function sweepExpiring<T extends { expiresAt: number }>(map: Map<string, T>, now: number): void {
@@ -898,74 +913,11 @@ function randomToken(prefix: string): string {
   return `${prefix}_${randomKeyB64().replace(/[+/=]/g, '').slice(0, 32)}`;
 }
 
-/** Start (or restart) a password registration's second-factor enrolment. */
-export function openPendingEnrollment(userId: string, dek: string): string {
-  const now = Date.now();
-  sweepExpiring(enrollments, now);
-  // One live enrolment per account: re-registering or resuming supersedes the
-  // previous attempt rather than leaving two valid tokens for one account.
-  for (const [token, entry] of enrollments) {
-    if (entry.userId === userId) enrollments.delete(token);
-  }
-  const token = randomToken('en');
-  enrollments.set(token, { userId, dek, expiresAt: now + ENROLLMENT_TTL_MS });
-  return token;
-}
-
-/**
- * Consume an enrolment token.
- *
- * Single use: a second call returns null, so a token that leaks after use is
- * worthless.
- */
-export function takePendingEnrollment(token: string): { userId: string; dek: string } | null {
-  const now = Date.now();
-  sweepExpiring(enrollments, now);
-  const entry = enrollments.get(token);
-  if (!entry) return null;
-  enrollments.delete(token);
-  return { userId: entry.userId, dek: entry.dek };
-}
-
-interface PendingSetup {
-  userId: string;
-  expiresAt: number;
-}
-
-const setups = new Map<string, PendingSetup>();
-
-/**
- * Start setup for an account created through X.
- *
- * Carries no key: the account has no password yet, so there is no data key to
- * carry. That is the point — this token can only turn an empty account into a real
- * one, and cannot reach records even if it leaks.
- */
-export function openPendingSetup(userId: string): string {
-  const now = Date.now();
-  sweepExpiring(setups, now);
-  for (const [token, entry] of setups) {
-    if (entry.userId === userId) setups.delete(token);
-  }
-  const token = randomToken('su');
-  setups.set(token, { userId, expiresAt: now + SETUP_TTL_MS });
-  return token;
-}
-
-export function takePendingSetup(token: string): string | null {
-  const now = Date.now();
-  sweepExpiring(setups, now);
-  const entry = setups.get(token);
-  if (!entry) return null;
-  setups.delete(token);
-  return entry.userId;
-}
-
 // ---------------------------------------------------------------------------
 // One-time codes — the OAuth callback's handoff to the web app
 // ---------------------------------------------------------------------------
 
-const oneTimeCodes = new Map<string, PendingSetup>();
+const oneTimeCodes = new Map<string, { userId: string; expiresAt: number }>();
 
 /**
  * Mint a single-use code that the OAuth callback puts in a redirect URL.
@@ -990,13 +942,4 @@ export function redeemOneTimeCode(code: string): string | null {
   if (!entry) return null;
   oneTimeCodes.delete(code);
   return entry.userId;
-}
-
-/** Test/diagnostic surface for the pending stores. */
-export function pendingCounts(): { enrollments: number; setups: number; oneTimeCodes: number } {
-  const now = Date.now();
-  sweepExpiring(enrollments, now);
-  sweepExpiring(setups, now);
-  sweepExpiring(oneTimeCodes, now);
-  return { enrollments: enrollments.size, setups: setups.size, oneTimeCodes: oneTimeCodes.size };
 }

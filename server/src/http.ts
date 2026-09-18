@@ -239,15 +239,6 @@ function appUrl(path: string, params?: Record<string, string>): string {
   return url.toString();
 }
 
-function enrollmentPayload(userId: string, username: string, enrollmentToken: string, totp: { secret: string; otpauthUri: string; backupCodes: string[] }) {
-  return {
-    user_id: userId,
-    username,
-    enrollment_token: enrollmentToken,
-    totp: { secret: totp.secret, otpauth_uri: totp.otpauthUri, backup_codes: totp.backupCodes },
-  };
-}
-
 /**
  * Whether Google sign-in is configured, for the `/health` flag the app reads.
  *
@@ -341,7 +332,7 @@ export function createRequestHandler() {
         return send(res, 200, await publicStats());
       }
 
-      // --- Auth: registration and enrolment --------------------------------
+      // --- Auth: registration -----------------------------------------------
       if (path === '/auth/register' && req.method === 'POST') {
         const limits = getConfig().rateLimits;
         if (rateLimited(`register:${clientIp(req)}`, limits.register, limits.windowMs)) {
@@ -359,27 +350,13 @@ export function createRequestHandler() {
         });
         if (!result.ok) return send(res, 400, { error: result.error });
         await AccountService.recordAuthEvent(result.value.userId, 'register', clientIp(req));
-        // No session token: TOTP is mandatory, so the account stays unusable until
-        // the code below is confirmed.
-        return send(res, 201, enrollmentPayload(result.value.userId, result.value.username, result.value.enrollmentToken, result.value.totp));
-      }
-
-      if (path === '/auth/totp/confirm' && req.method === 'POST') {
-        const body = (await readBody(req)) as { enrollment_token?: unknown; code?: unknown } | undefined;
-        const result = await AccountService.confirmEnrollment(String(body?.enrollment_token ?? ''), body?.code);
-        if (!result.ok) return send(res, 400, { error: result.error });
-        return send(res, 200, { user_id: result.value.userId, username: result.value.username, token: result.value.token });
-      }
-
-      if (path === '/auth/totp/resume' && req.method === 'POST') {
-        const limits = getConfig().rateLimits;
-        if (rateLimited(`resume:${clientIp(req)}`, limits.resume, limits.windowMs)) {
-          return send(res, 429, { error: 'too many attempts; try again shortly' });
-        }
-        const body = (await readBody(req)) as { username?: unknown; password?: unknown } | undefined;
-        const result = await AccountService.resumeEnrollment(body?.username, body?.password);
-        if (!result.ok) return send(res, 401, { error: result.error });
-        return send(res, 200, enrollmentPayload(result.value.userId, result.value.username, result.value.enrollmentToken, result.value.totp));
+        // A session straight away, because there is nothing left to confirm: the
+        // caller has just chosen the password, and the DEK was minted with it.
+        return send(res, 201, {
+          user_id: result.value.userId,
+          username: result.value.username,
+          token: result.value.token,
+        });
       }
 
       // --- Auth: sign-in ---------------------------------------------------
@@ -389,25 +366,16 @@ export function createRequestHandler() {
           return send(res, 429, { error: 'too many attempts; try again shortly' });
         }
         const body = (await readBody(req)) as
-          | { username?: unknown; password?: unknown; code?: unknown; backup_code?: unknown }
+          | { username?: unknown; password?: unknown }
           | undefined;
-        const result = await AccountService.unlock(body?.username, body?.password, {
-          code: body?.code,
-          backupCode: body?.backup_code,
-        });
+        const result = await AccountService.unlock(body?.username, body?.password);
         if (!result.ok) {
-          // `two_factor_required` is reported distinctly on purpose: the password is
-          // already proven at that point, so telling the client to prompt for a code
-          // reveals nothing a wrong-password attempt could exploit.
           return send(res, 401, { error: result.error });
         }
         return send(res, 200, {
           user_id: result.value.userId,
           username: result.value.username,
           token: result.value.token,
-          ...(result.value.recoveryCodesRemaining !== undefined
-            ? { recovery_codes_remaining: result.value.recoveryCodesRemaining }
-            : {}),
         });
       }
 
@@ -417,28 +385,14 @@ export function createRequestHandler() {
         return send(res, 200, { ok: true });
       }
 
-      // --- Auth: password and recovery codes -------------------------------
+      // --- Auth: password ---------------------------------------------------
       if (path === '/auth/password' && req.method === 'POST') {
         const ctx = await contextFor(req);
         if (!ctx) return send(res, 401, { error: 'authentication required' });
         const body = (await readBody(req)) as { current_password?: unknown; new_password?: unknown } | undefined;
         const result = await AccountService.changePassword(ctx, body?.current_password, body?.new_password);
         if (!result.ok) return send(res, 400, { error: result.error });
-        return send(res, 200, {
-          ok: true,
-          // Present only when setting a FIRST password, where the existing recovery
-          // codes cannot have been seen.
-          ...(result.value.recoveryCodes ? { recovery_codes: result.value.recoveryCodes } : {}),
-        });
-      }
-
-      if (path === '/auth/recovery-codes/regenerate' && req.method === 'POST') {
-        const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
-        const body = (await readBody(req)) as { code?: unknown } | undefined;
-        const result = await AccountService.regenerateRecoveryCodes(ctx, body?.code);
-        if (!result.ok) return send(res, 400, { error: result.error });
-        return send(res, 200, { recovery_codes: result.value });
+        return send(res, 200, { ok: true });
       }
 
       // --- Auth: Google OAuth ----------------------------------------------
@@ -479,6 +433,18 @@ export function createRequestHandler() {
         return redirect(res, appUrl('/auth/google/callback', { code: result.value.oneTimeCode ?? '' }));
       }
 
+      if (path === '/auth/google/exchange' && req.method === 'POST') {
+        const body = (await readBody(req)) as { code?: unknown } | undefined;
+        const result = await AccountService.completeProviderSignIn('google', body?.code);
+        if (!result.ok) return send(res, 400, { error: result.error });
+        return send(res, 200, {
+          user_id: result.value.userId,
+          username: result.value.username,
+          token: result.value.token,
+          ...(result.value.lockedToken ? { locked_token: result.value.lockedToken } : {}),
+        });
+      }
+
       // --- Auth: X OAuth ---------------------------------------------------
       if (path === '/auth/x/start' && req.method === 'GET') {
         const wantsLink = url.searchParams.get('purpose') === 'link';
@@ -508,28 +474,17 @@ export function createRequestHandler() {
           return redirect(res, appUrl('/auth/x/callback', { error: result.error }));
         }
         const outcome = result.value;
-        if (outcome.outcome === 'login') {
-          return redirect(res, appUrl('/auth/x/callback', { code: outcome.oneTimeCode }));
-        }
         if (outcome.outcome === 'link') {
           return redirect(res, appUrl('/auth/x/callback', { linked: '1', handle: outcome.handle ?? '' }));
         }
-        // An account with no password yet: hand the app the enrolment material. The
-        // sign-in path still requires a completed second factor, so this leg and that
-        // gate are removed together or not at all.
-        return redirect(
-          res,
-          appUrl('/auth/x/setup', {
-            setup_token: outcome.setupToken,
-            username: outcome.username,
-            secret: outcome.totp.secret,
-          }),
-        );
+        // An X account is usable the moment it exists; the prompt to bind a fallback
+        // gates records, not the account.
+        return redirect(res, appUrl('/auth/x/callback', { code: outcome.oneTimeCode }));
       }
 
       if (path === '/auth/x/exchange' && req.method === 'POST') {
         const body = (await readBody(req)) as { code?: unknown } | undefined;
-        const result = await AccountService.completeXSignIn(body?.code);
+        const result = await AccountService.completeProviderSignIn('x', body?.code);
         if (!result.ok) return send(res, 400, { error: result.error });
         return send(res, 200, {
           user_id: result.value.userId,
@@ -544,8 +499,9 @@ export function createRequestHandler() {
 
       // --- Auth: data unlock (advanced mode) -------------------------------
       //
-      // Distinct from `/auth/login`: that proves identity with password + TOTP, this
-      // proves the *data* credential for a session whose identity X already proved.
+      // Distinct from `/auth/login`: that proves identity for the account, this
+      // proves the *data* credential for a session whose identity a provider
+      // already proved.
       if (path === '/auth/unlock' && req.method === 'POST') {
         const limits = getConfig().rateLimits;
         if (rateLimited(`unlock:${clientIp(req)}`, limits.login, limits.windowMs)) {
@@ -591,28 +547,6 @@ export function createRequestHandler() {
         if (!result.ok) return send(res, 400, { error: result.error });
         // Returned exactly once. It is never readable again, by design.
         return send(res, 200, { recovery_key: result.value.recoveryKey });
-      }
-
-      if (path === '/auth/x/setup' && req.method === 'POST') {
-        const body = (await readBody(req)) as
-          | { setup_token?: unknown; password?: unknown; code?: unknown; privacy_mode?: unknown; turnstile_token?: unknown }
-          | undefined;
-        // The X-setup step is the other place an account is born, so it carries the
-        // same human check as `/auth/register`.
-        const human = await verifyTurnstile(body?.turnstile_token, 'x_setup', clientIp(req));
-        if (!human.ok) return send(res, 403, { error: human.error });
-        const result = await AccountService.completeSetup(
-          String(body?.setup_token ?? ''),
-          body?.password,
-          body?.code,
-          { privacyMode: body?.privacy_mode },
-        );
-        if (!result.ok) return send(res, 400, { error: result.error });
-        return send(res, 200, {
-          user_id: result.value.userId,
-          username: result.value.username,
-          token: result.value.token,
-        });
       }
 
       // --- Auth: passkeys (WebAuthn) ---------------------------------------
@@ -743,16 +677,12 @@ export function createRequestHandler() {
         const ctx = await contextFor(req);
         if (!ctx) return send(res, 401, { error: 'authentication required' });
         const body = (await readBody(req)) as
-          | { password?: unknown; code?: unknown; backup_code?: unknown; reason?: unknown }
+          | { password?: unknown; reason?: unknown }
           | undefined;
         const result = await AccountService.deleteAccount(ctx, body?.password, {
-          code: body?.code,
-          backupCode: body?.backup_code,
           reason: body?.reason,
         });
         if (!result.ok) {
-          // `two_factor_required` stays distinguishable for the same reason as at
-          // sign-in: the password is already proven at that point.
           return send(res, 400, { error: result.error });
         }
         return send(res, 200, { deleted: true });
@@ -768,13 +698,12 @@ export function createRequestHandler() {
         if (!ctx) return send(res, 401, { error: 'authentication required' });
         const { getPool } = await import('./db.ts');
         const { rows } = await getPool().query<{
-          doses: string; labs: string; backups: string; x_links: string; created_at: Date;
+          doses: string; labs: string; x_links: string; created_at: Date;
           privacy_mode: string; encryption_metadata: unknown; x_avatar_url: string | null;
         }>(
           `SELECT
              (SELECT count(*) FROM medication_events WHERE user_id = $1 AND deleted_at IS NULL) AS doses,
              (SELECT count(*) FROM lab_results      WHERE user_id = $1 AND deleted_at IS NULL) AS labs,
-             (SELECT count(*) FROM totp_backup_codes WHERE user_id = $1 AND used_at IS NULL)  AS backups,
              (SELECT count(*) FROM oauth_accounts       WHERE user_id = $1)                      AS x_links,
              (SELECT created_at FROM users WHERE id = $1)                                     AS created_at,
              (SELECT privacy_mode FROM users WHERE id = $1)                                   AS privacy_mode,
@@ -795,7 +724,6 @@ export function createRequestHandler() {
           created_at: row?.created_at?.toISOString() ?? null,
           dose_count: Number(row?.doses ?? 0),
           lab_count: Number(row?.labs ?? 0),
-          recovery_codes_remaining: Number(row?.backups ?? 0),
           x_links: Number(row?.x_links ?? 0),
           x_login_available: AccountService.xLoginAvailable(),
           x_avatar_url: row?.x_avatar_url ?? null,
@@ -816,8 +744,7 @@ export function createRequestHandler() {
       if (path === '/auth/x/unlink' && req.method === 'POST') {
         const ctx = await contextFor(req);
         if (!ctx) return send(res, 401, { error: 'authentication required' });
-        const body = (await readBody(req)) as { code?: unknown } | undefined;
-        const result = await AccountService.unlinkX(ctx, body?.code);
+        const result = await AccountService.unlinkX(ctx);
         if (!result.ok) return send(res, 400, { error: result.error });
         return send(res, 200, { ok: true });
       }
@@ -862,8 +789,7 @@ export function createRequestHandler() {
         const provider = path.slice('/auth/oauth/'.length, -'/unlink'.length);
         const ctx = await contextFor(req);
         if (!ctx) return send(res, 401, { error: 'authentication required' });
-        const body = (await readBody(req)) as { code?: unknown } | undefined;
-        const result = await AccountService.unlinkProvider(ctx, provider, body?.code);
+        const result = await AccountService.unlinkProvider(ctx, provider);
         if (!result.ok) return send(res, 400, { error: result.error });
         return send(res, 200, { ok: true });
       }

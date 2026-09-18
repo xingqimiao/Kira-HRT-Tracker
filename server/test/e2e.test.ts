@@ -12,7 +12,6 @@ import type { Server } from 'node:http';
 
 import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
 import { registerAccount, signIn } from './helpers.ts';
-import { totpCodeAt } from '../src/totp.ts';
 import { setConfigForTesting } from '../src/config.ts';
 
 let pg: PostgresHandle;
@@ -30,11 +29,12 @@ before(async () => {
     apiBaseUrl: 'https://api.hrt.test',
     port: 0,
     databaseUrl: '',
-    totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    encryptionKey: null,
     turnstile: null,
     webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: null,
+    google: null,
     sessionTtlMinutes: 30,
     rateLimits: { register: 1000, login: 1000, resume: 1000, windowMs: 60_000 },
   });
@@ -57,7 +57,7 @@ const json = (body: unknown, token?: string): RequestInit => ({
 });
 
 test('full agent path: register, log, predict, timeline', async () => {
-  // 1. Register and complete the mandatory second factor.
+  // 1. Register.
   const account = await registerAccount(base);
   const token = account.token;
   assert.ok(token.startsWith('ks_'), 'unlock token shape');
@@ -170,17 +170,15 @@ test('validation rejects rather than silently clamps', async () => {
 test('a wrong password does not unlock, and a locked account reads nothing', async () => {
   const account = await registerAccount(base, { password: 'the-right-password' });
 
-  // A wrong password, with a correct code, is refused.
+  // A wrong password is refused.
   const wrong = await api('/auth/login', json({
     username: account.username,
     password: 'the-wrong-password',
-    code: totpCodeAt(account.secret),
   }));
   assert.equal(wrong.status, 401);
 
-  // The right credentials work, using the next step since the failed attempt above
-  // carried a code that this test never spent.
-  const right = await signIn(base, account, 1);
+  // The right credentials work.
+  const right = await signIn(base, account);
   assert.equal(right.status, 200, JSON.stringify(right.body));
   const token: string = right.body.token;
 
@@ -191,9 +189,10 @@ test('a wrong password does not unlock, and a locked account reads nothing', asy
 });
 
 test('an agent API token works only while the account is unlocked', async () => {
-  // Advanced mode: X + TOTP (and a durable token) never yield the key, so the token
-  // only works while a separate password unlock is live. This is the mode where the
-  // property below matters, and the mode a privacy-conscious user picks.
+  // Advanced mode: signing in through a provider (and a durable token) never yields
+  // the key, so the token only works while a separate password unlock is live. This
+  // is the mode where the property below matters, and the mode a privacy-conscious
+  // user picks.
   const account = await registerAccount(base, { password: 'agent-password-1', privacyMode: 'advanced' });
   const unlockToken: string = account.token;
 

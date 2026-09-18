@@ -35,8 +35,9 @@ before(async () => {
     apiBaseUrl: 'https://api.hrt.test',
     port: 0,
     databaseUrl: '',
-    totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    encryptionKey: null,
+    google: null,
     turnstile: null,
     webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: null,
@@ -86,25 +87,20 @@ function sampleExport() {
  */
 async function freshAccount(): Promise<{ userId: string; dek: string }> {
   const { AccountService } = await import('../src/accounts.ts');
-  const { takePendingEnrollment } = await import('../src/session.ts');
-  const { totpCodeAt } = await import('../src/totp.ts');
+  const { lookupSession } = await import('../src/session.ts');
 
   const username = `imp${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.slice(0, 30);
   const registered = await AccountService.register(username, 'import-password-1');
   assert.ok(registered.ok, `register failed: ${!registered.ok ? registered.error : ''}`);
 
-  // Read the DEK straight out of the pending enrolment, then confirm so the account
-  // is complete and behaves like a real one.
-  const pending = takePendingEnrollment(registered.value.enrollmentToken);
-  assert.ok(pending, 'the enrolment token resolves');
+  // Registration opens a session, and the session is where the DEK lives — the same
+  // path the MCP layer reads it through. It used to come out of a pending enrolment,
+  // which no longer exists because the account is usable the moment it is created.
+  const session = lookupSession(registered.value.token);
+  assert.ok(session, 'the session from registration resolves');
+  assert.equal(session.userId, registered.value.userId, 'and belongs to the new account');
 
-  const confirmed = await AccountService.confirmEnrollment(
-    (await import('../src/session.ts')).openPendingEnrollment(pending.userId, pending.dek),
-    totpCodeAt(registered.value.totp.secret),
-  );
-  assert.ok(confirmed.ok, `confirm failed: ${!confirmed.ok ? confirmed.error : ''}`);
-
-  return { userId: pending.userId, dek: pending.dek };
+  return { userId: session.userId, dek: session.dek };
 }
 
 test('the app parser reads the same payload the app writes', () => {

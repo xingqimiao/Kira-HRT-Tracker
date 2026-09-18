@@ -49,7 +49,7 @@ const MAX_TTL_MS = 90 * 24 * 60 * 60 * 1000;
  */
 const FORBIDDEN_SNAPSHOT_KEYS = [
   'labResults', 'labs', 'weight', 'email', 'username', 'password',
-  'recoveryCodes', 'apiToken', 'totpSecret', 'pkParams',
+  'apiToken', 'pkParams',
 ];
 
 /**

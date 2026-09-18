@@ -37,8 +37,9 @@ before(async () => {
     apiBaseUrl: 'https://api.hrt.test',
     port: 0,
     databaseUrl: '',
-    totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    encryptionKey: null,
+    google: null,
     turnstile: null,
     webauthn: null,
     x: null,
@@ -92,7 +93,7 @@ test('the same device signing in twice is one row standing for both', async () =
   // carry it and the grouping has something to group.
   await listSessions(account.token, 'SameDevice/1.0');
 
-  const again = await signIn(base, account, 1);
+  const again = await signIn(base, account);
   assert.equal(again.status, 200, JSON.stringify(again.body));
 
   const listed = await listSessions(again.body.token, 'SameDevice/1.0');
@@ -108,7 +109,7 @@ test('signing out everywhere else ends the other devices and only those', async 
   resetRateLimits();
   const account = await registerAccount(base);
   // A second unlock, distinguished by the user agent of its first request.
-  const other = await signIn(base, account, 1);
+  const other = await signIn(base, account);
   assert.equal(other.status, 200, JSON.stringify(other.body));
   await listSessions(other.body.token, 'OtherDevice/1.0');
 
@@ -154,7 +155,7 @@ test('one account cannot revoke another account session', async () => {
 test('revoking by id ends that device, and a request naming nothing is refused', async () => {
   resetRateLimits();
   const account = await registerAccount(base);
-  const other = await signIn(base, account, 1);
+  const other = await signIn(base, account);
   await listSessions(other.body.token, 'DropMe/1.0');
   const rows = (await listSessions(account.token, 'KeepMe/1.0')).body.sessions;
   const doomed = rows.find((r: { current: boolean }) => !r.current);

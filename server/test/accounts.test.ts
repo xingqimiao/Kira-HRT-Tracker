@@ -1,16 +1,14 @@
 /**
- * Accounts: mandatory TOTP, recovery codes, and X as an assist.
+ * Accounts: registration, password sign-in, and X as an assist.
  *
  * The rules under test are the ones the user asked for, stated as behaviour:
  *
- *   1. Registration does NOT produce a usable session. TOTP is mandatory, so an
- *      account becomes usable only when a code from its new secret is confirmed.
- *   2. Sign-in requires a password AND a TOTP code (or a single-use recovery code).
- *   3. A TOTP code cannot be replayed inside its own validity window.
- *   4. X login verifies identity but cannot produce a working session on its own,
- *      because the data key is wrapped under the password.
- *   5. An X-created account has no key and no records until a password is set and
- *      TOTP enrolled — so losing X costs a login button, never the data.
+ *   1. Registration produces a usable session straight away.
+ *   2. Sign-in is a password, and a wrong one is refused.
+ *   3. X login verifies identity but does not by itself open the data key.
+ *   4. An X-created account has no password and no records until one is bound —
+ *      so losing X costs a login button, never the data.
+ *   5. Repeated failures lock the account, on top of the per-IP limiter.
  *
  * X's HTTP endpoints are stubbed rather than called: these tests must not depend on
  * the network, a real X app, or rate limits, and the thing being tested is this
@@ -21,7 +19,6 @@ import { test, before, after } from 'node:test';
 import type { Server } from 'node:http';
 
 import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
-import { totpCodeAt, generateTotpSecret, base32Encode } from '../src/totp.ts';
 import { setConfigForTesting } from '../src/config.ts';
 import { resetRateLimits } from '../src/http.ts';
 import { closeUserSessions } from '../src/session.ts';
@@ -35,6 +32,7 @@ const API_ORIGIN = 'https://api.hrt.test';
 const X_CLIENT_ID = 'test-client-id';
 const X_CLIENT_SECRET = 'test-client-secret';
 const X_REDIRECT_URI = `${API_ORIGIN}/auth/x/callback`;
+const GOOGLE_CLIENT_ID = 'test-google-client-id.apps.googleusercontent.com';
 
 before(async () => {
   // Configuration is installed before the database so that any module reading it at
@@ -46,12 +44,12 @@ before(async () => {
     apiBaseUrl: API_ORIGIN,
     port: 0,
     databaseUrl: '',
-    // Deterministic and long enough for the seal.
-    totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    encryptionKey: null,
     turnstile: null,
     webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
+    google: null,
     sessionTtlMinutes: 30,
     // Generous, so one test's attempts never consume another's budget. The limits
     // themselves are exercised by their own test below.
@@ -83,164 +81,41 @@ async function userIdFor(username: string): Promise<string> {
   return rows[0].id;
 }
 
-/** Register and complete enrolment, returning a usable session. */
-async function createAccount(): Promise<{ username: string; password: string; secret: string; token: string; backupCodes: string[] }> {
+/** Register, returning a usable session. */
+async function createAccount(): Promise<{ username: string; password: string; token: string }> {
   const username = `u${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const password = 'a-good-password-1';
   const reg = await call(base, '/auth/register', json({ username, password }));
   assert.equal(reg.status, 201, JSON.stringify(reg.body));
-  const secret: string = reg.body.totp.secret;
-  const backupCodes: string[] = reg.body.totp.backup_codes;
-
-  const confirm = await call(
-    base,
-    '/auth/totp/confirm',
-    json({ enrollment_token: reg.body.enrollment_token, code: totpCodeAt(secret) }),
-  );
-  assert.equal(confirm.status, 200, JSON.stringify(confirm.body));
-  return { username, password, secret, token: confirm.body.token, backupCodes };
+  return { username, password, token: reg.body.token };
 }
-
 // ---------------------------------------------------------------------------
-// Registration and mandatory enrolment
+// Registration
 // ---------------------------------------------------------------------------
 
-test('registration returns enrolment material but NO session', async () => {
+test('registration returns a usable session', async () => {
   resetRateLimits();
   const username = `r${Date.now().toString(36)}`;
   const reg = await call(base, '/auth/register', json({ username, password: 'a-good-password-1' }));
 
   assert.equal(reg.status, 201, JSON.stringify(reg.body));
-  // The account is deliberately unusable: TOTP is mandatory, so handing back a
-  // session here would let anyone who knows a password skip the second factor.
-  assert.equal(reg.body.token, undefined, 'registration must not issue a session token');
-  assert.ok(reg.body.enrollment_token, 'an enrolment token is returned instead');
-  assert.ok(reg.body.totp.secret, 'the TOTP secret is returned for the QR code');
-  assert.ok(reg.body.totp.otpauth_uri.startsWith('otpauth://totp/'), 'a scannable URI is returned');
-  assert.equal(reg.body.totp.backup_codes.length, 10, 'recovery codes are issued');
+  // The session is issued here: the password has just been chosen by the caller, so
+  // there is nothing left to prove before opening one.
+  assert.ok(reg.body.token, 'registration issues a session');
+  // And it works: the token is usable immediately.
+  const me = await call(base, '/auth/account', { headers: { Authorization: `Bearer ${reg.body.token}` } });
+  assert.equal(me.status, 200, 'the session from registration is live');
 });
 
-test('the account is unusable until TOTP is confirmed', async () => {
-  const username = `p${Date.now().toString(36)}`;
-  const password = 'a-good-password-1';
-  const reg = await call(base, '/auth/register', json({ username, password }));
-  const secret: string = reg.body.totp.secret;
-
-  // A correct password and a correct code still fail: the account is not enrolled
-  // yet, so there is no completed second factor to check against.
-  const early = await call(base, '/auth/login', json({ username, password, code: totpCodeAt(secret) }));
-  assert.equal(early.status, 401);
-  assert.match(early.body.error, /setup was not completed/i, `got: ${early.body.error}`);
-
-  // Confirming makes it usable.
-  const confirm = await call(
-    base,
-    '/auth/totp/confirm',
-    json({ enrollment_token: reg.body.enrollment_token, code: totpCodeAt(secret) }),
-  );
-  assert.equal(confirm.status, 200, JSON.stringify(confirm.body));
-  const after = await call(base, '/auth/login', json({ username, password, code: totpCodeAt(secret) }));
-  assert.equal(after.status, 200, 'the account works once enrolled');
-});
-
-test('confirming with a wrong code does not enrol the account', async () => {
-  const username = `w${Date.now().toString(36)}`;
-  const reg = await call(base, '/auth/register', json({ username, password: 'a-good-password-1' }));
-
-  const bad = await call(
-    base,
-    '/auth/totp/confirm',
-    json({ enrollment_token: reg.body.enrollment_token, code: '000000' }),
-  );
-  assert.equal(bad.status, 400);
-
-  // An enrolment token is single-use, so the failed attempt consumed it — the
-  // client must resume rather than reuse it.
-  const retry = await call(
-    base,
-    '/auth/totp/confirm',
-    json({ enrollment_token: reg.body.enrollment_token, code: totpCodeAt(reg.body.totp.secret) }),
-  );
-  assert.equal(retry.status, 400, 'a spent enrolment token cannot be replayed');
-  assert.match(retry.body.error, /expired or already completed/i, `got: ${retry.body.error}`);
-});
-
-test('an abandoned registration can be resumed with the password', async () => {
-  const username = `a${Date.now().toString(36)}`;
-  const password = 'a-good-password-1';
-  await call(base, '/auth/register', json({ username, password }));
-  // The new secret supersedes the old one, which is why the fresh material must be
-  // used rather than what registration returned.
-  const resumed = await call(base, '/auth/totp/resume', json({ username, password }));
-  assert.equal(resumed.status, 200, JSON.stringify(resumed.body));
-  assert.ok(resumed.body.enrollment_token, 'resume issues a new enrolment token');
-
-  const confirm = await call(
-    base,
-    '/auth/totp/confirm',
-    json({ enrollment_token: resumed.body.enrollment_token, code: totpCodeAt(resumed.body.totp.secret) }),
-  );
-  assert.equal(confirm.status, 200);
-  const login = await call(base, '/auth/login', json({ username, password, code: totpCodeAt(resumed.body.totp.secret) }));
-  assert.equal(login.status, 200, 'the resumed account works');
-});
-
-// ---------------------------------------------------------------------------
-// Sign-in: both factors required
-// ---------------------------------------------------------------------------
-
-test('a password alone is refused, and the client is told a code is needed', async () => {
+test('a password alone is enough, and a wrong one is refused', async () => {
   const account = await createAccount();
-  const onlyPassword = await call(
-    base,
-    '/auth/login',
-    json({ username: account.username, password: account.password }),
-  );
-  assert.equal(onlyPassword.status, 401);
-  // Distinguishable on purpose: the password is already proven at this point, so the
-  // client can prompt for a code without that revealing anything exploitable.
-  assert.equal(onlyPassword.body.error, 'two_factor_required');
-});
+  const ok = await call(base, '/auth/login', json({ username: account.username, password: account.password }));
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.ok(ok.body.token, 'a session is issued');
 
-test('a wrong or missing code fails, and a bad password is indistinguishable from a bad code', async () => {
-  const account = await createAccount();
-
-  const wrongCode = await call(
-    base,
-    '/auth/login',
-    json({ username: account.username, password: account.password, code: '000000' }),
-  );
-  assert.equal(wrongCode.status, 401);
-  assert.equal(wrongCode.body.error, 'invalid credentials', 'a wrong code must not be distinguishable');
-
-  const wrongPassword = await call(
-    base,
-    '/auth/login',
-    json({ username: account.username, password: 'not-the-password', code: totpCodeAt(account.secret) }),
-  );
-  assert.equal(wrongPassword.status, 401);
-  assert.equal(wrongPassword.body.error, 'invalid credentials');
-
-  const noSuchUser = await call(
-    base,
-    '/auth/login',
-    json({ username: 'nosuchuser_xyz', password: 'whatever-password', code: '123456' }),
-  );
-  assert.equal(noSuchUser.body.error, 'invalid credentials', 'unknown accounts look the same');
-});
-
-test('a TOTP code cannot be replayed', async () => {
-  const account = await createAccount();
-  const code = totpCodeAt(account.secret);
-
-  const first = await call(base, '/auth/login', json({ username: account.username, password: account.password, code }));
-  assert.equal(first.status, 200, 'the first use succeeds');
-
-  // The same code inside its 30-second window must not work twice. Without the
-  // step bookkeeping, an observed code would be reusable for its whole validity.
-  const replay = await call(base, '/auth/login', json({ username: account.username, password: account.password, code }));
-  assert.equal(replay.status, 401, 'the same code must not work twice');
-  assert.equal(replay.body.error, 'invalid credentials');
+  const bad = await call(base, '/auth/login', json({ username: account.username, password: 'not-the-password' }));
+  assert.equal(bad.status, 401);
+  assert.match(bad.body.error, /invalid credentials/i);
 });
 
 test('repeated failures lock the account', async () => {
@@ -253,7 +128,7 @@ test('repeated failures lock the account', async () => {
     last = await call(
       base,
       '/auth/login',
-      json({ username: account.username, password: 'wrong-password-here', code: '000000' }),
+      json({ username: account.username, password: 'wrong-password-here' }),
     );
   }
   assert.equal(last.status, 401);
@@ -264,82 +139,14 @@ test('repeated failures lock the account', async () => {
   const correct = await call(
     base,
     '/auth/login',
-    json({ username: account.username, password: account.password, code: totpCodeAt(account.secret) }),
+    json({ username: account.username, password: account.password }),
   );
   assert.equal(correct.status, 401);
   assert.match(correct.body.error, /too many failed attempts/i);
 });
 
 // ---------------------------------------------------------------------------
-// Recovery codes
-// ---------------------------------------------------------------------------
-
-test('a recovery code signs in and is then spent', async () => {
-  const account = await createAccount();
-  const code = account.backupCodes[0];
-
-  const used = await call(
-    base,
-    '/auth/login',
-    json({ username: account.username, password: account.password, backup_code: code }),
-  );
-  assert.equal(used.status, 200, JSON.stringify(used.body));
-  assert.equal(used.body.recovery_codes_remaining, 9, 'the remaining count is reported');
-
-  const again = await call(
-    base,
-    '/auth/login',
-    json({ username: account.username, password: account.password, backup_code: code }),
-  );
-  assert.equal(again.status, 401, 'a recovery code is single use');
-});
-
-test('a wrong recovery code is refused, and the password is still required', async () => {
-  const account = await createAccount();
-
-  const wrongCode = await call(
-    base,
-    '/auth/login',
-    json({ username: account.username, password: account.password, backup_code: 'WRONG-WRONG' }),
-  );
-  assert.equal(wrongCode.status, 401, 'a bad recovery code fails');
-
-  // The recovery code replaces the TOTP factor, not the password.
-  const wrongPassword = await call(
-    base,
-    '/auth/login',
-    json({ username: account.username, password: 'nope-not-it', backup_code: account.backupCodes[0] }),
-  );
-  assert.equal(wrongPassword.status, 401, 'a recovery code must not bypass the password');
-});
-
-test('recovery codes can be rotated with a TOTP code, invalidating the old set', async () => {
-  const account = await createAccount();
-  const rotated = await call(
-    base,
-    '/auth/recovery-codes/regenerate',
-    json({ code: totpCodeAt(account.secret) }, account.token),
-  );
-  assert.equal(rotated.status, 200, JSON.stringify(rotated.body));
-  assert.equal(rotated.body.recovery_codes.length, 10);
-
-  const oldCode = await call(
-    base,
-    '/auth/login',
-    json({ username: account.username, password: account.password, backup_code: account.backupCodes[0] }),
-  );
-  assert.equal(oldCode.status, 401, 'the old codes stop working');
-
-  const newCode = await call(
-    base,
-    '/auth/login',
-    json({ username: account.username, password: account.password, backup_code: rotated.body.recovery_codes[0] }),
-  );
-  assert.equal(newCode.status, 200, 'the new codes work');
-});
-
-// ---------------------------------------------------------------------------
-// Password change
+// Password
 // ---------------------------------------------------------------------------
 
 test('changing the password re-keys access without touching records', async () => {
@@ -367,7 +174,7 @@ test('changing the password re-keys access without touching records', async () =
   const oldLogin = await call(
     base,
     '/auth/login',
-    json({ username: account.username, password: account.password, code: totpCodeAt(account.secret) }),
+    json({ username: account.username, password: account.password }),
   );
   assert.equal(oldLogin.status, 401, 'the old password is refused');
 
@@ -376,7 +183,7 @@ test('changing the password re-keys access without touching records', async () =
   const newLogin = await call(
     base,
     '/auth/login',
-    json({ username: account.username, password: newPassword, code: totpCodeAt(account.secret) }),
+    json({ username: account.username, password: newPassword }),
   );
   assert.equal(newLogin.status, 200, JSON.stringify(newLogin.body));
   const meds = await call(base, '/api/medications', auth(newLogin.body.token));
@@ -475,7 +282,7 @@ test('the authorize URL is a correct PKCE authorization request', async () => {
   assert.ok(!started.body.authorize_url.includes('client_secret'), 'the secret must never reach the browser');
 });
 
-test('a first-time X sign-in creates an account that cannot be used until set up', async () => {
+test('a first-time X sign-in creates an account that is usable at once', async () => {
   const x = stubX({ userId: `900${Date.now()}`, handle: 'stubuser' });
   try {
     const { location, status } = await runXCallback();
@@ -485,80 +292,100 @@ test('a first-time X sign-in creates an account that cannot be used until set up
     const landed = new URL(location!);
     // Must land on the WEB app, not the API host.
     assert.equal(landed.origin, PUBLIC_ORIGIN, 'the browser is sent to the web app');
-    assert.ok(landed.pathname.includes('setup'), `expected the setup flow, got ${landed.pathname}`);
-    const setupToken = landed.searchParams.get('setup_token');
-    assert.ok(setupToken, 'a setup token is handed over');
 
-    // Critically: no session token in the URL. URLs leak into history and referrers.
+    // No setup leg: a URL still never carries a session token, which is why a
+    // one-time code travels instead.
+    assert.ok(!landed.pathname.includes('setup'), `expected no setup flow, got ${landed.pathname}`);
+    assert.ok(landed.searchParams.get('code'), 'a one-time code is issued');
     assert.equal(landed.searchParams.get('token'), null, 'no session token in a redirect URL');
-    assert.equal(landed.searchParams.get('code'), null, 'no one-time code either, at this stage');
 
-    // The account exists but has no password yet, so it is unusable.
+    // The account exists with no password. It can sign in, but records stay closed
+    // until a fallback credential is bound — see `requireBoundCtx`.
     const account = await import('../src/accounts.ts');
     const user = await account.loadUser({ username: 'stubuser' });
     assert.ok(user, 'the account was created');
     assert.equal(user!.password_set_at, null, 'no password set yet');
-    assert.equal(user!.wrapped_dek, null, 'and therefore no data key — nothing to lose if X is lost');
+    assert.equal(
+      await account.AccountService.hasBoundCredentials(user!.id),
+      false,
+      'an X-only account counts as unbound, so records are gated',
+    );
   } finally {
     x.restore();
   }
 });
 
-test('completing X setup sets a password and enrols TOTP, making the account real', async () => {
+test('binding a name and password makes an X account survivable on its own', async () => {
   const x = stubX({ userId: `901${Date.now()}`, handle: 'setupper' });
   try {
     const { location } = await runXCallback();
-    const landed = new URL(location!);
-    const setupToken = landed.searchParams.get('setup_token')!;
-    const secret = landed.searchParams.get('secret');
-    assert.ok(secret, 'the setup redirect carries the enrolment secret');
+    const code = new URL(location!).searchParams.get('code')!;
 
-    // Set a password and confirm TOTP in one step — this is what makes the account
-    // survivable without X.
-    const done = await call(
+    // Exchange the one-time code for a session, as the app does.
+    const exchanged = await call(base, '/auth/x/exchange', json({ code }));
+    assert.equal(exchanged.status, 200, JSON.stringify(exchanged.body));
+    const token = exchanged.body.token as string;
+    assert.ok(token, 'the exchange yields a session');
+
+    // Bind the fallback. This is the anti-ban story: from here the account is reachable
+    // without X ever being involved again.
+    const bound = await call(
       base,
-      '/auth/x/setup',
-      json({ setup_token: setupToken, password: 'a-brand-new-password-9', code: totpCodeAt(secret!) }),
+      '/auth/credentials/bind',
+      json({ username: 'setupper', password: 'a-brand-new-password-9' }, token),
     );
-    assert.equal(done.status, 200, JSON.stringify(done.body));
-    assert.ok(done.body.token, 'setup yields a working session');
-    assert.equal(done.body.username, 'setupper');
+    assert.equal(bound.status, 200, JSON.stringify(bound.body));
 
-    // The account is now fully usable with password + TOTP, with no X involvement.
+    // And it signs in by name and password, with X out of the picture entirely.
     const login = await call(
       base,
       '/auth/login',
-      json({ username: 'setupper', password: 'a-brand-new-password-9', code: totpCodeAt(secret!) }),
+      json({ username: 'setupper', password: 'a-brand-new-password-9' }),
     );
-    assert.equal(login.status, 200, 'the account works without X');
+    assert.equal(login.status, 200, JSON.stringify(login.body));
   } finally {
     x.restore();
   }
 });
+
+/**
+ * An account that has both a password and a linked X identity.
+ *
+ * Built through the two real paths: register (which yields a usable session), then
+ * link X from that session.
+ */
+async function accountWithLinkedX(opts: {
+  username: string;
+  password: string;
+  privacyMode?: 'standard' | 'advanced';
+}): Promise<{ userId: string; token: string }> {
+  const reg = await call(base, '/auth/register', json({
+    username: opts.username,
+    password: opts.password,
+    ...(opts.privacyMode ? { privacy_mode: opts.privacyMode } : {}),
+  }));
+  assert.equal(reg.status, 201, JSON.stringify(reg.body));
+  const token = reg.body.token as string;
+
+  const start = await call(base, '/auth/x/start?purpose=link', auth(token));
+  assert.equal(start.status, 200, JSON.stringify(start.body));
+  const state = new URL(start.body.authorize_url).searchParams.get('state')!;
+  await fetch(`${base}/auth/x/callback?code=stub&state=${state}`, { redirect: 'manual' });
+
+  return { userId: reg.body.user_id, token };
+}
 
 test('a second X sign-in for a known account returns a one-time code, not a token', async () => {
   const x = stubX({ userId: `902${Date.now()}`, handle: 'returner' });
   try {
-    // Advanced mode, because that is the mode in which "X alone cannot unlock the
-    // records" is still true — standard mode deliberately returns a session here
-    // (see the privacy-mode suite). What this test pins is the URL safety: the
-    // callback hands over a one-time code, never a session token.
-    const first = await runXCallback();
-    const setupToken = new URL(first.location!).searchParams.get('setup_token')!;
-    const secret = new URL(first.location!).searchParams.get('secret')!;
-    await call(
-      base,
-      '/auth/x/setup',
-      json({
-        setup_token: setupToken,
-        password: 'a-returning-password-9',
-        code: totpCodeAt(secret),
-        privacy_mode: 'advanced',
-      }),
-    );
+    await accountWithLinkedX({
+      username: 'returner',
+      password: 'a-returning-password-9',
+      privacyMode: 'advanced',
+    });
 
     // Clear every live unlock for this account, so this second sign-in represents a
-    // fresh device. Doing it per-session would not be enough: `completeSetup` opened
+    // fresh device. Doing it per-session would not be enough: the linking flow opened
     // one and it is still live, so the X sign-in would correctly reuse it — a
     // different behaviour, tested separately below.
     closeUserSessions(await userIdFor('returner'));
@@ -593,15 +420,11 @@ test('a second X sign-in for a known account returns a one-time code, not a toke
 test('X login reuses an existing unlock when the account is already unlocked', async () => {
   const x = stubX({ userId: `903${Date.now()}`, handle: 'already' });
   try {
-    const first = await runXCallback();
-    const setupToken = new URL(first.location!).searchParams.get('setup_token')!;
-    const secret = new URL(first.location!).searchParams.get('secret')!;
-    const done = await call(
-      base,
-      '/auth/x/setup',
-      json({ setup_token: setupToken, password: 'an-already-password-9', code: totpCodeAt(secret) }),
-    );
-    assert.ok(done.body.token, 'setup produced a session');
+    const account = await accountWithLinkedX({
+      username: 'already',
+      password: 'an-already-password-9',
+    });
+    assert.ok(account.token, 'the linking session is live');
 
     // With that session still live, an X sign-in can hand back a token directly —
     // which is what makes X login feel like one click in the common case.
@@ -615,6 +438,53 @@ test('X login reuses an existing unlock when the account is already unlocked', a
   } finally {
     x.restore();
   }
+});
+
+test('a Google identity is read from the ID token, and its code becomes a session', async () => {
+  const { parseGoogleIdToken } = await import('../src/oauth.ts');
+  const { AccountService } = await import('../src/accounts.ts');
+  const { issueOneTimeCode } = await import('../src/session.ts');
+
+  const claims = {
+    sub: `goog-${Date.now()}`,
+    aud: GOOGLE_CLIENT_ID,
+    iss: 'https://accounts.google.com',
+    exp: Math.floor(Date.now() / 1000) + 300,
+    nonce: 'the-nonce',
+  };
+  const jwt = (payload: unknown) => `x.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.y`;
+
+  // Only `sub` is taken. The scope is `openid` alone, so the app must not start
+  // building a handle out of claims it never asked for — the privacy policy says we
+  // receive no name, address or picture, and this is the line that keeps that true.
+  const profile = parseGoogleIdToken(
+    jwt({ ...claims, email: 'someone@example.test', name: 'Someone', picture: 'https://example.test/p.png' }),
+    { clientId: GOOGLE_CLIENT_ID, nonce: 'the-nonce' },
+  );
+  assert.equal(profile.id, claims.sub, 'the subject is the account key');
+  assert.equal(profile.handle, null, 'no email was requested, so none is shown');
+  assert.equal(profile.displayName, null);
+  assert.equal(profile.avatarUrl, null);
+
+  // `nonce` is the replay guard and `aud` is what stops another client's token being
+  // presented here; without the second one any Google app's token would be accepted.
+  assert.throws(() => parseGoogleIdToken(jwt(claims), { clientId: GOOGLE_CLIENT_ID, nonce: 'another-nonce' }));
+  assert.throws(() => parseGoogleIdToken(jwt(claims), { clientId: 'some-other-client', nonce: 'the-nonce' }));
+
+  // The callback hands the browser back a one-time code, so the code has to be
+  // redeemable somewhere — otherwise the flow ends at a URL the app can do nothing
+  // with, which is exactly what an endpoint-less Google login did.
+  const created = await AccountService.createAccountFromOAuth('google', profile);
+  assert.ok(created.ok, JSON.stringify(created));
+  const code = issueOneTimeCode(created.value.id);
+
+  const exchanged = await call(base, '/auth/google/exchange', json({ code }));
+  assert.equal(exchanged.status, 200, JSON.stringify(exchanged.body));
+  assert.equal(exchanged.body.username, created.value.username);
+  assert.ok(exchanged.body.token, 'standard mode yields a real session, as it does for X');
+
+  const reused = await call(base, '/auth/google/exchange', json({ code }));
+  assert.equal(reused.status, 400, 'a one-time code is single use');
 });
 
 test('an unlinkable state is refused, and an X error is surfaced', async () => {
@@ -673,35 +543,20 @@ test('linking, rebinding and unlinking X on an existing account', async () => {
       `linkedAt must be a parseable timestamp, got ${JSON.stringify(link.linkedAt)}`,
     );
 
-    // Unlink requires a second-factor code, so a stolen session cannot detach a
-    // compromised X account's audit trail.
-    const badUnlink = await call(base, '/auth/x/unlink', json({ code: '000000' }, account.token));
-    assert.equal(badUnlink.status, 400, 'a wrong code cannot unlink');
-
-    const goodUnlink = await call(
-      base,
-      '/auth/x/unlink',
-      json({ code: totpCodeAt(account.secret) }, account.token),
-    );
-    assert.equal(goodUnlink.status, 200, JSON.stringify(goodUnlink.body));
+    // Unlinking needs a session and nothing else: it changes how the account is
+    // reached, but the rule below already refuses the one case that would strand the
+    // owner.
+    const unlinked = await call(base, '/auth/x/unlink', json({}, account.token));
+    assert.equal(unlinked.status, 200, JSON.stringify(unlinked.body));
     const after = await call(base, '/auth/x/links', auth(account.token));
     assert.equal(after.body.links.length, 0, 'the link is gone');
 
-    // Crucially, unlinking does not lock the user out: a usable account always has a
-    // password, which is the whole point of X being an assist.
-    //
-    // The next step is used rather than the same code, because unlinking spends its
-    // step — replay protection applies to any code that authorises a change, not
-    // just to sign-in. That is the intended behaviour, and a real authenticator
-    // advances on its own.
+    // Crucially, unlinking does not lock the user out: the password still opens the
+    // account, which is the whole point of the social login being an assist.
     const stillWorks = await call(
       base,
       '/auth/login',
-      json({
-        username: account.username,
-        password: account.password,
-        code: totpCodeAt(account.secret, Date.now() + 30_000),
-      }),
+      json({ username: account.username, password: account.password }),
     );
     assert.equal(stillWorks.status, 200, 'the account is fully usable after unlinking X');
   } finally {
@@ -789,11 +644,12 @@ test('the per-IP limiter refuses a burst of sign-in attempts', async () => {
     apiBaseUrl: API_ORIGIN,
     port: 0,
     databaseUrl: '',
-    totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    encryptionKey: null,
     turnstile: null,
     webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
+    google: null,
     sessionTtlMinutes: 30,
     rateLimits: { register: 3, login: 3, resume: 3, windowMs: 60_000 },
   });
@@ -816,11 +672,12 @@ test('the per-IP limiter refuses a burst of sign-in attempts', async () => {
     apiBaseUrl: API_ORIGIN,
       port: 0,
       databaseUrl: '',
-      totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
       serverDekKey: 'test-server-dek-key-0123456789abcdef',
+      encryptionKey: null,
       turnstile: null,
       webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
       x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
+      google: null,
       sessionTtlMinutes: 30,
       rateLimits: { register: 1000, login: 1000, resume: 1000, windowMs: 60_000 },
     });

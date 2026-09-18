@@ -61,13 +61,14 @@ difference between the two modes:
 
 - **Standard** — `password` **+ `server`**. The `server` wrapper is wrapped under
   `SERVER_DEK_KEY`, so the server can recover the DEK on its own. That is the mode's
-  promise: X + TOTP, or a live `hrt_` token, is enough to reach records again, and a
-  forgotten password is recoverable. The cost is stated where the mode is chosen —
-  the server can read the data whenever it decides to, not only during a live unlock.
+  promise: X or Google sign-in, or a live `hrt_` token, is enough to reach records
+  again, and a forgotten password is recoverable. The cost is stated where the mode is
+  chosen — the server can read the data whenever it decides to, not only during a live
+  unlock.
 - **Advanced** — `password` (+ optional `recovery`), and **never `server`**. Nothing
-  the server holds opens the DEK, so completing X + TOTP yields authentication and
-  nothing else. X sign-in returns a locked token (`lu_…`, no key) and the data opens
-  only when the user supplies a password or recovery key. A forgotten password with no
+  the server holds opens the DEK, so completing a provider sign-in yields authentication
+  and nothing else. It returns a locked token (`lu_…`, no key) and the data opens only
+  when the user supplies a password or recovery key. A forgotten password with no
   recovery key means the data is gone; the spec requires saying so and the UI does.
 
 Both are stored in `users.encryption_metadata` (versioned jsonb, `version: 2`), with
@@ -273,7 +274,7 @@ lines) and the Core has its own model. They do not overlap:
 | Feature | App (Worker/D1) | Core |
 |---|---|---|
 | Password login | yes | yes (scrypt) |
-| TOTP 2FA + backup codes | yes | no |
+| TOTP 2FA + backup codes | removed | removed |
 | Passkeys / WebAuthn | removed | yes (PRF-derived key) |
 | Session list & revoke | yes | no (unlock TTL only) |
 | Admin | yes | no |
@@ -285,14 +286,15 @@ So "migrate the app to the Core" cannot be finished by wiring a hook: the app's
 systems issue credentials independently. Three ways forward, and they differ enough
 that this should not be chosen by accident:
 
-1. **Port TOTP to the Core, drop passkeys.** TOTP is genuinely small — the
-   `totp_secret` and `backup_codes` columns already exist in `schema.sql`
-   (inherited from the original design), and verification is an HMAC over a time
-   step in `node:crypto`. Passkeys have since been removed from the Worker
-   altogether (the intended login model is password/TOTP plus X one-tap), so
-   this is now just "port what remains".
-2. **Port TOTP plus a WebAuthn library.** Would re-introduce passkey tables and
-   a WebAuthn dependency the app has deliberately dropped; not the current plan.
+1. **Make the Core the only identity provider and retire the Worker.** This is what
+   has actually happened: the Core now has username + password, X and Google, a
+   binding gate, agent tokens and MCP, and both sides have dropped TOTP and passkeys.
+   `src/services/auth.ts` and `src/pages/Admin.tsx` are the remaining legacy surface.
+2. **Re-introduce a second factor in the Core.** Rejected: it was removed because a
+   mandatory one made every provider-created account unusable until enrolment, and a
+   password-only fallback is what keeps records reachable when a provider account is
+   lost. Adding it back would restore that trap unless it is optional, and an optional
+   second factor that most accounts never enrol is a maintenance cost with little gain.
 3. **Keep the Worker as the identity provider and let the Core trust it.** Smallest
    change to the app, but it moves where the DEK can be unwrapped: the Core would
    have to accept identity asserted by another service, which weakens the "the
@@ -330,94 +332,105 @@ through the engine, all finite (CPA 12.5 mg → 0.215 ng/mL CPA, 0 E2, as expect
 a CPA injection must not produce estradiol). The files stay unmodified so upstream
 pulls remain clean; fixing them would be an upstream change, not ours.
 
-## Authentication: password + mandatory TOTP, X as an assist
+## Authentication: username + password, X and Google as equals
 
-The decision was made, so this section replaces the "blocked" one: **password plus
-mandatory TOTP is the only way in, and X OAuth2 can create and identify an account
-but never produce a usable one by itself.**
+**There is no second factor.** TOTP, its enrolment leg, its replay-safety bookkeeping
+and the recovery-code set were removed. Identity is proven one of three ways — the
+account name and password, X, or Google — and all three end at the same place: a
+session, or a locked token when the account's mode means no key came with it.
 
-**Registration now also requires human verification** (Cloudflare Turnstile) when
-`TURNSTILE_SECRET` is configured: both `/auth/register` and `/auth/x/setup` check the
-widget token at the door, requiring `success`, a matching `action`, and an allowlisted
-`hostname`. Unconfigured means skipped, so a self-hosted instance without a widget is
-not blocked.
+The history is worth one line, because the shape of the code still shows it: the
+design used to make TOTP mandatory, so an OAuth signup produced an account that could
+not be used or even store anything until a code had been confirmed. That made a
+provider-created account a trap — and once the provider account was the only way in
+and it was banned, the records went with it. The gate below replaces it.
+
+**Registration requires human verification** (Cloudflare Turnstile) when
+`TURNSTILE_SECRET` is configured: `/auth/register` checks the widget token at the
+door, requiring `success`, a matching `action`, and an allowlisted `hostname`.
+Unconfigured means skipped, so a self-hosted instance without a widget is not blocked.
+There used to be a second widget action (`x_setup`) for the X setup leg; that leg is
+gone with TOTP, so `register` is the only action left.
 
 **Registration records a privacy mode** (`standard` by default, `advanced` on request),
-which decides the account's wrapper set from its first request. Beyond that, the mode
-also splits two ideas the older design ran together: **authentication** (X + TOTP) and
-**data unlock** (password / recovery key). In advanced mode these are separate states,
-and `isAuthenticated = true, isDataUnlocked = false` is a legitimate one the UI shows
-rather than treating as failure.
+which decides the account's wrapper set from its first request. The mode also splits
+two ideas: **authentication** (who you are) and **data unlock** (the key). In advanced
+mode these are separate states, and `isAuthenticated = true, isDataUnlocked = false` is
+a legitimate one the UI shows rather than treating as failure.
 
-### The rule, and why it is structural rather than policy
+### The rule: a provider account must bind a fallback credential before it holds data
 
-An account is usable only when it has **both** a password and a confirmed TOTP
-enrolment. Registration does not return a session; it returns enrolment material and
-a single-use token that can only finish setup. This is not a policy that a future
-change could loosen by accident — it falls out of the key design:
+An account created through X or Google has no password, so there is no credential that
+survives losing that provider account. Records calls therefore answer
+`403 account_incomplete` until a name and password are bound
+(`POST /auth/credentials/bind`), and the app routes to the binding screen. Sign-out
+would be the wrong response: the session is valid, and it is exactly what the user
+needs in order to bind.
 
-- The DEK is wrapped under a password-derived KEK.
-- An account with no password therefore has **no key**, and so no readable records.
+This is deliberate and it is the anti-ban property: **if the X or Google account is
+lost or suspended, the user signs in with the name and password they bound, and the
+records are still there.** Nothing to migrate, nothing to lose.
 
-So an X-only account cannot hold data, which is exactly what was asked for: if an X
-account is banned, the user signs in with their password and unlinks it. Nothing to
-migrate, nothing to lose. `password_set_at IS NULL` is the machine-checkable form of
-"this account cannot hold data yet".
+The gate is on *records*, not on the account. A freshly created provider account can
+sign in, read its login methods and bind a credential — which is what makes the gate a
+prompt rather than a deadlock. `password_hash IS NULL` is the machine-checkable form of
+"this account has no fallback yet".
 
-### X login cannot skip the data unlock, and the modes decide what it returns
+### Provider login cannot skip the data unlock, and the modes decide what it returns
 
-X proves *identity*. It cannot supply the password, and the password is what unwraps
-the key. What an X sign-in returns therefore depends on the account's privacy mode,
-and `POST /api/auth/x/exchange` reports each case honestly:
+A provider proves *identity*. It cannot supply the password, and in advanced mode the
+password is what unwraps the key. What a provider sign-in returns therefore depends on
+the account's privacy mode, and `POST /auth/{x,google}/exchange` reports each case
+honestly:
 
 - `token: "<ks_…>"` — a live unlock already existed (another tab), **or** the account
   is in **standard** mode and the server opened its own wrapper. Either way the person
-  is verified and the key is in hand. This is what makes X sign-in feel like one click.
-- `token: null` **with** `locked_token` — **advanced** mode: X verified the person and
-  nothing more. The `lu_…` token carries the identity to `POST /auth/unlock`, which
-  takes a password or recovery key. The UI shows "verified, not yet unlocked", not
+  is verified and the key is in hand. This is what makes provider sign-in feel like one
+  click.
+- `token: null` **with** `locked_token` — **advanced** mode: the provider verified the
+  person and nothing more. The `lu_…` token carries the identity to `POST /auth/unlock`,
+  which takes a password or recovery key. The UI shows "verified, not yet unlocked", not
   "sign-in failed".
 - `token: null` with no `locked_token` — no live unlock and no server key to make one;
   the client pre-fills the username and runs the normal sign-up path.
 
-The alternative — wrapping the DEK under something X can supply — would make the key
-recoverable from the X account, which is precisely the dependency the requirement
-rules out, and would hand X a path to the encryption key. Standard mode's `server`
-wrapper is *not* that: it is wrapped under a deployment secret, not anything X
-controls, and it is removed entirely in advanced mode.
+The alternative — wrapping the DEK under something the provider can supply — would make
+the key recoverable from the provider account, which is precisely the dependency this
+rules out, and would hand that provider a path to the encryption key. Standard mode's
+`server` wrapper is *not* that: it is wrapped under a deployment secret
+(`SERVER_DEK_KEY`), not anything the provider controls, and it is absent entirely in
+advanced mode.
 
-### Second-factor specifics
+### What a provider is allowed to tell us
 
-- **Replay protection.** `users.totp_last_step` must strictly increase, enforced in
-  the `UPDATE`'s `WHERE` so two concurrent submissions of one code cannot both
-  succeed. Verified: the same code fails on second use, and the next step works.
-- **Enrolment does not spend the step.** Deliberate, and the reason is usability
-  rather than security: spending it would reject a user who finishes signup and then
-  signs in on a second device within the same 30-second window, which reads as
-  "setup failed". Nothing weakens — confirming requires the single-use enrolment
-  token, and the step is spent the first time a code actually opens access.
-- **TOTP secrets are encrypted at rest** under `TOTP_ENC_KEY`. A database dump that
-  carried secrets in the clear would silently remove the second factor for every
-  account, which is worse than not offering 2FA. Losing this key invalidates
-  enrolments but not recovery codes.
-- **Recovery codes** are hashed with scrypt (they are passwords in effect), single-use
-  (`used_at IS NULL` in the `WHERE` guard), and normalised for case, spacing and the
-  hyphen.
-- **Two independent throttles.** Per-account lockout (5 failures → 15 min) and a
-  per-IP window. Per-IP alone loses to a botnet; per-account alone lets an attacker
-  spray. Limits are configurable because households and offices share an IP.
+- **X** returns the numeric user id, username, display name and avatar. `provider_user_id`
+  is the key; the handle is decoration and is allowed to change.
+- **Google** returns exactly one thing: the `sub` claim of the ID token. The scope is
+  `openid` alone, so there is no email, no name and no picture — `handle`, `displayName`
+  and `avatarUrl` are all `null` by construction, and the page must render that absence
+  rather than invent a glyph. The privacy policy states this, and
+  `test/accounts.test.ts` asserts it against a token that *does* carry `email`/`name`/
+  `picture`, because the risk is a later change quietly starting to use them.
+- **Neither** provider is asked for `access_type=offline`, and no refresh token is
+  stored: we read the identity once, at sign-in, and never call the provider again on
+  the user's behalf. One fewer long-lived credential.
+
+### Throttles and lockout
+
+**Two independent throttles.** Per-account lockout (5 failures → 15 min) and a per-IP
+window. Per-IP alone loses to a botnet; per-account alone lets an attacker spray.
+Limits are configurable because households and offices share an IP. They exist on
+`/auth/login`, `/auth/register` and `/auth/unlock`; a failed unlock does not spend the
+locked token, so a mistyped password does not cost a fresh provider round-trip.
 
 ### Verified against the standard, not against itself
 
-`test/totp.test.ts` asserts **RFC 6238's published vectors**, not values this code
-produced. A round-trip test ("the code I generated verifies") passes just as happily
-for a wrong algorithm — which is the failure that would ship, since correct-looking
-codes that no authenticator accepts are invisible to a self-consistent test.
-
-`test/accounts.test.ts` covers the whole flow with X's endpoints stubbed: where a
-request must NOT issue a token, that a link cannot be rebound to a second account,
-that unlinking cannot lock a user out, and that CORS refuses a list of hostile origins
-(including `hrt.kirayao.com.evil.test` and `null`).
+`test/accounts.test.ts` covers the flow with X's endpoints stubbed: where a request must
+NOT issue a token, that a one-time code is single-use, that a link cannot be rebound to
+a second account, that unlinking cannot lock a user out, that Google identity is read
+from the ID token and its code is redeemable, and that CORS refuses a list of hostile
+origins (including `hrt.kirayao.com.evil.test` and `null`). `test/recordsMigration.test.ts`
+covers the binding gate itself, including that binding unlocks it.
 
 ### The service is mounted under a prefix, not at the host root
 

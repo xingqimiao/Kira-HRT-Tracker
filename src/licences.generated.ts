@@ -28,7 +28,7 @@ export interface RuntimeLicence {
     licence: string;
 }
 
-export const GENERATED_AT = "2026-09-17";
+export const GENERATED_AT = "2026-09-18";
 
 export const UPSTREAM_WORKS: UpstreamWork[] = [
     {
@@ -95,20 +95,12 @@ export const RUNTIME_LICENCES: RuntimeLicence[] = [
         "licence": "MIT"
     },
     {
-        "name": "jsqr",
-        "licence": "Apache-2.0"
-    },
-    {
         "name": "jszip",
         "licence": "(MIT OR GPL-3.0-or-later)"
     },
     {
         "name": "prop-types",
         "licence": "MIT"
-    },
-    {
-        "name": "qrcode.react",
-        "licence": "ISC"
     },
     {
         "name": "react",

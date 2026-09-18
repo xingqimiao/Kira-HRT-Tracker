@@ -4,16 +4,15 @@ Internal document. Not part of the published policy, and not written for users: 
 cannot check file paths, so a claim that cites one is a claim they must take on trust.
 
 This exists for one job: confirming a claim against the code *before* it goes into the
-policy at `https://kiramyao.com/privacy`. Work down the table, open each path, and
-refuse to publish any row you cannot confirm. See `PRIVACY-POLICY-GUIDE.md` for the
-plain-language version that users actually read.
+policy at `https://hrt.kiramyao.com/privacy`. Work down the table, open each path, and
+refuse to publish any row you cannot confirm.
 
 | Claim | Where to check |
 |---|---|
-| Records encrypted, DEK wrapped under password | `server/src/session.ts`, `createUserKeyMaterial` / `unwrapDek` |
-| Only `occurred_at` and `user_id` are clear | `server/schema.sql` comments on `medication_events` |
-| TOTP secrets sealed, not stored raw | `server/src/totp.ts`, `sealTotpSecret` |
-| Session key lifetime | `server/src/session.ts`, `SESSION_TTL_MS` and `SESSION_TTL_MINUTES` |
+| Records encrypted, DEK wrapped per credential | `server/src/session.ts`, `createKeyMaterial` / `unwrapWithPassword` / `unwrapWithServer` / `unwrapWithRecovery` |
+| Only `occurred_at` and `user_id` are clear | `server/schema.sql` comments on `medication_events`, and `server/scripts/check-records.mjs` (reads the column directly) |
+| Record payloads are sealed with AES-256-GCM | `server/src/payloadCrypto.ts`; wire format is `iv:tag:ciphertext` |
+| Session key lifetime | `server/src/session.ts`, `MAX_SESSION_AGE_MS` and `SESSION_TTL_MINUTES` |
 | Password hashing (scrypt) | `server/src/accounts.ts`, `hashPassword` |
 | Rate limits and lockout | `server/src/http.ts` limiter + `server/src/accounts.ts`, `noteFailedUnlock` |
 | Tokens revoked on password change | `server/src/accounts.ts`, `changePassword` |
@@ -23,11 +22,12 @@ plain-language version that users actually read.
 | Deletion removes everything user-scoped | `server/test/deleteAccount.test.ts` — asserts each table is empty |
 | The deletion tombstone carries no identifier | `server/schema.sql`, `deletion_log`, and the tombstone test |
 | Individual record deletes are soft | `server/src/store.ts`, `softDelete` |
+| **We receive no Google data except the account id** | `server/src/oauth.ts`, `GOOGLE_SCOPE = 'openid'` and `parseGoogleIdToken` — `handle`/`displayName`/`avatarUrl` are `null` by construction; `server/test/accounts.test.ts` feeds it a token that carries `email`/`name`/`picture` and asserts they are ignored |
 | X receives no data from us | `server/src/oauth.ts` — the only X calls are token exchange and profile fetch |
 | No third-party requests in the app | `grep -rn "https://" src/ index.html` — links only |
 | Share links exclude labs and weight | `worker.ts` snapshot sanitiser, and `README.md` |
 | What a predicted level is | `server/src/core.ts`, `PKSimulationService` |
-| The medical disclaimer, and where it lives | `public/terms/index.html` section 3 — the binding text; `src/components/DisclaimerModal.tsx` and `src/i18n/share.ts` are summaries |
+| The medical disclaimer, and where it lives | `index.html` (the line under the feature list, which a client that runs no JavaScript still sees) and `src/components/DisclaimerModal.tsx` / `src/i18n/share.ts` for the in-app text. There is no `/terms` page — one was removed on purpose, because everything left after the disclaimer was a guess about an operator that is not a legal entity |
 
 ## The claim that was previously stated too strongly
 

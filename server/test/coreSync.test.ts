@@ -34,8 +34,8 @@ before(async () => {
     apiBaseUrl: 'https://api.hrt.test',
     port: 0,
     databaseUrl: '',
-    totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    google: null,
     // The record store encrypts payloads under this key; a suite that syncs must
     // carry one: requireKey() refuses rather than writing payloads in the clear.
     encryptionKey: TEST_ENCRYPTION_KEY,

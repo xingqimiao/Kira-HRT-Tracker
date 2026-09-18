@@ -1,30 +1,32 @@
 /**
- * Accounts: password + mandatory TOTP, with X OAuth as an optional assist.
+ * Accounts: identity, credentials, and the key material behind them.
  *
  * The product rule this file enforces, stated once so the rest reads clearly:
  *
- *   **An account is usable only when it has a password AND TOTP enabled.**
- *   X login can create an account and can log into a complete one, but it can
- *   never produce a usable account on its own. A user who registers through X is
- *   walked straight into setting a password and enrolling TOTP, and cannot read or
- *   write a single record until both are done.
+ *   **Identity is proven by an account name and password, by X, or by Google.**
+ *   Any of the three may create an account; a social signup starts with no
+ *   password at all.
+ *
+ *   **Records are a separate gate.** Reading or writing one requires a *bound
+ *   fallback credential* — an account name plus a password — which is what
+ *   `requireBoundCtx` enforces. A social signup therefore reaches its own account
+ *   page and is asked once, while the provider still works, to bind one. Losing
+ *   the provider then costs a login button, not the history.
  *
  * That rule is not a policy bolted on top — it falls out of the key design. The
- * data key (DEK) is wrapped under a password-derived key (KEK), so an account with
- * no password has no key and therefore no readable data. This is what makes "the X
- * account gets banned" a non-event: losing X loses a login button, not the record.
+ * account key (DEK) is wrapped once per credential that can open it: under a
+ * password-derived key, under the recovery key, under the deployment's server
+ * key in standard mode, and under a passkey's PRF output. An account with no
+ * password has no password wrapper, which is exactly why binding one has to
+ * rewrap the key rather than only storing a hash.
  *
- * Second-factor rules, and why each is where it is:
+ * Rules that are easy to get wrong, and why each is where it is:
  *
- *   - TOTP codes are verified replay-safely. `totp_last_step` must strictly
- *     increase, so a code observed once cannot be reused inside its own 30-second
- *     validity window.
- *   - Recovery codes are single-use, hashed like passwords, and consumed inside
- *     the same transaction that authenticates them — two concurrent submissions of
- *     one code must not both succeed.
  *   - Failed unlocks are counted per account with a lockout, on top of the
  *     per-IP limiter in the HTTP layer. Per-IP alone is defeated by a botnet;
  *     per-account alone lets an attacker spray many accounts.
+ *   - A password change rewraps the DEK and never re-encrypts a record, so it
+ *     cannot half-fail and leave a corrupted history behind.
  */
 import { randomUUID, createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
@@ -34,21 +36,17 @@ import { getConfig } from './config.ts';
 import { settings } from './store.ts';
 import {
   createUserKeyMaterial,
-  unwrapDek,
   rewrapForNewPassword,
   openSession,
   closeSession,
   closeUserSessions,
   findUserSession as findUserSessionFor,
   lookupSession,
-  openPendingEnrollment,
-  takePendingEnrollment,
-  openPendingSetup,
-  takePendingSetup,
   issueOneTimeCode,
   redeemOneTimeCode,
   readMetadata,
   createKeyMaterial,
+  createPasswordlessKeyMaterial,
   unwrapWithPassword,
   unwrapWithRecovery,
   unwrapWithServer,
@@ -68,16 +66,6 @@ import {
   redeemLockedSession,
   type EncryptionMetadata,
 } from './session.ts';
-import {
-  generateTotpSecret,
-  sealTotpSecret,
-  openTotpSecret,
-  verifyTotpCodeWithStep,
-  otpauthUri,
-  generateBackupCodes,
-  verifyBackupCode,
-  hashBackupCode,
-} from './totp.ts';
 import {
   buildAuthorizeUrl,
   buildGoogleAuthorizeUrl,
@@ -129,8 +117,6 @@ const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
  */
 const PASSKEY_STEP_UP_MAX_AGE_MS = 5 * 60 * 1000;
 
-const ISSUER = 'Kira Tracker';
-
 export type PrivacyMode = 'standard' | 'advanced';
 
 function validatePrivacyMode(raw: unknown): Result<PrivacyMode> {
@@ -165,27 +151,17 @@ export interface AccountRow {
   wrapped_dek: unknown;
   privacy_mode: PrivacyMode;
   encryption_metadata: unknown;
-  totp_secret_sealed: string | null;
-  totp_enabled_at: Date | null;
-  totp_last_step: string | number | null;
   failed_unlocks: number;
   locked_until: Date | null;
   /** Needed for the deletion tombstone: "how long after signing up do people leave". */
   created_at: Date;
 }
 
-export interface EnrollmentMaterial {
-  secret: string;
-  otpauthUri: string;
-  backupCodes: string[];
-}
-
 export interface RegistrationResult {
   userId: string;
   username: string;
-  /** Present until TOTP is confirmed. The account is not usable before then. */
-  enrollmentToken: string;
-  totp: EnrollmentMaterial;
+  /** Issued by registration itself: there is nothing left to confirm. */
+  token: string;
 }
 
 async function hashPassword(password: string): Promise<string> {
@@ -238,7 +214,7 @@ async function loadUser(where: { id?: string; username?: string }): Promise<Acco
   const { rows } = await getPool().query<AccountRow>(
     `SELECT id, username, display_name, password_hash, password_set_at, wrapped_dek,
             privacy_mode, encryption_metadata,
-            totp_secret_sealed, totp_enabled_at, totp_last_step, failed_unlocks, locked_until,
+            failed_unlocks, locked_until,
             created_at
        FROM users WHERE ${column} = $1`,
     [value],
@@ -246,9 +222,14 @@ async function loadUser(where: { id?: string; username?: string }): Promise<Acco
   return rows[0] ?? null;
 }
 
-/** Whether an account has finished setup and may be used at all. */
+/**
+ * Whether an account has finished becoming usable.
+ *
+ * Only a password is needed. A social signup has none, so it signs in through its
+ * provider instead and is asked to bind a fallback before it can reach records.
+ */
 function isComplete(user: AccountRow): boolean {
-  return user.password_set_at !== null && user.totp_enabled_at !== null;
+  return user.password_set_at !== null;
 }
 
 /**
@@ -316,117 +297,6 @@ async function hasPasskeys(userId: string): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
-// TOTP verification with replay protection
-// ---------------------------------------------------------------------------
-
-/**
- * Verify a TOTP code and spend its step.
- *
- * The step is compared and written in one statement with a `WHERE` that requires it
- * to be strictly greater than what is stored. Two concurrent requests carrying the
- * same code therefore cannot both succeed — the database decides, not a read-then-
- * write in application code, which would leave a window between the two.
- */
-async function consumeTotpStep(userId: string, sealed: string, code: string): Promise<boolean> {
-  const secret = await openTotpSecret(sealed, getConfig().totpEncKey);
-  // Fail closed: an unreadable secret means the check cannot be performed, not
-  // that the check passes.
-  if (secret === null) return false;
-
-  const step = verifyTotpCodeWithStep(secret, code);
-  if (step === null) return false;
-
-  const { rowCount } = await getPool().query(
-    `UPDATE users SET totp_last_step = $1, updated_at = now()
-      WHERE id = $2 AND (totp_last_step IS NULL OR totp_last_step < $1)`,
-    [step, userId],
-  );
-  return (rowCount ?? 0) > 0;
-}
-
-/**
- * Redeem a recovery code, marking it used in the same statement that matches it.
- *
- * `used_at IS NULL` in the `WHERE` is what makes it single-use under concurrency:
- * a second request with the same code finds no row to update.
- */
-async function consumeBackupCode(userId: string, code: string): Promise<boolean> {
-  const { rows } = await getPool().query<{ id: string; code_hash: string }>(
-    `SELECT id, code_hash FROM totp_backup_codes
-      WHERE user_id = $1 AND used_at IS NULL
-      ORDER BY created_at`,
-    [userId],
-  );
-  for (const row of rows) {
-    if (!(await verifyBackupCode(code, row.code_hash))) continue;
-    const { rowCount } = await getPool().query(
-      `UPDATE totp_backup_codes SET used_at = now() WHERE id = $1 AND used_at IS NULL`,
-      [row.id],
-    );
-    // Lost the race to another request carrying the same code.
-    if ((rowCount ?? 0) === 0) return false;
-    return true;
-  }
-  return false;
-}
-
-async function countUnusedBackupCodes(userId: string): Promise<number> {
-  const { rows } = await getPool().query<{ n: string }>(
-    `SELECT count(*) AS n FROM totp_backup_codes WHERE user_id = $1 AND used_at IS NULL`,
-    [userId],
-  );
-  return Number(rows[0].n);
-}
-
-/**
- * Mint the enrolment bundle: a fresh secret, its QR URI, and recovery codes.
- *
- * Pure with respect to the database — it generates and returns, and does not write.
- * That separation is not stylistic: an earlier version wrote the recovery codes
- * here, and on the registration path it ran *before* the user row existed, so the
- * foreign key rejected the insert and every registration failed with a 500. The
- * caller now owns the writes, and on registration they happen inside the same
- * transaction as the user row.
- */
-async function buildEnrollment(userId: string): Promise<{
-  material: EnrollmentMaterial;
-  sealed: string;
-  codeHashes: string[];
-}> {
-  const secret = generateTotpSecret();
-  const sealed = await sealTotpSecret(secret, getConfig().totpEncKey);
-  const codes = await generateBackupCodes();
-
-  return {
-    material: {
-      secret,
-      otpauthUri: otpauthUri({ secretBase32: secret, accountLabel: userId, issuer: ISSUER }),
-      backupCodes: codes.plaintext,
-    },
-    sealed,
-    codeHashes: codes.hashes,
-  };
-}
-
-/**
- * Replace an account's unused recovery codes.
- *
- * Only the unused ones: a code that was already spent is a historical fact and is
- * kept so the audit trail shows it was used.
- */
-async function replaceRecoveryCodes(
-  userId: string,
-  codeHashes: string[],
-  client?: { query: (text: string, values?: unknown[]) => Promise<unknown> },
-): Promise<void> {
-  const q = client ?? getPool();
-  await q.query(`DELETE FROM totp_backup_codes WHERE user_id = $1 AND used_at IS NULL`, [userId]);
-  for (const hash of codeHashes) {
-    await q.query(`INSERT INTO totp_backup_codes (user_id, code_hash) VALUES ($1, $2)`, [userId, hash]);
-  }
-}
-
-// ---------------------------------------------------------------------------
 // AccountService
 // ---------------------------------------------------------------------------
 
@@ -434,20 +304,16 @@ export interface UnlockedAccount {
   userId: string;
   username: string;
   token: string;
-  /** Set when a recovery code was used, so the UI can say how many remain. */
-  recoveryCodesRemaining?: number;
 }
 
 export const AccountService = {
-  // --- Registration and enrolment -----------------------------------------
+  // --- Registration -------------------------------------------------------
 
   /**
    * Create an account.
    *
-   * Returns enrolment material but does NOT return a usable token: TOTP is
-   * mandatory, so the account stays unusable until a code from the new secret is
-   * confirmed. Registering and being immediately logged in would mean the second
-   * factor could be skipped entirely by anyone who knows the password.
+   * Returns a usable session directly: the caller has just chosen the password,
+   * so there is nothing left to prove before opening one.
    */
   async register(
     usernameRaw: unknown,
@@ -464,36 +330,25 @@ export const AccountService = {
     const userId = randomUUID();
     const { metadata, dek } = await buildKeyMaterial(password.value, userId, privacyMode.value);
     const passwordHash = await hashPassword(password.value);
-    const { material, sealed, codeHashes } = await buildEnrollment(userId);
 
     try {
-      // One transaction for the user row and its recovery codes. The codes have a
-      // foreign key onto the user, so writing them outside this block fails — and
-      // splitting them would let a crash leave an account with no recovery codes,
-      // discoverable only after someone loses their phone.
+      // One transaction, so the row and the username claim are committed together.
       await withTransaction(async (client) => {
-        // An abandoned registration should not squat its username forever, so an
-        // unconfirmed row past the TTL is replaced. A *confirmed* account is never
-        // touched — that would be account takeover.
-        const existing = await client.query<AccountRow>(
-          `SELECT id, totp_enabled_at, created_at FROM users WHERE username = $1 FOR UPDATE`,
+        // A username is claimed on insert and never recycled: `users.username` is
+        // unique, and there is no longer a notion of an "abandoned" row to replace,
+        // because a registration now completes in one step.
+        const existing = await client.query<{ id: string }>(
+          `SELECT id FROM users WHERE username = $1 FOR UPDATE`,
           [username.value],
         );
         if (existing.rows.length > 0) {
-          const row = existing.rows[0];
-          const abandoned =
-            row.totp_enabled_at === null &&
-            Date.now() - new Date(row.created_at as unknown as string).getTime() > PENDING_REGISTRATION_TTL_MS;
-          if (!abandoned) {
-            throw Object.assign(new Error('username is already taken'), { taken: true });
-          }
-          await client.query(`DELETE FROM users WHERE id = $1`, [row.id]);
+          throw Object.assign(new Error('username is already taken'), { taken: true });
         }
 
         await client.query(
           `INSERT INTO users (id, username, password_hash, password_set_at, wrapped_dek,
-                              privacy_mode, encryption_metadata, totp_secret_sealed, failed_unlocks)
-           VALUES ($1, $2, $3, now(), $4, $5, $6, $7, 0)`,
+                              privacy_mode, encryption_metadata, failed_unlocks)
+           VALUES ($1, $2, $3, now(), $4, $5, $6, 0)`,
           [
             userId,
             username.value,
@@ -501,10 +356,8 @@ export const AccountService = {
             JSON.stringify(passwordEnvelopeOf(metadata)),
             privacyMode.value,
             JSON.stringify(metadata),
-            sealed,
           ],
         );
-        await replaceRecoveryCodes(userId, codeHashes, client);
       });
     } catch (error) {
       if ((error as { taken?: boolean }).taken) {
@@ -518,121 +371,26 @@ export const AccountService = {
 
     await settings.upsert(userId, { hrtMode: 'transfem' }).catch(() => undefined);
 
-    // The DEK is handed straight to the enrolment store, so confirming the second
-    // factor can open a session without the password being sent a second time. It
-    // was minted above and never needed unwrapping, which is also why the old
-    // unwrap-immediately-after-insert dance is gone — it only existed to prove the
-    // wrapping round-tripped, and `unwrapWithPassword` is covered by its own tests.
-    const enrollmentToken = openPendingEnrollment(userId, requireKey(dek, 'registration'));
+    // The session is opened here, with the DEK minted a few lines above, so the key
+    // never has to be unwrapped again and there is no second step to hand it through.
+    const token = openSession(userId, requireKey(dek, 'registration'), getConfig().sessionTtlMinutes);
 
     return {
       ok: true,
-      value: { userId, username: username.value, enrollmentToken, totp: material },
+      value: { userId, username: username.value, token },
     };
   },
 
   /**
-   * Resume an abandoned enrolment.
-   *
-   * Without this, someone who closed the tab between registering and confirming
-   * would be stuck for the registration TTL with a username they cannot reuse.
-   * Requires the password, so it grants nothing an attacker without it could get.
-   */
-  async resumeEnrollment(usernameRaw: unknown, passwordRaw: unknown): Promise<Result<RegistrationResult>> {
-    const username = validateUsername(usernameRaw);
-    if (!username.ok) return username;
-    const password = validatePassword(passwordRaw);
-    if (!password.ok) return password;
-
-    const user = await loadUser({ username: username.value });
-    const generic = { ok: false as const, error: 'invalid credentials' };
-    if (!user) {
-      await verifyPassword(password.value, 'scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$AAAA');
-      return generic;
-    }
-    if (!(await verifyPassword(password.value, user.password_hash))) return generic;
-    if (user.totp_enabled_at !== null) {
-      return { ok: false, error: 'this account is already set up; sign in normally' };
-    }
-
-    // A resume mints a new secret, so the codes from the abandoned attempt must go:
-    // two live sets would mean a code the user wrote down no longer matching the
-    // secret it was issued with.
-    const { material, sealed, codeHashes } = await buildEnrollment(user.id);
-    await withTransaction(async (client) => {
-      await client.query(`UPDATE users SET totp_secret_sealed = $1, updated_at = now() WHERE id = $2`, [sealed, user.id]);
-      await replaceRecoveryCodes(user.id, codeHashes, client);
-    });
-
-    // The DEK is recoverable because the password is right here — the KEK wraps it.
-    const dek = await unwrapDek(user.wrapped_dek, password.value, user.id);
-    if (dek === null) return { ok: false, error: 'account key material is unreadable' };
-
-    return {
-      ok: true,
-      value: {
-        userId: user.id,
-        username: user.username,
-        enrollmentToken: openPendingEnrollment(user.id, requireKey(dek, 'resumeEnrollment')),
-        totp: material,
-      },
-    };
-  },
-
-  /**
-   * Finish enrolment: confirm a code from the new secret.
-   *
-   * Only here does the account become usable, and only here is a session opened.
-   */
-  async confirmEnrollment(enrollmentToken: string, code: unknown): Promise<Result<UnlockedAccount>> {
-    const pending = takePendingEnrollment(enrollmentToken);
-    if (!pending) {
-      return { ok: false, error: 'enrolment expired or already completed; sign in to try again' };
-    }
-    if (typeof code !== 'string') return { ok: false, error: 'code: required' };
-
-    const user = await loadUser({ id: pending.userId });
-    if (!user || !user.totp_secret_sealed) return { ok: false, error: 'account not found' };
-
-    const secret = await openTotpSecret(user.totp_secret_sealed, getConfig().totpEncKey);
-    if (secret === null) return { ok: false, error: 'could not read the enrolment secret' };
-    const step = verifyTotpCodeWithStep(secret, code);
-    if (step === null) return { ok: false, error: 'that code is not valid — check the device clock' };
-
-    // `totp_last_step` is deliberately NOT recorded here, unlike at login.
-    //
-    // Recording it would mean the confirming code is spent, so a user who finishes
-    // signup and then signs in on a second device within the same 30-second window
-    // is told their code is invalid — which reads as "setup failed", not "wait a
-    // moment". Nothing is weakened by omitting it: confirming requires the
-    // single-use enrolment token, so the code cannot be replayed *here*, and the
-    // step is still spent the first time it is used to actually sign in. The replay
-    // guard exists to stop a code from repeatedly opening access, and enrolment
-    // opens no access to records.
-    await getPool().query(
-      `UPDATE users SET totp_enabled_at = now(), failed_unlocks = 0, updated_at = now()
-        WHERE id = $1`,
-      [user.id],
-    );
-    await this.recordAuthEvent(user.id, 'totp_enabled');
-
-    const token = openSession(user.id, requireKey(pending.dek, 'confirmEnrollment'), getConfig().sessionTtlMinutes);
-    return { ok: true, value: { userId: user.id, username: user.username, token } };
-  },
-
-  // --- Unlock -------------------------------------------------------------
-
-  /**
-   * Sign in with a password, and a TOTP code or a recovery code.
+   * Sign in with a password.
    *
    * Every failure path returns the same message, and the password is verified even
    * when the account does not exist, so the endpoint cannot be used to enumerate
-   * usernames or to learn which accounts have passed enrolment.
+   * usernames.
    */
   async unlock(
     usernameRaw: unknown,
     passwordRaw: unknown,
-    opts: { code?: unknown; backupCode?: unknown } = {},
   ): Promise<Result<UnlockedAccount>> {
     const generic = { ok: false as const, error: 'invalid credentials' };
     const username = validateUsername(usernameRaw);
@@ -655,43 +413,8 @@ export const AccountService = {
       return generic;
     }
 
-    // A password without a completed second factor must not be enough. An account
-    // stuck here is one whose enrolment was abandoned; say so plainly, with the
-    // resume path, rather than reporting a wrong password that is actually right.
-    //
-    // TOTP is on its way out (see the branch's plan), and this is the last gate that
-    // has to go for it to be gone: removing it here is what makes every account that
-    // never enrolled able to sign in, so it belongs in the same change as deleting the
-    // enrolment routes, the recovery codes and their tests — not before them.
-    if (user.totp_enabled_at === null || !user.totp_secret_sealed) {
-      return {
-        ok: false,
-        // Path relative to the service mount — the deployment's prefix (e.g. /hrt)
-        // is not this layer's business, and hardcoding one would make the message
-        // wrong on any host that mounts the service elsewhere.
-        error: 'second-factor setup was not completed; POST /auth/totp/resume to finish it',
-      };
-    }
-
-    const usingBackup = typeof opts.backupCode === 'string' && opts.backupCode.length > 0;
-    if (usingBackup) {
-      if (!(await consumeBackupCode(user.id, opts.backupCode as string))) {
-        await this.noteFailedUnlock(user.id);
-        return generic;
-      }
-      await this.recordAuthEvent(user.id, 'unlock_backup_code');
-    } else {
-      if (typeof opts.code !== 'string' || opts.code.length === 0) {
-        // Distinguishable from a bad code on purpose: the client needs to know to
-        // prompt for one, and at this point the password is already proven.
-        return { ok: false, error: 'two_factor_required' };
-      }
-      if (!(await consumeTotpStep(user.id, user.totp_secret_sealed, opts.code))) {
-        await this.noteFailedUnlock(user.id);
-        return generic;
-      }
-    }
-
+    // No second check follows. Identity here is the password alone — or X, or Google,
+    // on their own paths — so there is nothing else to demand.
     const metadata = metadataFor(user);
     const dek = await unwrapWithPassword(metadata, password.value, user.id);
     if (dek === null) {
@@ -712,15 +435,9 @@ export const AccountService = {
     const token = openSession(user.id, requireKey(dek, 'unlock'), getConfig().sessionTtlMinutes);
     await this.recordAuthEvent(user.id, 'unlock');
 
-    const remaining = usingBackup ? await countUnusedBackupCodes(user.id) : undefined;
     return {
       ok: true,
-      value: {
-        userId: user.id,
-        username: user.username,
-        token,
-        ...(remaining !== undefined ? { recoveryCodesRemaining: remaining } : {}),
-      },
+      value: { userId: user.id, username: user.username, token },
     };
   },
 
@@ -740,18 +457,17 @@ export const AccountService = {
   // --- Data unlock (separate from authentication) -------------------------
   //
   // Advanced mode splits "who you are" from "can this device read your records".
-  // X + TOTP answers the first; these methods answer the second. Keeping them
+  // The sign-in answers the first; these methods answer the second. Keeping them
   // distinct is the whole point of the mode — an authenticated session that holds
   // no key is a legitimate state, not a failure.
 
   /**
    * Unlock data from an authenticated-but-locked session, using one factor.
    *
-   * The locked token stands in for the identity that X proved, so the factor here
-   * is a *data* credential — the account password or a recovery key — not the
-   * second factor (that was already spent proving identity). The token is spent
-   * only after the factor succeeds, so a mistyped password does not cost a new X
-   * round-trip.
+   * The locked token stands in for the identity the provider already proved, so the
+   * factor here is a *data* credential — the account password or a recovery key.
+   * The token is spent only after the factor succeeds, so a mistyped password does
+   * not cost a new provider round-trip.
    */
   async unlockData(
     lockedToken: unknown,
@@ -796,11 +512,11 @@ export const AccountService = {
    * metadata rewrite rather than a re-encryption — see the spec's requirement that
    * a switch must not regenerate the DEK.
    *
-   * Requires the *current password* (not a TOTP code): lowering the mode reduces
-   * privacy, raising it changes which wrappers exist, and both are changes to how
-   * the data key is protected, so the check is against the credential that protects
-   * it. The server wrapper is the one case that needs no password of its own — the
-   * live session already holds the DEK.
+   * Requires the *current password*: lowering the mode reduces privacy, raising it
+   * changes which wrappers exist, and both are changes to how the data key is
+   * protected, so the check is against the credential that protects it. The server
+   * wrapper is the one case that needs no password of its own — the live session
+   * already holds the DEK.
    */
   async switchPrivacyMode(
     ctx: AuthContext,
@@ -1050,8 +766,8 @@ export const AccountService = {
    *
    * This is the usernameless path end to end: the credential id in the response names
    * the account, the PRF output opens its DEK, and a normal session comes back. No
-   * username, no password, no TOTP — the authenticator's user verification is the
-   * proof of presence, and its PRF output is the key.
+   * username, no password — the authenticator's user verification is the proof of
+   * presence, and its PRF output is the key.
    */
   async finishPasskeyAuthentication(
     responseRaw: unknown,
@@ -1210,7 +926,7 @@ export const AccountService = {
     ctx: AuthContext,
     currentPassword: unknown,
     newPasswordRaw: unknown,
-  ): Promise<Result<{ recoveryCodes: string[] | null }>> {
+  ): Promise<Result<void>> {
     const newPassword = validatePassword(newPasswordRaw);
     if (!newPassword.ok) return newPassword;
 
@@ -1245,16 +961,7 @@ export const AccountService = {
     closeUserSessions(ctx.userId);
     await getPool().query(`DELETE FROM api_tokens WHERE user_id = $1`, [ctx.userId]);
     await this.recordAuthEvent(ctx.userId, 'password_change');
-
-    // Rotate recovery codes only when the account could not have seen the old ones
-    // — an X-created account setting its first password. Otherwise keep them; a
-    // silent rotation would invalidate the paper copy in the user's drawer.
-    const hadPassword = user.password_set_at !== null;
-    if (hadPassword) return { ok: true, value: { recoveryCodes: null } };
-
-    const codes = await generateBackupCodes();
-    await replaceRecoveryCodes(ctx.userId, codes.hashes);
-    return { ok: true, value: { recoveryCodes: codes.plaintext } };
+    return { ok: true, value: undefined };
   },
 
   /**
@@ -1273,27 +980,6 @@ export const AccountService = {
   async hasBoundCredentials(userId: string): Promise<boolean> {
     const user = await loadUser({ id: userId });
     return user?.password_set_at !== null && user?.password_set_at !== undefined;
-  },
-
-  /** Regenerate recovery codes, invalidating the old set. Requires a TOTP code. */
-  async regenerateRecoveryCodes(ctx: AuthContext, code: unknown): Promise<Result<string[]>> {
-    const user = await loadUser({ id: ctx.userId });
-    if (!user?.totp_secret_sealed) return { ok: false, error: 'account not found' };
-    if (typeof code !== 'string' || !(await consumeTotpStep(user.id, user.totp_secret_sealed, code))) {
-      return { ok: false, error: 'that code is not valid' };
-    }
-
-    // Rotation revokes the whole set, including already-used ones, so the account's
-    // recovery state is unambiguous after a suspected compromise.
-    const codes = await generateBackupCodes();
-    await withTransaction(async (client) => {
-      await client.query(`DELETE FROM totp_backup_codes WHERE user_id = $1`, [ctx.userId]);
-      for (const hash of codes.hashes) {
-        await client.query(`INSERT INTO totp_backup_codes (user_id, code_hash) VALUES ($1, $2)`, [ctx.userId, hash]);
-      }
-    });
-    await this.recordAuthEvent(ctx.userId, 'recovery_codes_rotated');
-    return { ok: true, value: codes.plaintext };
   },
 
   // --- Agent tokens -------------------------------------------------------
@@ -1523,42 +1209,17 @@ export const AccountService = {
       const user = await loadUser({ id: userId });
       if (!user) return { ok: false, error: 'linked account no longer exists' };
 
-      // An account created through X that never finished enrolment cannot sign in: the
-      // sign-in path still requires a completed second factor, which is why this leg
-      // exists. Both go together in the change that removes TOTP.
-      if (!isComplete(user)) {
-        return { ok: true, value: await this.beginXSetup(user, profile) };
-      }
-
       return { ok: true, value: { outcome: 'login', oneTimeCode: issueOneTimeCode(userId) } };
     }
 
     // --- First time seeing this X account: create the account ---
+    //
+    // Usable immediately. The prompt to bind a fallback comes from
+    // `/auth/login-methods` reporting `recovery_risk`, and gates *records* rather than
+    // the account — see `requireBoundCtx`.
     const created = await this.createAccountFromX(profile);
     if (!created.ok) return created;
-    return { ok: true, value: await this.beginXSetup(created.value, profile) };
-  },
-
-  /** Issue setup material for an account that has not finished enrolling. */
-  async beginXSetup(
-    user: AccountRow,
-    profile: XProfile,
-  ): Promise<{ outcome: 'setup'; setupToken: string; username: string; totp: EnrollmentMaterial }> {
-    const { material, sealed, codeHashes } = await buildEnrollment(user.id);
-    await withTransaction(async (client) => {
-      await client.query(
-        `UPDATE users SET totp_secret_sealed = $1, display_name = COALESCE(display_name, $2), updated_at = now()
-          WHERE id = $3`,
-        [sealed, profile.handle, user.id],
-      );
-      await replaceRecoveryCodes(user.id, codeHashes, client);
-    });
-    return {
-      outcome: 'setup',
-      setupToken: openPendingSetup(user.id),
-      username: user.username,
-      totp: material,
-    };
+    return { ok: true, value: { outcome: 'login', oneTimeCode: issueOneTimeCode(created.value.id) } };
   },
 
   // --- Google OAuth -------------------------------------------------------
@@ -1602,9 +1263,9 @@ export const AccountService = {
    * Handle the Google callback.
    *
    * Simpler than X's by construction: identity comes out of the ID token, so there is no
-   * profile request, and the account needs no follow-up enrolment — it is usable the
-   * moment it exists. What it does need is the anti-ban prompt, which the app derives
-   * from `loginOverview` (`recovery_risk: true` while no password is bound).
+   * profile request, and the account is usable the moment it exists. What it does
+   * need is the anti-ban prompt, which the app derives from `loginOverview`
+   * (`recovery_risk: true` while no password is bound).
    */
   async completeGoogleCallback(query: {
     code?: string;
@@ -1707,17 +1368,29 @@ export const AccountService = {
     profile: { id: string; handle: string | null; displayName: string | null; avatarUrl: string | null },
   ): Promise<Result<AccountRow>> {
     const base = usernameFromHandle(profile.handle);
+    // Key material is created per attempt, with the server wrapper and no password
+    // wrapper. Without it an OAuth account had no DEK at all, so `serverDekFor` had
+    // nothing to unwrap and sign-in could only hand back a locked token — which made
+    // binding a fallback credential impossible, because that endpoint needs a real
+    // session. That deadlock is why this exists.
+    const serverKey = getConfig().serverDekKey;
+
     // Usernames are unique; a provider handle or address may collide with a local
     // account that already holds the name. Try the plain name, then suffixed variants.
     for (let attempt = 0; attempt < 12; attempt++) {
       const candidate = attempt === 0 ? base : `${base.slice(0, 26)}_${randomBytes(2).toString('hex')}`;
+      const userId = randomUUID();
+      // The metadata is bound to the id it was wrapped for, so it has to be built per
+      // attempt rather than hoisted out of the loop.
+      const { metadata } = await createPasswordlessKeyMaterial(userId, { serverKey });
       try {
         const { rows } = await getPool().query<AccountRow>(
-          `INSERT INTO users (id, username, display_name, totp_secret_sealed, failed_unlocks)
-           VALUES ($1, $2, $3, NULL, 0)
+          `INSERT INTO users (id, username, display_name, wrapped_dek, encryption_metadata,
+                              failed_unlocks)
+           VALUES ($1, $2, $3, NULL, $4, 0)
            RETURNING id, username, display_name, password_hash, password_set_at, wrapped_dek,
-                     totp_secret_sealed, totp_enabled_at, totp_last_step, failed_unlocks, locked_until`,
-          [randomUUID(), candidate, profile.displayName ?? profile.handle],
+                     failed_unlocks, locked_until`,
+          [userId, candidate, profile.displayName ?? profile.handle, JSON.stringify(metadata)],
         );
         const user = rows[0];
         await getPool().query(
@@ -1737,110 +1410,17 @@ export const AccountService = {
   },
 
   /**
-   * Complete setup for an X-created account: set a password and confirm TOTP.
-   *
-   * This is the step that makes the account real. Until it runs the account has no
-   * data key, so there is nothing to lose if X is lost — and nothing to read either.
-   */
-  async completeSetup(
-    setupToken: string,
-    passwordRaw: unknown,
-    code: unknown,
-    opts: { privacyMode?: unknown } = {},
-  ): Promise<Result<UnlockedAccount & { recoveryCodes: string[] | null }>> {
-    const userId = takePendingSetup(setupToken);
-    if (!userId) return { ok: false, error: 'setup session expired; sign in with X again to restart' };
-
-    const password = validatePassword(passwordRaw);
-    if (!password.ok) return password;
-    if (typeof code !== 'string') return { ok: false, error: 'code: required' };
-    const privacyMode = validatePrivacyMode(opts.privacyMode);
-    if (!privacyMode.ok) return privacyMode;
-
-    const user = await loadUser({ id: userId });
-    if (!user) return { ok: false, error: 'account not found' };
-
-    const firstPassword = user.password_set_at === null;
-    const { metadata, dek } = await buildKeyMaterial(password.value, userId, privacyMode.value);
-
-    if (!user.totp_secret_sealed) {
-      return { ok: false, error: 'no enrolment in progress; restart the X sign-in' };
-    }
-    const secret = await openTotpSecret(user.totp_secret_sealed, getConfig().totpEncKey);
-    if (secret === null) return { ok: false, error: 'could not read the enrolment secret' };
-    const step = verifyTotpCodeWithStep(secret, code);
-    if (step === null) return { ok: false, error: 'that code is not valid — check the device clock' };
-    void step; // not recorded — see the note in `confirmEnrollment`
-
-    const passwordHash = await hashPassword(password.value);
-    await getPool().query(
-      `UPDATE users
-          SET password_hash = $1, password_set_at = now(), wrapped_dek = $2,
-              privacy_mode = $3, encryption_metadata = $4,
-              totp_enabled_at = now(), failed_unlocks = 0, locked_until = NULL,
-              updated_at = now()
-        WHERE id = $5`,
-      [
-        passwordHash,
-        JSON.stringify(passwordEnvelopeOf(metadata)),
-        privacyMode.value,
-        JSON.stringify(metadata),
-        userId,
-      ],
-    );
-    await this.recordAuthEvent(userId, 'setup_completed');
-
-    const token = openSession(userId, requireKey(dek, 'completeSetup'), getConfig().sessionTtlMinutes);
-    return {
-      ok: true,
-      value: {
-        userId,
-        username: user.username,
-        token,
-        // Recovery codes were minted with the enrolment material; null means the
-        // caller already displayed them, so they are not re-shown.
-        recoveryCodes: firstPassword ? null : null,
-      },
-    };
-  },
-
-  /**
-   * Finish an X sign-in.
-   *
-   * This is the honest shape of the design, and it is worth being explicit about
-   * because it is a real limitation rather than an oversight:
-   *
-   * X proves *identity*. It does not and cannot supply the **password**, and the
-   * password is what unwraps the data key. So an X sign-in verifies the person and
-   * then still needs the password before any record can be read. It is a faster
-   * path to "which account is this", not a way to skip the credential.
-   *
-   * The alternative — wrapping the DEK under something X *can* supply — would mean
-   * the DEK is recoverable from the X account, which is exactly the dependency the
-   * user asked to avoid (an X ban must not cost the data) and would also hand X a
-   * path to the encryption key.
-   *
-   * Callers therefore use the returned `username` to pre-fill the sign-in form, and
-   * the normal password + TOTP unlock runs from there. When the account already has
-   * an active unlock on this server, that existing session is reused instead, which
-   * is what makes X login feel like a single click in the common case.
-   */
-  /**
    * Delete an account and everything belonging to it.
    *
-   * Requires the password AND a second factor, because this is the most destructive
-   * action the service offers and the one an attacker holding a stolen session would
-   * most want. A session alone is not enough.
-   *
-   * A recovery code is accepted in place of a TOTP code, for the same reason it is
-   * accepted at sign-in: someone whose authenticator is gone must still be able to
-   * exercise their own right to erasure. Refusing that would leave the account
-   * undeletable precisely when the user most wants it gone.
+   * The password authorises it, on top of the lockout budget it shares with
+   * sign-in: a session alone is not enough, because this is the most destructive
+   * action the service offers and the one an attacker holding a stolen session
+   * would most want.
    *
    * This is a real delete, not a flag. Every table referencing `users` declares
-   * `ON DELETE CASCADE`, so records, settings, recovery codes, API tokens and OAuth
-   * links all go with the row — the only way the Privacy Policy's deletion promise
-   * can be honest. `auth_events` is removed explicitly because its foreign key is
+   * `ON DELETE CASCADE`, so records, settings, API tokens and OAuth links all go
+   * with the row — the only way the Privacy Policy's deletion promise can be
+   * honest. `auth_events` is removed explicitly because its foreign key is
    * `ON DELETE SET NULL`, so a cascade would leave rows behind still holding IP
    * addresses, which is exactly what deletion is supposed to remove.
    *
@@ -1850,7 +1430,7 @@ export const AccountService = {
   async deleteAccount(
     ctx: AuthContext,
     passwordRaw: unknown,
-    opts: { code?: unknown; backupCode?: unknown; reason?: unknown } = {},
+    opts: { reason?: unknown } = {},
   ): Promise<Result<{ deleted: true }>> {
     const user = await loadUser({ id: ctx.userId });
     if (!user) return { ok: false, error: 'account not found' };
@@ -1862,29 +1442,11 @@ export const AccountService = {
       return { ok: false, error: 'too many failed attempts; try again later' };
     }
 
-    // Every failure below returns the same message. A wrong password and a wrong code
-    // must not be distinguishable, or this endpoint becomes an oracle for the
-    // credentials it protects.
+    // Every failure below returns the same message, or this endpoint becomes an
+    // oracle for the credential it protects.
     const generic = { ok: false as const, error: 'invalid credentials' };
 
     if (!(await verifyPassword(String(passwordRaw ?? ''), user.password_hash))) {
-      await this.noteFailedUnlock(user.id);
-      return generic;
-    }
-
-    const usingBackup = typeof opts.backupCode === 'string' && opts.backupCode.length > 0;
-    if (usingBackup) {
-      if (!(await consumeBackupCode(user.id, opts.backupCode as string))) {
-        await this.noteFailedUnlock(user.id);
-        return generic;
-      }
-    } else if (typeof opts.code !== 'string' || opts.code.length === 0) {
-      // Deliberately NOT counted as a failed attempt. The password has already been
-      // proven correct at this point, so this is a client mid-flow — a UI that asks
-      // for the password and the code on separate screens — not a guess. Counting it
-      // would let an honest user lock themselves out of deleting their own account.
-      return { ok: false, error: 'two_factor_required' };
-    } else if (!user.totp_secret_sealed || !(await consumeTotpStep(user.id, user.totp_secret_sealed, opts.code))) {
       await this.noteFailedUnlock(user.id);
       return generic;
     }
@@ -1903,7 +1465,7 @@ export const AccountService = {
         reason,
         user.created_at,
       ]);
-      // Cascades to api_tokens, totp_backup_codes, oauth_accounts, oauth_states,
+      // Cascades to api_tokens, oauth_accounts, oauth_states,
       // medication_events, lab_results and user_settings.
       await client.query(`DELETE FROM users WHERE id = $1`, [user.id]);
     });
@@ -1916,10 +1478,28 @@ export const AccountService = {
     return { ok: true, value: { deleted: true } };
   },
 
-  /** Redeem the single-use code from an X callback for a session, or a locked token. */
-  async completeXSignIn(oneTimeCode: unknown): Promise<
-    Result<{ userId: string; username: string; token: string | null; lockedToken?: string }>
-  > {
+  /**
+   * Redeem the single-use code from an OAuth callback for a session, or a locked token.
+   *
+   * The callback redirects the browser back to the app with a one-time code rather
+   * than a session, so a URL that leaks out of browser history is not a credential.
+   * This is where that code becomes a session again. Both providers share it: the
+   * work below is about *this account*, not about who proved the identity, and
+   * duplicating it per provider would mean two copies of the same rule about locked
+   * versus open sessions.
+   *
+   * A provider sign-in proves *identity*, and identity alone does not open the data.
+   * In standard mode the server wrapper supplies the key and a real session comes
+   * back; in advanced mode no key exists to supply one, so a locked token carries the
+   * verified identity to the unlock step. Callers use the returned `username` to
+   * pre-fill the sign-in form, and when an unlock is already live on this server it is
+   * reused instead — which is what makes provider login feel like one click in the
+   * common case.
+   */
+  async completeProviderSignIn(
+    provider: 'x' | 'google',
+    oneTimeCode: unknown,
+  ): Promise<Result<{ userId: string; username: string; token: string | null; lockedToken?: string }>> {
     if (typeof oneTimeCode !== 'string' || oneTimeCode.length === 0) {
       return { ok: false, error: 'code: required' };
     }
@@ -1928,14 +1508,16 @@ export const AccountService = {
 
     const user = await loadUser({ id: userId });
     if (!user) return { ok: false, error: 'linked account no longer exists' };
-    if (!isComplete(user)) return { ok: false, error: 'account setup is incomplete' };
+    // No completeness gate: the user has just proved identity with the provider, and
+    // this session is what lets them bind the fallback credential that the records
+    // gate asks for. Refusing here would be a dead end.
 
     // A live unlock on this server (e.g. another tab, or a recent sign-in) already
     // holds the key, so no password is needed from this caller.
     const existing = findUserSessionFor(userId);
     if (existing) {
       const token = openSession(userId, existing, getConfig().sessionTtlMinutes);
-      await this.recordAuthEvent(userId, 'x_login_session_reused');
+      await this.recordAuthEvent(userId, `${provider}_login_session_reused`);
       return { ok: true, value: { userId, username: user.username, token } };
     }
 
@@ -1945,7 +1527,7 @@ export const AccountService = {
     const serverDek = await serverDekFor(user);
     if (serverDek) {
       const token = openSession(userId, serverDek, getConfig().sessionTtlMinutes);
-      await this.recordAuthEvent(userId, 'x_login_server_unlock');
+      await this.recordAuthEvent(userId, `${provider}_login_server_unlock`);
       return { ok: true, value: { userId, username: user.username, token } };
     }
 
@@ -1953,7 +1535,7 @@ export const AccountService = {
     // A locked token carries the identity forward to the unlock step without ever
     // carrying a key — the honest state the spec asks to be shown as "verified, but
     // this device has not unlocked your records" rather than "sign-in failed".
-    await this.recordAuthEvent(userId, 'x_login_password_required');
+    await this.recordAuthEvent(userId, `${provider}_login_password_required`);
     return {
       ok: true,
       value: {
@@ -2017,14 +1599,33 @@ export const AccountService = {
     }
 
     const passwordHash = await hashPassword(password.value);
+
+    // The password has to *unlock*, not just authenticate.
+    //
+    // An account created through X or Google had no password, so its key material
+    // carried no password wrapper — the DEK was only reachable through the server
+    // wrapper. Writing the hash alone would let the user sign in and then find every
+    // record sealed against them, which is the same deadlock this endpoint exists to
+    // remove, one step later. The DEK is in hand already: it is the one the session
+    // that is calling this was opened with, so wrapping it needs no unwrap.
+    const metadata = await setPasswordWrapper(metadataFor(user), ctx.dek, password.value, ctx.userId);
+    const legacy = passwordEnvelopeOf(metadata);
+
     try {
       await getPool().query(
         `UPDATE users
             SET username = $2, password_hash = $3,
                 password_set_at = COALESCE(password_set_at, now()),
+                encryption_metadata = $4, wrapped_dek = $5,
                 updated_at = now()
           WHERE id = $1`,
-        [ctx.userId, username.value, passwordHash],
+        [
+          ctx.userId,
+          username.value,
+          passwordHash,
+          JSON.stringify(metadata),
+          legacy ? JSON.stringify(legacy) : null,
+        ],
       );
     } catch (error) {
       // The unique index is the real arbiter: two requests can both pass the check
@@ -2040,28 +1641,23 @@ export const AccountService = {
   },
 
   /**
-   * Unlink one provider. Requires a TOTP code, since it changes how the account is
-   * reached.
+   * Unlink one provider.
    *
    * Refuses when this is the last way in. The comment this replaced claimed "a usable
    * account always has a password", which is false for exactly the accounts this
    * product creates through X: an OAuth signup has no password, so unlinking would
    * have left an account nobody — including its owner — could open.
+   *
+   * What guards it is the rule below and the fact that a session is needed to call
+   * this at all.
    */
-  async unlinkProvider(ctx: AuthContext, provider: string, code: unknown): Promise<Result<void>> {
+  async unlinkProvider(ctx: AuthContext, provider: string): Promise<Result<void>> {
     if (provider !== 'x' && provider !== 'google') {
       return { ok: false, error: 'unsupported provider' };
     }
 
     const user = await loadUser({ id: ctx.userId });
-    if (!user?.totp_secret_sealed) return { ok: false, error: 'account not found' };
-    if (typeof code !== 'string' || !(await consumeTotpStep(user.id, user.totp_secret_sealed, code))) {
-      // A recovery code is accepted here too: someone who lost their authenticator
-      // must still be able to detach a compromised social account.
-      if (!(typeof code === 'string' && (await consumeBackupCode(user.id, code)))) {
-        return { ok: false, error: 'that code is not valid' };
-      }
-    }
+    if (!user) return { ok: false, error: 'account not found' };
 
     const { hasPassword, providers } = await this.loginMethodsFor(ctx.userId);
     const others = providers.filter((p) => p !== provider);
@@ -2081,8 +1677,8 @@ export const AccountService = {
   },
 
   /** Unlink X. Kept as a named alias so existing callers and tests keep working. */
-  async unlinkX(ctx: AuthContext, code: unknown): Promise<Result<void>> {
-    return await this.unlinkProvider(ctx, 'x', code);
+  async unlinkX(ctx: AuthContext): Promise<Result<void>> {
+    return await this.unlinkProvider(ctx, 'x');
   },
 
   async listXLinks(userId: string): Promise<{
@@ -2223,15 +1819,6 @@ export const AccountService = {
     return { ok: true, value: await settings.upsert(ctx.userId, update) };
   },
 };
-
-/** Recover the DEK once, right after registration, so enrolment can open a session. */
-async function currentDekForEnrollment(password: string, userId: string): Promise<string> {
-  const user = await loadUser({ id: userId });
-  if (!user) throw new Error('registration lost its own row');
-  const dek = await unwrapDek(user.wrapped_dek, password, userId);
-  if (dek === null) throw new Error('registration could not recover the new key');
-  return dek;
-}
 
 /**
  * Assert a value that must be a non-empty string.

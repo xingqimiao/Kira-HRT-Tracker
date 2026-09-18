@@ -2,9 +2,10 @@
  * The two privacy modes.
  *
  * The spec's acceptance line is short: standard is simple and recoverable, advanced
- * keeps the server out of the data key, X + TOTP is identity in both, and a switch
- * never re-encrypts a record. Each of those is one test below, plus the security
- * regression the spec asks for explicitly — that nothing turns X + TOTP into a DEK.
+ * keeps the server out of the data key, a provider sign-in is identity and not access
+ * in both, and a switch never re-encrypts a record. Each of those is one test below,
+ * plus the security regression the spec asks for explicitly — that nothing turns an
+ * OAuth identity into a DEK.
  *
  * The test that carries the most weight is "a switch leaves the ciphertext byte for
  * byte". It is the difference between a rewrap and a rewrite, and it is the thing the
@@ -35,8 +36,9 @@ before(async () => {
     apiBaseUrl: 'https://api.hrt.test',
     port: 0,
     databaseUrl: '',
-    totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
     serverDekKey: SERVER_DEK_KEY,
+    encryptionKey: null,
+    google: null,
     turnstile: null,
     webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: null,
@@ -280,25 +282,26 @@ test('a durable token reaches records in standard mode but not advanced', async 
   }
 });
 
-test('X + TOTP never yields the DEK, and neither does the TOTP secret', async () => {
+test('a provider sign-in never yields the DEK on its own', async () => {
   resetRateLimits();
   const account = await registerAccount(base, { privacyMode: 'advanced' });
 
-  // The TOTP secret is on the server (sealed), so it plainly cannot be the key: the
-  // DEK is random and independent. Asserted structurally — the wrapper set has no
-  // member keyed by the secret, and the secret is not stored in the metadata.
+  // In advanced mode the key is wrapped only under the user's own credentials, so
+  // there is no wrapper the server could hand to a provider round-trip. Asserted
+  // structurally, because that absence is the whole guarantee.
   const { metadata } = await metadataFor(account.userId);
-  assert.ok(!JSON.stringify(metadata).includes(account.secret), 'the TOTP secret is not key material');
+  assert.equal(metadata.wrappers.server, undefined, 'no server wrapper exists to hand over');
 
-  // And a full password + TOTP sign-in does open data — that is the user's own
-  // credential working — but completing X + TOTP alone (no password) never does.
+  // The password does open the data — that is the user's own credential working.
   const signInResult = await signIn(base, account);
-  assert.equal(signInResult.status, 200, 'password + TOTP is the user unlocking their own data');
+  assert.equal(signInResult.status, 200, 'the password is the user unlocking their own data');
 
+  // Whereas completing a provider sign-in alone never does: it returns identity, and
+  // the client is sent to the unlock step for the key.
   const fresh = await registerAccount(base, { privacyMode: 'advanced' });
   const user = await getUser(fresh.username);
   const redeemed = await xSignInExchange(user);
-  assert.equal(redeemed.token, null, 'X + TOTP alone is identity, not access');
+  assert.equal(redeemed.token, null, 'provider identity alone is not access');
 });
 
 // --- helpers the X flow needs, since there is no live X in this suite ----------
@@ -317,8 +320,8 @@ async function lockedFor(account: { userId: string }): Promise<string> {
 /**
  * The standard-mode X path: an account with a server wrapper signs in from X alone.
  *
- * Driven through `completeXSignIn` rather than a stubbed HTTP callback, because what
- * is under test is the key decision inside it, not the OAuth plumbing (covered in
+ * Driven through `completeProviderSignIn` rather than a stubbed HTTP callback, because
+ * what is under test is the key decision inside it, not the OAuth plumbing (covered in
  * `accounts.test.ts`).
  *
  * Every live unlock is dropped first. Registration opens one, and an X sign-in that
@@ -330,7 +333,7 @@ async function xSignInRedeem(userId: string): Promise<string | null> {
   const { issueOneTimeCode, closeUserSessions } = await import('../src/session.ts');
   closeUserSessions(userId);
   const code = issueOneTimeCode(userId);
-  const result = await AccountService.completeXSignIn(code);
+  const result = await AccountService.completeProviderSignIn('x', code);
   assert.ok(result.ok, JSON.stringify(result));
   return result.ok ? result.value.token : null;
 }
@@ -340,7 +343,7 @@ async function xSignInExchange(userId: string): Promise<{ token: string | null; 
   const { issueOneTimeCode, closeUserSessions } = await import('../src/session.ts');
   closeUserSessions(userId);
   const code = issueOneTimeCode(userId);
-  const result = await AccountService.completeXSignIn(code);
+  const result = await AccountService.completeProviderSignIn('x', code);
   assert.ok(result.ok, JSON.stringify(result));
   if (!result.ok) return { token: null };
   return { token: result.value.token, locked_token: result.value.lockedToken };

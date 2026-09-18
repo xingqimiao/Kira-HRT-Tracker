@@ -78,12 +78,6 @@ export interface Config {
   apiBaseUrl: string;
   port: number;
   databaseUrl: string;
-  /**
-   * Encrypts TOTP secrets at rest. TOTP is a second factor, so a database dump
-   * that carries the secrets in the clear silently removes that factor for every
-   * account — the same class of failure as storing passwords unsalted.
-   */
-  totpEncKey: string;
   /** Absent until the X app is registered; X login is then reported as unconfigured. */
   x: XOAuthConfig | null;
   /**
@@ -182,14 +176,6 @@ function requireOrigin(raw: string | undefined, name: string): string {
   return url.origin;
 }
 
-function requireSecret(raw: string | undefined, name: string): string {
-  if (!raw) throw new ConfigError(`${name} is required`);
-  if (raw.length < MIN_SECRET_LENGTH) {
-    throw new ConfigError(`${name} must be at least ${MIN_SECRET_LENGTH} characters`);
-  }
-  return raw;
-}
-
 /**
  * Common second-level labels that are themselves a public suffix.
  *
@@ -280,11 +266,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const databaseUrl = env.DATABASE_URL;
   if (!databaseUrl) throw new ConfigError('DATABASE_URL is required');
 
-  const totpEncKey = requireSecret(env.TOTP_ENC_KEY, 'TOTP_ENC_KEY');
-
   // X is optional as a whole: an instance with no X app configured runs purely on
-  // password + TOTP. Half-configured is the failure worth catching, so if any of
-  // the three is present all three must be.
+  // passwords. Half-configured is the failure worth catching, so if any of the
+  // three is present all three must be.
   const xClientId = env.X_CLIENT_ID?.trim();
   const xClientSecret = env.X_CLIENT_SECRET?.trim();
   const xRedirect = env.X_REDIRECT_URI?.trim();
@@ -322,7 +306,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
 
   // The standard-mode server key. Optional generally, required in production —
-  // see the interface comment. 32 bytes is the floor, same as TOTP_ENC_KEY.
+  // see the interface comment. 32 bytes is the floor.
   const serverDekKeyRaw = env.SERVER_DEK_KEY?.trim();
   const serverDekKey = serverDekKeyRaw ? serverDekKeyRaw : null;
   if (serverDekKey && serverDekKey.length < MIN_SECRET_LENGTH) {
@@ -434,7 +418,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     apiBaseUrl: `${apiOrigin}${basePath}`,
     port,
     databaseUrl,
-    totpEncKey,
     x,
     google,
     serverDekKey,

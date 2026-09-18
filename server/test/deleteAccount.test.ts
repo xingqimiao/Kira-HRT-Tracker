@@ -9,10 +9,9 @@
  *      afterwards — checked per table rather than assumed from `ON DELETE CASCADE`,
  *      because `auth_events` uses `ON DELETE SET NULL` and would otherwise leave rows
  *      behind still holding IP addresses.
- *   2. **It cannot be triggered without both factors.** The endpoint is the most
- *      destructive one the service offers, so a stolen session, a wrong password, or
- *      a missing code must all fail — and a recovery code must still work, so an
- *      account whose authenticator is gone is not left undeletable.
+ *   2. **It cannot be triggered without the password.** The endpoint is the most
+ *      destructive one the service offers, so a stolen session or a wrong password
+ *      must fail, and the lockout it shares with sign-in must apply here too.
  */
 import assert from 'node:assert/strict';
 import { test, before, after } from 'node:test';
@@ -21,7 +20,6 @@ import type { Server } from 'node:http';
 import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
 import { registerAccount } from './helpers.ts';
 import { setConfigForTesting } from '../src/config.ts';
-import { totpCodeAt } from '../src/totp.ts';
 
 let pg: PostgresHandle;
 let server: Server | undefined;
@@ -35,11 +33,12 @@ before(async () => {
     apiBaseUrl: 'https://api.hrt.test',
     port: 0,
     databaseUrl: '',
-    totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    encryptionKey: null,
     turnstile: null,
     webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: null,
+    google: null,
     sessionTtlMinutes: 30,
     // Generous: these tests deliberately repeat credential attempts, and the limiter
     // is exercised by its own test in accounts.test.ts.
@@ -84,7 +83,6 @@ const USER_SCOPED_TABLES = [
   'lab_results',
   'user_settings',
   'api_tokens',
-  'totp_backup_codes',
   'oauth_accounts',
   'auth_events',
 ] as const;
@@ -122,7 +120,6 @@ test('the account summary reports what deletion would remove', async () => {
   assert.equal(summary.status, 200, JSON.stringify(summary.body));
   assert.equal(summary.body.dose_count, 1);
   assert.equal(summary.body.lab_count, 1);
-  assert.equal(summary.body.recovery_codes_remaining, 10, 'none used yet');
   assert.ok(summary.body.created_at, 'reports when the account was created');
   // No X linked, so there is no avatar to show — and the header falls back to its
   // placeholder glyph. Asserted explicitly because `null` and "absent" are easy to
@@ -167,7 +164,7 @@ test('deletion is complete: no user-scoped row survives', async () => {
   const deleted = await call(
     base,
     '/auth/account/delete',
-    json({ password: account.password, code: totpCodeAt(account.secret) }, account.token),
+    json({ password: account.password }, account.token),
   );
   assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
   assert.equal(deleted.body.deleted, true);
@@ -196,7 +193,7 @@ test('one anonymised tombstone is written, naming nobody', async () => {
   await call(
     base,
     '/auth/account/delete',
-    json({ password: account.password, code: totpCodeAt(account.secret), reason: 'no longer needed' }, account.token),
+    json({ password: account.password, reason: 'no longer needed' }, account.token),
   );
 
   const after = await pool.query<{ reason: string; user_created_at: Date | null }>(
@@ -215,74 +212,6 @@ test('one anonymised tombstone is written, naming nobody', async () => {
   assert.ok(!/user_id|email|ip/.test(serialised), 'and carries no identifying column');
 });
 
-test('deletion requires both factors, and a session alone is not one', async () => {
-  const account = await registerAccount(base);
-  const userId = await userIdFor(account.username);
-
-  const assertAlive = async (label: string) => {
-    const pool = await getPool();
-    const n = (await pool.query<{ n: number }>('SELECT count(*)::int AS n FROM users WHERE id = $1', [userId])).rows[0].n;
-    assert.equal(n, 1, `${label}: the account must still exist`);
-  };
-
-  // No credential at all.
-  const anon = await call(base, '/auth/account/delete', json({ password: account.password, code: '123456' }));
-  assert.equal(anon.status, 401, 'a session is required');
-  await assertAlive('no session');
-
-  // A session plus a code, but no password.
-  const noPassword = await call(base, '/auth/account/delete', json({ code: totpCodeAt(account.secret) }, account.token));
-  assert.equal(noPassword.status, 400);
-  assert.equal(noPassword.body.error, 'invalid credentials');
-  await assertAlive('no password');
-
-  // Wrong password, with a valid code.
-  const wrongPassword = await call(
-    base,
-    '/auth/account/delete',
-    json({ password: 'not-the-password', code: totpCodeAt(account.secret, 1) }, account.token),
-  );
-  assert.equal(wrongPassword.body.error, 'invalid credentials');
-  await assertAlive('wrong password');
-
-  // Password, no second factor.
-  const noCode = await call(base, '/auth/account/delete', json({ password: account.password }, account.token));
-  assert.equal(noCode.body.error, 'two_factor_required');
-  await assertAlive('no second factor');
-
-  // Wrong code.
-  const wrongCode = await call(
-    base,
-    '/auth/account/delete',
-    json({ password: account.password, code: '000000' }, account.token),
-  );
-  assert.equal(wrongCode.body.error, 'invalid credentials');
-  await assertAlive('wrong code');
-
-  // Three of the attempts above counted toward the failed-attempt budget: no password,
-  // wrong password, wrong code. A missing code does not count, deliberately — the
-  // password is already proven at that point, so it is a client mid-flow rather than a
-  // guess, and counting it would let an honest user lock themselves out of deleting
-  // their own account. Budget is 5, so the account is not locked yet and the correct
-  // credentials must still work.
-  const pool = await getPool();
-  const counter = await pool.query<{ failed_unlocks: number }>(
-    'SELECT failed_unlocks FROM users WHERE id = $1',
-    [userId],
-  );
-  assert.equal(counter.rows[0].failed_unlocks, 3, 'exactly the three genuine guesses counted');
-
-  // The current step. Not a future one: the drift window is ±1 step, so `+2` is a
-  // minute ahead and never verifies — an earlier draft used it and the resulting
-  // failure looked like a lockout problem when it was a bad fixture.
-  const ok = await call(
-    base,
-    '/auth/account/delete',
-    json({ password: account.password, code: totpCodeAt(account.secret) }, account.token),
-  );
-  assert.equal(ok.status, 200, JSON.stringify(ok.body));
-});
-
 test('deletion honours the lockout, so it is not a way around the sign-in limit', async () => {
   // Without the lockout check, an attacker locked out of /auth/login could keep
   // guessing the password on this endpoint instead — the more damaging target.
@@ -295,14 +224,14 @@ test('deletion honours the lockout, so it is not a way around the sign-in limit'
     await call(
       base,
       '/auth/account/delete',
-      json({ password: 'definitely-wrong', code: totpCodeAt(account.secret) }, account.token),
+      json({ password: 'definitely-wrong' }, account.token),
     );
   }
 
   const locked = await call(
     base,
     '/auth/account/delete',
-    json({ password: account.password, code: totpCodeAt(account.secret) }, account.token),
+    json({ password: account.password }, account.token),
   );
   assert.match(
     locked.body.error,
@@ -319,57 +248,9 @@ test('deletion honours the lockout, so it is not a way around the sign-in limit'
   const after = await call(
     base,
     '/auth/account/delete',
-    json({ password: account.password, code: totpCodeAt(account.secret) }, account.token),
+    json({ password: account.password }, account.token),
   );
   assert.equal(after.status, 200, JSON.stringify(after.body));
-});
-
-test('a recovery code allows deletion when the authenticator is lost', async () => {
-  // The right to erasure cannot depend on owning the authenticator. Refusing here
-  // would leave an account undeletable exactly when a user most wants it gone.
-  const account = await registerAccount(base);
-  const userId = await userIdFor(account.username);
-
-  const deleted = await call(
-    base,
-    '/auth/account/delete',
-    json({ password: account.password, backup_code: account.backupCodes[3] }, account.token),
-  );
-  assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
-
-  const pool = await getPool();
-  const n = (await pool.query<{ n: number }>('SELECT count(*)::int AS n FROM users WHERE id = $1', [userId])).rows[0].n;
-  assert.equal(n, 0, 'the account is gone');
-
-  // And the recovery code was spent, which the tombstone does not record but the
-  // deletion implies — the code list went with the account.
-  assert.equal(await countFor('totp_backup_codes', userId), 0, 'recovery codes are gone too');
-});
-
-test('a wrong recovery code does not delete, and does not bypass the password', async () => {
-  const account = await registerAccount(base);
-  const userId = await userIdFor(account.username);
-  const pool = await getPool();
-
-  const wrongCode = await call(
-    base,
-    '/auth/account/delete',
-    json({ password: account.password, backup_code: 'WRONG-WRONG' }, account.token),
-  );
-  assert.equal(wrongCode.status, 400);
-  assert.equal(wrongCode.body.error, 'invalid credentials');
-
-  // A valid recovery code with a wrong password must still fail: the recovery code
-  // substitutes for the second factor, never for the password.
-  const wrongPassword = await call(
-    base,
-    '/auth/account/delete',
-    json({ password: 'nope-not-it', backup_code: account.backupCodes[0] }, account.token),
-  );
-  assert.equal(wrongPassword.body.error, 'invalid credentials');
-
-  const n = (await pool.query<{ n: number }>('SELECT count(*)::int AS n FROM users WHERE id = $1', [userId])).rows[0].n;
-  assert.equal(n, 1, 'the account survived both attempts');
 });
 
 test('a deleted username can be registered again and starts empty', async () => {
@@ -379,7 +260,7 @@ test('a deleted username can be registered again and starts empty', async () => 
   await call(
     base,
     '/auth/account/delete',
-    json({ password: account.password, code: totpCodeAt(account.secret) }, account.token),
+    json({ password: account.password }, account.token),
   );
 
   // Nothing may outlive the deletion that blocks reuse of the name. This also proves
@@ -395,7 +276,6 @@ test('a deleted username can be registered again and starts empty', async () => 
 
   const summary = await call(base, '/auth/account', auth(again.token));
   assert.equal(summary.body.dose_count, 0);
-  assert.equal(summary.body.recovery_codes_remaining, 10, 'a fresh set of recovery codes');
 
   // The settings were reset too, so the new account does not inherit the old weight.
   const settings = await call(base, '/api/settings', auth(again.token));
@@ -412,7 +292,7 @@ test('deleting one account leaves another untouched', async () => {
   await call(
     base,
     '/auth/account/delete',
-    json({ password: doomed.password, code: totpCodeAt(doomed.secret) }, doomed.token),
+    json({ password: doomed.password }, doomed.token),
   );
 
   // The cascade must be scoped to one account.

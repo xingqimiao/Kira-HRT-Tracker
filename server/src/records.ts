@@ -220,7 +220,7 @@ export const RecordService = {
             `DELETE FROM records WHERE user_id = $1 AND id = $2`,
             [ctx.userId, id],
         );
-        return rowCount > 0;
+        return (rowCount ?? 0) > 0;
     },
 
     /** How many records the account holds, without decrypting anything. */

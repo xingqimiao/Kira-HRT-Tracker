@@ -28,8 +28,9 @@ function configWith(turnstile: Config['turnstile']): Config {
     apiBaseUrl: 'https://api.hrt.test',
     port: 0,
     databaseUrl: '',
-    totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    encryptionKey: null,
+    google: null,
     turnstile,
     webauthn: null,
     x: null,
@@ -104,8 +105,8 @@ test('a transport failure fails closed rather than open', async () => {
 
 test('the secret and the response are sent to siteverify', async () => {
   setConfigForTesting(configWith({ secret: SECRET, hostnames: HOSTS }));
-  const { calls } = stubReply({ success: true, action: 'x_setup', hostname: 'kiramyao.com' });
-  assert.equal((await verifyTurnstile('the-token', 'x_setup', '203.0.113.9')).ok, true);
+  const { calls } = stubReply({ success: true, action: 'register', hostname: 'kiramyao.com' });
+  assert.equal((await verifyTurnstile('the-token', 'register', '203.0.113.9')).ok, true);
 
   assert.equal(calls.length, 1);
   assert.match(calls[0].url, /challenges\.cloudflare\.com\/turnstile\/v0\/siteverify/);

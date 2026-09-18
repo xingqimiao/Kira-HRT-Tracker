@@ -20,7 +20,6 @@ import type { Server } from 'node:http';
 
 import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
 import { setConfigForTesting } from '../src/config.ts';
-import { totpCodeAt } from '../src/totp.ts';
 
 let pg: PostgresHandle;
 let server: Server | undefined;
@@ -37,8 +36,9 @@ before(async () => {
     apiBaseUrl: `https://api.kiramyao.com${MOUNT}`,
     port: 0,
     databaseUrl: '',
-    totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    encryptionKey: null,
+    google: null,
     turnstile: null,
     webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: null,
@@ -103,19 +103,13 @@ test('authentication routes live inside the mount, matching the host convention'
   const inside = await call(host, `${MOUNT}/auth/register`, json({ username: 'mountuser', password: 'a-good-password-1' }));
   assert.equal(inside.status, 201, JSON.stringify(inside.body));
 
-  // And the full flow works through the mount.
-  const secret: string = inside.body.totp.secret;
-  const confirm = await call(
-    host,
-    `${MOUNT}/auth/totp/confirm`,
-    json({ enrollment_token: inside.body.enrollment_token, code: totpCodeAt(secret) }),
-  );
-  assert.equal(confirm.status, 200, JSON.stringify(confirm.body));
-
+  // And the full flow works through the mount. Registration returns a usable session
+  // directly now — the mount is what this test is about, so it needs the shortest path
+  // through the auth surface, not an enrolment round trip that no longer exists.
   const login = await call(
     host,
     `${MOUNT}/auth/login`,
-    json({ username: 'mountuser', password: 'a-good-password-1', code: totpCodeAt(secret) }),
+    json({ username: 'mountuser', password: 'a-good-password-1' }),
   );
   assert.equal(login.status, 200, JSON.stringify(login.body));
   const token = login.body.token;
@@ -141,13 +135,8 @@ test('the MCP endpoint works under the mount', async () => {
   // rather than the path this router matched, so a prefix bug would surface here
   // and nowhere else.
   const reg = await call(host, `${MOUNT}/auth/register`, json({ username: 'mountmcp', password: 'a-good-password-2' }));
-  const secret: string = reg.body.totp.secret;
-  const confirm = await call(
-    host,
-    `${MOUNT}/auth/totp/confirm`,
-    json({ enrollment_token: reg.body.enrollment_token, code: totpCodeAt(secret) }),
-  );
-  const token = confirm.body.token;
+  assert.equal(reg.status, 201, JSON.stringify(reg.body));
+  const token = reg.body.token;
 
   const init = await fetch(`${host}${MOUNT}/mcp`, {
     method: 'POST',
@@ -205,7 +194,6 @@ test('BASE_PATH validation refuses anything that could escape the subtree', asyn
   const { loadConfig, ConfigError } = await import('../src/config.ts');
   const base = {
     DATABASE_URL: 'postgres://x:y@127.0.0.1:5432/z',
-    TOTP_ENC_KEY: 'a'.repeat(48),
     PUBLIC_ORIGIN: 'https://hrt.kiramyao.com',
     API_ORIGIN: 'https://api.kiramyao.com',
   };
@@ -236,7 +224,6 @@ test('the api base URL is composed from origin and prefix', async () => {
   const { loadConfig } = await import('../src/config.ts');
   const cfg = loadConfig({
     DATABASE_URL: 'postgres://x:y@127.0.0.1:5432/z',
-    TOTP_ENC_KEY: 'a'.repeat(48),
     PUBLIC_ORIGIN: 'https://hrt.kiramyao.com',
     API_ORIGIN: 'https://api.kiramyao.com',
     BASE_PATH: '/hrt',
@@ -247,7 +234,6 @@ test('the api base URL is composed from origin and prefix', async () => {
   // would produce `//auth/login` when a caller appends a path.
   const rootCfg = loadConfig({
     DATABASE_URL: 'postgres://x:y@127.0.0.1:5432/z',
-    TOTP_ENC_KEY: 'a'.repeat(48),
     PUBLIC_ORIGIN: 'https://hrt.kiramyao.com',
     API_ORIGIN: 'https://api.kiramyao.com',
   } as NodeJS.ProcessEnv);
@@ -258,7 +244,6 @@ test('the default X redirect URI carries the prefix', async () => {
   const { loadConfig } = await import('../src/config.ts');
   const cfg = loadConfig({
     DATABASE_URL: 'postgres://x:y@127.0.0.1:5432/z',
-    TOTP_ENC_KEY: 'a'.repeat(48),
     PUBLIC_ORIGIN: 'https://hrt.kiramyao.com',
     API_ORIGIN: 'https://api.kiramyao.com',
     BASE_PATH: '/hrt',

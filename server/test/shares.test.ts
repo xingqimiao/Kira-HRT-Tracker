@@ -36,8 +36,8 @@ let base = '';
 // The generous timeout is the embedded-postgres initdb, which is slow on a cold run.
 before(async () => {
   // The full config, not a partial one: the account service reads several of these at
-  // request time, and a missing `totpEncKey` makes registration fail inside the route
-  // rather than at boot.
+  // request time, and a field it needs missing makes registration fail inside the
+  // route rather than at boot.
   setConfigForTesting({
     publicOrigin: 'https://hrt.test',
     apiOrigin: 'https://api.hrt.test',
@@ -45,8 +45,9 @@ before(async () => {
     apiBaseUrl: 'https://api.hrt.test',
     port: 0,
     databaseUrl: '',
-    totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    encryptionKey: null,
+    google: null,
     turnstile: null,
     webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: null,
@@ -88,7 +89,7 @@ const inFuture = (ms: number) => Date.now() + ms;
 const DAY = 24 * 60 * 60 * 1000;
 
 test('a share round-trips, and publicly readable fields carry no identity', async () => {
-  const account = await registerAccount(base, 'sharer_one');
+  const account = await registerAccount(base, { username: 'sharer_one' });
 
   const created = await call(base, '/api/shares', json({
     snapshot: snapshot(),
@@ -114,7 +115,7 @@ test('a share round-trips, and publicly readable fields carry no identity', asyn
 });
 
 test('a snapshot carrying a lab result or a weight is refused', async () => {
-  const account = await registerAccount(base, 'sharer_two');
+  const account = await registerAccount(base, { username: 'sharer_two' });
 
   // Built in the browser, so the server cannot assume the client behaved. Each of
   // these is a real field the app holds and must never publish through a share.
@@ -139,7 +140,7 @@ test('a snapshot carrying a lab result or a weight is refused', async () => {
 });
 
 test('the token is stored only as a hash', async () => {
-  const account = await registerAccount(base, 'sharer_three');
+  const account = await registerAccount(base, { username: 'sharer_three' });
   const created = await call(base, '/api/shares', json({
     snapshot: snapshot(),
     expiresAt: inFuture(DAY),
@@ -155,7 +156,7 @@ test('the token is stored only as a hash', async () => {
 });
 
 test('a password-protected share asks for the password and refuses the wrong one', async () => {
-  const account = await registerAccount(base, 'sharer_four');
+  const account = await registerAccount(base, { username: 'sharer_four' });
   const created = await call(base, '/api/shares', json({
     snapshot: snapshot(),
     password: 'correct-horse-battery',
@@ -188,7 +189,7 @@ test('a password-protected share asks for the password and refuses the wrong one
 });
 
 test('an expired link is refused, and expiry cannot be pushed past the cap', async () => {
-  const account = await registerAccount(base, 'sharer_five');
+  const account = await registerAccount(base, { username: 'sharer_five' });
 
   const tooLong = await call(base, '/api/shares', json({
     snapshot: snapshot(),
@@ -230,7 +231,7 @@ test('an expired link is refused, and expiry cannot be pushed past the cap', asy
 });
 
 test('only live shares are refreshed, and only by their owner', async () => {
-  const account = await registerAccount(base, 'sharer_six');
+  const account = await registerAccount(base, { username: 'sharer_six' });
 
   const live = await call(base, '/api/shares', json({
     snapshot: snapshot(), expiresAt: inFuture(DAY), live: true,
@@ -258,8 +259,8 @@ test('only live shares are refreshed, and only by their owner', async () => {
 });
 
 test('one account cannot revoke another account\'s share', async () => {
-  const owner = await registerAccount(base, 'sharer_seven');
-  const stranger = await registerAccount(base, 'sharer_eight');
+  const owner = await registerAccount(base, { username: 'sharer_seven' });
+  const stranger = await registerAccount(base, { username: 'sharer_eight' });
 
   const created = await call(base, '/api/shares', json({
     snapshot: snapshot(), expiresAt: inFuture(DAY),
@@ -285,7 +286,7 @@ test('one account cannot revoke another account\'s share', async () => {
 });
 
 test('deleting the account deletes its shares', async () => {
-  const account = await registerAccount(base, 'sharer_nine');
+  const account = await registerAccount(base, { username: 'sharer_nine' });
   const created = await call(base, '/api/shares', json({
     snapshot: snapshot(), expiresAt: inFuture(DAY),
   }, account.token));
@@ -320,8 +321,9 @@ test('the access route is rate-limited, because guessing tokens is the threat', 
     apiBaseUrl: 'https://api.hrt.test',
     port: 0,
     databaseUrl: '',
-    totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    encryptionKey: null,
+    google: null,
     turnstile: null,
     webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: null,

@@ -183,9 +183,9 @@ DELETE /auth/oauth/{provider}     解绑一个 provider
 | `payloadCrypto.ts`（AES-256-GCM，`ENCRYPTION_KEY`） | ✅ 已实现，启动期校验 |
 | `ENCRYPTION_KEY` 写入生产环境 | ✅ 已生成（32 字节）并写入 |
 | `crypto.scrypt` 密码哈希 | ✅ **既有实现**（`accounts.ts:188`），无需重写 |
-| Google OAuth provider | ⬜ 待做（X 的 PKCE 流程已存在，可抽象复用） |
-| 绑定/解绑接口（§4.4 / §4.5） | ⬜ 待做 |
-| 前端引导「绑定备用凭据」 | ⬜ 待做 |
+| Google OAuth provider | ✅ 已实现（只申请 `openid`，身份取 ID token 的 `sub`；见 `docs/add-google-oauth.md`） |
+| 绑定/解绑接口（§4.4 / §4.5） | ✅ 已实现（`/auth/credentials/bind`、`/auth/oauth/{provider}/unlink`） |
+| 前端引导「绑定备用凭据」 | ⬜ 待做（服务端已用 `403 account_incomplete` 强制） |
 | Session Cookie（httpOnly/Secure/SameSite=Lax） | ⬜ 待定：现有实现是 Bearer token，见 §7 |
 
 ---

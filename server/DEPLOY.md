@@ -15,9 +15,10 @@ https://api.kiramyao.com
 └── /hrt/*           ← this service
     ├── /hrt/health
     ├── /hrt/stats            ← public aggregate counts, no identifiers
-    ├── /hrt/auth/register, /hrt/auth/login, /hrt/auth/totp/*, /hrt/auth/x/*
+    ├── /hrt/auth/register, /hrt/auth/login, /hrt/auth/unlock
+    ├── /hrt/auth/x/*, /hrt/auth/google/*, /hrt/auth/credentials/bind
     ├── /hrt/api/settings, /hrt/api/medications, /hrt/api/labs, /hrt/api/timeline,
-    │   /hrt/api/predict, /hrt/api/sync, /hrt/api/tokens
+    │   /hrt/api/predict, /hrt/api/sync, /hrt/api/tokens, /hrt/api/records
     └── /hrt/mcp
 ```
 
@@ -41,7 +42,7 @@ used by the login flow.
 | **Organization name** | your real name or org — shown on the consent screen |
 | **Organization URL** | `https://kiramyao.com` |
 | **Terms of Service** | leave empty (see below) |
-| **Privacy Policy** | `https://kiramyao.com/privacy` |
+| **Privacy Policy** | `https://hrt.kiramyao.com/privacy` |
 
 The callback **must** match `X_REDIRECT_URI` byte for byte, prefix included.
 
@@ -57,11 +58,17 @@ medical disclaimer belongs where the reader is about to act on an estimate, whic
 the in-app `DisclaimerModal` and the line under a shared chart
 (`src/i18n/share.ts`), both already present.
 
-The Privacy Policy lives on the main domain; the guide is in
-`PRIVACY-POLICY-GUIDE.md`. Account deletion is implemented, so its deletion
-promise can be made honestly — the guide says what to claim and which claims would be
-false. `CODE-AUDIT.md` maps each claim to the code that verifies it; that file is
-internal and does not go in front of users, who cannot check a file path.
+The Privacy Policy now lives on the **app subdomain**, `hrt.kiramyao.com/privacy`,
+because that is where Google's brand verification requires it: the policy must be
+"hosted within the same domain as your application's home page". It is a real static
+file (`public/privacy/index.html`), so it survives the SPA fallback — the same trick,
+and the same trap, as the paragraph below. `kiramyao.com/privacy` is still the wider
+KiraMyao Equal policy and is linked from it; the app-specific page takes precedence
+for anything about Kira Tracker. Google also requires the home page to describe the
+app and link to the policy, which is why `index.html` carries real content inside
+`#root` (`index.tsx` clears it before the first render).
+
+Account deletion is implemented, so its deletion promise can be made honestly.
 
 ### Serving anything static on this host (the lesson the Terms page left behind)
 
@@ -106,14 +113,15 @@ description line rather than being a bare icon.
 end of this file. The algorithm repository does not declare a licence.
 
 The two policy URLs must resolve. X checks them, and this app stores health data, so
-a privacy policy is not paperwork here. Each page needs at least:
+a privacy policy is not paperwork here. The page needs at least:
 
-- records are encrypted and the operator holds no key at rest (see `ARCHITECTURE.md`),
-- an X account is only used to identify you and never gets access to your key,
+- records are encrypted with AES-256-GCM and the key is held separately from the database,
+- an X or Google account is only used to identify you, and never yields the record key,
 - what is stored: dose logs, lab results, body weight.
 
-Until X is configured the service runs normally on password + TOTP, `/hrt/health`
-reports `"x_login": false`, and the sign-in screen should hide the button.
+Until a provider is configured the service runs normally on username + password,
+`/hrt/health` reports `"x_login": false` / `"google_login": false`, and the sign-in
+screen hides that button.
 
 ---
 
@@ -193,27 +201,36 @@ BASE_PATH=/hrt
 PORT=8788
 BIND_HOST=127.0.0.1
 
-# Encrypts TOTP secrets at rest. Back this up separately from the database: a dump
-# without it cannot mint second-factor codes, but losing it invalidates enrolments.
-TOTP_ENC_KEY=<openssl rand -base64 48>
+# Encrypts record payloads at rest (AES-256-GCM). Back this up separately from the
+# database: a dump without it is unreadable, and losing it makes every stored record
+# unreadable too. Rotating it has the same effect — there is no re-wrap path.
+ENCRYPTION_KEY=<openssl rand -base64 32>
 
-SESSION_TTL_MINUTES=30
+# Wraps each account's data key for standard-mode accounts, so the server can serve
+# their records without asking for a password. Without it every account behaves as
+# advanced mode: identity still signs you in, but the key needs a credential.
+SERVER_DEK_KEY=<openssl rand -base64 48>
+
+SESSION_TTL_MINUTES=10080
 
 # Per-IP budgets. Raise if a shared NAT hits them. Defaults: 5 / 10 / 5 per minute.
 # RATE_LIMIT_LOGIN=10
 # RATE_LIMIT_REGISTER=5
-# RATE_LIMIT_RESUME=5
 # RATE_LIMIT_WINDOW_MS=60000
 
-# X login. Omit all three to run on password + TOTP only.
+# Provider login. Omit a provider's pair to run without it; the app then reports it
+# as unconfigured and hides the button. Half-configured is refused at boot.
 X_CLIENT_ID=<from the portal>
 X_CLIENT_SECRET=<from the portal>
 X_REDIRECT_URI=https://api.kiramyao.com/hrt/auth/x/callback
+
+GOOGLE_CLIENT_ID=<from the Google Cloud console>
+GOOGLE_CLIENT_SECRET=<from the Google Cloud console>
+GOOGLE_REDIRECT_URI=https://api.kiramyao.com/hrt/auth/google/callback
 ```
 
-```bash
-echo "TOTP_ENC_KEY=$(openssl rand -base64 48)"
-```
+`TOTP_ENC_KEY` is gone: it sealed second-factor secrets, and there is no second
+factor any more. Leaving it in `.env` is harmless — nothing reads it.
 
 Leave `PORT` at 8788 — the comment service is on its own port, and nothing here
 depends on which.
@@ -412,10 +429,11 @@ curl -s https://api.kiramyao.com/comments/health
 curl -sI https://api.kiramyao.com/hrt/health -H 'Origin: https://hrt.kiramyao.com' | grep -i access-control-allow-origin
 curl -sI https://api.kiramyao.com/hrt/health -H 'Origin: https://evil.example' | grep -i access-control-allow-origin || echo "correctly refused"
 
-# 5. Registration must NOT return a session token — TOTP is mandatory.
+# 5. Registration returns a session at once — there is no second factor to confirm.
 curl -s https://api.kiramyao.com/hrt/auth/register \
   -H 'Content-Type: application/json' \
   -d '{"username":"smoketest","password":"a-smoke-test-password"}'
+#  -> 201 {"user_id":"…","username":"smoketest","token":"ks_…"}
 
 # 6. The public aggregate. Needs no token, and the body must be counts only —
 #    no ids, no usernames, nothing per-account. If this ever returns a row-shaped
@@ -430,35 +448,44 @@ curl -sI 'https://api.kiramyao.com/hrt/auth/x/callback?code=x&state=y' | head -3
 #    checker sees, and it is the difference between a working policy link and a blank
 #    page. Look for the text, not just the status code — and remember the app
 #    subdomain has a shell that returns 200 for anything, so a 200 proves nothing.
-curl -s https://kiramyao.com/privacy | grep -c "Kira Tracker"
+#    Google's verifier does not run JavaScript, so both of these matter.
+curl -s https://hrt.kiramyao.com/privacy | grep -c "openid"          # >= 1
+curl -s https://hrt.kiramyao.com/ | grep -c "Kira Tracker"          # >= 1
+curl -s https://hrt.kiramyao.com/privacy | wc -c                    # ~12k, not ~2.8k
 
-# 8. And the Privacy Policy, once written, must resolve too — it lives on the main
-#    domain, not on the app subdomain.
-curl -sI https://kiramyao.com/privacy | head -1
+# 8. One provider sign-in still ends in a session, not a dead URL: the callback hands
+#    the browser a one-time code, and the exchange turns it into a session.
+curl -s https://api.kiramyao.com/hrt/auth/google/start | head -c 120
 ```
 
-For step 5: scan `totp.otpauth_uri` with an authenticator, then
-`POST /hrt/auth/totp/confirm`, then `POST /hrt/auth/login` with a code. That is the
-whole mandatory-2FA path in four requests.
+For step 8, the browser half needs a real Google account: sign in with Google, confirm
+you land back in the app signed in, then `POST /hrt/auth/google/exchange` is what the
+app calls with the `code` from the URL.
 
 ---
 
 ## 6. Operations
 
-**Backups.** The database alone is not sufficient. `TOTP_ENC_KEY` seals the
-second-factor secrets, so a restore without it locks every user out of 2FA (recovery
-codes still work, and a user can regenerate). Store the key off the database host.
+**Backups.** Two keys, not one. `ENCRYPTION_KEY` opens every record payload, and
+`SERVER_DEK_KEY` unwraps the per-account data keys of standard-mode accounts. A
+database restore without both is a database full of ciphertext. Store both off the
+database host.
 
-**Rotating `TOTP_ENC_KEY`** invalidates every enrolment. Recovery codes survive —
-they are hashed independently — but expect support load. Prefer not to rotate.
+**Rotating either key is destructive.** `ENCRYPTION_KEY` has no re-wrap path: rotating
+it makes every existing `payload_encrypted` unreadable. `SERVER_DEK_KEY` can be
+rotated only by re-wrapping each account's DEK with the password in hand, so in
+practice it is not rotatable either. Treat both as permanent.
 
-**Lost authenticator.** A recovery code signs in and reports how many remain. With
-none left there is no self-service path: the account is password-wrapped, so the
-operator cannot reset it without the password. That is the intended trade.
+**A lost password on an advanced-mode account.** Advanced mode has no server wrapper,
+so the operator cannot open the account's records. The self-service path is the
+recovery key (`/auth/recovery-key`, set from Settings before it is needed); with
+neither, the data is unrecoverable by design. A standard-mode account can be reached
+with the server key.
 
-**An X ban.** The user signs in with password + TOTP and unlinks X on the account
-page. No data is involved — an X-created account cannot store a single record until a
-password exists.
+**An X or Google ban.** The user signs in with their username and password; the
+provider link is one row in `oauth_accounts` and can be removed from the account page.
+This is why a provider-created account is forced to bind a fallback credential before
+it can store anything — records calls answer `403 account_incomplete` until it does.
 
 **Audit queries:**
 
@@ -466,9 +493,20 @@ password exists.
 SELECT kind, count(*) FROM auth_events GROUP BY kind ORDER BY 2 DESC;
 -- Locked accounts: an attack in progress, or a user who mistyped.
 SELECT username, failed_unlocks, locked_until FROM users WHERE locked_until > now();
--- Accounts that never finished setup.
-SELECT username, created_at FROM users WHERE totp_enabled_at IS NULL ORDER BY created_at;
+-- Accounts created through a provider that never bound a fallback credential.
+SELECT u.username, o.provider, u.created_at
+  FROM users u JOIN oauth_accounts o ON o.user_id = u.id
+ WHERE u.password_hash IS NULL ORDER BY u.created_at;
 ```
+
+**Dropping the old second-factor columns.** `users.totp_secret_sealed`,
+`users.totp_enabled_at`, `users.totp_last_step` and the `totp_backup_codes` table are
+still in `schema.sql` and still in the production database. Nothing reads or writes
+them since TOTP was removed, and all three columns are nullable, so leaving them costs
+nothing but a little confusion. Drop them only *after* the code change is live and
+verified, so a rollback to the previous release still boots; and if you drop them by
+hand, remember `ALTER TABLE users OWNER TO hrt` is not needed for a `DROP COLUMN` on a
+table `hrt` already owns, but the ownership probe below is.
 
 ---
 

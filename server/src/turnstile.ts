@@ -25,8 +25,14 @@ import type { Result } from './domain.ts';
 const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 const VERIFY_TIMEOUT_MS = 10_000;
 
-/** The two forms a token can come from. Pinned here so route and widget agree. */
-export type TurnstileAction = 'register' | 'x_setup';
+/**
+ * The action a token can come from. Pinned here so route and widget agree.
+ *
+ * It used to be `'register' | 'x_setup'`, from when a social signup had a second
+ * leg that set a password and enrolled a second factor. That leg is gone, so the
+ * X-created account is finished by the callback itself and only one form is left.
+ */
+export type TurnstileAction = 'register';
 
 interface SiteverifyResponse {
   success?: boolean;

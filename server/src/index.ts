@@ -29,7 +29,6 @@ Environment:
   PUBLIC_ORIGIN     Where the web app is served, e.g. https://hrt.example.com
                     (the single origin allowed by CORS)
   API_ORIGIN        This server's public origin, e.g. https://api.example.com
-  TOTP_ENC_KEY      >=32 chars; encrypts TOTP secrets at rest (required)
   PORT              HTTP port (default 8788)
   BIND_HOST         Interface to bind (default 127.0.0.1 — put a proxy in front)
   X_CLIENT_ID       Optional. All three are needed to enable X sign-in.
@@ -43,7 +42,7 @@ async function main(): Promise<void> {
   const command = process.argv[2] ?? 'http';
 
   // Load and validate configuration before anything else, including `migrate`:
-  // a missing TOTP_ENC_KEY or a malformed origin should stop the process at boot
+  // a missing DATABASE_URL or a malformed origin should stop the process at boot
   // rather than surface as a 500 on the first sign-in attempt. Validation errors
   // are ordinary `main()` failures, so they print one line and exit non-zero.
   const config = getConfig();

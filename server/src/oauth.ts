@@ -2,7 +2,7 @@
  * X (Twitter) OAuth 2.0 — authorization code flow with PKCE.
  *
  * X login is an *assist*, never a replacement for a password. An account is only
- * usable once it has a password and TOTP enabled (see `AccountService`), because
+ * usable once it has a password (see `AccountService`), because
  * the data key is wrapped under a password-derived key: with no password there is
  * no key and no records. So losing the X account costs one login button, never the
  * history. That constraint is enforced in the domain, not here — this file only
@@ -256,7 +256,7 @@ export function buildGoogleAuthorizeUrl(
     // Replay protection for the ID token. Google returns it as a claim and we compare.
     nonce: params.nonce,
     // Always let the person choose, even with one Google session active: signing in as
-    // the wrong account is silent otherwise, and there is no second factor to catch it.
+    // the wrong account is silent otherwise.
     prompt: 'select_account',
   });
   return `${GOOGLE_AUTHORIZE_ENDPOINT}?${query.toString()}`;

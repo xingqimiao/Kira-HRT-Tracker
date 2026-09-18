@@ -56,8 +56,9 @@ before(async () => {
     apiBaseUrl: 'https://api.hrt.test',
     port: 0,
     databaseUrl: '',
-    totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    encryptionKey: null,
+    google: null,
     turnstile: null,
     webauthn: {
       rpId: 'hrt.test',
@@ -258,7 +259,6 @@ test('the RP ID is derived from the API origin and suffixes every origin', () =>
     PUBLIC_ORIGIN: 'https://hrt.kiramyao.com',
     API_ORIGIN: 'https://api.kiramyao.com',
     DATABASE_URL: 'postgres://x/y',
-    TOTP_ENC_KEY: 'a'.repeat(40),
     SERVER_DEK_KEY: 'b'.repeat(40),
             // 32 bytes base64 — the record-payload key is required in production, so a
             // fixture claiming production has to carry one. Fixed, not random: a
@@ -277,7 +277,6 @@ test('an RP ID that does not suffix the host is refused at boot', () => {
         PUBLIC_ORIGIN: 'https://hrt.kiramyao.com',
         API_ORIGIN: 'https://api.kiramyao.com',
         DATABASE_URL: 'postgres://x/y',
-        TOTP_ENC_KEY: 'a'.repeat(40),
         SERVER_DEK_KEY: 'b'.repeat(40),
             // 32 bytes base64 — the record-payload key is required in production, so a
             // fixture claiming production has to carry one. Fixed, not random: a
@@ -296,7 +295,6 @@ test('passkeys can be switched off entirely', () => {
     PUBLIC_ORIGIN: 'https://hrt.kiramyao.com',
     API_ORIGIN: 'https://api.kiramyao.com',
     DATABASE_URL: 'postgres://x/y',
-    TOTP_ENC_KEY: 'a'.repeat(40),
     SERVER_DEK_KEY: 'b'.repeat(40),
             // 32 bytes base64 — the record-payload key is required in production, so a
             // fixture claiming production has to carry one. Fixed, not random: a
@@ -393,7 +391,7 @@ test('a signed-in account can still sign in with its password after registering 
     ['regression-cred', account.userId, Buffer.from([9, 9, 9])],
   );
 
-  const again = await signIn(base, account, 1);
+  const again = await signIn(base, account);
   assert.equal(again.status, 200, JSON.stringify(again.body));
   assert.ok(again.body.token, 'the password path is untouched');
 });
