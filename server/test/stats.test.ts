@@ -37,6 +37,8 @@ before(async () => {
     port: 0,
     databaseUrl: '',
     totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
+    serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    turnstile: null,
     x: null,
     sessionTtlMinutes: 30,
     // High enough that registering the fixture accounts never trips a limit; the

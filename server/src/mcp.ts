@@ -29,7 +29,7 @@ import {
   PKSimulationService,
 } from './core.ts';
 import type { AuthContext } from './types.ts';
-import { findUserSession, lookupSession } from './session.ts';
+
 import { buildExportPayload } from './import.ts';
 import { ShareService } from './shares.ts';
 import { SL_TIER_ORDER, GEL_SITE_ORDER, PK_PARAM_RANGES } from './engine.ts';
@@ -502,29 +502,22 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
  * Resolve a bearer credential into an `AuthContext`.
  *
  * Two credential shapes, deliberately distinct:
- *   - `hrt_…` — a durable token minted for an agent. Proves identity only; the
- *     user still has to have unlocked, which is what supplies the key.
+ *   - `hrt_…` — a durable token minted for an agent. Proves identity; how it reaches
+ *     the key depends on the account's privacy mode (standard: the server key is
+ *     enough; advanced: a live unlock is still required, because no server key exists).
  *   - `ks_…`  — a live unlock token from the web UI. Carries the key directly.
  *
- * A durable token with no open unlock resolves to null, so the tool tells the
- * user to unlock rather than reporting a confusing authentication error.
+ * Both are delegated to `AccountService.resolveApiContext`, which is the same
+ * resolver the HTTP layer uses. Enforcing the mode rule in the service rather than
+ * here is what keeps an MCP tool and its REST twin from diverging on it.
+ *
+ * A durable token that resolves to null makes the tool say "unlock first" rather
+ * than reporting a confusing authentication error.
  */
 export function makeBearerResolver(getToken: () => string | undefined): ContextResolver {
   return async () => {
     const token = getToken();
     if (!token) return null;
-
-    if (token.startsWith('ks_')) {
-      // A live unlock token carries the key itself.
-      return lookupSession(token);
-    }
-
-    const userId = await AccountService.resolveApiToken(token);
-    if (!userId) return null;
-    // The token proves who is asking; the key still has to come from an unlock
-    // the user opened with their password. No key, no records.
-    const dek = findUserSession(userId);
-    if (!dek) return null;
-    return { userId, dek };
+    return await AccountService.resolveApiContext(token);
   };
 }

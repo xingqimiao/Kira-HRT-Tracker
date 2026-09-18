@@ -40,12 +40,28 @@ import {
   closeSession,
   closeUserSessions,
   findUserSession as findUserSessionFor,
+  lookupSession,
   openPendingEnrollment,
   takePendingEnrollment,
   openPendingSetup,
   takePendingSetup,
   issueOneTimeCode,
   redeemOneTimeCode,
+  readMetadata,
+  createKeyMaterial,
+  unwrapWithPassword,
+  unwrapWithRecovery,
+  unwrapWithServer,
+  addServerWrapper,
+  addRecoveryWrapper,
+  stripServerWrapper,
+  setPasswordWrapper,
+  generateRecoveryKey,
+  passwordEnvelopeOf,
+  openLockedSession,
+  peekLockedSession,
+  redeemLockedSession,
+  type EncryptionMetadata,
 } from './session.ts';
 import {
   generateTotpSecret,
@@ -86,6 +102,31 @@ const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 const ISSUER = 'Kira Tracker';
 
+export type PrivacyMode = 'standard' | 'advanced';
+
+function validatePrivacyMode(raw: unknown): Result<PrivacyMode> {
+  if (raw === undefined || raw === null || raw === '') return { ok: true, value: 'standard' };
+  if (raw === 'standard' || raw === 'advanced') return { ok: true, value: raw };
+  return { ok: false, error: "privacy_mode: must be 'standard' or 'advanced'" };
+}
+
+/**
+ * Build the key material for a new account in the chosen mode.
+ *
+ * Standard mode adds a `server` wrapper under the deployment's server key, which is
+ * what makes the account recoverable (and what lets a live `hrt_` token reach the
+ * data. Advanced mode omits it. The DEK is the same either way — only its wrappers
+ * differ, which is why switching modes later never touches a record.
+ */
+async function buildKeyMaterial(
+  password: string,
+  userId: string,
+  mode: PrivacyMode,
+): Promise<{ metadata: EncryptionMetadata; dek: string }> {
+  const serverKey = mode === 'standard' ? getConfig().serverDekKey : null;
+  return await createKeyMaterial(password, userId, { serverKey });
+}
+
 export interface AccountRow {
   id: string;
   username: string;
@@ -93,6 +134,8 @@ export interface AccountRow {
   password_hash: string | null;
   password_set_at: Date | null;
   wrapped_dek: unknown;
+  privacy_mode: PrivacyMode;
+  encryption_metadata: unknown;
   totp_secret_sealed: string | null;
   totp_enabled_at: Date | null;
   totp_last_step: string | number | null;
@@ -165,6 +208,7 @@ async function loadUser(where: { id?: string; username?: string }): Promise<Acco
   const value = where.id ?? where.username;
   const { rows } = await getPool().query<AccountRow>(
     `SELECT id, username, display_name, password_hash, password_set_at, wrapped_dek,
+            privacy_mode, encryption_metadata,
             totp_secret_sealed, totp_enabled_at, totp_last_step, failed_unlocks, locked_until,
             created_at
        FROM users WHERE ${column} = $1`,
@@ -176,6 +220,43 @@ async function loadUser(where: { id?: string; username?: string }): Promise<Acco
 /** Whether an account has finished setup and may be used at all. */
 function isComplete(user: AccountRow): boolean {
   return user.password_set_at !== null && user.totp_enabled_at !== null;
+}
+
+/**
+ * The account's encryption metadata, tolerating the pre-migration shape.
+ *
+ * A row written before this release has a populated `wrapped_dek` and an empty
+ * `encryption_metadata`; schema.sql backfills it on the next migration, but this
+ * falls back anyway so a read never depends on the migration having run. New rows
+ * carry both — the metadata is authoritative, `wrapped_dek` stays in step for
+ * readers that have not been updated.
+ */
+function metadataFor(user: AccountRow): EncryptionMetadata {
+  const metadata = readMetadata(user.encryption_metadata);
+  if (!metadata.wrappers.password && user.wrapped_dek) {
+    return { version: metadata.version, dek: metadata.dek, wrappers: { ...metadata.wrappers, password: user.wrapped_dek as never } };
+  }
+  return metadata;
+}
+
+/**
+ * Persist a new metadata document, mirroring the password wrapper into `wrapped_dek`.
+ *
+ * One write rather than two columns drifting apart: the legacy column is derived
+ * from the document every time, so it cannot disagree with it.
+ */
+async function saveMetadata(userId: string, metadata: EncryptionMetadata): Promise<void> {
+  const legacy = passwordEnvelopeOf(metadata);
+  await getPool().query(
+    `UPDATE users SET encryption_metadata = $2, wrapped_dek = $3, updated_at = now() WHERE id = $1`,
+    [userId, JSON.stringify(metadata), legacy ? JSON.stringify(legacy) : null],
+  );
+}
+
+/** The live DEK for an account in standard mode, or null. Server-side only. */
+async function serverDekFor(user: AccountRow): Promise<string | null> {
+  if (user.privacy_mode !== 'standard') return null;
+  return await unwrapWithServer(metadataFor(user), user.id, getConfig().serverDekKey);
 }
 
 // ---------------------------------------------------------------------------
@@ -312,14 +393,20 @@ export const AccountService = {
    * confirmed. Registering and being immediately logged in would mean the second
    * factor could be skipped entirely by anyone who knows the password.
    */
-  async register(usernameRaw: unknown, passwordRaw: unknown): Promise<Result<RegistrationResult>> {
+  async register(
+    usernameRaw: unknown,
+    passwordRaw: unknown,
+    opts: { privacyMode?: unknown } = {},
+  ): Promise<Result<RegistrationResult>> {
     const username = validateUsername(usernameRaw);
     if (!username.ok) return username;
     const password = validatePassword(passwordRaw);
     if (!password.ok) return password;
+    const privacyMode = validatePrivacyMode(opts.privacyMode);
+    if (!privacyMode.ok) return privacyMode;
 
     const userId = randomUUID();
-    const { wrappedDek } = await createUserKeyMaterial(password.value, userId);
+    const { metadata, dek } = await buildKeyMaterial(password.value, userId, privacyMode.value);
     const passwordHash = await hashPassword(password.value);
     const { material, sealed, codeHashes } = await buildEnrollment(userId);
 
@@ -349,9 +436,17 @@ export const AccountService = {
 
         await client.query(
           `INSERT INTO users (id, username, password_hash, password_set_at, wrapped_dek,
-                              totp_secret_sealed, failed_unlocks)
-           VALUES ($1, $2, $3, now(), $4, $5, 0)`,
-          [userId, username.value, passwordHash, JSON.stringify(wrappedDek), sealed],
+                              privacy_mode, encryption_metadata, totp_secret_sealed, failed_unlocks)
+           VALUES ($1, $2, $3, now(), $4, $5, $6, $7, 0)`,
+          [
+            userId,
+            username.value,
+            passwordHash,
+            JSON.stringify(passwordEnvelopeOf(metadata)),
+            privacyMode.value,
+            JSON.stringify(metadata),
+            sealed,
+          ],
         );
         await replaceRecoveryCodes(userId, codeHashes, client);
       });
@@ -367,17 +462,12 @@ export const AccountService = {
 
     await settings.upsert(userId, { hrtMode: 'transfem' }).catch(() => undefined);
 
-    // The DEK is recovered here and held only for the enrolment window, so that
-    // confirming the second factor can open a session without the password being
-    // sent a second time. Deriving it by unwrapping what was just written also
-    // proves the wrapping round-trips.
-    // NOT destructured: `currentDekForEnrollment` returns the key string itself, and
-    // `const { dek } = <a string>` silently yields undefined because a primitive has
-    // no `dek` property. That is how this shipped a session with no key at all —
-    // every encrypted read then failed with a confusing base64 error rather than
-    // anything pointing here.
-    const dek = requireKey(await currentDekForEnrollment(password.value, userId), 'registration');
-    const enrollmentToken = openPendingEnrollment(userId, dek);
+    // The DEK is handed straight to the enrolment store, so confirming the second
+    // factor can open a session without the password being sent a second time. It
+    // was minted above and never needed unwrapping, which is also why the old
+    // unwrap-immediately-after-insert dance is gone — it only existed to prove the
+    // wrapping round-tripped, and `unwrapWithPassword` is covered by its own tests.
+    const enrollmentToken = openPendingEnrollment(userId, requireKey(dek, 'registration'));
 
     return {
       ok: true,
@@ -541,12 +631,23 @@ export const AccountService = {
       }
     }
 
-    const dek = await unwrapDek(user.wrapped_dek, password.value, user.id);
+    const metadata = metadataFor(user);
+    const dek = await unwrapWithPassword(metadata, password.value, user.id);
     if (dek === null) {
       return { ok: false, error: 'account key material is unreadable; set a new password to re-key it' };
     }
 
     await getPool().query(`UPDATE users SET failed_unlocks = 0, locked_until = NULL WHERE id = $1`, [user.id]);
+
+    // Standard mode promises the account is recoverable, so a standard account must
+    // carry the server wrapper. Accounts created before this release do not; a
+    // password unlock is the one moment the key is in hand to add it without asking
+    // the user for anything twice.
+    const serverKey = getConfig().serverDekKey;
+    if (user.privacy_mode === 'standard' && !metadata.wrappers.server && serverKey) {
+      await saveMetadata(user.id, await addServerWrapper(metadata, dek, user.id, serverKey));
+    }
+
     const token = openSession(user.id, requireKey(dek, 'unlock'), getConfig().sessionTtlMinutes);
     await this.recordAuthEvent(user.id, 'unlock');
 
@@ -575,6 +676,166 @@ export const AccountService = {
     );
   },
 
+  // --- Data unlock (separate from authentication) -------------------------
+  //
+  // Advanced mode splits "who you are" from "can this device read your records".
+  // X + TOTP answers the first; these methods answer the second. Keeping them
+  // distinct is the whole point of the mode — an authenticated session that holds
+  // no key is a legitimate state, not a failure.
+
+  /**
+   * Unlock data from an authenticated-but-locked session, using one factor.
+   *
+   * The locked token stands in for the identity that X proved, so the factor here
+   * is a *data* credential — the account password or a recovery key — not the
+   * second factor (that was already spent proving identity). The token is spent
+   * only after the factor succeeds, so a mistyped password does not cost a new X
+   * round-trip.
+   */
+  async unlockData(
+    lockedToken: unknown,
+    factor: unknown,
+    secretRaw: unknown,
+  ): Promise<Result<UnlockedAccount>> {
+    if (typeof lockedToken !== 'string') return { ok: false, error: 'data_unlock_required' };
+    if (factor !== 'password' && factor !== 'recovery') {
+      return { ok: false, error: "factor: must be 'password' or 'recovery'" };
+    }
+    const userId = peekLockedSession(lockedToken);
+    if (!userId) return { ok: false, error: 'this session expired; sign in again' };
+    if (typeof secretRaw !== 'string' || secretRaw.length === 0) {
+      return { ok: false, error: factor === 'password' ? 'password: required' : 'recovery key: required' };
+    }
+
+    const user = await loadUser({ id: userId });
+    if (!user) return { ok: false, error: 'account not found' };
+    const metadata = metadataFor(user);
+
+    const dek =
+      factor === 'password'
+        ? await unwrapWithPassword(metadata, secretRaw, user.id)
+        : await unwrapWithRecovery(metadata, secretRaw, user.id);
+    if (dek === null) {
+      await this.noteFailedUnlock(user.id);
+      return { ok: false, error: factor === 'password' ? 'invalid credentials' : 'that recovery key is not valid' };
+    }
+
+    redeemLockedSession(lockedToken);
+    await getPool().query(`UPDATE users SET failed_unlocks = 0, locked_until = NULL WHERE id = $1`, [user.id]);
+    await this.recordAuthEvent(user.id, factor === 'password' ? 'data_unlock_password' : 'data_unlock_recovery');
+    const token = openSession(user.id, requireKey(dek, 'unlockData'), getConfig().sessionTtlMinutes);
+    return { ok: true, value: { userId: user.id, username: user.username, token } };
+  },
+
+  /**
+   * Switch privacy mode.
+   *
+   * The DEK does not change and no record is touched: standard adds a server
+   * wrapper, advanced drops it. That is the entire operation, which is why it is a
+   * metadata rewrite rather than a re-encryption — see the spec's requirement that
+   * a switch must not regenerate the DEK.
+   *
+   * Requires the *current password* (not a TOTP code): lowering the mode reduces
+   * privacy, raising it changes which wrappers exist, and both are changes to how
+   * the data key is protected, so the check is against the credential that protects
+   * it. The server wrapper is the one case that needs no password of its own — the
+   * live session already holds the DEK.
+   */
+  async switchPrivacyMode(
+    ctx: AuthContext,
+    modeRaw: unknown,
+    currentPasswordRaw: unknown,
+  ): Promise<Result<{ privacyMode: PrivacyMode }>> {
+    const mode = validatePrivacyMode(modeRaw);
+    if (!mode.ok) return mode;
+    if (modeRaw === undefined || modeRaw === null || modeRaw === '') {
+      return { ok: false, error: 'privacy_mode: required' };
+    }
+
+    const user = await loadUser({ id: ctx.userId });
+    if (!user) return { ok: false, error: 'account not found' };
+    if (!(await verifyPassword(String(currentPasswordRaw), user.password_hash))) {
+      await this.noteFailedUnlock(user.id);
+      return { ok: false, error: 'current password is incorrect' };
+    }
+    if (user.privacy_mode === mode.value) {
+      return { ok: true, value: { privacyMode: mode.value } };
+    }
+
+    const metadata = metadataFor(user);
+    if (mode.value === 'standard') {
+      const serverKey = getConfig().serverDekKey;
+      if (!serverKey) {
+        return { ok: false, error: 'standard mode is not available on this server' };
+      }
+      await saveMetadata(user.id, await addServerWrapper(metadata, ctx.dek, user.id, serverKey));
+    } else {
+      await saveMetadata(user.id, stripServerWrapper(metadata));
+    }
+
+    await getPool().query(`UPDATE users SET privacy_mode = $2, updated_at = now() WHERE id = $1`, [
+      user.id,
+      mode.value,
+    ]);
+    await this.recordAuthEvent(user.id, mode.value === 'advanced' ? 'privacy_advanced' : 'privacy_standard');
+    return { ok: true, value: { privacyMode: mode.value } };
+  },
+
+  /**
+   * Create or replace the recovery key for an advanced account.
+   *
+   * The plaintext is returned exactly once and never stored — only its wrapper is.
+   * The client must show it and require an acknowledgement before dropping it, which
+   * is the difference between a recovery key and a recovery key nobody wrote down.
+   */
+  async createRecoveryKey(
+    ctx: AuthContext,
+    currentPasswordRaw: unknown,
+  ): Promise<Result<{ recoveryKey: string }>> {
+    const user = await loadUser({ id: ctx.userId });
+    if (!user) return { ok: false, error: 'account not found' };
+    if (!(await verifyPassword(String(currentPasswordRaw), user.password_hash))) {
+      await this.noteFailedUnlock(user.id);
+      return { ok: false, error: 'current password is incorrect' };
+    }
+
+    const recoveryKey = generateRecoveryKey();
+    const metadata = await addRecoveryWrapper(metadataFor(user), ctx.dek, recoveryKey, user.id);
+    await saveMetadata(user.id, metadata);
+    await this.recordAuthEvent(user.id, 'recovery_key_created');
+    return { ok: true, value: { recoveryKey } };
+  },
+
+  /**
+   * Resolve a bearer token to an auth context, honouring the privacy mode.
+   *
+   * This is the single place both the HTTP layer and the MCP layer ask "what can
+   * this credential reach", so the mode rule cannot be enforced in one path and
+   * forgotten in the other:
+   *
+   *   - a `ks_` unlock token carries its own key;
+   *   - a `hrt_` API token proves identity only. In standard mode the server key
+   *     then opens the data (the spec's "a live key is enough" for the ordinary
+   *     case); in advanced mode it still requires a live unlock, because no server
+   *     key exists to supply one.
+   */
+  async resolveApiContext(token: string): Promise<AuthContext | null> {
+    if (token.startsWith('ks_')) {
+      const session = lookupSession(token);
+      return session ? { userId: session.userId, dek: session.dek } : null;
+    }
+    const userId = await this.resolveApiToken(token);
+    if (!userId) return null;
+
+    const user = await loadUser({ id: userId });
+    if (!user) return null;
+    const serverDek = await serverDekFor(user);
+    if (serverDek) return { userId, dek: serverDek };
+
+    const dek = findUserSessionFor(userId);
+    return dek ? { userId, dek } : null;
+  },
+
   async lock(token: string): Promise<void> {
     closeSession(token);
   },
@@ -595,16 +856,19 @@ export const AccountService = {
       return { ok: false, error: 'current password is incorrect' };
     }
 
-    // Re-wrap the DEK rather than re-encrypting records: one row changes, and the
-    // operation cannot half-fail and leave a corrupted history behind.
-    const wrappedDek = await rewrapForNewPassword(ctx.dek, newPassword.value, ctx.userId);
+    // Re-wrap the DEK rather than re-encrypting records: one wrapper changes, and
+    // the operation cannot half-fail and leave a corrupted history behind. The
+    // recovery and server wrappers, if any, are left untouched — they protect the
+    // same DEK and the new password is just another way to reach it.
+    const metadata = await setPasswordWrapper(metadataFor(user), ctx.dek, newPassword.value, ctx.userId);
     const passwordHash = await hashPassword(newPassword.value);
     await getPool().query(
-      `UPDATE users SET password_hash = $1, wrapped_dek = $2, password_set_at = COALESCE(password_set_at, now()),
+      `UPDATE users SET password_hash = $1, password_set_at = COALESCE(password_set_at, now()),
                         updated_at = now()
-        WHERE id = $3`,
-      [passwordHash, JSON.stringify(wrappedDek), ctx.userId],
+        WHERE id = $2`,
+      [passwordHash, ctx.userId],
     );
+    await saveMetadata(ctx.userId, metadata);
 
     // A password change is a security event: every other session and every API
     // token minted under the old credentials should stop working.
@@ -954,6 +1218,7 @@ export const AccountService = {
     setupToken: string,
     passwordRaw: unknown,
     code: unknown,
+    opts: { privacyMode?: unknown } = {},
   ): Promise<Result<UnlockedAccount & { recoveryCodes: string[] | null }>> {
     const userId = takePendingSetup(setupToken);
     if (!userId) return { ok: false, error: 'setup session expired; sign in with X again to restart' };
@@ -961,12 +1226,14 @@ export const AccountService = {
     const password = validatePassword(passwordRaw);
     if (!password.ok) return password;
     if (typeof code !== 'string') return { ok: false, error: 'code: required' };
+    const privacyMode = validatePrivacyMode(opts.privacyMode);
+    if (!privacyMode.ok) return privacyMode;
 
     const user = await loadUser({ id: userId });
     if (!user) return { ok: false, error: 'account not found' };
 
     const firstPassword = user.password_set_at === null;
-    const { wrappedDek, dek } = await createUserKeyMaterial(password.value, userId);
+    const { metadata, dek } = await buildKeyMaterial(password.value, userId, privacyMode.value);
 
     if (!user.totp_secret_sealed) {
       return { ok: false, error: 'no enrolment in progress; restart the X sign-in' };
@@ -981,10 +1248,17 @@ export const AccountService = {
     await getPool().query(
       `UPDATE users
           SET password_hash = $1, password_set_at = now(), wrapped_dek = $2,
+              privacy_mode = $3, encryption_metadata = $4,
               totp_enabled_at = now(), failed_unlocks = 0, locked_until = NULL,
               updated_at = now()
-        WHERE id = $3`,
-      [passwordHash, JSON.stringify(wrappedDek), userId],
+        WHERE id = $5`,
+      [
+        passwordHash,
+        JSON.stringify(passwordEnvelopeOf(metadata)),
+        privacyMode.value,
+        JSON.stringify(metadata),
+        userId,
+      ],
     );
     await this.recordAuthEvent(userId, 'setup_completed');
 
@@ -1114,8 +1388,10 @@ export const AccountService = {
     return { ok: true, value: { deleted: true } };
   },
 
-  /** Redeem the single-use code from an X callback for a session. */
-  async completeXSignIn(oneTimeCode: unknown): Promise<Result<{ userId: string; username: string; token: string | null }>> {
+  /** Redeem the single-use code from an X callback for a session, or a locked token. */
+  async completeXSignIn(oneTimeCode: unknown): Promise<
+    Result<{ userId: string; username: string; token: string | null; lockedToken?: string }>
+  > {
     if (typeof oneTimeCode !== 'string' || oneTimeCode.length === 0) {
       return { ok: false, error: 'code: required' };
     }
@@ -1128,15 +1404,37 @@ export const AccountService = {
 
     // A live unlock on this server (e.g. another tab, or a recent sign-in) already
     // holds the key, so no password is needed from this caller.
-    const dek = findUserSessionFor(userId);
-    if (dek) {
-      const token = openSession(userId, dek, getConfig().sessionTtlMinutes);
+    const existing = findUserSessionFor(userId);
+    if (existing) {
+      const token = openSession(userId, existing, getConfig().sessionTtlMinutes);
       await this.recordAuthEvent(userId, 'x_login_session_reused');
       return { ok: true, value: { userId, username: user.username, token } };
     }
 
+    // Standard mode is the difference: the server can open the account's key with
+    // its own wrapper, so X alone is enough to reach the records — which is exactly
+    // what "simple, easy to recover" is supposed to mean.
+    const serverDek = await serverDekFor(user);
+    if (serverDek) {
+      const token = openSession(userId, serverDek, getConfig().sessionTtlMinutes);
+      await this.recordAuthEvent(userId, 'x_login_server_unlock');
+      return { ok: true, value: { userId, username: user.username, token } };
+    }
+
+    // Advanced mode: no server key exists, so X yields identity and nothing more.
+    // A locked token carries the identity forward to the unlock step without ever
+    // carrying a key — the honest state the spec asks to be shown as "verified, but
+    // this device has not unlocked your records" rather than "sign-in failed".
     await this.recordAuthEvent(userId, 'x_login_password_required');
-    return { ok: true, value: { userId, username: user.username, token: null } };
+    return {
+      ok: true,
+      value: {
+        userId,
+        username: user.username,
+        token: null,
+        lockedToken: openLockedSession(userId, getConfig().sessionTtlMinutes),
+      },
+    };
   },
 
   /** Unlink X. Requires a TOTP code, since it changes how the account is reached. */

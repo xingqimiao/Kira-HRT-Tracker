@@ -25,6 +25,8 @@
  * `encryptCloudPayload` / `decryptCloudPayload` (AES-GCM) that the app already
  * ships, so the browser and the server agree on the format byte for byte.
  */
+import { createHmac } from 'node:crypto';
+
 import { deriveCloudKey, encryptCloudPayload, decryptCloudPayload, isCloudEncrypted } from './engine.ts';
 
 /** A wrapped DEK as stored server-side. Identical envelope to a cloud backup. */
@@ -90,6 +92,259 @@ export async function unwrapDek(
     return null;
   }
   return await decryptCloudPayload(wrappedDek, kek);
+}
+
+// ---------------------------------------------------------------------------
+// Versioned encryption metadata — the two privacy modes, in one document
+// ---------------------------------------------------------------------------
+//
+// Everything above wraps the DEK under the password's KEK, which is what the
+// server has always done. The two privacy modes differ only in *which other*
+// wrappers over the same DEK exist:
+//
+//   standard — password + server. The `server` wrapper is wrapped under a
+//              process secret, so the server can recover the DEK on its own.
+//              That is the whole point of the mode: X + TOTP (or a live `hrt_`
+//              token) is enough to reach records again, and a forgotten password
+//              is recoverable rather than fatal.
+//   advanced — password + (optional) recovery, and never `server`. Nothing the
+//              server holds opens the DEK, so completing X + TOTP yields
+//              authentication and nothing else.
+//
+// Both are the same records under the same DEK. Switching modes rewraps the DEK
+// and never touches a ciphertext — see `encryption_metadata` in schema.sql.
+
+/** The DEK, wrapped. The same envelope as a cloud backup, plus how it was keyed. */
+export interface WrapperEnvelope {
+  cloud: 1;
+  iv: string;
+  data: string;
+  /** The password KDF, for the password and recovery wrappers. */
+  kdf?: string;
+  /** The scheme, for the server wrapper, which uses no password KDF. */
+  scheme?: string;
+}
+
+export interface EncryptionMetadata {
+  /** Explicit, never inferred from which wrappers are present. */
+  version: number;
+  dek?: { alg: string; createdAt: string };
+  wrappers: {
+    password?: WrapperEnvelope;
+    server?: WrapperEnvelope;
+    recovery?: WrapperEnvelope;
+    /** Reserved. WebAuthn-PRF wrappers would go here; not implemented yet. */
+    passkey?: WrapperEnvelope;
+  };
+}
+
+export const ENCRYPTION_VERSION = 2;
+const PASSWORD_KDF = 'pbkdf2-sha256-600k';
+const SERVER_SCHEME = 'server-hmac-sha256-v1';
+
+/** Coerce whatever the jsonb column holds into a well-formed document. */
+export function readMetadata(raw: unknown): EncryptionMetadata {
+  if (!raw || typeof raw !== 'object') return { version: ENCRYPTION_VERSION, wrappers: {} };
+  const doc = raw as Partial<EncryptionMetadata>;
+  const wrappers =
+    doc.wrappers && typeof doc.wrappers === 'object' && !Array.isArray(doc.wrappers)
+      ? doc.wrappers
+      : {};
+  return { version: doc.version ?? ENCRYPTION_VERSION, dek: doc.dek, wrappers };
+}
+
+/** The password wrapper alone, in the shape the legacy `wrapped_dek` column wants. */
+export function passwordEnvelopeOf(metadata: EncryptionMetadata): WrappedKey | null {
+  const wrapper = metadata.wrappers.password;
+  if (!isCloudEncrypted(wrapper)) return null;
+  return { cloud: 1, iv: wrapper.iv, data: wrapper.data };
+}
+
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+/**
+ * A 160-bit recovery key, Crockford base32, grouped for transcription.
+ *
+ * High entropy by construction, and the alphabet omits `I`, `L`, `O` and `U` so a
+ * hand-copied key cannot be ambiguous. The grouping is presentational — the
+ * wrapper normalises it away — so a user who retypes it with the dashes in the
+ * wrong place still unlocks.
+ */
+export function generateRecoveryKey(): string {
+  const bytes = new Uint8Array(20);
+  globalThis.crypto.getRandomValues(bytes);
+  let bits = 0;
+  let value = 0;
+  let out = '';
+  for (const byte of bytes) {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      out += CROCKFORD[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) out += CROCKFORD[(value << (5 - bits)) & 31];
+  return (out.match(/.{1,4}/g) ?? []).join('-');
+}
+
+/** Fold a pasted recovery key to its canonical form. */
+function normalizeRecoveryKey(key: string): string {
+  return key.toUpperCase().replace(/[^0-9A-Z]/g, '');
+}
+
+function recoverySalt(userId: string): string {
+  return `hrt-recovery-v1:${userId}`;
+}
+
+/**
+ * The key the server wrapper is wrapped under, for one user.
+ *
+ * HMAC-SHA256 rather than PBKDF2: the server secret is machine-generated and
+ * already high-entropy, so a deliberately slow KDF buys nothing, and this runs on
+ * every request that resolves an `hrt_` token in standard mode. One HMAC is the
+ * right primitive and costs microseconds.
+ */
+function serverKekFor(userId: string, serverKey: string): string {
+  return createHmac('sha256', serverKey).update(`hrt-server-v1:${userId}`).digest('base64');
+}
+
+async function unwrapEnvelope(
+  envelope: WrapperEnvelope | undefined,
+  deriveKek: () => Promise<string>,
+): Promise<string | null> {
+  if (!isCloudEncrypted(envelope)) return null;
+  let kek: string;
+  try {
+    kek = await deriveKek();
+  } catch {
+    // `crypto.subtle` unavailable, or an unusable server secret. No key is better
+    // than a wrong one, and every read path already handles "locked".
+    return null;
+  }
+  return await decryptCloudPayload(envelope, kek);
+}
+
+/** Recover the DEK from the password wrapper. Its name says which wrapper it uses. */
+export async function unwrapWithPassword(
+  metadata: EncryptionMetadata,
+  password: string,
+  userId: string,
+): Promise<string | null> {
+  return unwrapEnvelope(metadata.wrappers.password, () => deriveCloudKey(password, userId));
+}
+
+/** Recover the DEK from a recovery key, if this account has one. */
+export async function unwrapWithRecovery(
+  metadata: EncryptionMetadata,
+  recoveryKey: string,
+  userId: string,
+): Promise<string | null> {
+  return unwrapEnvelope(metadata.wrappers.recovery, () =>
+    deriveCloudKey(normalizeRecoveryKey(recoveryKey), userId, recoverySalt(userId)),
+  );
+}
+
+/**
+ * Recover the DEK with the server's own key — standard mode only.
+ *
+ * Returns null in advanced mode, where no `server` wrapper exists. That null is
+ * the security model: "the server cannot self-unlock" is enforced by the wrapper
+ * simply not being there, not by a caller remembering to check a flag.
+ */
+export async function unwrapWithServer(
+  metadata: EncryptionMetadata,
+  userId: string,
+  serverKey: string | null,
+): Promise<string | null> {
+  if (!serverKey) return null;
+  return unwrapEnvelope(metadata.wrappers.server, async () => serverKekFor(userId, serverKey));
+}
+
+/** Replace the password wrapper, keeping every other wrapper and the DEK. */
+export async function setPasswordWrapper(
+  metadata: EncryptionMetadata,
+  dek: string,
+  password: string,
+  userId: string,
+): Promise<EncryptionMetadata> {
+  const kek = await deriveCloudKey(password, userId);
+  const wrapped = (await encryptCloudPayload(dek, kek)) as WrappedKey;
+  return {
+    ...metadata,
+    wrappers: { ...metadata.wrappers, password: { ...wrapped, kdf: PASSWORD_KDF } },
+  };
+}
+
+/** Add (or replace) the recovery wrapper. */
+export async function addRecoveryWrapper(
+  metadata: EncryptionMetadata,
+  dek: string,
+  recoveryKey: string,
+  userId: string,
+): Promise<EncryptionMetadata> {
+  const kek = await deriveCloudKey(normalizeRecoveryKey(recoveryKey), userId, recoverySalt(userId));
+  const wrapped = (await encryptCloudPayload(dek, kek)) as WrappedKey;
+  return {
+    ...metadata,
+    wrappers: { ...metadata.wrappers, recovery: { ...wrapped, kdf: PASSWORD_KDF } },
+  };
+}
+
+/** Add the server wrapper — the step that turns an account into standard mode. */
+export async function addServerWrapper(
+  metadata: EncryptionMetadata,
+  dek: string,
+  userId: string,
+  serverKey: string,
+): Promise<EncryptionMetadata> {
+  const wrapped = (await encryptCloudPayload(dek, serverKekFor(userId, serverKey))) as WrappedKey;
+  return {
+    ...metadata,
+    wrappers: { ...metadata.wrappers, server: { ...wrapped, scheme: SERVER_SCHEME } },
+  };
+}
+
+/**
+ * Drop the server wrapper — the step that turns an account into advanced mode.
+ *
+ * Pure: the caller persists the result. Dropping it makes the server unable to
+ * self-unlock this account from the next request on.
+ */
+export function stripServerWrapper(metadata: EncryptionMetadata): EncryptionMetadata {
+  const { server: _dropped, ...rest } = metadata.wrappers;
+  return { ...metadata, wrappers: rest };
+}
+
+/**
+ * Mint the wrappers for a brand-new account.
+ *
+ * `serverKey` present means standard mode; absent means advanced. The DEK is
+ * returned so the caller can open an unlocked session without a second request.
+ */
+export async function createKeyMaterial(
+  password: string,
+  userId: string,
+  opts: { serverKey?: string | null } = {},
+): Promise<{ metadata: EncryptionMetadata; dek: string }> {
+  const dek = randomKeyB64();
+  const kek = await deriveCloudKey(password, userId);
+  const passwordWrapper = (await encryptCloudPayload(dek, kek)) as WrappedKey;
+  const wrappers: EncryptionMetadata['wrappers'] = {
+    password: { ...passwordWrapper, kdf: PASSWORD_KDF },
+  };
+  if (opts.serverKey) {
+    const serverWrapper = (await encryptCloudPayload(dek, serverKekFor(userId, opts.serverKey))) as WrappedKey;
+    wrappers.server = { ...serverWrapper, scheme: SERVER_SCHEME };
+  }
+  return {
+    metadata: {
+      version: ENCRYPTION_VERSION,
+      dek: { alg: 'AES-GCM', createdAt: new Date().toISOString() },
+      wrappers,
+    },
+    dek,
+  };
 }
 
 // --- Unlocked-session registry ---
@@ -196,6 +451,57 @@ export function closeUserSessions(userId: string): void {
 export function activeSessionCount(): number {
   sweep(Date.now());
   return sessions.size;
+}
+
+// ---------------------------------------------------------------------------
+// Locked sessions — "authenticated, but the key has not been handed over"
+// ---------------------------------------------------------------------------
+//
+// Advanced mode's X sign-in proves *who* the user is and nothing more. The web app
+// needs to carry that proof to the unlock step, so the callback issues one of
+// these instead of a session: it names the user and carries no key, so leaking it
+// exposes no data. It is deliberately not a session with a flag — a flag is one
+// forgotten check away from full access, whereas this type simply has no key to
+// hand out.
+
+interface LockedSession {
+  userId: string;
+  expiresAt: number;
+}
+
+const lockedSessions = new Map<string, LockedSession>();
+/** Long enough to read a notice and type a password; short enough to matter little. */
+const LOCKED_TTL_MS = 10 * 60 * 1000;
+
+/** Start a locked session. One live token per user, like enrolment. */
+export function openLockedSession(userId: string, ttlMinutes?: number): string {
+  const now = Date.now();
+  sweepExpiring(lockedSessions, now);
+  for (const [token, entry] of lockedSessions) {
+    if (entry.userId === userId) lockedSessions.delete(token);
+  }
+  const token = randomToken('lu');
+  const ttl = ttlMinutes !== undefined ? ttlMinutes * 60 * 1000 : LOCKED_TTL_MS;
+  lockedSessions.set(token, { userId, expiresAt: now + ttl });
+  return token;
+}
+
+/**
+ * Whose locked session is this, without consuming it.
+ *
+ * Non-consuming on purpose: a mistyped password should not cost the user a whole
+ * new X round-trip. The token is spent only after a successful unlock.
+ */
+export function peekLockedSession(token: string): string | null {
+  sweepExpiring(lockedSessions, Date.now());
+  return lockedSessions.get(token)?.userId ?? null;
+}
+
+/** Spend a locked session, once. */
+export function redeemLockedSession(token: string): string | null {
+  const userId = peekLockedSession(token);
+  if (userId) lockedSessions.delete(token);
+  return userId;
 }
 
 // ---------------------------------------------------------------------------

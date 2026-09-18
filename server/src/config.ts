@@ -19,6 +19,12 @@ export interface XOAuthConfig {
   redirectUri: string;
 }
 
+export interface TurnstileConfig {
+  secret: string;
+  /** Hostnames the widget is served from. Verified against the siteverify reply. */
+  hostnames: string[];
+}
+
 export interface Config {
   /** Where the web app lives. Used for the CORS allowlist and OAuth bounce targets. */
   publicOrigin: string;
@@ -50,6 +56,18 @@ export interface Config {
   totpEncKey: string;
   /** Absent until the X app is registered; X login is then reported as unconfigured. */
   x: XOAuthConfig | null;
+  /**
+   * The key the standard-mode `server` wrapper is wrapped under.
+   *
+   * Optional so a self-hosted instance can run advanced-only, and so the test
+   * suite does not have to carry every field. But its presence *is* the standard
+   * mode's promise ("the server can recover your data"), so production refuses to
+   * start without it rather than silently degrading: an instance that let people
+   * choose Standard and then could not recover them would be lying.
+   */
+  serverDekKey: string | null;
+  /** Human-verification on the register and X-setup entry points. Absent = off. */
+  turnstile: TurnstileConfig | null;
   /** Tokens live this long without use. */
   sessionTtlMinutes: number;
   /**
@@ -194,6 +212,36 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     x = { clientId: xClientId, clientSecret: xClientSecret, redirectUri };
   }
 
+  // The standard-mode server key. Optional generally, required in production —
+  // see the interface comment. 32 bytes is the floor, same as TOTP_ENC_KEY.
+  const serverDekKeyRaw = env.SERVER_DEK_KEY?.trim();
+  const serverDekKey = serverDekKeyRaw ? serverDekKeyRaw : null;
+  if (serverDekKey && serverDekKey.length < MIN_SECRET_LENGTH) {
+    throw new ConfigError(`SERVER_DEK_KEY must be at least ${MIN_SECRET_LENGTH} characters`);
+  }
+  if (env.NODE_ENV === 'production' && !serverDekKey) {
+    throw new ConfigError(
+      'SERVER_DEK_KEY is required in production: standard-mode accounts rely on it for ' +
+        'recovery. Set it to 32+ random characters, or run advanced-only.',
+    );
+  }
+
+  // Turnstile is optional as a unit. Half-configured is the failure worth catching:
+  // a secret with no hostname allowlist would accept a token minted on any site.
+  const turnstileSecret = env.TURNSTILE_SECRET?.trim();
+  const turnstileHostsRaw = env.TURNSTILE_HOSTNAMES?.trim();
+  let turnstile: TurnstileConfig | null = null;
+  if (turnstileSecret || turnstileHostsRaw) {
+    if (!turnstileSecret) throw new ConfigError('TURNSTILE_SECRET is required when TURNSTILE_HOSTNAMES is set');
+    if (!turnstileHostsRaw) throw new ConfigError('TURNSTILE_HOSTNAMES is required when TURNSTILE_SECRET is set');
+    const hostnames = turnstileHostsRaw
+      .split(',')
+      .map((h) => h.trim().toLowerCase())
+      .filter(Boolean);
+    if (hostnames.length === 0) throw new ConfigError('TURNSTILE_HOSTNAMES must list at least one hostname');
+    turnstile = { secret: turnstileSecret, hostnames };
+  }
+
   const sessionTtlMinutes = Number(env.SESSION_TTL_MINUTES ?? 30);
   if (!Number.isFinite(sessionTtlMinutes) || sessionTtlMinutes <= 0) {
     throw new ConfigError('SESSION_TTL_MINUTES must be a positive number');
@@ -224,6 +272,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     databaseUrl,
     totpEncKey,
     x,
+    serverDekKey,
+    turnstile,
     sessionTtlMinutes,
     rateLimits,
   };

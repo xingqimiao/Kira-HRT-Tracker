@@ -76,3 +76,8 @@ public/ocr/
 # seconds between writing and running. Ignoring the pattern is cheaper than noticing
 # them in the status every time.
 /_tmp-*.mjs
+/tmp-*.mjs
+
+# Agent-harness scratch: plan documents and session notes the tooling writes into the
+# workspace. Nothing the app builds or serves.
+/.zcode/

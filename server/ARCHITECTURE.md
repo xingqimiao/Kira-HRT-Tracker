@@ -41,7 +41,7 @@ logic belongs in `core.ts`.
 
 ## Decisions, and what they cost
 
-### Records are encrypted at rest, and the key is session-scoped
+### Records are encrypted at rest, and there are two privacy modes
 
 The product's headline claim is that the operator cannot read your hormone record.
 Answering `hrt.list_medications` from the server while keeping that claim true
@@ -52,17 +52,34 @@ needs a specific shape:
   only during an unlock request and stores only a scrypt hash, which derives
   nothing.
 - The **DEK** is random per account and is what actually encrypts records. It is
-  stored server-side only as a ciphertext wrapped under the KEK, so the stored
-  material reveals nothing.
+  stored server-side only as a ciphertext wrapped under one or more wrappers.
 - An **unlocked** session holds the DEK in memory for 30 minutes of idle time.
   That window is when the server can read the account's data.
 
-That last point is the honest description of the tradeoff, and it is worth stating
-plainly rather than glossing: **this is not "the server never sees the data".** It
-is "the server holds no key at rest, and only in memory while the user has
-explicitly unlocked". An agent connecting with a durable token gets no separate
-key — the token proves identity, and it only works while the user has an unlock
-open.
+Which *wrappers* exist over that one DEK is `privacy_mode`, and it is the whole
+difference between the two modes:
+
+- **Standard** — `password` **+ `server`**. The `server` wrapper is wrapped under
+  `SERVER_DEK_KEY`, so the server can recover the DEK on its own. That is the mode's
+  promise: X + TOTP, or a live `hrt_` token, is enough to reach records again, and a
+  forgotten password is recoverable. The cost is stated where the mode is chosen —
+  the server can read the data whenever it decides to, not only during a live unlock.
+- **Advanced** — `password` (+ optional `recovery`), and **never `server`**. Nothing
+  the server holds opens the DEK, so completing X + TOTP yields authentication and
+  nothing else. X sign-in returns a locked token (`lu_…`, no key) and the data opens
+  only when the user supplies a password or recovery key. A forgotten password with no
+  recovery key means the data is gone; the spec requires saying so and the UI does.
+
+Both are stored in `users.encryption_metadata` (versioned jsonb, `version: 2`), with
+`users.wrapped_dek` mirroring `wrappers.password` so a reader that predates this
+release still works. **Switching modes rewraps the DEK and never touches a record** —
+asserted by a test that reads the raw ciphertext before and after both switches.
+
+The honest description is still **not "the server never sees the data"**, and standard
+mode makes that sharper rather than softer: it is "the operator holds no key at rest
+in advanced mode, and a self-unlock key by design in standard mode". An agent
+connecting with a durable token gets the key directly in standard mode; in advanced
+mode the token proves identity and only works while the user has an unlock open.
 
 Two consequences follow, both accepted deliberately:
 
@@ -71,11 +88,18 @@ Two consequences follow, both accepted deliberately:
    strict sense is not preservable through an agent, and claiming otherwise would
    be false.
 2. **No SQL-level reporting over health data.** The server cannot aggregate doses
-   or labs, because it cannot read them. `user_id` and `occurred_at` are the only
-   cleartext columns; everything clinical is inside the envelope.
+   or labs from ciphertext. `user_id` and `occurred_at` are the only cleartext
+   columns; everything clinical is inside the envelope.
 
 Password change re-wraps the DEK rather than re-encrypting records, so it is one
-row and cannot half-fail.
+row and cannot half-fail. A mode switch is the same operation twice over.
+
+**Passkeys are not implemented.** The spec allows a passkey to unwrap the DEK, but
+only if it is real client-side key protection. The browser only offers that through
+the WebAuthn PRF extension, which is not universally available, and an earlier passkey
+feature here was removed on purpose. Rather than ship a passkey button that does not
+actually guard the key, the `passkey` slot exists in the metadata shape and the UI
+says it is unavailable.
 
 ### Record ids are opaque client strings, scoped per account
 
@@ -229,7 +253,7 @@ lines) and the Core has its own model. They do not overlap:
 |---|---|---|
 | Password login | yes | yes (scrypt) |
 | TOTP 2FA + backup codes | yes | no |
-| Passkeys / WebAuthn | removed | no |
+| Passkeys / WebAuthn | removed | no (slot reserved, not built) |
 | Session list & revoke | yes | no (unlock TTL only) |
 | Admin | yes | no |
 | Unlock token | n/a | yes (`ks_…`) |
@@ -291,6 +315,19 @@ The decision was made, so this section replaces the "blocked" one: **password pl
 mandatory TOTP is the only way in, and X OAuth2 can create and identify an account
 but never produce a usable one by itself.**
 
+**Registration now also requires human verification** (Cloudflare Turnstile) when
+`TURNSTILE_SECRET` is configured: both `/auth/register` and `/auth/x/setup` check the
+widget token at the door, requiring `success`, a matching `action`, and an allowlisted
+`hostname`. Unconfigured means skipped, so a self-hosted instance without a widget is
+not blocked.
+
+**Registration records a privacy mode** (`standard` by default, `advanced` on request),
+which decides the account's wrapper set from its first request. Beyond that, the mode
+also splits two ideas the older design ran together: **authentication** (X + TOTP) and
+**data unlock** (password / recovery key). In advanced mode these are separate states,
+and `isAuthenticated = true, isDataUnlocked = false` is a legitimate one the UI shows
+rather than treating as failure.
+
 ### The rule, and why it is structural rather than policy
 
 An account is usable only when it has **both** a password and a confirmed TOTP
@@ -306,20 +343,27 @@ account is banned, the user signs in with their password and unlinks it. Nothing
 migrate, nothing to lose. `password_set_at IS NULL` is the machine-checkable form of
 "this account cannot hold data yet".
 
-### X login cannot skip the password, and that is correct
+### X login cannot skip the data unlock, and the modes decide what it returns
 
 X proves *identity*. It cannot supply the password, and the password is what unwraps
-the key. So an X sign-in verifies the person, then still needs the password before any
-record is readable. `POST /api/auth/x/exchange` reports this honestly:
+the key. What an X sign-in returns therefore depends on the account's privacy mode,
+and `POST /api/auth/x/exchange` reports each case honestly:
 
-- `token: null` — X verified you; the data key needs your password. The client
-  pre-fills the username and runs the normal sign-in.
-- `token: "<ks_…>"` — the account already had a live unlock on this server, so it is
-  reused. This is what makes X sign-in feel like one click in the common case.
+- `token: "<ks_…>"` — a live unlock already existed (another tab), **or** the account
+  is in **standard** mode and the server opened its own wrapper. Either way the person
+  is verified and the key is in hand. This is what makes X sign-in feel like one click.
+- `token: null` **with** `locked_token` — **advanced** mode: X verified the person and
+  nothing more. The `lu_…` token carries the identity to `POST /auth/unlock`, which
+  takes a password or recovery key. The UI shows "verified, not yet unlocked", not
+  "sign-in failed".
+- `token: null` with no `locked_token` — no live unlock and no server key to make one;
+  the client pre-fills the username and runs the normal sign-up path.
 
 The alternative — wrapping the DEK under something X can supply — would make the key
 recoverable from the X account, which is precisely the dependency the requirement
-rules out, and would hand X a path to the encryption key.
+rules out, and would hand X a path to the encryption key. Standard mode's `server`
+wrapper is *not* that: it is wrapped under a deployment secret, not anything X
+controls, and it is removed entirely in advanced mode.
 
 ### Second-factor specifics
 

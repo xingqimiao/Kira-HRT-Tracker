@@ -3,7 +3,8 @@ import Icon from '../components/Icon';
 import { CheckCircle2, Loader2, AlertTriangle } from '../icons';
 
 import TotpSecretDisplay from '../components/TotpSecretDisplay';
-import { coreAuth, CoreAuthError, readXCallbackParams } from '../services/coreAuth';
+import TurnstileWidget from '../components/TurnstileWidget';
+import { coreAuth, CoreAuthError, readXCallbackParams, type PrivacyMode } from '../services/coreAuth';
 import { useCoreSession } from '../hooks/useCoreSession';
 import { useTranslation } from '../contexts/LanguageContext';
 import { setXLandingIntent } from '../utils/xLandingIntent';
@@ -94,8 +95,15 @@ const XAuthLanding: React.FC<XAuthLandingProps> = ({
           navigate('home');
           return;
         }
-        // No token: the honest case, and the reason X is an assist rather than a
-        // login method.
+        // No token. In advanced mode a locked token comes with it: X proved identity,
+        // the data is sealed, and that is a legitimate state to show — not a failure.
+        if (result.lockedToken) {
+          session.adoptLockedSession(result.lockedToken, result.userId, result.username);
+          setPhase('needs_password');
+          return;
+        }
+        // Standard-shape fallback: identity known, no locked session to carry it. The
+        // user finishes with the normal password sign-in.
         setPhase('needs_password');
         onPrefillSignIn?.(result.username);
       } catch (error) {
@@ -160,24 +168,32 @@ const XAuthLanding: React.FC<XAuthLandingProps> = ({
   }
 
   if (phase === 'needs_password') {
+    // With a locked token, this is advanced mode: identity is proven and the records
+    // are sealed. Saying "verified" rather than "failed" is the whole point of
+    // separating authentication from data unlock, so the copy and the single action
+    // both reflect that.
+    const locked = !!session.lockedToken;
     return (
       <Page>
-        <PageHeader title={t('core.x.identified_title')} />
-        {/* The single most important thing to explain in this flow, and the thing a
-            user is most likely to find surprising. Given as a reason, not an apology. */}
-        <StatusLine body={t('core.x.identified_body')} />
+        <PageHeader title={locked ? t('core.x.verified_title') : t('core.x.identified_title')} />
+        <StatusLine body={locked ? t('core.x.verified_body') : t('core.x.identified_body')} />
         <button
           type="button"
           onClick={() => {
-            // Straight to the Core form with the username filled in. This went to
-            // Home and passed the name to a prefill that nothing rendered, so the
-            // flow ended where it started having just proved who the user was.
+            if (locked) {
+              navigate('account');
+              return;
+            }
             onPrefillSignIn?.(username);
             navigate('account', { username });
           }}
           className="btn-primary mt-6 w-full"
         >
-          {username ? t('core.x.sign_in_as').replace('{username}', username) : t('core.x.go_signin')}
+          {locked
+            ? t('core.privacy.unlock_action')
+            : username
+              ? t('core.x.sign_in_as').replace('{username}', username)
+              : t('core.x.go_signin')}
         </button>
       </Page>
     );
@@ -224,6 +240,9 @@ const SetupForm: React.FC<{
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [privacyMode, setPrivacyMode] = useState<PrivacyMode>('standard');
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileReset, setTurnstileReset] = useState(0);
 
   const otpauthUri = useMemo(
     () =>
@@ -256,9 +275,14 @@ const SetupForm: React.FC<{
           setError(null);
           setBusy(true);
           try {
-            const session = await coreAuth.completeXSetup(setupToken, password, code);
+            const session = await coreAuth.completeXSetup(setupToken, password, code, {
+              privacyMode,
+              turnstileToken,
+            });
             onDone(session.userId, session.username, session.token);
           } catch (err) {
+            // A rejected challenge is spent; force a fresh one before the retry.
+            setTurnstileReset(v => v + 1);
             setError(
               err instanceof CoreAuthError ? err.message : t('core.err.generic'),
             );
@@ -302,6 +326,50 @@ const SetupForm: React.FC<{
             required
           />
         </div>
+
+        <div className="space-y-2">
+          <p className="text-sm font-medium">{t('core.privacy.choose_title')}</p>
+          {(['standard', 'advanced'] as PrivacyMode[]).map((mode) => {
+            const selected = privacyMode === mode;
+            return (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setPrivacyMode(mode)}
+                aria-pressed={selected}
+                className={`w-full rounded-xl border p-3 text-left  transition-colors ${
+                  selected
+                    ? 'border-[var(--color-m3-primary)] bg-[var(--color-m3-surface-container)]'
+                    : 'border-[var(--color-m3-outline-variant)]'
+                }`}
+                style={{ transitionDuration: 'var(--md-sys-motion-duration-short3)' }}
+              >
+                <span className="flex items-center gap-2">
+                  <span
+                    className={`h-4 w-4 shrink-0 rounded-full border-2 ${
+                      selected
+                        ? 'border-[var(--color-m3-primary)] bg-[var(--color-m3-primary)]'
+                        : 'border-[var(--color-m3-outline-variant)]'
+                    }`}
+                  />
+                  <span className="text-sm font-medium">
+                    {mode === 'standard' ? t('core.privacy.standard_name') : t('core.privacy.advanced_name')}
+                  </span>
+                </span>
+                <span className="mt-1 block pl-6 text-xs text-[var(--color-m3-on-surface-variant)]">
+                  {mode === 'standard' ? t('core.privacy.standard_blurb') : t('core.privacy.advanced_blurb')}
+                </span>
+              </button>
+            );
+          })}
+          {privacyMode === 'advanced' && (
+            <p className="text-xs text-[var(--color-m3-on-surface-variant)]">
+              {t('core.privacy.advanced_warning')}
+            </p>
+          )}
+        </div>
+
+        <TurnstileWidget action="x_setup" onToken={setTurnstileToken} resetSignal={turnstileReset} />
 
         {error && (
           <p

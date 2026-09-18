@@ -147,7 +147,20 @@ export interface AccountSummary {
   recoveryCodesRemaining: number;
   xLinks: number;
   xLoginAvailable: boolean;
+  privacyMode: PrivacyMode;
+  /** Whether a recovery *wrapper* exists. The key itself is never stored. */
+  hasRecoveryKey: boolean;
+  /** Whether this deployment can offer standard mode (it needs a server key). */
+  serverRecoveryAvailable: boolean;
 }
+
+/**
+ * The two data-security modes.
+ *
+ * Not a security score — a different key model, described in plain terms in the UI.
+ * See the settings screen and the register form.
+ */
+export type PrivacyMode = 'standard' | 'advanced';
 
 export interface XLink {
   handle: string | null;
@@ -202,11 +215,20 @@ export const coreAuth = {
   // --- Registration and enrolment -------------------------------------------
 
   /** Create an account. Returns enrolment material, deliberately NOT a session. */
-  async register(username: string, password: string): Promise<RegistrationResponse> {
+  async register(
+    username: string,
+    password: string,
+    opts: { privacyMode?: PrivacyMode; turnstileToken?: string } = {},
+  ): Promise<RegistrationResponse> {
     return toRegistration(
       await request('/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({
+          username,
+          password,
+          ...(opts.privacyMode ? { privacy_mode: opts.privacyMode } : {}),
+          ...(opts.turnstileToken ? { turnstile_token: opts.turnstileToken } : {}),
+        }),
       }),
     );
   },
@@ -278,7 +300,57 @@ export const coreAuth = {
       recoveryCodesRemaining: raw.recovery_codes_remaining,
       xLinks: raw.x_links,
       xLoginAvailable: raw.x_login_available,
+      privacyMode: raw.privacy_mode === 'advanced' ? 'advanced' : 'standard',
+      hasRecoveryKey: raw.has_recovery_key === true,
+      serverRecoveryAvailable: raw.server_recovery_available === true,
     };
+  },
+
+  /**
+   * Unlock data for a session whose identity X already proved.
+   *
+   * Distinct from `login`: X supplied the identity and the second factor, so the only
+   * thing missing is the *data* credential. `factor` says which one was supplied.
+   */
+  async unlockData(
+    lockedToken: string,
+    factor: 'password' | 'recovery',
+    secret: string,
+  ): Promise<SessionResponse> {
+    return toSession(
+      await request('/auth/unlock', {
+        method: 'POST',
+        body: JSON.stringify({
+          locked_token: lockedToken,
+          factor,
+          ...(factor === 'password' ? { password: secret } : { recovery_key: secret }),
+        }),
+      }),
+    );
+  },
+
+  /** Switch privacy mode. Re-wraps the data key; records are never re-encrypted. */
+  async switchPrivacyMode(
+    token: string,
+    mode: PrivacyMode,
+    currentPassword: string,
+  ): Promise<PrivacyMode> {
+    const raw = await request<any>('/auth/privacy-mode', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ privacy_mode: mode, current_password: currentPassword }),
+    });
+    return raw.privacy_mode === 'advanced' ? 'advanced' : 'standard';
+  },
+
+  /** Create or replace the recovery key. The plaintext is returned once, here only. */
+  async createRecoveryKey(token: string, currentPassword: string): Promise<string> {
+    const raw = await request<any>('/auth/recovery-key', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ current_password: currentPassword }),
+    });
+    return raw.recovery_key;
   },
 
   /** Change the password. Re-wraps the data key; records survive. */
@@ -361,24 +433,45 @@ export const coreAuth = {
   /**
    * Exchange the one-time code from the X callback.
    *
-   * `token: null` is the expected and important case: X proved the identity, but the
-   * data key needs the password, so the caller must run the normal sign-in. It is
-   * not a failure.
+   * Three outcomes, and the middle one is the interesting case:
+   *   - `token` set → a real session (standard mode, or an already-live unlock).
+   *   - `token: null` and `lockedToken` set → advanced mode: X proved identity, the
+   *     data is still locked. The caller shows the unlock step with this token.
+   *   - `token: null`, no `lockedToken` → shouldn't happen, but the caller falls back
+   *     to the normal password sign-in.
    */
-  async exchangeXCode(code: string): Promise<{ userId: string; username: string; token: string | null }> {
+  async exchangeXCode(
+    code: string,
+  ): Promise<{ userId: string; username: string; token: string | null; lockedToken: string | null }> {
     const raw = await request<any>('/auth/x/exchange', {
       method: 'POST',
       body: JSON.stringify({ code }),
     });
-    return { userId: raw.user_id, username: raw.username, token: raw.token };
+    return {
+      userId: raw.user_id,
+      username: raw.username,
+      token: raw.token,
+      lockedToken: raw.locked_token ?? null,
+    };
   },
 
   /** Complete setup for an X-created account: set a password and enrol TOTP. */
-  async completeXSetup(setupToken: string, password: string, code: string): Promise<SessionResponse> {
+  async completeXSetup(
+    setupToken: string,
+    password: string,
+    code: string,
+    opts: { privacyMode?: PrivacyMode; turnstileToken?: string } = {},
+  ): Promise<SessionResponse> {
     return toSession(
       await request('/auth/x/setup', {
         method: 'POST',
-        body: JSON.stringify({ setup_token: setupToken, password, code }),
+        body: JSON.stringify({
+          setup_token: setupToken,
+          password,
+          code,
+          ...(opts.privacyMode ? { privacy_mode: opts.privacyMode } : {}),
+          ...(opts.turnstileToken ? { turnstile_token: opts.turnstileToken } : {}),
+        }),
       }),
     );
   },

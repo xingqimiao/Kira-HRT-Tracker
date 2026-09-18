@@ -36,6 +36,8 @@ before(async () => {
     port: 0,
     databaseUrl: '',
     totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
+    serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    turnstile: null,
     x: null,
     sessionTtlMinutes: 30,
     rateLimits: { register: 1000, login: 1000, resume: 1000, windowMs: 60_000 },

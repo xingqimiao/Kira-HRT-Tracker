@@ -31,6 +31,8 @@ before(async () => {
     port: 0,
     databaseUrl: '',
     totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
+    serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    turnstile: null,
     x: null,
     sessionTtlMinutes: 30,
     rateLimits: { register: 1000, login: 1000, resume: 1000, windowMs: 60_000 },
@@ -188,7 +190,10 @@ test('a wrong password does not unlock, and a locked account reads nothing', asy
 });
 
 test('an agent API token works only while the account is unlocked', async () => {
-  const account = await registerAccount(base, { password: 'agent-password-1' });
+  // Advanced mode: X + TOTP (and a durable token) never yield the key, so the token
+  // only works while a separate password unlock is live. This is the mode where the
+  // property below matters, and the mode a privacy-conscious user picks.
+  const account = await registerAccount(base, { password: 'agent-password-1', privacyMode: 'advanced' });
   const unlockToken: string = account.token;
 
   // Mint a durable token for the agent.
@@ -201,11 +206,26 @@ test('an agent API token works only while the account is unlocked', async () => 
   const whileUnlocked = await api('/api/medications', { headers: { Authorization: `Bearer ${apiToken}` } });
   assert.equal(whileUnlocked.status, 200, JSON.stringify(whileUnlocked.body));
 
-  // Lock the account: the durable token alone must no longer read records. A
-  // leaked token is not a key — that is the property worth this test.
+  // Lock the account: the durable token alone must no longer read records, because
+  // advanced mode has no server key to supply one.
   await api('/auth/logout', json({}, unlockToken));
   const whileLocked = await api('/api/medications', { headers: { Authorization: `Bearer ${apiToken}` } });
-  assert.equal(whileLocked.status, 401, 'a durable token alone must not read records');
+  assert.equal(whileLocked.status, 401, 'a durable token alone must not read records in advanced mode');
+});
+
+test('in standard mode a live token is enough, which is the point of the mode', async () => {
+  // Standard mode: the server holds its own wrapper, so a valid durable token can
+  // read and write without a password unlock open. This is a deliberate trade — it
+  // is what makes the mode simple and recoverable — and it is unacceptable in
+  // advanced mode, which is exactly why the two modes exist.
+  const account = await registerAccount(base, { password: 'standard-password-1', privacyMode: 'standard' });
+  const minted = await api('/api/tokens', json({ name: 'standard-agent' }, account.token));
+  assert.equal(minted.status, 201);
+  const apiToken: string = minted.body.token;
+
+  await api('/auth/logout', json({}, account.token));
+  const afterLogout = await api('/api/medications', { headers: { Authorization: `Bearer ${apiToken}` } });
+  assert.equal(afterLogout.status, 200, 'standard-mode token still reaches records');
 });
 
 test('a stored record is not readable as plaintext in the database', async () => {

@@ -42,7 +42,7 @@ function freshUsername(prefix = 't'): string {
  */
 export async function registerAccount(
   base: string,
-  opts: { username?: string; password?: string } = {},
+  opts: { username?: string; password?: string; privacyMode?: 'standard' | 'advanced' } = {},
 ): Promise<TestAccount> {
   const username = opts.username ?? freshUsername();
   const password = opts.password ?? 'a-good-password-1';
@@ -50,7 +50,11 @@ export async function registerAccount(
   const reg = await call(base, '/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({
+      username,
+      password,
+      ...(opts.privacyMode ? { privacy_mode: opts.privacyMode } : {}),
+    }),
   });
   assert.equal(reg.status, 201, `register failed: ${JSON.stringify(reg.body)}`);
 

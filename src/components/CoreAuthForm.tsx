@@ -3,7 +3,8 @@ import Icon from './Icon';
 import { Loader2, AlertTriangle, X } from '../icons';
 
 import TotpEnrollment from './TotpEnrollment';
-import { coreAuth, CoreAuthError, type RegistrationResponse } from '../services/coreAuth';
+import TurnstileWidget from './TurnstileWidget';
+import { coreAuth, CoreAuthError, type PrivacyMode, type RegistrationResponse } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
 import { useTranslation } from '../contexts/LanguageContext';
 
@@ -45,7 +46,7 @@ interface CoreAuthFormProps {
     active?: boolean;
 }
 
-type Screen = 'credentials' | 'two_factor' | 'enroll';
+type Screen = 'credentials' | 'two_factor' | 'enroll' | 'unlock';
 
 const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
     session,
@@ -70,9 +71,26 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
     const [xAvailable, setXAvailable] = useState<boolean | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
 
+    // Registration: the chosen data-security mode, and the human-verification token.
+    const [privacyMode, setPrivacyMode] = useState<PrivacyMode>('standard');
+    const [turnstileToken, setTurnstileToken] = useState('');
+    // Bumped to force a fresh challenge after a rejected submit, since a solved
+    // token is single use.
+    const [turnstileReset, setTurnstileReset] = useState(0);
+
+    // Data unlock (advanced mode): which factor, and the secret for it.
+    const [unlockFactor, setUnlockFactor] = useState<'password' | 'recovery'>('password');
+    const [unlockSecret, setUnlockSecret] = useState('');
+
     React.useEffect(() => {
         if (active && initialUsername) setUsername(initialUsername);
     }, [active, initialUsername]);
+
+    // A locked session is a real state to show, not an error: the identity is known
+    // and the only thing missing is the data credential.
+    React.useEffect(() => {
+        if (session.lockedToken) setScreen('unlock');
+    }, [session.lockedToken]);
 
     // Ask whether X is offered once, when the form becomes active.
     React.useEffect(() => {
@@ -133,11 +151,16 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                 finish(result);
             } else {
                 // Registration produces enrolment material, not a session.
-                const material = await session.register(username, password);
+                const material = await session.register(username, password, {
+                    privacyMode,
+                    turnstileToken,
+                });
                 setEnrollment(material);
                 setScreen('enroll');
             }
         } catch (err) {
+            // A rejected challenge must be re-solved: the token is spent either way.
+            setTurnstileReset(v => v + 1);
             // A locked-out or previously-abandoned account is told how to finish rather
             // than left believing the password was wrong.
             if (err instanceof CoreAuthError && err.message.includes('not completed')) {
@@ -151,6 +174,24 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                 }
             }
             setError(describe(err));
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function handleUnlock(e: React.FormEvent) {
+        e.preventDefault();
+        if (busy) return;
+        setError(null);
+        setBusy(true);
+        try {
+            await session.unlockData(unlockFactor, unlockSecret);
+            setUnlockSecret('');
+            onSignedIn?.();
+            onDone?.();
+        } catch (err) {
+            setError(describe(err));
+            setUnlockSecret('');
         } finally {
             setBusy(false);
         }
@@ -197,13 +238,15 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                 <h3 className="modal-title !mb-0">
                     {screen === 'enroll'
                         ? t('core.setup_2fa')
-                        : isLogin
-                            ? t('core.sign_in')
-                            : t('core.create_account')}
+                        : screen === 'unlock'
+                            ? t('core.privacy.unlock_title')
+                            : isLogin
+                                ? t('core.sign_in')
+                                : t('core.create_account')}
                 </h3>
                 {/* Not closable mid-enrolment: the account exists but is unusable, and
                     the single-use enrolment token would be lost with the form. */}
-                {onCancel && screen !== 'enroll' && (
+                {onCancel && screen !== 'enroll' && screen !== 'unlock' && (
                     <button
                         type="button"
                         onClick={onCancel}
@@ -240,6 +283,73 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                         onDone?.();
                     }}
                 />
+            )}
+
+            {/* ── Data unlock (advanced mode) ────────────────────────────────── */}
+            {screen === 'unlock' && (
+                <form onSubmit={handleUnlock} className="space-y-4">
+                    {/* The honest state, spelled out: identity is done, the records are
+                        not open. This is not "sign-in failed". */}
+                    <p className="text-sm text-[var(--color-m3-on-surface-variant)]  !mt-0">
+                        {t('core.privacy.unlock_intro')}
+                    </p>
+                    {session.lockedUser && (
+                        <p className="text-sm font-medium">
+                            {t('core.privacy.unlock_as').replace('{username}', session.lockedUser.username)}
+                        </p>
+                    )}
+
+                    <div className="space-y-1.5">
+                        <label className="text-sm" htmlFor="core-unlock-secret">
+                            {unlockFactor === 'password'
+                                ? t('core.privacy.factor_password')
+                                : t('core.privacy.factor_recovery')}
+                        </label>
+                        <input
+                            id="core-unlock-secret"
+                            type={unlockFactor === 'password' ? 'password' : 'text'}
+                            className={unlockFactor === 'password' ? 'input-base' : 'input-base font-mono'}
+                            value={unlockSecret}
+                            onChange={(e) =>
+                                setUnlockSecret(
+                                    unlockFactor === 'password' ? e.target.value : e.target.value.toUpperCase(),
+                                )
+                            }
+                            placeholder={unlockFactor === 'recovery' ? 'XXXX-XXXX-…' : undefined}
+                            autoComplete={unlockFactor === 'password' ? 'current-password' : 'off'}
+                            autoFocus
+                            required
+                        />
+                    </div>
+
+                    {error && (
+                        <p className="text-xs flex items-start gap-1.5 text-[#B3261E]" role="alert">
+                            <Icon icon={AlertTriangle} size={13} className="mt-0.5 shrink-0" />
+                            <span>{error}</span>
+                        </p>
+                    )}
+
+                    <button type="submit" disabled={busy} className="btn-primary w-full">
+                        {busy && <Icon icon={Loader2} size={16} className="animate-spin" />}
+                        {t('core.privacy.unlock_action')}
+                    </button>
+
+                    <div className="flex flex-col items-center gap-1.5 pt-1">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setUnlockFactor(v => (v === 'password' ? 'recovery' : 'password'));
+                                setUnlockSecret('');
+                                setError(null);
+                            }}
+                            className="text-xs text-[var(--color-m3-primary)]  hover:underline"
+                        >
+                            {unlockFactor === 'password'
+                                ? t('core.privacy.use_recovery')
+                                : t('core.privacy.use_password')}
+                        </button>
+                    </div>
+                </form>
             )}
 
             {/* ── Second factor ──────────────────────────────────────────────── */}
@@ -360,6 +470,58 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                             </p>
                         )}
                     </div>
+
+                    {!isLogin && (
+                        <div className="space-y-2">
+                            <p className="text-sm font-medium">{t('core.privacy.choose_title')}</p>
+                            {(['standard', 'advanced'] as PrivacyMode[]).map((mode) => {
+                                const selected = privacyMode === mode;
+                                return (
+                                    <button
+                                        key={mode}
+                                        type="button"
+                                        onClick={() => setPrivacyMode(mode)}
+                                        aria-pressed={selected}
+                                        className={`w-full rounded-xl border p-3 text-left  transition-colors ${
+                                            selected
+                                                ? 'border-[var(--color-m3-primary)] bg-[var(--color-m3-surface-container)]'
+                                                : 'border-[var(--color-m3-outline-variant)]'
+                                        }`}
+                                        style={{ transitionDuration: 'var(--md-sys-motion-duration-short3)' }}
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <span
+                                                className={`h-4 w-4 shrink-0 rounded-full border-2 ${
+                                                    selected
+                                                        ? 'border-[var(--color-m3-primary)] bg-[var(--color-m3-primary)]'
+                                                        : 'border-[var(--color-m3-outline-variant)]'
+                                                }`}
+                                            />
+                                            <span className="text-sm font-medium">
+                                                {mode === 'standard'
+                                                    ? t('core.privacy.standard_name')
+                                                    : t('core.privacy.advanced_name')}
+                                            </span>
+                                        </span>
+                                        <span className="mt-1 block pl-6 text-xs text-[var(--color-m3-on-surface-variant)]">
+                                            {mode === 'standard'
+                                                ? t('core.privacy.standard_blurb')
+                                                : t('core.privacy.advanced_blurb')}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                            {privacyMode === 'advanced' && (
+                                <p className="text-xs text-[var(--color-m3-on-surface-variant)]">
+                                    {t('core.privacy.advanced_warning')}
+                                </p>
+                            )}
+                        </div>
+                    )}
+
+                    {!isLogin && (
+                        <TurnstileWidget action="register" onToken={setTurnstileToken} resetSignal={turnstileReset} />
+                    )}
 
                     {error && (
                         <p className="text-xs flex items-start gap-1.5 text-[#B3261E]" role="alert">

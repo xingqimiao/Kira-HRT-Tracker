@@ -48,6 +48,8 @@ before(async () => {
     databaseUrl: '',
     // Deterministic and long enough for the seal.
     totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
+    serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    turnstile: null,
     x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
     sessionTtlMinutes: 30,
     // Generous, so one test's attempts never consume another's budget. The limits
@@ -536,14 +538,22 @@ test('completing X setup sets a password and enrols TOTP, making the account rea
 test('a second X sign-in for a known account returns a one-time code, not a token', async () => {
   const x = stubX({ userId: `902${Date.now()}`, handle: 'returner' });
   try {
-    // First sign-in: create and complete setup.
+    // Advanced mode, because that is the mode in which "X alone cannot unlock the
+    // records" is still true — standard mode deliberately returns a session here
+    // (see the privacy-mode suite). What this test pins is the URL safety: the
+    // callback hands over a one-time code, never a session token.
     const first = await runXCallback();
     const setupToken = new URL(first.location!).searchParams.get('setup_token')!;
     const secret = new URL(first.location!).searchParams.get('secret')!;
     await call(
       base,
       '/auth/x/setup',
-      json({ setup_token: setupToken, password: 'a-returning-password-9', code: totpCodeAt(secret) }),
+      json({
+        setup_token: setupToken,
+        password: 'a-returning-password-9',
+        code: totpCodeAt(secret),
+        privacy_mode: 'advanced',
+      }),
     );
 
     // Clear every live unlock for this account, so this second sign-in represents a
@@ -561,12 +571,15 @@ test('a second X sign-in for a known account returns a one-time code, not a toke
     assert.ok(oneTimeCode!.startsWith('otc_'), `unexpected code shape: ${oneTimeCode}`);
     assert.equal(landed.searchParams.get('token'), null, 'still no session token in a URL');
 
-    // Redeeming it reports the identity but no session, because the data key needs
-    // the password. This is the honest shape of password-wrapped keys.
+    // Redeeming it reports the identity but no session: in advanced mode the data key
+    // exists only under the user's own credentials. A locked token comes instead, to
+    // carry the verified identity to the unlock step.
     const exchanged = await call(base, '/auth/x/exchange', json({ code: oneTimeCode }));
     assert.equal(exchanged.status, 200, JSON.stringify(exchanged.body));
     assert.equal(exchanged.body.username, 'returner');
     assert.equal(exchanged.body.token, null, 'X alone cannot unlock the records');
+    assert.ok(exchanged.body.locked_token, 'a locked token carries the identity forward');
+    assert.ok(exchanged.body.locked_token.startsWith('lu_'), 'with the locked-token shape');
 
     // And the one-time code is spent.
     const reused = await call(base, '/auth/x/exchange', json({ code: oneTimeCode }));
@@ -776,6 +789,8 @@ test('the per-IP limiter refuses a burst of sign-in attempts', async () => {
     port: 0,
     databaseUrl: '',
     totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
+    serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    turnstile: null,
     x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
     sessionTtlMinutes: 30,
     rateLimits: { register: 3, login: 3, resume: 3, windowMs: 60_000 },
@@ -800,6 +815,8 @@ test('the per-IP limiter refuses a burst of sign-in attempts', async () => {
       port: 0,
       databaseUrl: '',
       totpEncKey: 'test-totp-encryption-key-0123456789abcdef',
+      serverDekKey: 'test-server-dek-key-0123456789abcdef',
+      turnstile: null,
       x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
       sessionTtlMinutes: 30,
       rateLimits: { register: 1000, login: 1000, resume: 1000, windowMs: 60_000 },

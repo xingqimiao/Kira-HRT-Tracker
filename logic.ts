@@ -1969,7 +1969,13 @@ async function importRawAesKey(rawKeyB64: string): Promise<CryptoKey> {
 // returning the raw key bytes (base64) for caching on this device. The raw key
 // can decrypt backups but cannot be used to authenticate, so caching it is
 // strictly safer than caching the password itself.
-export async function deriveCloudKey(password: string, userId: string): Promise<string> {
+//
+// `salt` is optional and exists for the server's other wrappers over the same
+// data key: recovery keys and the standard-mode server key reuse this PBKDF2
+// rather than shipping a second implementation. The default reproduces the
+// historical salt byte for byte, so untouched callers derive the same key they
+// always did.
+export async function deriveCloudKey(password: string, userId: string, salt?: string): Promise<string> {
     const enc = new TextEncoder();
     const keyMaterial = await window.crypto.subtle.importKey(
         "raw",
@@ -1981,7 +1987,7 @@ export async function deriveCloudKey(password: string, userId: string): Promise<
     const key = await window.crypto.subtle.deriveKey(
         {
             name: "PBKDF2",
-            salt: enc.encode(`hrt-cloud-v1:${userId}`) as any,
+            salt: enc.encode(salt ?? `hrt-cloud-v1:${userId}`) as any,
             iterations: 600000,
             hash: "SHA-256"
         },
