@@ -1,163 +1,132 @@
-# 如何添加 Google OAuth 登录
+# Google OAuth：现状、Console 配置与品牌验证
 
-> 现状（2026-09-19）：**X 已实现，Google 尚未实现。**
-> 数据库与类型已经就绪（`oauth_accounts.provider` 已放开到 `'x' | 'google'`，
-> 见 `server/schema.sql`），缺的是 provider 实现与配置。
-> 预计工作量：**半天以内**，其中一半是 Google Cloud Console 的点击。
+> 更新：2026-09-19。**Google 登录已实现并已接入前端**；本文分成「实现现状」、
+> 「Console 怎么填」、「品牌验证为什么会被打回」三部分。
 
 ---
 
-## 0. 为什么容易加：现有实现已经是「一个 provider 的形状」
+## 1. 实现现状（代码已完成，不用再改）
 
-`server/src/oauth.ts` 里只有 **3 个常量和 1 个映射函数**是 X 专属的，其余（PKCE
-生成、state、code 交换、错误类型）与 provider 无关：
+| 位置 | 内容 |
+|---|---|
+| `server/src/oauth.ts:244` | `GOOGLE_SCOPE = 'openid'` —— **只申请 `openid`** |
+| `server/src/oauth.ts:287` | `parseGoogleIdToken`：只读 ID token 的 `sub`/`aud`/`iss`/`exp`/`nonce` |
+| `server/src/oauth.ts:337` | `exchangeGoogleCode`：client secret 放在表单体里 |
+| `server/src/config.ts:291` | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` |
+| `server/src/http.ts:437` | `GET /auth/google/start` → `{ authorize_url }` |
+| `server/src/http.ts:453` | `GET /auth/google/callback` → 302 回前端，带一次性 code |
+| `server/src/http.ts:323` | `/health` 的 `google_login` 标志，前端据此决定是否显示按钮 |
 
-| 位置 | 内容 | Google 对应 |
+三条与「常见写法」不同、且是有意的决定：
+
+1. **身份取自 ID token，不调 userinfo。** `sub` 是 Google 保证恒定、永不复用的账号
+   id，token 里就有，所以不需要第二次 HTTP 请求，也不需要 `profile` 权限。
+2. **不要 `email`，也不要 `profile`。** 我们只需要「同一个人」，不需要邮箱或姓名
+   （Google 自己说 email 声明可能不唯一、可能不是本账号的）。少一个权限，就少一
+   项要向 Google 证明「你为什么要它」的说明义务，也就少一次敏感权限审核。
+   代价是账号没有可显示的名字与头像 —— 这是刻意的，见
+   `parseGoogleIdToken` 里 `handle: null, avatarUrl: null` 的注释。
+3. **不用 PKCE，不取 refresh token。** Google 的 web client 用 client secret 认证；
+   我们只在登录那一刻读一次身份，之后不再代表用户调用任何 Google API。没有长期
+   凭据，就没有长期凭据可泄露。
+
+**不加 `access_type=offline`**：那会换来一个 refresh token，而我们没有任何用途。
+
+---
+
+## 2. Google Cloud Console 怎么填
+
+### 2.1 凭据
+
+OAuth client 类型 **Web application**，Authorized redirect URIs **逐字**填
+（Google 精确匹配，大小写、协议、路径、结尾斜杠都算）：
+
+```
+https://api.kiramyao.com/hrt/auth/google/callback
+```
+
+`authorized JavaScript origins` **留空**：我们走服务端流程（code 换 token 在后端
+完成），浏览器从不直接跟 Google 说话。
+
+本地开发另加一条 `http://localhost:5173/auth/google/callback` —— Google 只对
+localhost 放行 `http`，其他域名一律 `https`。
+
+### 2.2 同意屏幕（新版 Console 叫 Google Auth Platform）
+
+| 字段 | 填什么 |
+|---|---|
+| User type | **External** |
+| App name | `Kira Tracker` |
+| User support email | 你自己的邮箱（Google 会往这里发审核邮件，必须是你在看的地址） |
+| Application home page | `https://hrt.kiramyao.com/` |
+| Application privacy policy link | `https://hrt.kiramyao.com/privacy` |
+| Application terms of service link | **留空**（见下） |
+| Authorized domains | `kiramyao.com` |
+| Scopes | 只加 `openid`；**不要**加 Gmail / Drive / Calendar 等 |
+
+**Terms of service 留空。** Google 明确写了它是 optional。本仓库此前有过一个
+`/terms`，后来被删掉，理由是：去掉与「不是医疗器械、不构成医疗建议」重复的部分
+之后，剩下的（适用法律、管辖、责任上限）都是对一个并不存在的法律主体所做的猜测
+（见 `DEPLOY.md` §1）。一条编出来的条款比没有条款更糟，所以这一次没有再写一份。
+医疗免责声明仍然放在用户真正要做决定的地方：应用内的 `DisclaimerModal`，以及分享
+图表下方那一行。
+
+**Authorized domains 填的是「top private domain」，不是主机名。**
+home page、privacy、以及 redirect URI 的主机（`api.kiramyao.com`）全都归到同一个
+`kiramyao.com`，所以这里**只有一行**。
+
+### 2.3 域名所有权（最容易漏的一步）
+
+必须用**与 Cloud Console 项目同一个 Google 账号**，在
+[Search Console](https://search.google.com/search-console/about) 里把
+`kiramyao.com` 验证为 owner。Google 的品牌验证会自动去核对这一点，没验证过就会
+以「无法确认域名所有权」打回，而且这条通常不会在自动检查里说得那么直白。
+
+---
+
+## 3. 品牌验证要求与本次被打回的原因
+
+Google 官方要求（[Submit for brand verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/brand-verification)）
+的原文有两条是硬性的：
+
+> **Home page:** Your home page must be publicly accessible, and not just accessible
+> to your site's logged-in users. The relevance of your home page to the app that's
+> under review must be clear.
+
+> **Privacy policy:** The privacy policy must be visible to users, **hosted within the
+> same domain as your application's home page**, and linked to on the OAuth consent
+> screen … the home page must include a description of the app's functionality, as
+> well as **links to the privacy policy** and optional terms of service.
+
+对照本次实测到的状态：
+
+| 要求 | 打回时的实际状态 | 已做的修复 |
 |---|---|---|
-| `oauth.ts:24` | `AUTHORIZE_ENDPOINT` | `https://accounts.google.com/o/oauth2/v2/auth` |
-| `oauth.ts:25` | `TOKEN_ENDPOINT` | `https://oauth2.googleapis.com/token` |
-| `oauth.ts:26` | `PROFILE_ENDPOINT` | `https://openidconnect.googleapis.com/v1/userinfo` |
-| `oauth.ts:45` | `SCOPE = 'users.read tweet.read'` | `openid email profile` |
-| `oauth.ts:149-197` | `XProfile` 类型 + `fetchProfile` 映射 | Google 的 userinfo 形状 |
-| `oauth.ts:199` | `upgradeAvatarSize` | **X 专属**，Google 不需要（头像本来就是 96px+） |
+| 首页能说明应用是什么 | `hrt.kiramyao.com/` 是客户端渲染的 SPA，初始 HTML 只有 12 个可见字符，而校验器**不执行 JavaScript** | `index.html` 里 `#root` 内写入真实静态内容（应用名、用途、功能列表、隐私政策链接）；`index.tsx` 首次渲染前 `replaceChildren()` 清掉，浏览器不会看到两份 |
+| 隐私政策与首页**同域** | `kiramyao.com/privacy` 是真实政策，但**不同域**；`hrt.kiramyao.com/privacy` 返回空 SPA 外壳 | 新增 `public/privacy/index.html`，实际部署为 `hrt.kiramyao.com/privacy` |
+| 首页有 privacy 链接 | 无 | 首页静态内容里已加 |
+| 隐私政策写明 Google 数据怎么用 | 原政策未提及 Google | 新增页面第 2 节：只申请 `openid`、只收到 `sub`、只用于识别同一次登录，并附 Limited Use 声明 |
+| 条款页可达 | `hrt.kiramyao.com/terms` 是空外壳 | **不修**：这一项 Google 标为 optional，而本仓库此前已决定不发布条款页（理由见 §2.2） |
 
-`buildAuthorizeUrl` / `exchangeCode` **本来就是通用的**——它们只接收端点与 client 凭据。
-所以正确的做法是**把它们参数化**，而不是复制一份 `google.ts`。
+**`/privacy` 当时为什么是空壳**（两个原因叠在一起，都已解决）：
 
----
+1. `/srv/hrt-web/` 下没有 `privacy/` 目录，Caddy 的
+   `try_files {path} {path}/index.html /index.html` 于是回退到 SPA 外壳。
+   Caddyfile 里那段注释记的就是这次踩坑：`{path}/index.html` 必须写在 `try_files`
+   里，且不能用 `not file` 匹配器改写 —— `file` 只看「是不是文件」，目录会被判为
+   未命中。Caddy 侧已经不需要再改，**只要目录存在就会被正确服务**。
+2. service worker 的导航回退会把 `/privacy` 也换成预缓存的 `index.html`，而且是
+   **从缓存里换**，在线也一样。这会让「装过应用的老人」永远看到应用外壳，只有从没
+   装过的人（比如 Google 的审核员）看到真页面 —— 也就是说问题会伪装成没问题。
+   `vite.config.ts` 的 `navigateFallbackDenylist` 已加入 `^/privacy`。
 
-## 1. 第一步：在 Google Cloud Console 建凭据（你自己做，约 15 分钟）
-
-1. 打开 <https://console.cloud.google.com/>，新建（或选择）一个项目。
-2. **APIs & Services → OAuth consent screen**
-   - User type：**External**
-   - App name、support email、developer contact 必填
-   - **Scopes**：只加 `openid`、`email`、`profile` 三个。**不要**申请任何 Gmail / Drive 权限
-     （会触发 Google 的敏感权限审核，几周起步，而我们只需要知道"你是谁"）
-   - Test users：开发阶段把你的 Google 账号加进去（否则 `External` + 未发布状态下只有测试用户能登录）
-3. **APIs & Services → Credentials → Create credentials → OAuth client ID**
-   - Application type：**Web application**
-   - **Authorized redirect URIs** 必须**逐字**填（Google 是精确匹配，多一个斜杠都会失败）：
-     ```
-     https://api.kiramyao.com/hrt/auth/google/callback
-     ```
-   - 开发用再加一条本地的（见 §4）
-4. 保存后拿到 **Client ID** 与 **Client secret**。
-
-> **发布状态**：`External` + `Testing` 状态下 refresh token 7 天过期、且只有测试用户能登录。
-> 要让所有人用，需要在 consent screen 点 **Publish app**。因为只申请了三个基础 scope，
-> 通常不需要 Google 人工审核，但**会显示"未验证应用"警告**，用户需点「高级 → 继续」。
+> 隐私政策还必须**写明如何使用 Google 用户数据**。`public/privacy/index.html`
+> 第 2 节直接写了「只申请 `openid`、只收到 `sub`、只用于识别同一次登录」，并带上
+> Limited Use 声明 —— 这三句必须与代码一致，改 `GOOGLE_SCOPE` 时请连着改它。
 
 ---
 
-## 2. 第二步：改代码（4 处）
-
-### 2.1 `config.ts`：把 X 配置泛化成 provider 表
-
-```ts
-// 现在
-x: XOAuthConfig | null;
-
-// 改成（保留 x 便于过渡，新增 google）
-google: XOAuthConfig | null;
-```
-
-在 `loadConfig` 里照 `x` 的写法加一段（`config.ts:256-273` 附近）：
-
-```ts
-const gClientId = env.GOOGLE_CLIENT_ID?.trim();
-const gClientSecret = env.GOOGLE_CLIENT_SECRET?.trim();
-let google: XOAuthConfig | null = null;
-if (gClientId || gClientSecret) {
-  if (!gClientId) throw new ConfigError('GOOGLE_CLIENT_ID is required when Google login is configured');
-  if (!gClientSecret) throw new ConfigError('GOOGLE_CLIENT_SECRET is required when Google login is configured');
-  google = {
-    clientId: gClientId,
-    clientSecret: gClientSecret,
-    redirectUri: env.GOOGLE_REDIRECT_URI?.trim()
-      ?? `${apiOrigin}${basePath}/auth/google/callback`,
-  };
-}
-```
-
-### 2.2 `oauth.ts`：端点参数化 + Google 的 profile 映射
-
-把 3 个常量收进一个 provider 描述表，`buildAuthorizeUrl` / `exchangeCode` 接收它：
-
-```ts
-export interface OAuthProvider {
-  name: 'x' | 'google';
-  authorizeEndpoint: string;
-  tokenEndpoint: string;
-  scope: string;
-  /** true 时 token 端点需要 client_secret（X 的 confidential client 走 Basic，Google 走表单） */
-  clientSecretInBody: boolean;
-}
-
-export const PROVIDERS: Record<'x' | 'google', OAuthProvider> = {
-  x: { name: 'x', authorizeEndpoint: '…/i/oauth2/authorize', tokenEndpoint: '…/oauth2/token', scope: 'users.read tweet.read', clientSecretInBody: false },
-  google: {
-    name: 'google',
-    authorizeEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
-    tokenEndpoint: 'https://oauth2.googleapis.com/token',
-    scope: 'openid email profile',
-    clientSecretInBody: true,
-  },
-};
-```
-
-> **一个真实差异，必须处理**：Google 的 authorize 端点要求 `access_type=offline`
-> 才发 refresh token，而**我们不需要 refresh token**——我们只在登录那一刻读一次
-> userinfo。所以**不要**加 `access_type=offline`，少一个长期凭据就少一个泄露面。
-
-`fetchProfile` 加一个 Google 分支，返回统一形状：
-
-```ts
-export interface OAuthProfile {
-  providerUserId: string;   // 不可变 id
-  handle: string | null;
-  avatarUrl: string | null;
-}
-```
-
-Google 的 `userinfo` 返回 `{ sub, email, email_verified, name, picture }`：
-
-```ts
-// sub 是 Google 的不可变用户 id —— 和 X 的数值 id 一样，绝不能用 email 当键：
-// 邮箱可变、可被回收再分配给他人，用它做键会让一次邮箱变更转移账号访问权。
-providerUserId: body.sub,
-handle: body.email ?? null,
-avatarUrl: typeof body.picture === 'string' ? body.picture : null,
-```
-
-**必须校验 `email_verified === true`** 再把它当 handle 展示。未验证的邮箱不属于用户，
-展示它等于替 Google 说谎。
-
-### 2.3 `accounts.ts` / `http.ts`：加路由
-
-现有路由（`http.ts:430-496`）是 X 专属的路径 `/auth/x/start`、`/auth/x/callback`。
-加同样的两条：
-
-```
-GET /auth/google/start     → { authorize_url }
-GET /auth/google/callback  → 302 回前端，带一次性 code
-```
-
-`createAccountFromX` 已经做了「按 `(provider, provider_user_id)` 查 → 没有则建号」，
-把它泛化成 `createAccountFromProvider(provider, profile)` 即可。**注意建号时仍要生成
-username**（`usernameFromHandle`，Google 用 email 的 @ 前部分），并做唯一性重试。
-
-`oauth_states` 表已存在，`state` 里记 provider 即可，不必改表。
-
-### 2.4 前端：登录页加一个按钮
-
-`CoreAuthForm.tsx:604` 现在是 `{xAvailable && (…)}`。加一个同形状的 Google 分支，
-`coreAuth.xAvailable()` 相应改为返回 `{ x: boolean, google: boolean }`
-（它读的是 `/health`，服务端加 `google_login` 字段即可，照 `http.ts:308` 的 `x_login` 写）。
-
----
-
-## 3. 第三步：环境变量与上线
+## 4. 环境变量与部署
 
 在 `/srv/hrt/.env` 追加（**不要**覆盖已有内容）：
 
@@ -167,64 +136,61 @@ GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxxxxx
 GOOGLE_REDIRECT_URI=https://api.kiramyao.com/hrt/auth/google/callback
 ```
 
-`.env` 的权限是 `600 hrt:hrt`，照旧。然后：
+`.env` 权限保持 `600 hrt:hrt`。然后按常规流程：提交 → 构建 → 上传 → 重启。
 
 ```bash
-# 本地：提交 → 构建 → 上传 → 重启   见 DEPLOY.md
 sudo systemctl restart hrt-server
-sudo journalctl -u hrt-server --since "-1min" --no-pager | tail -3
-# 期望看到启动行里出现 google=on（照 x_login=on 的写法加一个）
+sudo journalctl -u hrt-server --since "-1min" --no-pager | tail -5
 ```
 
 ---
 
-## 4. 第四步：验证
+## 5. 验证
 
-**顺序很重要，先验证配置再验证功能**，否则一个错配会伪装成代码 bug。
+**顺序很重要：先验证配置，再验证功能**，否则一个错配会伪装成代码 bug。
 
 ```bash
-# 1. 配置被读到了吗（服务端启动行应打印 google=on）
-sudo journalctl -u hrt-server --since "-1min" --no-pager | grep -i google
+# 1. 服务端认为 Google 可用
+curl -s https://api.kiramyao.com/hrt/health | python3 -m json.tool | grep google_login
 
-# 2. start 端点返回授权 URL，且 redirect_uri 与 Console 里逐字一致
-curl -s 'https://api.kiramyao.com/hrt/auth/google/start' | python3 -m json.tool
-#    把返回的 authorize_url 里的 redirect_uri 参数抄出来，与 Google Console
-#    里填的那条对比：**必须完全一致**，差一个字符就是 redirect_uri_mismatch
+# 2. start 端点返回授权 URL，并核对 redirect_uri 与 Console 里逐字一致
+curl -s https://api.kiramyao.com/hrt/auth/google/start | python3 -m json.tool
+
+# 3. 静态页真的被服务（不能是 2,837 字节的 SPA 外壳）
+curl -s https://hrt.kiramyao.com/privacy | wc -c      # 期望 ~12,000，不是 ~2,800
+curl -s https://hrt.kiramyao.com/privacy | grep -c 'openid'   # 期望 >= 1
+# 首页也要有可见文字，且能读到应用名与政策链接
+curl -s https://hrt.kiramyao.com/ | grep -c 'Kira Tracker'
+curl -s https://hrt.kiramyao.com/ | grep -c '/privacy'
 ```
 
-**然后走一遍真实的登录**（浏览器，注意先清 service worker，否则会看到旧前端）：
+再走一遍真实登录（浏览器**先清 service worker**，否则看到的是旧前端）：
 
-1. 登录页应出现 Google 按钮
-2. 点进去 → Google 授权 → 回到应用并已登录
-3. `psql` 确认绑定行：
+1. 登录页出现 Google 按钮；
+2. 点进去 → 授权 → 回到应用且已登录；
+3. 确认绑定行：
+
    ```sql
    SELECT provider, provider_user_id, handle FROM oauth_accounts WHERE provider = 'google';
    ```
-4. **关键一条**：这个新账号应当**没有密码**，登录方式总览应报 `recovery_risk = true`
-   ```
-   GET /auth/login-methods   → { has_password: false, providers: ["google"], recovery_risk: true }
-   ```
-   看到 `recovery_risk: true` 说明防封禁引导会正确提示他绑定账号名+密码——
-   这正是整个绑定机制存在的理由。
 
-**本地开发**：Console 里再加一条 `http://localhost:5173/auth/google/callback`（或你的端口），
-并且 Google 只接受 `http` 的 **localhost**，其他域必须是 `https`。
+4. **关键一条**：这个账号**没有密码**，登录方式总览应报 `recovery_risk = true`：
+
+   ```
+   GET /auth/login-methods  →  { has_password: false, providers: ["google"], recovery_risk: true }
+   ```
+
+   看到 `recovery_risk: true` 说明「绑定账号名 + 密码」的引导会正确出现 —— 这正是
+   整个绑定机制存在的理由：Google 账号被封时，记录还进得去。
 
 ---
 
-## 5. 三个容易踩的坑
+## 6. 三个坑
 
-1. **`redirect_uri_mismatch`**：Google 精确匹配，包括协议、端口、路径、结尾斜杠。
-   注意生产路径带 `/hrt` 前缀（`BASE_PATH`），漏掉就是错配。
-2. **用 email 当账号键**：绝对不要。用 `sub`。邮箱可改、可回收，
-   用它可以转移账号访问权。这是 `oauth_accounts` 表把 `provider_user_id` 独立出来的原因。
-3. **`External` + `Testing` 忘了发布**：只有测试用户能登录，别人会看到
-   "Access blocked"。上线前记得 Publish，并接受那个"未验证应用"警告页。
-
----
-
-## 6. 完成后应当仍然成立的两条不变量
-
-- `oauth_accounts.provider` 已有 `CHECK (provider IN ('x', 'google'))`，无需改表。
-- **不允许解绑最后一种登录方式**（`unlinkProvider`，已实现）。Google 接入后这条自动适用：
-  一个只有 Google 的账号必须绑定了账号名+密码才能解绑 Google，否则会被拒绝。
+1. **`redirect_uri_mismatch`**：Google 精确匹配。生产路径带 `/hrt` 前缀，
+   漏掉就是错配。
+2. **用 email 当账号键**：绝对不要，用 `sub`。邮箱可改、可回收，用它做键会让一次
+   邮箱变更转移账号访问权。
+3. **忘了 Publish**：`External` + `Testing` 状态下只有测试用户能登录，其他人看到
+   "Access blocked"。上线前点 Publish；因为只申请 `openid`，通常不需要人工审核数据
+   权限，但品牌信息仍需通过品牌验证，且**未验证时用户会看到「未验证应用」警告页**。

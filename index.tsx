@@ -17,6 +17,11 @@ preventPinchZoom();
 
 const container = document.getElementById('root');
 if (container) {
+    // `index.html` ships real content inside `#root` for clients that never run this
+    // script — see the comment there. Drop it explicitly rather than relying on React's
+    // first render to replace it: a stale copy above the app is the one failure mode
+    // that would be invisible to us and obvious to everyone else.
+    container.replaceChildren();
     const root = createRoot(container);
     root.render(
         <React.StrictMode>

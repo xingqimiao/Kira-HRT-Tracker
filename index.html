@@ -25,10 +25,76 @@
          now discloses. -->
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <title>Kira Tracker</title>
+    <!-- The app is a client-rendered SPA, so without this the page served to a client
+         that does not run JavaScript — a crawler, a link-preview bot, or the reviewer
+         checking our OAuth branding — is an empty shell. Google's brand verification
+         requires the home page to be publicly accessible, to say what the app does and
+         to link to the privacy policy and terms, and it does not execute JavaScript.
+         This is the real content, in the initial HTML. `index.tsx` drops it before the
+         first React render, so a browser never sees both. -->
+    <style>
+        .boot-fallback {
+            max-width: 46rem;
+            margin: 0 auto;
+            padding: 2.5rem 1.25rem;
+            font: 16px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+        }
+
+        .boot-fallback h1 {
+            font-size: 1.75rem;
+            line-height: 1.3;
+            margin: 0 0 0.5rem;
+        }
+
+        .boot-fallback h2 {
+            font-size: 1.125rem;
+            margin: 2rem 0 0.5rem;
+        }
+
+        .boot-fallback ul {
+            padding-left: 1.25rem;
+        }
+
+        .boot-fallback a {
+            color: #0b57d0;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .boot-fallback a {
+                color: #a8c7fa;
+            }
+        }
+    </style>
 </head>
 
 <body class="text-gray-900 dark:text-white transition-colors duration-300">
-    <div id="root"></div>
+    <div id="root">
+        <div class="boot-fallback">
+            <h1>Kira Tracker</h1>
+            <p>
+                激素替代治疗（HRT）用药与化验记录工具。记录每一次用药与化验结果，并推算血药浓度的变化曲线。
+            </p>
+            <p>
+                A medication and blood-test tracker for hormone replacement therapy: log each dose
+                and lab result, and see an estimated concentration curve over time.
+            </p>
+            <h2>功能 / Features</h2>
+            <ul>
+                <li>记录用药：药物、制剂、剂量与时间 / Log doses: drug, preparation, amount and time</li>
+                <li>记录化验结果并跟踪长期趋势 / Log blood-test results and follow long-term trends</li>
+                <li>根据剂量与时间推算激素水平的估算曲线 / Estimate hormone-level curves from your doses and timing</li>
+                <li>记录以 AES-256-GCM 加密保存 / Records are stored encrypted with AES-256-GCM</li>
+                <li>使用账号名与密码、X 或 Google 登录 / Sign in with a username and password, X, or Google</li>
+            </ul>
+            <p>
+                本工具不是医疗器械，也不提供医疗建议；估算曲线不是实测值，用药决定请遵循处方医师的意见。
+                Kira Tracker is not a medical device and does not provide medical advice.
+            </p>
+            <p>
+                <a href="/privacy">隐私说明 / Privacy Policy</a>
+            </p>
+        </div>
+    </div>
     <script type="module" src="/index.tsx"></script>
 </body>
 
