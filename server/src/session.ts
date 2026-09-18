@@ -26,7 +26,7 @@
  * ships, so the browser and the server agree on the format byte for byte.
  */
 import { createHmac } from 'node:crypto';
-
+import { getConfig } from './config.ts';
 import { deriveCloudKey, derivePasskeyKey, encryptCloudPayload, decryptCloudPayload, isCloudEncrypted } from './engine.ts';
 
 /** A wrapped DEK as stored server-side. Identical envelope to a cloud backup. */
@@ -460,6 +460,16 @@ interface UnlockedSession {
    * schema change, and is the input `hasFreshPasskeyVerification` is written against.
    */
   passkeyVerifiedAt?: number;
+  /**
+   * This session's idle window, fixed when it was opened.
+   *
+   * Stored rather than recomputed on renewal because the two can legitimately differ:
+   * `openSession` takes an explicit TTL, and a caller that asks for 120 minutes must get
+   * 120 minutes on every renewal — not 120 once and then whatever the deployment's
+   * default happens to be. Recomputing was a real defect: a caller-requested window
+   * silently collapsed to 30 minutes on the second request.
+   */
+  idleTtlMs: number;
 }
 
 /**
@@ -471,8 +481,54 @@ interface UnlockedSession {
  */
 const sessions = new Map<string, UnlockedSession>();
 
-/** Idle timeout. Short enough that a forgotten unlock does not persist all day. */
-const SESSION_TTL_MS = 30 * 60 * 1000;
+/**
+ * Idle timeout for a session whose caller passed no explicit TTL.
+ *
+ * Read from the deployment's `SESSION_TTL_MINUTES` at each use rather than captured at
+ * import, so tests can change it and so one source of truth exists.
+ *
+ * This used to be a hard-coded 30 minutes while renewal below wrote the same constant
+ * rather than the configured value. Setting `SESSION_TTL_MINUTES=10080` therefore
+ * extended the first unlock to a week and the very next request cut it back to 30
+ * minutes — sessions expired far sooner than configured, the opposite of what the
+ * setting promises.
+ *
+ * Swallows a config error on purpose: this module is exercised on its own (see
+ * `test/session.test.ts`), where none of the config the rest of the server needs has
+ * been set. A deployment that cannot load its config fails loudly at startup, long
+ * before a session is opened, so the fallback here is not hiding a real problem.
+ */
+const DEFAULT_IDLE_TTL_MS = 30 * 60 * 1000;
+
+function idleTtlMs(): number {
+  try {
+    const minutes = getConfig().sessionTtlMinutes;
+    if (Number.isFinite(minutes) && minutes > 0) return minutes * 60 * 1000;
+  } catch {
+    // No config loaded — see above.
+  }
+  return DEFAULT_IDLE_TTL_MS;
+}
+
+/**
+ * Renew a live session's idle window.
+ *
+ * Sliding: every use pushes the deadline out again, so a device in regular use never
+ * has to sign in. Renewal is capped by `createdAt` as well, so a session cannot be kept
+ * alive indefinitely just by polling it — that cap also bounds how long a single stolen
+ * token stays useful.
+ *
+ * `MAX_SESSION_AGE_MS` is deliberately generous (a year) while the idle window is the
+ * setting people actually tune: the absolute cap is a backstop against a forever-token,
+ * not a second timeout to trip over during normal use.
+ */
+const MAX_SESSION_AGE_MS = 365 * 24 * 60 * 60 * 1000;
+
+function renew(session: UnlockedSession, now: number): void {
+  const until = now + session.idleTtlMs;
+  const cap = session.createdAt + MAX_SESSION_AGE_MS;
+  session.expiresAt = Math.min(until, cap);
+}
 
 function sweep(now: number): void {
   for (const [token, session] of sessions) {
@@ -489,15 +545,16 @@ export function openSession(
   const now = Date.now();
   sweep(now);
   const token = `ks_${randomKeyB64().replace(/[+/=]/g, '').slice(0, 32)}`;
-  const ttl = ttlMinutes !== undefined ? ttlMinutes * 60 * 1000 : SESSION_TTL_MS;
+  const ttl = ttlMinutes !== undefined ? ttlMinutes * 60 * 1000 : idleTtlMs();
   sessions.set(token, {
     userId,
     dek,
-    expiresAt: now + ttl,
+    expiresAt: Math.min(now + ttl, now + MAX_SESSION_AGE_MS),
     id: randomKeyB64().replace(/[+/=]/g, '').slice(0, 24),
     createdAt: now,
     lastSeenAt: now,
     device: null,
+    idleTtlMs: ttl,
     ...(opts.passkeyVerified ? { passkeyVerifiedAt: now } : {}),
   });
   return token;
@@ -514,7 +571,7 @@ export function resolveSession(token: string, userId: string): string | null {
   sweep(now);
   const session = sessions.get(token);
   if (!session || session.userId !== userId) return null;
-  session.expiresAt = now + SESSION_TTL_MS;
+  renew(session, now);
   return session.dek;
 }
 
@@ -535,7 +592,7 @@ export function lookupSession(token: string): { userId: string; dek: string } | 
   sweep(now);
   const session = sessions.get(token);
   if (!session) return null;
-  session.expiresAt = now + SESSION_TTL_MS;
+  renew(session, now);
   return { userId: session.userId, dek: session.dek };
 }
 
@@ -554,7 +611,7 @@ export function findUserSession(userId: string): string | null {
   sweep(now);
   for (const session of sessions.values()) {
     if (session.userId === userId) {
-      session.expiresAt = now + SESSION_TTL_MS;
+      renew(session, now);
       return session.dek;
     }
   }
@@ -715,7 +772,7 @@ export function markSessionPasskeyVerified(token: string): boolean {
   const session = sessions.get(token);
   if (!session) return false;
   session.passkeyVerifiedAt = now;
-  session.expiresAt = now + SESSION_TTL_MS;
+  renew(session, now);
   return true;
 }
 

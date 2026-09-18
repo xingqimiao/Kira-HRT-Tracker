@@ -260,3 +260,56 @@ test('signing out everywhere else keeps the caller', async () => {
     closeUserSessions(user);
   }
 });
+
+// ── Idle lifetime ──────────────────────────────────────────────────────────────
+//
+// These two exist because the setting and the renewal disagreed: `SESSION_TTL_MINUTES`
+// set the *first* unlock's deadline, while every later request reset it from a
+// hard-coded 30 minutes. A week-long setting therefore behaved like 30 minutes from the
+// second request on, which reads as "the app logs me out constantly" and is invisible
+// unless someone watches the deadline across two calls.
+
+test('a session slides: every use pushes the deadline out', async () => {
+  const user = 'session-slide';
+  const { dek } = await createUserKeyMaterial(password, user);
+  try {
+    const token = openSession(user, dek, 60);
+    const first = Date.parse(listUserSessions(user, token)[0].expiresAt);
+
+    // Let a measurable moment pass, then use the session the way a request would.
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(resolveSession(token, user), dek);
+
+    const second = Date.parse(listUserSessions(user, token)[0].expiresAt);
+    assert.ok(second > first, 'using a session must extend it, not merely preserve it');
+  } finally {
+    closeUserSessions(user);
+  }
+});
+
+test('the idle window follows the configured TTL, not a built-in default', async () => {
+  const user = 'session-ttl-follows-config';
+  const { dek } = await createUserKeyMaterial(password, user);
+  try {
+    const token = openSession(user, dek, 120);
+    const row = listUserSessions(user, token)[0];
+    const windowMinutes = (Date.parse(row.expiresAt) - Date.parse(row.createdAt)) / 60000;
+
+    assert.ok(
+      Math.abs(windowMinutes - 120) < 1,
+      `a 120-minute unlock should expire in 120 minutes, got ${windowMinutes}`,
+    );
+
+    // And renewal must honour the same number rather than snapping back to a default.
+    await new Promise((r) => setTimeout(r, 20));
+    resolveSession(token, user);
+    const renewed = listUserSessions(user, token)[0];
+    const remaining = (Date.parse(renewed.expiresAt) - Date.now()) / 60000;
+    assert.ok(
+      Math.abs(remaining - 120) < 1,
+      `renewal should restore the full 120 minutes, got ${remaining}`,
+    );
+  } finally {
+    closeUserSessions(user);
+  }
+});

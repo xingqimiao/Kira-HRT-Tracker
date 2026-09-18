@@ -81,3 +81,6 @@ public/ocr/
 # Agent-harness scratch: plan documents and session notes the tooling writes into the
 # workspace. Nothing the app builds or serves.
 /.zcode/
+
+# Scratch files used while composing a commit message.
+.tmp-*
