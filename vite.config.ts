@@ -1,4 +1,5 @@
 import path from 'path';
+import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -17,6 +18,37 @@ import { VitePWA } from 'vite-plugin-pwa';
  * is not about anything.
  */
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'));
+
+/**
+ * A short stamp that changes whenever the code does, used to version the service
+ * worker's filename.
+ *
+ * A fixed `/sw.js` is un-propagatable in a way that produced a real bug. Cloudflare's
+ * default Browser Cache TTL (4 hours) pinned that file at the edge, so its bytes never
+ * changed, so the browser's update check concluded "no new version" — and the
+ * *previous* worker kept serving its old precache manifest. The new `index.html`
+ * pointed at a new bundle and it made no difference, because the request never reached
+ * the network. A fixed bug stayed broken for the person who reported it.
+ *
+ * A different URL whenever the commit changes sidesteps the whole class: there is
+ * nothing cached to serve, so the new worker installs, claims the scope and replaces
+ * the old one. The Caddy `no-cache` header on `/sw*.js` covers the case where a URL is
+ * somehow revisited. Both, because either alone leaves a window.
+ *
+ * Falls back to the app version when git is unavailable (a tarball build), which is
+ * coarser but still changes when the project does.
+ */
+function swStamp(): string {
+  try {
+    return execSync('git rev-parse --short HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim();
+  } catch {
+    return pkg.version;
+  }
+}
+
+const SW_FILENAME = `sw-${swStamp()}.js`;
 
 export default defineConfig(() => {
   return {
@@ -38,6 +70,13 @@ export default defineConfig(() => {
       react(),
       VitePWA({
         registerType: 'autoUpdate',
+        // The worker gets a commit-stamped name so a deploy is never shadowed by a
+        // cached copy at a fixed path — see `swStamp`.
+        filename: SW_FILENAME,
+        // Registering inline puts the code in `index.html`, which is served
+        // `DYNAMIC` by Cloudflare and therefore never edge-cached. An external
+        // `/registerSW.js` would be one more fixed URL to go stale.
+        injectRegister: 'inline',
         includeAssets: ['favicon.png', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
         manifest: {
           name: 'Kira Tracker',
