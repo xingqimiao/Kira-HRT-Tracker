@@ -147,6 +147,8 @@ export interface AccountSummary {
   recoveryCodesRemaining: number;
   xLinks: number;
   xLoginAvailable: boolean;
+  /** The linked X avatar, for the account header. Null when no X account is linked. */
+  xAvatarUrl: string | null;
   privacyMode: PrivacyMode;
   /** Whether a recovery *wrapper* exists. The key itself is never stored. */
   hasRecoveryKey: boolean;
@@ -309,6 +311,7 @@ export const coreAuth = {
       recoveryCodesRemaining: raw.recovery_codes_remaining,
       xLinks: raw.x_links,
       xLoginAvailable: raw.x_login_available,
+      xAvatarUrl: raw.x_avatar_url ?? null,
       privacyMode: raw.privacy_mode === 'advanced' ? 'advanced' : 'standard',
       hasRecoveryKey: raw.has_recovery_key === true,
       serverRecoveryAvailable: raw.server_recovery_available === true,

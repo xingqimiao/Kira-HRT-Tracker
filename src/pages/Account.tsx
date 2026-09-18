@@ -107,9 +107,23 @@ const Account: React.FC<AccountProps> = ({
                 </div>
             ) : session.isSignedIn ? (
                 <div className="mx-auto w-full max-w-2xl">
-                    {/* Identity. */}
+                    {/* Identity. The linked X avatar when there is one, and the generic
+                        glyph when there is not — the same rule the X row uses further
+                        down, so this either says "the account you linked" or reads as a
+                        deliberate placeholder rather than a missing image. */}
                     <div className={`flex items-center gap-3 py-5 ${divider}`}>
-                        <Icon icon={UserCircle} size={36} strokeWidth={1.5} className={`${muted} shrink-0`} />
+                        {summary?.xAvatarUrl ? (
+                            <img
+                                src={summary.xAvatarUrl}
+                                alt=""
+                                className="w-9 h-9 rounded-full object-cover shrink-0"
+                                // A broken fetch must not leave a torn glyph; degrading to
+                                // the placeholder is better than an empty hole.
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                            />
+                        ) : (
+                            <Icon icon={UserCircle} size={36} strokeWidth={1.5} className={`${muted} shrink-0`} />
+                        )}
                         <div className="min-w-0">
                             <p className={`${on} font-semibold text-lg truncate`}>
                                 {session.user?.username ?? t('core.acct.signed_in_as')}

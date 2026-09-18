@@ -124,9 +124,28 @@ test('the account summary reports what deletion would remove', async () => {
   assert.equal(summary.body.lab_count, 1);
   assert.equal(summary.body.recovery_codes_remaining, 10, 'none used yet');
   assert.ok(summary.body.created_at, 'reports when the account was created');
+  // No X linked, so there is no avatar to show — and the header falls back to its
+  // placeholder glyph. Asserted explicitly because `null` and "absent" are easy to
+  // confuse, and the client reads this key directly.
+  assert.equal(summary.body.x_avatar_url, null, 'no linked X means no avatar');
 
   const anon = await call(base, '/auth/account');
   assert.equal(anon.status, 401, 'the summary requires a session');
+});
+
+test('the account summary carries the linked X avatar for the header', async () => {
+  const account = await registerAccount(base);
+  const userId = await userIdFor(account.username);
+  const pool = await getPool();
+  await pool.query(
+    `INSERT INTO oauth_links (user_id, provider, provider_user_id, handle, avatar_url)
+     VALUES ($1, 'x', '12345', 'somebody', $2)`,
+    [userId, 'https://example.test/avatar.jpg'],
+  );
+
+  const summary = await call(base, '/auth/account', auth(account.token));
+  assert.equal(summary.status, 200, JSON.stringify(summary.body));
+  assert.equal(summary.body.x_avatar_url, 'https://example.test/avatar.jpg');
 });
 
 test('deletion is complete: no user-scoped row survives', async () => {

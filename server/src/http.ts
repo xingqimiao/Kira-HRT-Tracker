@@ -654,7 +654,7 @@ export function createRequestHandler() {
         const { getPool } = await import('./db.ts');
         const { rows } = await getPool().query<{
           doses: string; labs: string; backups: string; x_links: string; created_at: Date;
-          privacy_mode: string; encryption_metadata: unknown;
+          privacy_mode: string; encryption_metadata: unknown; x_avatar_url: string | null;
         }>(
           `SELECT
              (SELECT count(*) FROM medication_events WHERE user_id = $1 AND deleted_at IS NULL) AS doses,
@@ -663,7 +663,13 @@ export function createRequestHandler() {
              (SELECT count(*) FROM oauth_links       WHERE user_id = $1)                      AS x_links,
              (SELECT created_at FROM users WHERE id = $1)                                     AS created_at,
              (SELECT privacy_mode FROM users WHERE id = $1)                                   AS privacy_mode,
-             (SELECT encryption_metadata FROM users WHERE id = $1)                            AS encryption_metadata`,
+             (SELECT encryption_metadata FROM users WHERE id = $1)                            AS encryption_metadata,
+             -- The linked X avatar, for the account header. It is already stored; the
+             -- summary simply never surfaced it, so the page had nothing but a generic
+             -- glyph to draw. Null when no X account is linked.
+             (SELECT avatar_url FROM oauth_links
+               WHERE user_id = $1 AND provider = 'x' AND avatar_url IS NOT NULL
+               ORDER BY linked_at ASC LIMIT 1)                                                 AS x_avatar_url`,
           [ctx.userId],
         );
         const row = rows[0];
@@ -677,6 +683,7 @@ export function createRequestHandler() {
           recovery_codes_remaining: Number(row?.backups ?? 0),
           x_links: Number(row?.x_links ?? 0),
           x_login_available: AccountService.xLoginAvailable(),
+          x_avatar_url: row?.x_avatar_url ?? null,
           privacy_mode: row?.privacy_mode ?? 'standard',
           has_recovery_key: Boolean(wrappers?.recovery),
           // Standard mode depends on a server key existing at all; surface it so the
