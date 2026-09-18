@@ -311,21 +311,14 @@ function useCoreSessionState() {
    *
    * Two calls to the ceremony, not one: the options must come from the server so the
    * challenge is one the server will accept, and the assertion it produces is what the
-   * server verifies. The PRF output rides along, and it is what opens the data — so a
-   * browser that returns no PRF output cannot complete this, which is the intended
-   * failure rather than a fallback.
+   * server verifies. The PRF output rides along, and it is what opens the data — the
+   * ceremony throws `no_prf` rather than returning null when it is missing, so the
+   * failure reaches the UI with a reason instead of as an undefined.
    */
   const signInWithPasskey = useCallback(
     async (opts: { username?: string; stepUpToken?: string } = {}) => {
       const options = await coreAuth.startPasskeyAuthentication(opts.username);
       const assertion = await getPasskeyAssertion(options);
-      if (!assertion.prfOutput) {
-        throw new CoreAuthError(
-          'unknown',
-          'This device did not provide the passkey key material (PRF). Try another device or sign in with your password.',
-          null,
-        );
-      }
       const session = await coreAuth.finishPasskeyAuthentication(assertion.response, assertion.prfOutput, {
         ...(opts.stepUpToken ? { stepUpToken: opts.stepUpToken } : {}),
       });
@@ -340,19 +333,13 @@ function useCoreSessionState() {
       if (!state.token) throw new CoreAuthError('unknown', 'Not signed in', null);
       const options = await coreAuth.startPasskeyRegistration(state.token, currentPassword);
       const created = await createPasskey(options);
-      if (!created.prfOutput) {
-        throw new CoreAuthError(
-          'unknown',
-          'This device did not provide the passkey key material (PRF). Try another device or browser.',
-          null,
-        );
-      }
       return await coreAuth.finishPasskeyRegistration(state.token, created.response, created.prfOutput, name);
     },
     [state.token],
   );
 
-  const signOut = useCallback(async () => {    const token = state.token;
+  const signOut = useCallback(async () => {
+    const token = state.token;
     persist(null, null);
     persistMode(null);
     // Revoke server-side too. Fire-and-forget: the local session is already gone,

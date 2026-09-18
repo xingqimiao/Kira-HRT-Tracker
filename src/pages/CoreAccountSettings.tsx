@@ -5,7 +5,7 @@ import { AlertTriangle, Check, Copy, Fingerprint, KeyRound, Loader2, LogOut, Loc
 
 import { coreAuth, CoreAuthError, type AccountSummary, type PasskeyInfo, type PrivacyMode, type XLink } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
-import { passkeysSupported, prfAvailable } from '../utils/passkeys';
+import { passkeysSupported, PasskeyError } from '../utils/passkeys';
 
 /**
  * Account security for an Application Core session.
@@ -77,7 +77,8 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
   const [summary, setSummary] = useState<AccountSummary | null>(null);
   const [links, setLinks] = useState<XLink[]>([]);
   const [passkeys, setPasskeys] = useState<PasskeyInfo[]>([]);
-  const [passkeyReady, setPasskeyReady] = useState(false);
+  // A pure property test, safe to evaluate while rendering — it cannot prompt.
+  const passkeysUsable = passkeysSupported();
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,24 +105,25 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
     }
   }, [token]);
 
-  // Probe passkey support once, the same way the sign-in form does — the button is
-  // only honest where PRF actually works.
-  useEffect(() => {
-    if (!passkeysSupported()) return;
-    let cancelled = false;
-    void prfAvailable().then((ok) => {
-      if (!cancelled) setPasskeyReady(ok);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
   function describe(error: unknown): string {
+    // Passkey failures, translated — they are the ones a user is most likely to hit
+    // for reasons that are not their fault (no authenticator here, PRF unsupported).
+    if (error instanceof PasskeyError) {
+      switch (error.code) {
+        case 'unsupported':
+          return t('core.passkey.err_unsupported');
+        case 'cancelled':
+          return t('core.passkey.err_cancelled');
+        case 'no_prf':
+          return t('core.passkey.err_no_prf');
+        default:
+          return error.message;
+      }
+    }
     if (error instanceof CoreAuthError) {
       switch (error.kind) {
         case 'invalid_credentials':
@@ -335,7 +337,10 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
         </section>
 
         {/* ── Passkeys ─────────────────────────────────────────────────────── */}
-        {(passkeyReady || passkeys.length > 0) && (
+        {/* Shown whenever the browser can do WebAuthn. Whether PRF actually works is
+            learned when the user clicks Add — never by probing, which would pop a
+            system dialog for a feature nobody asked for yet. */}
+        {(passkeysUsable || passkeys.length > 0) && (
           <section className="mb-6">
             <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{t('core.passkey.section')}</span>
 
@@ -361,7 +366,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
                 />
               ))}
 
-              {passkeyReady && (
+              {passkeysUsable && (
                 <Row
                   icon={<Icon icon={Fingerprint} size={17} />}
                   title={t('core.passkey.add')}

@@ -1,5 +1,43 @@
 export type Lang = 'zh' | 'zh-TW' | 'yue' | 'en' | 'ja' | 'ko' | 'tr';
 
+const PASSKEY_ERR_I18N = {
+    "zh": {
+        "core.passkey.err_unsupported": "这个浏览器不支持通行密钥。你可以改用密码登录，或在支持通行密钥的设备上操作。",
+        "core.passkey.err_cancelled": "已取消，或这台设备上没有可用于该账户的通行密钥。你仍然可以用密码登录。",
+        "core.passkey.err_no_prf": "这台设备没有提供通行密钥所需的密钥材料（PRF 扩展）。请换一台设备，或改用密码；我们不会在没有 PRF 的情况下保存一把打不开数据的通行密钥。",
+    },
+    "zh-TW": {
+        "core.passkey.err_unsupported": "這個瀏覽器不支援通行金鑰。你可以改用密碼登入，或在支援通行金鑰的裝置上操作。",
+        "core.passkey.err_cancelled": "已取消，或這台裝置上沒有可用於該帳號的通行金鑰。你仍然可以用密碼登入。",
+        "core.passkey.err_no_prf": "這台裝置沒有提供通行金鑰所需的密鑰材料（PRF 擴充）。請換一台裝置，或改用密碼；我們不會在沒有 PRF 的情況下保存一把打不開資料的通行金鑰。",
+    },
+    "yue": {
+        "core.passkey.err_unsupported": "呢個瀏覽器唔支援通行鎖匙。你可以改用密碼登入，或者去支援嘅裝置度整。",
+        "core.passkey.err_cancelled": "取消咗，或者呢部機冇呢個帳號嘅通行鎖匙。你仲可以用密碼登入。",
+        "core.passkey.err_no_prf": "呢部機冇提供通行鎖匙要嘅鎖匙材料（PRF 擴充）。換部機，或者改用密碼；冇 PRF 我哋唔會存一把開唔到資料嘅通行鎖匙。",
+    },
+    "en": {
+        "core.passkey.err_unsupported": "This browser does not support passkeys. Sign in with your password instead, or use a device that does.",
+        "core.passkey.err_cancelled": "Cancelled, or there is no passkey for this account on this device. You can still sign in with your password.",
+        "core.passkey.err_no_prf": "This device did not provide the key material a passkey needs (the PRF extension). Try another device, or use your password — a passkey without PRF cannot open your data, so we do not save one.",
+    },
+    "ja": {
+        "core.passkey.err_unsupported": "このブラウザはパスキーに対応していません。代わりにパスワードでサインインするか、対応している端末をご利用ください。",
+        "core.passkey.err_cancelled": "キャンセルされたか、この端末にこのアカウントのパスキーがありません。パスワードでサインインできます。",
+        "core.passkey.err_no_prf": "この端末はパスキーに必要な鍵素材（PRF 拡張）を提供しませんでした。別の端末かパスワードをご利用ください。PRF のないパスキーはデータを開けないため、保存しません。",
+    },
+    "ko": {
+        "core.passkey.err_unsupported": "이 브라우저는 패스키를 지원하지 않습니다. 대신 비밀번호로 로그인하거나 지원하는 기기를 사용하세요.",
+        "core.passkey.err_cancelled": "취소되었거나 이 기기에 해당 계정의 패스키가 없습니다. 비밀번호로 로그인할 수 있습니다.",
+        "core.passkey.err_no_prf": "이 기기가 패스키에 필요한 키 재료(PRF 확장)를 제공하지 않았습니다. 다른 기기나 비밀번호를 사용하세요. PRF가 없는 패스키는 데이터를 열 수 없으므로 저장하지 않습니다.",
+    },
+    "tr": {
+        "core.passkey.err_unsupported": "Bu tarayıcı geçiş anahtarlarını desteklemiyor. Bunun yerine parolayla giriş yapın veya destekleyen bir cihaz kullanın.",
+        "core.passkey.err_cancelled": "İptal edildi ya da bu cihazda bu hesabın geçiş anahtarı yok. Yine de parolayla giriş yapabilirsiniz.",
+        "core.passkey.err_no_prf": "Bu cihaz geçiş anahtarının gerektirdiği anahtar malzemesini (PRF uzantısı) sağlamadı. Başka bir cihaz veya parolanızı kullanın — PRF olmadan verinizi açamayacağı için kaydetmiyoruz.",
+    },
+} as const;
+
 const PASSKEY_I18N = {
     "zh": {
         "core.passkey.sign_in": "使用通行密钥登录",
@@ -2911,13 +2949,14 @@ const ZH_TW = {
 };
 
 export const TRANSLATIONS = {
-    zh: { ...TRANSLATIONS_BASE.zh, ...PRIVACY_I18N.zh, ...PASSKEY_I18N.zh },
+    zh: { ...TRANSLATIONS_BASE.zh, ...PRIVACY_I18N.zh, ...PASSKEY_I18N.zh, ...PASSKEY_ERR_I18N.zh },
 
-    "zh-TW": { ...ZH_TW, ...PRIVACY_I18N["zh-TW"], ...PASSKEY_I18N["zh-TW"] },
+    "zh-TW": { ...ZH_TW, ...PRIVACY_I18N["zh-TW"], ...PASSKEY_I18N["zh-TW"], ...PASSKEY_ERR_I18N["zh-TW"] },
 
     yue: {
         ...PRIVACY_I18N.yue,
         ...PASSKEY_I18N.yue,
+        ...PASSKEY_ERR_I18N.yue,
         ...ZH_TW,
         "app.title": "Kira 記錄",
         "nav.home": "總覽",
@@ -3452,11 +3491,13 @@ export const TRANSLATIONS = {
         ...TRANSLATIONS_BASE.en,
         ...PRIVACY_I18N.en,
         ...PASSKEY_I18N.en,
+        ...PASSKEY_ERR_I18N.en,
         "app.title": "Kira Tracker",
     },
     ja: {
         ...PRIVACY_I18N.ja,
         ...PASSKEY_I18N.ja,
+        ...PASSKEY_ERR_I18N.ja,
         "nav.home": "概要",
         "notice.dismiss": "お知らせを閉じる",
         "app.title": "Kira Tracker",
@@ -4196,6 +4237,7 @@ export const TRANSLATIONS = {
     ko: {
         ...PRIVACY_I18N.ko,
         ...PASSKEY_I18N.ko,
+        ...PASSKEY_ERR_I18N.ko,
         "app.title": "Kira 추적기",
         "nav.home": "개요",
         "notice.dismiss": "공지 닫기",
@@ -4932,6 +4974,7 @@ export const TRANSLATIONS = {
     tr: {
         ...PRIVACY_I18N.tr,
         ...PASSKEY_I18N.tr,
+        ...PASSKEY_ERR_I18N.tr,
         ...TRANSLATIONS_BASE.en,
         "app.title": "Kira Tracker",
         "nav.home": "Genel Bakış",

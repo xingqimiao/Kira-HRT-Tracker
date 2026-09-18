@@ -6,25 +6,44 @@
  * key. Without a PRF output there is nothing to unwrap with, so an authenticator that
  * cannot produce one is refused rather than accepted as a weaker login.
  *
- * That makes the capability check load-bearing rather than a nicety. Registration asks
- * for PRF with an `eval`, and the response's extension results say whether it was
- * honoured; a browser that reports `prf.enabled: false`, or omits the results, cannot
- * be allowed to finish — it would store a credential with no wrapper, and the account
- * would look registered while nothing could open it.
- *
- * PRF is a relatively new extension. Chromium and Safari support it; Firefox's support
- * has been behind flags. Where it is absent the UI says so plainly instead of offering
- * a button that fails at the OS prompt.
+ * **Capability is checked by doing, never by probing.** An earlier version asked
+ * `prfAvailable()` on mount, which created a throwaway credential to find out — and
+ * that meant a system passkey dialog appearing on page load, before the user had asked
+ * for anything, and the button *hiding itself* if they dismissed it. A prompt is fine
+ * when the person just clicked a button; it is not fine on their behalf at load time.
+ * So the only check made up front is `passkeysSupported()`, which is a pure property
+ * test that cannot prompt. Everything else is discovered when the user actually acts,
+ * and reported then — the PRF requirement is enforced by the ceremony itself.
  */
 
-export interface PasskeyCapability {
-  /** Whether this browser exposes the WebAuthn API at all. */
-  supported: boolean;
-  /** Whether we have *verified* PRF works, rather than assuming. */
-  prfAvailable: boolean;
+/** Why a passkey ceremony did not complete, in terms the UI can explain. */
+export type PasskeyErrorCode =
+  /** This browser has no WebAuthn API at all. */
+  | 'unsupported'
+  /** The user dismissed the prompt, or no credential on this device matched. */
+  | 'cancelled'
+  /** The authenticator did not return the PRF output the data key needs. */
+  | 'no_prf'
+  /** Anything else the platform refused. */
+  | 'failed';
+
+export class PasskeyError extends Error {
+  constructor(
+    readonly code: PasskeyErrorCode,
+    message?: string,
+  ) {
+    super(message ?? code);
+    this.name = 'PasskeyError';
+  }
 }
 
-/** True when this browser can plausibly do passkeys at all. */
+/**
+ * True when this browser can do passkeys at all.
+ *
+ * A pure property test — it never prompts, so it is safe to call while rendering. It
+ * deliberately does *not* try to learn whether PRF works: that can only be answered by
+ * creating a credential, which is a prompt, and a prompt here would arrive uninvited.
+ */
 export function passkeysSupported(): boolean {
   return (
     typeof window !== 'undefined' &&
@@ -33,34 +52,15 @@ export function passkeysSupported(): boolean {
   );
 }
 
-/** Explicitly create a credential allowed for this site, then delete it. */
-export async function prfAvailable(): Promise<boolean> {
-  if (!passkeysSupported()) return false;
-  try {
-    const publicKey: PublicKeyCredentialCreationOptions = {
-      challenge: crypto.getRandomValues(new Uint8Array(32)),
-      rp: { name: 'Kira Tracker' },
-      user: {
-        id: crypto.getRandomValues(new Uint8Array(16)),
-        name: 'prf-probe',
-        displayName: 'PRF probe',
-      },
-      pubKeyCredParams: [
-        { type: 'public-key', alg: -7 },
-        { type: 'public-key', alg: -257 },
-      ],
-      authenticatorSelection: { userVerification: 'required', residentKey: 'discouraged' },
-      timeout: 60_000,
-      extensions: { prf: {} } as never,
-    };
-    const credential = (await navigator.credentials.create({ publicKey })) as PublicKeyCredential | null;
-    if (!credential) return false;
-    const extensions = credential.getClientExtensionResults() as { prf?: { enabled?: boolean } };
-    return extensions.prf?.enabled === true;
-  } catch {
-    // No authenticator, a cancelled prompt, or a refusal — all mean "do not offer it".
-    return false;
+/** Map whatever the platform threw into something the UI can translate. */
+function asPasskeyError(error: unknown): PasskeyError {
+  if (error instanceof PasskeyError) return error;
+  // `NotAllowedError` covers both "the user said no" and "nothing matched on this
+  // device"; the platform does not distinguish them, so neither do we.
+  if (error instanceof DOMException && error.name === 'NotAllowedError') {
+    return new PasskeyError('cancelled', error.message);
   }
+  return new PasskeyError('failed', error instanceof Error ? error.message : String(error));
 }
 
 function fromB64url(value: string): Uint8Array<ArrayBuffer> {
@@ -102,20 +102,28 @@ interface PrfResults {
   [key: string]: unknown;
 }
 
-/** Pull the PRF output out of an extension-results object, or null. */
-function prfOutputOf(credential: PublicKeyCredential): string | null {
+/**
+ * The PRF output, or a `no_prf` failure.
+ *
+ * Required, not optional. A credential that produced no PRF output has nothing to wrap
+ * the data key with, so finishing the ceremony would store a passkey that can never
+ * open anything while appearing registered — the failure mode with no error message.
+ * Refusing here turns it into one the user can act on.
+ */
+function requirePrf(credential: PublicKeyCredential): string {
   const extensions = credential.getClientExtensionResults() as PrfResults;
   const first = extensions.prf?.results?.first;
-  if (!first) return null;
+  if (!first) throw new PasskeyError('no_prf');
   const bytes = first instanceof Uint8Array ? first : new Uint8Array(first as ArrayBuffer);
-  return bytes.length > 0 ? toB64url(bytes) : null;
+  if (bytes.length === 0) throw new PasskeyError('no_prf');
+  return toB64url(bytes);
 }
 
 export interface PasskeyAssertion {
   /** The JSON shape @simplewebauthn/server verifies. */
   response: unknown;
-  /** The PRF output, base64url. Null when the authenticator did not provide one. */
-  prfOutput: string | null;
+  /** The PRF output, base64url. Never null — a ceremony without one is a failure. */
+  prfOutput: string;
   /** The credential id, base64url. */
   credentialId: string;
 }
@@ -160,8 +168,13 @@ export async function createPasskey(optionsJson: unknown): Promise<PasskeyAssert
     extensions: { prf: { eval: { first: prfSaltBytes() } } } as never,
   };
 
-  const credential = (await navigator.credentials.create({ publicKey })) as PublicKeyCredential | null;
-  if (!credential) throw new Error('passkey registration was cancelled');
+  let credential: PublicKeyCredential | null;
+  try {
+    credential = (await navigator.credentials.create({ publicKey })) as PublicKeyCredential | null;
+  } catch (error) {
+    throw asPasskeyError(error);
+  }
+  if (!credential) throw new PasskeyError('cancelled');
 
   const response = credential.response as AuthenticatorAttestationResponse;
   return {
@@ -176,7 +189,7 @@ export async function createPasskey(optionsJson: unknown): Promise<PasskeyAssert
         ...(response.getTransports ? { transports: response.getTransports() } : {}),
       },
     },
-    prfOutput: prfOutputOf(credential),
+    prfOutput: requirePrf(credential),
     credentialId: credential.id,
   };
 }
@@ -213,8 +226,13 @@ export async function getPasskeyAssertion(optionsJson: unknown): Promise<Passkey
     extensions: { prf: { eval: { first: prfSaltBytes() } } } as never,
   };
 
-  const credential = (await navigator.credentials.get({ publicKey })) as PublicKeyCredential | null;
-  if (!credential) throw new Error('passkey sign-in was cancelled');
+  let credential: PublicKeyCredential | null;
+  try {
+    credential = (await navigator.credentials.get({ publicKey })) as PublicKeyCredential | null;
+  } catch (error) {
+    throw asPasskeyError(error);
+  }
+  if (!credential) throw new PasskeyError('cancelled');
 
   const response = credential.response as AuthenticatorAssertionResponse;
   return {
@@ -230,12 +248,12 @@ export async function getPasskeyAssertion(optionsJson: unknown): Promise<Passkey
         userHandle: response.userHandle ? toB64url(new Uint8Array(response.userHandle)) : null,
       },
     },
-    prfOutput: prfOutputOf(credential),
+    prfOutput: requirePrf(credential),
     credentialId: credential.id,
   };
 }
 
-/** The PRF salt, exposed for the capability probe and diagnostics. */
+/** The PRF salt, exposed for diagnostics and the salt-agreement test. */
 export function passkeyPrfSalt(): string {
   return PRF_SALT;
 }

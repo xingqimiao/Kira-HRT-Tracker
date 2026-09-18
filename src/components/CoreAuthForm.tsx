@@ -7,7 +7,7 @@ import TurnstileWidget from './TurnstileWidget';
 import { coreAuth, CoreAuthError, type PrivacyMode, type RegistrationResponse } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
 import { useTranslation } from '../contexts/LanguageContext';
-import { passkeysSupported, prfAvailable } from '../utils/passkeys';
+import { passkeysSupported, PasskeyError } from '../utils/passkeys';
 
 /**
  * Sign in or sign up against the Application Core — the credentials, the second
@@ -83,9 +83,11 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
     const [unlockFactor, setUnlockFactor] = useState<'password' | 'recovery'>('password');
     const [unlockSecret, setUnlockSecret] = useState('');
 
-    // Passkeys, probed rather than assumed. `null` means "still checking", so the
-    // button does not flash in and out on load.
-    const [passkeyReady, setPasskeyReady] = useState<boolean | null>(null);
+    // Whether this browser has WebAuthn at all — a pure property test that cannot
+    // prompt, so it is safe to run while rendering. It says nothing about whether a
+    // passkey for *this* account exists on *this* device; that is only knowable by
+    // asking, which happens on the click.
+    const passkeysUsable = passkeysSupported();
 
     React.useEffect(() => {
         if (active && initialUsername) setUsername(initialUsername);
@@ -132,26 +134,14 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
         }
     }
 
-    // Probe passkey support once. `prfAvailable()` creates and discards a throwaway
-    // credential, which is the only honest way to know whether the extension actually
-    // works — a browser can expose the API and still not honour PRF, and offering the
-    // button there would fail at the OS prompt.
-    React.useEffect(() => {
-        if (!active) return;
-        let cancelled = false;
-        if (!passkeysSupported()) {
-            setPasskeyReady(false);
-            return;
-        }
-        void prfAvailable().then((ok) => {
-            if (!cancelled) setPasskeyReady(ok);
-        });
-        return () => {
-            cancelled = true;
-        };
-    }, [active]);
-
-    /** Sign in with a passkey alone. No username, no password, no TOTP. */
+    /**
+     * Sign in with a passkey alone. No username, no password, no TOTP.
+     *
+     * The system prompt appears here, on the click — not on page load. A browser with
+     * no WebAuthn, or a device with no passkey for this account, explains itself in the
+     * error line rather than by hiding the button, so the entry point is the same for
+     * everyone and the reason is only given to the person who asked.
+     */
     async function handlePasskey() {
         setError(null);
         setBusy(true);
@@ -159,10 +149,27 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
             await session.signInWithPasskey();
             finish({});
         } catch (err) {
-            setError(err instanceof CoreAuthError ? err.message : t('core.err.generic'));
+            setError(describePasskey(err));
         } finally {
             setBusy(false);
         }
+    }
+
+    /** Turn a passkey failure into something worth reading, per code. */
+    function describePasskey(err: unknown): string {
+        if (err instanceof PasskeyError) {
+            switch (err.code) {
+                case 'unsupported':
+                    return t('core.passkey.err_unsupported');
+                case 'cancelled':
+                    return t('core.passkey.err_cancelled');
+                case 'no_prf':
+                    return t('core.passkey.err_no_prf');
+                default:
+                    return err.message || t('core.err.generic');
+            }
+        }
+        return err instanceof CoreAuthError ? err.message : t('core.err.generic');
     }
 
     /** Shared tail of both successful exits: announce, then let the caller react. */
@@ -374,7 +381,7 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
 
                     {/* A passkey opens the same data without any secret typed, so it is
                         offered here beside the two secret-based factors. */}
-                    {passkeyReady === true && (
+                    {passkeysUsable && (
                         <button type="button" onClick={handlePasskey} disabled={busy} className="btn-secondary w-full">
                             {t('core.passkey.unlock')}
                         </button>
@@ -584,10 +591,11 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                         {isLogin ? t('core.sign_in') : t('core.create_account')}
                     </button>
 
-                    {/* Passkey sign-in sits above the X divider and is offered on the
-                        sign-in side only: registering does not have a session to
-                        attach a credential to yet. */}
-                    {isLogin && passkeyReady === true && (
+                    {/* Shown whenever the browser can do WebAuthn, without checking
+                        whether a passkey exists here — that check would be a prompt.
+                        Someone with no passkey gets a sentence after clicking, which
+                        is far better than an entry point that silently disappears. */}
+                    {isLogin && passkeysUsable && (
                         <button type="button" onClick={handlePasskey} disabled={busy} className="btn-secondary w-full">
                             {t('core.passkey.sign_in')}
                         </button>
