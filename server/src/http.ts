@@ -770,6 +770,52 @@ export function createRequestHandler() {
         return send(res, 200, { ok: true });
       }
 
+      // --- Auth: fallback credentials (the anti-ban path) -------------------
+      //
+      // Signing up through X or Google leaves an account whose only way in is that
+      // provider, so a ban or a revoked API credential makes the account — and the
+      // records in it — unreachable. These two routes are how a user avoids that:
+      // bind an account name and password while the social login still works, and
+      // unlink later without ever being stranded.
+
+      if (path === '/auth/credentials/bind' && req.method === 'POST') {
+        const ctx = await contextFor(req);
+        if (!ctx) return send(res, 401, { error: 'authentication required' });
+        const body = (await readBody(req)) as { username?: unknown; password?: unknown } | undefined;
+        const result = await AccountService.bindCredentials(ctx, body?.username, body?.password);
+        if (!result.ok) {
+          // A name another account holds is a conflict, not a bad request; the form
+          // renders the two differently.
+          const status = result.error === 'username_taken' ? 409 : 400;
+          return send(res, status, { error: result.error });
+        }
+        return send(res, 200, { ok: true, username: result.value.username });
+      }
+
+      if (path === '/auth/login-methods' && req.method === 'GET') {
+        const ctx = await contextFor(req);
+        if (!ctx) return send(res, 401, { error: 'authentication required' });
+        const overview = await AccountService.loginOverview(ctx.userId);
+        return send(res, 200, {
+          username: overview.username,
+          has_password: overview.hasPassword,
+          providers: overview.providers,
+          // True when losing the linked provider would lose the account.
+          recovery_risk: overview.recoveryRisk,
+          accounts: await AccountService.listOAuthLinks(ctx.userId),
+        });
+      }
+
+      if (path.startsWith('/auth/oauth/') && path.endsWith('/unlink') && req.method === 'POST') {
+        const provider = path.slice('/auth/oauth/'.length, -'/unlink'.length);
+        const ctx = await contextFor(req);
+        if (!ctx) return send(res, 401, { error: 'authentication required' });
+        const body = (await readBody(req)) as { code?: unknown } | undefined;
+        const result = await AccountService.unlinkProvider(ctx, provider, body?.code);
+        if (!result.ok) return send(res, 400, { error: result.error });
+        return send(res, 200, { ok: true });
+      }
+
       // ---------------------------------------------------------------------
       // Authenticated routes
       //

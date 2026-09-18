@@ -1793,44 +1793,177 @@ export const AccountService = {
     };
   },
 
-  /** Unlink X. Requires a TOTP code, since it changes how the account is reached. */
-  async unlinkX(ctx: AuthContext, code: unknown): Promise<Result<void>> {
+  /**
+   * How many *independent* ways this account can be entered.
+   *
+   * Used to refuse an unlink that would strand the owner. The two kinds are a
+   * password and each linked provider; two links to the same provider are one way in,
+   * because losing that provider loses both.
+   */
+  async loginMethodsFor(userId: string): Promise<{ hasPassword: boolean; providers: string[] }> {
+    const user = await loadUser({ id: userId });
+    const { rows } = await getPool().query<{ provider: string }>(
+      `SELECT DISTINCT provider FROM oauth_accounts WHERE user_id = $1`,
+      [userId],
+    );
+    return {
+      hasPassword: Boolean(user?.password_hash),
+      providers: rows.map((r) => r.provider),
+    };
+  },
+
+  /**
+   * Give an account a fallback: an account name plus a password.
+   *
+   * This is the answer to "what if the social account is banned". Signing up through
+   * X or Google creates an account whose only way in is that provider, so if the
+   * provider bans the user, or revokes the application's credentials outright, the
+   * account becomes unreachable while its records sit intact in the database. Binding
+   * a name and password before that happens is what makes the records reachable.
+   *
+   * The name may be the one already generated at signup (renamed here) or any unused
+   * one. `scrypt` with a random salt, same as registration — see `hashPassword`.
+   */
+  async bindCredentials(
+    ctx: AuthContext,
+    usernameRaw: unknown,
+    passwordRaw: unknown,
+  ): Promise<Result<{ username: string }>> {
+    const username = validateUsername(usernameRaw);
+    if (!username.ok) return username;
+    const password = validatePassword(passwordRaw);
+    if (!password.ok) return password;
+
+    const user = await loadUser({ id: ctx.userId });
+    if (!user) return { ok: false, error: 'account not found' };
+
+    // Renaming to a name another account holds must fail loudly rather than as a
+    // constraint violation: the handler maps this to a 409 the form can render.
+    if (username.value !== user.username) {
+      const taken = await loadUser({ username: username.value });
+      if (taken) return { ok: false, error: 'username_taken' };
+    }
+
+    const passwordHash = await hashPassword(password.value);
+    try {
+      await getPool().query(
+        `UPDATE users
+            SET username = $2, password_hash = $3,
+                password_set_at = COALESCE(password_set_at, now()),
+                updated_at = now()
+          WHERE id = $1`,
+        [ctx.userId, username.value, passwordHash],
+      );
+    } catch (error) {
+      // The unique index is the real arbiter: two requests can both pass the check
+      // above and only one can commit.
+      if ((error as { code?: string }).code === '23505') {
+        return { ok: false, error: 'username_taken' };
+      }
+      throw error;
+    }
+
+    await this.recordAuthEvent(ctx.userId, 'credentials_bound');
+    return { ok: true, value: { username: username.value } };
+  },
+
+  /**
+   * Unlink one provider. Requires a TOTP code, since it changes how the account is
+   * reached.
+   *
+   * Refuses when this is the last way in. The comment this replaced claimed "a usable
+   * account always has a password", which is false for exactly the accounts this
+   * product creates through X: an OAuth signup has no password, so unlinking would
+   * have left an account nobody — including its owner — could open.
+   */
+  async unlinkProvider(ctx: AuthContext, provider: string, code: unknown): Promise<Result<void>> {
+    if (provider !== 'x' && provider !== 'google') {
+      return { ok: false, error: 'unsupported provider' };
+    }
+
     const user = await loadUser({ id: ctx.userId });
     if (!user?.totp_secret_sealed) return { ok: false, error: 'account not found' };
     if (typeof code !== 'string' || !(await consumeTotpStep(user.id, user.totp_secret_sealed, code))) {
       // A recovery code is accepted here too: someone who lost their authenticator
-      // must still be able to detach a compromised X account.
-      if (typeof code === 'string' && (await consumeBackupCode(user.id, code))) {
-        // fall through — the code was valid
-      } else {
+      // must still be able to detach a compromised social account.
+      if (!(typeof code === 'string' && (await consumeBackupCode(user.id, code)))) {
         return { ok: false, error: 'that code is not valid' };
       }
     }
 
-    const { rowCount } = await getPool().query(`DELETE FROM oauth_accounts WHERE user_id = $1 AND provider = 'x'`, [
-      ctx.userId,
-    ]);
-    await this.recordAuthEvent(ctx.userId, rowCount ? 'x_unlinked' : 'x_unlink_noop');
-    // Unlinking never locks the user out: a usable account always has a password,
-    // which is the whole reason X is an assist rather than a login method.
+    const { hasPassword, providers } = await this.loginMethodsFor(ctx.userId);
+    const others = providers.filter((p) => p !== provider);
+    if (!hasPassword && others.length === 0) {
+      return {
+        ok: false,
+        error: 'this is the only way into the account — set an account name and password first',
+      };
+    }
+
+    const { rowCount } = await getPool().query(
+      `DELETE FROM oauth_accounts WHERE user_id = $1 AND provider = $2`,
+      [ctx.userId, provider],
+    );
+    await this.recordAuthEvent(ctx.userId, rowCount ? `${provider}_unlinked` : `${provider}_unlink_noop`);
     return { ok: true, value: undefined };
+  },
+
+  /** Unlink X. Kept as a named alias so existing callers and tests keep working. */
+  async unlinkX(ctx: AuthContext, code: unknown): Promise<Result<void>> {
+    return await this.unlinkProvider(ctx, 'x', code);
   },
 
   async listXLinks(userId: string): Promise<{
     handle: string | null; avatarUrl: string | null; linkedAt: string; lastLoginAt: string | null;
   }[]> {
+    return await this.listOAuthLinks(userId, 'x');
+  },
+
+  /** Every linked social account, or one provider's. Newest link first. */
+  async listOAuthLinks(userId: string, provider?: string): Promise<{
+    provider: string; handle: string | null; avatarUrl: string | null;
+    linkedAt: string; lastLoginAt: string | null;
+  }[]> {
     const { rows } = await getPool().query<{
-      handle: string | null; avatar_url: string | null; linked_at: Date; last_login_at: Date | null;
+      provider: string; handle: string | null; avatar_url: string | null;
+      linked_at: Date; last_login_at: Date | null;
     }>(
-      `SELECT handle, avatar_url, linked_at, last_login_at FROM oauth_accounts WHERE user_id = $1 AND provider = 'x'`,
-      [userId],
+      `SELECT provider, handle, avatar_url, linked_at, last_login_at
+         FROM oauth_accounts
+        WHERE user_id = $1 AND ($2::text IS NULL OR provider = $2)
+        ORDER BY linked_at DESC`,
+      [userId, provider ?? null],
     );
     return rows.map((r) => ({
+      provider: r.provider,
       handle: r.handle,
       avatarUrl: r.avatar_url,
       linkedAt: r.linked_at.toISOString(),
       lastLoginAt: r.last_login_at ? r.last_login_at.toISOString() : null,
     }));
+  },
+
+  /**
+   * What the account page needs to guide someone into binding a fallback.
+   *
+   * `recoveryRisk` is the honest headline: true means this account has exactly one way
+   * in and it is a social provider, so losing that provider loses the account. The UI
+   * should say so plainly rather than waiting for it to happen.
+   */
+  async loginOverview(userId: string): Promise<{
+    username: string;
+    hasPassword: boolean;
+    providers: string[];
+    recoveryRisk: boolean;
+  }> {
+    const user = await loadUser({ id: userId });
+    const { hasPassword, providers } = await this.loginMethodsFor(userId);
+    return {
+      username: user?.username ?? '',
+      hasPassword,
+      providers,
+      recoveryRisk: !hasPassword && providers.length > 0,
+    };
   },
 
   // --- Shared -------------------------------------------------------------
