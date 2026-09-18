@@ -18,8 +18,19 @@ import { keyFromEnv } from './payloadCrypto.ts';
 export interface XOAuthConfig {
   clientId: string;
   clientSecret: string;
-  /** Must match the X app's Callback URI byte for byte. */
+  /** Must match the app's Callback URI byte for byte. */
   redirectUri: string;
+}
+
+/**
+ * A configured social provider, named so the callback knows which one it is serving.
+ *
+ * `X` and `Google` differ in more than their endpoints — Google returns identity inside
+ * the ID token rather than at a profile endpoint, and needs no PKCE — so the name
+ * travels with the config instead of being inferred from which variable was set.
+ */
+export interface ProviderOAuthConfig extends XOAuthConfig {
+  provider: 'x' | 'google';
 }
 
 export interface TurnstileConfig {
@@ -75,6 +86,15 @@ export interface Config {
   totpEncKey: string;
   /** Absent until the X app is registered; X login is then reported as unconfigured. */
   x: XOAuthConfig | null;
+  /**
+   * Google sign-in. Null until the OAuth client is configured, and the app then
+   * reports Google as unconfigured rather than offering a button that cannot work.
+   *
+   * Requests only the `openid` scope. That is enough because identity comes from the
+   * ID token's `sub` claim, which Google marks as always present and never reused —
+   * so no email, no name, no picture, and no second call to the userinfo endpoint.
+   */
+  google: XOAuthConfig | null;
   /**
    * The key the standard-mode `server` wrapper is wrapped under.
    *
@@ -281,6 +301,26 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     x = { clientId: xClientId, clientSecret: xClientSecret, redirectUri };
   }
 
+  // Google is optional on the same terms, and half-configured is refused the same way.
+  // No PKCE here: Google's web client authenticates with the secret, and asking for a
+  // verifier it does not require would be a parameter to keep correct for no gain.
+  const gClientId = env.GOOGLE_CLIENT_ID?.trim();
+  const gClientSecret = env.GOOGLE_CLIENT_SECRET?.trim();
+  const gRedirect = env.GOOGLE_REDIRECT_URI?.trim();
+  let google: XOAuthConfig | null = null;
+  if (gClientId || gClientSecret || gRedirect) {
+    if (!gClientId) throw new ConfigError('GOOGLE_CLIENT_ID is required when Google login is configured');
+    if (!gClientSecret) throw new ConfigError('GOOGLE_CLIENT_SECRET is required when Google login is configured');
+    // Google matches the redirect URI exactly, including scheme, case and any trailing
+    // slash, so the value must be the one registered in the Cloud Console.
+    const redirectUri = gRedirect ?? `${apiOrigin}${basePath}/auth/google/callback`;
+    const redirectUrl = new URL(redirectUri);
+    if (redirectUrl.protocol !== 'https:' && !isLocal(redirectUrl.origin)) {
+      throw new ConfigError('GOOGLE_REDIRECT_URI must be https (Google allows http only for localhost)');
+    }
+    google = { clientId: gClientId, clientSecret: gClientSecret, redirectUri };
+  }
+
   // The standard-mode server key. Optional generally, required in production —
   // see the interface comment. 32 bytes is the floor, same as TOTP_ENC_KEY.
   const serverDekKeyRaw = env.SERVER_DEK_KEY?.trim();
@@ -396,6 +436,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     databaseUrl,
     totpEncKey,
     x,
+    google,
     serverDekKey,
     turnstile,
     webauthn,

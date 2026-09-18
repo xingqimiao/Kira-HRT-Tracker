@@ -211,3 +211,171 @@ function upgradeAvatarSize(raw: unknown): string | null {
 export function isXConfigured(config: XOAuthConfig | null): config is XOAuthConfig {
   return config !== null;
 }
+
+// ---------------------------------------------------------------------------
+// Google
+// ---------------------------------------------------------------------------
+//
+// Same authorization-code flow, three real differences from X:
+//
+//   1. Identity arrives in the **ID token**, not at a profile endpoint. The token
+//      response already carries a signed JWT, and its `sub` claim is what identifies
+//      the account — Google marks it as always present and never reused. So there is
+//      no second HTTP call and no userinfo scope.
+//
+//   2. Only the `openid` scope is requested. `email` is deliberately absent: Google's
+//      own documentation says the email claim "may not be unique to this account and
+//      could change over time" and should not be the identifier, and this product does
+//      not need an address at all. `profile` is absent too, so no name or picture is
+//      requested — the account page shows the name the user chose, which is the
+//      identifier that actually matters here.
+//
+//   3. No PKCE. Google's web client authenticates with the client secret, and the
+//      verifier would be a parameter to keep correct for no additional protection on
+//      this flow.
+//
+// No refresh token is requested (`access_type=offline`): one userinfo-free login needs
+// the access token once, and a long-lived credential nobody uses is only a liability.
+
+const GOOGLE_AUTHORIZE_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
+const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
+
+/** `openid` alone — see the note above on why email and profile are not requested. */
+const GOOGLE_SCOPE = 'openid';
+
+export function buildGoogleAuthorizeUrl(
+  config: XOAuthConfig,
+  params: { state: string; nonce: string },
+): string {
+  const query = new URLSearchParams({
+    response_type: 'code',
+    client_id: config.clientId,
+    redirect_uri: config.redirectUri,
+    scope: GOOGLE_SCOPE,
+    state: params.state,
+    // Replay protection for the ID token. Google returns it as a claim and we compare.
+    nonce: params.nonce,
+    // Always let the person choose, even with one Google session active: signing in as
+    // the wrong account is silent otherwise, and there is no second factor to catch it.
+    prompt: 'select_account',
+  });
+  return `${GOOGLE_AUTHORIZE_ENDPOINT}?${query.toString()}`;
+}
+
+/**
+ * Read the `sub` claim out of an ID token.
+ *
+ * The signature is **not** re-verified, and that is deliberate rather than an
+ * oversight: this token came from Google's token endpoint over HTTPS in the same
+ * request, authenticated with the client secret, which is the case Google's own
+ * documentation says the signature check exists to cover ("since you are communicating
+ * directly with Google … and using your client secret to authenticate yourself, you can
+ * be confident that the token you receive really comes from Google"). Verifying it would
+ * mean fetching and caching Google's JWKS to re-prove something the TLS channel and the
+ * secret already establish.
+ *
+ * What *is* checked, because it is cheap and each has a real failure behind it:
+ *   - three dot-separated parts, and the payload parses as JSON
+ *   - `aud` equals our client id (a token minted for another app must not sign in here)
+ *   - `iss` is Google
+ *   - `exp` has not passed
+ *   - `nonce` matches the one we generated for this flow
+ *
+ * A caller that ever forwards an ID token onward must verify the signature first; this
+ * function is for the request that just received it.
+ */
+export function parseGoogleIdToken(
+  idToken: string,
+  opts: { clientId: string; nonce: string },
+): XProfile {
+  const parts = idToken.split('.');
+  if (parts.length !== 3) {
+    throw new XOAuthError('Google ID token was not a JWT', 'profile_failed');
+  }
+
+  let claims: {
+    sub?: unknown; aud?: unknown; iss?: unknown; exp?: unknown; nonce?: unknown;
+  };
+  try {
+    claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  } catch {
+    throw new XOAuthError('Google ID token payload was not JSON', 'profile_failed');
+  }
+
+  if (claims.aud !== opts.clientId) {
+    throw new XOAuthError('Google ID token was issued for another client', 'profile_failed', claims.aud);
+  }
+  if (claims.iss !== 'https://accounts.google.com' && claims.iss !== 'accounts.google.com') {
+    throw new XOAuthError('Google ID token had an unexpected issuer', 'profile_failed', claims.iss);
+  }
+  if (typeof claims.exp !== 'number' || claims.exp * 1000 <= Date.now()) {
+    throw new XOAuthError('Google ID token has expired', 'profile_failed');
+  }
+  if (claims.nonce !== opts.nonce) {
+    throw new XOAuthError('Google ID token nonce did not match', 'profile_failed');
+  }
+  if (typeof claims.sub !== 'string' || claims.sub === '') {
+    throw new XOAuthError('Google ID token had no subject', 'profile_failed', claims);
+  }
+
+  return {
+    id: claims.sub,
+    // No handle and no avatar: neither `email` nor `profile` was requested, and
+    // inventing one from the id would be a fabricated identity shown as fact.
+    handle: null,
+    displayName: null,
+    avatarUrl: null,
+  };
+}
+
+/**
+ * Redeem a Google authorization code and return the identity it proves.
+ *
+ * The client secret goes in the form body, not an HTTP Basic header: Google documents
+ * both, and the body is the form its own examples use.
+ */
+export async function exchangeGoogleCode(
+  config: XOAuthConfig,
+  params: { code: string; nonce: string },
+): Promise<XProfile> {
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    code: params.code,
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+    redirect_uri: config.redirectUri,
+  });
+
+  const res = await fetch(GOOGLE_TOKEN_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+
+  const text = await res.text();
+  if (!res.ok) {
+    // Google's error body names the real problem (`redirect_uri_mismatch`,
+    // `invalid_grant`), while the status is only ever 400. Without it, a misconfigured
+    // redirect URI looks identical to a used code.
+    throw new XOAuthError(`Google token exchange failed (${res.status})`, 'exchange_failed', text.slice(0, 500));
+  }
+
+  let payload: { id_token?: string };
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    throw new XOAuthError('Google token response was not JSON', 'exchange_failed', text.slice(0, 200));
+  }
+  if (!payload.id_token) {
+    // Missing when the `openid` scope was not granted — worth naming, because the
+    // cause is a scope problem and not a bad code.
+    throw new XOAuthError('Google token response had no id_token', 'exchange_failed', payload);
+  }
+
+  return parseGoogleIdToken(payload.id_token, { clientId: config.clientId, nonce: params.nonce });
+}
+
+/** Whether Google sign-in is available on this instance. */
+export function isGoogleConfigured(config: XOAuthConfig | null): config is XOAuthConfig {
+  return config !== null;
+}

@@ -301,8 +301,12 @@ ALTER TABLE oauth_accounts ADD CONSTRAINT oauth_accounts_provider_check
 -- it. Single-use, short-lived, and consumed on the callback.
 CREATE TABLE IF NOT EXISTS oauth_states (
     state           text PRIMARY KEY,
-    code_verifier   text NOT NULL,
+    code_verifier   text,
     purpose         text NOT NULL CHECK (purpose IN ('login','link')),
+    -- Which provider this authorization belongs to. The callback needs it: the state is
+    -- the only thing the provider echoes back, so without this column a state minted for
+    -- Google would be redeemed against X's token endpoint.
+    provider        varchar(32) NOT NULL DEFAULT 'x',
     -- Set for 'link': the account this authorization will be attached to.
     user_id         uuid REFERENCES users(id) ON DELETE CASCADE,
     created_at      timestamptz NOT NULL DEFAULT now(),
@@ -310,6 +314,10 @@ CREATE TABLE IF NOT EXISTS oauth_states (
     consumed_at     timestamptz
 );
 CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states(expires_at);
+-- Bring a database created by an earlier revision up to the shape above.
+ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS provider varchar(32) NOT NULL DEFAULT 'x';
+-- Google has no PKCE, so its rows carry no verifier. X's path still sets one.
+ALTER TABLE oauth_states ALTER COLUMN code_verifier DROP NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- Health records — encrypted at rest

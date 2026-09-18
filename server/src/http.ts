@@ -26,6 +26,7 @@ import { getConfig } from './config.ts';
 import { buildServer, makeBearerResolver } from './mcp.ts';
 import { MedicationService, LabService, TimelineService, PKSimulationService } from './core.ts';
 import { AccountService } from './accounts.ts';
+import { isGoogleConfigured } from './oauth.ts';
 import { RecordService } from './records.ts';
 import { getPool } from './db.ts';
 import { MAX_PASSKEYS_PER_ACCOUNT } from './webauthn.ts';
@@ -247,6 +248,17 @@ function enrollmentPayload(userId: string, username: string, enrollmentToken: st
   };
 }
 
+/**
+ * Whether Google sign-in is configured, for the `/health` flag the app reads.
+ *
+ * Separate from `AccountService.xLoginAvailable` because the answer comes from config
+ * rather than from a service method, and the health payload is where the app learns
+ * whether to render a provider's button at all.
+ */
+function googleLoginAvailable(): boolean {
+  return isGoogleConfigured(getConfig().google);
+}
+
 export function createRequestHandler() {
   return async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://localhost');
@@ -308,6 +320,7 @@ export function createRequestHandler() {
           service: 'hrt',
           mount: getConfig().basePath || '/',
           x_login: AccountService.xLoginAvailable(),
+          google_login: googleLoginAvailable(),
         });
         return;
       }
@@ -428,6 +441,44 @@ export function createRequestHandler() {
         return send(res, 200, { recovery_codes: result.value });
       }
 
+      // --- Auth: Google OAuth ----------------------------------------------
+      //
+      // Same shape as X's pair, and deliberately so: the app decides how to present the
+      // URL, and the callback hands back a one-time code rather than a session, so a
+      // URL that leaks from a browser history is not a credential.
+      if (path === '/auth/google/start' && req.method === 'GET') {
+        const wantsLink = url.searchParams.get('purpose') === 'link';
+        let userId: string | undefined;
+        if (wantsLink) {
+          const ctx = await contextFor(req);
+          if (!ctx) return send(res, 401, { error: 'authentication required to link an account' });
+          userId = ctx.userId;
+        }
+        const result = await AccountService.startGoogleAuthorization({
+          purpose: wantsLink ? 'link' : 'login',
+          userId,
+        });
+        if (!result.ok) return send(res, 400, { error: result.error });
+        return send(res, 200, { authorize_url: result.value.authorizeUrl });
+      }
+
+      if (path === '/auth/google/callback' && req.method === 'GET') {
+        const result = await AccountService.completeGoogleCallback({
+          code: url.searchParams.get('code') ?? undefined,
+          state: url.searchParams.get('state') ?? undefined,
+          error: url.searchParams.get('error') ?? undefined,
+        });
+        if (!result.ok) {
+          return redirect(res, appUrl('/auth/google/callback', { error: result.error }));
+        }
+        if (result.value.outcome === 'link') {
+          return redirect(res, appUrl('/auth/google/callback', { linked: '1' }));
+        }
+        // No setup leg, unlike X: a Google account is usable immediately. The anti-ban
+        // prompt is driven by `/auth/login-methods` reporting `recovery_risk`.
+        return redirect(res, appUrl('/auth/google/callback', { code: result.value.oneTimeCode ?? '' }));
+      }
+
       // --- Auth: X OAuth ---------------------------------------------------
       if (path === '/auth/x/start' && req.method === 'GET') {
         const wantsLink = url.searchParams.get('purpose') === 'link';
@@ -463,10 +514,9 @@ export function createRequestHandler() {
         if (outcome.outcome === 'link') {
           return redirect(res, appUrl('/auth/x/callback', { linked: '1', handle: outcome.handle ?? '' }));
         }
-        // An account with no password yet: hand the app the setup material so it can
-        // walk the user through a password and TOTP enrolment. This is the ONLY way
-        // an X-created account becomes usable, and it is why losing X costs a login
-        // button rather than the record.
+        // An account with no password yet: hand the app the enrolment material. The
+        // sign-in path still requires a completed second factor, so this leg and that
+        // gate are removed together or not at all.
         return redirect(
           res,
           appUrl('/auth/x/setup', {
@@ -839,6 +889,27 @@ export function createRequestHandler() {
         return resolved;
       };
 
+      /**
+       * Resolve the caller, and require that they have bound a fallback credential.
+       *
+       * Answering **403 with a machine-readable code** rather than 401 is deliberate: the
+       * session is perfectly valid, so signing the user out would be wrong and would lose
+       * the very session they need in order to bind. The app reads `account_incomplete`
+       * and routes to the binding screen instead of to sign-in.
+       */
+      const requireBoundCtx = async (): Promise<AuthContext | null> => {
+        const resolved = await requireCtx();
+        if (!resolved) return null;
+        if (!(await AccountService.hasBoundCredentials(resolved.userId))) {
+          send(res, 403, {
+            error: 'account_incomplete',
+            detail: 'bind an account name and password before using records',
+          });
+          return null;
+        }
+        return resolved;
+      };
+
       // --- Records (encrypted payloads) ------------------------------------
       //
       // The client sends and receives plaintext JSON; sealing and opening happen here.
@@ -856,7 +927,7 @@ export function createRequestHandler() {
       // Idempotent, and cheap to ask: an account with no legacy rows reports
       // `needed: false` and the client stops asking on future logins.
       if (path === '/api/records/migrate-needed' && req.method === 'GET') {
-        const ctx = await requireCtx();
+        const ctx = await requireBoundCtx();
         if (!ctx) return;
         const [legacy, stored] = await Promise.all([
           getPool().query<{ doses: string; labs: string }>(
@@ -881,7 +952,7 @@ export function createRequestHandler() {
       }
 
       if (path === '/api/records' && req.method === 'GET') {
-        const ctx = await requireCtx();
+        const ctx = await requireBoundCtx();
         if (!ctx) return;
         const beforeRaw = url.searchParams.get('before');
         const before = beforeRaw ? Number(beforeRaw) : undefined;
@@ -905,7 +976,7 @@ export function createRequestHandler() {
       }
 
       if (path === '/api/records' && req.method === 'POST') {
-        const ctx = await requireCtx();
+        const ctx = await requireBoundCtx();
         if (!ctx) return;
         const body = (await readBody(req)) as Record<string, unknown> | undefined;
         const result = await RecordService.put(ctx, body ?? {});
@@ -915,7 +986,7 @@ export function createRequestHandler() {
 
       const recordMatch = path.match(/^\/api\/records\/([^/]+)$/);
       if (recordMatch) {
-        const ctx = await requireCtx();
+        const ctx = await requireBoundCtx();
         if (!ctx) return;
         const id = decodeURIComponent(recordMatch[1]);
         if (req.method === 'DELETE') {

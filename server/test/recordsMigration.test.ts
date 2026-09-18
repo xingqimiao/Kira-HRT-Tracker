@@ -154,3 +154,44 @@ test('an unauthenticated caller gets no account information', async () => {
     assert.equal(res.status, 401, 'the record routes must require credentials');
   }
 });
+
+test('records are refused until a fallback credential is bound', async () => {
+  // The requirement this pins: a social signup must bind an account name and password
+  // before it can use records. Without that, losing the provider loses the history,
+  // which is the whole reason binding exists.
+  const { token, userId } = await freshAccount();
+  const { getPool } = await import('../src/db.ts');
+
+  // Stand in for an OAuth-only account: a password was never set.
+  await getPool().query(
+    `UPDATE users SET password_hash = NULL, password_set_at = NULL WHERE id = $1`,
+    [userId],
+  );
+
+  const blocked = await call(base, '/api/records', bearer(token));
+  assert.equal(blocked.status, 403, 'an unbound account must not reach records');
+  assert.equal(
+    blocked.body.error,
+    'account_incomplete',
+    'the app needs the code to route to the binding screen rather than to sign-in',
+  );
+
+  // The endpoints that let someone *become* complete must stay reachable, or the gate
+  // would be a lockout rather than a prompt.
+  const methods = await call(base, '/auth/login-methods', bearer(token));
+  assert.equal(methods.status, 200, 'the login-methods screen must remain reachable');
+  assert.equal(methods.body.has_password, false);
+
+  const bound = await call(base, '/auth/credentials/bind', json({
+    username: `gated_${Date.now().toString(36)}`,
+    password: 'a-real-password-1',
+  }, token));
+  assert.equal(bound.status, 200, `binding failed: ${JSON.stringify(bound.body)}`);
+
+  const allowed = await call(base, '/api/records', bearer(token));
+  assert.equal(allowed.status, 200, 'binding must unlock records immediately');
+
+  const after = await call(base, '/auth/login-methods', bearer(token));
+  assert.equal(after.body.has_password, true);
+  assert.equal(after.body.recovery_risk, false, 'a bound account is no longer at risk');
+});

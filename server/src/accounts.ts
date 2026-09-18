@@ -80,11 +80,14 @@ import {
 } from './totp.ts';
 import {
   buildAuthorizeUrl,
+  buildGoogleAuthorizeUrl,
   codeChallengeS256,
   exchangeCode,
+  exchangeGoogleCode,
   fetchProfile,
   generateCodeVerifier,
   generateState,
+  isGoogleConfigured,
   isXConfigured,
   XOAuthError,
   type XProfile,
@@ -655,6 +658,11 @@ export const AccountService = {
     // A password without a completed second factor must not be enough. An account
     // stuck here is one whose enrolment was abandoned; say so plainly, with the
     // resume path, rather than reporting a wrong password that is actually right.
+    //
+    // TOTP is on its way out (see the branch's plan), and this is the last gate that
+    // has to go for it to be gone: removing it here is what makes every account that
+    // never enrolled able to sign in, so it belongs in the same change as deleting the
+    // enrolment routes, the recovery codes and their tests — not before them.
     if (user.totp_enabled_at === null || !user.totp_secret_sealed) {
       return {
         ok: false,
@@ -1249,6 +1257,24 @@ export const AccountService = {
     return { ok: true, value: { recoveryCodes: codes.plaintext } };
   },
 
+  /**
+   * Whether this account has bound an account name and password.
+   *
+   * The gate on records, not on the account. A social signup produces an account with
+   * no fallback credential, so losing that provider loses the history — which is the
+   * whole reason binding exists. Making it required means a new OAuth user is asked once,
+   * at the moment they are provably present, instead of being trusted to do it later and
+   * never doing it.
+   *
+   * Kept separate from `isComplete`: that one decides whether a password-based sign-in
+   * may proceed, this one decides whether records may be read. Conflating them would
+   * make an unbound account unable to reach the very endpoint that binds it.
+   */
+  async hasBoundCredentials(userId: string): Promise<boolean> {
+    const user = await loadUser({ id: userId });
+    return user?.password_set_at !== null && user?.password_set_at !== undefined;
+  },
+
   /** Regenerate recovery codes, invalidating the old set. Requires a TOTP code. */
   async regenerateRecoveryCodes(ctx: AuthContext, code: unknown): Promise<Result<string[]>> {
     const user = await loadUser({ id: ctx.userId });
@@ -1411,7 +1437,10 @@ export const AccountService = {
     state?: unknown;
     error?: unknown;
     errorDescription?: unknown;
-  }): Promise<Result<{ outcome: 'login'; oneTimeCode: string } | { outcome: 'link'; handle: string | null } | { outcome: 'setup'; setupToken: string; username: string; totp: EnrollmentMaterial }>> {
+  }): Promise<Result<
+    | { outcome: 'login'; oneTimeCode: string }
+    | { outcome: 'link'; handle: string | null }
+  >> {
     const config = getConfig().x;
     if (!isXConfigured(config)) return { ok: false, error: 'X login is not configured on this instance' };
 
@@ -1494,9 +1523,9 @@ export const AccountService = {
       const user = await loadUser({ id: userId });
       if (!user) return { ok: false, error: 'linked account no longer exists' };
 
-      // An account created through X that never finished setup cannot log in: there
-      // is no data key, so there is nothing it could legitimately reach. Send it
-      // back through setup rather than issuing a useless session.
+      // An account created through X that never finished enrolment cannot sign in: the
+      // sign-in path still requires a completed second factor, which is why this leg
+      // exists. Both go together in the change that removes TOTP.
       if (!isComplete(user)) {
         return { ok: true, value: await this.beginXSetup(user, profile) };
       }
@@ -1532,11 +1561,154 @@ export const AccountService = {
     };
   },
 
+  // --- Google OAuth -------------------------------------------------------
+
+  /**
+   * Begin a Google authorization.
+   *
+   * No PKCE: Google's web client authenticates with the client secret, so there is no
+   * verifier to store. The row still records `provider`, because the state is the only
+   * thing Google echoes back and the callback has to know which token endpoint to use.
+   */
+  async startGoogleAuthorization(opts: {
+    purpose: 'login' | 'link';
+    userId?: string;
+  }): Promise<Result<{ authorizeUrl: string; state: string }>> {
+    const config = getConfig().google;
+    if (!isGoogleConfigured(config)) {
+      return { ok: false, error: 'Google login is not configured on this instance' };
+    }
+    if (opts.purpose === 'link' && !opts.userId) {
+      return { ok: false, error: 'linking requires a signed-in account' };
+    }
+
+    const state = generateState();
+    // Doubles as the ID-token replay guard; stored in the same row as the state so the
+    // two cannot drift apart.
+    const nonce = generateState();
+    await getPool().query(
+      `INSERT INTO oauth_states (state, code_verifier, purpose, provider, user_id, expires_at)
+       VALUES ($1, $2, $3, 'google', $4, now() + ($5 || ' milliseconds')::interval)`,
+      [state, nonce, opts.purpose, opts.userId ?? null, String(OAUTH_STATE_TTL_MS)],
+    );
+
+    return {
+      ok: true,
+      value: { authorizeUrl: buildGoogleAuthorizeUrl(config, { state, nonce }), state },
+    };
+  },
+
+  /**
+   * Handle the Google callback.
+   *
+   * Simpler than X's by construction: identity comes out of the ID token, so there is no
+   * profile request, and the account needs no follow-up enrolment — it is usable the
+   * moment it exists. What it does need is the anti-ban prompt, which the app derives
+   * from `loginOverview` (`recovery_risk: true` while no password is bound).
+   */
+  async completeGoogleCallback(query: {
+    code?: string;
+    state?: string;
+    error?: string;
+  }): Promise<Result<{ outcome: 'login' | 'link'; oneTimeCode?: string; handle?: string | null }>> {
+    if (query.error) return { ok: false, error: `Google returned: ${query.error}` };
+    if (!query.code) return { ok: false, error: 'Google callback had no code' };
+    if (!query.state) return { ok: false, error: 'Google callback had no state' };
+
+    const config = getConfig().google;
+    if (!isGoogleConfigured(config)) {
+      return { ok: false, error: 'Google login is not configured on this instance' };
+    }
+
+    // Spend the state first, so a replayed callback cannot be redeemed twice even if
+    // the exchange below fails.
+    const { rows } = await getPool().query<{
+      purpose: 'login' | 'link'; user_id: string | null; code_verifier: string | null; provider: string;
+    }>(
+      `UPDATE oauth_states
+          SET consumed_at = now()
+        WHERE state = $1 AND consumed_at IS NULL AND expires_at > now()
+        RETURNING purpose, user_id, code_verifier, provider`,
+      [query.state],
+    );
+    const pending = rows[0];
+    if (!pending) return { ok: false, error: 'that sign-in link expired; try again' };
+    if (pending.provider !== 'google') {
+      return { ok: false, error: 'that sign-in link was started for a different provider' };
+    }
+    // The nonce is what makes the ID token unusable outside this flow.
+    const nonce = pending.code_verifier ?? '';
+
+    let profile;
+    try {
+      profile = await exchangeGoogleCode(config, { code: query.code, nonce });
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : 'Google authorization failed' };
+    }
+
+    if (pending.purpose === 'link') {
+      if (!pending.user_id) return { ok: false, error: 'link authorization had no account' };
+      const existing = await getPool().query<{ user_id: string }>(
+        `SELECT user_id FROM oauth_accounts WHERE provider = 'google' AND provider_user_id = $1`,
+        [profile.id],
+      );
+      if (existing.rows.length > 0) {
+        if (existing.rows[0].user_id === pending.user_id) {
+          return { ok: true, value: { outcome: 'link', handle: profile.handle } };
+        }
+        return { ok: false, error: 'that Google account is already linked to a different account' };
+      }
+      await getPool().query(
+        `INSERT INTO oauth_accounts (user_id, provider, provider_user_id, handle, avatar_url)
+         VALUES ($1, 'google', $2, $3, $4)`,
+        [pending.user_id, profile.id, profile.handle, profile.avatarUrl],
+      );
+      await this.recordAuthEvent(pending.user_id, 'google_linked');
+      return { ok: true, value: { outcome: 'link', handle: profile.handle } };
+    }
+
+    const link = await getPool().query<{ user_id: string }>(
+      `SELECT user_id FROM oauth_accounts WHERE provider = 'google' AND provider_user_id = $1`,
+      [profile.id],
+    );
+
+    if (link.rows.length > 0) {
+      const userId = link.rows[0].user_id;
+      await getPool().query(
+        `UPDATE oauth_accounts SET last_login_at = now()
+          WHERE provider = 'google' AND provider_user_id = $1`,
+        [profile.id],
+      );
+      const user = await loadUser({ id: userId });
+      if (!user) return { ok: false, error: 'linked account no longer exists' };
+      return { ok: true, value: { outcome: 'login', oneTimeCode: issueOneTimeCode(userId) } };
+    }
+
+    const created = await this.createAccountFromOAuth('google', profile);
+    if (!created.ok) return created;
+    return { ok: true, value: { outcome: 'login', oneTimeCode: issueOneTimeCode(created.value.id) } };
+  },
+
   /** Create an account owned by an X identity, with no password yet. */
   async createAccountFromX(profile: XProfile): Promise<Result<AccountRow>> {
+    return await this.createAccountFromOAuth('x', profile);
+  },
+
+  /**
+   * Create an account owned by a social identity, with no password yet.
+   *
+   * `provider` is a parameter rather than a constant because both providers need the
+   * same four steps — allocate a username, insert the user, record the link, seed
+   * settings — and a second copy of them would be a second place for the unique-name
+   * retry to be got wrong.
+   */
+  async createAccountFromOAuth(
+    provider: 'x' | 'google',
+    profile: { id: string; handle: string | null; displayName: string | null; avatarUrl: string | null },
+  ): Promise<Result<AccountRow>> {
     const base = usernameFromHandle(profile.handle);
-    // Usernames are unique; X handles are unique too but a local account may
-    // already hold the name. Try the plain name, then suffixed variants.
+    // Usernames are unique; a provider handle or address may collide with a local
+    // account that already holds the name. Try the plain name, then suffixed variants.
     for (let attempt = 0; attempt < 12; attempt++) {
       const candidate = attempt === 0 ? base : `${base.slice(0, 26)}_${randomBytes(2).toString('hex')}`;
       try {
@@ -1550,11 +1722,11 @@ export const AccountService = {
         const user = rows[0];
         await getPool().query(
           `INSERT INTO oauth_accounts (user_id, provider, provider_user_id, handle, avatar_url)
-           VALUES ($1, 'x', $2, $3, $4)`,
-          [user.id, profile.id, profile.handle, profile.avatarUrl],
+           VALUES ($1, $2, $3, $4, $5)`,
+          [user.id, provider, profile.id, profile.handle, profile.avatarUrl],
         );
         await settings.upsert(user.id, { hrtMode: 'transfem' }).catch(() => undefined);
-        await this.recordAuthEvent(user.id, 'x_account_created');
+        await this.recordAuthEvent(user.id, `${provider}_account_created`);
         return { ok: true, value: user };
       } catch (error) {
         if ((error as { code?: string }).code === '23505') continue; // username raced
