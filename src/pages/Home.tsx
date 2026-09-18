@@ -244,7 +244,6 @@ const Home: React.FC<HomeProps> = ({
                         </div>
                         <DoseHeatmap
                             events={events}
-                            isDarkMode={isDarkMode}
                             className="min-w-0 2xl:flex-[2] 2xl:min-w-[16rem]"
                         />
                     </div>

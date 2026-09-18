@@ -10,6 +10,7 @@ import BloodVial from '../components/BloodVial';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { DoseTemplate } from '../components/DoseFormModal';
 import { DoseDayGroup } from '../hooks/useAppData';
+import Switch from '../components/Switch';
 
 // Trim trailing zeros so wear durations read "3.5" / "7" rather than "3.50".
 const formatWearDays = (days: number): string =>
@@ -182,14 +183,7 @@ const History: React.FC<HistoryProps> = ({
                                 <p className={`text-sm font-medium ${on}`}>{t('timeline.batch')}</p>
                                 <p className={`text-xs ${muted} mt-0.5`}>{t('timeline.batch_desc')}</p>
                             </div>
-                            <button
-                                onClick={() => setBatchOn(!batchOn)}
-                                className={`relative inline-flex switch-track h-6 w-11 shrink-0 items-center rounded-full ${batchOn ? 'bg-[var(--color-m3-primary)]' : 'bg-[var(--color-m3-outline-variant)] '}`}
-                                role="switch"
-                                aria-checked={batchOn}
-                            >
-                                <span className={`inline-block switch-knob h-4 w-4 rounded-full bg-cos-surface-container shadow ${batchOn ? 'translate-x-6' : 'translate-x-1'}`} />
-                            </button>
+                            <Switch checked={batchOn} onChange={setBatchOn} />
                         </div>
                         {batchOn && (
                             <div className="pb-3">

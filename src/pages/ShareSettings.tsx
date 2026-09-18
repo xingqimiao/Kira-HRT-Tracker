@@ -9,6 +9,7 @@ import { useDialog } from '../contexts/DialogContext';
 import { LOCALE_MAP } from '../utils/helpers';
 import DateTimePicker from '../components/DateTimePicker';
 import { buildSharedDosageSnapshot } from '../services/shareSnapshot';
+import Switch from '../components/Switch';
 
 interface ShareSettingsProps {
     onBack: () => void;
@@ -243,16 +244,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                                 <label htmlFor="share-live-toggle" className="cursor-pointer text-[0.9375rem] font-medium text-body">
                                     {copy.liveToggle}
                                 </label>
-                                <button
-                                    id="share-live-toggle"
-                                    type="button"
-                                    role="switch"
-                                    aria-checked={liveEnabled}
-                                    onClick={() => setLiveEnabled(value => !value)}
-                                    className={`relative inline-flex switch-track h-6 w-11 shrink-0 items-center rounded-full ${liveEnabled ? 'bg-[var(--color-m3-primary)]' : 'bg-[var(--color-m3-outline-variant)] '}`}
-                                >
-                                    <span className={`inline-block switch-knob h-4 w-4 rounded-full bg-cos-surface-container shadow-sm ${liveEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-                                </button>
+                                <Switch id="share-live-toggle" checked={liveEnabled} onChange={setLiveEnabled} />
                             </div>
 
                             <div className="mb-5">
@@ -262,19 +254,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                                             {copy.passwordToggle}
                                         </label>
                                     </div>
-                                    <button
-                                        id="share-password-toggle"
-                                        type="button"
-                                        role="switch"
-                                        aria-checked={passwordEnabled}
-                                        onClick={() => {
-                                            setPasswordEnabled(value => !value);
-                                            setError(null);
-                                        }}
-                                        className={`relative inline-flex switch-track h-6 w-11 shrink-0 items-center rounded-full ${passwordEnabled ? 'bg-[var(--color-m3-primary)]' : 'bg-[var(--color-m3-outline-variant)] '}`}
-                                    >
-                                        <span className={`inline-block switch-knob h-4 w-4 rounded-full bg-cos-surface-container shadow-sm ${passwordEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-                                    </button>
+                                    <Switch id="share-password-toggle" checked={passwordEnabled} onChange={(next) => { setPasswordEnabled(next); setError(null); }} />
                                 </div>
 
                                 {passwordEnabled && (

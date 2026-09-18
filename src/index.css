@@ -73,6 +73,13 @@
     --color-cos-success-container: var(--color-m3-success-container);
     --color-cos-warning: var(--color-m3-warning);
     --color-cos-warning-container: var(--color-m3-warning-container);
+    /* The surfaces needed one more alias, and its absence was a bug rather than an
+       omission: `bg-cos-surface-container` is used 24 times, and Tailwind only emits a
+       utility for a token that exists, so every one of those elements rendered with no
+       background at all — the date picker's list, both toggle knobs, and the panels
+       around them. The `text-cos-*` aliases were there, which is why the text looked
+       right while the backgrounds were see-through. */
+    --color-cos-surface-container: var(--color-m3-surface-container);
 
     /* — The dark set. Identical on purpose: this app is dark-first, and the dark:
          overrides written through the codebase are the structure the styling was
@@ -1249,24 +1256,10 @@ select,
     opacity: 0.4;
 }
 
-/* The knob slid instantly between its two offsets and the track colour cut over
-   with it. */
-.switch-track {
-    transition: background-color var(--duration-base) var(--ease-standard);
-}
-
-/* Both properties on purpose: Tailwind v4's `translate-x-*` compiles to the
-   standalone `translate` property, not to `transform`, so transitioning only
-   `transform` animates nothing. Keeping `transform` too means this still works
-   if a knob is ever positioned the older way. */
-.switch-knob {
-    transition: translate var(--duration-base) var(--ease-standard),
-                transform var(--duration-base) var(--ease-standard);
-}
-
 /* Disclosure chevrons. `rotate-180` compiles to the standalone `rotate`
-   property in Tailwind v4, so that is what has to be transitioned — see the
-   note on .switch-knob. */
+   property in Tailwind v4, so that is what has to be transitioned, and both
+   properties are listed because an older `transform`-based rule would
+   otherwise animate nothing. */
 .chev {
     transition: rotate var(--duration-base) var(--ease-standard),
                 transform var(--duration-base) var(--ease-standard);
@@ -1690,8 +1683,6 @@ select,
     [role="tab"],
     [role="switch"],
     [role="option"],
-    .switch-track,
-    .switch-knob,
     .chev,
     .disclosure {
         transition: none;

@@ -12,6 +12,8 @@ interface SwitchProps {
      * name it, rather than reading the label twice.
      */
     label?: string;
+    /** The element id, so a visible <label htmlFor> can point at the switch. */
+    id?: string;
 }
 
 /**
@@ -33,9 +35,10 @@ interface SwitchProps {
  * Space/Enter, and `role="switch"` is what makes the checked state meaningful to
  * assistive tech. A `<div>` with a click handler would need all three rebuilt.
  */
-const Switch: React.FC<SwitchProps> = ({ checked, onChange, disabled, label }) => (
+const Switch: React.FC<SwitchProps> = ({ checked, onChange, disabled, label, id }) => (
     <button
         type="button"
+        id={id}
         role="switch"
         aria-checked={checked}
         aria-label={label}

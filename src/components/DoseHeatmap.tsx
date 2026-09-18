@@ -32,11 +32,9 @@ type Cell = { col: number; row: number; date: Date; key: string; count: number; 
  */
 const DoseHeatmap = ({
     events,
-    isDarkMode = false,
     className = '',
 }: {
     events: DoseEvent[];
-    isDarkMode?: boolean;
     className?: string;
 }) => {
     const { t, lang } = useTranslation();
@@ -64,11 +62,24 @@ const DoseHeatmap = ({
         return () => clearInterval(id);
     }, []);
 
-    // Same terracotta family as the chart. Empty is the chart's grid neutral;
-    // the four filled steps climb from a light tint to a deep burnt shade.
-    const c = isDarkMode
-        ? { empty: '#2E2C28', axis: '#7A776F', ring: '#D8927C', levels: ['#4E3428', '#7B4C37', '#AC6A4C', '#D8927C'] }
-        : { empty: '#E7E4DD', axis: '#A8A59E', ring: '#CC785C', levels: ['#F0CDB8', '#DFA184', '#CC785C', '#9E4F2E'] };
+    // The ramp is the theme's own primary mixed into the chart's grid neutral in four
+    // equal steps, and the other roles are the chart's tokens, so the heatmap cannot
+    // drift from the chart beside it. It used to be a fixed terracotta set with a
+    // hand-written dark variant, which stayed terracotta under every palette — the
+    // dark-mode branch is gone because the tokens carry the theme now.
+    //
+    // The mix keeps the property the doc above asks for: every step adds primary to the
+    // same base, so lightness moves in one direction only and the encoding stays
+    // readable without separating hues.
+    const grid = 'var(--color-m3-chart-grid)';
+    const c = {
+        empty: grid,
+        axis: 'var(--color-m3-chart-axis)',
+        ring: 'var(--color-m3-primary)',
+        levels: [25, 50, 75, 100].map(
+            (percent) => `color-mix(in oklab, var(--color-m3-primary) ${percent}%, ${grid})`,
+        ),
+    };
 
     // The plot is laid out in raw SVG units, so unlike the rest of the UI it
     // does not follow the root font size. Reading that size back keeps the
