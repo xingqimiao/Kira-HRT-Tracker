@@ -33,17 +33,13 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 --   is set. That is the whole answer to "what if the X account gets banned" —
 --   losing X costs the convenience of one login button, never the data.
 --
---   `totp_secret_sealed` is the TOTP secret encrypted under a key held only in
---   the environment (`TOTP_ENC_KEY`), not in this database. A dump that carried
---   secrets in the clear would quietly switch off the second factor for every
---   account, which is strictly worse than not offering 2FA at all.
---
---   `totp_last_step` is the highest TOTP step already spent. A code is valid for
---   its whole 30-second step (90 with drift), so without this an observed code
---   could be replayed inside that window. Requiring a strictly higher step makes
---   each code single-use.
---
 --   `failed_unlocks` / `locked_until` throttle password guessing per account.
+--
+--   There is no second factor. TOTP and its recovery codes were removed, and the
+--   three columns and the `totp_backup_codes` table that held them are dropped
+--   below rather than left to rot: nothing reads them, and a sealed secret whose
+--   key (`TOTP_ENC_KEY`) is no longer required by the environment is unreadable
+--   anyway.
 CREATE TABLE IF NOT EXISTS users (
     id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     -- The login identifier: a self-chosen account name, NOT an email address.
@@ -63,9 +59,6 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash       text,
     password_set_at     timestamptz,
     wrapped_dek         jsonb,
-    totp_secret_sealed  text,
-    totp_enabled_at     timestamptz,
-    totp_last_step      bigint,
     failed_unlocks      integer NOT NULL DEFAULT 0,
     locked_until        timestamptz,
     created_at          timestamptz NOT NULL DEFAULT now(),
@@ -79,13 +72,20 @@ CREATE TABLE IF NOT EXISTS users (
 -- column is already present.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name       text;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_set_at    timestamptz;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret_sealed text;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled_at    timestamptz;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_last_step     bigint;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_unlocks     integer NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until       timestamptz;
 -- Password became optional for X-created accounts.
 ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+
+-- Second factor removal. Deliberately a DROP and not a "leave it, it is harmless":
+-- three nullable columns nobody reads are exactly the kind of residue that a later
+-- revision starts writing to again, and `totp_secret_sealed` is ciphertext whose key
+-- is no longer a required variable, so it can never be read even if something wanted
+-- to. `DROP COLUMN IF EXISTS` keeps this file re-runnable.
+ALTER TABLE users DROP COLUMN IF EXISTS totp_secret_sealed;
+ALTER TABLE users DROP COLUMN IF EXISTS totp_enabled_at;
+ALTER TABLE users DROP COLUMN IF EXISTS totp_last_step;
+DROP TABLE IF EXISTS totp_backup_codes;
 
 -- `username` is the login identifier, so its width and non-emptiness are enforced by
 -- the database and not only by the request validator. Widen from `text` to
@@ -224,16 +224,6 @@ CREATE INDEX IF NOT EXISTS idx_webauthn_challenges_expiry ON webauthn_challenges
 -- Recovery codes for the second factor. Hashed with scrypt, not stored
 -- reversibly: each code bypasses 2FA, so the set is equivalent to ten spare
 -- passwords and deserves the same treatment. `used_at` enforces single use.
-CREATE TABLE IF NOT EXISTS totp_backup_codes (
-    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id     uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    code_hash   text NOT NULL,
-    used_at     timestamptz,
-    created_at  timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_totp_backup_codes_user
-    ON totp_backup_codes(user_id) WHERE used_at IS NULL;
-
 -- A linked external identity. One row per (provider, external account), so the same
 -- X or Google account cannot be attached to two users, and one user can rebind to a
 -- different external account only after unlinking the old one.
