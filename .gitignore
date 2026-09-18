@@ -25,10 +25,6 @@ src-tauri/target/release
 *.sln
 *.sw?
 
-# Wrangler
-.wrangler
-.dev.vars
-
 # Credentials handed over out-of-band (X developer portal, etc). These arrive as
 # loose text/JSON files and would otherwise be swept up by `git add .` — which is
 # exactly how an OAuth client secret ends up in a public repository.
@@ -38,10 +34,15 @@ oauth*.txt
 client_secret*
 
 
-# Docker runtime configuration
+# Environment files and local runtime data.
+#
+# `.env.example` is allowed through deliberately: it holds placeholders only, and a
+# deployment guide that cannot be copied is one people guess at. Without the negation
+# it is swallowed by `.env.*`, which is how it stayed untracked while `DEPLOY.md`
+# documented the same variables by hand.
 .env
 .env.*
-!.env.docker.example
+!.env.example
 data/
 
 # Test Data
