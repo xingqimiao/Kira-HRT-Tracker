@@ -104,7 +104,7 @@ export {
 } from './compat';
 
 /** The app's own drawings, in the same shape as the reicon ones. */
-export { CalibrationCurve, ShieldSoft } from './custom';
+export { CalibrationCurve } from './custom';
 
 // reicon has no `LucideIcon`; call sites use this as the icon-function type.
 export type { IconFunction as IconComponent, IconWeight } from 'reicon';

@@ -8,15 +8,13 @@ import { useTranslation } from './LanguageContext';
 interface AuthContextType {
     user: User | null;
     token: string | null;
-    login: (username: string, password: string, totpCode?: string, backupCode?: string) => Promise<void>;
+    login: (username: string, password: string) => Promise<void>;
     register: (username: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
     isLoading: boolean;
     updateProfile: (username: string) => Promise<void>;
     changePassword: (current: string, newPass: string) => Promise<void>;
-    deleteAccount: (password: string, code?: string, backupCode?: string) => Promise<void>;
-    needsSetup2FA: boolean;
-    clearSetup2FA: () => void;
+    deleteAccount: (password: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -33,16 +31,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [user, setUser] = useState<User | null>(null);
     const [token, setToken] = useState<string | null>(localStorage.getItem('auth_token'));
     const [isLoading, setIsLoading] = useState(true);
-    const [needsSetup2FA, setNeedsSetup2FA] = useState(() => localStorage.getItem('needs_setup_2fa') === 'true');
-
-    // Clear any stale forced-2FA flag persisted from previous app versions —
-    // 2FA setup is now optional, never forced.
-    useEffect(() => {
-        if (localStorage.getItem('needs_setup_2fa') === 'true') {
-            localStorage.removeItem('needs_setup_2fa');
-            setNeedsSetup2FA(false);
-        }
-    }, []);
 
     useEffect(() => {
         const storedUser = localStorage.getItem('auth_user');
@@ -58,20 +46,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsLoading(false);
     }, [token]);
 
-    const login = async (username: string, password: string, totpCode?: string, backupCode?: string) => {
-        const data = await authService.login(username, password, totpCode, backupCode);
+    const login = async (username: string, password: string) => {
+        const data = await authService.login(username, password);
         setToken(data.token);
         setUser(data.user);
         localStorage.setItem('auth_token', data.token);
         localStorage.setItem('auth_user', JSON.stringify(data.user));
         await deriveAndCacheCloudKey(password, data.user.id);
-        if (data.needsSetup2FA) {
-            setNeedsSetup2FA(true);
-            localStorage.setItem('needs_setup_2fa', 'true');
-        } else {
-            setNeedsSetup2FA(false);
-            localStorage.removeItem('needs_setup_2fa');
-        }
     };
 
     const register = async (username: string, password: string) => {
@@ -81,14 +62,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem('auth_token', data.token);
         localStorage.setItem('auth_user', JSON.stringify(data.user));
         await deriveAndCacheCloudKey(password, data.user.id);
-        // 2FA setup is optional — do not force new users into setup flow.
-        setNeedsSetup2FA(false);
-        localStorage.removeItem('needs_setup_2fa');
-    };
-
-    const clearSetup2FA = () => {
-        setNeedsSetup2FA(false);
-        localStorage.removeItem('needs_setup_2fa');
     };
 
     // Clear this device's copy of the session. Split out so the forced sign-out
@@ -97,10 +70,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const clearLocalSession = () => {
         setToken(null);
         setUser(null);
-        setNeedsSetup2FA(false);
         localStorage.removeItem('auth_token');
         localStorage.removeItem('auth_user');
-        localStorage.removeItem('needs_setup_2fa');
         cacheCloudKey(null);
     };
 
@@ -158,15 +129,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (user) await deriveAndCacheCloudKey(newPass, user.id);
     };
 
-    const deleteAccount = async (password: string, code?: string, backupCode?: string) => {
+    const deleteAccount = async (password: string) => {
         if (!token) return;
-        await authService.deleteAccount(token, password, code, backupCode);
+        await authService.deleteAccount(token, password);
         // The account delete already dropped every sessions row for this user.
         clearLocalSession();
     };
 
     return (
-        <AuthContext.Provider value={{ user, token, login, register, logout, isLoading, updateProfile, changePassword, deleteAccount, needsSetup2FA, clearSetup2FA }}>
+        <AuthContext.Provider value={{ user, token, login, register, logout, isLoading, updateProfile, changePassword, deleteAccount }}>
             {children}
         </AuthContext.Provider>
     );

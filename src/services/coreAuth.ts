@@ -2,35 +2,45 @@
  * Client for the Application Core's authentication API.
  *
  * Separate from `services/auth.ts`, which speaks to the legacy Worker API
- * (session list, admin). The Core has a different model — password plus a
- * *mandatory* second factor — so mixing the two into one module would hide which
- * backend each call reaches, and they are reached at different origins.
+ * (session list, admin). The Core has a different model — a password, and a data
+ * key the server unwraps per session — so mixing the two into one module would hide
+ * which backend each call reaches, and they are reached at different origins.
  *
  * Paths here are relative to the service mount (`VITE_API_ORIGIN` already includes
  * the `/hrt` prefix in production), so `apiEndpoint('/auth/login')` resolves to
  * `https://api.kiramyao.com/hrt/auth/login`.
  *
- * The error handling is the load-bearing part, because three failure modes look
+ * The error handling is the load-bearing part, because two failure modes look
  * alike over HTTP and need different UI:
  *
- *   - **`two_factor_required`** — the password was accepted and a code is needed.
- *     Not an error; the next step of a normal sign-in.
  *   - **`locked`** (429 / account lockout) — stop retrying, tell the user to wait.
  *   - **`invalid credentials`** — indistinguishable on purpose, so the UI must not
  *     try to explain which part was wrong.
  */
-import { apiEndpoint, apiFetch, UNAUTHORIZED_EVENT } from './apiClient';
+import { apiEndpoint, apiFetch } from './apiClient';
 
 /** What the server is willing to say about a failure. */
 export type CoreErrorKind =
   | 'invalid_credentials'
-  | 'two_factor_required'
   | 'locked'
   | 'rate_limited'
   | 'not_configured'
   | 'passkey_limit'
+  | 'username_taken'
   | 'network'
   | 'unknown';
+
+/** The social sign-in providers this client speaks to. Both are the same flow. */
+export type LoginProvider = 'x' | 'google';
+
+/**
+ * The provider's name as a reader sees it, for the copy that names one.
+ *
+ * One map rather than the literal sprinkled through three screens: the landing, the
+ * sign-in form and the account rows all have to say the same word, and a provider
+ * renamed in one place would otherwise disagree with the other two.
+ */
+export const PROVIDER_NAMES: Record<LoginProvider, string> = { x: 'X', google: 'Google' };
 
 export class CoreAuthError extends Error {
   constructor(
@@ -44,13 +54,9 @@ export class CoreAuthError extends Error {
 
   /**
    * Whether the user can do something about it.
-   *
-   * `two_factor_required` is deliberately `false` — it is a prompt, not a failure,
-   * and a UI that renders it red would train people to think their password was
-   * wrong every time they sign in.
    */
   get isRecoverable(): boolean {
-    return this.kind === 'two_factor_required' || this.kind === 'invalid_credentials';
+    return this.kind === 'invalid_credentials';
   }
 }
 
@@ -58,7 +64,6 @@ export class CoreAuthError extends Error {
  *  string-matches after a rename. */
 function classify(body: { error?: string } | undefined, status: number): CoreErrorKind {
   const raw = (body?.error ?? '').toLowerCase();
-  if (raw === 'two_factor_required') return 'two_factor_required';
   if (raw.includes('too many failed attempts')) return 'locked';
   if (raw.includes('too many attempts')) return 'rate_limited';
   if (raw.includes('not configured')) return 'not_configured';
@@ -66,6 +71,9 @@ function classify(body: { error?: string } | undefined, status: number): CoreErr
   // its own kind rather than arriving as `unknown` and being shown in the server's
   // English. Matched on both words so an unrelated sentence cannot claim it.
   if (raw.includes('maximum of') && raw.includes('passkey')) return 'passkey_limit';
+  // The one bind failure with a field to attach it to, so it must not arrive as
+  // `unknown` and be shown as a generic error against the whole form.
+  if (raw.includes('username_taken')) return 'username_taken';
   if (raw.includes('invalid credentials')) return 'invalid_credentials';
   if (status === 429) return 'rate_limited';
   return 'unknown';
@@ -102,15 +110,6 @@ async function request<T>(
 
   if (!res.ok) {
     const kind = classify(body as { error?: string }, res.status);
-    // A session that the server has invalidated should clear app state, which is
-    // what this event is for. The Core reports a locked account as 401 too, so this
-    // only fires when the response is *not* a lockout — a lockout is a prompt.
-    if (res.status === 401 && kind !== 'two_factor_required' && typeof window !== 'undefined') {
-      // Not dispatched: unlike the Worker API, a 401 here can mean "account locked",
-      // and signing the user out of the app for that would be wrong. The caller
-      // decides. Kept explicit so the reason is visible.
-      void UNAUTHORIZED_EVENT;
-    }
     const message =
       (body as { error?: string })?.error ?? `Request failed (${res.status})`;
     throw new CoreAuthError(kind, message, res.status);
@@ -123,33 +122,16 @@ async function request<T>(
 // Shapes returned by the server
 // ---------------------------------------------------------------------------
 
-export interface EnrollmentMaterial {
-  secret: string;
-  otpauthUri: string;
-  /** Shown once. The server stores only hashes and cannot re-issue these. */
-  backupCodes: string[];
-}
-
-export interface RegistrationResponse {
-  userId: string;
-  username: string;
-  enrollmentToken: string;
-  totp: EnrollmentMaterial;
-}
-
 export interface SessionResponse {
   userId: string;
   username: string;
   token: string;
-  /** Present only after a recovery-code sign-in; how many remain. */
-  recoveryCodesRemaining?: number;
 }
 
 export interface AccountSummary {
   createdAt: string | null;
   doseCount: number;
   labCount: number;
-  recoveryCodesRemaining: number;
   xLinks: number;
   xLoginAvailable: boolean;
   /** The linked X avatar, for the account header. Null when no X account is linked. */
@@ -169,12 +151,30 @@ export interface AccountSummary {
  */
 export type PrivacyMode = 'standard' | 'advanced';
 
-export interface XLink {
+export interface OAuthLink {
+  /** Which provider this row is. Google sends no handle and no avatar by design. */
+  provider: string;
   handle: string | null;
-  /** X avatar, captured server-side at link/login time. Null when X sent none. */
+  /** The avatar the provider sent, captured server-side at link/login time. */
   avatarUrl: string | null;
-  linkedAt: string;
+  linkedAt: string | null;
   lastLoginAt: string | null;
+}
+
+/**
+ * What `GET /auth/login-methods` reports about how an account can be entered.
+ *
+ * `recoveryRisk` is the honest headline: one way in, and it is a social provider, so
+ * losing that provider loses the account. It is also what makes the fallback-credential
+ * screen worth offering before the server has to refuse anything.
+ */
+export interface LoginMethods {
+  username: string | null;
+  hasPassword: boolean;
+  providers: string[];
+  recoveryRisk: boolean;
+  /** Every linked social account, when the server sends them alongside. */
+  links: OAuthLink[];
 }
 
 /**
@@ -223,38 +223,31 @@ export interface PasskeyInfo {
 // Wire decoding: snake_case in, camelCase out, in one place
 // ---------------------------------------------------------------------------
 
-const toEnrollment = (raw: any): EnrollmentMaterial => ({
-  secret: raw.secret,
-  otpauthUri: raw.otpauth_uri,
-  backupCodes: raw.backup_codes ?? [],
-});
-
-const toRegistration = (raw: any): RegistrationResponse => ({
-  userId: raw.user_id,
-  username: raw.username,
-  enrollmentToken: raw.enrollment_token,
-  totp: toEnrollment(raw.totp),
-});
-
 const toSession = (raw: any): SessionResponse => ({
   userId: raw.user_id,
   username: raw.username,
   token: raw.token,
-  ...(raw.recovery_codes_remaining !== undefined
-    ? { recoveryCodesRemaining: raw.recovery_codes_remaining }
-    : {}),
+});
+
+/** One linked provider row, as both the X list and `login-methods` describe it. */
+const toOAuthLink = (raw: any): OAuthLink => ({
+  provider: String(raw.provider ?? ''),
+  handle: raw.handle ?? null,
+  avatarUrl: raw.avatarUrl ?? null,
+  linkedAt: raw.linkedAt ?? null,
+  lastLoginAt: raw.lastLoginAt ?? null,
 });
 
 export const coreAuth = {
-  // --- Registration and enrolment -------------------------------------------
+  // --- Registration ---------------------------------------------------------
 
-  /** Create an account. Returns enrolment material, deliberately NOT a session. */
+  /** Create an account. Returns a live session; there is no separate enrolment step. */
   async register(
     username: string,
     password: string,
     opts: { privacyMode?: PrivacyMode; turnstileToken?: string } = {},
-  ): Promise<RegistrationResponse> {
-    return toRegistration(
+  ): Promise<SessionResponse> {
+    return toSession(
       await request('/auth/register', {
         method: 'POST',
         body: JSON.stringify({
@@ -267,54 +260,14 @@ export const coreAuth = {
     );
   },
 
-  /**
-   * Resume an abandoned enrolment.
-   *
-   * Needed because someone who closed the tab between registering and confirming
-   * would otherwise be stuck with a username they cannot reuse.
-   */
-  async resumeEnrollment(username: string, password: string): Promise<RegistrationResponse> {
-    return toRegistration(
-      await request('/auth/totp/resume', {
-        method: 'POST',
-        body: JSON.stringify({ username, password }),
-      }),
-    );
-  },
-
-  /** Confirm a code from the new secret. Only this makes the account usable. */
-  async confirmEnrollment(enrollmentToken: string, code: string): Promise<SessionResponse> {
-    return toSession(
-      await request('/auth/totp/confirm', {
-        method: 'POST',
-        body: JSON.stringify({ enrollment_token: enrollmentToken, code }),
-      }),
-    );
-  },
-
   // --- Sign-in -------------------------------------------------------------
 
-  /**
-   * Sign in.
-   *
-   * Pass `code` for the authenticator, or `backupCode` when the authenticator is
-   * gone. Omitting both is valid and yields a `two_factor_required` error, which is
-   * how the UI learns to ask for a code after checking the password first.
-   */
-  async login(
-    username: string,
-    password: string,
-    opts: { code?: string; backupCode?: string } = {},
-  ): Promise<SessionResponse> {
+  /** Sign in with a username and password. */
+  async login(username: string, password: string): Promise<SessionResponse> {
     return toSession(
       await request('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({
-          username,
-          password,
-          ...(opts.code ? { code: opts.code } : {}),
-          ...(opts.backupCode ? { backup_code: opts.backupCode } : {}),
-        }),
+        body: JSON.stringify({ username, password }),
       }),
     );
   },
@@ -331,7 +284,6 @@ export const coreAuth = {
       createdAt: raw.created_at,
       doseCount: raw.dose_count,
       labCount: raw.lab_count,
-      recoveryCodesRemaining: raw.recovery_codes_remaining,
       xLinks: raw.x_links,
       xLoginAvailable: raw.x_login_available,
       xAvatarUrl: raw.x_avatar_url ?? null,
@@ -344,8 +296,8 @@ export const coreAuth = {
   /**
    * Unlock data for a session whose identity X already proved.
    *
-   * Distinct from `login`: X supplied the identity and the second factor, so the only
-   * thing missing is the *data* credential. `factor` says which one was supplied.
+   * Distinct from `login`: X supplied the identity, so the only thing missing is the
+   * *data* credential. `factor` says which one was supplied.
    */
   async unlockData(
     lockedToken: string,
@@ -393,92 +345,87 @@ export const coreAuth = {
     token: string,
     currentPassword: string,
     newPassword: string,
-  ): Promise<{ recoveryCodes: string[] | null }> {
-    const raw = await request<any>('/auth/password', {
+  ): Promise<void> {
+    await request('/auth/password', {
       method: 'POST',
       token,
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     });
-    // Present only for an account setting its FIRST password.
-    return { recoveryCodes: raw.recovery_codes ?? null };
-  },
-
-  async regenerateRecoveryCodes(token: string, code: string): Promise<string[]> {
-    const raw = await request<any>('/auth/recovery-codes/regenerate', {
-      method: 'POST',
-      token,
-      body: JSON.stringify({ code }),
-    });
-    return raw.recovery_codes ?? [];
   },
 
   /**
    * Delete the account and everything in it.
    *
-   * Requires the password AND a second factor, so a stolen session is not enough.
-   * A recovery code is accepted in place of the authenticator code.
+   * Requires the password, so a stolen session is not enough.
    */
   async deleteAccount(
     token: string,
     password: string,
-    opts: { code?: string; backupCode?: string; reason?: string } = {},
+    opts: { reason?: string } = {},
   ): Promise<void> {
     await request('/auth/account/delete', {
       method: 'POST',
       token,
       body: JSON.stringify({
         password,
-        ...(opts.code ? { code: opts.code } : {}),
-        ...(opts.backupCode ? { backup_code: opts.backupCode } : {}),
         ...(opts.reason ? { reason: opts.reason } : {}),
       }),
     });
   },
 
-  // --- X OAuth -------------------------------------------------------------
+  // --- Social sign-in (X, Google) ------------------------------------------
 
-  /** Whether this instance has X login configured. */
-  async xAvailable(): Promise<boolean> {
+  /**
+   * Which social providers this instance has configured.
+   *
+   * An unreachable or unreadable `/health` means neither is, deliberately: a button
+   * that cannot work is worse than no button, because the user blames themselves for
+   * the failure. One request answers for both, since the app always asks about both.
+   */
+  async loginProviders(): Promise<{ x: boolean; google: boolean }> {
     try {
       const res = await apiFetch(apiEndpoint('/health'));
-      const body = (await res.json()) as { x_login?: boolean };
-      return body.x_login === true;
+      const body = (await res.json()) as { x_login?: boolean; google_login?: boolean };
+      return { x: body.x_login === true, google: body.google_login === true };
     } catch {
-      return false;
+      return { x: false, google: false };
     }
   },
 
   /**
-   * Start an X authorization.
+   * Start a provider authorization.
    *
-   * Returns the URL to send the browser to. `purpose: 'link'` attaches an X account
-   * to the signed-in one and needs a token.
+   * Returns the URL to send the browser to. `purpose: 'link'` attaches a provider
+   * account to the signed-in one and needs a token.
    */
-  async startX(
+  async startOAuth(
+    provider: LoginProvider,
     purpose: 'login' | 'link',
     token?: string,
   ): Promise<{ authorizeUrl: string; state: string }> {
     const raw = await request<any>(
-      `/auth/x/start${purpose === 'link' ? '?purpose=link' : ''}`,
+      `/auth/${provider}/start${purpose === 'link' ? '?purpose=link' : ''}`,
       token ? { token } : {},
     );
     return { authorizeUrl: raw.authorize_url, state: raw.state };
   },
 
   /**
-   * Exchange the one-time code from the X callback.
+   * Exchange the one-time code from a provider callback.
    *
    * Three outcomes, and the middle one is the interesting case:
    *   - `token` set → a real session (standard mode, or an already-live unlock).
-   *   - `token: null` and `lockedToken` set → advanced mode: X proved identity, the
-   *     data is still locked. The caller shows the unlock step with this token.
+   *   - `token: null` and `lockedToken` set → advanced mode: the provider proved
+   *     identity, the data is still locked. The caller shows the unlock step with
+   *     this token.
    *   - `token: null`, no `lockedToken` → shouldn't happen, but the caller falls back
    *     to the normal password sign-in.
    */
-  async exchangeXCode(
+  async exchangeOAuthCode(
+    provider: LoginProvider,
     code: string,
   ): Promise<{ userId: string; username: string; token: string | null; lockedToken: string | null }> {
-    const raw = await request<any>('/auth/x/exchange', {
+    const raw = await request<any>(`/auth/${provider}/exchange`, {
       method: 'POST',
       body: JSON.stringify({ code }),
     });
@@ -490,43 +437,56 @@ export const coreAuth = {
     };
   },
 
-  /** Complete setup for an X-created account: set a password and enrol TOTP. */
-  async completeXSetup(
-    setupToken: string,
-    password: string,
-    code: string,
-    opts: { privacyMode?: PrivacyMode; turnstileToken?: string } = {},
-  ): Promise<SessionResponse> {
-    return toSession(
-      await request('/auth/x/setup', {
-        method: 'POST',
-        body: JSON.stringify({
-          setup_token: setupToken,
-          password,
-          code,
-          ...(opts.privacyMode ? { privacy_mode: opts.privacyMode } : {}),
-          ...(opts.turnstileToken ? { turnstile_token: opts.turnstileToken } : {}),
-        }),
-      }),
-    );
-  },
-
-  async listXLinks(token: string): Promise<XLink[]> {
+  async listXLinks(token: string): Promise<OAuthLink[]> {
     const raw = await request<any>('/auth/x/links', { token });
     // The Core serialises these itself (`listXLinks` maps its rows), so they arrive
     // camelCase — not as the `oauth_accounts` column names. Reading `l.avatar_url` here
     // yielded undefined for every field, which is why the account page showed a
     // generic glyph and "Invalid Date": nothing was ever populated to render.
-    return (raw.links ?? []).map((l: any) => ({
-      handle: l.handle ?? null,
-      avatarUrl: l.avatarUrl ?? null,
-      linkedAt: l.linkedAt ?? null,
-      lastLoginAt: l.lastLoginAt ?? null,
-    }));
+    return ((raw.links ?? []) as any[]).map(toOAuthLink);
   },
 
-  async unlinkX(token: string, code: string): Promise<void> {
-    await request('/auth/x/unlink', { method: 'POST', token, body: JSON.stringify({ code }) });
+  /**
+   * How this account can be entered: a password, and each linked provider.
+   *
+   * Also the only place that reports `recovery_risk`, which is what the account page
+   * needs in order to say "losing that provider would lose this account" *before* the
+   * server has to refuse a record write.
+   */
+  async loginMethods(token: string): Promise<LoginMethods> {
+    const raw = await request<any>('/auth/login-methods', { token });
+    return {
+      username: raw.username ?? null,
+      hasPassword: raw.has_password === true,
+      providers: Array.isArray(raw.providers) ? raw.providers.map(String) : [],
+      recoveryRisk: raw.recovery_risk === true,
+      links: Array.isArray(raw.accounts) ? raw.accounts.map(toOAuthLink) : [],
+    };
+  },
+
+  /**
+   * Bind a fallback account name and password to a session opened by a provider.
+   *
+   * The one call that makes an X- or Google-created account reachable without that
+   * provider. Works on a session whose records are still refused, which is why it
+   * cannot be behind the same gate as `/api/records`.
+   */
+  async bindCredentials(
+    token: string,
+    username: string,
+    password: string,
+  ): Promise<{ username: string }> {
+    const raw = await request<{ username: string }>('/auth/credentials/bind', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ username, password }),
+    });
+    return { username: raw.username };
+  },
+
+  /** Detach a provider. The server refuses this when it is the last way in. */
+  async unlinkOAuth(token: string, provider: LoginProvider): Promise<void> {
+    await request(`/auth/oauth/${provider}/unlink`, { method: 'POST', token, body: '{}' });
   },
 
   // --- Agent tokens ---------------------------------------------------------
@@ -679,12 +639,16 @@ export const coreAuth = {
   },
 };
 
-/** Where the browser lands after an X authorization, read from the current URL. */
-export function readXCallbackParams(): {
+/**
+ * Where the browser lands after a provider authorization, read from the current URL.
+ *
+ * `handle` is X's alone: Google is asked for the `openid` scope only, so it sends no
+ * handle and no avatar, and everything that renders one has to treat that as absent
+ * rather than as a missing value to paper over.
+ */
+export function readAuthCallbackParams(): {
   code: string | null;
-  setupToken: string | null;
   username: string | null;
-  secret: string | null;
   handle: string | null;
   linked: boolean;
   error: string | null;
@@ -692,9 +656,7 @@ export function readXCallbackParams(): {
   const p = new URLSearchParams(window.location.search);
   return {
     code: p.get('code'),
-    setupToken: p.get('setup_token'),
     username: p.get('username'),
-    secret: p.get('secret'),
     handle: p.get('handle'),
     linked: p.get('linked') === '1',
     error: p.get('error'),

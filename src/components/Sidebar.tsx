@@ -37,7 +37,7 @@ const Sidebar: React.FC<SidebarProps> = ({ navItems, currentView, onViewChange }
     /** A view belongs to the section it drills out of until it drills somewhere else. */
     const sectionFor = (view: string): string => {
         if (view.startsWith('settings-') || view === 'pk-params') return 'settings';
-        if (view === 'sessions' || view === 'two-factor' || view === 'change-password') return 'account';
+        if (view === 'sessions' || view === 'change-password') return 'account';
         if (view === 'lab-calibration') return 'lab';
         return view;
     };

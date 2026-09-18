@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-import { coreAuth, CoreAuthError, type PrivacyMode, type RegistrationResponse } from '../services/coreAuth';
+import { coreAuth, CoreAuthError, type PrivacyMode } from '../services/coreAuth';
 import { createPasskey, getPasskeyAssertion } from '../utils/passkeys';
 
 /**
@@ -33,9 +33,6 @@ export interface CoreUser {
   username: string;
 }
 
-/** How the sign-in form should proceed after the credentials were submitted. */
-export type SignInStep = 'credentials' | 'two_factor';
-
 /** The shared session, as consumers see it. Declared rather than inferred from the
  *  implementation, which would make the type circular with the hook that returns it. */
 export interface CoreSession {
@@ -61,17 +58,12 @@ export interface CoreSession {
    */
   lockedToken: string | null;
   lockedUser: CoreUser | null;
-  signIn: (
-    username: string,
-    password: string,
-    opts?: { code?: string; backupCode?: string },
-  ) => Promise<{ step: SignInStep; recoveryCodesRemaining?: number }>;
+  signIn: (username: string, password: string) => Promise<void>;
   register: (
     username: string,
     password: string,
     opts?: { privacyMode?: PrivacyMode; turnstileToken?: string },
-  ) => Promise<RegistrationResponse>;
-  confirmEnrollment: (enrollmentToken: string, code: string) => Promise<{ userId: string; username: string; token: string }>;
+  ) => Promise<void>;
   adoptSession: (token: string, userId: string, username: string) => void;
   /** Record an identity X proved, pending a data unlock. */
   adoptLockedSession: (lockedToken: string, userId: string, username: string) => void;
@@ -214,60 +206,32 @@ function useCoreSessionState() {
   }, [persist]);
 
   /**
-   * Sign in with a password and, when the server asks for it, a second factor.
+   * Sign in with a password.
    *
-   * Returns which step to show next instead of throwing for the code prompt: the
-   * password being accepted is progress, not an error.
+   * The password being accepted is the whole step: there is no second factor.
    */
   const signIn = useCallback(
-    async (
-      username: string,
-      password: string,
-      opts: { code?: string; backupCode?: string } = {},
-    ): Promise<{ step: SignInStep; recoveryCodesRemaining?: number }> => {
-      try {
-        const session = await coreAuth.login(username, password, opts);
-        persist(session.token, { userId: session.userId, username: session.username });
-        return {
-          step: 'credentials',
-          ...(session.recoveryCodesRemaining !== undefined
-            ? { recoveryCodesRemaining: session.recoveryCodesRemaining }
-            : {}),
-        };
-      } catch (error) {
-        if (error instanceof CoreAuthError && error.kind === 'two_factor_required') {
-          return { step: 'two_factor' };
-        }
-        throw error;
-      }
+    async (username: string, password: string): Promise<void> => {
+      const session = await coreAuth.login(username, password);
+      persist(session.token, { userId: session.userId, username: session.username });
     },
     [persist],
   );
 
-  /** Start a registration. Returns the enrolment material; it is NOT a session. */
+  /** Create an account, which opens a session straight away. */
   const register = useCallback(
     async (
       username: string,
       password: string,
       opts: { privacyMode?: PrivacyMode; turnstileToken?: string } = {},
-    ): Promise<RegistrationResponse> => {
-      const result = await coreAuth.register(username, password, opts);
+    ): Promise<void> => {
+      const session = await coreAuth.register(username, password, opts);
       // Remember the chosen mode so the account page can label it before the first
       // server summary arrives.
       if (opts.privacyMode) persistMode(opts.privacyMode);
-      return result;
-    },
-    [persistMode],
-  );
-
-  /** Finish enrolment. Only here does the account become usable and a session open. */
-  const confirmEnrollment = useCallback(
-    async (enrollmentToken: string, code: string) => {
-      const session = await coreAuth.confirmEnrollment(enrollmentToken, code);
       persist(session.token, { userId: session.userId, username: session.username });
-      return session;
     },
-    [persist],
+    [persist, persistMode],
   );
 
   /** Adopt a session issued somewhere else — the X flow, or an X setup completion. */
@@ -359,7 +323,6 @@ function useCoreSessionState() {
       lockedUser: state.lockedUser,
       signIn,
       register,
-      confirmEnrollment,
       adoptSession,
       adoptLockedSession,
       unlockData,
@@ -367,6 +330,6 @@ function useCoreSessionState() {
       addPasskey,
       signOut,
     }),
-    [state, signIn, register, confirmEnrollment, adoptSession, adoptLockedSession, unlockData, signInWithPasskey, addPasskey, signOut],
+    [state, signIn, register, adoptSession, adoptLockedSession, unlockData, signInWithPasskey, addPasskey, signOut],
   );
 }

@@ -29,18 +29,9 @@ reactive theme effect lives: `/auth/x/callback`, a public share link, and the
 onboarding gate's pre-mount frame. While the only application point was inside
 `AppContent`, those routes never got `.dark` at all, so every `.dark …` rule and
 `dark:` variant sat inert and they painted light whatever the user had chosen — which
-is how the X enrolment page shipped with no dark mode. `themeInit` also resolves
+is how the X callback page shipped with no dark mode. `themeInit` also resolves
 `system` (the stylesheet keys off classes, not a `prefers-color-scheme` query, so
 defaulting to light would break dark OSes) and sets `key-blue`.
-
-### Never put a QR code on a theme surface
-
-A TOTP enrolment code must sit on a **literal white plate with its own quiet zone**.
-`bg-cos-surface-container` — an undefined token, so effectively `background: none` —
-left one on a near-black page in dark mode, where no scanner could find it while it
-looked perfectly normal on screen. `TotpSecretDisplay` therefore uses `bg-white` and
-passes `marginSize={4}` so four modules of white travel with the code itself, and
-`scripts/check-qr-scannable.mjs` decodes the rendered QR against both palettes.
 
 ### Adding a colour
 
@@ -97,8 +88,8 @@ carries the `aria-label`; `Icon` sets `aria-hidden` otherwise.
 Adding a glyph reicon lacks: add the name to `scripts/gen-compat-icons.mjs`,
 run it, and commit the regenerated `src/icons/compat.ts`.
 
-**Do not replace** `src/flag_svg/`, the pixel-cat sprite, `ShieldIcon`'s drawing, or
-`ResultChart`'s marks — those are artwork and data marks, not icons.
+**Do not replace** `src/flag_svg/`, the pixel-cat sprite, or `ResultChart`'s marks —
+those are artwork and data marks, not icons.
 
 ## Motion
 

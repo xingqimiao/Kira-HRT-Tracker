@@ -31,6 +31,12 @@ export interface CoreSyncState {
   status: CoreSyncStatus;
   lastSyncedAt: number | null;
   syncNow: () => Promise<void>;
+  /**
+   * The server refused the records because this account has no bound fallback
+   * credential. True until a sync succeeds, and it is a state to act on — see
+   * `BindCredentials` — rather than a failure to retry.
+   */
+  accountIncomplete: boolean;
 }
 
 interface Options {
@@ -74,6 +80,9 @@ export const useCoreSync = ({
 }: Options): CoreSyncState => {
   const [status, setStatus] = useState<CoreSyncStatus>('off');
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+  // Sticky in one direction only: cleared by a sync that gets through, so binding the
+  // credential is what takes the gate down rather than a second server round trip.
+  const [accountIncomplete, setAccountIncomplete] = useState(false);
 
   // Read at fire time rather than captured: a sync armed before a render must not
   // upload a payload built from state that render has since replaced.
@@ -152,11 +161,16 @@ export const useCoreSync = ({
       lastSeenRef.current = fingerprintState(merged.merged);
       bootstrappedForRef.current = account;
       setLastSyncedAt(Date.now());
+      setAccountIncomplete(false);
       setStatus(rejected > 0 ? 'error' : 'synced');
     } catch (error) {
       // A locked account is not a failure to retry — the user has not entered a
       // password on this device yet, so the fix is an unlock, not another attempt.
       setStatus(error instanceof CoreSyncError && error.locked ? 'idle' : 'error');
+      // An incomplete account is neither: the session is valid and the key is in hand,
+      // and the only thing missing is the fallback credential. Signing out to "fix" it
+      // would destroy the session that binds it.
+      setAccountIncomplete(error instanceof CoreSyncError && error.accountIncomplete);
     } finally {
       runningRef.current = false;
       if (rerunRef.current) {
@@ -172,6 +186,9 @@ export const useCoreSync = ({
   useEffect(() => {
     if (!activeRef.current) {
       setStatus('off');
+      // No account in force, so nothing is refused. Left set, this would greet the next
+      // sign-in — a different account — with the previous one's gate.
+      setAccountIncomplete(false);
       lastSeenRef.current = null;
       bootstrappedForRef.current = null;
       return;
@@ -215,5 +232,5 @@ export const useCoreSync = ({
     await run();
   }, [run]);
 
-  return { status, lastSyncedAt, syncNow };
+  return { status, lastSyncedAt, syncNow, accountIncomplete };
 };

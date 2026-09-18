@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Icon from '../components/Icon';
 import { useTranslation } from '../contexts/LanguageContext';
-import { AlertTriangle, Check, Copy, Fingerprint, KeyRound, Loader2, LogOut, Lock, MonitorSmartphone, RefreshCw, ShieldCheck, Trash2, Unlink } from '../icons';
+import { AlertTriangle, Check, Copy, Fingerprint, KeyRound, Loader2, LogOut, Lock, MonitorSmartphone, RefreshCw, Trash2, Unlink } from '../icons';
 
-import { coreAuth, CoreAuthError, type AccountSummary, type PasskeyInfo, type PrivacyMode, type SessionInfo, type XLink } from '../services/coreAuth';
+import { coreAuth, CoreAuthError, PROVIDER_NAMES, type AccountSummary, type LoginMethods, type OAuthLink, type PasskeyInfo, type PrivacyMode, type SessionInfo } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
 import { passkeysSupported, PasskeyError } from '../utils/passkeys';
 
@@ -16,9 +16,9 @@ import { passkeysSupported, PasskeyError } from '../utils/passkeys';
  * reader — or a debugger — to tell which.
  *
  * Everything here is destructive-or-sensitive, so each action re-proves identity
- * rather than trusting the session alone: unlink and recovery-code rotation want a
- * second-factor code, deletion wants the password and a code. A stolen session should
- * not be enough to change how an account is reached.
+ * rather than trusting the session alone: unlink wants the account's password, and
+ * deletion wants the password too. A stolen session should not be enough to change
+ * how an account is reached.
  */
 
 const on = 'text-[var(--color-m3-on-surface)] ';
@@ -32,7 +32,7 @@ interface CoreAccountSettingsProps {
   onDeleted: () => void;
 }
 
-type Dialog = null | 'password' | 'recovery' | 'unlink' | 'delete' | 'privacy' | 'recoveryKey' | 'passkey';
+type Dialog = null | 'password' | 'unlink' | 'delete' | 'privacy' | 'recoveryKey' | 'passkey';
 
 /** What each mode actually does, in the words the spec asked for. */
 function privacyCopy(t: (k: string) => string, mode: PrivacyMode) {
@@ -55,22 +55,23 @@ function formatDate(value: string | null | undefined): string | null {
 }
 
 /**
- * What an X row says under the handle.
+ * What a linked-provider row says under the name.
  *
  * The linked date is normally known, but the string is chosen rather than assembled:
- * `x_linked_used` carries two placeholders and the template has to be picked before
+ * `linked_used` carries two placeholders and the template has to be picked before
  * either is filled, which is what makes a missing one fall back cleanly instead of
  * leaving a stray `{last}` on screen.
  */
-function xLinkSubtitle(
+function linkSubtitle(
   t: (key: string) => string,
-  link: { linkedAt: string | null; lastLoginAt: string | null },
+  link: { linkedAt: string | null; lastLoginAt: string | null } | undefined,
+  fallback: string,
 ): string {
-  const linked = formatDate(link.linkedAt);
-  const last = formatDate(link.lastLoginAt);
-  if (!linked) return t('core.acct.x_section');
-  if (!last) return t('core.acct.x_linked').replace('{date}', linked);
-  return t('core.acct.x_linked_used').replace('{date}', linked).replace('{last}', last);
+  const linked = formatDate(link?.linkedAt);
+  const last = formatDate(link?.lastLoginAt);
+  if (!linked) return fallback;
+  if (!last) return t('core.acct.linked').replace('{date}', linked);
+  return t('core.acct.linked_used').replace('{date}', linked).replace('{last}', last);
 }
 
 /** "Windows · Edge" from a user agent, or the caller's fallback when it says nothing. */
@@ -92,7 +93,10 @@ function describeDevice(userAgent: string | null, fallback: string): string {
 
 const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBack, onDeleted }) => {
   const [summary, setSummary] = useState<AccountSummary | null>(null);
-  const [links, setLinks] = useState<XLink[]>([]);
+  const [links, setLinks] = useState<OAuthLink[]>([]);
+  /** `providers` here are the *linked* ones; whether Google is offered is `/health`. */
+  const [methods, setMethods] = useState<LoginMethods | null>(null);
+  const [googleAvailable, setGoogleAvailable] = useState(false);
   const [passkeys, setPasskeys] = useState<PasskeyInfo[]>([]);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   // Nothing paints until the first load lands — see the skeleton below.
@@ -104,6 +108,8 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
   const passkeysUsable = passkeysSupported();
   const atPasskeyLimit = passkeyMax !== null && passkeys.length >= passkeyMax;
   const [dialog, setDialog] = useState<Dialog>(null);
+  /** Which provider the unlink dialog is about, set by the row that opened it. */
+  const [unlinkTarget, setUnlinkTarget] = useState<'x' | 'google' | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -118,15 +124,19 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
       return;
     }
     try {
-      const [s, l, p, d] = await Promise.all([
+      const [s, l, m, offered, p, d] = await Promise.all([
         coreAuth.summary(token),
         coreAuth.listXLinks(token),
+        coreAuth.loginMethods(token).catch(() => null),
+        coreAuth.loginProviders(),
         coreAuth.listPasskeys(token).catch(() => ({ passkeys: [] as PasskeyInfo[], max: null })),
         // A server that has not learned the sessions route yet must not break the page.
         coreAuth.listSessions(token).catch(() => [] as SessionInfo[]),
       ]);
       setSummary(s);
       setLinks(l);
+      setMethods(m);
+      setGoogleAvailable(offered.google);
       setPasskeys(p.passkeys);
       setPasskeyMax(p.max);
       setSessions(d);
@@ -163,9 +173,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
     if (error instanceof CoreAuthError) {
       switch (error.kind) {
         case 'invalid_credentials':
-          return 'Incorrect password or code.';
-        case 'two_factor_required':
-          return 'Enter a code from your authenticator.';
+          return 'Incorrect password.';
         case 'locked':
           return 'Too many failed attempts. Wait a few minutes.';
         case 'not_configured':
@@ -197,17 +205,29 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
     }
   }
 
-  async function handleLinkX() {
+  /** Send the browser to a provider's authorization page, to attach it to this account. */
+  async function handleLink(provider: 'x' | 'google') {
     setBusy(true);
     setError(null);
     try {
-      const { authorizeUrl } = await coreAuth.startX('link', token ?? undefined);
+      const { authorizeUrl } = await coreAuth.startOAuth(provider, 'link', token ?? undefined);
       window.location.href = authorizeUrl;
     } catch (err) {
       setError(describe(err));
       setBusy(false);
     }
   }
+
+  /**
+   * Whether a provider may be detached.
+   *
+   * Never when it is the last way in: the server refuses that, and a row whose only
+   * outcome is an error should not be offered. Named per provider rather than read from
+   * `recoveryRisk`, because an account with two providers linked and no password is at
+   * risk of losing the *account* yet can still safely drop one of them.
+   */
+  const canDetach = (provider: 'x' | 'google') =>
+    methods === null || methods.hasPassword || methods.providers.some((p) => p !== provider);
 
   // Nothing paints until the first load lands: the page used to render only the parts
   // that need no data and then grow as the summary, the X link and the passkeys arrived,
@@ -250,15 +270,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
             <div className={`mt-2 rounded-[var(--radius-md)] border ${divider.replace('border-b ', '')} border-[var(--color-m3-outline-variant)]  px-4`}>
               <Stat label={t('core.acct.doses')} value={summary.doseCount} />
               <Stat label={t('core.acct.labs')} value={summary.labCount} />
-              <Stat label={t('core.acct.codes_left')} value={summary.recoveryCodesRemaining} warn={summary.recoveryCodesRemaining <= 2} />
             </div>
-            {summary.recoveryCodesRemaining <= 2 && (
-              <p className={`text-xs mt-2 ${muted}`}>
-                {/* Surfaced early because the alternative is finding out when they run
-                    out, which is the moment someone has already lost their phone. */}
-                {t('core.acct.codes_low')}
-              </p>
-            )}
           </section>
         )}
 
@@ -268,28 +280,10 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
 
           <div className="mt-2 flex flex-col">
             <Row
-              icon={<Icon icon={ShieldCheck} size={17} />}
-              title={t('core.acct.pw_and_totp')}
-              subtitle={t('core.acct.pw_and_totp_sub')}
-              right={<span className={`text-xs ${muted}`}>{t('core.acct.active')}</span>}
-            />
-
-            <Row
               icon={<Icon icon={RefreshCw} size={17} />}
               title={t('core.acct.change_pw')}
               subtitle={t('core.acct.change_pw_sub')}
               onClick={() => setDialog('password')}
-            />
-
-            <Row
-              icon={<Icon icon={Copy} size={17} />}
-              title={t('core.acct.regen')}
-              subtitle={
-                summary
-                  ? t('core.acct.regen_sub').replace('{n}', String(summary.recoveryCodesRemaining))
-                  : t('core.acct.regen_sub_none')
-              }
-              onClick={() => setDialog('recovery')}
             />
           </div>
         </section>
@@ -303,9 +297,9 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
               {links.length === 0 ? (
                 <Row
                   icon={<span className="text-[15px] font-semibold">𝕏</span>}
-                  title={t('core.acct.x_connect')}
-                  subtitle={t('core.acct.x_connect_sub')}
-                  onClick={handleLinkX}
+                  title={t('core.acct.connect').replace('{provider}', 'X')}
+                  subtitle={t('core.acct.connect_sub').replace('{provider}', 'X')}
+                  onClick={() => handleLink('x')}
                   disabled={busy}
                 />
               ) : (
@@ -327,16 +321,51 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
                       <span className="text-[15px] font-semibold">𝕏</span>
                     )}
                     title={l.handle ? `@${l.handle}` : t('core.acct.x_section')}
-                    subtitle={xLinkSubtitle(t, l)}
-                    right={<Icon icon={Unlink} size={15} className={muted} />}
-                    onClick={() => setDialog('unlink')}
+                    subtitle={linkSubtitle(t, l, t('core.acct.x_section'))}
+                    right={canDetach('x') ? <Icon icon={Unlink} size={15} className={muted} /> : undefined}
+                    onClick={canDetach('x') ? () => { setUnlinkTarget('x'); setDialog('unlink'); } : undefined}
                   />
                 ))
               )}
             </div>
 
             <p className={`text-xs mt-2 ${muted}`}>
-              {t('core.acct.x_unlink_note')}
+              {canDetach('x') ? t('core.acct.unlink_note') : t('core.bind.banner')}
+            </p>
+          </section>
+        )}
+
+        {/* ── Google ───────────────────────────────────────────────────────── */}
+        {/* Same row, same rules. No handle and no avatar by design: the app asks Google
+            for the `openid` scope only, so there is nothing to show but the name.
+            A link still shows when the deployment has stopped offering Google, or the
+            account would have no way to detach it. */}
+        {(googleAvailable || methods?.providers.includes('google')) && (
+          <section className="mb-6">
+            <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{t('core.acct.google_section')}</span>
+
+            <div className="mt-2 flex flex-col">
+              {methods?.providers.includes('google') ? (
+                <Row
+                  icon={<span className="text-[15px] font-semibold">G</span>}
+                  title={t('core.acct.google_section')}
+                  subtitle={linkSubtitle(t, methods.links.find((l) => l.provider === 'google'), t('core.acct.google_section'))}
+                  right={canDetach('google') ? <Icon icon={Unlink} size={15} className={muted} /> : undefined}
+                  onClick={canDetach('google') ? () => { setUnlinkTarget('google'); setDialog('unlink'); } : undefined}
+                />
+              ) : (
+                <Row
+                  icon={<span className="text-[15px] font-semibold">G</span>}
+                  title={t('core.acct.connect').replace('{provider}', 'Google')}
+                  subtitle={t('core.acct.connect_sub').replace('{provider}', 'Google')}
+                  onClick={() => handleLink('google')}
+                  disabled={busy}
+                />
+              )}
+            </div>
+
+            <p className={`text-xs mt-2 ${muted}`}>
+              {canDetach('google') ? t('core.acct.unlink_note') : t('core.bind.banner')}
             </p>
           </section>
         )}
@@ -515,29 +544,10 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
           onClose={() => { setDialog(null); setError(null); }}
           onSubmit={async (current, next) => {
             await run(async () => {
-              const res = await coreAuth.changePassword(token!, current, next);
-              if (res.recoveryCodes) {
-                setNotice(t('core.acct.notice_pw_set'));
-              } else {
-                setNotice(t('core.acct.notice_pw_changed'));
-              }
+              await coreAuth.changePassword(token!, current, next);
+              setNotice(t('core.acct.notice_pw_changed'));
             });
             setDialog(null);
-          }}
-          describeError={describe}
-        />
-      )}
-
-      {dialog === 'recovery' && (
-        <RecoveryDialog
-          busy={busy}
-          onClose={() => { setDialog(null); setError(null); }}
-          onSubmit={async (code) => {
-            let codes: string[] = [];
-            await run(async () => {
-              codes = await coreAuth.regenerateRecoveryCodes(token!, code);
-            });
-            return codes;
           }}
           describeError={describe}
         />
@@ -593,13 +603,15 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
         />
       )}
 
-      {dialog === 'unlink' && (        <UnlinkDialog
+      {dialog === 'unlink' && unlinkTarget && (
+        <UnlinkDialog
           busy={busy}
-          handle={links[0]?.handle ?? null}
+          provider={unlinkTarget}
+          handle={unlinkTarget === 'x' ? links[0]?.handle ?? null : null}
           onClose={() => { setDialog(null); setError(null); }}
-          onSubmit={async (code) => {
+          onSubmit={async () => {
             await run(async () => {
-              await coreAuth.unlinkX(token!, code);
+              await coreAuth.unlinkOAuth(token!, unlinkTarget);
             }, t('core.acct.notice_unlinked'));
             setDialog(null);
           }}
@@ -612,11 +624,9 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
           busy={busy}
           summary={summary}
           onClose={() => { setDialog(null); setError(null); }}
-          onSubmit={async (password, code, useBackup, backupCode) => {
+          onSubmit={async (password) => {
             await run(async () => {
-              await coreAuth.deleteAccount(token!, password, {
-                ...(useBackup ? { backupCode } : { code }),
-              });
+              await coreAuth.deleteAccount(token!, password);
             });
             // The session is gone server-side; clear it locally and leave.
             await session.signOut().catch(() => undefined);
@@ -647,10 +657,10 @@ const AccountSkeleton: React.FC = () => (
   </div>
 );
 
-const Stat: React.FC<{ label: string; value: number; warn?: boolean }> = ({ label, value, warn }) => (
+const Stat: React.FC<{ label: string; value: number }> = ({ label, value }) => (
   <div className={`flex items-center justify-between py-3 ${divider} last:border-b-0`}>
     <span className={`text-sm ${muted}`}>{label}</span>
-    <span className={`text-sm font-medium tabular-nums ${warn ? 'text-[#B3261E]' : on}`}>{value}</span>
+    <span className={`text-sm font-medium tabular-nums ${on}`}>{value}</span>
   </div>
 );
 
@@ -713,9 +723,8 @@ const Field: React.FC<{
   onChange: (v: string) => void;
   placeholder?: string;
   autoFocus?: boolean;
-  mono?: boolean;
   hint?: string;
-}> = ({ label, type = 'text', value, onChange, placeholder, autoFocus, mono, hint }) => (
+}> = ({ label, type = 'text', value, onChange, placeholder, autoFocus, hint }) => (
   <div className="space-y-1.5">
     <label className="text-sm">{label}</label>
     <input
@@ -725,7 +734,7 @@ const Field: React.FC<{
       placeholder={placeholder}
       autoFocus={autoFocus}
       autoComplete={type === 'password' ? 'off' : 'one-time-code'}
-      className={`input-base ${mono ? 'font-mono text-center tracking-[0.3em]' : ''}`}
+      className="input-base"
     />
     {hint && (
       <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">
@@ -809,8 +818,7 @@ const PasswordDialog: React.FC<{
  * Given as a consequence-first screen rather than a toggle: both directions change
  * what the server can do with an account, and the advanced direction in particular can
  * make data unrecoverable. The credential asked for is the *current password*, because
- * this changes how the data key is protected — not a TOTP code, which is about
- * identity.
+ * this changes how the data key is protected.
  */
 const PrivacyDialog: React.FC<{
   busy: boolean;
@@ -1027,87 +1035,32 @@ const PasskeyDialog: React.FC<{
   );
 };
 
-const RecoveryDialog: React.FC<{  busy: boolean;
-  onClose: () => void;
-  onSubmit: (code: string) => Promise<string[]>;
-  describeError: (e: unknown) => string;
-}> = ({ busy, onClose, onSubmit, describeError }) => {
-  const { t } = useTranslation();
-  const [code, setCode] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [codes, setCodes] = useState<string[] | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  if (codes) {
-    return (
-      <Dialog title={t('core.regen.done_title')} onClose={onClose}>
-        <div className="callout !text-[0.75rem] mt-1 mb-3">
-          <strong>{t('core.regen.done_note').split('.')[0]}.</strong>{t('core.regen.done_note').split('.').slice(1).join('.')}
-        </div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-[0.8125rem] px-3 py-3 rounded-[var(--radius-sm)] border border-[var(--color-m3-outline-variant)]  bg-[var(--color-m3-surface-container-low)] ">
-          {codes.map((c) => <span key={c}>{c}</span>)}
-        </div>
-        <button
-          type="button"
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(codes.join('\n'));
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            } catch { /* clipboard unavailable; the codes are on screen */ }
-          }}
-          className="btn-secondary w-full mt-3 !text-xs"
-        >
-          {copied ? <Icon icon={Check} size={14} /> : <Icon icon={Copy} size={14} />}
-          {copied ? t('core.copied') : t('core.regen.copy_all')}
-        </button>
-      </Dialog>
-    );
-  }
-
-  return (
-    <Dialog title={t('core.acct.regen')} onClose={onClose}>
-      <p className="text-xs text-[var(--color-m3-on-surface-variant)]  mb-3">
-        {t('core.regen.intro')}
-      </p>
-      <form
-        className="space-y-3"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setError(null);
-          try {
-            setCodes(await onSubmit(code));
-          } catch (err) {
-            setError(describeError(err));
-            setCode('');
-          }
-        }}
-      >
-        <Field label={t('core.regen.code')} value={code} onChange={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))} placeholder="000000" mono autoFocus />
-        {error && <p className="text-xs text-[#B3261E]" role="alert">{error}</p>}
-        <Submit busy={busy} disabled={code.length !== 6}>{t('core.regen.submit')}</Submit>
-      </form>
-    </Dialog>
-  );
-};
-
+/**
+ * Unlink a provider.
+ *
+ * No credential is asked for: unlinking only removes a way *in*, so it cannot lock
+ * anyone out, and the session already proves who is asking. The server still refuses
+ * the last way in — which is why the row that opens this is not offered when there is
+ * no password to fall back on.
+ */
 const UnlinkDialog: React.FC<{
   busy: boolean;
+  provider: 'x' | 'google';
   handle: string | null;
   onClose: () => void;
-  onSubmit: (code: string) => Promise<void>;
+  onSubmit: () => Promise<void>;
   describeError: (e: unknown) => string;
-}> = ({ busy, handle, onClose, onSubmit, describeError }) => {
+}> = ({ busy, provider, handle, onClose, onSubmit, describeError }) => {
   const { t } = useTranslation();
-  const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const name = PROVIDER_NAMES[provider];
 
   return (
-    <Dialog title={t('core.unlink.title')} onClose={onClose}>
+    <Dialog title={t('core.unlink.title').replace('{provider}', name)} onClose={onClose}>
       <p className="text-xs text-[var(--color-m3-on-surface-variant)]  mb-3">
         {handle
           ? t('core.unlink.body').replace('{handle}', `@${handle}`)
-          : t('core.unlink.body_generic')}
+          : t('core.unlink.body_generic').replace('{provider}', name)}
       </p>
       <form
         className="space-y-3"
@@ -1115,24 +1068,14 @@ const UnlinkDialog: React.FC<{
           e.preventDefault();
           setError(null);
           try {
-            await onSubmit(code);
+            await onSubmit();
           } catch (err) {
             setError(describeError(err));
-            setCode('');
           }
         }}
       >
-        <Field
-          label={t('core.unlink.code')}
-          value={code}
-          onChange={(v) => setCode(v.toUpperCase().trim())}
-          placeholder="000000 or XXXXX-XXXXX"
-          mono
-          autoFocus
-          hint={t('core.unlink.code_hint')}
-        />
         {error && <p className="text-xs text-[#B3261E]" role="alert">{error}</p>}
-        <Submit busy={busy} disabled={code.length < 6}>{t('core.unlink.submit')}</Submit>
+        <Submit busy={busy}>{t('core.unlink.submit')}</Submit>
       </form>
     </Dialog>
   );
@@ -1142,21 +1085,17 @@ const DeleteDialog: React.FC<{
   busy: boolean;
   summary: AccountSummary | null;
   onClose: () => void;
-  onSubmit: (password: string, code: string, useBackup: boolean, backupCode: string) => Promise<void>;
+  onSubmit: (password: string) => Promise<void>;
   describeError: (e: unknown) => string;
 }> = ({ busy, summary, onClose, onSubmit, describeError }) => {
   const { t } = useTranslation();
   const [password, setPassword] = useState('');
-  const [code, setCode] = useState('');
-  const [backupCode, setBackupCode] = useState('');
-  const [useBackup, setUseBackup] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   // Typing the word is deliberate friction on an irreversible action. It also makes
   // an accidental Enter-through impossible.
-  const ready = confirmText.trim().toUpperCase() === 'DELETE' && !!password
-    && (useBackup ? backupCode.trim().length >= 10 : code.length === 6);
+  const ready = confirmText.trim().toUpperCase() === 'DELETE' && !!password;
 
   return (
     <Dialog title={t('core.del.title')} onClose={onClose} danger>
@@ -1175,40 +1114,13 @@ const DeleteDialog: React.FC<{
           if (!ready) return;
           setError(null);
           try {
-            await onSubmit(password, code, useBackup, backupCode);
+            await onSubmit(password);
           } catch (err) {
             setError(describeError(err));
-            setCode('');
           }
         }}
       >
         <Field label={t('core.del.password')} type="password" value={password} onChange={setPassword} autoFocus />
-
-        {useBackup ? (
-          <Field
-            label={t('core.del.backup')}
-            value={backupCode}
-            onChange={(v) => setBackupCode(v.toUpperCase())}
-            placeholder="XXXXX-XXXXX"
-            mono
-          />
-        ) : (
-          <Field
-            label={t('core.del.totp')}
-            value={code}
-            onChange={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))}
-            placeholder="000000"
-            mono
-          />
-        )}
-
-        <button
-          type="button"
-          onClick={() => { setUseBackup(v => !v); setError(null); }}
-          className="text-xs text-[var(--color-m3-primary)]  hover:underline"
-        >
-          {useBackup ? t('core.del.use_totp') : t('core.del.use_backup')}
-        </button>
 
         <Field
           label={t('core.del.confirm_label')}

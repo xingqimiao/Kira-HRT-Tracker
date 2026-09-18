@@ -63,6 +63,15 @@ export class CoreSyncError extends Error {
     message: string,
     readonly status: number,
     readonly locked = false,
+    /**
+     * The session is fine; the account has no fallback credential yet.
+     *
+     * Carried separately from `locked` because the two call for opposite things: a
+     * locked account needs a password typed, an incomplete one needs a name and
+     * password *bound* — and the session it is bound with is the one being refused,
+     * so signing out would destroy the only means of fixing it.
+     */
+    readonly accountIncomplete = false,
   ) {
     super(message);
     this.name = 'CoreSyncError';
@@ -90,9 +99,18 @@ function authHeaders(token: string): Record<string, string> {
  * A 401 here means the account is locked, not that the token is bad — the token is
  * durable, the *key* is what expires. Reporting it as "locked" is what lets the UI
  * prompt for a password instead of signing the user out.
+ *
+ * A 403 carrying `account_incomplete` is the other distinct refusal: the session is
+ * valid and the key is in hand, but this account was created through X or Google and
+ * has never bound an account name and password. The record store refuses every path
+ * until it has, so it gets its own flag rather than arriving as a generic failure
+ * that reads like a broken sync.
  */
 function describe(status: number, what: string, detail?: string): CoreSyncError {
   if (status === 401) return new CoreSyncError('the account is locked; unlock it to sync', 401, true);
+  if (status === 403 && detail === 'account_incomplete') {
+    return new CoreSyncError('this account has no fallback credential yet', 403, false, true);
+  }
   return new CoreSyncError(detail ?? `${what} failed (${status})`, status);
 }
 
@@ -182,7 +200,10 @@ async function migrateLegacyIfNeeded(token: string): Promise<void> {
       headers: authHeaders(token),
     });
     if (!probe.ok) {
-      migrationChecked.add(token);
+      // Only an answer settles the question. A refusal — an unbound account's 403, or
+      // the 401 a locked one gets — is a state the user leaves without reloading, and
+      // caching it would skip the migration for the rest of the tab's life.
+      if (probe.status !== 401 && probe.status !== 403) migrationChecked.add(token);
       return;
     }
     const status = (await probe.json()) as { needed?: boolean; legacy_count?: number };
@@ -328,7 +349,11 @@ export async function syncWithCore(
     });
     if (!res.ok) {
       if (res.status === 401) throw describe(401, 'sync');
-      rejected.push({ reason: (await errorDetail(res)) ?? `status ${res.status}`, id: doc.id });
+      const detail = await errorDetail(res);
+      // An incomplete account is refused on every record, so reporting it per-record
+      // would bury the one thing the user has to act on under a list of rejections.
+      if (res.status === 403 && detail === 'account_incomplete') throw describe(403, 'sync', detail);
+      rejected.push({ reason: detail ?? `status ${res.status}`, id: doc.id });
     }
   }
 

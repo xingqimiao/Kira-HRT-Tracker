@@ -12,7 +12,7 @@ import { useLiveShareSync } from './hooks/useLiveShareSync';
 import { useCloudSync } from './hooks/useCloudSync';
 import { useCoreSync } from './hooks/useCoreSync';
 import { onAppSettingsApplied } from './utils/appSettings';
-import { setXLandingIntent, takeXLandingIntent } from './utils/xLandingIntent';
+import { setAuthLandingIntent, takeAuthLandingIntent } from './utils/authLandingIntent';
 
 import WeightEditorModal from './components/WeightEditorModal';
 import DoseFormModal from './components/DoseFormModal';
@@ -35,7 +35,8 @@ import Settings from './pages/Settings';
 import Account from './pages/Account';
 import Admin from './pages/Admin';
 import CoreAccountSettings from './pages/CoreAccountSettings';
-import XAuthLanding from './pages/XAuthLanding';
+import BindCredentials from './pages/BindCredentials';
+import OAuthLanding from './pages/OAuthLanding';
 import PKParamsPage from './pages/PKParams';
 import HRTModeSettings from './pages/HRTModeSettings';
 import LanguageSettings from './pages/LanguageSettings';
@@ -68,20 +69,25 @@ const AppContent = () => {
     const coreSession = useCoreSession();
 
     /**
-     * What the X landing asked for, read once during this first render.
+     * What a provider landing asked for, read once during this first render.
      *
      * State rather than an effect, and read *before* the hooks that consume it, for two
      * reasons: an effect applies the navigation after the first paint, so the user would
      * see Home flash and then Account, and it made correctness depend on declaration
      * order — the effect sat above `setPrefillUsername` and `handleViewChange`.
      *
-     * `takeXLandingIntent` clears the key as it reads it, so a later manual reload does
+     * `takeAuthLandingIntent` clears the key as it reads it, so a later manual reload does
      * not drag the user back to the Account tab.
      */
-    const [xIntent] = useState(() => takeXLandingIntent());
+    const [landingIntent] = useState(() => takeAuthLandingIntent());
 
     const [isCoreAuthOpen, setIsCoreAuthOpen] = useState(false);
-    const [prefillUsername, setPrefillUsername] = useState(xIntent?.username ?? '');
+    const [prefillUsername, setPrefillUsername] = useState(landingIntent?.username ?? '');
+    /**
+     * Set when the account page offers the binding screen before the server has refused
+     * anything. The mandatory case needs no flag: it comes from the record store itself.
+     */
+    const [bindRequested, setBindRequested] = useState(false);
 
     // Use Custom Hooks
     const {
@@ -126,7 +132,7 @@ const AppContent = () => {
         handleViewChange,
         mainScrollRef,
         navItems,
-    } = useAppNavigation(user, xIntent?.view);
+    } = useAppNavigation(user, landingIntent?.view);
 
 
     // --- Local UI State (Modals & Forms) ---
@@ -386,13 +392,35 @@ const AppContent = () => {
 
     // Takes over the whole screen rather than sitting in the view stack: the
     // intro is where language and HRT mode get chosen, and leaving the nav up
-    // would let someone tab away with both still on their defaults. Yields to a
-    // forced 2FA setup, which is the one thing that can't wait behind a tour.
+    // would let someone tab away with both still on their defaults.
     if (showOnboarding) {
         return (
             <Onboarding
                 languageOptions={languageOptions}
                 onDone={() => { markOnboardingSeen(); setShowOnboarding(false); }}
+            />
+        );
+    }
+
+    /**
+     * The mandatory fallback-credential gate.
+     *
+     * The record store refuses an account that has no password bound — an account
+     * created through X or Google — so every screen behind this one would be empty and
+     * every write refused. It takes the shell's place rather than sitting inside it for
+     * that reason: there is nothing to navigate to yet, and the session is deliberately
+     * left intact, because it is what binds the credential.
+     */
+    if (coreSession.isSignedIn && (coreSyncState.accountIncomplete || bindRequested)) {
+        return (
+            <BindCredentials
+                session={coreSession}
+                onDone={async () => {
+                    setBindRequested(false);
+                    // Only a sync that gets through clears the server's refusal, so this
+                    // is what decides whether the gate comes down.
+                    await coreSyncState.syncNow();
+                }}
             />
         );
     }
@@ -617,6 +645,9 @@ const AppContent = () => {
                             /* Carried through from the X landing, which knows the
                                username X just confirmed. */
                             initialUsername={prefillUsername}
+                            /* Offered by the account page while `recovery_risk` says the
+                               account has one way in and it is a provider. */
+                            onBindCredentials={() => setBindRequested(true)}
                         />
                     )}
 
@@ -671,7 +702,6 @@ const AppContent = () => {
                                 'pk-params': 'settings',
                                 'account': 'account',
                                 'sessions': 'account',
-                                'two-factor': 'account',
                                 // Mobile reaches admin from Settings → General, so the
                                 // settings tab is the one that should read as active.
                                 'admin': 'settings',
@@ -750,8 +780,7 @@ const AppContent = () => {
             />
 
             {/* The Core sign-in. Rendered alongside the legacy modal during the
-                migration: the Core is what actually protects records, and this is the
-                flow with the mandatory second factor. */}
+                migration: the Core is what actually protects records. */}
             <CoreAuthModal
                 isOpen={isCoreAuthOpen}
                 onClose={() => { setIsCoreAuthOpen(false); setPrefillUsername(''); }}
@@ -764,14 +793,21 @@ const AppContent = () => {
 };
 
 /**
- * Where the browser lands after an X authorization.
+ * Where the browser lands after a provider authorization.
  *
  * Path-based rather than a view key, because the server redirects to a real URL and
- * the app must recognise it on a cold load — the user arrives from X with no app state
- * at all. Same approach as `/share`, which has the same constraint.
+ * the app must recognise it on a cold load — the user arrives from the provider with no
+ * app state at all. Same approach as `/share`, which has the same constraint.
+ *
+ * The legacy `/auth/x/setup` path is still matched: the callback no longer sends anyone
+ * there, but a browser holding an older redirect should land on the same screen rather
+ * than on the app shell with a spent code in the address bar.
  */
-const isXAuthRoute = (): boolean =>
-    /^\/auth\/x\/(callback|setup)\/?$/.test(window.location.pathname);
+const getAuthCallbackProvider = (): 'x' | 'google' | null => {
+    if (/^\/auth\/x\/(callback|setup)\/?$/.test(window.location.pathname)) return 'x';
+    if (/^\/auth\/google\/callback\/?$/.test(window.location.pathname)) return 'google';
+    return null;
+};
 
 const getShareRoute = (): { isShareRoute: boolean; token: string | null } => {
     if (!/^\/share\/?$/.test(window.location.pathname)) {
@@ -788,11 +824,11 @@ const getShareRoute = (): { isShareRoute: boolean; token: string | null } => {
 
 const App = () => {
     const [shareRoute, setShareRoute] = useState(getShareRoute);
-    const [xAuthRoute, setXAuthRoute] = useState(isXAuthRoute);
+    const [authCallbackProvider, setAuthCallbackProvider] = useState(getAuthCallbackProvider);
     useEffect(() => {
         const updateRoute = () => {
             setShareRoute(getShareRoute());
-            setXAuthRoute(isXAuthRoute());
+            setAuthCallbackProvider(getAuthCallbackProvider());
         };
         window.addEventListener('hashchange', updateRoute);
         window.addEventListener('popstate', updateRoute);
@@ -803,11 +839,11 @@ const App = () => {
     }, []);
 
     /**
-     * The X landing is reached from an external redirect, so it must be handled
+     * The provider landing is reached from an external redirect, so it must be handled
      * before anything that expects app state — including the onboarding gate, which
-     * would otherwise intercept a brand-new X user and hide the setup they need.
+     * would otherwise intercept a brand-new social user and hide the setup they need.
      */
-    if (xAuthRoute) {
+    if (authCallbackProvider) {
         return (
             <LanguageProvider>
                 <HRTModeProvider>
@@ -815,19 +851,19 @@ const App = () => {
                         <AuthProvider>
                             <CoreSessionProvider>
                             <ErrorBoundary>
-                                <XAuthLanding navigate={(view, options) => {
+                                <OAuthLanding provider={authCallbackProvider} navigate={(view, options) => {
                                     // The destination is persisted, not used here: this
                                     // route renders *instead of* the app shell, so it
                                     // cannot switch views in place, and the reload below
                                     // is what brings the shell back. Without persisting it,
                                     // every button landed on Home — including the one
                                     // that continues a sign-in.
-                                    setXLandingIntent({ view, username: options?.username });
+                                    setAuthLandingIntent({ view, username: options?.username });
                                     // Replace, not push: the callback URL carries a
                                     // spent one-time code, and Back must not return to
                                     // a link that cannot work twice.
                                     window.history.replaceState(null, '', '/');
-                                    setXAuthRoute(false);
+                                    setAuthCallbackProvider(null);
                                     window.location.reload();
                                 }} />
                             </ErrorBoundary>

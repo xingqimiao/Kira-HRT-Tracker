@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Icon from '../components/Icon';
-import { Trash2, Loader2, AlertCircle, Server, Search, KeyRound, PenLine, ImageOff, X, ChevronLeft, ChevronRight, Cloud, Trash, Users, ArrowLeft, ShieldCheck, ShieldOff, Megaphone } from '../icons';
+import { Trash2, Loader2, AlertCircle, Server, Search, KeyRound, PenLine, ImageOff, X, ChevronLeft, ChevronRight, Cloud, Trash, Users, ArrowLeft, Megaphone } from '../icons';
 import { useAuth } from '../contexts/AuthContext';
-import { adminService, AdminUser, AdminUser2FA, BackupMeta, TwoFactorScope } from '../services/admin';
+import { adminService, AdminUser, BackupMeta } from '../services/admin';
 import { useDialog } from '../contexts/DialogContext';
 import { settingsMuted, settingsOn } from '../components/SettingsListItem';
 import type { IconComponent } from '../icons';
@@ -11,7 +11,7 @@ import { Lang } from '../i18n/translations';
 
 type AdminCat = 'users' | 'notice' | 'system';
 type MobileView = 'list' | AdminCat;
-type UserPanel = null | { type: 'password'; user: AdminUser } | { type: 'edit'; user: AdminUser } | { type: 'backups'; user: AdminUser } | { type: '2fa'; user: AdminUser };
+type UserPanel = null | { type: 'password'; user: AdminUser } | { type: 'edit'; user: AdminUser } | { type: 'backups'; user: AdminUser };
 
 const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
 const rowBase = `w-full flex items-center justify-between py-[18px] ${divider} text-start`;
@@ -60,8 +60,6 @@ const Admin: React.FC = () => {
     const [newUsername, setNewUsername] = useState('');
     const [backups, setBackups] = useState<BackupMeta[]>([]);
     const [backupsLoading, setBackupsLoading] = useState(false);
-    const [twoFA, setTwoFA] = useState<AdminUser2FA | null>(null);
-    const [twoFALoading, setTwoFALoading] = useState(false);
 
     // --- Site notice ---
     // `noticeLang` is which text the textarea is editing: the default body, or
@@ -78,7 +76,7 @@ const Admin: React.FC = () => {
     const [noticeLang, setNoticeLang] = useState<'default' | Lang>('default');
 
     const cats: { id: AdminCat; label: string; icon: IconComponent; hint: string }[] = [
-        { id: 'users', label: 'Users', icon: Users, hint: 'Accounts · Passwords · 2FA · Cloud backups' },
+        { id: 'users', label: 'Users', icon: Users, hint: 'Accounts · Passwords · Cloud backups' },
         { id: 'notice', label: 'Notice', icon: Megaphone, hint: 'Site-wide banner · Per-language text · Schedule' },
         { id: 'system', label: 'System', icon: Server, hint: 'Status · Environment' },
     ];
@@ -179,41 +177,6 @@ const Admin: React.FC = () => {
         });
     };
 
-    const openTwoFAPanel = async (user: AdminUser) => {
-        if (!token) return;
-        setTwoFA(null);
-        setPanel({ type: '2fa', user });
-        setTwoFALoading(true);
-        try {
-            setTwoFA(await adminService.getUser2FA(token, user.id));
-        } catch { setTwoFA(null); }
-        finally { setTwoFALoading(false); }
-    };
-
-    const clearTwoFA = (user: AdminUser, scope: TwoFactorScope, confirmText: string) => {
-        if (!token) return;
-        showDialog('confirm', confirmText, async () => {
-            try {
-                const cleared = await adminService.clearUser2FA(token, user.id, scope);
-                setTwoFA(await adminService.getUser2FA(token, user.id));
-                setUsers(prev => prev.map(u => u.id === user.id ? {
-                    ...u,
-                    has_totp: cleared.totp ? 0 : u.has_totp,
-                } : u));
-                const parts = [
-                    cleared.totp && 'authenticator app',
-                    cleared.backupCodes > 0 && `${cleared.backupCodes} backup code${cleared.backupCodes === 1 ? '' : 's'}`,
-                ].filter(Boolean) as string[];
-                const sessions = cleared.sessions > 0
-                    ? ` ${cleared.sessions} session${cleared.sessions === 1 ? '' : 's'} signed out.`
-                    : '';
-                showDialog('alert', parts.length
-                    ? `Removed ${parts.join(', ')}.${sessions}`
-                    : `Nothing to remove — ${user.username} had no 2FA enrolled.`);
-            } catch (e: any) { showDialog('alert', e.message || 'Failed to reset 2FA.'); }
-        });
-    };
-
     const openBackupsPanel = async (user: AdminUser) => {
         if (!token) return;
         setPanel({ type: 'backups', user });
@@ -256,7 +219,7 @@ const Admin: React.FC = () => {
                         <div className="flex items-start justify-between mb-4">
                             <div>
                                 <h3 className={`text-[0.9375rem] font-semibold ${settingsOn}`}>{panel.user.username}</h3>
-                                <p className={`text-xs ${settingsMuted} mt-0.5`}>{panel.type === 'password' ? 'Change Password' : panel.type === 'edit' ? 'Edit Profile' : panel.type === '2fa' ? 'Two-Factor Authentication' : 'Cloud Backups'}</p>
+                                <p className={`text-xs ${settingsMuted} mt-0.5`}>{panel.type === 'password' ? 'Change Password' : panel.type === 'edit' ? 'Edit Profile' : 'Cloud Backups'}</p>
                             </div>
                             <button onClick={() => setPanel(null)} className={`${iconBtn} -mr-1 -mt-1`} aria-label="Close">
                                 <Icon icon={X} size={16} strokeWidth={1.5} />
@@ -319,57 +282,6 @@ const Admin: React.FC = () => {
                                     </button>
                                 </div>
                             </div>
-                        )}
-
-                        {panel.type === '2fa' && (
-                            twoFALoading ? (
-                                <div className="flex justify-center py-12"><Icon icon={Loader2} className={`animate-spin ${settingsMuted}`} size={20} /></div>
-                            ) : !twoFA ? (
-                                <p className={`text-sm ${settingsMuted} text-center py-8`}>Could not load 2FA status.</p>
-                            ) : (
-                                <div>
-                                    <div className={`flex items-center justify-between gap-3 py-3.5 ${divider}`}>
-                                        <div className="min-w-0">
-                                            <p className={`text-sm ${settingsOn}`}>Authenticator app</p>
-                                            <p className={`text-xs ${settingsMuted} mt-0.5`}>{twoFA.totp ? 'A TOTP secret is enrolled.' : 'Not set up.'}</p>
-                                        </div>
-                                        <button
-                                            onClick={() => clearTwoFA(panel.user, 'totp', `Disable the authenticator app for "${panel.user.username}"? They will sign in with their password alone, and every active session is signed out.`)}
-                                            disabled={!twoFA.totp}
-                                            className={dangerTextBtn}
-                                        >
-                                            Disable
-                                        </button>
-                                    </div>
-
-                                    <div className="flex items-center justify-between gap-3 py-3.5">
-                                        <div className="min-w-0">
-                                            <p className={`text-sm ${settingsOn}`}>Backup codes</p>
-                                            <p className={`text-xs ${settingsMuted} mt-0.5`}>{twoFA.backupCodes === 0 ? 'None left.' : `${twoFA.backupCodes} unused.`}</p>
-                                        </div>
-                                        <button
-                                            onClick={() => clearTwoFA(panel.user, 'backup_codes', `Erase the remaining backup codes for "${panel.user.username}"? Their sessions stay signed in.`)}
-                                            disabled={twoFA.backupCodes === 0}
-                                            className={dangerTextBtn}
-                                        >
-                                            Erase
-                                        </button>
-                                    </div>
-
-                                    <div className="flex items-end justify-between gap-4 pt-4 border-t border-[var(--color-m3-outline-variant)] ">
-                                        <p className="text-xs text-cos-error  leading-relaxed">
-                                            Erasing a factor drops this account back to its password alone. Confirm who is asking before you do it.
-                                        </p>
-                                        <button
-                                            onClick={() => clearTwoFA(panel.user, 'all', `Erase ALL two-factor authentication for "${panel.user.username}"? This removes the authenticator secret and every backup code, and signs out all of their sessions.`)}
-                                            disabled={!twoFA.enabled && twoFA.backupCodes === 0}
-                                            className="btn-secondary text-cos-error  shrink-0 disabled:opacity-40 disabled:pointer-events-none"
-                                        >
-                                            <Icon icon={ShieldOff} size={15} strokeWidth={1.5} /> Erase All
-                                        </button>
-                                    </div>
-                                </div>
-                            )
                         )}
 
                         {panel.type === 'backups' && (
@@ -471,12 +383,6 @@ const Admin: React.FC = () => {
                                                 {u.backup_count} · {formatBytes(u.total_backup_size || 0)} · {timeAgo(u.last_backup_at)}
                                             </span>
                                         )}
-                                        {(u.has_totp ?? 0) > 0 && (
-                                            <span className={`inline-flex items-center gap-1 text-xs ${settingsMuted}`} title="Two-factor authentication enabled">
-                                                <Icon icon={ShieldCheck} size={11} strokeWidth={1.5} />
-                                                TOTP
-                                            </span>
-                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -484,9 +390,6 @@ const Admin: React.FC = () => {
                             <div className="flex items-center gap-0.5 shrink-0">
                                 <button onClick={() => openBackupsPanel(u)} className={iconBtn} title="Cloud Backups">
                                     <Icon icon={Cloud} size={15} strokeWidth={1.5} />
-                                </button>
-                                <button onClick={() => openTwoFAPanel(u)} className={iconBtn} title="Reset 2FA">
-                                    <Icon icon={ShieldOff} size={15} strokeWidth={1.5} />
                                 </button>
                                 <button onClick={() => openPasswordPanel(u)} className={iconBtn} title="Change Password">
                                     <Icon icon={KeyRound} size={15} strokeWidth={1.5} />

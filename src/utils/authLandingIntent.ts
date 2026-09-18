@@ -1,7 +1,7 @@
 import type { ViewKey } from '../hooks/useAppNavigation';
 
 /**
- * A message from the X landing to the app, carried across a page reload.
+ * A message from a provider landing to the app, carried across a page reload.
  *
  * The landing renders *instead of* the app shell — it has to, because the callback URL
  * carries a spent one-time code and the flow must clean it before anything else runs —
@@ -19,16 +19,16 @@ import type { ViewKey } from '../hooks/useAppNavigation';
  * reload, and `sessionStorage` rather than `localStorage` because this is one navigation,
  * not a preference: it should not outlive the tab.
  */
-const KEY = 'hrt:x-landing-intent';
+const KEY = 'hrt:auth-landing-intent';
 
-export interface XLandingIntent {
+export interface AuthLandingIntent {
     /** Where to land after the reload. */
     view: ViewKey;
-    /** A username to pre-fill the sign-in form with, when X identified one. */
+    /** A username to pre-fill the sign-in form with, when the provider identified one. */
     username?: string;
 }
 
-export function setXLandingIntent(intent: XLandingIntent): void {
+export function setAuthLandingIntent(intent: AuthLandingIntent): void {
     try {
         sessionStorage.setItem(KEY, JSON.stringify(intent));
     } catch {
@@ -56,9 +56,9 @@ export function setXLandingIntent(intent: XLandingIntent): void {
  * page load — a manual refresh, a service-worker update — is unaffected and does not drag
  * the user back to the Account tab.
  */
-let cached: XLandingIntent | null | undefined;
+let cached: AuthLandingIntent | null | undefined;
 
-export function takeXLandingIntent(): XLandingIntent | null {
+export function takeAuthLandingIntent(): AuthLandingIntent | null {
     if (cached !== undefined) return cached;
 
     try {
@@ -68,7 +68,7 @@ export function takeXLandingIntent(): XLandingIntent | null {
             return cached;
         }
         sessionStorage.removeItem(KEY);
-        const parsed = JSON.parse(raw) as XLandingIntent;
+        const parsed = JSON.parse(raw) as AuthLandingIntent;
         cached = !parsed || typeof parsed.view !== 'string'
             ? null
             : {
@@ -88,6 +88,6 @@ export function takeXLandingIntent(): XLandingIntent | null {
  * Only for tests, which need to observe a second page load within one module instance.
  * The app never calls it: a real page load gets a fresh module.
  */
-export function resetXLandingIntentCacheForTest(): void {
+export function resetAuthLandingIntentCacheForTest(): void {
     cached = undefined;
 }

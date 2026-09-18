@@ -5,7 +5,7 @@ import CoreAuthForm from '../components/CoreAuthForm';
 import { SettingsListItem, settingsMuted } from '../components/SettingsListItem';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
-import { coreAuth, type AccountSummary } from '../services/coreAuth';
+import { coreAuth, type AccountSummary, type LoginMethods } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
 import type { CoreSyncStatus } from '../hooks/useCoreSync';
 
@@ -36,6 +36,8 @@ interface AccountProps {
      * came up empty.
      */
     initialUsername?: string;
+    /** Opens the fallback-credential screen, offered while this account has no password. */
+    onBindCredentials: () => void;
 }
 
 const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
@@ -49,7 +51,7 @@ const muted = settingsMuted;
  * ── What changed, and why ────────────────────────────────────────────────────
  *
  * This page used to present **two** sign-ins at once. The inline form was the
- * legacy Worker's (cloud backup, its own password, its own second factor) and the
+ * legacy Worker's (cloud backup, its own password, its own session list) and the
  * Core — the backend that actually holds the records — was a pair of rows opening a
  * *modal* underneath it. So the form a visitor saw first belonged to the backend
  * they did not need, and the one that owned their data was hidden behind a link.
@@ -60,7 +62,7 @@ const muted = settingsMuted;
  *
  * Now there is one form, and it is the Core's: the same `CoreAuthForm` the modal
  * renders, so the two cannot drift. The Worker's rows (cloud backup, its password,
- * its second factor, its session list, profile and avatar) are gone from this page
+ * its session list, profile and avatar) are gone from this page
  * with it. They are not deleted — the Worker still exists as the legacy backend —
  * but nothing here pretends it is how you sign in.
  */
@@ -72,19 +74,27 @@ const Account: React.FC<AccountProps> = ({
     lastSyncedAt,
     onSyncNow,
     initialUsername,
+    onBindCredentials,
 }) => {
     const { t } = useTranslation();
     const { showDialog } = useDialog();
     const [summary, setSummary] = useState<AccountSummary | null>(null);
+    const [methods, setMethods] = useState<LoginMethods | null>(null);
 
     const token = session.token;
 
     useEffect(() => {
-        if (!token) { setSummary(null); return; }
+        if (!token) { setSummary(null); setMethods(null); return; }
         let cancelled = false;
-        void coreAuth.summary(token)
-            .then((s) => { if (!cancelled) setSummary(s); })
-            .catch(() => { if (!cancelled) setSummary(null); });
+        void Promise.all([
+            coreAuth.summary(token),
+            // Null on failure rather than a scream: this only decides whether a
+            // suggestion is shown, and a suggestion that cannot be read is not an error
+            // worth putting in front of someone who came here to look at their account.
+            coreAuth.loginMethods(token).catch(() => null),
+        ])
+            .then(([s, m]) => { if (!cancelled) { setSummary(s); setMethods(m); } })
+            .catch(() => { if (!cancelled) { setSummary(null); setMethods(null); } });
         return () => { cancelled = true; };
     }, [token]);
 
@@ -107,6 +117,18 @@ const Account: React.FC<AccountProps> = ({
                 </div>
             ) : session.isSignedIn ? (
                 <div className="mx-auto w-full max-w-2xl">
+                    {/* The one way in is a social provider, so losing it loses the
+                        account. Said here, before the server has to refuse a record,
+                        because afterwards is too late to be useful. */}
+                    {methods?.recoveryRisk && (
+                        <div className="mb-4 rounded-[var(--radius-md)] border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container)] p-4">
+                            <p className="text-sm leading-relaxed">{t('core.bind.banner')}</p>
+                            <button type="button" onClick={onBindCredentials} className="btn-primary mt-3 w-full">
+                                {t('core.bind.action')}
+                            </button>
+                        </div>
+                    )}
+
                     {/* Identity. The linked X avatar when there is one, and the generic
                         glyph when there is not — the same rule the X row uses further
                         down, so this either says "the account you linked" or reads as a

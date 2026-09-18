@@ -75,6 +75,12 @@ localhost 放行 `http`，其他域名一律 `https`。
 home page、privacy、以及 redirect URI 的主机（`api.kiramyao.com`）全都归到同一个
 `kiramyao.com`，所以这里**只有一行**。
 
+**一个已知的小不一致**：`LanguageContext.tsx:61` 会在中文界面把 `document.title`
+改成「Kira 记录」，而 `<title>`、侧栏品牌、manifest 和同意屏幕里写的都是
+「Kira Tracker」。不执行 JavaScript 的校验器看到的是「Kira Tracker」，所以目前
+不影响验证；但如果 Google 因为「品牌名称不一致」打回，这就是要统一的那一处
+（把品牌名保留在标题里，例如「Kira Tracker · 记录」，比改同意屏幕上的名字更安全）。
+
 ### 2.3 域名所有权（最容易漏的一步）
 
 必须用**与 Cloud Console 项目同一个 Google 账号**，在

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import Icon from './Icon';
 import { X, Loader2 } from '../icons';
-import ShieldIcon from './ShieldIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from '../contexts/LanguageContext';
 
@@ -16,10 +15,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     const [password, setPassword] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
-    const [needsTOTP, setNeedsTOTP] = useState(false);
-    const [totpCode, setTotpCode] = useState('');
-    const [useBackupCode, setUseBackupCode] = useState(false);
-    const [backupCode, setBackupCode] = useState('');
 
     const { login, register } = useAuth();
     const { t } = useTranslation();
@@ -32,31 +27,15 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         setLoading(true);
         try {
             if (isLogin) {
-                await login(
-                    username, password,
-                    needsTOTP && !useBackupCode ? totpCode : undefined,
-                    needsTOTP && useBackupCode ? backupCode : undefined,
-                );
+                await login(username, password);
             } else {
                 await register(username, password);
-                onClose();
-                // needsSetup2FA redirect is handled by App.tsx
-                return;
             }
             onClose();
             setUsername('');
             setPassword('');
-            setNeedsTOTP(false);
-            setTotpCode('');
-            setUseBackupCode(false);
-            setBackupCode('');
         } catch (err: any) {
-            if (err.needs2FA) {
-                setNeedsTOTP(true);
-                setError(null);
-            } else {
-                setError(err.message || t('error.generic'));
-            }
+            setError(err.message || t('error.generic'));
         } finally {
             setLoading(false);
         }
@@ -105,57 +84,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                             required
                         />
                     </div>
-
-                    {needsTOTP && isLogin && (
-                        <div className="space-y-3">
-                            <div className="callout flex items-center gap-2 text-xs">
-                                <ShieldIcon size={16} className="shrink-0 text-[var(--color-m3-primary)] " />
-                                {t('auth.needs_2fa')}
-                            </div>
-                            {useBackupCode ? (
-                                <div className="space-y-2">
-                                    <label className="text-sm text-muted">{t('auth.backup_code_label')}</label>
-                                    <input
-                                        type="text"
-                                        value={backupCode}
-                                        onChange={(e) => setBackupCode(e.target.value.toUpperCase())}
-                                        className="input-base font-mono text-center tracking-widest"
-                                        placeholder={t('auth.backup_code_placeholder')}
-                                        autoComplete="off"
-                                        autoFocus
-                                        required={useBackupCode}
-                                    />
-                                    <button type="button" onClick={() => { setUseBackupCode(false); setBackupCode(''); }}
-                                        className="text-xs text-[var(--color-m3-primary)] hover:underline">
-                                        ← {t('auth.totp_code')}
-                                    </button>
-                                </div>
-                            ) : (
-                                <>
-                                    <div className="space-y-1.5">
-                                        <label className="text-sm text-muted">{t('auth.totp_code')}</label>
-                                        <input
-                                            type="text"
-                                            inputMode="numeric"
-                                            pattern="[0-9]{6}"
-                                            maxLength={6}
-                                            value={totpCode}
-                                            onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                            className="input-base font-mono text-center tracking-widest"
-                                            placeholder={t('auth.totp_placeholder')}
-                                            autoComplete="one-time-code"
-                                            autoFocus
-                                            required={needsTOTP && !useBackupCode}
-                                        />
-                                    </div>
-                                    <button type="button" onClick={() => setUseBackupCode(true)}
-                                        className="w-full text-xs text-muted hover:text-body text-center py-1">
-                                        {t('auth.use_backup_code')}
-                                    </button>
-                                </>
-                            )}
-                        </div>
-                    )}
 
                     <button
                         type="submit"

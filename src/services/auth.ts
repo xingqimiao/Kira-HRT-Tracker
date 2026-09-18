@@ -9,7 +9,6 @@ export interface User {
 export interface AuthResponse {
     token: string;
     user: User;
-    needsSetup2FA?: boolean;
 }
 
 export interface Session {
@@ -20,16 +19,6 @@ export interface Session {
     device_info: string;
     ip: string;
     is_current: boolean;
-}
-
-export interface TwoFAStatus {
-    enabled: boolean;
-    totp?: boolean;
-}
-
-export interface TwoFASetup {
-    secret: string;
-    uri: string;
 }
 
 /**
@@ -53,26 +42,14 @@ export function sessionIdFromToken(token: string | null): string | null {
 }
 
 export const authService = {
-    async login(username: string, password: string, totpCode?: string, backupCode?: string): Promise<AuthResponse> {
-        const body: { username: string; password: string; totp_code?: string; backup_code?: string } = { username, password };
-        if (totpCode) body.totp_code = totpCode;
-        if (backupCode) body.backup_code = backupCode;
+    async login(username: string, password: string): Promise<AuthResponse> {
         const res = await apiFetch('/api/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
+            body: JSON.stringify({ username, password })
         });
         if (!res.ok) {
-            const text = await res.text();
-            let data: any;
-            try { data = JSON.parse(text); } catch { /* ignore */ }
-            if (data?.needs2FA) {
-                const err = new Error('2FA_REQUIRED') as any;
-                err.needs2FA = true;
-                err.method = data.method ?? 'totp';
-                throw err;
-            }
-            throw new Error(text);
+            throw new Error(await res.text());
         }
         return await res.json() as AuthResponse;
     },
@@ -112,17 +89,14 @@ export const authService = {
         if (!res.ok) throw new Error(await res.text());
     },
 
-    async deleteAccount(token: string, password: string, code?: string, backupCode?: string): Promise<void> {
-        const body: { password: string; code?: string; backup_code?: string } = { password };
-        if (code) body.code = code;
-        if (backupCode) body.backup_code = backupCode;
+    async deleteAccount(token: string, password: string): Promise<void> {
         const res = await apiFetch('/api/user/me', {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify(body)
+            body: JSON.stringify({ password })
         });
         if (!res.ok) throw new Error(await res.text());
     },
@@ -147,75 +121,6 @@ export const authService = {
         const res = await apiFetch('/api/user/sessions', {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (!res.ok) throw new Error(await res.text());
-    },
-
-    async get2FAStatus(token: string): Promise<TwoFAStatus> {
-        const res = await apiFetch('/api/user/2fa/status', {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (!res.ok) throw new Error(await res.text());
-        return await res.json() as TwoFAStatus;
-    },
-
-    async setup2FA(token: string): Promise<TwoFASetup> {
-        const res = await apiFetch('/api/user/2fa/setup', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (!res.ok) throw new Error(await res.text());
-        return await res.json() as TwoFASetup;
-    },
-
-    /**
-     * Writes the secret that gates login and replaces every backup code, so the
-     * worker requires the password — a bearer token on its own is not proof
-     * enough to hand someone a new second factor.
-     */
-    async enable2FA(token: string, secret: string, code: string, password: string, currentCode?: string): Promise<{ backupCodes: string[] }> {
-        const body: { secret: string; code: string; password: string; currentCode?: string } = { secret, code, password };
-        if (currentCode) body.currentCode = currentCode;
-        const res = await apiFetch('/api/user/2fa/enable', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify(body)
-        });
-        if (!res.ok) throw new Error(await res.text());
-        return await res.json() as { backupCodes: string[] };
-    },
-
-    /** Replaces every existing code, so the worker requires the password. */
-    async generateBackupCodes(token: string, password: string): Promise<string[]> {
-        const res = await apiFetch('/api/user/2fa/backup-codes/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ password }),
-        });
-        if (!res.ok) throw new Error(await res.text());
-        const data = await res.json() as { codes: string[] };
-        return data.codes;
-    },
-
-    async getBackupCodesStatus(token: string): Promise<{ remaining: number }> {
-        const res = await apiFetch('/api/user/2fa/backup-codes', {
-            headers: { 'Authorization': `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error(await res.text());
-        return await res.json() as { remaining: number };
-    },
-
-    async disable2FA(token: string, password: string, code: string): Promise<void> {
-        const res = await apiFetch('/api/user/2fa', {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({ password, code })
         });
         if (!res.ok) throw new Error(await res.text());
     },
