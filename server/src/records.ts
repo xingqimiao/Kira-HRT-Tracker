@@ -27,6 +27,8 @@
  * unreadable and skipped, and the count is surfaced so the condition is visible rather
  * than silent.
  */
+import { randomUUID } from 'node:crypto';
+
 import { getPool } from './db.ts';
 import { getConfig } from './config.ts';
 import { decryptPayload, encryptPayload } from './payloadCrypto.ts';
@@ -43,7 +45,6 @@ export interface StoredRecord {
     /** The decrypted business payload. */
     data: unknown;
     updatedAt: number;
-    clientId: string | null;
 }
 
 export interface ListOptions {
@@ -96,13 +97,14 @@ export const RecordService = {
     /**
      * Store one record, encrypting the payload on the way in.
      *
-     * Upsert on `(user_id, client_id)` when a client id is given, so a retried write
-     * after a flaky connection updates the record instead of duplicating it. Without a
-     * client id every call inserts, which is what a caller that has no stable id wants.
+     * Upsert on the record id, so a retried write after a flaky connection updates the
+     * record instead of duplicating it. The id is the client's own identity for the
+     * record — structured, and stable across devices — which is why there is no second
+     * client-id column to disagree with it.
      */
     async put(
         ctx: { userId: string },
-        body: { id?: unknown; takenAt?: unknown; category?: unknown; data?: unknown; clientId?: unknown },
+        body: { id?: unknown; takenAt?: unknown; category?: unknown; data?: unknown },
     ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
         const takenAt = parseTakenAt(body?.takenAt);
         if (takenAt === null) return { ok: false, error: 'takenAt: must be a date or epoch milliseconds' };
@@ -121,35 +123,35 @@ export const RecordService = {
             return { ok: false, error: 'data: too large' };
         }
 
-        const clientId = typeof body?.clientId === 'string' && body.clientId.trim() !== ''
-            ? body.clientId.trim()
-            : null;
-
-        // A client may supply the row id so an offline write keeps its identity across
-        // devices; otherwise the database mints one.
-        const id = typeof body?.id === 'string' && body.id.trim() !== '' ? body.id.trim() : null;
-
-        if (clientId) {
-            const { rows } = await getPool().query<{ id: string }>(
-                `INSERT INTO records (user_id, taken_at, category, payload_encrypted, client_id, id)
-                 VALUES ($1, to_timestamp($2 / 1000.0), $3, $4, $5, COALESCE($6::uuid, gen_random_uuid()))
-                 ON CONFLICT (user_id, client_id) WHERE client_id IS NOT NULL
-                 DO UPDATE SET taken_at = EXCLUDED.taken_at,
-                               category = EXCLUDED.category,
-                               payload_encrypted = EXCLUDED.payload_encrypted,
-                               updated_at = now()
-                 RETURNING id`,
-                [ctx.userId, takenAt, category, sealed, clientId, id],
-            );
-            return { ok: true, id: rows[0].id };
-        }
+        // A client may supply the row id; otherwise the server mints one. The id is
+        // deliberately a plain string: the client's ids are structured
+        // (`dose:transfem:<id>`), which is what makes a retry idempotent and a row
+        // traceable back to what it holds.
+        //
+        // Conflict target is the id alone. There is no second key: an id already
+        // *is* the client's identity for the record, so a separate client id could
+        // only disagree with it — and did, producing a primary-key violation on every
+        // re-sync once both constraints were in play.
+        const id = typeof body?.id === 'string' && body.id.trim() !== ''
+            ? body.id.trim()
+            : `srv:${randomUUID()}`;
 
         const { rows } = await getPool().query<{ id: string }>(
             `INSERT INTO records (user_id, taken_at, category, payload_encrypted, id)
-             VALUES ($1, to_timestamp($2 / 1000.0), $3, $4, COALESCE($5::uuid, gen_random_uuid()))
+             VALUES ($1, to_timestamp($2 / 1000.0), $3, $4, $5)
+             ON CONFLICT (id) DO UPDATE
+                SET taken_at = EXCLUDED.taken_at,
+                    category = EXCLUDED.category,
+                    payload_encrypted = EXCLUDED.payload_encrypted,
+                    updated_at = now()
+              WHERE records.user_id = EXCLUDED.user_id
              RETURNING id`,
             [ctx.userId, takenAt, category, sealed, id],
         );
+
+        // An id owned by another account must not be writeable, and must not be
+        // reported as a conflict either — that would confirm the id exists.
+        if (rows.length === 0) return { ok: false, error: 'id_unavailable' };
         return { ok: true, id: rows[0].id };
     },
 
@@ -180,9 +182,9 @@ export const RecordService = {
 
         const { rows } = await getPool().query<{
             id: string; taken_at: Date; category: string; payload_encrypted: string;
-            updated_at: Date; client_id: string | null;
+            updated_at: Date;
         }>(
-            `SELECT id, taken_at, category, payload_encrypted, updated_at, client_id
+            `SELECT id, taken_at, category, payload_encrypted, updated_at
                FROM records
               WHERE ${where}
               ORDER BY taken_at DESC
@@ -202,7 +204,6 @@ export const RecordService = {
                     category: isCategory(row.category) ? row.category : 'dose',
                     data: decryptPayload(row.payload_encrypted, key),
                     updatedAt: row.updated_at.getTime(),
-                    clientId: row.client_id,
                 });
             } catch {
                 // One bad row must not hide the rest of someone's history.

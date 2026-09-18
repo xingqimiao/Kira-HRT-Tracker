@@ -491,16 +491,17 @@ CREATE INDEX IF NOT EXISTS idx_shares_user ON shares(user_id);
 --   src/payloadCrypto.ts). TEXT rather than bytea so the column is readable in a
 --   psql session during an incident, at a 33% storage cost.
 CREATE TABLE IF NOT EXISTS records (
-    id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    -- TEXT, not uuid: the id is minted by the client, and the client's ids are
+    -- human-readable and structured (`dose:transfem:<id>`), which is what makes a
+    -- retried write idempotent and a record traceable back to what it holds. A uuid
+    -- column would reject every one of them at insert time.
+    id                 text PRIMARY KEY,
     user_id            uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     taken_at           timestamptz NOT NULL,
     category           varchar(32) NOT NULL DEFAULT 'dose',
     payload_encrypted  text NOT NULL,
     created_at         timestamptz NOT NULL DEFAULT now(),
-    updated_at         timestamptz NOT NULL DEFAULT now(),
-    -- A client-supplied id, so a record created offline can be pushed twice without
-    -- duplicating. Null for rows written before this column existed.
-    client_id          text
+    updated_at         timestamptz NOT NULL DEFAULT now()
 );
 
 -- The timeline query: one user's records, newest first, paged. Descending to match
@@ -512,10 +513,25 @@ CREATE INDEX IF NOT EXISTS idx_records_user_taken_at
 CREATE INDEX IF NOT EXISTS idx_records_user_category_taken_at
     ON records(user_id, category, taken_at DESC);
 
--- Idempotent client pushes. Partial, so the many rows without a client id do not
--- all collide on NULL.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_records_user_client_id
-    ON records(user_id, client_id)
-    WHERE client_id IS NOT NULL;
+-- A previous revision carried a separate `client_id` for idempotent pushes. The id is
+-- chosen by the client, so it already is that identity; keeping both meant a re-sync
+-- hit the primary key while the client-id constraint pointed somewhere else, and every
+-- second sync failed.
+DROP INDEX IF EXISTS idx_records_user_client_id;
+ALTER TABLE records DROP COLUMN IF EXISTS client_id;
 
-ALTER TABLE records ADD COLUMN IF NOT EXISTS client_id text;
+-- `records.id` was `uuid` in the revision that introduced the table. The client's ids
+-- are structured strings (`dose:transfem:<id>`), so every write failed with "invalid
+-- input syntax for type uuid" until this widens the column. Existing values were uuids,
+-- which are valid text, so the cast is lossless.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'records'
+       AND column_name = 'id' AND data_type = 'uuid'
+  ) THEN
+    ALTER TABLE records ALTER COLUMN id TYPE text USING id::text;
+    ALTER TABLE records ALTER COLUMN id DROP DEFAULT;
+  END IF;
+END $$;

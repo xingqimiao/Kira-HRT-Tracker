@@ -27,6 +27,7 @@ import { buildServer, makeBearerResolver } from './mcp.ts';
 import { MedicationService, LabService, TimelineService, PKSimulationService } from './core.ts';
 import { AccountService } from './accounts.ts';
 import { RecordService } from './records.ts';
+import { getPool } from './db.ts';
 import { MAX_PASSKEYS_PER_ACCOUNT } from './webauthn.ts';
 import { ShareService } from './shares.ts';
 import type { AuthContext } from './types.ts';
@@ -843,6 +844,42 @@ export function createRequestHandler() {
       // The client sends and receives plaintext JSON; sealing and opening happen here.
       // `user_id` and `taken_at` are the only things the database can read.
 
+      // --- Legacy migration -------------------------------------------------
+      //
+      // Accounts that predate the record store have their data in the older tables,
+      // encrypted under a per-user key the server may not hold (an `advanced` account
+      // has no `server` wrapper). The app can still read that payload through
+      // `/api/sync`, so the migration runs from the client: it fetches the legacy
+      // payload, where it is already plaintext, and writes it into the record store
+      // through the normal encrypted path.
+      //
+      // Idempotent, and cheap to ask: an account with no legacy rows reports
+      // `needed: false` and the client stops asking on future logins.
+      if (path === '/api/records/migrate-needed' && req.method === 'GET') {
+        const ctx = await requireCtx();
+        if (!ctx) return;
+        const [legacy, stored] = await Promise.all([
+          getPool().query<{ doses: string; labs: string }>(
+            `SELECT (SELECT count(*) FROM medication_events WHERE user_id = $1)::text AS doses,
+                    (SELECT count(*) FROM lab_results      WHERE user_id = $1)::text AS labs`,
+            [ctx.userId],
+          ),
+          RecordService.count(ctx),
+        ]);
+        // Two columns rather than one concatenated string: `+` does not concatenate in
+        // PostgreSQL, so reaching for it fails at runtime rather than at review — which
+        // is how this was found.
+        const legacyCount = legacy.rows[0]
+          ? Number(legacy.rows[0].doses) + Number(legacy.rows[0].labs)
+          : 0;
+        return send(res, 200, {
+          // Only needed when there is legacy data the record store has not got.
+          needed: legacyCount > 0 && stored === 0,
+          legacy_count: legacyCount,
+          stored_count: stored,
+        });
+      }
+
       if (path === '/api/records' && req.method === 'GET') {
         const ctx = await requireCtx();
         if (!ctx) return;
@@ -860,7 +897,6 @@ export function createRequestHandler() {
             category: r.category,
             data: r.data,
             updated_at: new Date(r.updatedAt).toISOString(),
-            client_id: r.clientId,
           })),
           // Surfaced rather than swallowed: a client that ignores this is at least not
           // being told its history is complete when it is not.
