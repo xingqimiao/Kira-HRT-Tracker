@@ -107,9 +107,8 @@ test('full agent path: register, log, predict, timeline', async () => {
   // 5. Predict through the core service, which is the one implementation of the
   // model: the REST route and the MCP tool both call it.
   const { AccountService, PKSimulationService } = await import('../src/core.ts');
-  const { lookupSession } = await import('../src/session.ts');
-  const ctx = lookupSession(token);
-  assert.ok(ctx, 'the unlock token resolves to a session');
+  const ctx = await AccountService.resolveApiContext(token);
+  assert.ok(ctx && 'dek' in ctx, 'the unlock token resolves to a session');
 
   const prediction = await PKSimulationService.predict(ctx, { fromDays: 60, toDays: 14 });
   assert.ok(prediction.ok, `prediction failed: ${prediction.ok ? '' : prediction.error}`);
@@ -356,9 +355,9 @@ test('a predicted curve never reports a negative concentration', async () => {
   }
 
   const { PKSimulationService } = await import('../src/core.ts');
-  const { lookupSession } = await import('../src/session.ts');
-  const ctx = lookupSession(token);
-  assert.ok(ctx, 'the unlock token resolves to a session');
+  const { AccountService } = await import('../src/accounts.ts');
+  const ctx = await AccountService.resolveApiContext(token);
+  assert.ok(ctx && 'dek' in ctx, 'the unlock token resolves to a session');
 
   const pred = await PKSimulationService.predict(ctx, { fromDays: 90, toDays: 14 });
   assert.ok(pred.ok, `prediction failed: ${pred.ok ? '' : pred.error}`);

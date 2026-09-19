@@ -130,10 +130,12 @@ export async function registerAccountWithKey(
   opts: { username?: string } = {},
 ): Promise<TestAccount & { dek: string }> {
   const account = await registerAccount(base, opts);
-  const { lookupSession } = await import('../src/session.ts');
-  const session = lookupSession(account.token);
-  assert.ok(session, 'the session from registration resolves');
-  return { ...account, dek: session.dek };
+  const { AccountService } = await import('../src/accounts.ts');
+  // The real resolver, not a store lookup: a session row holds no key, so the DEK has
+  // to come from the account's server wrapper exactly as it does in production.
+  const ctx = await AccountService.resolveApiContext(account.token);
+  assert.ok(ctx && 'dek' in ctx, 'the session from registration resolves');
+  return { ...account, dek: ctx.dek };
 }
 
 export { freshUsername };

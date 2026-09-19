@@ -31,8 +31,9 @@
  * `encryptCloudPayload` / `decryptCloudPayload` (AES-GCM) that the app already
  * ships, so the browser and the server agree on the format byte for byte.
  */
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { getConfig } from './config.ts';
+import { getPool } from './db.ts';
 import { deriveCloudKey, encryptCloudPayload, decryptCloudPayload, isCloudEncrypted } from './engine.ts';
 
 /** A wrapped DEK as stored server-side. Identical envelope to a cloud backup. */
@@ -293,202 +294,194 @@ export async function createPasswordlessKeyMaterial(
   };
 }
 
-// --- Unlocked-session registry ---
+// --- Sessions ---
+//
+// A session is a browser login: the bearer token the client keeps, and the account it
+// stands for. It is a row in `sessions` rather than a Map entry, because the promise
+// this module has to keep is that the server does not sign anyone out — an in-memory
+// registry dropped every session on every restart, which is a timeout nobody chose.
+//
+// The row holds **no key**. A record is opened from the account's own server wrapper
+// when a request needs it, so a session answers exactly one question — which browser is
+// this — and can be ended one row at a time from the device list. A dump of this table
+// is therefore not a key compromise: there is no key in it, and the tokens are stored
+// as SHA-256 hashes, the same treatment `api_tokens` gets.
 
-interface UnlockedSession {
-  userId: string;
-  dek: string;
-  expiresAt: number;
-  /**
-   * A non-secret handle for the account page.
-   *
-   * The token is the credential and never crosses back to the client, so a list of
-   * live unlocks needs something else to name them by. This is that: revoking is
-   * possible without the server or the browser handling anyone's token.
-   */
+/** How a session is described outside this module. Never the token. */
+export interface LiveSession {
+  /** Non-secret handle, so the account page can revoke without holding a token. */
   id: string;
-  createdAt: number;
+  userId: string;
   /**
-   * When an authenticated request last carried this token.
+   * A long-term login, with no expiry at all.
    *
-   * Recorded where the requests arrive, because this module has no request context of
-   * its own. It orders the list and it is also what makes "this device is still in use"
-   * visible, which is the thing a person checks before revoking something.
+   * The client asks for this when the reader ticks "keep me signed in". It is the only
+   * session the server never ends on its own.
    */
-  lastSeenAt: number;
-  /**
-   * Which device opened this unlock, filled in by `touchSession` on first sight.
-   *
-   * Null until a request arrives, because `openSession` is called from the unlock code,
-   * which has no business knowing about user agents.
-   */
-  device: { userAgent: string | null; ip: string | null } | null;
-  /**
-   * This session's idle window, fixed when it was opened.
-   *
-   * Stored rather than recomputed on renewal because the two can legitimately differ:
-   * `openSession` takes an explicit TTL, and a caller that asks for 120 minutes must get
-   * 120 minutes on every renewal — not 120 once and then whatever the deployment's
-   * default happens to be. Recomputing was a real defect: a caller-requested window
-   * silently collapsed to 30 minutes on the second request.
-   */
-  idleTtlMs: number;
+  persistent: boolean;
+  createdAt: string;
+  lastSeenAt: string;
+  /** ISO timestamp, or null for a session that does not expire. */
+  expiresAt: string | null;
+  userAgent: string | null;
+  ip: string | null;
 }
 
-/**
- * `ponytail:` in-memory, single-instance. Sessions are lost on restart, which is
- * the conservative direction — a restart revokes every unlock rather than
- * resurrecting one. Multi-instance or long-lived deployments need this moved to
- * a shared store (or sticky routing plus per-instance TTL); the interface below
- * is the whole surface that would change.
- */
-const sessions = new Map<string, UnlockedSession>();
+/** The idle window for a session that is not persistent. */
+const SESSION_TTL_FALLBACK_MINUTES = 30;
 
-/**
- * Idle timeout for a session whose caller passed no explicit TTL.
- *
- * Read from the deployment's `SESSION_TTL_MINUTES` at each use rather than captured at
- * import, so tests can change it and so one source of truth exists.
- *
- * This used to be a hard-coded 30 minutes while renewal below wrote the same constant
- * rather than the configured value. Setting `SESSION_TTL_MINUTES=10080` therefore
- * extended the first unlock to a week and the very next request cut it back to 30
- * minutes — sessions expired far sooner than configured, the opposite of what the
- * setting promises.
- *
- * Swallows a config error on purpose: this module is exercised on its own (see
- * `test/session.test.ts`), where none of the config the rest of the server needs has
- * been set. A deployment that cannot load its config fails loudly at startup, long
- * before a session is opened, so the fallback here is not hiding a real problem.
- */
-const DEFAULT_IDLE_TTL_MS = 30 * 60 * 1000;
-
-function idleTtlMs(): number {
+function idleTtlMinutes(): number {
   try {
     const minutes = getConfig().sessionTtlMinutes;
-    if (Number.isFinite(minutes) && minutes > 0) return minutes * 60 * 1000;
+    if (Number.isFinite(minutes) && minutes > 0) return minutes;
   } catch {
-    // No config loaded — see above.
+    // No config loaded — this module is exercised on its own in tests. A deployment
+    // that cannot load its config fails loudly at startup, long before a login.
   }
-  return DEFAULT_IDLE_TTL_MS;
+  return SESSION_TTL_FALLBACK_MINUTES;
+}
+
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+interface SessionRow {
+  id: string;
+  user_id: string;
+  token_hash?: string;
+  persistent: boolean;
+  created_at: Date;
+  last_seen_at: Date;
+  expires_at: Date | null;
+  user_agent: string | null;
+  ip: string | null;
+}
+
+function toLiveSession(row: SessionRow): LiveSession {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    persistent: row.persistent,
+    createdAt: row.created_at.toISOString(),
+    lastSeenAt: row.last_seen_at.toISOString(),
+    expiresAt: row.expires_at ? row.expires_at.toISOString() : null,
+    userAgent: row.user_agent,
+    ip: row.ip,
+  };
 }
 
 /**
- * Renew a live session's idle window.
+ * Mint a session.
  *
- * Sliding: every use pushes the deadline out again, so a device in regular use never
- * has to sign in. Renewal is capped by `createdAt` as well, so a session cannot be kept
- * alive indefinitely just by polling it — that cap also bounds how long a single stolen
- * token stays useful.
+ * `persistent` is the reader's "keep me signed in": no expiry, ended only from the
+ * device list or by the account going away. Everything else keeps the deployment's
+ * sliding idle window, so an unattended browser is signed out by time rather than by
+ * luck.
  *
- * `MAX_SESSION_AGE_MS` is deliberately generous (a year) while the idle window is the
- * setting people actually tune: the absolute cap is a backstop against a forever-token,
- * not a second timeout to trip over during normal use.
+ * The DEK is deliberately not an argument any more. Passing it made it a copy of the
+ * key held in memory, which a restart loses and a restore would have to hand back; the
+ * account's server wrapper can open the same DEK whenever a request needs it.
  */
-const MAX_SESSION_AGE_MS = 365 * 24 * 60 * 60 * 1000;
-
-function renew(session: UnlockedSession, now: number): void {
-  const until = now + session.idleTtlMs;
-  const cap = session.createdAt + MAX_SESSION_AGE_MS;
-  session.expiresAt = Math.min(until, cap);
-}
-
-function sweep(now: number): void {
-  for (const [token, session] of sessions) {
-    if (session.expiresAt <= now) sessions.delete(token);
-  }
-}
-
-export function openSession(
+export async function openSession(
   userId: string,
-  dek: string,
-  ttlMinutes?: number,
-): string {
-  const now = Date.now();
-  sweep(now);
+  opts: { persistent?: boolean } = {},
+): Promise<string> {
+  const persistent = opts.persistent === true;
+  const ttlMs = idleTtlMinutes() * 60 * 1000;
   const token = `ks_${randomKeyB64().replace(/[+/=]/g, '').slice(0, 32)}`;
-  const ttl = ttlMinutes !== undefined ? ttlMinutes * 60 * 1000 : idleTtlMs();
-  sessions.set(token, {
-    userId,
-    dek,
-    expiresAt: Math.min(now + ttl, now + MAX_SESSION_AGE_MS),
-    id: randomKeyB64().replace(/[+/=]/g, '').slice(0, 24),
-    createdAt: now,
-    lastSeenAt: now,
-    device: null,
-    idleTtlMs: ttl,
-  });
+
+  // Expired non-persistent rows are never usable, only rejected, so this is where they
+  // get collected. Lazy rather than scheduled: a login is the one moment the table is
+  // certain to be touched by someone who cares.
+  //
+  // `ponytail:` one DELETE per login. Move it to a cron if the table ever grows enough
+  // for the scan to show up.
+  await getPool().query(`DELETE FROM sessions WHERE expires_at IS NOT NULL AND expires_at <= now()`);
+
+  await getPool().query(
+    `INSERT INTO sessions (user_id, token_hash, persistent, expires_at)
+     VALUES ($1, $2, $3, $4)`,
+    [userId, hashToken(token), persistent, persistent ? null : new Date(Date.now() + ttlMs)],
+  );
   return token;
 }
 
 /**
- * Resolve a token to its DEK, refreshing the idle timer.
+ * Resolve a session token to its row, or null when it is gone or past its window.
  *
- * Scoped by `userId` as well as token: a token minted for one account must not
- * open another's records even if it somehow reaches the wrong request context.
+ * Expiry is enforced here rather than by a sweeper, so a row that is past its window
+ * stops working the moment it is asked for.
  */
-export function resolveSession(token: string, userId: string): string | null {
-  const now = Date.now();
-  sweep(now);
-  const session = sessions.get(token);
-  if (!session || session.userId !== userId) return null;
-  renew(session, now);
-  return session.dek;
+export async function lookupSession(token: string): Promise<LiveSession | null> {
+  const { rows } = await getPool().query<SessionRow>(
+    `SELECT id, user_id, persistent, created_at, last_seen_at, expires_at, user_agent, ip
+       FROM sessions
+      WHERE token_hash = $1 AND (expires_at IS NULL OR expires_at > now())`,
+    [hashToken(token)],
+  );
+  return rows[0] ? toLiveSession(rows[0]) : null;
 }
 
-export function closeSession(token: string): void {
-  sessions.delete(token);
+/** The same lookup, scoped to one user: a token must not reach another account. */
+export async function resolveSession(token: string, userId: string): Promise<LiveSession | null> {
+  const session = await lookupSession(token);
+  return session && session.userId === userId ? session : null;
 }
 
 /**
- * Look up a live unlock token without needing the user id in advance.
+ * Record that a token was just used, and from where.
  *
- * The MCP layer has only the token a client presented, so it needs a way to ask
- * "whose is this, and what key does it carry" in one call. Kept separate from
- * `resolveSession`, which is scoped by user id precisely so a token cannot be
- * used to reach an account it was not minted for.
+ * Called for every authenticated request, which is also what keeps a non-persistent
+ * session alive: the idle window is renewed here, not on a timer. `user_agent` and
+ * `ip` are written once and never replaced — the first sighting is what says which
+ * device opened this login, and a later request through the same token can legitimately
+ * come from somewhere else.
+ *
+ * `ponytail:` one UPDATE per authenticated request. Batch it if that ever shows up in
+ * a profile; nothing in this deployment is close.
  */
-export function lookupSession(token: string): { userId: string; dek: string } | null {
-  const now = Date.now();
-  sweep(now);
-  const session = sessions.get(token);
-  if (!session) return null;
-  renew(session, now);
-  return { userId: session.userId, dek: session.dek };
+export async function touchSession(
+  token: string,
+  device: { userAgent?: string | null; ip?: string | null } = {},
+): Promise<void> {
+  const ttlMs = String(idleTtlMinutes() * 60 * 1000);
+  await getPool().query(
+    `UPDATE sessions
+        SET last_seen_at = now(),
+            user_agent = COALESCE(user_agent, $2),
+            ip = COALESCE(ip, $3),
+            expires_at = CASE WHEN persistent THEN NULL
+                              ELSE now() + ($4 || ' milliseconds')::interval END
+      WHERE token_hash = $1`,
+    [hashToken(token), device.userAgent ?? null, device.ip ?? null, ttlMs],
+  );
+}
+
+/** End one session. An unknown token is a no-op: logout must be safe to repeat. */
+export async function closeSession(token: string): Promise<void> {
+  await getPool().query(`DELETE FROM sessions WHERE token_hash = $1`, [hashToken(token)]);
+}
+
+/** End every session for a user — password change, and logout-everywhere. */
+export async function closeUserSessions(userId: string): Promise<void> {
+  await getPool().query(`DELETE FROM sessions WHERE user_id = $1`, [userId]);
+}
+
+/** Whether the user has any live session. Used by the provider sign-in audit trail. */
+export async function hasUserSession(userId: string): Promise<boolean> {
+  const { rowCount } = await getPool().query(
+    `SELECT 1 FROM sessions WHERE user_id = $1 AND (expires_at IS NULL OR expires_at > now()) LIMIT 1`,
+    [userId],
+  );
+  return (rowCount ?? 0) > 0;
 }
 
 /**
- * The DEK for a user with any active unlock, or null.
- *
- * Used by the provider sign-in path: a round-trip that finds a live unlock reuses
- * that key rather than opening a second session for the same account. The key still
- * comes from an unlock the user opened, so this cannot create access on its own.
- */
-export function findUserSession(userId: string): string | null {
-  const now = Date.now();
-  sweep(now);
-  for (const session of sessions.values()) {
-    if (session.userId === userId) {
-      renew(session, now);
-      return session.dek;
-    }
-  }
-  return null;
-}
-
-/** Revoke every unlock for a user — used on password change and logout-everywhere. */
-export function closeUserSessions(userId: string): void {
-  for (const [token, session] of sessions) {
-    if (session.userId === userId) sessions.delete(token);
-  }
-}
-
-/**
- * One row of the account page's session list: a *device*, not an individual unlock.
+ * One row of the account page's session list: a *device*, not an individual login.
  *
  * Grouped, because a session list is read by a person looking for "a machine I do not
  * recognise", and the same browser signing in twice produces two identical-looking rows
- * that answer no question. `sessions` says how many unlocks are behind the row.
+ * that answer no question. `sessions` says how many logins are behind the row.
  *
  * Deliberately not the token and not the key. This crosses the wire, and a list that
  * leaked either would be a way to *become* the session it describes.
@@ -497,41 +490,19 @@ export interface SessionInfo {
   id: string;
   /** Every session id this row stands for, so revoking the row revokes all of them. */
   ids: string[];
-  /** How many live unlocks share this device signature. */
+  /** How many live logins share this device signature. */
   sessions: number;
   current: boolean;
   createdAt: string;
   lastSeenAt: string;
-  expiresAt: string;
+  /** Null for a long-term login, which is the point of ticking the box. */
+  expiresAt: string | null;
   userAgent: string | null;
   ip: string | null;
 }
 
 /**
- * Record that a token was just used, and from where.
- *
- * Called from the HTTP layer for every authenticated request, since that is the only
- * place that knows the request. A token that is not a live unlock (a durable `hrt_`
- * agent token) is ignored — it has no session to describe.
- *
- * The device is written once and never replaced: the first sighting is the one that says
- * which device opened this unlock, and a later request through the same token can
- * legitimately come from elsewhere, which would mislabel it.
- */
-export function touchSession(
-  token: string,
-  device: { userAgent?: string | null; ip?: string | null },
-): void {
-  const session = sessions.get(token);
-  if (!session) return;
-  session.lastSeenAt = Date.now();
-  if (!session.device) {
-    session.device = { userAgent: device.userAgent ?? null, ip: device.ip ?? null };
-  }
-}
-
-/**
- * Live unlocks for one user, grouped by device, most recent first.
+ * Live sessions for one user, grouped by device, most recent first.
  *
  * The grouping key is the user agent plus the address the request came from. That is a
  * proxy, stated plainly: the same browser on a phone that changed networks shows as two
@@ -542,41 +513,46 @@ export function touchSession(
  * The caller's own session is marked rather than hidden, so "is this device me?" is
  * answerable without comparing addresses.
  */
-export function listUserSessions(userId: string, currentToken: string | null): SessionInfo[] {
-  const now = Date.now();
-  sweep(now);
+export async function listUserSessions(
+  userId: string,
+  currentToken: string | null,
+): Promise<SessionInfo[]> {
+  const { rows } = await getPool().query<SessionRow>(
+    `SELECT id, user_id, token_hash, persistent, created_at, last_seen_at, expires_at, user_agent, ip
+       FROM sessions
+      WHERE user_id = $1 AND (expires_at IS NULL OR expires_at > now())
+      ORDER BY last_seen_at DESC`,
+    [userId],
+  );
+
+  const currentHash = currentToken ? hashToken(currentToken) : null;
   const groups = new Map<string, SessionInfo>();
-  for (const [token, session] of sessions) {
-    if (session.userId !== userId) continue;
-    const key = `${session.device?.userAgent ?? ''}\u0000${session.device?.ip ?? ''}`;
-    const seen = session.lastSeenAt;
+  for (const row of rows) {
+    const key = `${row.user_agent ?? ''}\u0000${row.ip ?? ''}`;
+    const current = currentHash !== null && row.token_hash === currentHash;
     const existing = groups.get(key);
     if (!existing) {
       groups.set(key, {
-        id: session.id,
-        ids: [session.id],
+        id: row.id,
+        ids: [row.id],
         sessions: 1,
-        current: token === currentToken,
-        createdAt: new Date(session.createdAt).toISOString(),
-        lastSeenAt: new Date(seen).toISOString(),
-        expiresAt: new Date(session.expiresAt).toISOString(),
-        userAgent: session.device?.userAgent ?? null,
-        ip: session.device?.ip ?? null,
+        current,
+        createdAt: row.created_at.toISOString(),
+        lastSeenAt: row.last_seen_at.toISOString(),
+        expiresAt: row.expires_at ? row.expires_at.toISOString() : null,
+        userAgent: row.user_agent,
+        ip: row.ip,
       });
       continue;
     }
-    existing.ids.push(session.id);
+    // Rows arrive newest first, so the group already reports the newest login in it.
+    existing.ids.push(row.id);
     existing.sessions += 1;
-    // The row reports the newest unlock in the group, and stays "current" if any of them
-    // is the caller's — a device is not two devices because one of its tabs re-signed-in.
-    if (seen > Date.parse(existing.lastSeenAt)) {
-      existing.id = session.id;
-      existing.lastSeenAt = new Date(seen).toISOString();
-      existing.createdAt = new Date(session.createdAt).toISOString();
-      existing.expiresAt = new Date(session.expiresAt).toISOString();
-    }
-    if (token === currentToken) existing.current = true;
+    // Stays "current" if any row in the group is the caller's — a device is not two
+    // devices because one of its tabs signed in again.
+    if (current) existing.current = true;
   }
+
   return [...groups.values()].sort((a, b) =>
     a.current === b.current ? b.lastSeenAt.localeCompare(a.lastSeenAt) : a.current ? -1 : 1,
   );
@@ -586,37 +562,38 @@ export function listUserSessions(userId: string, currentToken: string | null): S
  * Close sessions by handle, scoped to the user.
  *
  * Scoped, so an id belonging to one account cannot end a session belonging to another —
- * the ids are random, but a random id is not an authorization.
+ * the ids are random, but a random id is not an authorization. Compared as text so a
+ * malformed id is a miss rather than an invalid-uuid error.
  */
-export function revokeSessions(userId: string, ids: string[]): number {
-  const wanted = new Set(ids);
-  let removed = 0;
-  for (const [token, session] of sessions) {
-    if (session.userId !== userId || !wanted.has(session.id)) continue;
-    sessions.delete(token);
-    removed++;
-  }
-  return removed;
+export async function revokeSessions(userId: string, ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await getPool().query(
+    `DELETE FROM sessions WHERE user_id = $1 AND id::text = ANY($2::text[])`,
+    [userId, ids],
+  );
+  return rowCount ?? 0;
 }
 
 /**
- * Close every unlock for a user except the one making the request: "sign out everywhere
+ * Close every session for a user except the one making the request: "sign out everywhere
  * else", which is what someone reaches for when a device is lost.
  */
-export function revokeOtherSessions(userId: string, keepToken: string | null): number {
-  let removed = 0;
-  for (const [token, session] of sessions) {
-    if (session.userId !== userId || token === keepToken) continue;
-    sessions.delete(token);
-    removed++;
-  }
-  return removed;
+export async function revokeOtherSessions(userId: string, keepToken: string | null): Promise<number> {
+  const keep = keepToken ? hashToken(keepToken) : null;
+  const { rowCount } = await getPool().query(
+    `DELETE FROM sessions
+      WHERE user_id = $1 AND ($2::text IS NULL OR token_hash <> $2)`,
+    [userId, keep],
+  );
+  return rowCount ?? 0;
 }
 
 /** Test/diagnostic surface; not a public API. */
-export function activeSessionCount(): number {
-  sweep(Date.now());
-  return sessions.size;
+export async function activeSessionCount(): Promise<number> {
+  const { rows } = await getPool().query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM sessions WHERE expires_at IS NULL OR expires_at > now()`,
+  );
+  return rows[0]?.n ?? 0;
 }
 
 // ---------------------------------------------------------------------------

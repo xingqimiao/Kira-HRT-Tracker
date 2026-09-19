@@ -15,7 +15,7 @@ import { getPool, migrate } from './db.ts';
 import { getConfig } from './config.ts';
 import { startServer } from './http.ts';
 import { buildServer } from './mcp.ts';
-import { lookupSession } from './session.ts';
+import { AccountService } from './accounts.ts';
 
 const USAGE = `hrt-server — multi-user HRT record service
 
@@ -90,7 +90,9 @@ async function main(): Promise<void> {
     }
     const server = buildServer(async () => {
       if (!token) return null;
-      return lookupSession(token);
+      // The same resolver the HTTP mount uses, so a stale `HRT_UNLOCK_TOKEN` cannot
+      // behave differently here than it would over the network.
+      return AccountService.resolveApiContext(token);
     });
     const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
     await server.connect(new StdioServerTransport());

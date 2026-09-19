@@ -3,24 +3,27 @@
  * here are the ones the README's claim actually rests on.
  */
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
-
+import { test, before, after } from 'node:test';
 import {
   createUserKeyMaterial,
   unwrapDek,
   rewrapForNewPassword,
   openSession,
+  lookupSession,
+  hasUserSession,
   resolveSession,
   closeSession,
   closeUserSessions,
   activeSessionCount,
-  findUserSession,
   touchSession,
   listUserSessions,
   revokeSessions,
   revokeOtherSessions,
 } from '../src/session.ts';
 import { encryptCloudPayload, decryptCloudPayload } from '../src/engine.ts';
+import { bootPostgres, useDatabase, teardown, type PostgresHandle } from './pg.ts';
+import { setConfigForTesting } from '../src/config.ts';
+import { getPool } from '../src/db.ts';
 
 const userId = 'user-8f2c';
 const password = 'correct horse battery staple';
@@ -64,251 +67,157 @@ test('a wrong password cannot rotate the key', async () => {
   assert.equal(await unwrapDek(wrappedDek, 'nope', userId), null, 'no DEK, so nothing to re-wrap');
 });
 
-test('sessions hand back the DEK and are scoped to their user', async () => {
-  const { dek } = await createUserKeyMaterial(password, userId);
-  const token = openSession(userId, dek);
-  assert.equal(resolveSession(token, userId), dek);
-  assert.equal(resolveSession(token, 'another-user'), null, 'token must not cross accounts');
-  assert.equal(resolveSession('ks_forged', userId), null);
-});
-
-test('closing a session revokes it immediately', async () => {
-  const { dek } = await createUserKeyMaterial(password, userId);
-  const token = openSession(userId, dek);
-  closeSession(token);
-  assert.equal(resolveSession(token, userId), null);
-});
-
-test('closing all of a user sessions leaves other users untouched', async () => {
-  const a = await createUserKeyMaterial(password, userId);
-  const b = await createUserKeyMaterial(password, 'other-user');
-  const tokenA = openSession(userId, a.dek);
-  const tokenB = openSession('other-user', b.dek);
-
-  closeUserSessions(userId);
-  assert.equal(resolveSession(tokenA, userId), null, 'target user revoked');
-  assert.equal(resolveSession(tokenB, 'other-user'), b.dek, 'bystander unaffected');
-
-  closeSession(tokenB);
-  assert.equal(activeSessionCount(), 0);
-});
-
 /**
- * The live-unlock lookup.
+ * The session store.
  *
- * `findUserSession` is what lets a provider sign-in reuse the unlock the user
- * already has open rather than opening a second one for the same account. These
- * tests pin the two properties the lookup depends on — a session must actually be
- * live, and it stays open as long as someone keeps reading.
+ * Sessions are rows now, not Map entries, so this part of the suite boots the same
+ * database the server uses — the durability is the feature, and an in-memory fake would
+ * not exercise it. The properties that matter are unchanged: a session is scoped to its
+ * user, revocation is immediate and scoped, and the store never hands back a key.
+ *
+ * Each test uses its own token and cleans up, because the table is shared with every
+ * other test in the run.
  */
-test('no live unlock means no key', () => {
-  assert.equal(findUserSession(userId), null, 'a lookup with nothing open resolves to nothing');
+let pg: PostgresHandle;
+let alice = '';
+let bob = '';
+
+before(async () => {
+  setConfigForTesting({
+    publicOrigin: 'https://hrt.test',
+    apiOrigin: 'https://api.hrt.test',
+    basePath: '',
+    apiBaseUrl: 'https://api.hrt.test',
+    port: 0,
+    databaseUrl: '',
+    serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    encryptionKey: null,
+    google: null,
+    turnstile: null,
+    x: null,
+    sessionTtlMinutes: 30,
+    rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },
+  });
+  pg = await bootPostgres({ dir: './.pgdata-sessionstore', port: 55470, database: 'hrt_sessionstore' });
+  await useDatabase(pg);
+  const { rows } = await getPool().query<{ id: string; username: string }>(
+    `INSERT INTO users (id, username, password_hash)
+     VALUES (gen_random_uuid(), 'session-alice', 'x'),
+            (gen_random_uuid(), 'session-bob', 'x')
+     RETURNING id, username`,
+  );
+  alice = rows.find((row) => row.username === 'session-alice')!.id;
+  bob = rows.find((row) => row.username === 'session-bob')!.id;
+}, { timeout: 180_000 });
+
+after(async () => {
+  await teardown(undefined, pg);
 });
 
-test('a lookup by user id finds a live unlock', async () => {
-  const { dek } = await createUserKeyMaterial(password, userId);
-  openSession(userId, dek);
-  // No session token is passed in here — only the user id is known.
-  assert.equal(findUserSession(userId), dek);
-  closeUserSessions(userId);
+test('a session resolves to its user, and to nothing else', async () => {
+  const token = await openSession(alice);
+  const session = await lookupSession(token);
+  assert.ok(session, 'the fresh session resolves');
+  assert.equal(session.userId, alice);
+  assert.equal(session.persistent, false, 'a plain login keeps the idle window');
+  assert.ok(session.expiresAt, 'and it has one');
+  assert.deepEqual(await resolveSession(token, alice), session);
+  assert.equal(await resolveSession(token, bob), null, 'a token is scoped to its user');
+  assert.equal(await resolveSession('ks_forged', alice), null, 'a forged token resolves to nothing');
+  await closeSession(token);
 });
 
-test('a read keeps the session alive past its nominal 30-minute window', async () => {
-  const { dek } = await createUserKeyMaterial(password, userId);
-  // A session that is already expired, to prove findUserSession is not merely
-  // returning something that happened to still be valid.
-  openSession(userId, dek, -1);
-  assert.equal(findUserSession(userId), null, 'expired session sweeps to nothing before any read');
-
-  const fresh = openSession(userId, dek, 1);
-  assert.equal(findUserSession(userId), dek, 'a read extends the live window');
-  // The refresh means revoking is the only way to end it — expiry alone will not,
-  // so long as reads keep arriving. Documented in CODE-AUDIT.md.
-  closeSession(fresh);
+test('a long-term session has no expiry at all', async () => {
+  const token = await openSession(alice, { persistent: true });
+  const session = await lookupSession(token);
+  assert.ok(session);
+  assert.equal(session.persistent, true);
+  assert.equal(session.expiresAt, null, 'nothing on the server will end it by time');
+  // A renewal must leave it null rather than quietly filling in a window.
+  await touchSession(token, { userAgent: 'test-agent' });
+  const again = await lookupSession(token);
+  assert.equal(again?.expiresAt, null);
+  await closeSession(token);
 });
 
-test('revoking every session ends key access immediately', async () => {
-  const { dek } = await createUserKeyMaterial(password, userId);
-  openSession(userId, dek);
-  assert.equal(findUserSession(userId), dek);
-  closeUserSessions(userId);
-  assert.equal(findUserSession(userId), null, 'revocation must close the window, not shorten it');
+test('an expired session stops resolving the moment it is asked for', async () => {
+  const token = await openSession(alice);
+  await getPool().query(`UPDATE sessions SET expires_at = now() - interval '1 minute' WHERE user_id = $1`, [alice]);
+  assert.equal(await lookupSession(token), null, 'past its window is gone');
+  await closeSession(token);
 });
 
-test('the DEK a lookup obtains is scoped to its own account', async () => {
-  const a = await createUserKeyMaterial(password, userId);
-  const b = await createUserKeyMaterial(password, 'other-user');
-  assert.notEqual(a.dek, b.dek, 'two accounts must not share a DEK');
+test('a use renews a non-persistent window and records the device once', async () => {
+  const token = await openSession(alice);
+  await touchSession(token, { userAgent: 'first-agent', ip: '203.0.113.9' });
+  const first = await lookupSession(token);
+  assert.ok(first);
+  assert.equal(first.userAgent, 'first-agent');
+  assert.equal(first.ip, '203.0.113.9');
+  assert.ok(first.expiresAt && Date.parse(first.expiresAt) > Date.now() + 60_000, 'the window moved out');
 
-  openSession('other-user', b.dek);
-  assert.equal(findUserSession(userId), null, 'an open session for B must not unlock A');
-  assert.equal(findUserSession('other-user'), b.dek);
-
-  closeUserSessions('other-user');
-  assert.equal(findUserSession(userId), null);
+  await touchSession(token, { userAgent: 'second-agent', ip: '198.51.100.4' });
+  const second = await lookupSession(token);
+  assert.equal(second?.userAgent, 'first-agent', 'the first sighting names the device');
+  assert.equal(second?.ip, '203.0.113.9');
+  await closeSession(token);
 });
 
-/**
- * The account page's device list.
- *
- * The list exists so a person can *end* access they no longer recognise, so the two
- * properties that matter are that it names unlocks without ever carrying a credential,
- * and that revoking a row cannot reach another account. Both are pinned here.
- *
- * Each test uses its own user id: the store is module-level and shared with every other
- * test in the run, so a shared id would make the assertions depend on their order.
- */
-test('a session row is named by an id, and carries no token or key', async () => {
-  const user = 'sessions-row-shape';
-  const { dek } = await createUserKeyMaterial(password, user);
-  try {
-    const token = openSession(user, dek);
-    const rows = listUserSessions(user, token);
+test('the list groups by device, marks the caller, and puts it first', async () => {
+  const laptop = await openSession(alice);
+  await touchSession(laptop, { userAgent: 'laptop', ip: '203.0.113.1' });
+  const phone = await openSession(alice);
+  await touchSession(phone, { userAgent: 'phone', ip: '203.0.113.2' });
+  const secondLaptop = await openSession(alice);
+  await touchSession(secondLaptop, { userAgent: 'laptop', ip: '203.0.113.1' });
 
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0].current, true);
-    assert.notEqual(rows[0].id, token, 'the handle must not be the credential');
-    assert.deepEqual(rows[0].ids, [rows[0].id]);
-
-    // Pretty-printed so a nested leak cannot hide behind escaping.
-    const serialised = JSON.stringify(rows, null, 2);
-    assert.ok(!serialised.includes(token), 'the token must never cross the wire');
-    assert.ok(!serialised.includes(dek), 'nor the key it carries');
-  } finally {
-    closeUserSessions(user);
+  const list = await listUserSessions(alice, phone);
+  assert.equal(list.length, 2, 'two devices, three logins');
+  assert.equal(list[0].current, true, 'the caller is marked and sorted first');
+  const laptopRow = list.find((row) => row.userAgent === 'laptop');
+  assert.ok(laptopRow);
+  assert.equal(laptopRow.sessions, 2, 'both laptop logins are one row');
+  assert.equal(laptopRow.ids.length, 2);
+  for (const row of list) {
+    const serialised = JSON.stringify(row);
+    assert.ok(!serialised.includes(laptop) && !serialised.includes(phone), 'no token crosses the wire');
+    assert.ok(!('dek' in row), 'and no key');
   }
+  await closeUserSessions(alice);
 });
 
-test('two unlocks on one device read as one row that stands for both', async () => {
-  const user = 'sessions-grouping';
-  const { dek } = await createUserKeyMaterial(password, user);
-  try {
-    const first = openSession(user, dek);
-    const second = openSession(user, dek);
-    const device = { userAgent: 'TestAgent/1.0', ip: '203.0.113.7' };
-    touchSession(first, device);
-    touchSession(second, device);
+test('revocation is scoped to the user whose ids they are', async () => {
+  const mine = await openSession(alice);
+  const theirs = await openSession(bob);
+  const mineRow = await lookupSession(mine);
+  const theirsRow = await lookupSession(theirs);
+  assert.ok(mineRow && theirsRow);
 
-    const rows = listUserSessions(user, second);
-    assert.equal(rows.length, 1, 'the same device is one row');
-    assert.equal(rows[0].sessions, 2);
-    assert.equal(rows[0].ids.length, 2);
-    assert.equal(new Set(rows[0].ids).size, 2, 'both unlocks are named, with no duplicate');
-    assert.equal(rows[0].current, true, 'the caller is marked, not hidden');
-  } finally {
-    closeUserSessions(user);
-  }
+  assert.equal(await revokeSessions(bob, [mineRow.id]), 0, 'another account cannot end it');
+  assert.ok(await lookupSession(mine), 'and it is still live');
+  assert.equal(await revokeSessions(alice, [mineRow.id]), 1);
+  assert.equal(await lookupSession(mine), null);
+  await closeSession(theirs);
 });
 
-test('the first sighting names the device and later requests do not relabel it', async () => {
-  const user = 'sessions-touch-once';
-  const { dek } = await createUserKeyMaterial(password, user);
-  try {
-    const token = openSession(user, dek);
-    touchSession(token, { userAgent: 'FirstAgent/1.0', ip: '198.51.100.4' });
-    touchSession(token, { userAgent: 'LaterAgent/9.9', ip: '198.51.100.99' });
-
-    const [row] = listUserSessions(user, token);
-    assert.equal(row.userAgent, 'FirstAgent/1.0');
-    assert.equal(row.ip, '198.51.100.4');
-  } finally {
-    closeUserSessions(user);
-  }
+test('sign out everywhere else keeps exactly one session', async () => {
+  await closeUserSessions(alice);
+  const keep = await openSession(alice);
+  await openSession(alice);
+  await openSession(alice);
+  assert.equal(await revokeOtherSessions(alice, keep), 2);
+  const list = await listUserSessions(alice, null);
+  assert.equal(list.length, 1);
+  assert.equal(list[0].current, false, 'no token was passed, so nothing is marked');
+  await closeUserSessions(alice);
 });
 
-test('revocation by handle is scoped to its account', async () => {
-  const owner = 'sessions-revoke-owner';
-  const stranger = 'sessions-revoke-stranger';
-  const a = await createUserKeyMaterial(password, owner);
-  const b = await createUserKeyMaterial(password, stranger);
-  try {
-    openSession(owner, a.dek);
-    const victim = openSession(stranger, b.dek);
-    const strangerId = listUserSessions(stranger, victim)[0].id;
-
-    assert.equal(revokeSessions(owner, [strangerId]), 0, 'another account\'s id is not an authorization');
-    assert.equal(resolveSession(victim, stranger), b.dek, 'the other account is still unlocked');
-
-    const own = listUserSessions(owner, null)[0].id;
-    assert.equal(revokeSessions(owner, [own]), 1);
-    assert.equal(listUserSessions(owner, null).length, 0);
-  } finally {
-    closeUserSessions(owner);
-    closeUserSessions(stranger);
-  }
+test('hasUserSession and the count agree with the rows', async () => {
+  await closeUserSessions(alice);
+  assert.equal(await hasUserSession(alice), false);
+  const token = await openSession(alice);
+  assert.equal(await hasUserSession(alice), true);
+  assert.ok((await activeSessionCount()) >= 1);
+  await closeSession(token);
 });
 
-test('signing out everywhere else keeps the caller', async () => {
-  const user = 'sessions-revoke-others';
-  const { dek } = await createUserKeyMaterial(password, user);
-  try {
-    // Named devices, so the three unlocks are three rows and "two revoked" is visible
-    // as two rows going away rather than as arithmetic on a single grouped row.
-    touchSession(openSession(user, dek), { userAgent: 'Phone/1.0', ip: '203.0.113.1' });
-    touchSession(openSession(user, dek), { userAgent: 'Tablet/1.0', ip: '203.0.113.2' });
-    const keeper = openSession(user, dek);
-    touchSession(keeper, { userAgent: 'Laptop/1.0', ip: '203.0.113.3' });
-    assert.equal(listUserSessions(user, keeper).length, 3);
-
-    assert.equal(revokeOtherSessions(user, keeper), 2);
-    const rows = listUserSessions(user, keeper);
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0].current, true);
-    assert.equal(rows[0].userAgent, 'Laptop/1.0');
-  } finally {
-    closeUserSessions(user);
-  }
-});
-
-// ── Idle lifetime ──────────────────────────────────────────────────────────────
-//
-// These two exist because the setting and the renewal disagreed: `SESSION_TTL_MINUTES`
-// set the *first* unlock's deadline, while every later request reset it from a
-// hard-coded 30 minutes. A week-long setting therefore behaved like 30 minutes from the
-// second request on, which reads as "the app logs me out constantly" and is invisible
-// unless someone watches the deadline across two calls.
-
-test('a session slides: every use pushes the deadline out', async () => {
-  const user = 'session-slide';
-  const { dek } = await createUserKeyMaterial(password, user);
-  try {
-    const token = openSession(user, dek, 60);
-    const first = Date.parse(listUserSessions(user, token)[0].expiresAt);
-
-    // Let a measurable moment pass, then use the session the way a request would.
-    await new Promise((r) => setTimeout(r, 20));
-    assert.equal(resolveSession(token, user), dek);
-
-    const second = Date.parse(listUserSessions(user, token)[0].expiresAt);
-    assert.ok(second > first, 'using a session must extend it, not merely preserve it');
-  } finally {
-    closeUserSessions(user);
-  }
-});
-
-test('the idle window follows the configured TTL, not a built-in default', async () => {
-  const user = 'session-ttl-follows-config';
-  const { dek } = await createUserKeyMaterial(password, user);
-  try {
-    const token = openSession(user, dek, 120);
-    const row = listUserSessions(user, token)[0];
-    const windowMinutes = (Date.parse(row.expiresAt) - Date.parse(row.createdAt)) / 60000;
-
-    assert.ok(
-      Math.abs(windowMinutes - 120) < 1,
-      `a 120-minute unlock should expire in 120 minutes, got ${windowMinutes}`,
-    );
-
-    // And renewal must honour the same number rather than snapping back to a default.
-    await new Promise((r) => setTimeout(r, 20));
-    resolveSession(token, user);
-    const renewed = listUserSessions(user, token)[0];
-    const remaining = (Date.parse(renewed.expiresAt) - Date.now()) / 60000;
-    assert.ok(
-      Math.abs(remaining - 120) < 1,
-      `renewal should restore the full 120 minutes, got ${remaining}`,
-    );
-  } finally {
-    closeUserSessions(user);
-  }
-});

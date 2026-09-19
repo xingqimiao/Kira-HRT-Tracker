@@ -31,7 +31,6 @@ import { getPool } from './db.ts';
 import { ShareService } from './shares.ts';
 import type { AuthContext } from './types.ts';
 import {
-  findUserSession,
   lookupSession,
   closeSession,
   openSession,
@@ -207,7 +206,7 @@ async function contextFor(req: IncomingMessage): Promise<AuthContext | null> {
   // Where a live unlock is last seen. The session store cannot see requests, and this is
   // the single point every authenticated REST call passes through; a durable `hrt_` agent
   // token is not a session, and `touchSession` ignores it for exactly that reason.
-  if (token.startsWith('ks_')) touchSession(token, requestDevice(req));
+  if (token.startsWith('ks_')) await touchSession(token, requestDevice(req));
   return ctx;
 }
 
@@ -336,13 +335,15 @@ export function createRequestHandler() {
           return send(res, 429, { error: 'too many attempts; try again shortly' });
         }
         const body = (await readBody(req)) as
-          | { username?: unknown; password?: unknown; turnstile_token?: unknown }
+          | { username?: unknown; password?: unknown; turnstile_token?: unknown; persistent?: unknown }
           | undefined;
         // Human verification first: it is the cheapest rejection and it must gate
         // account creation, not sit after it.
         const human = await verifyTurnstile(body?.turnstile_token, 'register', clientIp(req));
         if (!human.ok) return send(res, 403, { error: human.error });
-        const result = await AccountService.register(body?.username, body?.password);
+        const result = await AccountService.register(body?.username, body?.password, {
+          persistent: body?.persistent === true,
+        });
         if (!result.ok) return send(res, 400, { error: result.error });
         await AccountService.recordAuthEvent(result.value.userId, 'register', clientIp(req));
         // A session straight away, because there is nothing left to confirm: the
@@ -361,9 +362,11 @@ export function createRequestHandler() {
           return send(res, 429, { error: 'too many attempts; try again shortly' });
         }
         const body = (await readBody(req)) as
-          | { username?: unknown; password?: unknown }
+          | { username?: unknown; password?: unknown; persistent?: unknown }
           | undefined;
-        const result = await AccountService.unlock(body?.username, body?.password);
+        const result = await AccountService.unlock(body?.username, body?.password, {
+          persistent: body?.persistent === true,
+        });
         if (!result.ok) {
           return send(res, 401, { error: result.error });
         }
@@ -447,7 +450,9 @@ export function createRequestHandler() {
 
       if (path === '/auth/google/exchange' && req.method === 'POST') {
         const body = (await readBody(req)) as { code?: unknown } | undefined;
-        const result = await AccountService.completeProviderSignIn('google', body?.code);
+        const result = await AccountService.completeProviderSignIn('google', body?.code, {
+          persistent: (body as { persistent?: unknown } | undefined)?.persistent === true,
+        });
         if (!result.ok) return send(res, 400, { error: result.error });
         return send(res, 200, {
           user_id: result.value.userId,
@@ -504,7 +509,9 @@ export function createRequestHandler() {
 
       if (path === '/auth/x/exchange' && req.method === 'POST') {
         const body = (await readBody(req)) as { code?: unknown } | undefined;
-        const result = await AccountService.completeProviderSignIn('x', body?.code);
+        const result = await AccountService.completeProviderSignIn('x', body?.code, {
+          persistent: (body as { persistent?: unknown } | undefined)?.persistent === true,
+        });
         if (!result.ok) return send(res, 400, { error: result.error });
         return send(res, 200, {
           user_id: result.value.userId,
@@ -521,7 +528,7 @@ export function createRequestHandler() {
       if (path === '/auth/sessions' && req.method === 'GET') {
         const ctx = await contextFor(req);
         if (!ctx) return send(res, 401, { error: 'authentication required' });
-        return send(res, 200, { sessions: listUserSessions(ctx.userId, bearer(req) ?? null) });
+        return send(res, 200, { sessions: await listUserSessions(ctx.userId, bearer(req) ?? null) });
       }
 
       if (path === '/auth/sessions/revoke' && req.method === 'POST') {
@@ -531,7 +538,7 @@ export function createRequestHandler() {
         const body = (await readBody(req)) as { ids?: unknown; all_others?: unknown } | undefined;
 
         if (body?.all_others === true) {
-          return send(res, 200, { revoked: revokeOtherSessions(ctx.userId, token) });
+          return send(res, 200, { revoked: await revokeOtherSessions(ctx.userId, token) });
         }
 
         // A row in the UI stands for a device, which can hold more than one unlock, so
@@ -542,7 +549,7 @@ export function createRequestHandler() {
         if (ids.length === 0) return send(res, 400, { error: 'ids: required' });
         // Revoking the caller's own session is allowed rather than refused: a client that
         // asked for it is a client that is about to drop its token anyway.
-        return send(res, 200, { revoked: revokeSessions(ctx.userId, ids) });
+        return send(res, 200, { revoked: await revokeSessions(ctx.userId, ids) });
       }
 
       if (path === '/auth/account/delete' && req.method === 'POST') {

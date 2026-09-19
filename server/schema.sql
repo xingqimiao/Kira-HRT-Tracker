@@ -165,6 +165,31 @@ CREATE TABLE IF NOT EXISTS api_tokens (
 );
 CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
 
+-- Browser logins. Durable on purpose: the product promise is that the server does not
+-- sign anyone out, and a session held only in process memory dropped every user on
+-- every restart — a logout nobody chose. The row holds **no key**: a record is opened
+-- from the account's own server wrapper when a request needs it, so this table answers
+-- "which browser is this" and can be ended one row at a time from the device list.
+--
+--   `token_hash` is SHA-256 of the bearer token, the same treatment `api_tokens` gets,
+--   so a dump of this table is not a set of usable logins.
+--
+--   `persistent` is the reader's "keep me signed in". Those rows have
+--   `expires_at IS NULL` forever; every other row keeps the deployment's sliding idle
+--   window and is signed out by it.
+CREATE TABLE IF NOT EXISTS sessions (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash    text NOT NULL UNIQUE,
+    persistent    boolean NOT NULL DEFAULT false,
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    last_seen_at  timestamptz NOT NULL DEFAULT now(),
+    expires_at    timestamptz,
+    user_agent    text,
+    ip            text
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
 -- Passkeys used to live here: `webauthn_credentials` (one row per registered
 -- credential, with its COSE public key and sign counter) and `webauthn_challenges`
 -- (single-use ceremony nonces). Both are gone with the feature.

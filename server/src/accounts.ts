@@ -39,7 +39,7 @@ import {
   openSession,
   closeSession,
   closeUserSessions,
-  findUserSession as findUserSessionFor,
+  hasUserSession,
   lookupSession,
   issueOneTimeCode,
   redeemOneTimeCode,
@@ -236,6 +236,7 @@ export const AccountService = {
   async register(
     usernameRaw: unknown,
     passwordRaw: unknown,
+    opts: { persistent?: boolean } = {},
   ): Promise<Result<RegistrationResult>> {
     const username = validateUsername(usernameRaw);
     if (!username.ok) return username;
@@ -243,7 +244,7 @@ export const AccountService = {
     if (!password.ok) return password;
 
     const userId = randomUUID();
-    const { metadata, dek } = await createKeyMaterial(password.value, userId, {
+    const { metadata } = await createKeyMaterial(password.value, userId, {
       serverKey: getConfig().serverDekKey,
     });
     const passwordHash = await hashPassword(password.value);
@@ -287,9 +288,10 @@ export const AccountService = {
 
     await settings.upsert(userId, { hrtMode: 'transfem' }).catch(() => undefined);
 
-    // The session is opened here, with the DEK minted a few lines above, so the key
-    // never has to be unwrapped again and there is no second step to hand it through.
-    const token = openSession(userId, requireKey(dek, 'registration'), getConfig().sessionTtlMinutes);
+    // The session is opened here because registration has just proved who this is;
+    // it holds no key, so nothing about the DEK minted above has to be threaded
+    // through it.
+    const token = await openSession(userId, { persistent: opts.persistent });
 
     return {
       ok: true,
@@ -307,6 +309,7 @@ export const AccountService = {
   async unlock(
     usernameRaw: unknown,
     passwordRaw: unknown,
+    opts: { persistent?: boolean } = {},
   ): Promise<Result<UnlockedAccount>> {
     const generic = { ok: false as const, error: 'invalid credentials' };
     const username = validateUsername(usernameRaw);
@@ -348,7 +351,7 @@ export const AccountService = {
       await saveMetadata(user.id, await addServerWrapper(metadata, dek, user.id, serverKey));
     }
 
-    const token = openSession(user.id, requireKey(dek, 'unlock'), getConfig().sessionTtlMinutes);
+    const token = await openSession(user.id, { persistent: opts.persistent });
     await this.recordAuthEvent(user.id, 'unlock');
 
     return {
@@ -388,8 +391,16 @@ export const AccountService = {
    */
   async resolveApiContext(token: string): Promise<AuthContext | ContextDenial | null> {
     if (token.startsWith('ks_')) {
-      const session = lookupSession(token);
-      return session ? { userId: session.userId, dek: session.dek } : null;
+      const session = await lookupSession(token);
+      if (!session) return null;
+      const sessionUser = await loadUser({ id: session.userId });
+      if (!sessionUser) return null;
+      // The session proves the login, not the key: a session row carries none, so the
+      // key comes from the account's own server wrapper, exactly as a durable token's
+      // does below. A deployment with no SERVER_DEK_KEY is the only "locked" left.
+      const sessionDek = await serverDekFor(sessionUser);
+      if (!sessionDek) return { denied: 'locked' };
+      return { userId: session.userId, dek: sessionDek };
     }
     const userId = await this.resolveApiToken(token);
     if (!userId) return null;
@@ -406,7 +417,7 @@ export const AccountService = {
   },
 
   async lock(token: string): Promise<void> {
-    closeSession(token);
+    await closeSession(token);
   },
 
   // --- Password -----------------------------------------------------------
@@ -447,7 +458,7 @@ export const AccountService = {
     // permanent by default, an entry that had quietly stopped working is exactly the
     // confusion the management screen exists to remove. The security event is still
     // recorded below.
-    closeUserSessions(ctx.userId);
+    await closeUserSessions(ctx.userId);
     await getPool().query(`DELETE FROM api_tokens WHERE user_id = $1`, [ctx.userId]);
     await this.recordAuthEvent(ctx.userId, 'password_change');
     return { ok: true, value: undefined };
@@ -960,10 +971,10 @@ export const AccountService = {
       await client.query(`DELETE FROM users WHERE id = $1`, [user.id]);
     });
 
-    // Unlocked sessions live in process memory, so the cascade cannot reach them.
-    // Without this the deleted account's key would sit in memory for up to its idle
-    // timeout, and a token minted before the delete would keep working.
-    closeUserSessions(ctx.userId);
+    // The cascade reaches `sessions` too, but deleting them explicitly keeps a
+    // deleted account from being re-read by a token minted before the delete — and it
+    // is the same call the password change makes, so there is one rule, not two.
+    await closeUserSessions(ctx.userId);
 
     return { ok: true, value: { deleted: true } };
   },
@@ -985,6 +996,7 @@ export const AccountService = {
   async completeProviderSignIn(
     provider: 'x' | 'google',
     oneTimeCode: unknown,
+    opts: { persistent?: boolean } = {},
   ): Promise<Result<{ userId: string; username: string; token: string }>> {
     if (typeof oneTimeCode !== 'string' || oneTimeCode.length === 0) {
       return { ok: false, error: 'code: required' };
@@ -998,15 +1010,6 @@ export const AccountService = {
     // this session is what lets them bind the fallback credential that the records
     // gate asks for. Refusing here would be a dead end.
 
-    // A live unlock on this server (e.g. another tab, or a recent sign-in) already
-    // holds the key, so no password is needed from this caller.
-    const existing = findUserSessionFor(userId);
-    if (existing) {
-      const token = openSession(userId, existing, getConfig().sessionTtlMinutes);
-      await this.recordAuthEvent(userId, `${provider}_login_session_reused`);
-      return { ok: true, value: { userId, username: user.username, token } };
-    }
-
     // The deployment's own copy of the account key opens the records, so a provider
     // round-trip is enough on its own — which is exactly what "simple, easy to
     // recover" is supposed to mean. A deployment with no key has nothing to hand
@@ -1015,8 +1018,12 @@ export const AccountService = {
     if (!serverDek) {
       return { ok: false, error: 'account key material is unreadable; set a new password to re-key it' };
     }
-    const token = openSession(userId, serverDek, getConfig().sessionTtlMinutes);
-    await this.recordAuthEvent(userId, `${provider}_login_server_unlock`);
+    // The audit trail still distinguishes "a tab was already signed in" from "the
+    // deployment opened the key", even though neither changes what the session is:
+    // a row that names a user and holds no key.
+    const reused = await hasUserSession(userId);
+    const token = await openSession(userId, { persistent: opts.persistent });
+    await this.recordAuthEvent(userId, `${provider}_login_${reused ? 'session_reused' : 'server_unlock'}`);
     return { ok: true, value: { userId, username: user.username, token } };
   },
 
