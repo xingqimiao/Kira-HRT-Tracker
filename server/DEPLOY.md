@@ -17,8 +17,7 @@ https://api.kiramyao.com
     ├── /hrt/stats            ← public aggregate counts, no identifiers
     ├── /hrt/auth/register, /hrt/auth/login, /hrt/auth/unlock
     ├── /hrt/auth/x/*, /hrt/auth/google/*, /hrt/auth/credentials/bind
-    ├── /hrt/api/settings, /hrt/api/medications, /hrt/api/labs, /hrt/api/timeline,
-    │   /hrt/api/predict, /hrt/api/sync, /hrt/api/tokens, /hrt/api/records
+    ├── /hrt/api/settings, /hrt/api/records, /hrt/api/tokens
     └── /hrt/mcp
 ```
 
@@ -507,14 +506,15 @@ SELECT u.username, o.provider, u.created_at
  WHERE u.password_hash IS NULL ORDER BY u.created_at;
 ```
 
-**Dropping the old second-factor columns.** `users.totp_secret_sealed`,
-`users.totp_enabled_at`, `users.totp_last_step` and the `totp_backup_codes` table are
-still in `schema.sql` and still in the production database. Nothing reads or writes
-them since TOTP was removed, and all three columns are nullable, so leaving them costs
-nothing but a little confusion. Drop them only *after* the code change is live and
-verified, so a rollback to the previous release still boots; and if you drop them by
-hand, remember `ALTER TABLE users OWNER TO hrt` is not needed for a `DROP COLUMN` on a
-table `hrt` already owns, but the ownership probe below is.
+**Retired tables.** Five tables have been dropped and `schema.sql` carries the `DROP`s:
+`medication_events` and `lab_results` (replaced by `records`, and read by nothing since
+MCP moved onto it), `totp_backup_codes` plus the three `users.totp_*` columns (no second
+factor), and `webauthn_credentials` / `webauthn_challenges` (no passkeys). They applied
+on the deploy that removed their last reader, so there is nothing left to do by hand —
+`scripts/check-table-ownership.sql` prints any that are still present, and expects none.
+If you ever need to drop one by hand, a `DROP` on a table `hrt` already owns needs no
+ownership fix, but run the probe afterwards anyway.
+
 
 ---
 
