@@ -31,13 +31,15 @@
          requires the home page to be publicly accessible, to say what the app does and
          to link to the privacy policy, and it does not execute JavaScript.
 
-         Visible to those clients, invisible to browsers. This script runs while the
-         head is still parsing — before anything is painted — so a browser never sees
-         the fallback at all rather than seeing it flash and then vanish. A client that
-         does not run the script never gets the `js` class, so it still reads the whole
-         block below. `index.tsx` also empties `#root` before the first render, which is
-         belt and braces: this hides it, that removes it. -->
-    <script>document.documentElement.className += ' js';</script>
+         Hidden by default, revealed by `<noscript>`. The obvious version of this is the
+         other way round — visible, then hidden by a script that sets a class — and it
+         does not work here: this site sits behind Cloudflare, whose Rocket Loader
+         rewrites every inline script's `type` to a non-executing value and re-runs it
+         after load, so the hiding script ran too late and the block flashed on every
+         visit. Styling the no-JavaScript case from inside `<noscript>` has no script to
+         defer, so it is correct before the first paint and cannot be broken by an edge
+         feature we do not control. `index.tsx` also empties `#root` before the first
+         render, which is belt and braces: this never lays the block out, that removes it. -->
     <style>
         .boot-fallback {
             max-width: 46rem;
@@ -46,7 +48,7 @@
             font: 16px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
         }
 
-        html.js .boot-fallback {
+        .boot-fallback {
             display: none;
         }
 
@@ -75,6 +77,16 @@
             }
         }
     </style>
+    <!-- The other half of the pair above: with scripting unavailable, show the block.
+         `<noscript>` in the head may only contain link/style/meta, which is why this is
+         a second style block rather than a rule in the first one. -->
+    <noscript>
+        <style>
+            .boot-fallback {
+                display: block;
+            }
+        </style>
+    </noscript>
 </head>
 
 <body class="text-gray-900 dark:text-white transition-colors duration-300">

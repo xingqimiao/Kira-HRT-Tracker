@@ -804,8 +804,16 @@ body {
     background-color: var(--color-m3-primary-light);
     box-shadow: var(--shadow-m3-1);
 }
+/* MD3's disabled filled button is a *neutral* container with a dimmer label — not the
+   primary colour at reduced opacity. Fading the fill keeps the call-to-action hue, so a
+   disabled "create account" renders as a dusty rose that reads as a broken button
+   rather than an unavailable one, which is exactly how it looked on the sign-up screen.
+   `on-surface` at 12% and 38% is the spec's pairing and it works in both themes, since
+   the token itself switches. */
 .btn-primary:disabled {
-    opacity: 0.5;
+    background-color: color-mix(in srgb, var(--color-m3-on-surface) 12%, transparent);
+    color: color-mix(in srgb, var(--color-m3-on-surface) 38%, transparent);
+    box-shadow: none;
     cursor: not-allowed;
 }
 
