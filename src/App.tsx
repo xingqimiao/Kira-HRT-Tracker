@@ -16,8 +16,7 @@ import { setAuthLandingIntent, takeAuthLandingIntent } from './utils/authLanding
 import WeightEditorModal from './components/WeightEditorModal';
 import DoseFormModal from './components/DoseFormModal';
 import ImportModal from './components/ImportModal';
-import Sidebar from './components/Sidebar';
-import Icon from './components/Icon';
+import { AppShell } from './components/ui';
 import PasswordInputModal from './components/PasswordInputModal';
 import DisclaimerModal from './components/DisclaimerModal';
 import CoreAuthModal from './components/CoreAuthModal';
@@ -339,12 +338,21 @@ const AppContent = () => {
     // Works with auto-sync switched off; refuses when the cloud copy is
     // encrypted and unreadable here, rather than replacing it with plaintext.
 
-    // Construct Nav Items again just for Sidebar prop, or reuse from hook if we exported it
-    // Actually we exported navItems from useAppNavigation
-    // But we need to pass them to sidebar.
-    // And also reconstruct the bottom nav bar manually because it was inline in the original App.tsx
-    // Let's grab navItems logic from hook or just reconstruct here?
-    // The hook provides navItems.
+    /**
+     * Which destination owns the current view.
+     *
+     * A sub-view belongs to the section it was drilled out of, so the rail (and
+     * the bar) keep that destination lit while you are inside it. The MCP screen
+     * is the one the two surfaces used to disagree about — the top bar lit
+     * Settings and the bottom bar lit Account, and it is reached from Account.
+     */
+    const sectionFor = (view: string): string => {
+        if (view === 'settings-mcp') return 'account';
+        if (view.startsWith('settings-') || view === 'pk-params') return 'settings';
+        if (view === 'lab-calibration') return 'lab';
+        return view;
+    };
+    const activeSection = sectionFor(currentView);
 
     // Takes over the whole screen rather than sitting in the view stack: the
     // intro is where language and HRT mode get chosen, and leaving the nav up
@@ -382,14 +390,13 @@ const AppContent = () => {
     }
 
     return (
-        <div className="h-[100dvh] w-full bg-[var(--color-m3-surface)] flex flex-col font-sans text-[var(--color-m3-on-surface)] select-none overflow-hidden">
-            <Sidebar
-                navItems={navItems}
-                currentView={currentView}
-                onViewChange={(v) => handleViewChange(v)}
-            />
-            <div className="flex-1 flex flex-col overflow-hidden w-full bg-[var(--color-m3-surface-dim)]  relative">
-
+        <>
+        <AppShell
+            navItems={navItems}
+            activeId={activeSection}
+            onNavigate={(v) => handleViewChange(v as ViewKey)}
+            navLabel="Primary"
+        >
                 <div
                     ref={mainScrollRef}
                     key={currentView}
@@ -624,46 +631,7 @@ const AppContent = () => {
                     )}
                     </div>
                 </div>
-
-                {/* Bottom Navigation — floating island */}
-                <nav className="fixed left-4 right-4 bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] z-40 md:hidden rounded-2xl bg-[var(--color-m3-surface-bright)]  border border-[var(--color-m3-outline-variant)]  shadow-[var(--shadow-m3-3)]">
-                    <div className="flex items-stretch p-1.5 gap-1">
-                        {navItems.map(({ id, icon, label }) => {
-                            const activeTab = ({
-                                'home': 'home',
-                                'history': 'history',
-                                'lab': 'lab',
-                                'lab-calibration': 'lab',
-                                'settings': 'settings',
-                                'settings-hrt-mode': 'settings',
-                                'settings-language': 'settings',
-                                'settings-appearance': 'settings',
-                                'settings-weight': 'settings',
-                                'settings-export': 'settings',
-                                'settings-import': 'settings',
-                                'settings-mcp': 'account',
-                                'settings-licences': 'settings',
-                                'pk-params': 'settings',
-                                'account': 'account',
-                            } as Record<string, string>)[currentView] ?? currentView;
-                            const isActive = activeTab === id;
-                            const isDisabled = false;
-                            return (
-                                <button
-                                    key={id}
-                                    onClick={() => !isDisabled && handleViewChange(id as ViewKey)}
-                                    disabled={isDisabled}
-                                    aria-current={isActive ? 'page' : undefined}
-                                    className={`m3-nav-item ${isActive ? 'is-active' : ''}`}
-                                >
-                                    <Icon icon={icon} size={22} strokeWidth={isActive ? 1.9 : 1.75} />
-                                    <span>{label}</span>
-                                </button>
-                            );
-                        })}
-                    </div>
-                </nav>
-            </div>
+        </AppShell>
 
             <PasswordInputModal
                 isOpen={isPasswordInputOpen}
@@ -715,7 +683,7 @@ const AppContent = () => {
                 initialUsername={prefillUsername}
                 onSignedIn={() => setPrefillUsername('')}
             />
-        </div >
+        </>
     );
 };
 

@@ -142,10 +142,6 @@
     --shadow-m3-2: 0 8px 24px rgba(0, 0, 0, 0.44);
     --shadow-m3-3: 0 16px 48px rgba(0, 0, 0, 0.56);
 
-    /* The height of the primary bar. Sticky page headers and the scroller's own top
-       padding offset by it, so it is declared once rather than as a magic 64px. */
-    --m3-navbar-height: 64px;
-
     /* ═══════════════════════════════════════════════════════════════════════
        MOTION — Material 3 tokens
        ═══════════════════════════════════════════════════════════════════════
@@ -877,14 +873,15 @@ body {
 
 .scroll-pb-nav {
     /* The floating bottom bar, plus the screen gesture area, plus breathing room:
-       92px is the bar and its gap. Only applies where that bar exists. */
+       92px is the bar and its gap. Only applies where that bar exists — which is
+       now below 840, the breakpoint the rail takes over at. */
     padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px));
 }
-@media (min-width: 768px) {
+@media (min-width: 840px) {
     .scroll-pb-nav {
-        /* No bottom bar here, but the top bar floats over the content. */
+        /* The rail sits beside the content rather than over it, so nothing has to
+           be reserved at the top or the bottom. */
         padding-bottom: 0;
-        padding-top: var(--m3-navbar-height);
     }
 }
 
@@ -1225,65 +1222,129 @@ body {
 }
 
 /* ── Nav ───────────────────────────────────────────────────────────────────
-   64px, the page colour at 88%, and a blur. The blur is not decoration: content
-   scrolling under a bar that is only 88% opaque otherwise reads as a smear, and
-   blurring it keeps the bar legible without making it a solid block.
+   The primary navigation used to be a 64px bar across the top: the page colour at
+   88% with a blur, pill-shaped links, the current one filled. It cost 64px of
+   every screen to hold five links, and its reserved `padding-top` was load
+   bearing for every sticky header in the app.
 
-   `position: fixed` is what makes that sentence true, and leaving it out was a
-   real bug rather than a style preference. The bar was an in-flow flex child, so
-   nothing ever scrolled under it — and worse, the two places that *assume* it
-   floats were then each adding a second 64px offset:
+   It is a rail now, on the leading side, from the expanded window size class up.
+   Below that the floating island stays what it always was. Both are `display`
+   switches on the same 840px query, so the swap does not depend on JavaScript.
 
-     .scroll-pb-nav   padding-top: 64px   (content already started below the bar)
-     every page       md:top-[64px]       (sticky pinned 64px below the scroller top)
-
-   Stacked, that put a page's sticky header 128px down the viewport with live
-   content scrolling through the gap above it — which is what "the header moves
-   with the scroll" looked like on the MCP page. It was true on every page with a
-   sticky header; that page was just tall enough to show it.
-
-   Fixed rather than left in flow so the compensation stays where it already is:
-   one declaration here, and the padding and the sticky offsets both become
-   correct as written. `z-index: 30` sits above the pages' `z-20` sticky headers
-   (so they slide *under* the bar) and below the bottom bar and dialogs. */
-.m3-navbar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 30;
-    align-items: center;
-    height: var(--m3-navbar-height);
-    background-color: color-mix(in srgb, var(--color-m3-surface) 88%, transparent);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--color-m3-line);
+   No motion on a destination — it is chosen dozens of times a day, which is the
+   /animate tier that gets none. Only the indicator's opacity and the label colour
+   cross-fade at 150ms, which reads as a state change rather than a transition. */
+.m3-rail {
+    display: none;
+}
+@media (min-width: 840px) {
+    .m3-rail {
+        position: fixed;
+        inset-block: 0;
+        inset-inline-start: 0;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--md-sys-space-2);
+        width: 80px;
+        padding: var(--md-sys-space-3) 0;
+        background-color: var(--md-sys-color-surface);
+        border-inline-end: 1px solid var(--md-sys-color-outline-variant);
+        overflow-y: auto;
+        scrollbar-width: none;
+    }
+    .m3-rail::-webkit-scrollbar { display: none; }
+    /* The rail sits beside the content, so the content has to move over. */
+    .m3-shell-body { padding-inline-start: 80px; }
 }
 
-/* Nav links are pills. The current one is filled, not underlined — the fill is the
-   whole signal, so there is no second indicator competing with it. */
-.m3-nav-pill {
+.m3-rail-item {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 72px;
+    min-height: 56px;
+    padding: 4px 0;
+    color: var(--md-sys-color-on-surface-variant);
+    background-color: transparent;
+    border: none;
+    border-radius: var(--md-sys-shape-corner-full);
+    font-family: var(--font-sans);
+    font-size: var(--md-sys-typescale-label-medium-size);
+    line-height: var(--md-sys-typescale-label-medium-line-height);
+    font-weight: var(--md-sys-typescale-label-medium-weight);
+    letter-spacing: var(--md-sys-typescale-label-medium-tracking);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 150ms var(--ease-out);
+}
+.m3-rail-item > * { position: relative; }
+.m3-rail-item::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 56px;
+    height: 32px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background-color: var(--md-sys-color-secondary-container);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 150ms var(--ease-out);
+}
+.m3-rail-item[aria-current="page"]::before { opacity: 1; }
+.m3-rail-item[aria-current="page"] { color: var(--md-sys-color-on-surface); }
+/* Descendant, not child: Icon wraps its svg in a span. */
+.m3-rail-item[aria-current="page"] svg { color: var(--md-sys-color-on-secondary-container); }
+.m3-rail-item:disabled { opacity: var(--md-sys-state-disabled-opacity); cursor: not-allowed; }
+
+/* The brand slot at the top of the rail. There is no logo, so this is the app's
+   own droplet at 24dp in a round target — a drawn wordmark would be the only
+   invented thing on the page. */
+.m3-rail-brand {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 8px 16px;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--color-m3-on-surface-variant);
-    border-radius: var(--radius-full);
-    white-space: nowrap;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    margin-block-end: var(--md-sys-space-3);
+    color: var(--md-sys-color-primary);
+    background-color: var(--md-sys-color-primary-container);
+    border: none;
+    border-radius: var(--md-sys-shape-corner-full);
     cursor: pointer;
-    transition: background-color var(--duration-quick) var(--ease-standard),
-                color var(--duration-quick) var(--ease-standard);
 }
-.m3-nav-pill:hover {
-    color: var(--color-m3-on-surface);
-    background-color: var(--color-m3-fill-soft);
+
+/* The compact-and-medium navigation: the app's floating island, unchanged, with
+   the spec's items inside it. Hidden once the rail takes over. */
+.m3-navigation-bar {
+    position: fixed;
+    left: var(--md-sys-space-4);
+    right: var(--md-sys-space-4);
+    bottom: calc(var(--md-sys-space-3) + env(safe-area-inset-bottom, 0px));
+    z-index: 40;
+    display: flex;
+    align-items: stretch;
+    gap: var(--md-sys-space-1);
+    padding: 6px;
+    border-radius: var(--md-sys-shape-corner-large);
+    background-color: var(--md-sys-color-surface-bright);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    box-shadow: var(--md-sys-elevation-level3);
 }
-.m3-nav-pill[aria-current="page"],
-.m3-nav-pill.is-active {
-    color: var(--color-m3-on-surface);
-    background-color: var(--color-m3-line);
+@media (min-width: 840px) {
+    .m3-navigation-bar { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .m3-rail-item,
+    .m3-rail-item::before {
+        transition: none;
+    }
 }
 
 /* A round target for an icon that is the whole control. 48px is the M3 floor for a
