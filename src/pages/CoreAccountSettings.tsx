@@ -218,7 +218,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
         )}
         {error && (
           <p
-            className="text-xs flex items-start gap-1.5 text-[#B3261E] mb-4"
+            className="text-xs flex items-start gap-1.5 text-cos-error mb-4"
             role="alert"
           >
             <Icon icon={AlertTriangle} size={13} className="mt-0.5 shrink-0" />
@@ -508,9 +508,9 @@ const Row: React.FC<{
       }`}
       style={onClick ? { transitionDuration: 'var(--md-sys-motion-duration-short3)' } : undefined}
     >
-      <span className={`mt-0.5 shrink-0 ${danger ? 'text-[#B3261E]' : muted}`}>{icon}</span>
+      <span className={`mt-0.5 shrink-0 ${danger ? 'text-cos-error' : muted}`}>{icon}</span>
       <span className="flex-1 min-w-0">
-        <span className={`block text-sm ${danger ? 'text-[#B3261E]' : on}`}>{title}</span>
+        <span className={`block text-sm ${danger ? 'text-cos-error' : on}`}>{title}</span>
         {subtitle && <span className={`block text-xs mt-0.5 leading-relaxed ${muted}`}>{subtitle}</span>}
       </span>
       {right && <span className="mt-0.5 shrink-0">{right}</span>}
@@ -528,7 +528,7 @@ const Dialog: React.FC<{
   <div className="modal-overlay z-[70]" data-state="open" role="dialog" aria-modal="true" aria-label={title}>
     <div className="modal-shell">
       <div className="modal-card">
-        <h3 className={`modal-title ${danger ? 'text-[#B3261E]' : ''}`}>{title}</h3>
+        <h3 className={`modal-title ${danger ? 'text-cos-error' : ''}`}>{title}</h3>
         {children}
         <button
           type="button"
@@ -579,7 +579,7 @@ const Submit: React.FC<{ busy: boolean; disabled?: boolean; danger?: boolean; ch
   <button
     type="submit"
     disabled={busy || disabled}
-    className={`${danger ? 'bg-[#B3261E] text-cos-on-primary' : 'btn-primary'} w-full mt-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-[var(--radius-sm)] text-sm font-medium disabled:opacity-50`}
+    className={`${danger ? 'bg-cos-error text-cos-on-error' : 'btn-primary'} w-full mt-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-[var(--radius-sm)] text-sm font-medium disabled:opacity-50`}
   >
     {busy && <Icon icon={Loader2} size={16} className="animate-spin" />}
     {children}
@@ -631,7 +631,7 @@ const PasswordDialog: React.FC<{
           hint={t('core.pw.new_hint')}
         />
         <Field label={t('core.pw.confirm')} type="password" value={confirm} onChange={setConfirm} />
-        {localError && <p className="text-xs text-[#B3261E]" role="alert">{localError}</p>}
+        {localError && <p className="text-xs text-cos-error" role="alert">{localError}</p>}
         <Submit busy={busy} disabled={!current || next.length < 8}>{t('core.pw.submit')}</Submit>
       </form>
     </Dialog>
@@ -677,7 +677,7 @@ const UnlinkDialog: React.FC<{
           }
         }}
       >
-        {error && <p className="text-xs text-[#B3261E]" role="alert">{error}</p>}
+        {error && <p className="text-xs text-cos-error" role="alert">{error}</p>}
         <Submit busy={busy}>{t('core.unlink.submit')}</Submit>
       </form>
     </Dialog>
@@ -732,7 +732,7 @@ const DeleteDialog: React.FC<{
           placeholder="DELETE"
         />
 
-        {error && <p className="text-xs text-[#B3261E]" role="alert">{error}</p>}
+        {error && <p className="text-xs text-cos-error" role="alert">{error}</p>}
 
         <Submit busy={busy} disabled={!ready} danger>{t('core.del.submit')}</Submit>
       </form>

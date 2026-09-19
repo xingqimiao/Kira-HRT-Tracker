@@ -263,7 +263,7 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                     </label>
 
                     {error && (
-                        <p className="text-xs flex items-start gap-1.5 text-[#B3261E]" role="alert">
+                        <p className="text-xs flex items-start gap-1.5 text-cos-error" role="alert">
                             <Icon icon={AlertTriangle} size={13} className="mt-0.5 shrink-0" />
                             <span>{error}</span>
                         </p>

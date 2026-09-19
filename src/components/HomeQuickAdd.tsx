@@ -205,15 +205,15 @@ const UndoBanner: React.FC<{
     return (
         <div
             role="status"
-            className="fixed bottom-4 left-1/2 z-[90] flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-highest)] px-4 py-3 text-[var(--color-m3-on-surface)] shadow-lg"
+            className="m3-snackbar fixed bottom-4 left-1/2 z-[90] w-[calc(100%-2rem)] max-w-sm"
         >
-            <span className="min-w-0 flex-1 text-xs">
+            <span className="min-w-0 flex-1">
                 {t('quickadd.done').replace('{name}', name)}
             </span>
             <button
                 type="button"
                 onClick={onUndo}
-                className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-container)]"
+                className="m3-snackbar-action inline-flex shrink-0 items-center gap-1"
             >
                 <Icon icon={RotateCcw} size={13} />
                 {t('quickadd.undo')}

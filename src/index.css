@@ -57,6 +57,20 @@
     --color-m3-success-container: #16301F;
     --color-m3-warning: #F5D08A;
     --color-m3-warning-container: #3A2C11;
+    /* The pairs the spec needs and the palette did not have: the ink that sits
+       *on* a semantic fill. Not the same hue in both themes, because the fills
+       are not the same lightness. */
+    --color-m3-on-error: #690005;
+    --color-m3-on-success: #00391C;
+    --color-m3-on-warning: #3F2E00;
+    /* Inverse roles: the surface and ink a snackbar is drawn with, so a snackbar
+       can read as the inverse of the page in either theme. */
+    --color-m3-inverse-surface: #E8E8EC;
+    --color-m3-inverse-on-surface: #16171C;
+    --color-m3-inverse-primary: #A8405A;
+    /* The two roles that are the same in every theme. */
+    --color-m3-scrim: #000000;
+    --color-m3-shadow: #000000;
 
     /* Tailwind-facing names for the same roles. The cos- prefix is deliberate: every
        colour here is a role, and text-cos-error says what the text means where
@@ -80,6 +94,9 @@
        around them. The `text-cos-*` aliases were there, which is why the text looked
        right while the backgrounds were see-through. */
     --color-cos-surface-container: var(--color-m3-surface-container);
+    --color-cos-on-error: var(--color-m3-on-error);
+    --color-cos-inverse-surface: var(--color-m3-inverse-surface);
+    --color-cos-inverse-on-surface: var(--color-m3-inverse-on-surface);
 
     /* — The dark set. Identical on purpose: this app is dark-first, and the dark:
          overrides written through the codebase are the structure the styling was
@@ -216,6 +233,204 @@
     /* How long the chart line takes to draw itself on. Markers and the "now"
        read-off are delayed along this same span so they land as it passes. */
     --duration-sweep: 900ms;
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       THE SPEC LAYER — --md-sys-*
+
+       Everything above is this app's own vocabulary. Everything below is the
+       Material 3 vocabulary pointing at the same values, so a component written
+       against the spec is correct here and no second palette exists. Aliases,
+       not a rename: --color-m3-* has ~520 call sites and every one of them keeps
+       working; new code reaches for --md-sys-*, old code moves across as it is
+       touched.
+
+       The roles the spec names that this design does not use as a family of its
+       own point at the family that plays that part here: secondary is this
+       palette's accent (the cool counterweight) and tertiary is the chart's
+       second series.
+       ═══════════════════════════════════════════════════════════════════════ */
+
+    /* — Colour — */
+    --md-sys-color-primary: var(--color-m3-primary);
+    --md-sys-color-on-primary: var(--color-m3-on-primary);
+    --md-sys-color-primary-container: var(--color-m3-primary-container);
+    --md-sys-color-on-primary-container: var(--color-m3-on-primary-container);
+    --md-sys-color-secondary: var(--color-m3-accent);
+    --md-sys-color-on-secondary: var(--color-m3-on-accent);
+    --md-sys-color-secondary-container: var(--color-m3-accent-container);
+    --md-sys-color-on-secondary-container: var(--color-m3-on-accent-container);
+    --md-sys-color-tertiary: var(--color-m3-chart-series-2);
+    --md-sys-color-on-tertiary: var(--color-m3-on-primary);
+    --md-sys-color-tertiary-container: var(--color-m3-accent-container);
+    --md-sys-color-on-tertiary-container: var(--color-m3-on-accent-container);
+    --md-sys-color-error: var(--color-m3-error);
+    --md-sys-color-on-error: var(--color-m3-on-error);
+    --md-sys-color-error-container: var(--color-m3-error-container);
+    --md-sys-color-on-error-container: var(--color-m3-on-error-container);
+    --md-sys-color-surface: var(--color-m3-surface);
+    --md-sys-color-on-surface: var(--color-m3-on-surface);
+    --md-sys-color-on-surface-variant: var(--color-m3-on-surface-variant);
+    --md-sys-color-surface-dim: var(--color-m3-surface-dim);
+    --md-sys-color-surface-bright: var(--color-m3-surface-bright);
+    --md-sys-color-surface-container-lowest: var(--color-m3-surface-container-lowest);
+    --md-sys-color-surface-container-low: var(--color-m3-surface-container-low);
+    --md-sys-color-surface-container: var(--color-m3-surface-container);
+    --md-sys-color-surface-container-high: var(--color-m3-surface-container-high);
+    --md-sys-color-surface-container-highest: var(--color-m3-surface-container-highest);
+    --md-sys-color-surface-tint: var(--color-m3-primary);
+    --md-sys-color-outline: var(--color-m3-outline);
+    --md-sys-color-outline-variant: var(--color-m3-outline-variant);
+    --md-sys-color-inverse-surface: var(--color-m3-inverse-surface);
+    --md-sys-color-inverse-on-surface: var(--color-m3-inverse-on-surface);
+    --md-sys-color-inverse-primary: var(--color-m3-inverse-primary);
+    --md-sys-color-scrim: var(--color-m3-scrim);
+    --md-sys-color-shadow: var(--color-m3-shadow);
+    /* This design's own additions, kept out of the spec names: success and
+       warning have no M3 role, and the chart series are data, not UI. */
+    --md-sys-color-success: var(--color-m3-success);
+    --md-sys-color-on-success: var(--color-m3-on-success);
+    --md-sys-color-success-container: var(--color-m3-success-container);
+    --md-sys-color-warning: var(--color-m3-warning);
+    --md-sys-color-on-warning: var(--color-m3-on-warning);
+    --md-sys-color-warning-container: var(--color-m3-warning-container);
+    /* The hairline wash. The spec would express these as a tonal step, but they
+       are what this surface system is actually built on, so they get
+       spec-shaped names instead of staying a private shorthand. */
+    --md-sys-color-hairline-soft: var(--color-m3-line-soft);
+    --md-sys-color-hairline: var(--color-m3-line);
+    --md-sys-color-hairline-strong: var(--color-m3-line-strong);
+    --md-sys-color-wash: var(--color-m3-fill-soft);
+
+    /* — Typescale —
+       15 styles: five families, three sizes each. Every size is paired with the
+       line height it is designed to sit in, because that pairing *is* the scale
+       — 16/24 is not a bigger 16/20, it is the same text in a different rhythm.
+
+       Nothing here replaces anything yet. The app's Tailwind sizes already sit
+       close to these (text-sm is 14/20, exactly body-medium), so the tokens are
+       for components written from the spec while the existing utilities stay
+       until their call sites are touched. */
+    --md-sys-typescale-display-large-size: 57px;
+    --md-sys-typescale-display-large-line-height: 64px;
+    --md-sys-typescale-display-large-weight: 400;
+    --md-sys-typescale-display-large-tracking: -0.25px;
+    --md-sys-typescale-display-medium-size: 45px;
+    --md-sys-typescale-display-medium-line-height: 52px;
+    --md-sys-typescale-display-medium-weight: 400;
+    --md-sys-typescale-display-medium-tracking: 0px;
+    --md-sys-typescale-display-small-size: 36px;
+    --md-sys-typescale-display-small-line-height: 44px;
+    --md-sys-typescale-display-small-weight: 400;
+    --md-sys-typescale-display-small-tracking: 0px;
+    --md-sys-typescale-headline-large-size: 32px;
+    --md-sys-typescale-headline-large-line-height: 40px;
+    --md-sys-typescale-headline-large-weight: 400;
+    --md-sys-typescale-headline-large-tracking: 0px;
+    --md-sys-typescale-headline-medium-size: 28px;
+    --md-sys-typescale-headline-medium-line-height: 36px;
+    --md-sys-typescale-headline-medium-weight: 400;
+    --md-sys-typescale-headline-medium-tracking: 0px;
+    --md-sys-typescale-headline-small-size: 24px;
+    --md-sys-typescale-headline-small-line-height: 32px;
+    --md-sys-typescale-headline-small-weight: 400;
+    --md-sys-typescale-headline-small-tracking: 0px;
+    --md-sys-typescale-title-large-size: 22px;
+    --md-sys-typescale-title-large-line-height: 28px;
+    --md-sys-typescale-title-large-weight: 400;
+    --md-sys-typescale-title-large-tracking: 0px;
+    --md-sys-typescale-title-medium-size: 16px;
+    --md-sys-typescale-title-medium-line-height: 24px;
+    --md-sys-typescale-title-medium-weight: 500;
+    --md-sys-typescale-title-medium-tracking: 0.15px;
+    --md-sys-typescale-title-small-size: 14px;
+    --md-sys-typescale-title-small-line-height: 20px;
+    --md-sys-typescale-title-small-weight: 500;
+    --md-sys-typescale-title-small-tracking: 0.1px;
+    --md-sys-typescale-body-large-size: 16px;
+    --md-sys-typescale-body-large-line-height: 24px;
+    --md-sys-typescale-body-large-weight: 400;
+    --md-sys-typescale-body-large-tracking: 0.5px;
+    --md-sys-typescale-body-medium-size: 14px;
+    --md-sys-typescale-body-medium-line-height: 20px;
+    --md-sys-typescale-body-medium-weight: 400;
+    --md-sys-typescale-body-medium-tracking: 0.25px;
+    --md-sys-typescale-body-small-size: 12px;
+    --md-sys-typescale-body-small-line-height: 16px;
+    --md-sys-typescale-body-small-weight: 400;
+    --md-sys-typescale-body-small-tracking: 0.4px;
+    --md-sys-typescale-label-large-size: 14px;
+    --md-sys-typescale-label-large-line-height: 20px;
+    --md-sys-typescale-label-large-weight: 500;
+    --md-sys-typescale-label-large-tracking: 0.1px;
+    --md-sys-typescale-label-medium-size: 12px;
+    --md-sys-typescale-label-medium-line-height: 16px;
+    --md-sys-typescale-label-medium-weight: 500;
+    --md-sys-typescale-label-medium-tracking: 0.5px;
+    --md-sys-typescale-label-small-size: 11px;
+    --md-sys-typescale-label-small-line-height: 16px;
+    --md-sys-typescale-label-small-weight: 500;
+    --md-sys-typescale-label-small-tracking: 0.5px;
+
+    /* — Shape —
+       The spec's corner names over this app's radii. large-increased (20px) is
+       the one this design is built on; extra-small (4px) is the one text fields
+       and menus take. */
+    --md-sys-shape-corner-none: 0px;
+    --md-sys-shape-corner-extra-small: var(--radius-xs);
+    --md-sys-shape-corner-small: var(--radius-sm);
+    --md-sys-shape-corner-medium: var(--radius-md);
+    --md-sys-shape-corner-large: var(--radius-lg);
+    --md-sys-shape-corner-large-increased: var(--radius-large-increased);
+    --md-sys-shape-corner-extra-large: var(--radius-xl);
+    --md-sys-shape-corner-extra-large-increased: 32px;
+    --md-sys-shape-corner-extra-extra-large: 48px;
+    --md-sys-shape-corner-full: var(--radius-full);
+
+    /* — Elevation —
+       M3 makes elevation a tonal step first and a shadow second, and this design
+       already worked that way. The levels are named so a component can say which
+       one it wants; only 1-3 carry a shadow at all, because those are the only
+       surfaces here that float over content they do not control. */
+    --md-sys-elevation-level0: none;
+    --md-sys-elevation-level1: var(--shadow-m3-1);
+    --md-sys-elevation-level2: var(--shadow-m3-2);
+    --md-sys-elevation-level3: var(--shadow-m3-3);
+    --md-sys-elevation-level4: var(--shadow-m3-3);
+    --md-sys-elevation-level5: var(--shadow-m3-3);
+
+    /* — State layer —
+       The opacities M3 overlays a component's own foreground with. Named so the
+       press state is one number in one place, instead of a set of hand-picked
+       rgba()s that only work against the background they were picked for. */
+    --md-sys-state-hover-opacity: 0.08;
+    --md-sys-state-focus-opacity: 0.10;
+    --md-sys-state-pressed-opacity: 0.10;
+    --md-sys-state-dragged-opacity: 0.16;
+    --md-sys-state-disabled-opacity: 0.38;
+    --md-sys-state-disabled-container-opacity: 0.12;
+
+    /* — Spacing — the 8dp system: a 4px half step, then multiples of 8. */
+    --md-sys-space-1: 4px;
+    --md-sys-space-2: 8px;
+    --md-sys-space-3: 12px;
+    --md-sys-space-4: 16px;
+    --md-sys-space-5: 24px;
+    --md-sys-space-6: 32px;
+    --md-sys-space-7: 40px;
+    --md-sys-space-8: 48px;
+
+    /* — Easing, strengthened —
+       The M3 curves above are the spec's own and stay what the spec's
+       transitions use. These two are the same idea tuned for UI: a steeper start
+       and a longer settle, so a 200ms move reads as immediate instead of
+       arriving late. ease-out is for anything entering, ease-in-out for
+       something travelling on screen, ease-drawer for a sheet leaving its edge.
+       Overriding --ease-out also upgrades Tailwind's own ease-out utility,
+       because that is the token it reads. */
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
 }
 
 /* Chart entrance, following the product film: the line draws on from the left,
@@ -575,6 +790,14 @@ html {
     --color-m3-success-container: #E1F3E6;
     --color-m3-warning: #7A5B14;
     --color-m3-warning-container: #FAF0D5;
+    --color-m3-on-error: #FFFFFF;
+    --color-m3-on-success: #FFFFFF;
+    --color-m3-on-warning: #FFFFFF;
+    --color-m3-inverse-surface: #16171C;
+    --color-m3-inverse-on-surface: #F4F5F7;
+    --color-m3-inverse-primary: #F5A9B8;
+    --color-m3-scrim: #000000;
+    --color-m3-shadow: #000000;
 
     /* The hairlines invert with the surface: the same alpha of black. */
     --color-m3-line-soft: #0000000F;
@@ -893,7 +1116,14 @@ body {
     color: var(--color-m3-on-surface);
     background-color: var(--color-m3-surface-container-lowest);
     border: 1px solid var(--color-m3-outline-variant);
-    border-radius: var(--radius-md);
+    /* 4dp: the spec's corner for text fields. It was 12dp, which made the
+       filled field read as a different control from the outlined one beside
+       it. */
+    border-radius: var(--md-sys-shape-corner-extra-small);
+    /* Kept, but only because the focus ring is now drawn by the global
+       :focus-visible rule and by `.input-base:focus-visible` in the component
+       layer. Without those, this line was removing the only keyboard
+       affordance the field had. */
     outline: none;
     transition: border-color var(--duration-quick) var(--ease-standard),
                 background-color var(--duration-quick) var(--ease-standard);
@@ -1615,6 +1845,354 @@ select,
 .px-float-b     { animation: px-float-b 2.9s steps(1) infinite; }
 .px-zzz         { animation: px-zzz 4.6s ease-in-out infinite; }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   MD3 COMPONENT LAYER
+
+   Tokens do not make a Material interface on their own; the components have to
+   be assembled the way the spec assembles them. Two things were missing
+   everywhere in this app, and they are the reason this block exists:
+
+     1. A focus indicator. The only :focus-visible in the stylesheet was on the
+        switch, and .input-base set outline: none — a keyboard user could not
+        see where they were. M3 draws an indicator for every component; one rule
+        gives it to all of them.
+     2. A state layer. Hover and press were each a colour *swap*, written
+        against one background, which only works on that background. M3 overlays
+        the component's own foreground at an opacity, and that is what makes the
+        same button correct on any surface, in either theme.
+
+   The existing primitives keep their names and their call sites; they gain the
+   behaviour here rather than being rewritten.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Focus, everywhere ───────────────────────────────────────────────────────
+   :where() so this contributes no specificity: a component with an indicator of
+   its own (the text fields thicken their border instead) can override it
+   without a specificity war. 2px of the primary colour clears the 3:1 non-text
+   contrast floor in both themes. */
+:where(a, button, input, select, textarea, summary, [tabindex], [role="button"], [role="tab"], [role="switch"], [role="option"]):focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
+}
+
+/* 48dp is the M3 floor for anything meant to be hit with a finger. The icon
+   button already meets it; this is the escape hatch for the small controls. */
+.m3-touch-target {
+    min-width: 48px;
+    min-height: 48px;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────────
+   Five emphasis levels and five sizes. The level says what a button *means*:
+   filled is the one action a screen exists for, tonal is a secondary action
+   inside the same system, outlined is an alternative that must not compete,
+   text is the lowest emphasis, and elevated is a filled button that has to
+   float above a busy surface.
+
+   120ms on the press: this fires dozens of times an hour, so it has to be over
+   before it is noticed. */
+.m3-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--md-sys-space-2);
+    height: 40px;
+    padding: 0 var(--md-sys-space-5);
+    border: none;
+    border-radius: var(--md-sys-shape-corner-full);
+    background-color: transparent;
+    color: var(--md-sys-color-primary);
+    font-family: var(--font-sans);
+    font-size: var(--md-sys-typescale-label-large-size);
+    line-height: var(--md-sys-typescale-label-large-line-height);
+    font-weight: var(--md-sys-typescale-label-large-weight);
+    letter-spacing: var(--md-sys-typescale-label-large-tracking);
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 120ms var(--ease-out),
+                border-color 120ms var(--ease-out),
+                box-shadow 120ms var(--ease-out),
+                transform 120ms var(--ease-out);
+}
+
+/* The state layer itself. currentColor is the component's own foreground, so
+   the wash is automatically the right pairing — on-primary over a filled
+   button, primary over an outlined one. */
+.m3-btn::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-color: currentColor;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms var(--ease-out);
+}
+.m3-btn:focus-visible::after { opacity: var(--md-sys-state-focus-opacity); }
+.m3-btn:active:not(:disabled)::after { opacity: var(--md-sys-state-pressed-opacity); }
+.m3-btn:active:not(:disabled) { transform: scale(0.97); }
+.m3-btn:disabled { cursor: not-allowed; opacity: var(--md-sys-state-disabled-opacity); }
+
+/* Hover exists only where there is a pointer. Without the query, a tap leaves
+   the button stuck in its hover state until the next tap elsewhere — the false
+   hover every touch device has had to live with. */
+@media (hover: hover) and (pointer: fine) {
+    .m3-btn:hover::after { opacity: var(--md-sys-state-hover-opacity); }
+}
+
+.m3-btn-filled { background-color: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
+.m3-btn-tonal { background-color: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+.m3-btn-outlined { box-shadow: inset 0 0 0 1px var(--md-sys-color-outline); color: var(--md-sys-color-primary); }
+.m3-btn-text { padding: 0 var(--md-sys-space-3); color: var(--md-sys-color-primary); }
+.m3-btn-elevated { background-color: var(--md-sys-color-surface-container-low); color: var(--md-sys-color-primary); box-shadow: var(--md-sys-elevation-level1); }
+
+/* Sizes. m3-btn alone is M (40dp) — the M3 default, and the height this app's
+   buttons already were, so adding the class never changes a layout. */
+.m3-btn-xs { height: 32px; padding: 0 var(--md-sys-space-3); font-size: var(--md-sys-typescale-label-medium-size); }
+.m3-btn-sm { height: 40px; }
+.m3-btn-md { height: 48px; }
+.m3-btn-lg { height: 56px; padding: 0 var(--md-sys-space-6); font-size: var(--md-sys-typescale-title-medium-size); }
+.m3-btn-xl { height: 64px; padding: 0 var(--md-sys-space-6); font-size: var(--md-sys-typescale-title-medium-size); }
+
+/* The three primitives this app already had, on the same state layer and the
+   same keyboard ring, without touching any of their call sites. They keep their
+   own colours: .btn-primary *is* the filled level here, .btn-secondary the
+   outlined one, .btn-ghost the text one. */
+.btn-primary, .btn-secondary, .btn-ghost { position: relative; overflow: hidden; }
+.btn-primary::after, .btn-secondary::after, .btn-ghost::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms var(--ease-out);
+}
+.btn-primary::after { background-color: var(--md-sys-color-on-primary); }
+.btn-secondary::after, .btn-ghost::after { background-color: var(--md-sys-color-primary); }
+@media (hover: hover) and (pointer: fine) {
+    .btn-primary:hover:not(:disabled)::after,
+    .btn-secondary:hover:not(:disabled)::after,
+    .btn-ghost:hover:not(:disabled)::after { opacity: var(--md-sys-state-hover-opacity); }
+}
+.btn-primary:focus-visible::after,
+.btn-secondary:focus-visible::after,
+.btn-ghost:focus-visible::after { opacity: var(--md-sys-state-focus-opacity); }
+.btn-primary:active:not(:disabled)::after,
+.btn-secondary:active:not(:disabled)::after,
+.btn-ghost:active:not(:disabled)::after { opacity: var(--md-sys-state-pressed-opacity); }
+
+/* ── Text fields ─────────────────────────────────────────────────────────────
+   The spec has two, and they mean different things: *filled* is a field that
+   belongs to the surface it sits on (a search box, a filter), *outlined* is a
+   field that is a control (a form). .input-base is this app's filled one; the
+   outlined variant is new, and its focus stroke is drawn with an inset shadow
+   rather than a thicker border so the field does not change size when focus
+   lands on it.
+
+   Both take the spec's 4dp corner and a 56dp height. */
+.m3-field {
+    width: 100%;
+    min-height: 56px;
+    padding: 0 var(--md-sys-space-4);
+    color: var(--md-sys-color-on-surface);
+    font-family: var(--font-sans);
+    font-size: var(--md-sys-typescale-body-large-size);
+    line-height: var(--md-sys-typescale-body-large-line-height);
+    letter-spacing: var(--md-sys-typescale-body-large-tracking);
+    background-color: transparent;
+    border: none;
+    border-radius: var(--md-sys-shape-corner-extra-small);
+    transition: background-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out), border-color 150ms var(--ease-out);
+}
+.m3-field::placeholder { color: var(--md-sys-color-on-surface-variant); }
+.m3-field:disabled { color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent); }
+
+.m3-field-filled {
+    background-color: var(--md-sys-color-surface-container-highest);
+    border-bottom: 1px solid var(--md-sys-color-on-surface-variant);
+}
+.m3-field-filled:focus {
+    border-bottom-color: var(--md-sys-color-primary);
+    box-shadow: inset 0 -1px 0 0 var(--md-sys-color-primary);
+    outline: none;
+}
+
+.m3-field-outlined { box-shadow: inset 0 0 0 1px var(--md-sys-color-outline); }
+.m3-field-outlined:focus { box-shadow: inset 0 0 0 2px var(--md-sys-color-primary); outline: none; }
+@media (hover: hover) and (pointer: fine) {
+    .m3-field-outlined:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--md-sys-color-on-surface); }
+}
+
+/* Error is a state of the field, not a second field: the same box with its
+   stroke moved to the error role. Both are driven by aria-invalid, which is
+   what a screen reader reads anyway — one source of truth for the paint and the
+   semantics. */
+.m3-field[aria-invalid="true"], .input-base[aria-invalid="true"] { border-color: var(--md-sys-color-error); }
+.m3-field-outlined[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--md-sys-color-error); }
+.m3-field-outlined[aria-invalid="true"]:focus { box-shadow: inset 0 0 0 2px var(--md-sys-color-error); }
+.m3-field-support {
+    padding: var(--md-sys-space-1) var(--md-sys-space-4) 0;
+    font-size: var(--md-sys-typescale-body-small-size);
+    line-height: var(--md-sys-typescale-body-small-line-height);
+    letter-spacing: var(--md-sys-typescale-body-small-tracking);
+    color: var(--md-sys-color-on-surface-variant);
+}
+.m3-field-support-error { color: var(--md-sys-color-error); }
+
+/* The legacy field was relying on the global ring to get its focus back; make
+   that explicit rather than order-dependent, and give it the error state too. */
+.input-base:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+
+/* ── Cards ───────────────────────────────────────────────────────────────────
+   Three variants from the spec. .m3-card stays what it is — the app's plain
+   grouping surface, a wash and a hairline — and a variant is added alongside it
+   when the card's *role* changes: an outlined card holds content that must not
+   appear raised, a filled card is the highest-emphasis container, an elevated
+   card is one that floats. */
+.m3-card-outlined { background-color: transparent; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); }
+.m3-card-filled { background-color: var(--md-sys-color-surface-container-highest); border: 1px solid transparent; border-radius: var(--md-sys-shape-corner-medium); }
+.m3-card-elevated { background-color: var(--md-sys-color-surface-container-low); border: 1px solid transparent; border-radius: var(--md-sys-shape-corner-medium); box-shadow: var(--md-sys-elevation-level1); }
+
+/* ── Navigation bar item ─────────────────────────────────────────────────────
+   The difference between a web tab bar and M3's NavigationBar is the
+   *indicator*: a 32x64 pill behind the active icon, filled with
+   secondary-container, with the label stepping up to on-surface. This app's bar
+   is a floating island rather than a flush edge, so the container stays as it
+   is and the item becomes the spec's.
+
+   No motion: a navigation item is tapped dozens of times a day. */
+.m3-nav-item {
+    position: relative;
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 56px;
+    padding: 6px 0 4px;
+    color: var(--md-sys-color-on-surface-variant);
+    background-color: transparent;
+    border: none;
+    border-radius: var(--md-sys-shape-corner-medium);
+    font-family: var(--font-sans);
+    font-size: var(--md-sys-typescale-label-medium-size);
+    line-height: var(--md-sys-typescale-label-medium-line-height);
+    font-weight: var(--md-sys-typescale-label-medium-weight);
+    letter-spacing: var(--md-sys-typescale-label-medium-tracking);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 150ms var(--ease-out);
+}
+/* The icon and label have to sit above the indicator. */
+.m3-nav-item > * { position: relative; }
+.m3-nav-item::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 64px;
+    height: 32px;
+    transform: translateX(-50%);
+    border-radius: var(--md-sys-shape-corner-full);
+    background-color: var(--md-sys-color-secondary-container);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 150ms var(--ease-out);
+}
+.m3-nav-item[aria-current="page"]::before,
+.m3-nav-item.is-active::before { opacity: 1; }
+.m3-nav-item[aria-current="page"],
+.m3-nav-item.is-active { color: var(--md-sys-color-on-surface); }
+/* Descendant, not child: the Icon component wraps its <svg> in a span, so a
+   direct-child selector silently painted the icon with the item's own label
+   colour instead of the indicator's. */
+.m3-nav-item[aria-current="page"] svg,
+.m3-nav-item.is-active svg { color: var(--md-sys-color-on-secondary-container); }
+.m3-nav-item:disabled { opacity: var(--md-sys-state-disabled-opacity); cursor: not-allowed; }
+
+/* ── List item ───────────────────────────────────────────────────────────────
+   M3's list item: a row at least 56dp tall, a leading slot, a two-line text
+   block and a trailing slot. The supporting line is what makes a list of
+   settings scannable — the headline says what the row is, and the line under it
+   says what happens if you press it. */
+.m3-list-item {
+    display: flex;
+    align-items: center;
+    gap: var(--md-sys-space-4);
+    width: 100%;
+    min-height: 56px;
+    padding: var(--md-sys-space-3) var(--md-sys-space-4);
+    text-align: start;
+    color: var(--md-sys-color-on-surface);
+    background-color: transparent;
+    border: none;
+    border-bottom: 1px solid var(--md-sys-color-hairline);
+    font-family: var(--font-sans);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 150ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+    .m3-list-item:hover { background-color: var(--md-sys-color-wash); }
+}
+.m3-list-item:focus-visible { background-color: var(--md-sys-color-wash); }
+.m3-list-item-headline {
+    font-size: var(--md-sys-typescale-body-large-size);
+    line-height: var(--md-sys-typescale-body-large-line-height);
+    font-weight: 500;
+    letter-spacing: var(--md-sys-typescale-body-large-tracking);
+}
+.m3-list-item-support {
+    margin-top: 2px;
+    font-size: var(--md-sys-typescale-body-medium-size);
+    line-height: var(--md-sys-typescale-body-medium-line-height);
+    letter-spacing: var(--md-sys-typescale-body-medium-tracking);
+    color: var(--md-sys-color-on-surface-variant);
+}
+.m3-list-item-leading, .m3-list-item-trailing { flex: none; color: var(--md-sys-color-on-surface-variant); }
+
+/* ── Snackbar ────────────────────────────────────────────────────────────────
+   M3's snackbar is an *inverse* surface — dark on a light page, light on a dark
+   one — so it never reads as part of the page it is covering. The entry is a
+   transition with a @starting-style, not a keyframe: the node is remounted per
+   message and a transition retargets from wherever it currently is, which is
+   what keeps two taps in a row from restarting the animation from zero. */
+.m3-snackbar {
+    display: flex;
+    align-items: center;
+    gap: var(--md-sys-space-3);
+    padding: var(--md-sys-space-3) var(--md-sys-space-4);
+    border-radius: var(--md-sys-shape-corner-extra-small);
+    background-color: var(--md-sys-color-inverse-surface);
+    color: var(--md-sys-color-inverse-on-surface);
+    box-shadow: var(--md-sys-elevation-level3);
+    font-size: var(--md-sys-typescale-body-medium-size);
+    line-height: var(--md-sys-typescale-body-medium-line-height);
+    letter-spacing: var(--md-sys-typescale-body-medium-tracking);
+    opacity: 1;
+    transform: translate(-50%, 0);
+    transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+}
+@starting-style {
+    .m3-snackbar {
+        opacity: 0;
+        transform: translate(-50%, 8px);
+    }
+}
+.m3-snackbar-action {
+    color: var(--md-sys-color-inverse-primary);
+    font-weight: 500;
+    cursor: pointer;
+    background: none;
+    border: none;
+    font: inherit;
+    padding: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .modal-overlay,
     .modal-shell,
@@ -1694,5 +2272,23 @@ select,
     .chev,
     .disclosure {
         transition: none;
+    }
+    /* The component layer. The press scale and the field strokes are
+       transitions, so they are simply off; the focus ring is not motion and
+       stays. */
+    .m3-btn,
+    .m3-btn::after,
+    .m3-nav-item,
+    .m3-nav-item::before,
+    .m3-list-item,
+    .m3-snackbar,
+    .m3-field,
+    .btn-primary::after,
+    .btn-secondary::after,
+    .btn-ghost::after {
+        transition: none;
+    }
+    .m3-btn:active:not(:disabled) {
+        transform: none;
     }
 }

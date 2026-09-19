@@ -5,7 +5,6 @@ import type { IconComponent } from '../icons';
 
 const muted = 'text-[var(--color-m3-on-surface-variant)] ';
 const on = 'text-[var(--color-m3-on-surface)] ';
-const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
 
 export const settingsMuted = muted;
 export const settingsOn = on;
@@ -14,7 +13,7 @@ export const settingsOn = on;
 export type SettingsIcon = IconComponent;
 
 export function SettingsIconBox({ icon }: { icon: SettingsIcon }) {
-    return <Icon icon={icon} size={18} className={`${muted} shrink-0`} />;
+    return <Icon icon={icon} size={24} className={`m3-list-item-leading ${muted}`} />;
 }
 
 interface SettingsListItemProps {
@@ -41,15 +40,15 @@ export const SettingsListItem: React.FC<SettingsListItemProps> = ({
         <Tag
             type={onClick ? 'button' : undefined}
             onClick={onClick}
-            className={`w-full flex items-center gap-3 py-4 ${divider} text-start ${className}`}
+            className={`m3-list-item ${className}`}
         >
-            <Icon icon={icon} size={18} className={`${muted} shrink-0`} />
+            <Icon icon={icon} size={24} className={`m3-list-item-leading ${muted}`} />
             <div className="flex-1 min-w-0 text-start">
-                <p className={`text-sm font-medium ${on}`}>{title}</p>
-                {description && <p className={`text-xs ${muted} mt-0.5 leading-relaxed`}>{description}</p>}
+                <p className={`m3-list-item-headline ${on}`}>{title}</p>
+                {description && <p className={`m3-list-item-support ${muted}`}>{description}</p>}
             </div>
             {trailing}
-            {showChevron && onClick && <Icon icon={ChevronRight} size={16} className={`${muted} shrink-0`} />}
+            {showChevron && onClick && <Icon icon={ChevronRight} size={18} className={`m3-list-item-trailing ${muted}`} />}
         </Tag>
     );
 };

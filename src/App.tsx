@@ -653,18 +653,11 @@ const AppContent = () => {
                                     key={id}
                                     onClick={() => !isDisabled && handleViewChange(id as ViewKey)}
                                     disabled={isDisabled}
-                                    className={`flex-1 flex flex-col items-center justify-center gap-1 py-1.5 transition-colors duration-150 motion-reduce:transition-none
-                                        ${isDisabled
-                                            ? 'text-[var(--color-m3-outline)]  cursor-not-allowed'
-                                            : isActive
-                                            ? 'text-body'
-                                            : 'text-muted'
-                                        }`}
+                                    aria-current={isActive ? 'page' : undefined}
+                                    className={`m3-nav-item ${isActive ? 'is-active' : ''}`}
                                 >
-                                    <Icon icon={icon} size={20} strokeWidth={isActive ? 1.9 : 1.75} />
-                                    <span className="text-[0.625rem] font-medium">
-                                        {label}
-                                    </span>
+                                    <Icon icon={icon} size={22} strokeWidth={isActive ? 1.9 : 1.75} />
+                                    <span>{label}</span>
                                 </button>
                             );
                         })}
