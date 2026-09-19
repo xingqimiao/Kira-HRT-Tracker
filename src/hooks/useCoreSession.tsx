@@ -17,7 +17,6 @@ import { coreAuth, CoreAuthError, type PrivacyMode } from '../services/coreAuth'
  * The Worker is gone, so the first bullet is history rather than a second code path.
  * What survives is the rule it forced: nothing in the client should assume it holds a
  * key, and every read goes through the token.
- */
  *
  * The token lives in `localStorage` rather than memory so a refresh does not sign
  * the user out. That is a real trade: any script on the origin can read it. It is
