@@ -43,12 +43,15 @@ export function usePresence(open: boolean, exitMs = 200): {
 
   useEffect(() => {
     if (open) {
-      // Mount first, then flip to `open` on the next frame. Setting both in one
-      // commit would apply the finished state immediately and the entrance
-      // animation would never play.
+      // Both in the same commit. The entrance is a keyframe animation on the bare
+      // class, and a keyframe runs when the node is created whatever state
+      // attribute it carries — so waiting a frame to flip to `open` bought
+      // nothing. It cost something: that frame was painted in the *closed* pose,
+      // which the exit rules match, so the surface started its life animating
+      // out. (It mattered once the exit rules became real.)
       setMounted(true);
-      const frame = requestAnimationFrame(() => setState('open'));
-      return () => cancelAnimationFrame(frame);
+      setState('open');
+      return;
     }
 
     setState('closed');

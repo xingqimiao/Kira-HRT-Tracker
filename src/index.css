@@ -967,7 +967,12 @@ body {
     animation: m3-dialog-enter var(--md-sys-motion-transition-enter) both;
     will-change: transform, opacity;
 }
-.modal-shell[data-state="closed"] {
+.modal-shell[data-state="closed"],
+/* The surface follows its scrim. `data-state` is set on the overlay, not on the
+   shell, so this descendant selector is what makes the surface leave as well —
+   without it the scrim faded out from under a static dialog. */
+.modal-overlay[data-state="closed"] .modal-shell,
+.modal-overlay[data-state="closed"] .modal-shell-wide {
     animation: m3-dialog-exit var(--md-sys-motion-transition-exit) both;
 }
 
