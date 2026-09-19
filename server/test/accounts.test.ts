@@ -49,13 +49,12 @@ before(async () => {
     // key, because the store refuses rather than writing plaintext.
     encryptionKey: TEST_ENCRYPTION_KEY,
     turnstile: null,
-    webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
     google: null,
     sessionTtlMinutes: 30,
     // Generous, so one test's attempts never consume another's budget. The limits
     // themselves are exercised by their own test below.
-    rateLimits: { register: 1000, login: 1000, resume: 1000, windowMs: 60_000 },
+    rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },
   });
 
   pg = await bootPostgres({ dir: './.pgdata-accounts', port: 55440, database: 'hrt_accounts' });  await useDatabase(pg);
@@ -648,11 +647,10 @@ test('the per-IP limiter refuses a burst of sign-in attempts', async () => {
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
     encryptionKey: null,
     turnstile: null,
-    webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
     google: null,
     sessionTtlMinutes: 30,
-    rateLimits: { register: 3, login: 3, resume: 3, windowMs: 60_000 },
+    rateLimits: { register: 3, login: 3, windowMs: 60_000 },
   });
   resetRateLimits();
   try {
@@ -676,11 +674,10 @@ test('the per-IP limiter refuses a burst of sign-in attempts', async () => {
       serverDekKey: 'test-server-dek-key-0123456789abcdef',
       encryptionKey: null,
       turnstile: null,
-      webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
       x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
       google: null,
       sessionTtlMinutes: 30,
-      rateLimits: { register: 1000, login: 1000, resume: 1000, windowMs: 60_000 },
+      rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },
     });
   }
 });

@@ -40,10 +40,9 @@ before(async () => {
     // carry one: requireKey() refuses rather than writing payloads in the clear.
     encryptionKey: TEST_ENCRYPTION_KEY,
     turnstile: null,
-    webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: null,
     sessionTtlMinutes: 30,
-    rateLimits: { register: 1000, login: 1000, resume: 1000, windowMs: 60_000 },
+    rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },
   });
   pg = await bootPostgres({ dir: './.pgdata-coresync', port: 55437, database: 'hrt_coresync' });
   await useDatabase(pg);

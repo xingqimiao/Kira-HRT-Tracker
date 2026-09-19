@@ -38,13 +38,12 @@ before(async () => {
     // key, because the store refuses rather than writing plaintext.
     encryptionKey: TEST_ENCRYPTION_KEY,
     turnstile: null,
-    webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: null,
     google: null,
     sessionTtlMinutes: 30,
     // Generous: these tests deliberately repeat credential attempts, and the limiter
     // is exercised by its own test in accounts.test.ts.
-    rateLimits: { register: 1000, login: 1000, resume: 1000, windowMs: 60_000 },
+    rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },
   });
   pg = await bootPostgres({ dir: './.pgdata-delete', port: 55442, database: 'hrt_delete' });
   await useDatabase(pg);

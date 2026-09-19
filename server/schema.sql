@@ -169,63 +169,18 @@ CREATE TABLE IF NOT EXISTS api_tokens (
 );
 CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
 
--- Passkeys (WebAuthn credentials).
+-- Passkeys used to live here: `webauthn_credentials` (one row per registered
+-- credential, with its COSE public key and sign counter) and `webauthn_challenges`
+-- (single-use ceremony nonces). Both are gone with the feature.
 --
--- One row per registered credential. `public_key` is the COSE key the authenticator
--- issued at registration, and it is what every later assertion is verified against —
--- so this column is *not* secret, and it cannot create a key: the row alone opens
--- nothing. `credential_id` is the browser-facing handle and is the lookup key for a
--- discoverable sign-in, where the server does not know who is signing in until the
--- assertion names the credential.
---
--- `sign_count` is the authenticator's monotonic counter. It is nullable and its
--- usefulness is genuinely limited — passkeys that sync between devices (iCloud
--- Keychain, Google Password Manager) report a constant 0, so a non-increase means
--- nothing there. It is recorded because some authenticators do report it and a
--- decrease is a real cloning signal; the check is "refuse a *decrease*", never
--- "require an increase".
---
--- The data-key wrapper for this credential lives in `users.encryption_metadata`
--- (`wrappers.passkeys[credential_id]`), not here. Key material stays in one document
--- so a mode switch rewraps in one place.
-CREATE TABLE IF NOT EXISTS webauthn_credentials (
-    credential_id   text PRIMARY KEY,
-    user_id         uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    public_key      bytea NOT NULL,
-    sign_count      bigint NOT NULL DEFAULT 0,
-    transports      text,
-    device_type     text,
-    backed_up       boolean NOT NULL DEFAULT false,
-    name            text,
-    created_at      timestamptz NOT NULL DEFAULT now(),
-    last_used_at    timestamptz
-);
-CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user ON webauthn_credentials(user_id);
--- One credential id maps to one account. The primary key enforces it; this index
--- exists because the discoverable-sign-in path looks the row up by id before it has
--- any user context, which is the primary key's job, so no second index is needed.
-
--- In-flight WebAuthn challenges.
---
--- A challenge is a single-use nonce: the server mints one, the authenticator signs it,
--- and the server refuses anything it did not just issue. It lives in a table rather
--- than in process memory because a ceremony can start on one instance and finish on
--- another — `webauthn.ts` kept these in a `Map` first, which works on exactly one
--- instance and then fails *sometimes*, the kind of failure that gets blamed on the
--- user's authenticator. A row also outlives a restart, so deploying between "tap to
--- add" and "tap to confirm" no longer discards the attempt.
---
--- `user_id` is nullable on purpose: a discoverable sign-in has no account yet, so its
--- challenge is minted ownerless and the credential naming the account afterwards. The
--- row is deleted the moment it is consumed, which is the replay guard; `expires_at` is
--- checked on read, so a lapsed challenge is refused even if no sweep has run.
-CREATE TABLE IF NOT EXISTS webauthn_challenges (
-    challenge   text PRIMARY KEY,
-    user_id     uuid REFERENCES users(id) ON DELETE CASCADE,
-    expires_at  timestamptz NOT NULL,
-    created_at  timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_webauthn_challenges_expiry ON webauthn_challenges(expires_at);
+-- The feature was not merely unused. A passkey here was built to protect the data key
+-- — `users.encryption_metadata` carried a `wrappers.passkeys[credential_id]` entry,
+-- and the KEK came from the authenticator's WebAuthn PRF output. That is the
+-- zero-knowledge design this service abandoned when it moved to a hosted model where
+-- the server holds `ENCRYPTION_KEY`, and a passkey that no longer guards the key would
+-- be a button claiming to do something it does not. Dropped rather than left inert.
+DROP TABLE IF EXISTS webauthn_credentials;
+DROP TABLE IF EXISTS webauthn_challenges;
 
 -- Recovery codes for the second factor. Hashed with scrypt, not stored
 -- reversibly: each code bypasses 2FA, so the set is equivalent to ten spare

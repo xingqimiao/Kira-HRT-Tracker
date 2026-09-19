@@ -2004,38 +2004,6 @@ export function isCloudEncrypted(obj: any): obj is CloudBundle {
     return !!(obj && obj.cloud === 1 && typeof obj.iv === 'string' && typeof obj.data === 'string');
 }
 
-// A passkey's WebAuthn PRF output is already a uniformly random 32-byte secret from
-// the authenticator, so a slow KDF would buy nothing and merely add latency to every
-// unlock. HKDF is the right primitive for "turn this high-entropy secret into a key",
-// and binding the credential id into the salt means two credentials can never produce
-// the same key even if an authenticator returned a colliding PRF output.
-//
-// This is what lets a passkey protect the data key at all — and it is also the reason
-// a passkey here is only offered where the browser really supports PRF. Without it
-// there is no key material, and a passkey that does not guard the key would be a
-// button that lies about what it does.
-export async function derivePasskeyKey(prfOutputB64: string, credentialId: string): Promise<string> {
-    const enc = new TextEncoder();
-    const keyMaterial = await window.crypto.subtle.importKey(
-        "raw",
-        base64ToBuff(prfOutputB64) as any,
-        { name: "HKDF" },
-        false,
-        ["deriveBits"]
-    );
-    const bits = await window.crypto.subtle.deriveBits(
-        {
-            name: "HKDF",
-            hash: "SHA-256",
-            salt: enc.encode(credentialId) as any,
-            info: enc.encode("hrt-passkey-v1") as any
-        },
-        keyMaterial,
-        256
-    );
-    return buffToBase64(new Uint8Array(bits));
-}
-
 export async function encryptCloudPayload(plaintext: string, rawKeyB64: string): Promise<CloudBundle> {
     const key = await importRawAesKey(rawKeyB64);
     const iv = window.crypto.getRandomValues(new Uint8Array(12));

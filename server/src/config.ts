@@ -12,7 +12,6 @@
  * than on the first request that needs the value.
  */
 
-import { isIP } from 'node:net';
 import { keyFromEnv } from './payloadCrypto.ts';
 
 export interface XOAuthConfig {
@@ -37,22 +36,6 @@ export interface TurnstileConfig {
   secret: string;
   /** Hostnames the widget is served from. Verified against the siteverify reply. */
   hostnames: string[];
-}
-
-export interface WebAuthnConfig {
-  /** The registrable domain a credential is scoped to, e.g. `kiramyao.com`. */
-  rpId: string;
-  /** Shown in the OS passkey prompt. */
-  rpName: string;
-  /**
-   * Every origin a ceremony may legitimately happen on.
-   *
-   * Both hosts, because the browser page is on `hrt.` while the API it calls is on
-   * `api.` — a discoverable sign-in starts on the page, and the registration that
-   * created the credential may have been started from either. Assertions are checked
-   * against this list, so leaving a host out is a lockout rather than a weakening.
-   */
-  origins: string[];
 }
 
 export interface Config {
@@ -109,16 +92,6 @@ export interface Config {
   encryptionKey: Buffer | null;
   /** Human-verification on the register and X-setup entry points. Absent = off. */
   turnstile: TurnstileConfig | null;
-  /**
-   * WebAuthn relying party. Absent = passkeys disabled (no button, no routes).
-   *
-   * Derived from the origins rather than configured separately where possible: the
-   * RP ID must be a registrable domain that *suffixes* both the site and the API host,
-   * or a credential created on one cannot be asserted to the other. `kiramyao.com`
-   * covers `hrt.` and `api.` at once, which is why this works at all on a split
-   * deployment — a credential is scoped to the domain, not the host.
-   */
-  webauthn: WebAuthnConfig | null;
   /** Tokens live this long without use. */
   sessionTtlMinutes: number;
   /**
@@ -137,9 +110,7 @@ export interface RateLimitConfig {
   register: number;
   /** Sign-in attempts per IP per window. */
   login: number;
-  /** Enrolment-resume attempts per IP per window. */
-  resume: number;
-  /** Window length in milliseconds, shared by all three. */
+  /** Window length in milliseconds, shared by both. */
   windowMs: number;
 }
 
@@ -174,38 +145,6 @@ function requireOrigin(raw: string | undefined, name: string): string {
     throw new ConfigError(`${name} must be a bare origin, e.g. https://example.com (got ${raw})`);
   }
   return url.origin;
-}
-
-/**
- * Common second-level labels that are themselves a public suffix.
- *
- * `ponytail:` a small known list, not the full Public Suffix List — pulling in a PSL
- * dependency to derive one string would be the larger change, and the failure mode is
- * benign at this scale: a wrong guess produces an RP ID that does not suffix the host,
- * which the caller's check rejects loudly at boot rather than silently at the OS
- * prompt. Add an entry when a deployment on a new ccTLD is configured, or override
- * the derivation entirely with `WEBAUTHN_RP_ID`.
- */
-const SECOND_LEVEL_SUFFIXES = new Set([
-  'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'co.jp', 'or.jp', 'ne.jp', 'com.cn',
-  'net.cn', 'org.cn', 'gov.cn', 'com.tw', 'org.tw', 'co.kr', 'or.kr', 'com.au',
-  'com.br', 'com.hk', 'com.sg',
-]);
-
-/**
- * The registrable domain an origin's credential should be scoped to.
- *
- * A passkey is bound to a domain, not a host, which is what lets one created on
- * `hrt.example.com` be asserted from `api.example.com`. Returns the host unchanged
- * for `localhost` and for an IP literal, where there is nothing to strip.
- */
-function registrableDomain(origin: string): string {
-  const host = new URL(origin).hostname.toLowerCase();
-  if (host === 'localhost' || isIP(host) !== 0) return host;
-  const labels = host.split('.');
-  if (labels.length <= 2) return host;
-  const lastTwo = labels.slice(-2).join('.');
-  return SECOND_LEVEL_SUFFIXES.has(lastTwo) ? labels.slice(-3).join('.') : lastTwo;
 }
 
 /**
@@ -362,34 +301,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     turnstile = { secret: turnstileSecret, hostnames };
   }
 
-  // WebAuthn. On by default wherever the origins share a registrable domain, because
-  // the RP ID can be derived correctly and a misconfigured RP ID is the kind of
-  // mistake that only shows up as "the passkey does not work on this device".
-  // WEBAUTHN_RP_ID overrides the derivation for an unusual deployment.
-  const webauthnEnabled = env.WEBAUTHN_ENABLED !== 'false';
-  let webauthn: WebAuthnConfig | null = null;
-  if (webauthnEnabled) {
-    const origins = [publicOrigin, apiOrigin];
-    const rpId = env.WEBAUTHN_RP_ID?.trim() || registrableDomain(apiOrigin);
-    if (!rpId) {
-      webauthn = null;
-    } else {
-      // An RP ID that does not suffix an origin means no credential made on that
-      // origin could ever be used — refuse loudly rather than offering a button that
-      // fails at the OS prompt.
-      for (const origin of origins) {
-        const host = new URL(origin).hostname;
-        if (host !== rpId && !host.endsWith(`.${rpId}`)) {
-          throw new ConfigError(
-            `WEBAUTHN_RP_ID (${rpId}) must be a suffix of the host ${host}; ` +
-              'a credential scoped to it could not be used on that origin',
-          );
-        }
-      }
-      webauthn = { rpId, rpName: env.WEBAUTHN_RP_NAME?.trim() || 'Kira Tracker', origins };
-    }
-  }
-
   const sessionTtlMinutes = Number(env.SESSION_TTL_MINUTES ?? 30);
   if (!Number.isFinite(sessionTtlMinutes) || sessionTtlMinutes <= 0) {
     throw new ConfigError('SESSION_TTL_MINUTES must be a positive number');
@@ -407,7 +318,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const rateLimits: RateLimitConfig = {
     register: positiveInt(env.RATE_LIMIT_REGISTER, 5, 'RATE_LIMIT_REGISTER'),
     login: positiveInt(env.RATE_LIMIT_LOGIN, 10, 'RATE_LIMIT_LOGIN'),
-    resume: positiveInt(env.RATE_LIMIT_RESUME, 5, 'RATE_LIMIT_RESUME'),
     windowMs: positiveInt(env.RATE_LIMIT_WINDOW_MS, 60_000, 'RATE_LIMIT_WINDOW_MS'),
   };
 
@@ -422,7 +332,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     google,
     serverDekKey,
     turnstile,
-    webauthn,
     sessionTtlMinutes,
     encryptionKey,
     rateLimits,

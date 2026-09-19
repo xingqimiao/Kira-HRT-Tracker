@@ -25,7 +25,6 @@ export type CoreErrorKind =
   | 'locked'
   | 'rate_limited'
   | 'not_configured'
-  | 'passkey_limit'
   | 'username_taken'
   | 'network'
   | 'unknown';
@@ -67,10 +66,6 @@ function classify(body: { error?: string } | undefined, status: number): CoreErr
   if (raw.includes('too many failed attempts')) return 'locked';
   if (raw.includes('too many attempts')) return 'rate_limited';
   if (raw.includes('not configured')) return 'not_configured';
-  // The ceiling is the one passkey failure with a fix the user can perform, so it gets
-  // its own kind rather than arriving as `unknown` and being shown in the server's
-  // English. Matched on both words so an unrelated sentence cannot claim it.
-  if (raw.includes('maximum of') && raw.includes('passkey')) return 'passkey_limit';
   // The one bind failure with a field to attach it to, so it must not arrive as
   // `unknown` and be shown as a generic error against the whole form.
   if (raw.includes('username_taken')) return 'username_taken';
@@ -204,19 +199,9 @@ export interface SessionInfo {
   createdAt: string | null;
   lastSeenAt: string | null;
   expiresAt: string | null;
-  passkeyVerified: boolean;
   /** The raw user agent; the page turns it into a readable name. */
   userAgent: string | null;
   ip: string | null;
-}
-
-/** One registered passkey, as the settings list shows it. */
-export interface PasskeyInfo {
-  id: string;
-  name: string | null;
-  createdAt: string | null;
-  lastUsedAt: string | null;
-  deviceType: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -513,89 +498,6 @@ export const coreAuth = {
     await request(`/api/tokens/${id}`, { method: 'DELETE', token });
   },
 
-  // --- Passkeys -------------------------------------------------------------
-
-  /** Begin adding a passkey. Returns the WebAuthn creation options verbatim. */
-  async startPasskeyRegistration(token: string, currentPassword: string): Promise<unknown> {
-    const raw = await request<{ options: unknown }>('/auth/passkeys/register/start', {
-      method: 'POST',
-      token,
-      body: JSON.stringify({ current_password: currentPassword }),
-    });
-    return raw.options;
-  },
-
-  /** Finish adding a passkey. The PRF output is what wraps the data key. */
-  async finishPasskeyRegistration(
-    token: string,
-    response: unknown,
-    prfOutput: string,
-    name?: string,
-  ): Promise<{ credentialId: string }> {
-    const raw = await request<{ credential_id: string }>('/auth/passkeys/register/finish', {
-      method: 'POST',
-      token,
-      body: JSON.stringify({ response, prf_output: prfOutput, ...(name ? { name } : {}) }),
-    });
-    return { credentialId: raw.credential_id };
-  },
-
-  /**
-   * Begin a passkey sign-in.
-   *
-   * No username means discoverable: the authenticator picks a credential for this site
-   * and the assertion names it. That is the "no password, no account" path.
-   */
-  async startPasskeyAuthentication(username?: string): Promise<unknown> {
-    const raw = await request<{ options: unknown }>('/auth/passkeys/authenticate/start', {
-      method: 'POST',
-      body: JSON.stringify(username ? { username } : {}),
-    });
-    return raw.options;
-  },
-
-  async finishPasskeyAuthentication(
-    response: unknown,
-    prfOutput: string,
-    opts: { stepUpToken?: string } = {},
-  ): Promise<SessionResponse> {
-    return toSession(
-      await request('/auth/passkeys/authenticate/finish', {
-        method: 'POST',
-        body: JSON.stringify({
-          response,
-          prf_output: prfOutput,
-          ...(opts.stepUpToken ? { step_up_token: opts.stepUpToken } : {}),
-        }),
-      }),
-    );
-  },
-
-  /**
-   * The account's passkeys, and the ceiling the server enforces.
-   *
-   * The ceiling travels with the list so the settings page can stop at it. Sending the
-   * user through a system prompt the server will refuse teaches them the feature is
-   * broken, when the answer was one delete away.
-   */
-  async listPasskeys(token: string): Promise<{ passkeys: PasskeyInfo[]; max: number | null }> {
-    const raw = await request<{ passkeys?: any[]; max?: number }>('/auth/passkeys', { token });
-    return {
-      passkeys: (raw.passkeys ?? []).map((p) => ({
-        id: p.id,
-        name: p.name ?? null,
-        createdAt: p.createdAt ?? null,
-        lastUsedAt: p.lastUsedAt ?? null,
-        deviceType: p.deviceType ?? null,
-      })),
-      max: typeof raw.max === 'number' ? raw.max : null,
-    };
-  },
-
-  async removePasskey(token: string, id: string): Promise<void> {
-    await request('/auth/passkeys', { method: 'DELETE', token, body: JSON.stringify({ id }) });
-  },
-
   /**
    * The account's live unlocks, grouped by device, with the caller's own marked.
    *
@@ -612,7 +514,6 @@ export const coreAuth = {
       createdAt: s.createdAt ?? null,
       lastSeenAt: s.lastSeenAt ?? null,
       expiresAt: s.expiresAt ?? null,
-      passkeyVerified: s.passkeyVerified === true,
       userAgent: typeof s.userAgent === 'string' ? s.userAgent : null,
       ip: typeof s.ip === 'string' ? s.ip : null,
     }));

@@ -41,20 +41,6 @@ const NOT_UNLOCKED =
   'This account is locked. Ask the user to unlock it at the web UI (they enter their ' +
   'password there); the server holds no key at rest, so no agent can open it for them.';
 
-/**
- * Said instead of "unlock", because the fix is different.
- *
- * An advanced account with a passkey deliberately refuses to act on a stored token: a
- * previous unlock is not proof that the user is present now. Telling them to "unlock
- * with your password" would send them to do something that will not help. The action
- * is a passkey prompt, and this is what an agent should relay.
- */
-const NEEDS_STEP_UP =
-  'This account requires a passkey confirmation for agent access. Ask the user to open the ' +
-  'HRT web UI and approve the agent request with their passkey (Touch ID, Windows Hello, or ' +
-  'a security key). A previous unlock or the access token alone is deliberately not enough ' +
-  'for an advanced-privacy account.';
-
 /** Wrap a tool body so failures arrive as readable results instead of protocol errors. */
 function toolResult(value: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] };
@@ -76,8 +62,9 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
       instructions:
         'Tools for a personal HRT record: logged doses, lab results, and modelled hormone levels. ' +
         `${SAFETY_NOTE} ` +
-        'Accounts are end-to-end keyed; if a tool reports the account is locked, the user must unlock ' +
-        'it in the web UI before record tools will work.',
+        'Identity is proven before any of these tools run; the record key is wrapped per credential, ' +
+        'and in standard mode the server can open it. If a tool reports the account is locked, the user ' +
+        'must unlock it in the web UI before record tools will work.',
     },
   );
 
@@ -88,7 +75,7 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
   ): Promise<{ value: T } | { error: string }> {
     const ctx = await resolveContext();
     if (!ctx) return { error: NOT_UNLOCKED };
-    if ('denied' in ctx) return { error: ctx.denied === 'step_up' ? NEEDS_STEP_UP : NOT_UNLOCKED };
+    if ('denied' in ctx) return { error: NOT_UNLOCKED };
     return { value: await fn(ctx) };
   }
 

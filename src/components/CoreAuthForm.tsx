@@ -12,7 +12,6 @@ import {
 } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
 import { useTranslation } from '../contexts/LanguageContext';
-import { passkeysSupported, PasskeyError } from '../utils/passkeys';
 
 /**
  * Sign in or sign up against the Application Core.
@@ -77,12 +76,6 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
     const [unlockFactor, setUnlockFactor] = useState<'password' | 'recovery'>('password');
     const [unlockSecret, setUnlockSecret] = useState('');
 
-    // Whether this browser has WebAuthn at all — a pure property test that cannot
-    // prompt, so it is safe to run while rendering. It says nothing about whether a
-    // passkey for *this* account exists on *this* device; that is only knowable by
-    // asking, which happens on the click.
-    const passkeysUsable = passkeysSupported();
-
     React.useEffect(() => {
         if (active && initialUsername) setUsername(initialUsername);
     }, [active, initialUsername]);
@@ -128,37 +121,6 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
             default:
                 return error.message || t('core.err.generic');
         }
-    }
-
-    /** Sign in with a passkey alone. No username, no password. */
-    async function handlePasskey() {
-        setError(null);
-        setBusy(true);
-        try {
-            await session.signInWithPasskey();
-            finish();
-        } catch (err) {
-            setError(describePasskey(err));
-        } finally {
-            setBusy(false);
-        }
-    }
-
-    /** Turn a passkey failure into something worth reading, per code. */
-    function describePasskey(err: unknown): string {
-        if (err instanceof PasskeyError) {
-            switch (err.code) {
-                case 'unsupported':
-                    return t('core.passkey.err_unsupported');
-                case 'cancelled':
-                    return t('core.passkey.err_cancelled');
-                case 'no_prf':
-                    return t('core.passkey.err_no_prf');
-                default:
-                    return err.message || t('core.err.generic');
-            }
-        }
-        return err instanceof CoreAuthError ? err.message : t('core.err.generic');
     }
 
     /** Shared tail of both successful exits: announce, then let the caller react. */
@@ -297,14 +259,6 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                         {busy && <Icon icon={Loader2} size={16} className="animate-spin" />}
                         {t('core.privacy.unlock_action')}
                     </button>
-
-                    {/* A passkey opens the same data without any secret typed, so it is
-                        offered here beside the two secret-based factors. */}
-                    {passkeysUsable && (
-                        <button type="button" onClick={handlePasskey} disabled={busy} className="btn-secondary w-full">
-                            {t('core.passkey.unlock')}
-                        </button>
-                    )}
 
                     <div className="flex flex-col items-center gap-1.5 pt-1">
                         <button
@@ -446,16 +400,6 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                         {busy && <Icon icon={Loader2} size={16} className="animate-spin" />}
                         {isLogin ? t('core.sign_in') : t('core.create_account')}
                     </button>
-
-                    {/* Shown whenever the browser can do WebAuthn, without checking
-                        whether a passkey exists here — that check would be a prompt.
-                        Someone with no passkey gets a sentence after clicking, which
-                        is far better than an entry point that silently disappears. */}
-                    {isLogin && passkeysUsable && (
-                        <button type="button" onClick={handlePasskey} disabled={busy} className="btn-secondary w-full">
-                            {t('core.passkey.sign_in')}
-                        </button>
-                    )}
 
                     {(providers?.x || providers?.google) && (
                         <>

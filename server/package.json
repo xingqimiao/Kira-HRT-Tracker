@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@simplewebauthn/server": "^14.0.2",
     "pg": "^8.13.1"
   },
   "devDependencies": {

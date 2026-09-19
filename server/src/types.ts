@@ -21,12 +21,9 @@ export interface AuthContext {
  * Why a credential could not be turned into an `AuthContext`.
  *
  * Distinct from "no context at all", because the two call for different things from
- * the user. `locked` means no unlock is open and a password will fix it. `step_up`
- * means a durable token is present but the account demands proof that a person is
- * there with their authenticator — telling that user to "unlock with your password"
- * would be wrong advice, since a password alone is deliberately not enough there.
+ * the user. `locked` means no unlock is open and a password will fix it.
  */
 export interface ContextDenial {
-  denied: 'locked' | 'step_up';
+  denied: 'locked';
 }
 

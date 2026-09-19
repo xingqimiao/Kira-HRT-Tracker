@@ -1,11 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Icon from '../components/Icon';
 import { useTranslation } from '../contexts/LanguageContext';
-import { AlertTriangle, Check, Copy, Fingerprint, KeyRound, Loader2, LogOut, Lock, MonitorSmartphone, RefreshCw, Trash2, Unlink } from '../icons';
+import { AlertTriangle, Check, Copy, KeyRound, Loader2, LogOut, Lock, MonitorSmartphone, RefreshCw, Trash2, Unlink } from '../icons';
 
-import { coreAuth, CoreAuthError, PROVIDER_NAMES, type AccountSummary, type LoginMethods, type OAuthLink, type PasskeyInfo, type PrivacyMode, type SessionInfo } from '../services/coreAuth';
+import { coreAuth, CoreAuthError, PROVIDER_NAMES, type AccountSummary, type LoginMethods, type OAuthLink, type PrivacyMode, type SessionInfo } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
-import { passkeysSupported, PasskeyError } from '../utils/passkeys';
 
 /**
  * Account security for an Application Core session.
@@ -32,7 +31,7 @@ interface CoreAccountSettingsProps {
   onDeleted: () => void;
 }
 
-type Dialog = null | 'password' | 'unlink' | 'delete' | 'privacy' | 'recoveryKey' | 'passkey';
+type Dialog = null | 'password' | 'unlink' | 'delete' | 'privacy' | 'recoveryKey';
 
 /** What each mode actually does, in the words the spec asked for. */
 function privacyCopy(t: (k: string) => string, mode: PrivacyMode) {
@@ -97,16 +96,9 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
   /** `providers` here are the *linked* ones; whether Google is offered is `/health`. */
   const [methods, setMethods] = useState<LoginMethods | null>(null);
   const [googleAvailable, setGoogleAvailable] = useState(false);
-  const [passkeys, setPasskeys] = useState<PasskeyInfo[]>([]);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   // Nothing paints until the first load lands — see the skeleton below.
   const [loaded, setLoaded] = useState(false);
-  // Null until the server has said what its ceiling is; treated as "no ceiling known"
-  // so a missing field cannot hide the button.
-  const [passkeyMax, setPasskeyMax] = useState<number | null>(null);
-  // A pure property test, safe to evaluate while rendering — it cannot prompt.
-  const passkeysUsable = passkeysSupported();
-  const atPasskeyLimit = passkeyMax !== null && passkeys.length >= passkeyMax;
   const [dialog, setDialog] = useState<Dialog>(null);
   /** Which provider the unlink dialog is about, set by the row that opened it. */
   const [unlinkTarget, setUnlinkTarget] = useState<'x' | 'google' | null>(null);
@@ -124,12 +116,11 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
       return;
     }
     try {
-      const [s, l, m, offered, p, d] = await Promise.all([
+      const [s, l, m, offered, d] = await Promise.all([
         coreAuth.summary(token),
         coreAuth.listXLinks(token),
         coreAuth.loginMethods(token).catch(() => null),
         coreAuth.loginProviders(),
-        coreAuth.listPasskeys(token).catch(() => ({ passkeys: [] as PasskeyInfo[], max: null })),
         // A server that has not learned the sessions route yet must not break the page.
         coreAuth.listSessions(token).catch(() => [] as SessionInfo[]),
       ]);
@@ -137,8 +128,6 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
       setLinks(l);
       setMethods(m);
       setGoogleAvailable(offered.google);
-      setPasskeys(p.passkeys);
-      setPasskeyMax(p.max);
       setSessions(d);
     } catch {
       // Leave the previous values rather than blanking the page on a transient
@@ -153,23 +142,6 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
   }, [refresh]);
 
   function describe(error: unknown): string {
-    // Passkey failures, translated — they are the ones a user is most likely to hit
-    // for reasons that are not their fault (no authenticator here, PRF unsupported).
-    if (error instanceof PasskeyError) {
-      switch (error.code) {
-        case 'unsupported':
-          return t('core.passkey.err_unsupported');
-        case 'cancelled':
-          return t('core.passkey.err_cancelled');
-        case 'no_prf':
-          return t('core.passkey.err_no_prf');
-        default:
-          // A platform refusal we cannot translate. Its own text is the only clue there
-          // is, so it is kept inside a translated sentence — and `passkeys.ts` logs the
-          // whole error to the console, where a bug report can quote it.
-          return t('core.passkey.err_failed').replace('{detail}', error.message);
-      }
-    }
     if (error instanceof CoreAuthError) {
       switch (error.kind) {
         case 'invalid_credentials':
@@ -180,8 +152,6 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
           return 'X sign-in is not available on this server.';
         case 'network':
           return 'Could not reach the server.';
-        case 'passkey_limit':
-          return t('core.passkey.err_limit').replace('{max}', String(passkeyMax ?? ''));
         default:
           return error.message;
       }
@@ -230,8 +200,8 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
     methods === null || methods.hasPassword || methods.providers.some((p) => p !== provider);
 
   // Nothing paints until the first load lands: the page used to render only the parts
-  // that need no data and then grow as the summary, the X link and the passkeys arrived,
-  // which reads as a flicker on every visit.
+  // that need no data and then grow as the summary and the X link arrived, which reads
+  // as a flicker on every visit.
   if (!loaded) return <AccountSkeleton />;
 
   return (
@@ -408,55 +378,6 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
           </p>
         </section>
 
-        {/* ── Passkeys ─────────────────────────────────────────────────────── */}
-        {/* Shown whenever the browser can do WebAuthn. Whether PRF actually works is
-            learned when the user clicks Add — never by probing, which would pop a
-            system dialog for a feature nobody asked for yet. */}
-        {(passkeysUsable || passkeys.length > 0) && (
-          <section className="mb-6">
-            <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{t('core.passkey.section')}</span>
-
-            <div className="mt-2 flex flex-col">
-              {passkeys.map((p) => (
-                <Row
-                  key={p.id}
-                  icon={<Icon icon={Fingerprint} size={17} />}
-                  title={p.name || t('core.passkey.unnamed')}
-                  subtitle={
-                    p.lastUsedAt
-                      ? t('core.passkey.last_used').replace('{date}', formatDate(p.lastUsedAt) ?? '')
-                      : t('core.passkey.never_used')
-                  }
-                  right={<Icon icon={Trash2} size={15} className={muted} />}
-                  onClick={() => {
-                    void run(async () => {
-                      await coreAuth.removePasskey(token!, p.id);
-                      await refresh();
-                    }, t('core.passkey.notice_removed'));
-                  }}
-                  disabled={busy}
-                />
-              ))}
-
-              {passkeysUsable && (
-                <Row
-                  icon={<Icon icon={Fingerprint} size={17} />}
-                  title={t('core.passkey.add')}
-                  subtitle={
-                    atPasskeyLimit
-                      ? t('core.passkey.limit_reached').replace('{max}', String(passkeyMax))
-                      : t('core.passkey.add_sub')
-                  }
-                  onClick={() => setDialog('passkey')}
-                  disabled={busy || atPasskeyLimit}
-                />
-              )}
-            </div>
-
-            <p className={`text-xs mt-2 ${muted}`}>{t('core.passkey.note')}</p>
-          </section>
-        )}
-
         {/* ── Signed-in devices ────────────────────────────────────────────── */}
         {/* Listed so a person can end access they no longer recognise. The list names
             devices, never tokens — see `listUserSessions` on the server. */}
@@ -583,21 +504,6 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
               await refresh();
             });
             return key;
-          }}
-          describeError={describe}
-        />
-      )}
-
-      {dialog === 'passkey' && (
-        <PasskeyDialog
-          busy={busy}
-          onClose={() => { setDialog(null); setError(null); }}
-          onSubmit={async (currentPassword, name) => {
-            await run(async () => {
-              await session.addPasskey(currentPassword, name);
-              await refresh();
-            }, t('core.passkey.notice_added'));
-            setDialog(null);
           }}
           describeError={describe}
         />
@@ -986,51 +892,6 @@ const RecoveryKeyDialog: React.FC<{
           </button>
         </div>
       )}
-    </Dialog>
-  );
-};
-
-/**
- * Add a passkey.
- *
- * Asks for the current password because a passkey is another way into the account's
- * data — adding one is as sensitive as changing the password, so a session alone must
- * not be enough. The name is free text so a user with two authenticators can tell them
- * apart later.
- */
-const PasskeyDialog: React.FC<{
-  busy: boolean;
-  onClose: () => void;
-  onSubmit: (currentPassword: string, name?: string) => Promise<void>;
-  describeError: (e: unknown) => string;
-}> = ({ busy, onClose, onSubmit, describeError }) => {
-  const { t } = useTranslation();
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [localError, setLocalError] = useState<string | null>(null);
-
-  return (
-    <Dialog title={t('core.passkey.add')} onClose={onClose}>
-      <form
-        className="space-y-3 mt-1"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setLocalError(null);
-          try {
-            await onSubmit(password, name.trim() || undefined);
-          } catch (err) {
-            setLocalError(describeError(err));
-          }
-        }}
-      >
-        <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">
-          {t('core.passkey.add_intro')}
-        </p>
-        <Field label={t('core.pw.current')} type="password" value={password} onChange={setPassword} autoFocus />
-        <Field label={t('core.passkey.name')} value={name} onChange={setName} hint={t('core.passkey.name_hint')} />
-        {localError && <p className="text-xs text-[#B3261E]" role="alert">{localError}</p>}
-        <Submit busy={busy} disabled={!password}>{t('core.passkey.add_submit')}</Submit>
-      </form>
     </Dialog>
   );
 };

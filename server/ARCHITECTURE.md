@@ -95,33 +95,22 @@ Two consequences follow, both accepted deliberately:
 Password change re-wraps the DEK rather than re-encrypting records, so it is one
 row and cannot half-fail. A mode switch is the same operation twice over.
 
-**Passkeys are implemented, and the distinction that makes them real.** A passkey here
-is not a second login factor wearing a data-credential costume: its **PRF extension
-output** is what derives the KEK that wraps the DEK. Registration refuses a credential
-that did not return a PRF output, because accepting one would store a credential that
-can never open the data — and the UI hides the whole feature on a browser that cannot
-do PRF, rather than offering a button that fails at the OS prompt.
+**Passkeys were removed, and why they could not simply stay.** The feature was built to
+protect the data key: a credential's **PRF extension output** derived the KEK that
+wrapped the DEK, registration refused any credential that did not return a PRF output,
+and the UI hid the whole thing on a browser that could not do PRF. That is the
+zero-knowledge design this service abandoned. Once the server holds `ENCRYPTION_KEY`
+and decrypts on read, a passkey that no longer derives anything is a button whose
+description is a lie — so it is gone, along with `webauthn_credentials` and
+`webauthn_challenges`.
 
-Two design points are load-bearing:
-
-- **The PRF salt is a fixed application-wide constant.** It has to be, because a
-  discoverable sign-in evaluates PRF *before* the server knows which account is asking.
-  It is an input, not a secret; the PRF output over it is the key. Storing a
-  per-account salt is the intuitive design and it breaks the usernameless flow.
-- **Wrappers are a map keyed by credential id**, not a single slot, so a second
-  authenticator does not orphan the first.
-
-The server unwraps, as it does for passwords — the product's claim is that the server
-cannot unlock *on its own*, not that it never decrypts during an unlock.
-
-**Step-up for agents.** An advanced account that has a passkey refuses a durable `hrt_`
-token unless a *passkey-proven* unlock is live (`session.passkeyVerifiedAt`). A password
-session opened hours earlier is deliberately not enough: the point is that an agent
-should not act on the strength of a stored token, and a passkey assertion proves someone
-is present now. The MCP layer reports this as its own message — telling the user to
-"unlock with your password" would be wrong advice, since a password alone will not
-satisfy it. An advanced account with *no* passkey keeps the older behaviour, so a
-password-only user is not locked out of their own agents.
+**Step-up for agents went with it.** An advanced account that had a passkey used to
+refuse a durable `hrt_` token unless a passkey-proven unlock was live
+(`session.passkeyVerifiedAt`), because an agent should not act on the strength of a
+stored token. With passkeys gone there is no assertion that can prove presence, so the
+denial had become unreachable and was removed rather than left as a state no caller can
+receive. What remains is `'locked'`, which is real: an agent token carries no key, and
+in advanced mode a live unlock is still required before it can read anything.
 
 ### Record ids are opaque client strings, scoped per account
 
@@ -275,46 +264,37 @@ lines) and the Core has its own model. They do not overlap:
 |---|---|---|
 | Password login | yes | yes (scrypt) |
 | TOTP 2FA + backup codes | removed | removed |
-| Passkeys / WebAuthn | removed | yes (PRF-derived key) |
+| Passkeys / WebAuthn | removed | removed |
 | Session list & revoke | yes | no (unlock TTL only) |
 | Admin | yes | no |
 | Unlock token | n/a | yes (`ks_…`) |
 | Agent API token | n/a | yes (`hrt_…`) |
 
-So "migrate the app to the Core" cannot be finished by wiring a hook: the app's
-`token` is a Worker JWT, while `/api/sync` needs a Core unlock token, and the two
-systems issue credentials independently. Three ways forward, and they differ enough
-that this should not be chosen by accident:
+This section used to describe two systems that both existed — a Worker authenticating
+the app and a Core holding the data — and set out three ways to reconcile them. There is
+only one system now: the Worker, its D1 schema, its Docker image and its whole frontend
+auth stack have been deleted, and the Core issues every credential. Two consequences are
+worth keeping written down, because both were decisions rather than accidents:
 
-1. **Make the Core the only identity provider and retire the Worker.** This is what
-   has actually happened: the Core now has username + password, X and Google, a
-   binding gate, agent tokens and MCP, and both sides have dropped TOTP and passkeys.
-   `src/services/auth.ts` and `src/pages/Admin.tsx` are the remaining legacy surface.
-2. **Re-introduce a second factor in the Core.** Rejected: it was removed because a
-   mandatory one made every provider-created account unusable until enrolment, and a
-   password-only fallback is what keeps records reachable when a provider account is
-   lost. Adding it back would restore that trap unless it is optional, and an optional
-   second factor that most accounts never enrol is a maintenance cost with little gain.
-3. **Keep the Worker as the identity provider and let the Core trust it.** Smallest
-   change to the app, but it moves where the DEK can be unwrapped: the Core would
-   have to accept identity asserted by another service, which weakens the "the
-   operator holds no key at rest" property unless the DEK wrapping moves with it.
-   This is the option to choose if the priority is shipping rather than purity —
-   but it should be chosen knowingly.
-
-Until this is settled, the app keeps its current path and the Core is reached
-either by an agent (MCP) or by an import/sync, which is already enough to move a
-real history across today.
+- **The Core holds no second factor.** A mandatory one made every provider-created
+  account unusable until enrolment, and TOTP was removed rather than made optional. The
+  fallback that keeps records reachable when a provider account is lost is the bound
+  account name and password, enforced by the `403 account_incomplete` gate.
+- **Nothing asserts identity on the Core's behalf.** The Core does not accept identity
+  from another service, which is what keeps the DEK wrapping — and the honest bound on
+  it — in one place.
 
 ### A trap worth knowing before running tsc on both trees
 
-`tsc -p tsconfig.json` at the repo root reports **26 errors in the server** that
-are all false. The cause is not the code: the root config has no `strict`, so
-`strictNullChecks` is off and a `union` discriminated by a boolean cannot narrow
-at all, which turns every early `return fail(...)` in `domain.ts` and `core.ts`
-into an apparent type mismatch. Under `server/tsconfig.json` (which sets
-`strict: true` and `lib: [ES2023, DOM]`) the server's `src/` is clean, and the same
-code passing under a looser config is not evidence of a real defect.
+`tsc -p tsconfig.json` at the repo root reports **dozens of errors in the server that
+are all false**. The cause is not the code: the root config has no `strict`, so
+`strictNullChecks` is off and a union discriminated by a boolean cannot narrow at all,
+which turns every early `return fail(...)` in `domain.ts` and `core.ts` into an apparent
+type mismatch (`TS2322`/`TS2339` on `Result<T>`, hundreds of lines apart from the
+mistake they claim). Under `server/tsconfig.json` — which sets `strict: true` and
+`lib: [ES2023, DOM]` — the server's `src/` is clean, and the same code passing under a
+looser config is not evidence of a real defect. Do not quote a number here: it changes
+with every commit, and the tell is the shape of the error, not the count.
 
 `server/tsconfig.json` includes `DOM` on purpose: the cross-boundary tests import
 the app's browser-side modules. The server's own sources use no DOM at runtime —

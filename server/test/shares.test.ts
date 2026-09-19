@@ -49,10 +49,9 @@ before(async () => {
     encryptionKey: null,
     google: null,
     turnstile: null,
-    webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: null,
     sessionTtlMinutes: 30,
-    rateLimits: { register: 1000, login: 1000, resume: 1000, windowMs: 60_000 },
+    rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },
   });
   pg = await bootPostgres({ dir: './.pgdata-shares', port: 55444, database: 'hrt_shares' });
   await useDatabase(pg);
@@ -325,10 +324,9 @@ test('the access route is rate-limited, because guessing tokens is the threat', 
     encryptionKey: null,
     google: null,
     turnstile: null,
-    webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: null,
     sessionTtlMinutes: 30,
-    rateLimits: { register: 1000, login: 5, resume: 1000, windowMs: 60_000 },
+    rateLimits: { register: 1000, login: 5, windowMs: 60_000 },
   });
   resetRateLimits();
 

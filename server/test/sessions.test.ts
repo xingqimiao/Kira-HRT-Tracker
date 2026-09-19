@@ -41,10 +41,9 @@ before(async () => {
     encryptionKey: null,
     google: null,
     turnstile: null,
-    webauthn: null,
     x: null,
     sessionTtlMinutes: 30,
-    rateLimits: { register: 1000, login: 1000, resume: 1000, windowMs: 60_000 },
+    rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },
   });
   pg = await bootPostgres({ dir: './.pgdata-sessions', port: 55449, database: 'hrt_sessions' });
   await useDatabase(pg);

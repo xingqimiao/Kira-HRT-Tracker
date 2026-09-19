@@ -32,10 +32,9 @@ function configWith(turnstile: Config['turnstile']): Config {
     encryptionKey: null,
     google: null,
     turnstile,
-    webauthn: null,
     x: null,
     sessionTtlMinutes: 30,
-    rateLimits: { register: 1000, login: 1000, resume: 1000, windowMs: 60_000 },
+    rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },
   };
 }
 

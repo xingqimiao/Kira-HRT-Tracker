@@ -28,7 +28,6 @@ import { AccountService } from './accounts.ts';
 import { isGoogleConfigured } from './oauth.ts';
 import { RecordService, buildExportPayload, publicStats } from './records.ts';
 import { getPool } from './db.ts';
-import { MAX_PASSKEYS_PER_ACCOUNT } from './webauthn.ts';
 import { ShareService } from './shares.ts';
 import type { AuthContext } from './types.ts';
 import {
@@ -200,9 +199,9 @@ async function contextFor(req: IncomingMessage): Promise<AuthContext | null> {
   // cannot be enforced on one route while being forgotten on another.
   //
   // A denial is flattened to null here: every REST route treats "no usable key" the
-  // same way (401), and only the MCP layer needs to tell the two reasons apart to give
-  // the user the right instruction. `mcp.ts` keeps the distinction because `http.ts`'s
-  // MCP mount passes the resolver straight through, not through this helper.
+  // same way (401), while `mcp.ts` turns it into the instruction the user actually
+  // needs. `http.ts`'s MCP mount passes the resolver straight through, not through
+  // this helper.
   const ctx = await AccountService.resolveApiContext(token);
   if (!ctx || 'denied' in ctx) return null;
   // Where a live unlock is last seen. The session store cannot see requests, and this is
@@ -545,93 +544,6 @@ export function createRequestHandler() {
         if (!result.ok) return send(res, 400, { error: result.error });
         // Returned exactly once. It is never readable again, by design.
         return send(res, 200, { recovery_key: result.value.recoveryKey });
-      }
-
-      // --- Auth: passkeys (WebAuthn) ---------------------------------------
-      //
-      // Registration is authenticated and password-gated (adding a way into the
-      // account is as sensitive as changing the password). Authentication is not:
-      // it is the usernameless sign-in, and the assertion plus PRF output are the
-      // whole credential.
-      if (path === '/auth/passkeys/register/start' && req.method === 'POST') {
-        const limits = getConfig().rateLimits;
-        if (rateLimited(`pkreg:${clientIp(req)}`, limits.login, limits.windowMs)) {
-          return send(res, 429, { error: 'too many attempts; try again shortly' });
-        }
-        const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
-        const body = (await readBody(req)) as { current_password?: unknown } | undefined;
-        const result = await AccountService.startPasskeyRegistration(ctx, body?.current_password);
-        if (!result.ok) return send(res, 400, { error: result.error });
-        // No salt is returned: the PRF evaluation input is a fixed application-wide
-        // constant, because a discoverable sign-in has to evaluate it before the
-        // server knows which account is involved.
-        return send(res, 200, { options: result.value.options });
-      }
-
-      if (path === '/auth/passkeys/register/finish' && req.method === 'POST') {
-        const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
-        const body = (await readBody(req)) as
-          | { response?: unknown; prf_output?: unknown; name?: unknown }
-          | undefined;
-        const result = await AccountService.finishPasskeyRegistration(ctx, body?.response, body?.prf_output, {
-          name: body?.name,
-        });
-        if (!result.ok) return send(res, 400, { error: result.error });
-        return send(res, 201, { credential_id: result.value.credentialId });
-      }
-
-      if (path === '/auth/passkeys/authenticate/start' && req.method === 'POST') {
-        const limits = getConfig().rateLimits;
-        if (rateLimited(`pkauth:${clientIp(req)}`, limits.login, limits.windowMs)) {
-          return send(res, 429, { error: 'too many attempts; try again shortly' });
-        }
-        const body = (await readBody(req)) as { username?: unknown } | undefined;
-        const result = await AccountService.startPasskeyAuthentication(body?.username);
-        if (!result.ok) return send(res, 400, { error: result.error });
-        return send(res, 200, { options: result.value.options });
-      }
-
-      if (path === '/auth/passkeys/authenticate/finish' && req.method === 'POST') {
-        const limits = getConfig().rateLimits;
-        if (rateLimited(`pkauthf:${clientIp(req)}`, limits.login, limits.windowMs)) {
-          return send(res, 429, { error: 'too many attempts; try again shortly' });
-        }
-        const body = (await readBody(req)) as
-          | { response?: unknown; prf_output?: unknown; step_up_token?: unknown }
-          | undefined;
-        const result = await AccountService.finishPasskeyAuthentication(
-          body?.response,
-          body?.prf_output,
-          { stepUpToken: typeof body?.step_up_token === 'string' ? body.step_up_token : undefined },
-        );
-        if (!result.ok) return send(res, 401, { error: result.error });
-        return send(res, 200, {
-          user_id: result.value.userId,
-          username: result.value.username,
-          token: result.value.token,
-        });
-      }
-
-      if (path === '/auth/passkeys' && req.method === 'GET') {
-        const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
-        // `max` travels with the list so the settings page can disable "add" at the
-        // ceiling instead of letting the user complete a prompt the server will refuse.
-        return send(res, 200, {
-          passkeys: await AccountService.listPasskeys(ctx.userId),
-          max: MAX_PASSKEYS_PER_ACCOUNT,
-        });
-      }
-
-      if (path === '/auth/passkeys' && req.method === 'DELETE') {
-        const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
-        const body = (await readBody(req)) as { id?: unknown } | undefined;
-        const result = await AccountService.removePasskey(ctx, body?.id);
-        if (!result.ok) return send(res, 400, { error: result.error });
-        return send(res, 200, { removed: true });
       }
 
       // --- Auth: live sessions ----------------------------------------------

@@ -1,7 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import { coreAuth, CoreAuthError, type PrivacyMode } from '../services/coreAuth';
-import { createPasskey, getPasskeyAssertion } from '../utils/passkeys';
 
 /**
  * The Application Core session.
@@ -69,10 +68,6 @@ export interface CoreSession {
   adoptLockedSession: (lockedToken: string, userId: string, username: string) => void;
   /** Unlock data with a password or recovery key, turning a locked session into a real one. */
   unlockData: (factor: 'password' | 'recovery', secret: string) => Promise<void>;
-  /** Sign in with a passkey alone — no username, no password. */
-  signInWithPasskey: (opts?: { username?: string; stepUpToken?: string }) => Promise<void>;
-  /** Add a passkey to the signed-in account. Needs the password, and a PRF-capable device. */
-  addPasskey: (currentPassword: string, name?: string) => Promise<{ credentialId: string }>;
   signOut: () => Promise<void>;
 }
 
@@ -270,38 +265,6 @@ function useCoreSessionState() {
     [persist, state.lockedToken],
   );
 
-  /**
-   * Sign in with a passkey alone.
-   *
-   * Two calls to the ceremony, not one: the options must come from the server so the
-   * challenge is one the server will accept, and the assertion it produces is what the
-   * server verifies. The PRF output rides along, and it is what opens the data — the
-   * ceremony throws `no_prf` rather than returning null when it is missing, so the
-   * failure reaches the UI with a reason instead of as an undefined.
-   */
-  const signInWithPasskey = useCallback(
-    async (opts: { username?: string; stepUpToken?: string } = {}) => {
-      const options = await coreAuth.startPasskeyAuthentication(opts.username);
-      const assertion = await getPasskeyAssertion(options);
-      const session = await coreAuth.finishPasskeyAuthentication(assertion.response, assertion.prfOutput, {
-        ...(opts.stepUpToken ? { stepUpToken: opts.stepUpToken } : {}),
-      });
-      persist(session.token, { userId: session.userId, username: session.username });
-    },
-    [persist],
-  );
-
-  /** Add a passkey to the signed-in account. Requires the password, and PRF. */
-  const addPasskey = useCallback(
-    async (currentPassword: string, name?: string) => {
-      if (!state.token) throw new CoreAuthError('unknown', 'Not signed in', null);
-      const options = await coreAuth.startPasskeyRegistration(state.token, currentPassword);
-      const created = await createPasskey(options);
-      return await coreAuth.finishPasskeyRegistration(state.token, created.response, created.prfOutput, name);
-    },
-    [state.token],
-  );
-
   const signOut = useCallback(async () => {
     const token = state.token;
     persist(null, null);
@@ -326,10 +289,8 @@ function useCoreSessionState() {
       adoptSession,
       adoptLockedSession,
       unlockData,
-      signInWithPasskey,
-      addPasskey,
       signOut,
     }),
-    [state, signIn, register, adoptSession, adoptLockedSession, unlockData, signInWithPasskey, addPasskey, signOut],
+    [state, signIn, register, adoptSession, adoptLockedSession, unlockData, signOut],
   );
 }

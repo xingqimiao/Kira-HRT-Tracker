@@ -154,7 +154,6 @@ export {
   interpolateConcentration_CPA,
   interpolateConcentration_T,
   deriveCloudKey,
-  derivePasskeyKey,
   encryptCloudPayload,
   decryptCloudPayload,
   isCloudEncrypted,
