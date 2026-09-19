@@ -1,9 +1,9 @@
 /**
  * Two-way sync against the Application Core.
  *
- * The Core's `/api/sync` holds structured records rather than an encrypted blob, which
- * is what keeps this hook small: there is no revision-CAS dance to perform, because
- * the Core enforces per-record optimistic locking server-side, so this hook can
+ * The Core's `/api/records` holds structured records rather than an encrypted blob,
+ * which is what keeps this hook small: there is no revision-CAS dance to perform,
+ * because the Core enforces per-record optimistic locking server-side, so this hook can
  * simply "merge, then push".
  *
  * The merge itself is NOT reimplemented here: `mergeSyncStates` is the app's own

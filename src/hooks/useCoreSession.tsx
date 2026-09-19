@@ -5,15 +5,19 @@ import { coreAuth, CoreAuthError, type PrivacyMode } from '../services/coreAuth'
 /**
  * The Application Core session.
  *
- * Kept separate from `AuthContext`, which speaks to the legacy Worker API. The two
- * are genuinely different models and merging them would obscure which backend each
- * call reaches:
+ * This is the only session the app has. It used to sit beside an `AuthContext` that
+ * spoke to the legacy Worker API, and the two differed in a way worth remembering:
  *
- *   - The Worker hands out a JWT and the browser derives a **cloud key** from the
- *     password to encrypt backups locally.
+ *   - The Worker handed out a JWT, and the browser derived a **cloud key** from the
+ *     password to encrypt backups locally before uploading them.
  *   - The Core hands out an unlock token (`ks_…`) that **is** the key holder: the
  *     server keeps the data key in memory while the session is live, so the browser
  *     needs no key of its own. Signing out — or the idle timeout — drops it.
+ *
+ * The Worker is gone, so the first bullet is history rather than a second code path.
+ * What survives is the rule it forced: nothing in the client should assume it holds a
+ * key, and every read goes through the token.
+ */
  *
  * The token lives in `localStorage` rather than memory so a refresh does not sign
  * the user out. That is a real trade: any script on the origin can read it. It is
