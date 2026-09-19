@@ -559,24 +559,18 @@
     }
 }
 
-/* The layout is drawn for a ~1280 px column, which leaves it undersized on a
-   wide display: small type stranded in a lot of empty page. Everything is sized
-   in rem, so lifting the root size scales type, spacing and the content column
-   together, keeping the proportions and just rendering them larger. Phones and
-   tablets stay at 16px, where the layout is already full-width. */
-:root { --ui-scale: 1; }
-@media (min-width: 1280px) { :root { --ui-scale: 1.10; } }
-@media (min-width: 1600px) { :root { --ui-scale: 1.20; } }
-@media (min-width: 1920px) { :root { --ui-scale: 1.28; } }
+/* There used to be a `--ui-scale` here: from 1280px up the root font size was
+   stepped 10/20/28% so the interface did not look undersized on a wide display.
+   That is the wrong lever. It enlarged the whole interface uniformly instead of
+   changing what fits on the screen, and on a 1920px monitor it turned a layout
+   meant for a 1280px window into a magnified one — bigger type and the same
+   amount of content.
 
-/* Icons carry their size as a px width/height attribute, so unlike everything
-   else they do not follow the root font size. Zoom scales the whole glyph,
-   stroke included, keeping them in proportion with the type beside them.
-   Excludes the chart, which lays itself out in measured pixels. */
-svg.lucide,
-.pm {
-    zoom: var(--ui-scale);
-}
+   The root is 16px at every width now. A wide window buys a rail instead of a
+   top bar and a wider reading column; it does not buy larger text. Icons lose
+   the `zoom` that went with it too, which is the right outcome: M3 icons are a
+   fixed dp size, and they were the only thing in the app scaling independently
+   of the type beside them.
 
 /* Sweeps the clip the curves are drawn through. */
 .chart-sweep {
@@ -744,7 +738,6 @@ svg.lucide,
 
 /* Base Styles */
 html {
-    font-size: calc(16px * var(--ui-scale));
     height: 100%;
     overscroll-behavior-y: contain;
     /* No page-level pinch or double-tap zoom. The layout is already responsive,
@@ -2008,19 +2001,15 @@ select,
    dense data furniture. The spec's floor is label-small (11/16, 500). They move
    there so every size in the app is a token.
 
-   Every one of these is in rem, and the #1 test caught why that matters: the
-   root font size is scaled by --ui-scale on large windows, and an SVG that has
-   been scaled by viewBox does not zoom with the page. Text inside it is for the
-   screen, not for the drawing, so it has to follow the root — otherwise the axis
-   labels shrink relative to the numbers they label on a wide monitor. A 1rem
-   factor on the *root's own* size keeps the control over the size in the rule
-   below while making it relative. (A rem on :root resolves against the browser's
-   initial size, not the modified root, so this is not circular.) */
+   These were written in rem with a --ui-scale factor so the chart's axis labels
+   would follow the root when it stepped up on a wide display. The root no longer
+   steps, so they are plain values again — the rule below still controls them, and
+   an SVG that lays itself out in measured pixels stays proportional to itself. */
 :root { --m3-text-2xs-size: 0.6875rem; }
 
 .m3-text-2xs {
-    font-size: calc(var(--m3-text-2xs-size) * var(--ui-scale, 1) * 1rem);
-    line-height: calc(var(--m3-text-2xs-size) * var(--ui-scale, 1) * 1rem * 16 / 11);
+    font-size: var(--m3-text-2xs-size);
+    line-height: 1rem;
     font-weight: var(--md-sys-typescale-label-small-weight);
     letter-spacing: 0.3px;
 }
@@ -2030,8 +2019,8 @@ select,
    carrying a sentence. body-small (12/16) is the role for a short explanation,
    and label-small's weight moves to 500 only where the text is a label. */
 .m3-text-note {
-    font-size: calc(0.75rem * var(--ui-scale, 1) * 1rem);
-    line-height: calc(0.75rem * var(--ui-scale, 1) * 1rem * 16 / 12);
+    font-size: 0.75rem;
+    line-height: 1rem;
     font-weight: 400;
     letter-spacing: 0.3px;
     color: var(--md-sys-color-on-surface-variant);
