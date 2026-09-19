@@ -162,7 +162,7 @@ must be listed in the portal's Callback URI field if you want to test the flow l
 
 ```
 /srv/hrt/
-  dist/index.js      # built bundle (npm run build)
+  dist/index.cjs     # built bundle (npm run build)
   package.json
   node_modules/      # npm ci --omit=dev
   schema.sql
@@ -241,7 +241,7 @@ depends on which.
 
 ```bash
 sudo -u hrt env $(sudo grep -v '^#' /srv/hrt/.env | xargs) \
-  node /srv/hrt/dist/index.js migrate
+  node /srv/hrt/dist/index.cjs migrate
 ```
 
 Idempotent, and includes `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for columns added
@@ -263,7 +263,7 @@ User=hrt
 Group=hrt
 WorkingDirectory=/srv/hrt
 EnvironmentFile=/srv/hrt/.env
-ExecStart=/usr/bin/node /srv/hrt/dist/index.js http
+ExecStart=/usr/bin/node /srv/hrt/dist/index.cjs http
 Restart=on-failure
 RestartSec=5
 
@@ -396,6 +396,15 @@ one that gets forgotten, because `/srv/hrt/dist/` already looks like it is full 
 backups. It is: the convention is `index.cjs.bak-<label>-<timestamp>`, written before
 the install that replaced it. Overwriting `index.cjs` without adding one leaves no
 staged way back, and rebuilding an old commit is a slower path than a `cp`.
+
+**The server bundle is CommonJS, and one flag in it is load-bearing.** `npm run build`
+runs esbuild with `--format=cjs` and `--define:import.meta.url=__filename`, because
+`src/db.ts` reads `import.meta.url` and a CJS output has no such thing. Drop the
+`--define` and the bundle still builds without a word, then dies at startup inside
+`path.isAbsolute(undefined)` with `ERR_INVALID_ARG_TYPE` and crash-loops the unit — so a
+routine `systemctl restart` turns into a 502 that reads like a database or ownership
+problem. `npm run build` therefore ends in `scripts/check-bundle.mjs`, which fails if
+`dist/index.cjs` emits `import_meta` or has lost `var modulePath = __filename;`.
 
 `VITE_API_ORIGIN` is read by `src/services/apiClient.ts`. Without it the requests go
 same-origin and every API call from `hrt.` would 404 against the static host.
