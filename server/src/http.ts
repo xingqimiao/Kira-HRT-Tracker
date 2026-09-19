@@ -194,9 +194,9 @@ function bearer(req: IncomingMessage): string | undefined {
 async function contextFor(req: IncomingMessage): Promise<AuthContext | null> {
   const token = bearer(req);
   if (!token) return null;
-  // One resolver for the HTTP and MCP paths, so the privacy-mode rule ("a `hrt_`
-  // token alone is enough in standard mode, never in advanced") is written once and
-  // cannot be enforced on one route while being forgotten on another.
+  // One resolver for the HTTP and MCP paths, so "what can this credential reach" is
+  // written once and cannot be enforced on one route while being forgotten on
+  // another.
   //
   // A denial is flattened to null here: every REST route treats "no usable key" the
   // same way (401), while `mcp.ts` turns it into the instruction the user actually
@@ -336,15 +336,13 @@ export function createRequestHandler() {
           return send(res, 429, { error: 'too many attempts; try again shortly' });
         }
         const body = (await readBody(req)) as
-          | { username?: unknown; password?: unknown; privacy_mode?: unknown; turnstile_token?: unknown }
+          | { username?: unknown; password?: unknown; turnstile_token?: unknown }
           | undefined;
         // Human verification first: it is the cheapest rejection and it must gate
         // account creation, not sit after it.
         const human = await verifyTurnstile(body?.turnstile_token, 'register', clientIp(req));
         if (!human.ok) return send(res, 403, { error: human.error });
-        const result = await AccountService.register(body?.username, body?.password, {
-          privacyMode: body?.privacy_mode,
-        });
+        const result = await AccountService.register(body?.username, body?.password);
         if (!result.ok) return send(res, 400, { error: result.error });
         await AccountService.recordAuthEvent(result.value.userId, 'register', clientIp(req));
         // A session straight away, because there is nothing left to confirm: the
@@ -455,7 +453,6 @@ export function createRequestHandler() {
           user_id: result.value.userId,
           username: result.value.username,
           token: result.value.token,
-          ...(result.value.lockedToken ? { locked_token: result.value.lockedToken } : {}),
         });
       }
 
@@ -512,64 +509,8 @@ export function createRequestHandler() {
         return send(res, 200, {
           user_id: result.value.userId,
           username: result.value.username,
-          // null means X verified the identity but no key was handed over. In
-          // advanced mode a `locked_token` comes with it, which the client passes to
-          // `/auth/unlock` with a password or recovery key.
-          token: result.value.token,
-          ...(result.value.lockedToken ? { locked_token: result.value.lockedToken } : {}),
-        });
-      }
-
-      // --- Auth: data unlock (advanced mode) -------------------------------
-      //
-      // Distinct from `/auth/login`: that proves identity for the account, this
-      // proves the *data* credential for a session whose identity a provider
-      // already proved.
-      if (path === '/auth/unlock' && req.method === 'POST') {
-        const limits = getConfig().rateLimits;
-        if (rateLimited(`unlock:${clientIp(req)}`, limits.login, limits.windowMs)) {
-          return send(res, 429, { error: 'too many attempts; try again shortly' });
-        }
-        const body = (await readBody(req)) as
-          | { locked_token?: unknown; factor?: unknown; password?: unknown; recovery_key?: unknown }
-          | undefined;
-        const secret = body?.factor === 'recovery' ? body?.recovery_key : body?.password;
-        const result = await AccountService.unlockData(body?.locked_token, body?.factor ?? 'password', secret);
-        if (!result.ok) return send(res, 401, { error: result.error });
-        return send(res, 200, {
-          user_id: result.value.userId,
-          username: result.value.username,
           token: result.value.token,
         });
-      }
-
-      if (path === '/auth/privacy-mode' && req.method === 'POST') {
-        const limits = getConfig().rateLimits;
-        if (rateLimited(`privacy:${clientIp(req)}`, limits.login, limits.windowMs)) {
-          return send(res, 429, { error: 'too many attempts; try again shortly' });
-        }
-        const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
-        const body = (await readBody(req)) as
-          | { privacy_mode?: unknown; current_password?: unknown }
-          | undefined;
-        const result = await AccountService.switchPrivacyMode(ctx, body?.privacy_mode, body?.current_password);
-        if (!result.ok) return send(res, 400, { error: result.error });
-        return send(res, 200, { privacy_mode: result.value.privacyMode });
-      }
-
-      if (path === '/auth/recovery-key' && req.method === 'POST') {
-        const limits = getConfig().rateLimits;
-        if (rateLimited(`recovery:${clientIp(req)}`, limits.login, limits.windowMs)) {
-          return send(res, 429, { error: 'too many attempts; try again shortly' });
-        }
-        const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
-        const body = (await readBody(req)) as { current_password?: unknown } | undefined;
-        const result = await AccountService.createRecoveryKey(ctx, body?.current_password);
-        if (!result.ok) return send(res, 400, { error: result.error });
-        // Returned exactly once. It is never readable again, by design.
-        return send(res, 200, { recovery_key: result.value.recoveryKey });
       }
 
       // --- Auth: live sessions ----------------------------------------------
@@ -634,14 +575,11 @@ export function createRequestHandler() {
         if (!ctx) return send(res, 401, { error: 'authentication required' });
         const counts = await RecordService.countByCategory(ctx);
         const { rows } = await getPool().query<{
-          x_links: string; created_at: Date;
-          privacy_mode: string; encryption_metadata: unknown; x_avatar_url: string | null;
+          x_links: string; created_at: Date; x_avatar_url: string | null;
         }>(
           `SELECT
              (SELECT count(*) FROM oauth_accounts       WHERE user_id = $1)                      AS x_links,
              (SELECT created_at FROM users WHERE id = $1)                                     AS created_at,
-             (SELECT privacy_mode FROM users WHERE id = $1)                                   AS privacy_mode,
-             (SELECT encryption_metadata FROM users WHERE id = $1)                            AS encryption_metadata,
              -- The linked X avatar, for the account header. It is already stored; the
              -- summary simply never surfaced it, so the page had nothing but a generic
              -- glyph to draw. Null when no X account is linked.
@@ -651,9 +589,6 @@ export function createRequestHandler() {
           [ctx.userId],
         );
         const row = rows[0];
-        // `has_recovery_key` is a boolean about a *wrapper*, not the key itself: the
-        // key is never stored, so this only says whether one has been created.
-        const wrappers = (row?.encryption_metadata as { wrappers?: Record<string, unknown> } | null)?.wrappers;
         return send(res, 200, {
           created_at: row?.created_at?.toISOString() ?? null,
           dose_count: counts.dose ?? 0,
@@ -661,11 +596,6 @@ export function createRequestHandler() {
           x_links: Number(row?.x_links ?? 0),
           x_login_available: AccountService.xLoginAvailable(),
           x_avatar_url: row?.x_avatar_url ?? null,
-          privacy_mode: row?.privacy_mode ?? 'standard',
-          has_recovery_key: Boolean(wrappers?.recovery),
-          // Standard mode depends on a server key existing at all; surface it so the
-          // settings screen can say honestly whether Standard is even offered here.
-          server_recovery_available: Boolean(getConfig().serverDekKey),
         });
       }
 

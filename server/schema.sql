@@ -112,39 +112,35 @@ DROP INDEX IF EXISTS idx_users_email_unique;
 -- a column that might hold the only copy of someone's 2FA secret is not a
 -- migration this file should perform unattended.
 
--- Two data-security modes, and a versioned home for the key wrappers.
+-- A versioned home for the account's key wrappers.
 --
--- `privacy_mode` is an explicit column, not something inferred from which wrappers
--- happen to exist. Guessing the mode from `hasPassword`/`hasRecovery`-style flags
--- makes it silently flip when a wrapper is added or removed; the mode is a stated
--- product choice, so it is stored as one.
---
--- `encryption_metadata` is versioned jsonb so a future wrapper (passkey, a new KDF,
--- a new algorithm) is a data change rather than a table change. Its shape:
+-- `encryption_metadata` is versioned jsonb so a future wrapper (a new KDF, a new
+-- algorithm) is a data change rather than a table change. Its shape:
 --   { version, dek: {alg, createdAt},
---     wrappers: { password?, server?, recovery?, passkey? } }
--- Every wrapper is the same {cloud:1,iv,data} AES-GCM envelope as a cloud backup,
--- so the browser and the server agree on the format by construction. `version` is
--- explicit for the same reason `privacy_mode` is: the format of this document must
--- never be guessed from which fields are present.
+--     wrappers: { password?, server? } }
+-- Every wrapper is the same {cloud:1,iv,data} AES-GCM envelope as a cloud backup, so
+-- the browser and the server agree on the format by construction. `version` is
+-- explicit because the format of this document must never be guessed from which
+-- fields are present.
 --
---   standard: wrappers.password + wrappers.server   (the server can self-unlock)
---   advanced: wrappers.password + wrappers.recovery  (it cannot)
+-- There is one arrangement now. There used to be a `privacy_mode` column choosing
+-- between a `standard` account (wrappers.password + wrappers.server — the server can
+-- self-unlock) and an `advanced` one (wrappers.password only — it cannot). That
+-- choice was a leftover of the zero-knowledge design this service abandoned, and it
+-- is gone: every account carries the server wrapper, so the server can always open
+-- the records it stores. The honest bound is the one `payloadCrypto.ts` states —
+-- a stolen database dump is unreadable without `ENCRYPTION_KEY`.
 --
 -- `wrapped_dek` is kept in step with `wrappers.password`: it is what existing rows
 -- hold and what the previous release reads, so this file neither drops it nor
 -- rewrites rows that already carry a metadata document.
-ALTER TABLE users ADD COLUMN IF NOT EXISTS privacy_mode        text NOT NULL DEFAULT 'standard';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS encryption_metadata jsonb NOT NULL DEFAULT '{}'::jsonb;
--- No `ADD CONSTRAINT IF NOT EXISTS` in Postgres, so the check is guarded by hand to
--- keep this file re-runnable.
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_privacy_mode_check') THEN
-    ALTER TABLE users ADD CONSTRAINT users_privacy_mode_check
-      CHECK (privacy_mode IN ('standard', 'advanced'));
-  END IF;
-END $$;
+-- The column and its check go unconditionally. Nothing reads or writes either any
+-- more, so leaving them would only preserve a second, contradictory statement of how
+-- an account's key is protected — which is exactly the residue a later change reads
+-- again by mistake. `DROP COLUMN IF EXISTS` keeps this file re-runnable.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_privacy_mode_check;
+ALTER TABLE users DROP COLUMN IF EXISTS privacy_mode;
 -- Backfill: lift the existing password wrapper into the new document, exactly once
 -- per row. Rows that already have a document (written by this release) are left
 -- alone, so re-running the file changes nothing.

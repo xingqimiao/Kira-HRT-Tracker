@@ -1,9 +1,16 @@
 /**
- * Session-scoped key handling — the privacy decision, in code.
+ * Session-scoped key handling.
  *
- * The product's headline claim is that the operator cannot read your hormone
- * record. Keeping that claim true while the *server* answers `hrt.list_medications`
- * needs a precise shape, so this is what each party holds:
+ * What the product claims, and what this file has to keep true: the operator cannot
+ * read a record from a stolen database dump, because every payload is sealed under
+ * `ENCRYPTION_KEY` and that key is not in the database. It is **not** the stronger
+ * claim that the server can never read a record — this deployment holds the key and
+ * decrypts on read, and every account's DEK is also wrapped under `SERVER_DEK_KEY` so
+ * the server can open it without the user being present. `payloadCrypto.ts` states the
+ * same bound; a comment here that promises more is the defect that keeps getting
+ * reintroduced.
+ *
+ * So this is what each party holds:
  *
  *   - The **KEK** is derived from the account password and user id, exactly the
  *     way the web app already derives its cloud key. The server sees the password
@@ -12,10 +19,9 @@
  *   - The **DEK** is random per user and is what actually encrypts records. It is
  *     stored server-side only as a ciphertext wrapped under the KEK.
  *   - An **unlocked** session holds the DEK in process memory for a bounded time.
- *     That is the window in which the server can read the user's data — which is
- *     the honest description of this design: not "the server never sees data",
- *     but "the server holds no key at rest, and only in memory while the user has
- *     explicitly unlocked it".
+ *     That is the window in which a request carries the key directly. It is not the
+ *     only way in: every account also carries a `server` wrapper (see below), so the
+ *     deployment's own key can open the same DEK.
  *
  * A DEK indirection rather than deriving the data key straight from the password:
  * password change then re-wraps one row instead of re-encrypting every record, and
@@ -95,31 +101,21 @@ export async function unwrapDek(
 }
 
 // ---------------------------------------------------------------------------
-// Versioned encryption metadata — the two privacy modes, in one document
+// Versioned encryption metadata
 // ---------------------------------------------------------------------------
 //
-// Everything above wraps the DEK under the password's KEK, which is what the
-// server has always done. The two privacy modes differ only in *which other*
-// wrappers over the same DEK exist:
-//
-//   standard — password + server. The `server` wrapper is wrapped under a
-//              process secret, so the server can recover the DEK on its own.
-//              That is the whole point of the mode: X (or a live `hrt_`
-//              token) is enough to reach records again, and a forgotten password
-//              is recoverable rather than fatal.
-//   advanced — password + (optional) recovery, and never `server`. Nothing the
-//              server holds opens the DEK, so signing in through X yields
-//              authentication and nothing else.
-//
-// Both are the same records under the same DEK. Switching modes rewraps the DEK
-// and never touches a ciphertext — see `encryption_metadata` in schema.sql.
+// The DEK is random per account and is stored only as ciphertext, wrapped once per
+// credential that can open it: under the password's KEK, and under the deployment's
+// server key. Both wrappers protect the same DEK, which is why a password change
+// rewraps one of them and never touches a record ciphertext — see
+// `encryption_metadata` in schema.sql.
 
 /** The DEK, wrapped. The same envelope as a cloud backup, plus how it was keyed. */
 export interface WrapperEnvelope {
   cloud: 1;
   iv: string;
   data: string;
-  /** The password KDF, for the password and recovery wrappers. */
+  /** The password KDF, for the password wrapper. */
   kdf?: string;
   /** The scheme, for the server wrapper, which uses no password KDF. */
   scheme?: string;
@@ -135,7 +131,6 @@ export interface EncryptionMetadata {
   wrappers: {
     password?: WrapperEnvelope;
     server?: WrapperEnvelope;
-    recovery?: WrapperEnvelope;
   };
 }
 
@@ -161,50 +156,13 @@ export function passwordEnvelopeOf(metadata: EncryptionMetadata): WrappedKey | n
   return { cloud: 1, iv: wrapper.iv, data: wrapper.data };
 }
 
-const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-
-/**
- * A 160-bit recovery key, Crockford base32, grouped for transcription.
- *
- * High entropy by construction, and the alphabet omits `I`, `L`, `O` and `U` so a
- * hand-copied key cannot be ambiguous. The grouping is presentational — the
- * wrapper normalises it away — so a user who retypes it with the dashes in the
- * wrong place still unlocks.
- */
-export function generateRecoveryKey(): string {
-  const bytes = new Uint8Array(20);
-  globalThis.crypto.getRandomValues(bytes);
-  let bits = 0;
-  let value = 0;
-  let out = '';
-  for (const byte of bytes) {
-    value = (value << 8) | byte;
-    bits += 8;
-    while (bits >= 5) {
-      out += CROCKFORD[(value >>> (bits - 5)) & 31];
-      bits -= 5;
-    }
-  }
-  if (bits > 0) out += CROCKFORD[(value << (5 - bits)) & 31];
-  return (out.match(/.{1,4}/g) ?? []).join('-');
-}
-
-/** Fold a pasted recovery key to its canonical form. */
-function normalizeRecoveryKey(key: string): string {
-  return key.toUpperCase().replace(/[^0-9A-Z]/g, '');
-}
-
-function recoverySalt(userId: string): string {
-  return `hrt-recovery-v1:${userId}`;
-}
-
 /**
  * The key the server wrapper is wrapped under, for one user.
  *
  * HMAC-SHA256 rather than PBKDF2: the server secret is machine-generated and
  * already high-entropy, so a deliberately slow KDF buys nothing, and this runs on
- * every request that resolves an `hrt_` token in standard mode. One HMAC is the
- * right primitive and costs microseconds.
+ * every request that resolves an `hrt_` token. One HMAC is the right primitive and
+ * costs microseconds.
  */
 function serverKekFor(userId: string, serverKey: string): string {
   return createHmac('sha256', serverKey).update(`hrt-server-v1:${userId}`).digest('base64');
@@ -235,24 +193,7 @@ export async function unwrapWithPassword(
   return unwrapEnvelope(metadata.wrappers.password, () => deriveCloudKey(password, userId));
 }
 
-/** Recover the DEK from a recovery key, if this account has one. */
-export async function unwrapWithRecovery(
-  metadata: EncryptionMetadata,
-  recoveryKey: string,
-  userId: string,
-): Promise<string | null> {
-  return unwrapEnvelope(metadata.wrappers.recovery, () =>
-    deriveCloudKey(normalizeRecoveryKey(recoveryKey), userId, recoverySalt(userId)),
-  );
-}
-
-/**
- * Recover the DEK with the server's own key — standard mode only.
- *
- * Returns null in advanced mode, where no `server` wrapper exists. That null is
- * the security model: "the server cannot self-unlock" is enforced by the wrapper
- * simply not being there, not by a caller remembering to check a flag.
- */
+/** Recover the DEK from the server wrapper. */
 export async function unwrapWithServer(
   metadata: EncryptionMetadata,
   userId: string,
@@ -277,22 +218,7 @@ export async function setPasswordWrapper(
   };
 }
 
-/** Add (or replace) the recovery wrapper. */
-export async function addRecoveryWrapper(
-  metadata: EncryptionMetadata,
-  dek: string,
-  recoveryKey: string,
-  userId: string,
-): Promise<EncryptionMetadata> {
-  const kek = await deriveCloudKey(normalizeRecoveryKey(recoveryKey), userId, recoverySalt(userId));
-  const wrapped = (await encryptCloudPayload(dek, kek)) as WrappedKey;
-  return {
-    ...metadata,
-    wrappers: { ...metadata.wrappers, recovery: { ...wrapped, kdf: PASSWORD_KDF } },
-  };
-}
-
-/** Add the server wrapper — the step that turns an account into standard mode. */
+/** Add the server wrapper, so the deployment's own key can open this account's DEK. */
 export async function addServerWrapper(
   metadata: EncryptionMetadata,
   dek: string,
@@ -307,21 +233,11 @@ export async function addServerWrapper(
 }
 
 /**
- * Drop the server wrapper — the step that turns an account into advanced mode.
- *
- * Pure: the caller persists the result. Dropping it makes the server unable to
- * self-unlock this account from the next request on.
- */
-export function stripServerWrapper(metadata: EncryptionMetadata): EncryptionMetadata {
-  const { server: _dropped, ...rest } = metadata.wrappers;
-  return { ...metadata, wrappers: rest };
-}
-
-/**
  * Mint the wrappers for a brand-new account.
  *
- * `serverKey` present means standard mode; absent means advanced. The DEK is
- * returned so the caller can open an unlocked session without a second request.
+ * The DEK is returned so the caller can open an unlocked session without a second
+ * request. `serverKey` is the deployment's own key, and an account minted without it
+ * is one the server cannot open — a misconfiguration, not a choice the product offers.
  */
 export async function createKeyMaterial(
   password: string,
@@ -353,14 +269,9 @@ export async function createKeyMaterial(
  *
  * A social signup has no password, so there is no KEK to wrap a DEK under — and the
  * account would have no DEK at all, which is what made an X-created account unable to
- * reach its own records. Under the hosted architecture the server holds the record key,
- * so a server wrapper is enough to make the account work immediately, and binding a
- * password later adds the password wrapper alongside it (`setPasswordWrapper`).
- *
- * When no server key is configured — an advanced-mode-only deployment — the caller gets
- * a DEK with no wrappers. That is deliberate rather than a failure: the account exists
- * and can bind a password, and until it does there is no key anyone can unwrap, which is
- * exactly what advanced mode promises.
+ * reach its own records. The deployment holds the record key, so a server wrapper is
+ * enough to make the account work immediately, and binding a password later adds the
+ * password wrapper alongside it (`setPasswordWrapper`).
  */
 export async function createPasswordlessKeyMaterial(
   userId: string,
@@ -549,12 +460,9 @@ export function lookupSession(token: string): { userId: string; dek: string } | 
 /**
  * The DEK for a user with any active unlock, or null.
  *
- * This is what lets a durable MCP token (`hrt_…`) work: the token proves *who* is
- * asking, and this supplies the key only because the user has separately unlocked
- * with their password. The tradeoff is explicit and worth stating — a leaked API
- * token can read records during a window when the user has an unlock open. It
- * cannot open one itself, and revoking the token ends the access. Callers should
- * surface "locked" rather than treating this as an authentication failure.
+ * Used by the provider sign-in path: a round-trip that finds a live unlock reuses
+ * that key rather than opening a second session for the same account. The key still
+ * comes from an unlock the user opened, so this cannot create access on its own.
  */
 export function findUserSession(userId: string): string | null {
   const now = Date.now();
@@ -709,57 +617,6 @@ export function revokeOtherSessions(userId: string, keepToken: string | null): n
 export function activeSessionCount(): number {
   sweep(Date.now());
   return sessions.size;
-}
-
-// ---------------------------------------------------------------------------
-// Locked sessions — "authenticated, but the key has not been handed over"
-// ---------------------------------------------------------------------------
-//
-// Advanced mode's X sign-in proves *who* the user is and nothing more. The web app
-// needs to carry that proof to the unlock step, so the callback issues one of
-// these instead of a session: it names the user and carries no key, so leaking it
-// exposes no data. It is deliberately not a session with a flag — a flag is one
-// forgotten check away from full access, whereas this type simply has no key to
-// hand out.
-
-interface LockedSession {
-  userId: string;
-  expiresAt: number;
-}
-
-const lockedSessions = new Map<string, LockedSession>();
-/** Long enough to read a notice and type a password; short enough to matter little. */
-const LOCKED_TTL_MS = 10 * 60 * 1000;
-
-/** Start a locked session. One live token per user. */
-export function openLockedSession(userId: string, ttlMinutes?: number): string {
-  const now = Date.now();
-  sweepExpiring(lockedSessions, now);
-  for (const [token, entry] of lockedSessions) {
-    if (entry.userId === userId) lockedSessions.delete(token);
-  }
-  const token = randomToken('lu');
-  const ttl = ttlMinutes !== undefined ? ttlMinutes * 60 * 1000 : LOCKED_TTL_MS;
-  lockedSessions.set(token, { userId, expiresAt: now + ttl });
-  return token;
-}
-
-/**
- * Whose locked session is this, without consuming it.
- *
- * Non-consuming on purpose: a mistyped password should not cost the user a whole
- * new X round-trip. The token is spent only after a successful unlock.
- */
-export function peekLockedSession(token: string): string | null {
-  sweepExpiring(lockedSessions, Date.now());
-  return lockedSessions.get(token)?.userId ?? null;
-}
-
-/** Spend a locked session, once. */
-export function redeemLockedSession(token: string): string | null {
-  const userId = peekLockedSession(token);
-  if (userId) lockedSessions.delete(token);
-  return userId;
 }
 
 // ---------------------------------------------------------------------------

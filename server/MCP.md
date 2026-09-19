@@ -5,11 +5,15 @@ transport — Claude Desktop, Cursor, VS Code, or an agent you wrote — can rea
 user's records. Written from the code that implements it (`server/src/mcp.ts`,
 `src/pages/McpSettings.tsx`); every value below is what the server actually sends.
 
-**The one thing that surprises everyone:** record tools refuse while the account is
-locked. That is not a bug and not an authentication failure — the server holds no
-decryption key at rest, so it cannot read anything until the user unlocks the account in
-the web UI. A tool answers `the account is locked` and the fix is a browser tab, not a
-new token.
+**The one thing that surprises everyone:** record tools can refuse with `the account is
+locked`. It is not an authentication failure, and the fix is a browser tab rather than a
+new token — but the reason is narrower than it used to be. The server does hold a copy of
+every account's data key (wrapped under `SERVER_DEK_KEY`), so a durable token normally
+reads with no live unlock at all. `locked` is returned by `resolveApiContext` in exactly
+one situation: the account carries no server wrapper, or the deployment has no
+`SERVER_DEK_KEY` to open it with. An account that predates the wrapper is the usual
+cause; signing in with the password at the web UI adds the wrapper, and the account stops
+reporting itself as locked for good.
 
 ---
 
@@ -26,21 +30,26 @@ new token.
 
 ## Two credential shapes, and why it matters
 
-The bearer token is one of two things, and they behave differently:
+The bearer token is one of two things, and they differ in lifetime rather than in reach:
 
-- **`hrt_…`** — a durable token minted for an agent in the app. It **proves identity
-  only**. The key still has to come from somewhere, so a token with no open unlock
-  resolves to nothing and the tools report the account as locked.
-- **`ks_…`** — a live unlock token from the web UI. It **carries the key**, so tools work
-  for as long as the session lasts (30 minutes of inactivity).
+- **`hrt_…`** — a durable token minted for an agent in the app. It **proves identity**,
+  and the key then comes from the deployment's own copy of it (`resolveApiContext` →
+  `serverDekFor`). **No live unlock is needed and the user does not have to be present.**
+  It never expires by default, and `/auth/logout` does not stop it, because it is not a
+  session: only revoking it in the app or changing the password ends it.
+- **`ks_…`** — a live unlock token from the web UI. It **carries the key** directly, and
+  it expires on its own idle window (`SESSION_TTL_MINUTES`).
 
-An agent therefore cannot read a locked account by any means. That is the design: the
-API token is deliberately not a key. `resolveApiToken` returns a user, never a key —
-see `ARCHITECTURE.md`.
+So an `hrt_` token is a full credential for the account's records — read and write.
+Treat it exactly as you would treat the user's password, and say so in any prompt or
+documentation that asks a user to paste one. `resolveApiToken` returns a user, never a
+key; the key is attached separately, but it is attached from a copy the server always
+holds. See `CODE-AUDIT.md` for the paths that prove it.
 
-**Consequence for automation:** a headless job cannot pull records on its own. Someone
-must have unlocked recently, or the job must hold a `ks_…` token, which expires. There is
-no "service account" mode, because that would mean storing a key on the server.
+**Consequence for automation:** a headless job holding an `hrt_` token can pull records
+on its own, indefinitely, with nobody signed in. That is deliberate — it is the same key
+that makes a forgotten password recoverable — but it means minting a token is granting
+standing access, not a temporary one.
 
 ---
 
@@ -134,7 +143,7 @@ Then `hrt_get_timeline` to confirm records are readable.
 
 | Symptom | Cause |
 |---|---|
-| `the account is locked` | No open unlock. The user must sign in at the web UI; a new token will not help. |
+| `the account is locked` | The account has no server wrapper, or the deployment has no `SERVER_DEK_KEY`. A new token will not help; a password sign-in at the web UI adds the wrapper. |
 | `401` on every call | Token missing, mistyped, or revoked in the app. |
 | `404` | Wrong path. It is `/hrt/mcp` — the `/hrt` prefix is part of it, because the host is shared with the comment service. |
 | `405` | Sent a GET. The transport is POST-only. |
@@ -142,9 +151,11 @@ Then `hrt_get_timeline` to confirm records are readable.
 
 ## Rotating or revoking a token
 
-Tokens are permanent by default and listed in the app (**Account → 连接 AI 助手**). A
-password change deletes them, so an agent stops working after the owner changes their
-password — deliberately, since the password is what wraps the key.
+Tokens are permanent by default and listed in the app (**Account → 连接 AI 助手**).
+Revoking one stops it immediately. A password change deletes every token as well, because
+a password change is a security event rather than because the password wraps the key —
+the agent's key came from the deployment's copy, not from the password. Signing out does
+**not** revoke a token.
 
 ---
 
@@ -152,8 +163,10 @@ password — deliberately, since the password is what wraps the key.
 
 | Claim | Where to check |
 |---|---|
-| The token is not a key | `server/src/mcp.ts`, `makeBearerResolver` — a `hrt_` token resolves to a user, then the key is looked up separately |
-| A locked account cannot be read | `server/src/session.ts`, `findUserSession`; `withContext` in `mcp.ts` |
+| A `hrt_` token reaches records without a live unlock | `server/src/accounts.ts`, `resolveApiContext` → `serverDekFor` → `unwrapWithServer` in `server/src/session.ts` |
+| A token is permanent by default | `server/src/accounts.ts`, `mintApiToken` — `expires_at` is NULL unless a caller passes `ttlDays` |
+| Sign-out does not stop a token | `server/src/http.ts`, `/auth/logout` → `AccountService.lock` → `closeSession`, which only removes a `ks_` unlock |
+| Only the locked state refuses | `server/src/mcp.ts`, `withContext` turns `{ denied: 'locked' }` into a readable tool error |
 | Shares exclude labs and weight | `server/src/shares.ts`, `assertShareable`; `server/test/shares.test.ts` |
 | The tool surface is what it says | `server/test/mcp.protocol.test.ts` asserts the names, including the three share tools |
 | Expiry is enforced on read | `shares.ts`, `access` — checked per request, not by a sweeper |

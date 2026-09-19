@@ -15,8 +15,9 @@ https://api.kiramyao.com
 └── /hrt/*           ← this service
     ├── /hrt/health
     ├── /hrt/stats            ← public aggregate counts, no identifiers
-    ├── /hrt/auth/register, /hrt/auth/login, /hrt/auth/unlock
+    ├── /hrt/auth/register, /hrt/auth/login, /hrt/auth/logout
     ├── /hrt/auth/x/*, /hrt/auth/google/*, /hrt/auth/credentials/bind
+    ├── /hrt/auth/sessions, /hrt/auth/account, /hrt/auth/account/delete
     ├── /hrt/api/settings, /hrt/api/records, /hrt/api/tokens
     └── /hrt/mcp
 ```
@@ -205,9 +206,10 @@ BIND_HOST=127.0.0.1
 # unreadable too. Rotating it has the same effect — there is no re-wrap path.
 ENCRYPTION_KEY=<openssl rand -base64 32>
 
-# Wraps each account's data key for standard-mode accounts, so the server can serve
-# their records without asking for a password. Without it every account behaves as
-# advanced mode: identity still signs you in, but the key needs a credential.
+# Wraps each account's data key, alongside the password wrapper. Every account carries
+# it, which is what lets provider sign-in finish in one round-trip and lets a durable
+# `hrt_` agent token read records with no live unlock. Required in production: the
+# server refuses to boot without it.
 SERVER_DEK_KEY=<openssl rand -base64 48>
 
 SESSION_TTL_MINUTES=10080
@@ -474,20 +476,36 @@ app calls with the `code` from the URL.
 ## 6. Operations
 
 **Backups.** Two keys, not one. `ENCRYPTION_KEY` opens every record payload, and
-`SERVER_DEK_KEY` unwraps the per-account data keys of standard-mode accounts. A
-database restore without both is a database full of ciphertext. Store both off the
-database host.
+`SERVER_DEK_KEY` unwraps every account's data key. A database restore without both is a
+database full of ciphertext. Store both off the database host.
 
 **Rotating either key is destructive.** `ENCRYPTION_KEY` has no re-wrap path: rotating
 it makes every existing `payload_encrypted` unreadable. `SERVER_DEK_KEY` can be
 rotated only by re-wrapping each account's DEK with the password in hand, so in
 practice it is not rotatable either. Treat both as permanent.
 
-**A lost password on an advanced-mode account.** Advanced mode has no server wrapper,
-so the operator cannot open the account's records. The self-service path is the
-recovery key (`/auth/recovery-key`, set from Settings before it is needed); with
-neither, the data is unrecoverable by design. A standard-mode account can be reached
-with the server key.
+**A lost password.** There is no recovery key, no self-service reset, and no admin
+endpoint. What makes it survivable is the server wrapper: the deployment holds a copy of
+every account's data key, so a forgotten password is a credentials problem rather than a
+data problem. The route back runs through the provider legs rather than through a
+break-glass endpoint:
+
+1. **A linked provider.** Sign in with X or Google. `completeProviderSignIn` opens a real
+   session from the server wrapper, and `POST /auth/credentials/bind` then sets a new
+   account name and password. The records open throughout; nothing is re-encrypted.
+2. **A password-only account.** The operator inserts an `oauth_accounts` row naming a
+   provider identity the operator controls — `(user_id, provider, provider_user_id)` — then
+   signs in through that provider's normal leg. The `login` purpose in
+   `completeXCallback` / `completeGoogleCallback` looks the link up and does not check for
+   a password, `completeProviderSignIn` opens a session from the server wrapper, and
+   `POST /auth/credentials/bind` then sets a new password. That is a deliberate act with
+   database access, and it is worth saying out loud what it implies: **anyone who can
+   write to the database can add a provider link and take the account over.** That is the
+   same property as the wrapper itself — the server holds a key that opens every account —
+   not a separate weakness.
+3. **What does not work.** Changing `users.password_hash` by hand leaves the account
+   broken rather than recovered: the DEK is wrapped under a key derived from the password,
+   so a new hash with an old wrapper opens nothing.
 
 **An X or Google ban.** The user signs in with their username and password; the
 provider link is one row in `oauth_accounts` and can be removed from the account page.
@@ -506,14 +524,30 @@ SELECT u.username, o.provider, u.created_at
  WHERE u.password_hash IS NULL ORDER BY u.created_at;
 ```
 
-**Retired tables.** Five tables have been dropped and `schema.sql` carries the `DROP`s:
-`medication_events` and `lab_results` (replaced by `records`, and read by nothing since
-MCP moved onto it), `totp_backup_codes` plus the three `users.totp_*` columns (no second
-factor), and `webauthn_credentials` / `webauthn_challenges` (no passkeys). They applied
-on the deploy that removed their last reader, so there is nothing left to do by hand —
-`scripts/check-table-ownership.sql` prints any that are still present, and expects none.
-If you ever need to drop one by hand, a `DROP` on a table `hrt` already owns needs no
-ownership fix, but run the probe afterwards anyway.
+**Retired tables and columns.** Five tables have been dropped and `schema.sql` carries
+the `DROP`s: `medication_events` and `lab_results` (replaced by `records`, and read by
+nothing since MCP moved onto it), `totp_backup_codes` plus the three `users.totp_*`
+columns (no second factor), and `webauthn_credentials` / `webauthn_challenges` (no
+passkeys). They applied on the deploy that removed their last reader, so there is
+nothing left to do by hand — `scripts/check-table-ownership.sql` prints any that are
+still present, and expects none. If you ever need to drop one by hand, a `DROP` on a
+table `hrt` already owns needs no ownership fix, but run the probe afterwards anyway.
+
+The same drop ran for **one column**, and it is worth checking separately because it
+lived on `users` rather than in a table of its own: `users.privacy_mode` and its
+`users_privacy_mode_check` constraint. The column chose between the two privacy modes,
+and there is one arrangement now — every account carries the server wrapper. It is
+dropped unconditionally, so an upgrade needs no step here. Confirm afterwards with
+
+```sql
+SELECT count(*) FROM users WHERE encryption_metadata -> 'wrappers' -> 'server' IS NULL;
+-- 0 for every account created since registration started writing the wrapper.
+-- A non-zero count is accounts that predate it: a password unlock adds the wrapper,
+-- and until then such an account cannot be read through a durable `hrt_` token.
+SELECT count(*) FROM information_schema.columns
+ WHERE table_name = 'users' AND column_name = 'privacy_mode';
+-- 0. Any other value means this migration did not run.
+```
 
 
 ---

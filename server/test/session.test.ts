@@ -94,27 +94,26 @@ test('closing all of a user sessions leaves other users untouched', async () => 
 });
 
 /**
- * The agent-token window.
+ * The live-unlock lookup.
  *
- * `findUserSession` is what lets a durable `hrt_` token read anything: the token
- * supplies a user id, this supplies the key. These tests pin the two properties the
- * policy depends on, because the policy's honesty rests on exactly them — an unlocked
- * session is *required*, and a session stays open as long as someone keeps reading.
+ * `findUserSession` is what lets a provider sign-in reuse the unlock the user
+ * already has open rather than opening a second one for the same account. These
+ * tests pin the two properties the lookup depends on — a session must actually be
+ * live, and it stays open as long as someone keeps reading.
  */
-test('an agent token needs an unlock: no session means no key', () => {
-  assert.equal(findUserSession(userId), null, 'a token alone must resolve to nothing');
+test('no live unlock means no key', () => {
+  assert.equal(findUserSession(userId), null, 'a lookup with nothing open resolves to nothing');
 });
 
-test('an agent token reads during the owner\'s unlock, with no token of its own', async () => {
+test('a lookup by user id finds a live unlock', async () => {
   const { dek } = await createUserKeyMaterial(password, userId);
   openSession(userId, dek);
-  // The token path passes no session token here — it only knows the user id. Getting
-  // the DEK back is what makes a leaked token dangerous while the user is signed in.
+  // No session token is passed in here — only the user id is known.
   assert.equal(findUserSession(userId), dek);
   closeUserSessions(userId);
 });
 
-test('a token read keeps the session alive past its nominal 30-minute window', async () => {
+test('a read keeps the session alive past its nominal 30-minute window', async () => {
   const { dek } = await createUserKeyMaterial(password, userId);
   // A session that is already expired, to prove findUserSession is not merely
   // returning something that happened to still be valid.
@@ -122,13 +121,13 @@ test('a token read keeps the session alive past its nominal 30-minute window', a
   assert.equal(findUserSession(userId), null, 'expired session sweeps to nothing before any read');
 
   const fresh = openSession(userId, dek, 1);
-  assert.equal(findUserSession(userId), dek, 'a token read extends the live window');
+  assert.equal(findUserSession(userId), dek, 'a read extends the live window');
   // The refresh means revoking is the only way to end it — expiry alone will not,
   // so long as reads keep arriving. Documented in CODE-AUDIT.md.
   closeSession(fresh);
 });
 
-test('revoking every session ends token access immediately', async () => {
+test('revoking every session ends key access immediately', async () => {
   const { dek } = await createUserKeyMaterial(password, userId);
   openSession(userId, dek);
   assert.equal(findUserSession(userId), dek);
@@ -136,7 +135,7 @@ test('revoking every session ends token access immediately', async () => {
   assert.equal(findUserSession(userId), null, 'revocation must close the window, not shorten it');
 });
 
-test('the DEK a token obtains is scoped to its own account', async () => {
+test('the DEK a lookup obtains is scoped to its own account', async () => {
   const a = await createUserKeyMaterial(password, userId);
   const b = await createUserKeyMaterial(password, 'other-user');
   assert.notEqual(a.dek, b.dek, 'two accounts must not share a DEK');

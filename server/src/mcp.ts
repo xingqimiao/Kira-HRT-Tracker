@@ -38,8 +38,8 @@ import { SL_TIER_ORDER, GEL_SITE_ORDER, PK_PARAM_RANGES } from './engine.ts';
 export type ContextResolver = () => Promise<AuthContext | ContextDenial | null>;
 
 const NOT_UNLOCKED =
-  'This account is locked. Ask the user to unlock it at the web UI (they enter their ' +
-  'password there); the server holds no key at rest, so no agent can open it for them.';
+  'This account is locked. Ask the user to sign in at the web UI; the credential ' +
+  'presented here does not reach the account\'s records.';
 
 /** Wrap a tool body so failures arrive as readable results instead of protocol errors. */
 function toolResult(value: unknown) {
@@ -62,9 +62,9 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
       instructions:
         'Tools for a personal HRT record: logged doses, lab results, and modelled hormone levels. ' +
         `${SAFETY_NOTE} ` +
-        'Identity is proven before any of these tools run; the record key is wrapped per credential, ' +
-        'and in standard mode the server can open it. If a tool reports the account is locked, the user ' +
-        'must unlock it in the web UI before record tools will work.',
+        'Identity is proven before any of these tools run; the record key is opened from the ' +
+        'deployment\'s own copy of it. If a tool reports the account is locked, the user must ' +
+        'sign in at the web UI before record tools will work.',
     },
   );
 
@@ -513,16 +513,15 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
  * Resolve a bearer credential into an `AuthContext`.
  *
  * Two credential shapes, deliberately distinct:
- *   - `hrt_…` — a durable token minted for an agent. Proves identity; how it reaches
- *     the key depends on the account's privacy mode (standard: the server key is
- *     enough; advanced: a live unlock is still required, because no server key exists).
+ *   - `hrt_…` — a durable token minted for an agent. Proves identity; the key comes
+ *     from the deployment's own copy of it.
  *   - `ks_…`  — a live unlock token from the web UI. Carries the key directly.
  *
  * Both are delegated to `AccountService.resolveApiContext`, which is the same
- * resolver the HTTP layer uses. Enforcing the mode rule in the service rather than
- * here is what keeps an MCP tool and its REST twin from diverging on it.
+ * resolver the HTTP layer uses. Enforcing the rule in the service rather than here
+ * is what keeps an MCP tool and its REST twin from diverging on it.
  *
- * A durable token that resolves to null makes the tool say "unlock first" rather
+ * A durable token that resolves to null makes the tool say "sign in first" rather
  * than reporting a confusing authentication error.
  */
 export function makeBearerResolver(getToken: () => string | undefined): ContextResolver {

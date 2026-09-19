@@ -231,12 +231,11 @@ test('a wrong password does not unlock, and a locked account reads nothing', asy
   assert.equal(afterLock.status, 401, 'a locked token reads nothing');
 });
 
-test('an agent API token works only while the account is unlocked', async () => {
-  // Advanced mode: signing in through a provider (and a durable token) never yields
-  // the key, so the token only works while a separate password unlock is live. This
-  // is the mode where the property below matters, and the mode a privacy-conscious
-  // user picks.
-  const account = await registerAccount(base, { password: 'agent-password-1', privacyMode: 'advanced' });
+test('a durable agent token needs a live unlock, and stops working without one', async () => {
+  // A `hrt_` token proves identity. It carries no key, so what it can reach is decided
+  // by whether an unlock is live — the policy tells the user the token "cannot unlock
+  // your account by itself", and this is the line that keeps that sentence true.
+  const account = await registerAccount(base, { password: 'agent-password-1' });
   const unlockToken: string = account.token;
 
   // Mint a durable token for the agent.
@@ -245,30 +244,16 @@ test('an agent API token works only while the account is unlocked', async () => 
   const apiToken: string = minted.body.token;
   assert.ok(apiToken.startsWith('hrt_'), 'api token shape');
 
-  // While unlocked, the durable token works.
+  // While the account is unlocked, the durable token works.
   const whileUnlocked = await api('/api/records', { headers: { Authorization: `Bearer ${apiToken}` } });
   assert.equal(whileUnlocked.status, 200, JSON.stringify(whileUnlocked.body));
 
-  // Lock the account: the durable token alone must no longer read records, because
-  // advanced mode has no server key to supply one.
+  // Close the session it was minted from, and the token is left holding identity and
+  // nothing else. Revoking the token or changing the password is what ends it for
+  // good; a lapsed session only parks it.
   await api('/auth/logout', json({}, unlockToken));
-  const whileLocked = await api('/api/records', { headers: { Authorization: `Bearer ${apiToken}` } });
-  assert.equal(whileLocked.status, 401, 'a durable token alone must not read records in advanced mode');
-});
-
-test('in standard mode a live token is enough, which is the point of the mode', async () => {
-  // Standard mode: the server holds its own wrapper, so a valid durable token can
-  // read and write without a password unlock open. This is a deliberate trade — it
-  // is what makes the mode simple and recoverable — and it is unacceptable in
-  // advanced mode, which is exactly why the two modes exist.
-  const account = await registerAccount(base, { password: 'standard-password-1', privacyMode: 'standard' });
-  const minted = await api('/api/tokens', json({ name: 'standard-agent' }, account.token));
-  assert.equal(minted.status, 201);
-  const apiToken: string = minted.body.token;
-
-  await api('/auth/logout', json({}, account.token));
   const afterLogout = await api('/api/records', { headers: { Authorization: `Bearer ${apiToken}` } });
-  assert.equal(afterLogout.status, 200, 'standard-mode token still reaches records');
+  assert.equal(afterLogout.status, 401, 'a durable token cannot open records by itself');
 });
 
 test('a stored record is not readable as plaintext in the database', async () => {

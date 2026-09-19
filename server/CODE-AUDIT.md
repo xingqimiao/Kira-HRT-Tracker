@@ -9,16 +9,17 @@ refuse to publish any row you cannot confirm.
 
 | Claim | Where to check |
 |---|---|
-| Records encrypted, DEK wrapped per credential | `server/src/session.ts`, `createKeyMaterial` / `unwrapWithPassword` / `unwrapWithServer` / `unwrapWithRecovery` |
+| Records encrypted, DEK wrapped per credential | `server/src/session.ts`, `createKeyMaterial` / `createPasswordlessKeyMaterial` / `unwrapWithPassword` / `unwrapWithServer` / `setPasswordWrapper` / `addServerWrapper` |
 | Only `user_id`, `taken_at` and `category` are clear | `server/schema.sql` comments on `records`, and `server/scripts/check-records.mjs` (reads the column directly, so a plaintext body fails the check rather than passing an API round-trip) |
 | Record payloads are sealed with AES-256-GCM | `server/src/payloadCrypto.ts`; wire format is `iv:tag:ciphertext` |
 | Session key lifetime | `server/src/session.ts`, `MAX_SESSION_AGE_MS` and `SESSION_TTL_MINUTES` |
 | Password hashing (scrypt) | `server/src/accounts.ts`, `hashPassword` |
 | Rate limits and lockout | `server/src/http.ts` limiter + `server/src/accounts.ts`, `noteFailedUnlock` |
 | Tokens revoked on password change | `server/src/accounts.ts`, `changePassword` |
-| **An agent token cannot unlock an account by itself** | `server/src/accounts.ts`, `resolveApiToken` — returns a user id, never a key; `server/src/http.ts` `contextFor` and `server/src/mcp.ts` `makeBearerResolver` then require `findUserSession` |
-| **An agent token can read during an unlocked window, and extends it** | `server/src/session.ts`, `findUserSession` — refreshes `expiresAt` on every read; `mintApiToken` defaults `expires_at` to NULL (no expiry) |
-| **An agent token does not permit remote access** | `server/src/session.ts`, `openSession` — a session is only created by a password unlock; no token path creates one |
+| **An agent token is a full credential for the account's records** | `server/src/accounts.ts`, `resolveApiContext` — a `hrt_` token resolves to a user id (`resolveApiToken`), and `serverDekFor` then opens the key from the account's own server wrapper. No live unlock is consulted |
+| **An agent token is permanent by default, and ends only by revocation** | `server/src/accounts.ts`, `mintApiToken` defaults `expires_at` to NULL; `revokeApiToken` deletes the row. `POST /auth/logout` (`AccountService.lock`) closes a live unlock and does not touch an API token |
+| **The password is the other thing that ends a token** | `server/src/accounts.ts`, `changePassword` — deletes every `api_tokens` row for the account and calls `closeUserSessions` |
+| **A token cannot be locked out by account state** | `server/src/accounts.ts`, `resolveApiContext` — a `hrt_` token whose account carries no server wrapper, or a deployment with no `SERVER_DEK_KEY`, returns `{ denied: 'locked' }`; that is the only state in which a durable token reads nothing |
 | Deletion removes everything user-scoped | `server/test/deleteAccount.test.ts` — asserts each table is empty |
 | The deletion tombstone carries no identifier | `server/schema.sql`, `deletion_log`, and the tombstone test |
 | Individual record deletes are **physical**, with no tombstone | `server/src/records.ts`, `RecordService.remove` — unlike account deletion, which writes one identifier-free `deletion_log` row |
@@ -29,25 +30,35 @@ refuse to publish any row you cannot confirm.
 | What a predicted level is | `server/src/core.ts`, `PKSimulationService` |
 | The medical disclaimer, and where it lives | `index.html` (the line under the feature list, which a client that runs no JavaScript still sees) and `src/components/DisclaimerModal.tsx` / `src/i18n/share.ts` for the in-app text. There is no `/terms` page — one was removed on purpose, because everything left after the disclaimer was a guess about an operator that is not a legal entity |
 
-## The claim that was previously stated too strongly
+## The claims that were previously stated too strongly
 
-An earlier version of this document said a leaked agent token "alone reads nothing."
-True, and not the whole story — the two halves of the mechanism pull in opposite
-directions:
+An earlier version of this document said a leaked agent token "alone reads nothing",
+and that it "does not permit remote access". Both were true while agents needed a live
+unlock and are false now. A durable `hrt_` token is a **full credential**:
 
-- A token needs a live unlock, so it cannot create access. (`findUserSession`)
-- That unlock renews on every token read, and the default token never expires. So once
-  the user is signed in, holding the token is enough to read, indefinitely.
+- It resolves to a user id (`resolveApiToken`), and the key then comes from the
+  deployment's own copy of the account key (`serverDekFor` → `unwrapWithServer`). The
+  request needs no live unlock, and no user presence.
+- It never expires by default (`mintApiToken` writes `expires_at = NULL`), so once
+  minted it keeps working until something explicitly ends it.
+- `POST /auth/logout` calls `AccountService.lock`, which closes a live unlock. A
+  durable token is not a session, so sign-out does not stop it. Only
+  `DELETE /api/tokens/{id}` or a password change (`changePassword`) does.
 
-"Reads nothing without an unlock" is therefore not the same as "a leaked token is
-harmless". Do not let the policy reduce to the first.
+This is the old standard-mode behaviour, now universal: every account carries the
+server wrapper, so the same key that makes a forgotten password recoverable makes a
+pasted token sufficient. The policy sentence that follows is **"treat an agent token
+as a password"**, not "a token cannot read on its own".
 
-Two changes would close the gap, neither made yet, because both alter security
-behaviour rather than wording:
+The bound that survives is the one `payloadCrypto.ts` states: a stolen database dump
+is unreadable without `ENCRYPTION_KEY`. It is not that the operator cannot see the
+data — the operator holds both keys.
 
-1. Give `mintApiToken` a non-NULL default expiry, so a forgotten token eventually dies.
-2. Stop refreshing the idle timer on token reads in `findUserSession`, so a session
-   expires on the user's own inactivity rather than on an agent's activity.
+One change would narrow the gap, not made yet because it alters security behaviour
+rather than wording: give `mintApiToken` a non-NULL default expiry, so a forgotten
+token eventually dies. Revoking a token and changing a password are both immediate and
+already correct; there is nothing to fix about the read path, because the read path is
+what the server wrapper is for.
 
-If either is done, update the token rows above and the "Agents and AI assistants"
+If that default changes, update the token rows above and the "Agents and AI assistants"
 paragraph in the guide.

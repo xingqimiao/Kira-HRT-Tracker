@@ -18,10 +18,10 @@ import type { ViewKey } from '../hooks/useAppNavigation';
  *
  * Two outcomes arrive here and they are genuinely different things:
  *
- *   - **`code`** — the provider verified an existing, complete account. Exchange it. The
- *     result may carry no token, which is the expected case rather than a failure: the
- *     provider proved identity, but the records are locked with the password, so the flow
- *     continues into the normal sign-in.
+ *   - **`code`** — exchange it for a session. A provider sign-in always yields one
+ *     now: it used to be able to come back with identity proven and the data key
+ *     withheld, which the flow finished by sending the user to the sign-in form, but
+ *     that could only happen in the advanced privacy mode and the mode is gone.
  *   - **`linked`** — a provider account was attached to the signed-in one.
  *
  * One component for both providers, because the two flows are the same flow: the server
@@ -36,20 +36,18 @@ interface OAuthLandingProps {
      *
      * The landing renders instead of the app shell — it has to, so the spent
      * callback code is cleaned before anything else runs — so it cannot switch
-     * views in place. The destination and any username are persisted, the page
-     * reloads, and App applies them on the other side.
+     * views in place. The destination is persisted, the page reloads, and App
+     * applies it on the other side.
      */
   navigate: (view: ViewKey, options?: { username?: string }) => void;
-  onPrefillSignIn?: (username: string) => void;
   onSignedIn?: () => void;
 }
 
-type Phase = 'working' | 'needs_password' | 'linked' | 'failed';
+type Phase = 'working' | 'linked' | 'failed';
 
 const OAuthLanding: React.FC<OAuthLandingProps> = ({
   provider,
   navigate,
-  onPrefillSignIn,
   onSignedIn,
 }) => {
   const { t: translate } = useTranslation();
@@ -65,7 +63,6 @@ const OAuthLanding: React.FC<OAuthLandingProps> = ({
 
   const [phase, setPhase] = useState<Phase>('working');
   const [message, setMessage] = useState('');
-  const [username, setUsername] = useState(params.username ?? '');
 
   // Exchange the one-time code exactly once. It is single-use server-side, so a
   // second invocation (StrictMode, a re-render) would fail and report an error for a
@@ -94,25 +91,20 @@ const OAuthLanding: React.FC<OAuthLandingProps> = ({
     void (async () => {
       try {
         const result = await coreAuth.exchangeOAuthCode(provider, params.code!);
-        setUsername(result.username);
-        if (result.token) {
-          session.adoptSession(result.token, result.userId, result.username);
-          onSignedIn?.();
-          navigate('home');
+        // A provider sign-in always yields a session. It used to be able to return a
+        // "locked" outcome — identity proven, data key withheld — which is what the
+        // `needs_password` screen below existed for, but that could only happen to an
+        // advanced-mode account and the mode is gone. No token now means something went
+        // wrong, and saying so is better than sending the user to a sign-in form to
+        // solve a problem that is not theirs.
+        if (!result.token) {
+          setPhase('failed');
+          setMessage(t('core.err.generic'));
           return;
         }
-        // No token. In advanced mode a locked token comes with it: the provider proved
-        // identity, the data is sealed, and that is a legitimate state to show — not a
-        // failure.
-        if (result.lockedToken) {
-          session.adoptLockedSession(result.lockedToken, result.userId, result.username);
-          setPhase('needs_password');
-          return;
-        }
-        // Standard-shape fallback: identity known, no locked session to carry it. The
-        // user finishes with the normal password sign-in.
-        setPhase('needs_password');
-        onPrefillSignIn?.(result.username);
+        session.adoptSession(result.token, result.userId, result.username);
+        onSignedIn?.();
+        navigate('home');
       } catch (error) {
         setPhase('failed');
         setMessage(error instanceof CoreAuthError ? error.message : t('core.err.generic'));
@@ -176,36 +168,10 @@ const OAuthLanding: React.FC<OAuthLandingProps> = ({
     );
   }
 
-  // phase === 'needs_password' — the only phase left once the branches above have
-  // returned. With a locked token this is advanced mode: identity is proven and the
-  // records are sealed. Saying "verified" rather than "failed" is the whole point of
-  // separating authentication from data unlock, so the copy and the single action
-  // both reflect that.
-  const locked = !!session.lockedToken;
-  return (
-    <Page>
-      <PageHeader title={locked ? t('core.oauth.verified_title') : t('core.oauth.identified_title')} />
-      <StatusLine body={locked ? t('core.oauth.verified_body') : t('core.oauth.identified_body')} />
-      <button
-        type="button"
-        onClick={() => {
-          if (locked) {
-            navigate('account');
-            return;
-          }
-          onPrefillSignIn?.(username);
-          navigate('account', { username });
-        }}
-        className="btn-primary mt-6 w-full"
-      >
-        {locked
-          ? t('core.privacy.unlock_action')
-          : username
-            ? t('core.oauth.sign_in_as').replace('{username}', username)
-            : t('core.oauth.go_signin')}
-      </button>
-    </Page>
-  );
+  // The three phases above cover every outcome — `linked`, `failed`, and the working
+  // state — so there is no fall-through screen. There used to be a fourth for a
+  // provider sign-in that proved identity without handing over the key.
+  return null;
 };
 
 /**

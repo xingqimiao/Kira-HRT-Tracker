@@ -90,7 +90,7 @@ try {
 
     await check('an unsupported provider is refused', async () => {
         const user = await oauthOnlyAccount()
-        const result = await AccountService.unlinkProvider(ctxFor(user), 'facebook', '000000')
+        const result = await AccountService.unlinkProvider(ctxFor(user), 'facebook')
         if (result.ok) throw new Error('an unknown provider was accepted')
         if (!/unsupported/.test(result.error)) throw new Error(`error was: ${result.error}`)
     })
@@ -182,9 +182,12 @@ try {
             throw new Error('fixture is not an at-risk account')
         }
 
-        // A wrong code is refused first — prove identity, then act.
-        const wrongCode = await AccountService.unlinkProvider(ctxFor(user), 'x', '000000')
-        if (wrongCode.ok) throw new Error('a wrong code was accepted')
+        // The refusal is the stranding rule, not a credential: this account has no
+        // password and exactly one provider, so unlinking would leave nobody able to
+        // get in. It used to demand a TOTP or recovery code as well — the third
+        // argument that used to sit on this call — and that requirement is gone.
+        const refused = await AccountService.unlinkProvider(ctxFor(user), 'x')
+        if (refused.ok) throw new Error('unlinking the only way in was accepted')
 
         const after = await AccountService.loginMethodsFor(user.id)
         if (after.providers.length !== 1) throw new Error('the rejected unlink still removed the link')

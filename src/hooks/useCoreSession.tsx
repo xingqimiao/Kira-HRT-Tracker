@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-import { coreAuth, CoreAuthError, type PrivacyMode } from '../services/coreAuth';
+import { coreAuth, CoreAuthError } from '../services/coreAuth';
 
 /**
  * The Application Core session.
@@ -26,9 +26,6 @@ import { coreAuth, CoreAuthError, type PrivacyMode } from '../services/coreAuth'
 
 const TOKEN_KEY = 'hrt_core_token';
 const USER_KEY = 'hrt_core_user';
-/** A session whose identity X proved but whose data is still locked (advanced mode). */
-const LOCKED_KEY = 'hrt_core_locked';
-const MODE_KEY = 'hrt_core_privacy';
 
 export interface CoreUser {
   userId: string;
@@ -47,30 +44,17 @@ export interface CoreSession {
    * Whether this session holds the data key.
    *
    * Equal to `isSignedIn` today — a `ks_` token *is* the key holder — but named
-   * separately because the two are conceptually distinct, and the locked state below
-   * is exactly where they come apart: identity known, key not.
+   * separately because the two are conceptually distinct: one says the server knows
+   * who is asking, the other that it will open their records.
    */
   isDataUnlocked: boolean;
-  /** The account's privacy mode, once known. Null until the server has said. */
-  privacyMode: PrivacyMode | null;
-  /**
-   * A token proving identity when the data is still locked (advanced mode, after X).
-   * Present on its own, with no `token`, is the legitimate "verified, not unlocked"
-   * state — not an error.
-   */
-  lockedToken: string | null;
-  lockedUser: CoreUser | null;
   signIn: (username: string, password: string) => Promise<void>;
   register: (
     username: string,
     password: string,
-    opts?: { privacyMode?: PrivacyMode; turnstileToken?: string },
+    opts?: { turnstileToken?: string },
   ) => Promise<void>;
   adoptSession: (token: string, userId: string, username: string) => void;
-  /** Record an identity X proved, pending a data unlock. */
-  adoptLockedSession: (lockedToken: string, userId: string, username: string) => void;
-  /** Unlock data with a password or recovery key, turning a locked session into a real one. */
-  unlockData: (factor: 'password' | 'recovery', secret: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -79,39 +63,21 @@ interface CoreSessionState {
   token: string | null;
   /** True until the stored token has been checked against the server. */
   restoring: boolean;
-  lockedToken: string | null;
-  lockedUser: CoreUser | null;
-  privacyMode: PrivacyMode | null;
 }
 
 function readStored(): {
   token: string | null;
   user: CoreUser | null;
-  lockedToken: string | null;
-  lockedUser: CoreUser | null;
-  privacyMode: PrivacyMode | null;
 } {
-  let lockedToken: string | null = null;
-  let lockedUser: CoreUser | null = null;
-  let privacyMode: PrivacyMode | null = null;
-  try {
-    lockedToken = localStorage.getItem(LOCKED_KEY);
-    const rawLocked = localStorage.getItem(`${LOCKED_KEY}_user`);
-    lockedUser = rawLocked ? (JSON.parse(rawLocked) as CoreUser) : null;
-    const rawMode = localStorage.getItem(MODE_KEY);
-    privacyMode = rawMode === 'advanced' || rawMode === 'standard' ? rawMode : null;
-  } catch {
-    // Best-effort; a corrupt value just means no locked session.
-  }
   try {
     const token = localStorage.getItem(TOKEN_KEY);
     const rawUser = localStorage.getItem(USER_KEY);
     const user = rawUser ? (JSON.parse(rawUser) as CoreUser) : null;
-    if (token && user?.userId) return { token, user, lockedToken, lockedUser, privacyMode };
+    if (token && user?.userId) return { token, user };
   } catch {
     // Corrupt storage: treat as signed out rather than throwing at import time.
   }
-  return { token: null, user: null, lockedToken, lockedUser, privacyMode };
+  return { token: null, user: null };
 }
 
 const CoreSessionContext = createContext<CoreSession | null>(null);
@@ -136,12 +102,12 @@ export const CoreSessionProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
 function useCoreSessionState() {
   const [state, setState] = useState<CoreSessionState>(() => {
-    const { token, user, lockedToken, lockedUser, privacyMode } = readStored();
-    return { token, user, restoring: !!token, lockedToken, lockedUser, privacyMode };
+    const { token, user } = readStored();
+    return { token, user, restoring: !!token };
   });
 
   const persist = useCallback((token: string | null, user: CoreUser | null) => {
-    setState(s => ({ ...s, token, user, restoring: false, lockedToken: null, lockedUser: null }));
+    setState(s => ({ ...s, token, user, restoring: false }));
     if (token && user) {
       localStorage.setItem(TOKEN_KEY, token);
       localStorage.setItem(USER_KEY, JSON.stringify(user));
@@ -149,26 +115,6 @@ function useCoreSessionState() {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
     }
-    // A real session supersedes any pending locked one.
-    localStorage.removeItem(LOCKED_KEY);
-    localStorage.removeItem(`${LOCKED_KEY}_user`);
-  }, []);
-
-  const persistLocked = useCallback((lockedToken: string | null, user: CoreUser | null) => {
-    setState(s => ({ ...s, lockedToken, lockedUser: user, restoring: false }));
-    if (lockedToken && user) {
-      localStorage.setItem(LOCKED_KEY, lockedToken);
-      localStorage.setItem(`${LOCKED_KEY}_user`, JSON.stringify(user));
-    } else {
-      localStorage.removeItem(LOCKED_KEY);
-      localStorage.removeItem(`${LOCKED_KEY}_user`);
-    }
-  }, []);
-
-  const persistMode = useCallback((privacyMode: PrivacyMode | null) => {
-    setState(s => ({ ...s, privacyMode }));
-    if (privacyMode) localStorage.setItem(MODE_KEY, privacyMode);
-    else localStorage.removeItem(MODE_KEY);
   }, []);
 
   // Verify a restored token on mount rather than trusting it. A stale token is the
@@ -184,11 +130,10 @@ function useCoreSessionState() {
     let cancelled = false;
     void (async () => {
       try {
-        const summary = await coreAuth.summary(token);
-        if (!cancelled) {
-          setState(s => ({ ...s, restoring: false, privacyMode: summary.privacyMode }));
-          localStorage.setItem(MODE_KEY, summary.privacyMode);
-        }
+        // The call is the check: its answer is not needed, only that it succeeded
+        // rather than 401ing.
+        await coreAuth.summary(token);
+        if (!cancelled) setState(s => ({ ...s, restoring: false }));
       } catch (error) {
         // A lockout or a dead session both mean "sign in again"; a network failure
         // means we cannot tell, so the token is kept and the app stays signed in
@@ -221,15 +166,12 @@ function useCoreSessionState() {
     async (
       username: string,
       password: string,
-      opts: { privacyMode?: PrivacyMode; turnstileToken?: string } = {},
+      opts: { turnstileToken?: string } = {},
     ): Promise<void> => {
       const session = await coreAuth.register(username, password, opts);
-      // Remember the chosen mode so the account page can label it before the first
-      // server summary arrives.
-      if (opts.privacyMode) persistMode(opts.privacyMode);
       persist(session.token, { userId: session.userId, username: session.username });
     },
-    [persist, persistMode],
+    [persist],
   );
 
   /** Adopt a session issued somewhere else — the X flow, or an X setup completion. */
@@ -240,42 +182,13 @@ function useCoreSessionState() {
     [persist],
   );
 
-  /**
-   * Adopt a locked session: identity proven by X, data still sealed (advanced mode).
-   *
-   * Not a sign-in and not a failure. It is what lets the Account page show the unlock
-   * step for the right account without re-asking who the user is.
-   */
-  const adoptLockedSession = useCallback(
-    (lockedToken: string, userId: string, username: string) => {
-      persistLocked(lockedToken, { userId, username });
-    },
-    [persistLocked],
-  );
-
-  /**
-   * Unlock data, turning a locked session into a real one.
-   *
-   * The password/recovery key is sent once to the server, which unwraps the DEK and
-   * opens a normal session; nothing key-shaped is held in the browser.
-   */
-  const unlockData = useCallback(
-    async (factor: 'password' | 'recovery', secret: string) => {
-      if (!state.lockedToken) throw new CoreAuthError('unknown', 'No locked session to unlock', null);
-      const session = await coreAuth.unlockData(state.lockedToken, factor, secret);
-      persist(session.token, { userId: session.userId, username: session.username });
-    },
-    [persist, state.lockedToken],
-  );
-
   const signOut = useCallback(async () => {
     const token = state.token;
     persist(null, null);
-    persistMode(null);
     // Revoke server-side too. Fire-and-forget: the local session is already gone,
     // and a failure here must not leave the user stuck in a signed-in UI.
     if (token) await coreAuth.logout(token).catch(() => undefined);
-  }, [persist, persistMode, state.token]);
+  }, [persist, state.token]);
 
   return useMemo(
     () => ({
@@ -284,16 +197,11 @@ function useCoreSessionState() {
       restoring: state.restoring,
       isSignedIn: !!state.token && !!state.user,
       isDataUnlocked: !!state.token,
-      privacyMode: state.privacyMode,
-      lockedToken: state.lockedToken,
-      lockedUser: state.lockedUser,
       signIn,
       register,
       adoptSession,
-      adoptLockedSession,
-      unlockData,
       signOut,
     }),
-    [state, signIn, register, adoptSession, adoptLockedSession, unlockData, signOut],
+    [state, signIn, register, adoptSession, signOut],
   );
 }

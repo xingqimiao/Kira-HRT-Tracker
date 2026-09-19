@@ -41,7 +41,7 @@ logic belongs in `core.ts`.
 
 ## Decisions, and what they cost
 
-### Records are encrypted at rest, and there are two privacy modes
+### Records are encrypted at rest, and the server holds a copy of the key
 
 The product's headline claim is that the operator cannot read your hormone record.
 Answering `hrt.list_medications` from the server while keeping that claim true
@@ -52,35 +52,38 @@ needs a specific shape:
   only during an unlock request and stores only a scrypt hash, which derives
   nothing.
 - The **DEK** is random per account and is what actually encrypts records. It is
-  stored server-side only as a ciphertext wrapped under one or more wrappers.
-- An **unlocked** session holds the DEK in memory for 30 minutes of idle time.
-  That window is when the server can read the account's data.
+  stored server-side only as a ciphertext, wrapped once per credential that can
+  open it: under the password's KEK, and under the deployment's own key
+  (`SERVER_DEK_KEY`).
+- An **unlocked** session holds the DEK in memory for `SESSION_TTL_MINUTES` of
+  idle time. That window is when a request carries the key directly. It is not the
+  only way in, because the server wrapper opens the same DEK.
 
-Which *wrappers* exist over that one DEK is `privacy_mode`, and it is the whole
-difference between the two modes:
+**There used to be two privacy modes, and there is one arrangement now.**
+`users.privacy_mode` chose between a `standard` account (password wrapper *and*
+server wrapper) and an `advanced` one (password wrapper only, no server wrapper).
+The choice was the last piece of the zero-knowledge design this service abandoned:
+it only meant anything while `advanced` could be enforced, and it could not be,
+because the same deployment already held `ENCRYPTION_KEY` and decrypted every
+record on read. An account whose wrapper set promises the operator cannot open it,
+on a server that opens it anyway, is a claim in the database that nothing checks.
+So the column and its check are dropped, every account is written with the server
+wrapper from its first request, and a password unlock adds the wrapper to an
+account that predates the change.
 
-- **Standard** — `password` **+ `server`**. The `server` wrapper is wrapped under
-  `SERVER_DEK_KEY`, so the server can recover the DEK on its own. That is the mode's
-  promise: X or Google sign-in, or a live `hrt_` token, is enough to reach records
-  again, and a forgotten password is recoverable. The cost is stated where the mode is
-  chosen — the server can read the data whenever it decides to, not only during a live
-  unlock.
-- **Advanced** — `password` (+ optional `recovery`), and **never `server`**. Nothing
-  the server holds opens the DEK, so completing a provider sign-in yields authentication
-  and nothing else. It returns a locked token (`lu_…`, no key) and the data opens only
-  when the user supplies a password or recovery key. A forgotten password with no
-  recovery key means the data is gone; the spec requires saying so and the UI does.
+Both wrappers live in `users.encryption_metadata` (versioned jsonb, `version: 2`),
+with `users.wrapped_dek` mirroring `wrappers.password` byte for byte so a reader that
+predates this release still works. **A password change rewraps the DEK and never
+touches a record** — one row changes, so it cannot half-fail. `test/keyMaterial.test.ts`
+pins the arrangement: both wrappers are present on a new account, both open the same
+DEK, and `wrapped_dek` stays identical to the password wrapper.
 
-Both are stored in `users.encryption_metadata` (versioned jsonb, `version: 2`), with
-`users.wrapped_dek` mirroring `wrappers.password` so a reader that predates this
-release still works. **Switching modes rewraps the DEK and never touches a record** —
-asserted by a test that reads the raw ciphertext before and after both switches.
-
-The honest description is still **not "the server never sees the data"**, and standard
-mode makes that sharper rather than softer: it is "the operator holds no key at rest
-in advanced mode, and a self-unlock key by design in standard mode". An agent
-connecting with a durable token gets the key directly in standard mode; in advanced
-mode the token proves identity and only works while the user has an unlock open.
+The honest description was never **"the server never sees the data"**, and one
+arrangement makes that easier to state rather than harder: there is no longer a
+mode in which it is even arguably true. What the arrangement does deliver is the
+bound `payloadCrypto.ts` states — **a stolen database dump is unreadable without
+`ENCRYPTION_KEY`**, a key kept outside the database. Nobody should read the
+encryption and conclude the operator cannot see the data.
 
 Two consequences follow, both accepted deliberately:
 
@@ -92,8 +95,13 @@ Two consequences follow, both accepted deliberately:
    or labs from ciphertext. `user_id` and `occurred_at` are the only cleartext
    columns; everything clinical is inside the envelope.
 
-Password change re-wraps the DEK rather than re-encrypting records, so it is one
-row and cannot half-fail. A mode switch is the same operation twice over.
+One consequence is worth naming separately because it is a capability, not a
+disclosure: **a durable `hrt_` agent token is now a full credential.** It resolves
+to a user, the server wrapper supplies the key, and the request needs no live
+unlock and no user presence. `/auth/logout` does not stop it, because a durable
+token is not a session; revoking the token or changing the password does. That was
+the old standard-mode behaviour and it is now the only behaviour, so the honest
+instruction to a user is "treat an agent token as a password".
 
 **Passkeys were removed, and why they could not simply stay.** The feature was built to
 protect the data key: a credential's **PRF extension output** derived the KEK that
@@ -104,13 +112,16 @@ and decrypts on read, a passkey that no longer derives anything is a button whos
 description is a lie — so it is gone, along with `webauthn_credentials` and
 `webauthn_challenges`.
 
-**Step-up for agents went with it.** An advanced account that had a passkey used to
-refuse a durable `hrt_` token unless a passkey-proven unlock was live
+**Step-up for agents went with it.** An account that had a passkey used to refuse a
+durable `hrt_` token unless a passkey-proven unlock was live
 (`session.passkeyVerifiedAt`), because an agent should not act on the strength of a
-stored token. With passkeys gone there is no assertion that can prove presence, so the
-denial had become unreachable and was removed rather than left as a state no caller can
-receive. What remains is `'locked'`, which is real: an agent token carries no key, and
-in advanced mode a live unlock is still required before it can read anything.
+stored token. With passkeys gone there is no assertion that can prove presence, so
+the denial had become unreachable and was removed rather than left as a state no
+caller can receive. The step-up would have been aimed at the wrong target anyway:
+the token path no longer consults a live unlock at all, so presence is not part of
+what it checks. What remains is `'locked'`, and it means one specific thing — the
+account carries no server wrapper, or the deployment has no `SERVER_DEK_KEY`, so
+there is no key to hand over. A password unlock adds the wrapper.
 
 ### Record ids are opaque client strings, scoped per account
 
@@ -317,7 +328,7 @@ pulls remain clean; fixing them would be an upstream change, not ours.
 **There is no second factor.** TOTP, its enrolment leg, its replay-safety bookkeeping
 and the recovery-code set were removed. Identity is proven one of three ways — the
 account name and password, X, or Google — and all three end at the same place: a
-session, or a locked token when the account's mode means no key came with it.
+session carrying the record key.
 
 The history is worth one line, because the shape of the code still shows it: the
 design used to make TOTP mandatory, so an OAuth signup produced an account that could
@@ -332,11 +343,19 @@ Unconfigured means skipped, so a self-hosted instance without a widget is not bl
 There used to be a second widget action (`x_setup`) for the X setup leg; that leg is
 gone with TOTP, so `register` is the only action left.
 
-**Registration records a privacy mode** (`standard` by default, `advanced` on request),
-which decides the account's wrapper set from its first request. The mode also splits
-two ideas: **authentication** (who you are) and **data unlock** (the key). In advanced
-mode these are separate states, and `isAuthenticated = true, isDataUnlocked = false` is
-a legitimate one the UI shows rather than treating as failure.
+**Registration mints both wrappers**, so the account's key material is complete from
+its first request: the password wrapper under the KEK just chosen, and the server
+wrapper under `SERVER_DEK_KEY`. There is no mode to choose, and no second step.
+
+That also collapses two ideas the design used to keep apart — **authentication** (who
+you are) and **data unlock** (the key). They were separate states while an account
+could exist with no server wrapper, and `isAuthenticated = true, isDataUnlocked =
+false` was a legitimate one the UI showed rather than treating as failure. With the
+wrapper on every account, holding a session means holding the key, so the client no
+longer has an "authenticated but locked" state to represent. The only remaining
+version of the split is on the *server* side, for an account that predates the
+wrapper: `resolveApiContext` returns `{ denied: 'locked' }` and the MCP adapter turns
+that into a readable message.
 
 ### The rule: a provider account must bind a fallback credential before it holds data
 
@@ -356,30 +375,29 @@ sign in, read its login methods and bind a credential — which is what makes th
 prompt rather than a deadlock. `password_hash IS NULL` is the machine-checkable form of
 "this account has no fallback yet".
 
-### Provider login cannot skip the data unlock, and the modes decide what it returns
+### Provider login ends in a real session, always
 
-A provider proves *identity*. It cannot supply the password, and in advanced mode the
-password is what unwraps the key. What a provider sign-in returns therefore depends on
-the account's privacy mode, and `POST /auth/{x,google}/exchange` reports each case
-honestly:
+A provider proves *identity*. It cannot supply the password, but with the server
+wrapper on every account it does not need to: the deployment holds its own copy of
+the record key. `POST /auth/{x,google}/exchange` therefore has exactly two
+outcomes, and neither of them is "verified but not unlocked":
 
-- `token: "<ks_…>"` — a live unlock already existed (another tab), **or** the account
-  is in **standard** mode and the server opened its own wrapper. Either way the person
-  is verified and the key is in hand. This is what makes provider sign-in feel like one
-  click.
-- `token: null` **with** `locked_token` — **advanced** mode: the provider verified the
-  person and nothing more. The `lu_…` token carries the identity to `POST /auth/unlock`,
-  which takes a password or recovery key. The UI shows "verified, not yet unlocked", not
-  "sign-in failed".
-- `token: null` with no `locked_token` — no live unlock and no server key to make one;
-  the client pre-fills the username and runs the normal sign-up path.
+- `token: "<ks_…>"` — a live unlock already existed (another tab), and it is reused.
+  `completeProviderSignIn` checks `findUserSession` first so a second round-trip does
+  not open a second session for the same account.
+- `token: "<ks_…>"`, from the server wrapper — no live unlock, so the deployment's
+  copy of the key opens one. This is what makes provider sign-in feel like one click,
+  and it is why the flow needs no return trip to a browser tab that is already open.
+
+The route never returns `token: null` and has no `locked_token` field to return.
+`server/test/accounts.test.ts` asserts exactly that, against an exchange made with no
+live unlock.
 
 The alternative — wrapping the DEK under something the provider can supply — would make
 the key recoverable from the provider account, which is precisely the dependency this
-rules out, and would hand that provider a path to the encryption key. Standard mode's
-`server` wrapper is *not* that: it is wrapped under a deployment secret
-(`SERVER_DEK_KEY`), not anything the provider controls, and it is absent entirely in
-advanced mode.
+rules out, and would hand that provider a path to the encryption key. The server
+wrapper is *not* that: it is wrapped under a deployment secret (`SERVER_DEK_KEY`), not
+anything the provider controls.
 
 ### What a provider is allowed to tell us
 
@@ -400,8 +418,8 @@ advanced mode.
 **Two independent throttles.** Per-account lockout (5 failures → 15 min) and a per-IP
 window. Per-IP alone loses to a botnet; per-account alone lets an attacker spray.
 Limits are configurable because households and offices share an IP. They exist on
-`/auth/login`, `/auth/register` and `/auth/unlock`; a failed unlock does not spend the
-locked token, so a mistyped password does not cost a fresh provider round-trip.
+`/auth/login`, `/auth/register` and account deletion; a failed sign-in does not spend
+the session the caller already holds.
 
 ### Verified against the standard, not against itself
 
@@ -450,7 +468,8 @@ header at all and fails the preflight with 403.
    guard now fails at the point a key enters a session.
 2. **Recovery codes were written before the user row existed**, violating the foreign
    key, so every registration 500'd. The writes now happen inside the same transaction
-   as the user row, which is also what prevents an account with no recovery codes.
+   as the user row. The codes themselves are gone with the second factor, but the
+   lesson is why the account row and its key material are written together.
 
 ## The public aggregate (`GET /stats`)
 
@@ -488,9 +507,9 @@ does not scan the tables on every request.
 ## Not yet done
 
 - **The web app's UI for the auth flow.** The API is complete and tested; the React
-  screens that call it (enrolment with a QR code, recovery-code display, the X
+  screens that call it (the sign-in and registration form, the binding screen, the X
   callback landing routes) are not written. The routes the server redirects to are
-  `/auth/x/callback` and `/auth/x/setup`.
+  `/auth/x/callback` and `/auth/google/callback`.
 - **The README's privacy claim** needs updating, per the section above.
 
 ## Deployment
@@ -525,5 +544,6 @@ curl -s localhost:8788/api/tokens -H "Authorization: Bearer $UNLOCK_TOKEN" \
 # 3. Point the agent at http://localhost:8788/mcp with that token as a bearer.
 ```
 
-The agent token works only while the account has an unlock open — locking the
-account stops agent access without revoking the token.
+The agent token works on its own: the server opens the account's records from its own
+copy of the key, so the token does not need a live unlock and `/auth/logout` does not
+stop it. Revoke the token or change the password to end it.

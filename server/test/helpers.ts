@@ -36,7 +36,7 @@ function freshUsername(prefix = 't'): string {
  */
 export async function registerAccount(
   base: string,
-  opts: { username?: string; password?: string; privacyMode?: 'standard' | 'advanced' } = {},
+  opts: { username?: string; password?: string } = {},
 ): Promise<TestAccount> {
   const username = opts.username ?? freshUsername();
   const password = opts.password ?? 'a-good-password-1';
@@ -44,11 +44,7 @@ export async function registerAccount(
   const reg = await call(base, '/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      username,
-      password,
-      ...(opts.privacyMode ? { privacy_mode: opts.privacyMode } : {}),
-    }),
+    body: JSON.stringify({ username, password }),
   });
   assert.equal(reg.status, 201, `register failed: ${JSON.stringify(reg.body)}`);
 
@@ -131,7 +127,7 @@ export async function putRecord(
  */
 export async function registerAccountWithKey(
   base: string,
-  opts: { username?: string; privacyMode?: 'standard' | 'advanced' } = {},
+  opts: { username?: string } = {},
 ): Promise<TestAccount & { dek: string }> {
   const account = await registerAccount(base, opts);
   const { lookupSession } = await import('../src/session.ts');

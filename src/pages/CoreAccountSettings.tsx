@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Icon from '../components/Icon';
 import { useTranslation } from '../contexts/LanguageContext';
-import { AlertTriangle, Check, Copy, KeyRound, Loader2, LogOut, Lock, MonitorSmartphone, RefreshCw, Trash2, Unlink } from '../icons';
+import { AlertTriangle, Loader2, LogOut, MonitorSmartphone, RefreshCw, Trash2, Unlink } from '../icons';
 
 import { coreAuth, CoreAuthError, PROVIDER_NAMES, type AccountSummary, type LoginMethods, type OAuthLink, type SessionInfo } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
@@ -31,7 +31,7 @@ interface CoreAccountSettingsProps {
   onDeleted: () => void;
 }
 
-type Dialog = null | 'password' | 'unlink' | 'delete' | 'recoveryKey';
+type Dialog = null | 'password' | 'unlink' | 'delete';
 
 /**
  * A date for display, or null when there is not one to show.
@@ -333,34 +333,6 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
           </section>
         )}
 
-        {/* ── Recovery key ─────────────────────────────────────────────────── */}
-        {/* No mode row any more. The account used to be offered a choice between a
-            standard mode (the server holds a key it can open) and an advanced one
-            (only your own credentials open it), and the UI had a switcher for it.
-            That choice is gone from the product: there is one arrangement now, so
-            there is nothing to display and nothing to switch. What remains is the
-            recovery key, which is real and worth keeping — it is the way back in
-            when the password is forgotten. */}
-        <section className="mb-6">
-          <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>
-            {t('core.privacy.recovery_section')}
-          </span>
-
-          <div className="mt-2 flex flex-col">
-            <Row
-              icon={<Icon icon={KeyRound} size={17} />}
-              title={summary?.hasRecoveryKey ? t('core.privacy.replace_recovery') : t('core.privacy.create_recovery')}
-              subtitle={
-                summary?.hasRecoveryKey
-                  ? t('core.privacy.recovery_exists')
-                  : t('core.privacy.recovery_recommend')
-              }
-              onClick={() => setDialog('recoveryKey')}
-              disabled={busy}
-            />
-          </div>
-        </section>
-
         {/* ── Signed-in devices ────────────────────────────────────────────── */}
         {/* Listed so a person can end access they no longer recognise. The list names
             devices, never tokens — see `listUserSessions` on the server. */}
@@ -452,22 +424,6 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
               setNotice(t('core.acct.notice_pw_changed'));
             });
             setDialog(null);
-          }}
-          describeError={describe}
-        />
-      )}
-
-      {dialog === 'recoveryKey' && (
-        <RecoveryKeyDialog
-          busy={busy}
-          onClose={() => { setDialog(null); setError(null); }}
-          onSubmit={async (currentPassword) => {
-            let key = '';
-            await run(async () => {
-              key = await coreAuth.createRecoveryKey(token!, currentPassword);
-              await refresh();
-            });
-            return key;
           }}
           describeError={describe}
         />
@@ -678,94 +634,6 @@ const PasswordDialog: React.FC<{
         {localError && <p className="text-xs text-[#B3261E]" role="alert">{localError}</p>}
         <Submit busy={busy} disabled={!current || next.length < 8}>{t('core.pw.submit')}</Submit>
       </form>
-    </Dialog>
-  );
-};
-
-/**
- * Create a recovery key.
- *
- * The plaintext is shown exactly once and the only way out is an explicit "I have
- * saved it", because a recovery key the user never wrote down is a recovery key that
- * does not exist — and it is the only way back into an account whose password is
- * forgotten.
- */
-const RecoveryKeyDialog: React.FC<{
-  busy: boolean;
-  onClose: () => void;
-  onSubmit: (currentPassword: string) => Promise<string>;
-  describeError: (e: unknown) => string;
-}> = ({ busy, onClose, onSubmit, describeError }) => {
-  const { t } = useTranslation();
-  const [password, setPassword] = useState('');
-  const [key, setKey] = useState<string | null>(null);
-  const [acknowledged, setAcknowledged] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [localError, setLocalError] = useState<string | null>(null);
-
-  return (
-    <Dialog title={t('core.privacy.recovery_dialog_title')} onClose={onClose}>
-      {key === null ? (
-        <form
-          className="space-y-3 mt-1"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setLocalError(null);
-            try {
-              setKey(await onSubmit(password));
-            } catch (err) {
-              setLocalError(describeError(err));
-            }
-          }}
-        >
-          <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">
-            {t('core.privacy.recovery_intro')}
-          </p>
-          <Field label={t('core.pw.current')} type="password" value={password} onChange={setPassword} autoFocus />
-          {localError && <p className="text-xs text-[#B3261E]" role="alert">{localError}</p>}
-          <Submit busy={busy} disabled={!password}>{t('core.privacy.recovery_generate')}</Submit>
-        </form>
-      ) : (
-        <div className="space-y-3 mt-1">
-          <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">
-            {t('core.privacy.recovery_once')}
-          </p>
-          <div className="rounded-xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container)] p-3">
-            <code className="block break-all font-mono text-sm tracking-wide">{key}</code>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              void navigator.clipboard?.writeText(key);
-              setCopied(true);
-            }}
-            className="btn-secondary w-full inline-flex items-center justify-center gap-2"
-          >
-            <Icon icon={copied ? Check : Copy} size={15} />
-            {copied ? t('core.copied') : t('core.copy')}
-          </button>
-
-          {/* The explicit acknowledgement the spec asks for, and the only way to close. */}
-          <label className="flex items-start gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={acknowledged}
-              onChange={(e) => setAcknowledged(e.target.checked)}
-              className="mt-0.5"
-            />
-            <span>{t('core.privacy.recovery_ack')}</span>
-          </label>
-
-          <button
-            type="button"
-            disabled={!acknowledged}
-            onClick={onClose}
-            className="btn-primary w-full disabled:opacity-50"
-          >
-            {t('core.privacy.recovery_done')}
-          </button>
-        </div>
-      )}
     </Dialog>
   );
 };

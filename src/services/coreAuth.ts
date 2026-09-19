@@ -131,20 +131,7 @@ export interface AccountSummary {
   xLoginAvailable: boolean;
   /** The linked X avatar, for the account header. Null when no X account is linked. */
   xAvatarUrl: string | null;
-  privacyMode: PrivacyMode;
-  /** Whether a recovery *wrapper* exists. The key itself is never stored. */
-  hasRecoveryKey: boolean;
-  /** Whether this deployment can offer standard mode (it needs a server key). */
-  serverRecoveryAvailable: boolean;
 }
-
-/**
- * The two data-security modes.
- *
- * Not a security score — a different key model, described in plain terms in the UI.
- * See the settings screen and the register form.
- */
-export type PrivacyMode = 'standard' | 'advanced';
 
 export interface OAuthLink {
   /** Which provider this row is. Google sends no handle and no avatar by design. */
@@ -230,7 +217,7 @@ export const coreAuth = {
   async register(
     username: string,
     password: string,
-    opts: { privacyMode?: PrivacyMode; turnstileToken?: string } = {},
+    opts: { turnstileToken?: string } = {},
   ): Promise<SessionResponse> {
     return toSession(
       await request('/auth/register', {
@@ -238,7 +225,6 @@ export const coreAuth = {
         body: JSON.stringify({
           username,
           password,
-          ...(opts.privacyMode ? { privacy_mode: opts.privacyMode } : {}),
           ...(opts.turnstileToken ? { turnstile_token: opts.turnstileToken } : {}),
         }),
       }),
@@ -272,43 +258,7 @@ export const coreAuth = {
       xLinks: raw.x_links,
       xLoginAvailable: raw.x_login_available,
       xAvatarUrl: raw.x_avatar_url ?? null,
-      privacyMode: raw.privacy_mode === 'advanced' ? 'advanced' : 'standard',
-      hasRecoveryKey: raw.has_recovery_key === true,
-      serverRecoveryAvailable: raw.server_recovery_available === true,
     };
-  },
-
-  /**
-   * Unlock data for a session whose identity X already proved.
-   *
-   * Distinct from `login`: X supplied the identity, so the only thing missing is the
-   * *data* credential. `factor` says which one was supplied.
-   */
-  async unlockData(
-    lockedToken: string,
-    factor: 'password' | 'recovery',
-    secret: string,
-  ): Promise<SessionResponse> {
-    return toSession(
-      await request('/auth/unlock', {
-        method: 'POST',
-        body: JSON.stringify({
-          locked_token: lockedToken,
-          factor,
-          ...(factor === 'password' ? { password: secret } : { recovery_key: secret }),
-        }),
-      }),
-    );
-  },
-
-  /** Create or replace the recovery key. The plaintext is returned once, here only. */
-  async createRecoveryKey(token: string, currentPassword: string): Promise<string> {
-    const raw = await request<any>('/auth/recovery-key', {
-      method: 'POST',
-      token,
-      body: JSON.stringify({ current_password: currentPassword }),
-    });
-    return raw.recovery_key;
   },
 
   /** Change the password. Re-wraps the data key; records survive. */
@@ -395,18 +345,14 @@ export const coreAuth = {
   /**
    * Exchange the one-time code from a provider callback.
    *
-   * Three outcomes, and the middle one is the interesting case:
-   *   - `token` set → a real session (standard mode, or an already-live unlock).
-   *   - `token: null` and `lockedToken` set → advanced mode: the provider proved
-   *     identity, the data is still locked. The caller shows the unlock step with
-   *     this token.
-   *   - `token: null`, no `lockedToken` → shouldn't happen, but the caller falls back
-   *     to the normal password sign-in.
+   * Two outcomes: `token` set means a real session; `token: null` means the provider
+   * proved identity but not entry, and the caller hands the user to the normal
+   * password sign-in.
    */
   async exchangeOAuthCode(
     provider: LoginProvider,
     code: string,
-  ): Promise<{ userId: string; username: string; token: string | null; lockedToken: string | null }> {
+  ): Promise<{ userId: string; username: string; token: string | null }> {
     const raw = await request<any>(`/auth/${provider}/exchange`, {
       method: 'POST',
       body: JSON.stringify({ code }),
@@ -415,7 +361,6 @@ export const coreAuth = {
       userId: raw.user_id,
       username: raw.username,
       token: raw.token,
-      lockedToken: raw.locked_token ?? null,
     };
   },
 

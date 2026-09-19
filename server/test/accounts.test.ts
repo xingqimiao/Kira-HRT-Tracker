@@ -357,12 +357,10 @@ test('binding a name and password makes an X account survivable on its own', asy
 async function accountWithLinkedX(opts: {
   username: string;
   password: string;
-  privacyMode?: 'standard' | 'advanced';
 }): Promise<{ userId: string; token: string }> {
   const reg = await call(base, '/auth/register', json({
     username: opts.username,
     password: opts.password,
-    ...(opts.privacyMode ? { privacy_mode: opts.privacyMode } : {}),
   }));
   assert.equal(reg.status, 201, JSON.stringify(reg.body));
   const token = reg.body.token as string;
@@ -378,11 +376,7 @@ async function accountWithLinkedX(opts: {
 test('a second X sign-in for a known account returns a one-time code, not a token', async () => {
   const x = stubX({ userId: `902${Date.now()}`, handle: 'returner' });
   try {
-    await accountWithLinkedX({
-      username: 'returner',
-      password: 'a-returning-password-9',
-      privacyMode: 'advanced',
-    });
+    await accountWithLinkedX({ username: 'returner', password: 'a-returning-password-9' });
 
     // Clear every live unlock for this account, so this second sign-in represents a
     // fresh device. Doing it per-session would not be enough: the linking flow opened
@@ -399,15 +393,13 @@ test('a second X sign-in for a known account returns a one-time code, not a toke
     assert.ok(oneTimeCode!.startsWith('otc_'), `unexpected code shape: ${oneTimeCode}`);
     assert.equal(landed.searchParams.get('token'), null, 'still no session token in a URL');
 
-    // Redeeming it reports the identity but no session: in advanced mode the data key
-    // exists only under the user's own credentials. A locked token comes instead, to
-    // carry the verified identity to the unlock step.
+    // Redeeming it with no live unlock still yields a real session: the deployment
+    // holds its own copy of the data key, so a provider round-trip is enough.
     const exchanged = await call(base, '/auth/x/exchange', json({ code: oneTimeCode }));
     assert.equal(exchanged.status, 200, JSON.stringify(exchanged.body));
     assert.equal(exchanged.body.username, 'returner');
-    assert.equal(exchanged.body.token, null, 'X alone cannot unlock the records');
-    assert.ok(exchanged.body.locked_token, 'a locked token carries the identity forward');
-    assert.ok(exchanged.body.locked_token.startsWith('lu_'), 'with the locked-token shape');
+    assert.ok(exchanged.body.token, 'a provider sign-in yields a session');
+    assert.equal(exchanged.body.locked_token, undefined, 'there is no locked state to carry');
 
     // And the one-time code is spent.
     const reused = await call(base, '/auth/x/exchange', json({ code: oneTimeCode }));

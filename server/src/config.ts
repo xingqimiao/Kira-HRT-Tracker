@@ -73,13 +73,12 @@ export interface Config {
    */
   google: XOAuthConfig | null;
   /**
-   * The key the standard-mode `server` wrapper is wrapped under.
+   * The key every account's `server` wrapper is wrapped under.
    *
-   * Optional so a self-hosted instance can run advanced-only, and so the test
-   * suite does not have to carry every field. But its presence *is* the standard
-   * mode's promise ("the server can recover your data"), so production refuses to
-   * start without it rather than silently degrading: an instance that let people
-   * choose Standard and then could not recover them would be lying.
+   * Optional in the type so the test suite does not have to carry every field, but
+   * its presence is what makes an account recoverable by the deployment, so
+   * production refuses to start without it rather than degrading silently: an
+   * instance that stored an account and could not open it again would be lying.
    */
   serverDekKey: string | null;
   /**
@@ -244,8 +243,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     google = { clientId: gClientId, clientSecret: gClientSecret, redirectUri };
   }
 
-  // The standard-mode server key. Optional generally, required in production —
-  // see the interface comment. 32 bytes is the floor.
+  // The deployment's copy of every account's data key. Optional in the type,
+  // required in production — see the interface comment. 32 bytes is the floor.
   const serverDekKeyRaw = env.SERVER_DEK_KEY?.trim();
   const serverDekKey = serverDekKeyRaw ? serverDekKeyRaw : null;
   if (serverDekKey && serverDekKey.length < MIN_SECRET_LENGTH) {
@@ -253,8 +252,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   if (env.NODE_ENV === 'production' && !serverDekKey) {
     throw new ConfigError(
-      'SERVER_DEK_KEY is required in production: standard-mode accounts rely on it for ' +
-        'recovery. Set it to 32+ random characters, or run advanced-only.',
+      'SERVER_DEK_KEY is required in production: it is the deployment\'s copy of every ' +
+        'account\'s data key. Set it to 32+ random characters.',
     );
   }
 

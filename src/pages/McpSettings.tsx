@@ -271,7 +271,7 @@ const McpSettings: React.FC<McpSettingsProps> = ({ session, onBack, onSignIn }) 
      * heard of this service. So it states the transport, the auth header, where the
      * config lives per client, how to tell it worked, and — importantly — the one
      * outcome that looks like a failure but is not: record tools refuse until the account
-     * is unlocked in the web UI, because the server holds no key at rest.
+     * is unlocked in the web UI, because the token carries identity and nothing else.
      *
      * The token is left as a placeholder on purpose. A prompt is often pasted into a chat
      * that keeps history, and a real token in a transcript is a leaked token.
@@ -304,8 +304,8 @@ const McpSettings: React.FC<McpSettingsProps> = ({ session, onBack, onSignIn }) 
         '',
         'Two things to expect:',
         '- Record tools answer "the account is locked" until I unlock it in the web app at',
-        '  hrt.kiramyao.com. That is deliberate — the decryption key is never stored, so',
-        '  the server cannot read anything while the account is locked.',
+        '  hrt.kiramyao.com. That is deliberate: the access token proves who is asking but',
+        '  carries no key of its own, so a token on its own reads nothing.',
         '- hrt_create_share publishes a link that anyone can open. Confirm with me before',
         '  calling it, and propose an expiry rather than picking one silently.',
         '',

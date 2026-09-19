@@ -21,7 +21,8 @@ export interface AuthContext {
  * Why a credential could not be turned into an `AuthContext`.
  *
  * Distinct from "no context at all", because the two call for different things from
- * the user. `locked` means no unlock is open and a password will fix it.
+ * the user. `locked` means the deployment holds no copy of this account's key, so
+ * the user's own credentials are the only thing that opens it.
  */
 export interface ContextDenial {
   denied: 'locked';

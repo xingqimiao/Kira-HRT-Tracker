@@ -5,10 +5,11 @@ implements it (`server/src/oauth.ts`, `server/src/accounts.ts`) and the deployme
 notes in `DEPLOY.md` §1 — every value below is the one the server actually sends,
 not a guess at what X expects.
 
-**X login is an assist, never a replacement for a password.** An account is only
-usable once it has a password and TOTP, because the data key is wrapped under a
-password-derived key. Losing the X account therefore costs one login button, never
-the history. Nothing in this setup can change that, by design.
+**X login is an assist, never a replacement for an account name and password.** An
+account created through X has no password, so it cannot store anything until one is
+bound — records calls answer `403 account_incomplete` until then. That is what makes
+losing the X account cost one login button rather than the history, and it is enforced
+rather than merely documented.
 
 ---
 
@@ -82,7 +83,7 @@ All three or none. Setting one or two makes config loading **throw** at boot
 (`server/src/config.ts`), deliberately: a half-configured provider fails later and
 less clearly, on someone's first login attempt.
 
-Leave all three unset and the service runs on password + TOTP alone. `/hrt/health`
+Leave all three unset and the service runs on account name + password alone. `/hrt/health`
 reports `x_login: false` in that case, which is how you confirm the state from
 outside.
 
@@ -171,5 +172,5 @@ just `/auth/x/start` — the authorize request will keep looking correct.
 3. `sudo systemctl restart kira-hrt`.
 
 Existing sessions are unaffected: X is an assist, so no session depends on the X
-tokens staying valid. Users who linked with X sign in again with their password if
-the link ever needs redoing — the data key is password-derived and never came from X.
+tokens staying valid. Users who linked with X sign in again with their account name and
+password if the link ever needs redoing — no key material ever came from X.

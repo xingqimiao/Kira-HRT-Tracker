@@ -22,8 +22,10 @@ import { useTranslation } from '../contexts/LanguageContext';
  * two different backends on one screen, and the one that owned the user's records
  * was the smaller of the two. This is the single form now.
  *
- * Two screens in one component: credentials, and the advanced-mode data unlock.
- * Registration opens a session immediately, so there is no step between the two.
+ * One screen. It used to have a second — the "unlock your data" step — which only
+ * appeared when a provider sign-in proved identity without handing over the data key.
+ * That could only happen to an advanced-mode account, and advanced mode is gone, so
+ * a provider sign-in now always yields a real session and there is nothing to unlock.
  */
 
 interface CoreAuthFormProps {
@@ -43,8 +45,6 @@ interface CoreAuthFormProps {
     active?: boolean;
 }
 
-type Screen = 'credentials' | 'unlock';
-
 const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
     session,
     onSignedIn,
@@ -55,7 +55,6 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
 }) => {
     const { t } = useTranslation();
 
-    const [screen, setScreen] = useState<Screen>('credentials');
     const [isLogin, setIsLogin] = useState(true);
     const [username, setUsername] = useState(initialUsername);
     const [password, setPassword] = useState('');
@@ -78,19 +77,9 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
      */
     const verified = !TURNSTILE_CONFIGURED || turnstileToken !== '';
 
-    // Data unlock (advanced mode): which factor, and the secret for it.
-    const [unlockFactor, setUnlockFactor] = useState<'password' | 'recovery'>('password');
-    const [unlockSecret, setUnlockSecret] = useState('');
-
     React.useEffect(() => {
         if (active && initialUsername) setUsername(initialUsername);
     }, [active, initialUsername]);
-
-    // A locked session is a real state to show, not an error: the identity is known
-    // and the only thing missing is the data credential.
-    React.useEffect(() => {
-        if (session.lockedToken) setScreen('unlock');
-    }, [session.lockedToken]);
 
     // Ask which providers are offered once, when the form becomes active.
     React.useEffect(() => {
@@ -156,24 +145,6 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
         }
     }
 
-    async function handleUnlock(e: React.FormEvent) {
-        e.preventDefault();
-        if (busy) return;
-        setError(null);
-        setBusy(true);
-        try {
-            await session.unlockData(unlockFactor, unlockSecret);
-            setUnlockSecret('');
-            onSignedIn?.();
-            onDone?.();
-        } catch (err) {
-            setError(describe(err));
-            setUnlockSecret('');
-        } finally {
-            setBusy(false);
-        }
-    }
-
     /**
      * Leave for a provider's authorization page.
      *
@@ -203,13 +174,9 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
         <>
             <div className="flex items-start justify-between gap-3 mb-1">
                 <h3 className="modal-title !mb-0">
-                    {screen === 'unlock'
-                        ? t('core.privacy.unlock_title')
-                        : isLogin
-                            ? t('core.sign_in')
-                            : t('core.create_account')}
+                    {isLogin ? t('core.sign_in') : t('core.create_account')}
                 </h3>
-                {onCancel && screen !== 'unlock' && (
+                {onCancel && (
                     <button
                         type="button"
                         onClick={onCancel}
@@ -222,76 +189,8 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                 )}
             </div>
 
-            {/* ── Data unlock (advanced mode) ────────────────────────────────── */}
-            {screen === 'unlock' && (
-                <form onSubmit={handleUnlock} className="space-y-4">
-                    {/* The honest state, spelled out: identity is done, the records are
-                        not open. This is not "sign-in failed". */}
-                    <p className="text-sm text-[var(--color-m3-on-surface-variant)]  !mt-0">
-                        {t('core.privacy.unlock_intro')}
-                    </p>
-                    {session.lockedUser && (
-                        <p className="text-sm font-medium">
-                            {t('core.privacy.unlock_as').replace('{username}', session.lockedUser.username)}
-                        </p>
-                    )}
-
-                    <div className="space-y-1.5">
-                        <label className="text-sm" htmlFor="core-unlock-secret">
-                            {unlockFactor === 'password'
-                                ? t('core.privacy.factor_password')
-                                : t('core.privacy.factor_recovery')}
-                        </label>
-                        <input
-                            id="core-unlock-secret"
-                            type={unlockFactor === 'password' ? 'password' : 'text'}
-                            className={unlockFactor === 'password' ? 'input-base' : 'input-base font-mono'}
-                            value={unlockSecret}
-                            onChange={(e) =>
-                                setUnlockSecret(
-                                    unlockFactor === 'password' ? e.target.value : e.target.value.toUpperCase(),
-                                )
-                            }
-                            placeholder={unlockFactor === 'recovery' ? 'XXXX-XXXX-…' : undefined}
-                            autoComplete={unlockFactor === 'password' ? 'current-password' : 'off'}
-                            autoFocus
-                            required
-                        />
-                    </div>
-
-                    {error && (
-                        <p className="text-xs flex items-start gap-1.5 text-[#B3261E]" role="alert">
-                            <Icon icon={AlertTriangle} size={13} className="mt-0.5 shrink-0" />
-                            <span>{error}</span>
-                        </p>
-                    )}
-
-                    <button type="submit" disabled={busy} className="btn-primary w-full">
-                        {busy && <Icon icon={Loader2} size={16} className="animate-spin" />}
-                        {t('core.privacy.unlock_action')}
-                    </button>
-
-                    <div className="flex flex-col items-center gap-1.5 pt-1">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setUnlockFactor(v => (v === 'password' ? 'recovery' : 'password'));
-                                setUnlockSecret('');
-                                setError(null);
-                            }}
-                            className="text-xs text-[var(--color-m3-primary)]  hover:underline"
-                        >
-                            {unlockFactor === 'password'
-                                ? t('core.privacy.use_recovery')
-                                : t('core.privacy.use_password')}
-                        </button>
-                    </div>
-                </form>
-            )}
-
             {/* ── Credentials ────────────────────────────────────────────────── */}
-            {screen === 'credentials' && (
-                <form onSubmit={handleCredentials} className="space-y-5">
+            <form onSubmit={handleCredentials} className="space-y-5">
                     <p className="text-sm text-[var(--color-m3-on-surface-variant)]  !mt-0">
                         {isLogin ? t('core.signin.intro') : t('core.signup.intro')}
                     </p>
@@ -399,22 +298,33 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                                     </button>
                                 ))}
                             </div>
-
-                            {/* Stated up front, because the alternative is a user discovering
-                                mid-flow that the button did not do what they expected. Shown
-                                only while registering: that is where the gate it describes
-                                applies. */}
-                            {!isLogin && (
-                                <p className="text-xs text-center text-[var(--color-m3-on-surface-variant)] ">
-                                    {t('core.oauth.note')}
-                                </p>
-                            )}
                         </div>
                     )}
 
                     {/* One footer block, so the way out of this form and the legal line
-                        read as a single closing section instead of two stray paragraphs. */}
+                        read as a single closing section instead of two stray paragraphs.
+
+                        The privacy line sits above the sign-in/register switch, not below
+                        it: it qualifies the account being created, so it belongs with the
+                        form's own content rather than after the link that leaves it. */}
                     <div className="space-y-2 pt-1">
+                        {!isLogin && (
+                            <p className="text-xs text-center">
+                                {/* Opened in a new tab so reading it does not throw away a
+                                    half-filled form. The whole sentence is the link: split
+                                    into a label and a fragment it reads as broken grammar in
+                                    half the seven languages this app ships. */}
+                                <a
+                                    href="/privacy"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[var(--color-m3-on-surface-variant)]  underline underline-offset-2 hover:text-[var(--color-m3-primary)]"
+                                >
+                                    {t('core.signup.privacy')}
+                                </a>
+                            </p>
+                        )}
+
                         <p className="text-center text-sm text-[var(--color-m3-on-surface-variant)] ">
                             {isLogin ? t('core.signin.no_account') : t('core.signin.has_account')}{' '}
                             <button
@@ -428,26 +338,8 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                                 {isLogin ? t('core.signin.go_register') : t('core.signin.go_login')}
                             </button>
                         </p>
-
-                        {/* Only where an account is actually created, and opened in a new tab so
-                            reading it does not throw away a half-filled form. The whole sentence
-                            is the link: split into a label and a fragment it would read as
-                            broken grammar in half the seven languages this app ships. */}
-                        {!isLogin && (
-                            <p className="text-xs text-center">
-                                <a
-                                    href="/privacy"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[var(--color-m3-on-surface-variant)]  underline underline-offset-2 hover:text-[var(--color-m3-primary)]"
-                                >
-                                    {t('core.signup.privacy')}
-                                </a>
-                            </p>
-                        )}
                     </div>
-                </form>
-            )}
+            </form>
         </>
     );
 };
