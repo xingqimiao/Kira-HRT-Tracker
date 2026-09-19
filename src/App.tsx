@@ -45,7 +45,6 @@ import McpSettings from './pages/McpSettings';
 import PublicShare from './pages/PublicShare';
 import ShareSettings from './pages/ShareSettings';
 import Onboarding, { markOnboardingSeen, shouldShowOnboarding } from './pages/Onboarding';
-import SiteNoticeBanner from './components/SiteNotice';
 
 const AppContent = () => {
     const { t, lang, setLang } = useTranslation();
@@ -390,10 +389,6 @@ const AppContent = () => {
                 onViewChange={(v) => handleViewChange(v)}
             />
             <div className="flex-1 flex flex-col overflow-hidden w-full bg-[var(--color-m3-surface-dim)]  relative">
-
-                {/* Operator banner. Outside the scroller and keyed off nothing in
-                    this component, so it stays put across view changes. */}
-                <SiteNoticeBanner />
 
                 <div
                     ref={mainScrollRef}
