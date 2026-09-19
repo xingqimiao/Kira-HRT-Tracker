@@ -2566,3 +2566,108 @@ select,
     }
     .m3-tooltip { transform: translate(-50%, 0); }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   INTRO — Material 3 Expressive
+
+   The first-run screen only (src/pages/Onboarding.tsx). Each step is one
+   full-bleed colour block under display type; the shared-axis slide defined
+   above carries the content in from the side while the block's colour eases
+   to the arriving step's role.
+
+   Every value here is an existing token. The role pairs are chosen per step
+   in Onboarding.tsx and arrive as --intro-* custom properties, so this block
+   names no colour, shape or type of its own.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* The screen *is* the colour block. One role pair per step; the colour eases
+   in with the arriving panel instead of snapping. 320ms rides just under the
+   shared-axis move, so the text never waits on the paint. */
+.intro-screen {
+    background-color: var(--intro-surface, var(--md-sys-color-surface-dim));
+    color: var(--intro-on, var(--md-sys-color-on-surface));
+    transition: background-color 320ms var(--ease-out);
+}
+
+/* Supporting copy on a block: the same on-* role at reduced strength, never a
+   second hue. currentColor keeps it correct on every block and both themes. */
+.intro-muted {
+    color: color-mix(in srgb, currentColor 78%, transparent);
+}
+
+/* The hairline between rows, drawn from the block's own ink. */
+.intro-divider {
+    border-color: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+/* Step titles: display-large (57/64) with room to spare. There is no
+   responsive display class, so the one phone size is stated here as
+   display-medium (45/52) — a single rule, not a variant of every step. */
+@media (max-width: 767px) {
+    .intro-title {
+        font-size: var(--md-sys-typescale-display-medium-size);
+        line-height: var(--md-sys-typescale-display-medium-line-height);
+        letter-spacing: var(--md-sys-typescale-display-medium-tracking);
+    }
+}
+
+/* Language and mode options: 64dp blocks, the selected one filled with the
+   block's accent role and the check trailing. The fill is the accent rather
+   than the block's own container role because a container fill on a container
+   block is invisible — the accent is the pair that carries contrast. */
+.intro-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--md-sys-space-4);
+    width: 100%;
+    min-height: 64px;
+    padding: var(--md-sys-space-3) var(--md-sys-space-4);
+    color: inherit;
+    text-align: start;
+    background-color: transparent;
+    border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+    border-radius: var(--md-sys-shape-corner-extra-large);
+    transition: background-color var(--duration-quick) var(--ease-standard),
+                border-color var(--duration-quick) var(--ease-standard);
+}
+.intro-option[aria-pressed='true'] {
+    color: var(--intro-accent-on, var(--md-sys-color-on-primary));
+    background-color: var(--intro-accent, var(--md-sys-color-primary));
+    border-color: transparent;
+}
+
+/* The primary action: a 56dp pill, full-width inside the footer's measure —
+   which is the phone width on a phone. */
+.intro-cta {
+    width: 100%;
+    min-height: 56px;
+    padding-inline: var(--md-sys-space-5);
+    border-radius: var(--md-sys-shape-corner-full);
+    font-size: var(--md-sys-typescale-title-medium-size);
+    line-height: var(--md-sys-typescale-title-medium-line-height);
+    font-weight: var(--md-sys-typescale-title-medium-weight);
+    letter-spacing: var(--md-sys-typescale-title-medium-tracking);
+}
+
+/* The back control reads on the block, not on the page. The descendant
+   selector outranks .dark .btn-secondary, so the ink stays the block's
+   on-role in either theme. */
+.intro-screen .btn-secondary {
+    color: inherit;
+    background-color: transparent;
+    border-color: color-mix(in srgb, currentColor 36%, transparent);
+}
+.intro-screen .btn-secondary:hover:not(:disabled) {
+    background-color: color-mix(in srgb, currentColor 12%, transparent);
+    border-color: color-mix(in srgb, currentColor 48%, transparent);
+}
+
+/* The block colour and the option fill are the only motion this screen adds;
+   both land in the same end state with the transition simply dropped. */
+@media (prefers-reduced-motion: reduce) {
+    .intro-screen,
+    .intro-option {
+        transition: none;
+    }
+}
