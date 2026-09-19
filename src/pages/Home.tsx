@@ -233,15 +233,18 @@ const Home: React.FC<HomeProps> = ({
                                 <div className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
                                     {currentCPA > 0 ? (
                                         <>
-                                            <span data-vial-sprayable className={`text-4xl md:text-5xl font-light tabular-nums ${on}`}><AnimatedNumber value={currentCPA} decimals={1} /></span>
+                                            <span data-vial-sprayable className={`text-4xl md:text-5xl font-light leading-none tabular-nums ${on}`}><AnimatedNumber value={currentCPA} decimals={1} /></span>
                                             <span className={`text-xs lowercase ${muted}`}>ng/ml</span>
                                         </>
                                     ) : (
-                                        // Previously `outline-variant`, which is a *divider*
-                                        // colour: at 1dp it separates surfaces, at 53px it was
-                                        // near-invisible against the card. A missing reading is
-                                        // still a reading, so it uses the muted *text* role.
-                                        <span className={`text-4xl md:text-5xl font-light ${muted}`}>--</span>
+                                        // E2's placeholder is `text-4xl md:text-5xl font-light
+                                        // leading-none ${dim}`; this one was a size smaller
+                                        // and used the *muted text* role, so the two dashes
+                                        // read as different states rather than as the same
+                                        // absence. `leading-none` is the half that moves the
+                                        // glyph: without it the taller default line-height
+                                        // pushed this one a few px down.
+                                        <span className={`text-4xl md:text-5xl font-light leading-none ${dim}`}>--</span>
                                     )}
                                 </div>
                             </div>
