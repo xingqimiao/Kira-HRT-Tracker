@@ -4,7 +4,7 @@ Internal document. Not part of the published policy, and not written for users: 
 cannot check file paths, so a claim that cites one is a claim they must take on trust.
 
 This exists for one job: confirming a claim against the code *before* it goes into the
-policy at `https://hrt.kiramyao.com/privacy`. Work down the table, open each path, and
+policy at `https://kiramyao.com/privacy`. Work down the table, open each path, and
 refuse to publish any row you cannot confirm.
 
 | Claim | Where to check |

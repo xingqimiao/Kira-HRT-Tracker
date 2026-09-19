@@ -116,7 +116,7 @@ test('an X sign-in reaches the records, because the deployment holds the key', a
   assert.equal(okRead.status, 200, 'and it reads records');
 });
 
-test('a durable token alone reaches nothing, and works while an unlock is live', async () => {
+test('a durable token keeps reaching the records after the session that minted it ends', async () => {
   resetRateLimits();
 
   const account = await registerAccount(base);
@@ -124,16 +124,16 @@ test('a durable token alone reaches nothing, and works while an unlock is live',
   assert.equal(minted.status, 201, JSON.stringify(minted.body));
   const apiToken: string = minted.body.token;
 
-  // While the unlock is live the token reads, even though it carries no key of its
-  // own — the server's copy of the key opens the account.
+  // The token carries no key of its own; the server's copy of the key opens the
+  // account, so no live unlock is needed for this either.
   const whileLive = await call(base, '/api/records', auth(apiToken));
-  assert.equal(whileLive.status, 200, 'a live unlock is what lets the token through');
+  assert.equal(whileLive.status, 200, JSON.stringify(whileLive.body));
 
-  // Sign out, dropping the live unlock. The token is still valid, and that is the
-  // point: it proves identity and nothing more. The answer is `locked`, not a key.
+  // Sign out. It closes the session the token was minted from and does not touch the
+  // token, which is not a session: only revoking it or changing the password ends it.
   await call(base, '/auth/logout', json({}, account.token));
   const afterLogout = await call(base, '/api/records', auth(apiToken));
-  assert.equal(afterLogout.status, 401, 'a durable token cannot open the records by itself');
+  assert.equal(afterLogout.status, 200, 'a durable token outlives the session that minted it');
 });
 
 test('the password still opens the data on its own', async () => {

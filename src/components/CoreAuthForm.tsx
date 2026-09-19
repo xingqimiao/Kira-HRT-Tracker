@@ -315,7 +315,7 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                                     into a label and a fragment it reads as broken grammar in
                                     half the seven languages this app ships. */}
                                 <a
-                                    href="/privacy"
+                                    href="https://kiramyao.com/privacy"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="text-[var(--color-m3-on-surface-variant)]  underline underline-offset-2 hover:text-[var(--color-m3-primary)]"

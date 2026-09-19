@@ -1,7 +1,8 @@
 # Writing the Privacy Policy
 
-Published at `https://hrt.kiramyao.com/privacy` (served from `public/privacy/index.html`),
-covering the HRT service specifically.
+Published at `https://kiramyao.com/privacy` (whose §26 covers Kira Tracker specifically).
+The app subdomain used to serve its own copy at `hrt.kiramyao.com/privacy`; that page was
+removed on purpose, so the app now links the shared policy above.
 
 This is a **structural and factual guide, not legal advice.** It tells you what you
 must say because of how this system actually works, and which claims would be false.
@@ -500,7 +501,8 @@ of medical warnings.
    tracking scripts** in the app bundle.
 4. Add the policy link in the app's footer, and in the sign-in and signup screens. X
    checks that the policy is *linked from* the app, not merely reachable. The sign-up
-   form already links `/privacy` (`src/components/CoreAuthForm.tsx`). This pass found no
+   form already links `https://kiramyao.com/privacy` (`src/components/CoreAuthForm.tsx`).
+   This pass found no
    footer privacy link anywhere under `src/`, so verify it before ticking this box, and
    note that there is no `/terms` page in the repository at all — the disclaimer's home
    is still described as the ToS, so decide where that document actually lives.

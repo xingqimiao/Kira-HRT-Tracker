@@ -42,7 +42,7 @@ used by the login flow.
 | **Organization name** | your real name or org — shown on the consent screen |
 | **Organization URL** | `https://kiramyao.com` |
 | **Terms of Service** | leave empty (see below) |
-| **Privacy Policy** | `https://hrt.kiramyao.com/privacy` |
+| **Privacy Policy** | `https://kiramyao.com/privacy` |
 
 The callback **must** match `X_REDIRECT_URI` byte for byte, prefix included.
 
@@ -58,15 +58,16 @@ medical disclaimer belongs where the reader is about to act on an estimate, whic
 the in-app `DisclaimerModal` and the line under a shared chart
 (`src/i18n/share.ts`), both already present.
 
-The Privacy Policy now lives on the **app subdomain**, `hrt.kiramyao.com/privacy`,
-because that is where Google's brand verification requires it: the policy must be
-"hosted within the same domain as your application's home page". It is a real static
-file (`public/privacy/index.html`), so it survives the SPA fallback — the same trick,
-and the same trap, as the paragraph below. `kiramyao.com/privacy` is still the wider
-KiraMyao Equal policy and is linked from it; the app-specific page takes precedence
-for anything about Kira Tracker. Google also requires the home page to describe the
-app and link to the policy, which is why `index.html` carries real content inside
-`#root` (`index.tsx` clears it before the first render).
+The Privacy Policy lives at `https://kiramyao.com/privacy` — the wider KiraMyao Equal
+policy, whose §26 covers Kira Tracker. The app subdomain used to serve its own copy at
+`hrt.kiramyao.com/privacy`, added for Google's brand verification because the policy
+must be "hosted within the same domain as your application's home page"; that page and
+its `public/privacy/` source have been **removed on purpose**. The same-domain
+condition is therefore no longer met, so a future verification attempt can fail on it —
+that is a known, accepted trade, not a regression. Google also requires the home page to
+describe the app and link to the policy, which is why `index.html` carries real content
+inside `#root` (`index.tsx` clears it before the first render), and that link now points
+at the absolute policy URL.
 
 Account deletion is implemented, so its deletion promise can be made honestly.
 
@@ -453,14 +454,12 @@ curl -s https://api.kiramyao.com/hrt/stats
 # 6. The callback path reaches this service, not the comment service.
 curl -sI 'https://api.kiramyao.com/hrt/auth/x/callback?code=x&state=y' | head -3
 
-# 7. The Privacy Policy returns a real document, not an app shell. This is what a URL
-#    checker sees, and it is the difference between a working policy link and a blank
-#    page. Look for the text, not just the status code — and remember the app
-#    subdomain has a shell that returns 200 for anything, so a 200 proves nothing.
-#    Google's verifier does not run JavaScript, so both of these matter.
-curl -s https://hrt.kiramyao.com/privacy | grep -c "openid"          # >= 1
+# 7. The Privacy Policy link resolves to a real document, and the home page still links
+#    it. This is what a URL checker sees: the app subdomain has a shell that returns 200
+#    for anything, so a 200 from it proves nothing — the policy is on kiramyao.com now.
+curl -sI https://kiramyao.com/privacy | head -1                     # expect 200
 curl -s https://hrt.kiramyao.com/ | grep -c "Kira Tracker"          # >= 1
-curl -s https://hrt.kiramyao.com/privacy | wc -c                    # ~12k, not ~2.8k
+curl -s https://hrt.kiramyao.com/ | grep -c "kiramyao.com/privacy"  # >= 1, the link
 
 # 8. One provider sign-in still ends in a session, not a dead URL: the callback hands
 #    the browser a one-time code, and the exchange turns it into a session.

@@ -378,22 +378,13 @@ export const AccountService = {
    * in the other:
    *
    *   - a `ks_` unlock token carries its own key;
-   *   - a `hrt_` API token proves identity, and then needs a live unlock before the
-   *     server's copy of the key opens anything.
+   *   - a `hrt_` API token proves identity, and the key is then attached from the
+   *     deployment's own copy of it.
    *
-   * Both halves of that second rule are worth stating, because they pull in opposite
-   * directions: the token cannot create access — with no session the answer is
-   * `locked`, not a key — but a live session renews on every read and the default
-   * token never expires, so while the user *is* signed in, holding the token is enough
-   * to keep reading for as long as they stay that way. "Reads nothing on its own" is
-   * not the same claim as "harmless if leaked", and the published policy must not
-   * reduce to the first.
-   *
-   * The live-unlock requirement was the advanced-mode rule before the mode was
-   * removed. Every account now carries a server wrapper, so without it a token alone
-   * would open the records — the exact opposite of what the privacy policy tells the
-   * user, and a promise about who can read your data is not one to drop quietly
-   * because a mode went away.
+   * A durable token is therefore a full credential: no live unlock and no user presence
+   * is needed, and `/auth/logout` does not stop it because it is not a session. Only
+   * revoking the token or changing the password ends it, so holding one is equivalent
+   * to holding the password and every surface that hands one out has to say so.
    */
   async resolveApiContext(token: string): Promise<AuthContext | ContextDenial | null> {
     if (token.startsWith('ks_')) {
@@ -405,7 +396,6 @@ export const AccountService = {
 
     const user = await loadUser({ id: userId });
     if (!user) return null;
-    if (!findUserSessionFor(userId)) return { denied: 'locked' };
 
     const serverDek = await serverDekFor(user);
     // No deployment key, so there is no copy of this account's key to hand over.

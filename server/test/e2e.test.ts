@@ -231,10 +231,10 @@ test('a wrong password does not unlock, and a locked account reads nothing', asy
   assert.equal(afterLock.status, 401, 'a locked token reads nothing');
 });
 
-test('a durable agent token needs a live unlock, and stops working without one', async () => {
-  // A `hrt_` token proves identity. It carries no key, so what it can reach is decided
-  // by whether an unlock is live — the policy tells the user the token "cannot unlock
-  // your account by itself", and this is the line that keeps that sentence true.
+test('a durable agent token outlives the session it was minted from', async () => {
+  // A `hrt_` token proves identity, and the key is attached from the deployment's own
+  // copy of it — no live unlock, no user presence. What ends it is revoking it or
+  // changing the password; `/auth/logout` does not, because it is not a session.
   const account = await registerAccount(base, { password: 'agent-password-1' });
   const unlockToken: string = account.token;
 
@@ -244,16 +244,14 @@ test('a durable agent token needs a live unlock, and stops working without one',
   const apiToken: string = minted.body.token;
   assert.ok(apiToken.startsWith('hrt_'), 'api token shape');
 
-  // While the account is unlocked, the durable token works.
   const whileUnlocked = await api('/api/records', { headers: { Authorization: `Bearer ${apiToken}` } });
   assert.equal(whileUnlocked.status, 200, JSON.stringify(whileUnlocked.body));
 
-  // Close the session it was minted from, and the token is left holding identity and
-  // nothing else. Revoking the token or changing the password is what ends it for
-  // good; a lapsed session only parks it.
+  // Close the session it was minted from. The token keeps working: it is a full
+  // credential, and only revocation or a password change ends it.
   await api('/auth/logout', json({}, unlockToken));
   const afterLogout = await api('/api/records', { headers: { Authorization: `Bearer ${apiToken}` } });
-  assert.equal(afterLogout.status, 401, 'a durable token cannot open records by itself');
+  assert.equal(afterLogout.status, 200, 'a durable token survives sign-out');
 });
 
 test('a stored record is not readable as plaintext in the database', async () => {

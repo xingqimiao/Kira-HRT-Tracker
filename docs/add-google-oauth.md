@@ -2,6 +2,12 @@
 
 > 更新：2026-09-19。**Google 登录已实现并已接入前端**；本文分成「实现现状」、
 > 「Console 怎么填」、「品牌验证为什么会被打回」三部分。
+>
+> **同日稍后的变更（晚于本文，已覆盖下文几处）：** 用户决定不在 hrt 子域自建隐私
+> 政策页，`public/privacy/index.html` 已删除，首页与注册表单改为直链
+> `https://kiramyao.com/privacy`。所以 §2 的 Application privacy policy link 应填该绝对
+> 地址；§3 里「新增 `public/privacy/index.html`」那条修复**已作废**；Google 的「政策
+> 必须与首页同域」条件也不再成立 —— 若重新提交品牌验证因此被打回，根因就在这里。
 
 ---
 
@@ -59,7 +65,7 @@ localhost 放行 `http`，其他域名一律 `https`。
 | App name | `Kira Tracker` |
 | User support email | 你自己的邮箱（Google 会往这里发审核邮件，必须是你在看的地址） |
 | Application home page | `https://hrt.kiramyao.com/` |
-| Application privacy policy link | `https://hrt.kiramyao.com/privacy` |
+| Application privacy policy link | `https://kiramyao.com/privacy`（注意：与首页不同域） |
 | Application terms of service link | **留空**（见下） |
 | Authorized domains | `kiramyao.com` |
 | Scopes | 只加 `openid`；**不要**加 Gmail / Drive / Calendar 等 |
@@ -162,12 +168,11 @@ curl -s https://api.kiramyao.com/hrt/health | python3 -m json.tool | grep google
 # 2. start 端点返回授权 URL，并核对 redirect_uri 与 Console 里逐字一致
 curl -s https://api.kiramyao.com/hrt/auth/google/start | python3 -m json.tool
 
-# 3. 静态页真的被服务（不能是 2,837 字节的 SPA 外壳）
-curl -s https://hrt.kiramyao.com/privacy | wc -c      # 期望 ~12,000，不是 ~2,800
-curl -s https://hrt.kiramyao.com/privacy | grep -c 'openid'   # 期望 >= 1
-# 首页也要有可见文字，且能读到应用名与政策链接
+# 3. 政策 URL 可达，且首页静态内容里能读到应用名与政策链接。
+#    注意 hrt 子域那份页面已于 2026-09-19 删除，政策现在只在 kiramyao.com。
+curl -sI https://kiramyao.com/privacy | head -1                 # 期望 200
 curl -s https://hrt.kiramyao.com/ | grep -c 'Kira Tracker'
-curl -s https://hrt.kiramyao.com/ | grep -c '/privacy'
+curl -s https://hrt.kiramyao.com/ | grep -c 'kiramyao.com/privacy'
 ```
 
 再走一遍真实登录（浏览器**先清 service worker**，否则看到的是旧前端）：

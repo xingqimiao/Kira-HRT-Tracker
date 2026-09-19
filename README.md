@@ -36,9 +36,9 @@ We strictly adhere to the `PKcore.swift` and `PKparameter.swift` logic provided 
 
   **默认保护隐私**：应用可以离线优先使用——你录入的内容保存在浏览器中并立即显示。登录之后记录同时保存在服务器上，并以**整包 AES-256-GCM 密文**存储，只有时间戳与类别保持明文以便分页。这**不是**端到端加密：密钥在服务器上，所以诚实的说法是「数据库被拖走、没有这把密钥则读不出来」，而**不是**「运营方看不到你的数据」。分享链接会保存一份只读的用药记录、模型曲线和时区副本，直到链接过期；其中不会包含检查结果、体重、个人资料或账户数据。
 
-- **Agent Access Tokens**: Connecting an AI assistant (MCP) uses a long-lived token you paste into its config. The token cannot unlock your account by itself — it carries no decryption key, so the assistant is told "locked" unless you have an active session. But while you are signed in, a leaked token *can* read your records, and each read keeps that session alive, so revoke it in Settings once you stop using it. Anything the assistant reads leaves this system and is governed by that provider's privacy policy.
+- **Agent Access Tokens**: Connecting an AI assistant (MCP) uses a long-lived token you paste into its config. The token is a full credential for your records: the server holds a copy of your data key, so the assistant reads and writes them with no browser session, no unlock, and no expiry. Signing out does not stop it — only revoking the token in Settings or changing your password does. Treat it exactly as you would treat your password. Anything the assistant reads leaves this system and is governed by that provider's privacy policy.
 
-  **AI 助手访问令牌**：连接 AI 助手（MCP）需要把一个长期令牌粘贴进它的配置。该令牌本身无法解锁你的账户——它不携带解密密钥，因此在你没有活跃会话时助手只会收到"已锁定"的提示。但在你登录期间，泄露的令牌**可以**读取你的记录，且每次读取都会延长该会话，所以不再使用时请在设置中吊销它。助手读到的任何内容都会离开本系统，并受该服务商隐私政策约束。
+  **AI 助手访问令牌**：连接 AI 助手（MCP）需要把一个长期令牌粘贴进它的配置。该令牌是你的记录的**完整凭据**：服务器持有你数据密钥的副本，所以助手无需浏览器会话、无需解锁、也不会过期。退出登录拦不住它——只有在设置中吊销该令牌或修改密码才行。请像对待密码一样对待它。助手读到的任何内容都会离开本系统，并受该服务商隐私政策约束。
 
 - **Internationalization**: Native support for **Simplified Chinese**, **English**, **Cantonese**, **Russian**, **Ukrainian**, and more.
 

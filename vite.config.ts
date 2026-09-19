@@ -104,14 +104,7 @@ export default defineConfig(() => {
         workbox: {
           // Shared pages require the network API and should always load the
           // current application shell instead of an older precached shell.
-          //
-          // `/privacy` is a real static page, not a route of the SPA. The navigation
-          // fallback would serve it the precached `index.html` instead — and because it
-          // comes from the cache it would keep doing so online, so the only person who
-          // ever sees the policy would be someone who has never installed the app.
-          // Google's reviewer is exactly that person, which would hide the problem
-          // until verification passed for the wrong reason.
-          navigateFallbackDenylist: [/^\/share(?:\/|$)/, /^\/privacy(?:\/|$)/],
+          navigateFallbackDenylist: [/^\/share(?:\/|$)/],
           // The OCR assets are ~22 MB and are only fetched when someone opens the
           // scan panel. Precaching them would put that download on every install —
           // including for the overwhelming majority who never scan a report — and
