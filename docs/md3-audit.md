@@ -65,8 +65,34 @@ by reading computed values in both themes from the built bundle.
    column, and add a navigation rail at ≥840dp.
 3. Remaining components in order: bottom sheet (the dialogs' compact form
    already animates like one), segmented button, chip, toolbar.
-4. Deploy with the usual sequence (`git push origin main` → `VITE_API_ORIGIN=…`
-   `vite build` → tar → scp → `rsync -a --delete` into `/srv/hrt-web`), and note
-   that the Caddy static-404 fix from the other handoff should land first, or the
-   new `sw-<commit>.js` name opens the same cache-poisoning window that document
-   describes.
+4. Re-check the Caddy static-404 question below — it matters to every
+   future deploy.
+
+## Shipped
+
+Deployed on 2026-09-19 19:10 (server local time), commit `35e4dd0`, using the
+usual sequence: `git push origin main` → `VITE_API_ORIGIN=https://api.kiramyao.com/hrt`
+`vite build` → local tar → scp to `/tmp` → `rsync -a --delete` into
+`/srv/hrt-web`. The previous bundle was backed up first
+(`/srv/hrt-web-backup-20260919-191010.tgz` on the host), and the **new service
+worker was copied over the old file name** (`sudo cp /srv/hrt-web/sw-35e4dd0.js
+/srv/hrt-web/sw-11902fe.js`), because `rsync --delete` removes the old name and a
+client whose registered SW 404s can never update itself.
+
+Verified against production, through Cloudflare rather than the origin:
+
+- the served HTML references `sw-35e4dd0.js` and the new CSS, and the page runs
+  with no console errors;
+- `sw-35e4dd0.js` and the old name `sw-11902fe.js` return byte-identical
+  `text/javascript` (so clients still on the old name recover on their own);
+- the MD3 tokens resolve, the nav indicator shows 1/0 for active/inactive, the
+  active icon is `rgb(4,34,46)` (on-secondary-container) and Tab puts a
+  `2px solid rgb(168,64,90)` ring on the first control.
+
+**Open observation.** The origin still answers
+`curl -skI --resolve hrt.kiramyao.com:443:127.0.0.1 https://hrt.kiramyao.com/definitely-missing.js`
+with `200` and `content-type: text/html` — the SPA fallback. So the "missing
+static assets 404" change recorded as landed in `e90084d7` is not in effect on
+this host right now. Nothing broke this time because both SW names really exist,
+but the next deploy that introduces a new `sw-<commit>.js` re-opens exactly the
+cache-poisoning window that change was made to close.
