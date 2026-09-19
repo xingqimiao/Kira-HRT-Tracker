@@ -3,6 +3,7 @@ import { isPlausibleBodyWeightKG } from '../../logic';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
 import { useEscape } from '../hooks/useEscape';
+import { usePresence } from '../hooks/usePresence';
 
 const WeightEditorModal = ({ isOpen, onClose, currentWeight, onSave }: any) => {
     const { t } = useTranslation();
@@ -31,10 +32,12 @@ const WeightEditorModal = ({ isOpen, onClose, currentWeight, onSave }: any) => {
         setIsSaving(false);
     };
 
-    if (!isOpen) return null;
+    const { mounted, state } = usePresence(isOpen, 200);
+
+    if (!mounted) return null;
 
     return (
-        <div className="modal-overlay">
+        <div className="modal-overlay" data-state={state}>
             <div className="modal-shell">
                 <div className="modal-card">
                     <h3 className="modal-title">{t('modal.weight.title')}</h3>

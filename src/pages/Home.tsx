@@ -14,6 +14,7 @@ import { useHRTMode } from '../contexts/HRTModeContext';
 import { AppTheme } from '../constants';
 import { useTranslation } from '../contexts/LanguageContext';
 import { getShareCopy } from '../i18n/share';
+import { Tooltip } from '../components/ui';
 
 /** Drawn width of the vial, in px. Height follows the canvas' 18:42. */
 const VIAL_SIZE = 44;
@@ -118,13 +119,15 @@ const Home: React.FC<HomeProps> = ({
                 <div className="flex items-center justify-between mb-5">
                     <div className="flex items-center gap-1.5">
                         <h1 className="m3-card-title">{t('status.estimate')}</h1>
-                        <button
-                            onClick={() => setIsEstimateInfoOpen(true)}
-                            className={`${muted} hover:text-[var(--color-m3-on-surface)] `}
-                            title={t('status.read_me')}
-                        >
-                            <Icon icon={Info} size={13} />
-                        </button>
+                        <Tooltip label={t('status.read_me')}>
+                            <button
+                                onClick={() => setIsEstimateInfoOpen(true)}
+                                className={`${muted} hover:text-[var(--color-m3-on-surface)] `}
+                                aria-label={t('status.read_me')}
+                            >
+                                <Icon icon={Info} size={13} />
+                            </button>
+                        </Tooltip>
                     </div>
                     <div className="flex items-center gap-3">
                         {currentStatus && (

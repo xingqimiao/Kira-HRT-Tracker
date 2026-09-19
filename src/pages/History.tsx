@@ -244,7 +244,13 @@ const History: React.FC<HistoryProps> = ({
             <div className="mx-auto w-full px-6 md:px-8 max-w-2xl">
                 {groupedEvents.map(({ key, label, events: dayEvents }) => (
                     <div key={key} className="mb-6 last:mb-0">
-                        <div className="sticky top-[94px] z-10 bg-[var(--color-m3-surface-dim)]  py-2">
+                        {/* Parks under the page header. The offset is that header's own height in
+                            rem — 2 (pt-8) + 2.25 (the title's line box) + 0.125 (the count's
+                            margin) + 1.25 (its line box) + 0.75 (pb-3) — so it still lands there
+                            when --ui-scale lifts the root font size on a wide window. Measured:
+                            102px at 390 and 840, 112px at 1440. It used to be a flat 94px, which
+                            sat inside the header even before this pass. */}
+                        <div className="sticky top-[6.375rem] z-10 bg-[var(--color-m3-surface-dim)]  py-2">
               <span className="text-xs font-semibold text-[var(--color-m3-on-surface-variant)] ">{label}</span>
                         </div>
                         <div>

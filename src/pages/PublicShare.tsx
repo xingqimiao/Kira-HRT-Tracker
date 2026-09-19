@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Icon from '../components/Icon';
-import { AlertCircle, Clock3, Eye, EyeOff, Loader2, LockKeyhole } from '../icons';
+import { AlertCircle, Clock3, Eye, EyeOff, LockKeyhole } from '../icons';
+import { Progress } from '../components/ui';
 import { DoseEvent, Ester, ExtraKey, getToE2Factor, isTestosteroneEster, Route } from '../../logic';
 import ResultChart from '../components/ResultChart';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -159,7 +160,7 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
         return (
             <PublicShell>
                 <div className="flex min-h-[65vh] flex-col items-center justify-center px-6 text-center" aria-live="polite">
-                    <Icon icon={Loader2} size={24} strokeWidth={1.5} className="mb-4 animate-spin text-[var(--color-m3-primary)]" aria-hidden="true" />
+                    <Progress size={24} className="mb-4" />
                     <p className="text-sm text-muted">{copy.loading}</p>
                 </div>
             </PublicShell>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Icon from '../components/Icon';
-import { AlertTriangle, Loader2 } from '../icons';
+import { AlertTriangle } from '../icons';
+import { Progress } from '../components/ui';
 
 import { coreAuth, CoreAuthError } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
@@ -135,7 +136,7 @@ const BindCredentials: React.FC<BindCredentialsProps> = ({ session, onDone }) =>
             )}
 
             <button type="submit" disabled={busy || !ready} className="btn-primary w-full">
-              {busy && <Icon icon={Loader2} size={16} className="animate-spin" />}
+              {busy && <Progress size={16} />}
               {t('core.bind.action')}
             </button>
           </form>

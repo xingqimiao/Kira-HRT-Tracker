@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Icon from '../components/Icon';
-import { ArrowLeft, Check, ChevronDown, Copy, Eye, EyeOff, Link2, Loader2, LockKeyhole, Trash2 } from '../icons';
+import { ArrowLeft, Check, ChevronDown, Copy, Eye, EyeOff, Link2, LockKeyhole, Trash2 } from '../icons';
+import { Progress } from '../components/ui';
 import { DoseEvent, HRTMode, SimulationResult } from '../../logic';
 import { useTranslation } from '../contexts/LanguageContext';
 import { getShareCopy } from '../i18n/share';
@@ -329,7 +330,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                                     disabled={submitting || !events.length || (passwordEnabled && password.length < 8)}
                                     className="btn-primary min-w-[8.5rem]"
                                 >
-                                    {submitting ? <Icon icon={Loader2} size={15} className="animate-spin" /> : <Icon icon={Link2} size={15} />}
+                                    {submitting ? <Progress size={15} /> : <Icon icon={Link2} size={15} />}
                                     {submitting ? copy.creating : copy.create}
                                 </button>
                             </div>
@@ -341,7 +342,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                         <p className="mt-1 text-sm leading-relaxed text-muted">{copy.manageDescription}</p>
                         {sharesLoading ? (
                             <div className="flex items-center gap-2 py-4 text-sm text-muted">
-                                <Icon icon={Loader2} size={14} className="animate-spin" /> {copy.loading}
+                                <Progress size={14} /> {copy.loading}
                             </div>
                         ) : shares.length === 0 ? (
                             <p className="py-4 text-sm text-muted">{copy.noneActive}</p>
@@ -374,7 +375,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                                             disabled={revokingId === share.id}
                                             className="-mr-2 inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-2 text-sm font-medium text-cos-error hover:bg-cos-error-container disabled:opacity-50  "
                                         >
-                                            {revokingId === share.id ? <Icon icon={Loader2} size={14} className="animate-spin" /> : <Icon icon={Trash2} size={14} />}
+                                            {revokingId === share.id ? <Progress size={14} /> : <Icon icon={Trash2} size={14} />}
                                             {copy.revoke}
                                         </button>
                                     </div>

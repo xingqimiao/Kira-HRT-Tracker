@@ -12,4 +12,6 @@
 export { default as AppShell } from './AppShell';
 export { default as NavigationBar } from './NavigationBar';
 export { default as NavigationRail } from './NavigationRail';
+export { default as Progress } from './Progress';
+export { default as Tooltip } from './Tooltip';
 export type { NavDestination } from './NavigationRail';

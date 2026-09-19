@@ -3,6 +3,7 @@ import Icon from './Icon';
 import { useTranslation } from '../contexts/LanguageContext';
 import { X, Upload } from '../icons';
 import { useEscape } from '../hooks/useEscape';
+import { usePresence } from '../hooks/usePresence';
 
 const ImportModal = ({ isOpen, onClose, onImportJson }: { isOpen: boolean; onClose: () => void; onImportJson: (text: string) => boolean | Promise<boolean> }) => {
     const { t } = useTranslation();
@@ -37,10 +38,12 @@ const ImportModal = ({ isOpen, onClose, onImportJson }: { isOpen: boolean; onClo
         }
     };
 
-    if (!isOpen) return null;
+    const { mounted, state } = usePresence(isOpen, 200);
+
+    if (!mounted) return null;
 
     return (
-        <div className="modal-overlay p-4">
+        <div className="modal-overlay p-4" data-state={state}>
             <div className="modal-shell">
                 <div className="modal-card flex flex-col max-h-[85vh]">
                     <div className="flex justify-between items-center mb-4 shrink-0">

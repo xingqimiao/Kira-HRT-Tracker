@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Icon from '../components/Icon';
 import { useTranslation } from '../contexts/LanguageContext';
-import { AlertTriangle, Loader2, LogOut, MonitorSmartphone, RefreshCw, Trash2, Unlink } from '../icons';
+import { AlertTriangle, LogOut, MonitorSmartphone, RefreshCw, Trash2, Unlink } from '../icons';
+import { Progress } from '../components/ui';
 
 import { coreAuth, CoreAuthError, PROVIDER_NAMES, type AccountSummary, type LoginMethods, type OAuthLink, type SessionInfo } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
@@ -581,7 +582,7 @@ const Submit: React.FC<{ busy: boolean; disabled?: boolean; danger?: boolean; ch
     disabled={busy || disabled}
     className={`${danger ? 'bg-cos-error text-cos-on-error' : 'btn-primary'} w-full mt-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-[var(--radius-sm)] text-sm font-medium disabled:opacity-50`}
   >
-    {busy && <Icon icon={Loader2} size={16} className="animate-spin" />}
+    {busy && <Progress size={16} />}
     {children}
   </button>
 );

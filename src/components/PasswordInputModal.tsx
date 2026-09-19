@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useEscape } from '../hooks/useEscape';
+import { usePresence } from '../hooks/usePresence';
 
 interface PasswordInputModalProps {
     isOpen: boolean;
@@ -24,12 +25,14 @@ const PasswordInputModal = ({ isOpen, onClose, onConfirm, title, description, er
         if (isOpen) setPassword("");
     }, [isOpen]);
 
-    if (!isOpen) return null;
+    const { mounted, state } = usePresence(isOpen, 200);
+
+    if (!mounted) return null;
 
     const submit = () => { if (password && !loading) onConfirm(password); };
 
     return (
-        <div className="modal-overlay z-[60] p-4">
+        <div className="modal-overlay z-[60] p-4" data-state={state}>
             <div className="modal-shell">
                 <div className="modal-card">
                     <h3 className="modal-title text-center">{title ?? t('import.password_title')}</h3>

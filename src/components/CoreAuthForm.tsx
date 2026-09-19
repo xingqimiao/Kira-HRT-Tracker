@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Icon from './Icon';
-import { Loader2, AlertTriangle, X } from '../icons';
+import { AlertTriangle, X } from '../icons';
+import { Progress } from './ui';
 
 import TurnstileWidget, { TURNSTILE_CONFIGURED } from './TurnstileWidget';
 import {
@@ -290,7 +291,7 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                         disabled={busy || (!isLogin && !verified)}
                         className="btn-primary w-full"
                     >
-                        {busy && <Icon icon={Loader2} size={16} className="animate-spin" />}
+                        {busy && <Progress size={16} />}
                         {isLogin ? t('core.sign_in') : t('core.create_account')}
                     </button>
 

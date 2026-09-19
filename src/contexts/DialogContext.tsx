@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from './LanguageContext';
+import { usePresence } from '../hooks/usePresence';
 
 type DialogType = 'alert' | 'confirm';
 
@@ -33,6 +34,8 @@ export const DialogProvider = ({ children }: { children: React.ReactNode }) => {
     // consumer of useDialog() across the app (showDialog itself never changes).
     const contextValue = useMemo(() => ({ showDialog }), [showDialog]);
 
+    const { mounted, state } = usePresence(isOpen, 200);
+
     const handleConfirm = () => {
         if (onConfirm) onConfirm();
         setIsOpen(false);
@@ -41,8 +44,8 @@ export const DialogProvider = ({ children }: { children: React.ReactNode }) => {
     return (
         <DialogContext.Provider value={contextValue}>
             {children}
-            {isOpen && (
-                <div className="modal-overlay z-[100]">
+            {mounted && (
+                <div className="modal-overlay z-[100]" data-state={state}>
                     <div className="modal-shell">
                         <div className="modal-card">
                             <h3 className="modal-title">

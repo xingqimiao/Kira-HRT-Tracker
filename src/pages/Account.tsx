@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Icon from '../components/Icon';
-import { Link2, Loader2, LogOut, ShieldCheck, UserCircle } from '../icons';
+import { Link2, LogOut, ShieldCheck, UserCircle } from '../icons';
+import { Progress } from '../components/ui';
 import CoreAuthForm from '../components/CoreAuthForm';
 import { SettingsListItem, settingsMuted } from '../components/SettingsListItem';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -112,7 +113,7 @@ const Account: React.FC<AccountProps> = ({
                 appear. */}
             {session.restoring ? (
                 <div className="flex justify-center py-16">
-                    <Icon icon={Loader2} className={`animate-spin ${muted}`} size={22} />
+                    <Progress size={22} />
                 </div>
             ) : session.isSignedIn ? (
                 <div className="mx-auto w-full max-w-2xl">
@@ -194,7 +195,7 @@ const Account: React.FC<AccountProps> = ({
                             className={`shrink-0 text-sm font-medium text-[var(--color-m3-primary)] hover:underline disabled:opacity-40 disabled:no-underline`}
                         >
                             {syncStatus === 'syncing'
-                                ? <Icon icon={Loader2} size={14} className="animate-spin" />
+                                ? <Progress size={14} />
                                 : t('sync.now')}
                         </button>
                     </div>

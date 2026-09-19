@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Icon from '../components/Icon';
-import { ArrowLeft, Check, Copy, KeyRound, Loader2, Plus, Trash2 } from '../icons';
+import { ArrowLeft, Check, Copy, KeyRound, Plus, Trash2 } from '../icons';
+import { Progress } from '../components/ui';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
 import { coreAuth, type ApiToken } from '../services/coreAuth';
@@ -167,7 +168,7 @@ const TokenManager: React.FC<{ session: CoreSession }> = ({ session }) => {
                     disabled={minting}
                     className="btn-primary shrink-0 disabled:opacity-50"
                 >
-                    {minting ? <Icon icon={Loader2} size={14} className="animate-spin" /> : <Icon icon={Plus} size={14} />}
+                    {minting ? <Progress size={14} /> : <Icon icon={Plus} size={14} />}
                     {t('mcp.token_generate')}
                 </button>
             </div>
@@ -200,7 +201,7 @@ const TokenManager: React.FC<{ session: CoreSession }> = ({ session }) => {
             <div className="mt-4">
                 {tokens === null ? (
                     <p className={`flex items-center gap-2 ${muted}`}>
-                        <Icon icon={Loader2} size={14} className="animate-spin" />{t('core.loading')}
+                        <Progress size={14} />{t('core.loading')}
                     </p>
                 ) : tokens.length === 0 ? (
                     <p className={muted}>{t('mcp.tokens_empty')}</p>

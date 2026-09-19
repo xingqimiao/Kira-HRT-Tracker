@@ -2438,3 +2438,115 @@ select,
         transform: none;
     }
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   KEPT FROM THE REWRITE: the two animating components
+   The rest of the component layer went back. These two stayed because they are
+   motion rather than structure: a tooltip that fades in from its trigger, and a
+   spec progress indicator in place of a spinning glyph.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Tooltip ─────────────────────────────────────────────────────────────────
+   catalog → component-catalog.md / Tooltip (the plain kind: a label, no rich
+   content, nothing interactive inside it). It opens on hover *and* on keyboard
+   focus.
+
+   Motion: a small anchored popover, so 150ms ease-out — the /animate table puts
+   tooltips at 125–200ms — with its transform-origin at the trigger's edge rather
+   than the centre. */
+.m3-tooltip-anchor {
+    position: relative;
+    display: inline-flex;
+}
+.m3-tooltip {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    z-index: 60;
+    padding: 4px 8px;
+    border-radius: var(--md-sys-shape-corner-extra-small);
+    background-color: var(--md-sys-color-inverse-surface);
+    color: var(--md-sys-color-inverse-on-surface);
+    font-size: var(--md-sys-typescale-body-small-size);
+    line-height: var(--md-sys-typescale-body-small-line-height);
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, 4px);
+    transform-origin: bottom center;
+    transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
+}
+.m3-tooltip-anchor:hover .m3-tooltip,
+.m3-tooltip-anchor:focus-within .m3-tooltip {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+/* ── Progress ────────────────────────────────────────────────────────────────
+   catalog → component-catalog.md / Progress indicator, and Loading indicator.
+   The circular form is what a spinning glyph was standing in for.
+
+   Motion: the rotation is *constant* motion, which is the one case the /animate
+   table gives to linear; the arc's grow-and-shrink is the spec's ease-in-out. */
+.m3-progress-circular {
+    display: inline-block;
+    width: var(--m3-progress-size, 24px);
+    height: var(--m3-progress-size, 24px);
+    color: var(--md-sys-color-primary);
+    animation: m3-progress-rotate 1.4s linear infinite;
+}
+/* Inside a filled button the indicator takes the button's own foreground: its
+   default is the primary role, which is exactly what the button is filled with,
+   so it would be invisible. */
+.m3-btn .m3-progress-circular { color: currentColor; }
+
+.m3-progress-circular circle {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 3;
+    stroke-linecap: round;
+    animation: m3-progress-arc 1.4s var(--ease-in-out) infinite;
+}
+@keyframes m3-progress-rotate { to { transform: rotate(360deg); } }
+@keyframes m3-progress-arc {
+    0%   { stroke-dasharray: 1 57;  stroke-dashoffset: 0; }
+    50%  { stroke-dasharray: 45 57; stroke-dashoffset: -16; }
+    100% { stroke-dasharray: 45 57; stroke-dashoffset: -56; }
+}
+
+.m3-progress-linear {
+    position: relative;
+    width: 100%;
+    height: 4px;
+    overflow: hidden;
+    border-radius: var(--md-sys-shape-corner-full);
+    background-color: var(--md-sys-color-secondary-container);
+}
+.m3-progress-linear__bar {
+    height: 100%;
+    border-radius: inherit;
+    background-color: var(--md-sys-color-primary);
+    transform-origin: left center;
+    transition: transform var(--md-sys-motion-duration-medium2) var(--ease-out);
+}
+.m3-progress-linear--indeterminate .m3-progress-linear__bar {
+    animation: m3-progress-linear 1.8s var(--ease-in-out) infinite;
+}
+@keyframes m3-progress-linear {
+    0%   { transform: translateX(-100%) scaleX(0.4); }
+    60%  { transform: translateX(40%) scaleX(0.7); }
+    100% { transform: translateX(100%) scaleX(0.4); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    /* A spinner that stops is a spinner that looks broken, so the rotation stays
+       and only the arc's growth is dropped. The tooltip keeps its fade — that is
+       opacity, which reduces comprehension if removed, not motion. */
+    .m3-progress-circular circle { animation: none; stroke-dasharray: 45 57; }
+    .m3-progress-linear--indeterminate .m3-progress-linear__bar {
+        animation: none;
+        transform: translateX(0) scaleX(0.4);
+    }
+    .m3-tooltip { transform: translate(-50%, 0); }
+}

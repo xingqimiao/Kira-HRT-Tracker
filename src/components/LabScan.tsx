@@ -1,6 +1,7 @@
 import React, { useRef, useState, useCallback } from 'react';
 import Icon from './Icon';
-import { AlertCircle, Check, ImagePlus, Loader2, Scan } from '../icons';
+import { AlertCircle, Check, ImagePlus, Scan } from '../icons';
+import { Progress } from './ui';
 import { useTranslation } from '../contexts/LanguageContext';
 import {
     findHormoneValues,
@@ -245,7 +246,7 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
 
             {state.kind === 'preparing' && (
                 <p className={`flex items-center gap-2 text-sm ${muted}`}>
-                    <Icon icon={Loader2} size={14} className="animate-spin" />
+                    <Progress size={14} />
                     {t('scan.preparing')}
                 </p>
             )}
@@ -253,7 +254,7 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
             {state.kind === 'recognising' && (
                 <div className="space-y-2">
                     <p className={`flex items-center gap-2 text-sm ${muted}`}>
-                        <Icon icon={Loader2} size={14} className="animate-spin" />
+                        <Progress size={14} />
                         {t('scan.recognising')}
                     </p>
                     {/* A determinate bar rather than a spinner: recognition takes seconds

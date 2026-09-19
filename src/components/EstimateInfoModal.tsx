@@ -1,16 +1,19 @@
 import { createPortal } from 'react-dom';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useEscape } from '../hooks/useEscape';
+import { usePresence } from '../hooks/usePresence';
 
 const EstimateInfoModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
     const { t } = useTranslation();
 
     useEscape(onClose, isOpen);
 
-    if (!isOpen) return null;
+    const { mounted, state } = usePresence(isOpen, 200);
+
+    if (!mounted) return null;
 
     return createPortal(
-        <div className="modal-overlay z-[60]">
+        <div className="modal-overlay z-[60]" data-state={state}>
             <div className="modal-shell">
                 <div className="modal-card">
                     <h3 className="modal-title">{t('modal.estimate.title')}</h3>

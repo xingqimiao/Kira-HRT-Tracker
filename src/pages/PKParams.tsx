@@ -3,6 +3,7 @@ import Icon from '../components/Icon';
 import { ArrowLeft, RotateCcw, ChevronDown, AlertTriangle, Info } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
+import { Tooltip } from '../components/ui';
 import { PKCustomParams, DEFAULT_PK_PARAMS } from '../../logic';
 
 interface PKParamsPageProps {
@@ -182,7 +183,9 @@ const PKParamsPage: React.FC<PKParamsPageProps> = ({ pkParams, onSave, onReset, 
                                                         {t(field.labelKey)}
                                                     </span>
                                                     {changed && (
-                                                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--color-m3-primary)] flex-shrink-0" title={t('pk.modified')} />
+                                                        <Tooltip label={t('pk.modified')}>
+                                                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--color-m3-primary)] flex-shrink-0" />
+                                                        </Tooltip>
                                                     )}
                                                 </div>
                                                 <span className="text-xs text-[var(--color-m3-on-surface-variant)] ">

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Icon from '../components/Icon';
-import { CheckCircle2, Loader2, AlertTriangle } from '../icons';
+import { CheckCircle2, AlertTriangle } from '../icons';
+import { Progress } from '../components/ui';
 
 import {
   coreAuth,
@@ -117,7 +118,7 @@ const OAuthLanding: React.FC<OAuthLandingProps> = ({
     return (
       <Page>
         <p className="flex items-center gap-2.5 text-sm text-[var(--color-m3-on-surface-variant)]">
-          <Icon icon={Loader2} size={17} className="animate-spin" />
+          <Progress size={17} />
           {t('core.oauth.working')}
         </p>
       </Page>
