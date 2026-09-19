@@ -217,7 +217,7 @@ export const coreAuth = {
   async register(
     username: string,
     password: string,
-    opts: { turnstileToken?: string } = {},
+    opts: { turnstileToken?: string; persistent?: boolean } = {},
   ): Promise<SessionResponse> {
     return toSession(
       await request('/auth/register', {
@@ -226,6 +226,7 @@ export const coreAuth = {
           username,
           password,
           ...(opts.turnstileToken ? { turnstile_token: opts.turnstileToken } : {}),
+          ...(opts.persistent ? { persistent: true } : {}),
         }),
       }),
     );
@@ -233,12 +234,21 @@ export const coreAuth = {
 
   // --- Sign-in -------------------------------------------------------------
 
-  /** Sign in with a username and password. */
-  async login(username: string, password: string): Promise<SessionResponse> {
+  /**
+   * Sign in with a username and password.
+   *
+   * `persistent` is the "keep me signed in" box: it asks the server for a session with
+   * no expiry at all, which only the device list or a password change can end.
+   */
+  async login(
+    username: string,
+    password: string,
+    opts: { persistent?: boolean } = {},
+  ): Promise<SessionResponse> {
     return toSession(
       await request('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, ...(opts.persistent ? { persistent: true } : {}) }),
       }),
     );
   },

@@ -2424,6 +2424,7 @@ const CORE_AUTH_I18N = {
 const FALLBACK_I18N = {
     "zh": {
         "core.signup.privacy": "创建账号即表示你已阅读隐私说明",
+        "core.signin.keep": "保持登录",
         "core.acct.google_section": "Google",
         "core.bind.title": "添加备用登录方式",
         "core.bind.why": "这个账户是通过 X 或 Google 创建的。绑定账户名和密码后，即使以后失去那个第三方账号，记录也仍然拿得回来。",
@@ -2433,6 +2434,7 @@ const FALLBACK_I18N = {
     },
     "zh-TW": {
         "core.signup.privacy": "建立帳號即表示你已閱讀隱私說明",
+        "core.signin.keep": "保持登入",
         "core.acct.google_section": "Google",
         "core.bind.title": "新增備用登入方式",
         "core.bind.why": "這個帳號是透過 X 或 Google 建立的。綁定使用者名稱和密碼後，即使日後失去那個第三方帳號，紀錄也仍然拿得回來。",
@@ -2442,6 +2444,7 @@ const FALLBACK_I18N = {
     },
     "yue": {
         "core.signup.privacy": "開帳號即表示你已經睇過私隱說明",
+        "core.signin.keep": "保持登入",
         "core.acct.google_section": "Google",
         "core.bind.title": "加返個備用登入方法",
         "core.bind.why": "呢個帳戶係用 X 或者 Google 開嘅。綁咗帳戶名同密碼，就算第日冇咗嗰個第三方帳號，紀錄都仲拎得返。",
@@ -2451,6 +2454,7 @@ const FALLBACK_I18N = {
     },
     "en": {
         "core.signup.privacy": "By creating an account you have read the privacy notice",
+        "core.signin.keep": "Keep me signed in",
         "core.acct.google_section": "Google",
         "core.bind.title": "Add a fallback sign-in",
         "core.bind.why": "This account was created through X or Google. A name and password are what keep your records reachable if you ever lose that provider account.",
@@ -2460,6 +2464,7 @@ const FALLBACK_I18N = {
     },
     "ja": {
         "core.signup.privacy": "アカウントを作成すると、プライバシーに関する説明をお読みいただいたものとみなされます",
+        "core.signin.keep": "ログイン状態を保持",
         "core.acct.google_section": "Google",
         "core.bind.title": "予備のログイン方法を追加",
         "core.bind.why": "このアカウントは X または Google で作成されました。名前とパスワードを設定しておけば、その連携アカウントを失っても記録にたどり着けます。",
@@ -2469,6 +2474,7 @@ const FALLBACK_I18N = {
     },
     "ko": {
         "core.signup.privacy": "계정을 만들면 개인정보 안내를 읽은 것으로 간주됩니다",
+        "core.signin.keep": "로그인 상태 유지",
         "core.acct.google_section": "Google",
         "core.bind.title": "대체 로그인 수단 추가",
         "core.bind.why": "이 계정은 X 또는 Google로 만들어졌습니다. 이름과 비밀번호를 설정해 두면 그 연동 계정을 잃어도 기록을 다시 열 수 있습니다.",
@@ -2478,6 +2484,7 @@ const FALLBACK_I18N = {
     },
     "tr": {
         "core.signup.privacy": "Hesap oluşturarak gizlilik bildirimini okumuş sayılırsınız",
+        "core.signin.keep": "Oturumumu açık tut",
         "core.acct.google_section": "Google",
         "core.bind.title": "Yedek giriş yöntemi ekle",
         "core.bind.why": "Bu hesap X veya Google ile oluşturuldu. Bir kullanıcı adı ve parola, o sağlayıcı hesabını kaybetseniz bile kayıtlarınıza ulaşabilmenizi sağlar.",

@@ -68,6 +68,11 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
     const [turnstileToken, setTurnstileToken] = useState('');
     const [turnstileReset, setTurnstileReset] = useState(0);
 
+    // "Keep me signed in": asks the server for a session with no expiry, so only the
+    // device list or a password change ends it. Off by default, because a shared
+    // computer should not stay signed in because someone did not notice a checkbox.
+    const [keepSignedIn, setKeepSignedIn] = useState(false);
+
     /**
      * Whether the challenge is satisfied, or whether there is none to satisfy.
      *
@@ -131,9 +136,9 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
         setBusy(true);
         try {
             if (isLogin) {
-                await session.signIn(username, password);
+                await session.signIn(username, password, { persistent: keepSignedIn });
             } else {
-                await session.register(username, password, { turnstileToken });
+                await session.register(username, password, { turnstileToken, persistent: keepSignedIn });
             }
             finish();
         } catch (err) {
@@ -240,6 +245,19 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                             )}
                         </div>
                     </div>
+
+                    {/* Offered on both credential paths, because both open a session and
+                        both can open a long-term one. Off by default: a shared machine
+                        should not stay signed in because nobody noticed a checkbox. */}
+                    <label className="flex items-center gap-2 text-sm text-[var(--color-m3-on-surface-variant)] cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-[var(--color-m3-primary)]"
+                            checked={keepSignedIn}
+                            onChange={(e) => setKeepSignedIn(e.target.checked)}
+                        />
+                        {t('core.signin.keep')}
+                    </label>
 
                     {error && (
                         <p className="text-xs flex items-start gap-1.5 text-[#B3261E]" role="alert">

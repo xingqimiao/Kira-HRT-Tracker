@@ -48,11 +48,15 @@ export interface CoreSession {
    * who is asking, the other that it will open their records.
    */
   isDataUnlocked: boolean;
-  signIn: (username: string, password: string) => Promise<void>;
+  signIn: (
+    username: string,
+    password: string,
+    opts?: { persistent?: boolean },
+  ) => Promise<void>;
   register: (
     username: string,
     password: string,
-    opts?: { turnstileToken?: string },
+    opts?: { turnstileToken?: string; persistent?: boolean },
   ) => Promise<void>;
   adoptSession: (token: string, userId: string, username: string) => void;
   signOut: () => Promise<void>;
@@ -154,8 +158,12 @@ function useCoreSessionState() {
    * The password being accepted is the whole step: there is no second factor.
    */
   const signIn = useCallback(
-    async (username: string, password: string): Promise<void> => {
-      const session = await coreAuth.login(username, password);
+    async (
+      username: string,
+      password: string,
+      opts: { persistent?: boolean } = {},
+    ): Promise<void> => {
+      const session = await coreAuth.login(username, password, opts);
       persist(session.token, { userId: session.userId, username: session.username });
     },
     [persist],
@@ -166,7 +174,7 @@ function useCoreSessionState() {
     async (
       username: string,
       password: string,
-      opts: { turnstileToken?: string } = {},
+      opts: { turnstileToken?: string; persistent?: boolean } = {},
     ): Promise<void> => {
       const session = await coreAuth.register(username, password, opts);
       persist(session.token, { userId: session.userId, username: session.username });
