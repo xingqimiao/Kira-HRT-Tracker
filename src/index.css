@@ -462,38 +462,57 @@
     to { opacity: 0; }
 }
 
-/* — Dialog: scale + fade. The scale starts low enough to read as "appearing"
-     rather than "growing", and never overshoots — an overshoot on a surface the
-     user is about to read from is distracting, not playful. — */
+/* — Dialog: a drop from the top edge, at every width.
+     A surface the user is about to read from arrives the way a sheet of paper
+     does — down, and settling — rather than sliding up from a bottom edge it is
+     not anchored to, or growing out of nothing. The curve is the strengthened
+     ease-out: fast while the eye is still on the trigger, slow as it lands, no
+     overshoot. Both halves matter: entering and leaving travel the same axis, so
+     a dismissed dialog leaves the way it came. — */
 @keyframes m3-dialog-enter {
-    from { opacity: 0; transform: scale(0.90); }
+    from { opacity: 0; transform: translateY(-14px) scale(0.98); }
     to { opacity: 1; transform: none; }
 }
 @keyframes m3-dialog-exit {
     from { opacity: 1; transform: none; }
-    to { opacity: 0; transform: scale(0.94); }
+    to { opacity: 0; transform: translateY(-10px) scale(0.98); }
 }
 
-/* — Bottom sheet: slides from the edge it is anchored to. — */
+/* The compact "sheet" and the desktop "dialog" are one motion now: the width
+   used to change the animation as well as the surface, so the same control
+   arrived differently on a phone and on a desktop. */
 @keyframes m3-sheet-enter {
-    from { transform: translateY(100%); }
-    to { transform: none; }
+    from { opacity: 0; transform: translateY(-14px) scale(0.98); }
+    to { opacity: 1; transform: none; }
 }
 @keyframes m3-sheet-exit {
-    from { transform: none; }
-    to { transform: translateY(100%); }
+    from { opacity: 1; transform: none; }
+    to { opacity: 0; transform: translateY(-10px) scale(0.98); }
 }
 
-/* — Menu / dropdown: grows from the anchor point (`transform-origin` is set per
-     placement below). Scale-only, no fade, because a translucent menu over a
-     changing background reads as a glitch at this size. — */
+/* — Menu / dropdown: drops from the anchor point (`transform-origin` is set per
+     placement below). A uniform scale reads as the whole list inflating; a small
+     downward offset with a tiny scale reads as the list unfolding from the
+     control that opened it, which is what it does. — */
 @keyframes m3-menu-enter {
-    from { opacity: 0; transform: scale(0.85); }
+    from { opacity: 0; transform: translateY(-6px) scale(0.98); }
     to { opacity: 1; transform: none; }
 }
 @keyframes m3-menu-exit {
     from { opacity: 1; transform: none; }
-    to { opacity: 0; transform: scale(0.9); }
+    to { opacity: 0; transform: translateY(-4px) scale(0.98); }
+}
+
+/* — The secondary menu on a settings screen. The pane under the category list
+     changes in place without moving anything else, so it drops in from the top
+     on the same curve the dialogs use. 180ms: this fires on every category tap,
+     which is the "tens a day" tier, so it has to be over before it is noticed. — */
+@keyframes m3-panel-enter {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: none; }
+}
+.m3-panel-in {
+    animation: m3-panel-enter var(--duration-base) var(--ease-out) both;
 }
 
 /* — Shared axis: forward and back navigation. Direction encodes hierarchy, so
@@ -943,24 +962,13 @@ body {
     width: 100%;
     max-width: 24rem;
     padding-bottom: env(safe-area-inset-bottom, 0px);
-    /* Compact: the surface is anchored to the bottom edge, so it arrives by sliding
-       up from it. */
-    animation: m3-sheet-enter var(--md-sys-motion-transition-enter) both;
-    will-change: transform;
+    /* One entrance at every width — a drop from the top, not a slide up from a
+       bottom edge the surface is not anchored to. */
+    animation: m3-dialog-enter var(--md-sys-motion-transition-enter) both;
+    will-change: transform, opacity;
 }
 .modal-shell[data-state="closed"] {
-    animation: m3-sheet-exit var(--md-sys-motion-transition-exit) both;
-}
-@media (min-width: 768px) {
-    .modal-shell {
-        /* Medium and up: the surface is centred and detached from any edge, so
-           sliding would imply an anchor it does not have. It scales in place. */
-        animation: m3-dialog-enter var(--md-sys-motion-transition-enter) both;
-        will-change: transform, opacity;
-    }
-    .modal-shell[data-state="closed"] {
-        animation: m3-dialog-exit var(--md-sys-motion-transition-exit) both;
-    }
+    animation: m3-dialog-exit var(--md-sys-motion-transition-exit) both;
 }
 
 /* A dialog is the one surface that genuinely floats over content it does not
@@ -974,7 +982,13 @@ body {
     padding: 1.5rem;
     max-height: 88vh;
     overflow-y: auto;
+    /* Long content still scrolls, but the bar itself is not part of the surface:
+       a chrome-coloured strip down the edge of a dialog the app drew on purpose
+       reads as a browser artefact, and on a phone it eats the width the content
+       needs. */
+    scrollbar-width: none;
 }
+.modal-card::-webkit-scrollbar { display: none; }
 .dark .modal-card {
     background-color: var(--color-m3-dark-surface-container-low);
     border-color: var(--color-m3-line);
@@ -1150,20 +1164,11 @@ body {
     width: 100%;
     max-width: 36rem;
     padding-bottom: env(safe-area-inset-bottom, 0px);
-    animation: m3-sheet-enter var(--md-sys-motion-transition-enter) both;
-    will-change: transform;
+    animation: m3-dialog-enter var(--md-sys-motion-transition-enter) both;
+    will-change: transform, opacity;
 }
 .modal-shell-wide[data-state="closed"] {
-    animation: m3-sheet-exit var(--md-sys-motion-transition-exit) both;
-}
-@media (min-width: 768px) {
-    .modal-shell-wide {
-        animation: m3-dialog-enter var(--md-sys-motion-transition-enter) both;
-        will-change: transform, opacity;
-    }
-    .modal-shell-wide[data-state="closed"] {
-        animation: m3-dialog-exit var(--md-sys-motion-transition-exit) both;
-    }
+    animation: m3-dialog-exit var(--md-sys-motion-transition-exit) both;
 }
 
 .callout {
@@ -2161,8 +2166,9 @@ select,
     border-bottom: 1px solid var(--md-sys-color-on-surface-variant);
 }
 .m3-field-filled:focus {
+    /* One pixel, not two: the underline itself is the whole indicator. The inset
+       shadow used to sit under the border and double it. */
     border-bottom-color: var(--md-sys-color-primary);
-    box-shadow: inset 0 -1px 0 0 var(--md-sys-color-primary);
     outline: none;
 }
 
@@ -2188,9 +2194,13 @@ select,
 }
 .m3-field-support-error { color: var(--md-sys-color-error); }
 
-/* The legacy field was relying on the global ring to get its focus back; make
-   that explicit rather than order-dependent, and give it the error state too. */
-.input-base:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+/* A focused text field shows exactly one indicator: its own border moving to the
+   primary role. It used to also draw the global 2px ring at a 2px offset, so a
+   click produced a 1px border *and* a 2px frame two pixels outside it — read as
+   one thick coloured band, which is what it was. The border change is the
+   affordance, and it clears the 3:1 floor on its own. */
+.input-base:focus-visible { outline: none; }
+.m3-field:focus-visible { outline: none; }
 
 /* ── Cards ───────────────────────────────────────────────────────────────────
    Three variants from the spec. .m3-card stays what it is — the app's plain
@@ -2345,6 +2355,7 @@ select,
     .modal-shell-wide,
     .m3-menu,
     .dropdown-in,
+    .m3-panel-in,
     .view-enter-forward,
     .view-enter-backward {
         animation: none;

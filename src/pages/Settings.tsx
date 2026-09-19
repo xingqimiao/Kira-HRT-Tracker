@@ -286,7 +286,9 @@ const Settings: React.FC<SettingsProps> = ({
                 <h2 className={`text-m3-title-xl ${on} mb-6`}>
                     {cats.find(c => c.id === cat)?.label}
                 </h2>
-                {catContent(cat)}
+                {/* Keyed on the category so switching remounts the pane and the
+                    entrance plays. The category list itself does not move. */}
+                <div className="m3-panel-in" key={cat}>{catContent(cat)}</div>
             </div>
 
             {/* ── Mobile ──────────────────────────────────────────────── */}
@@ -328,7 +330,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 </h1>
                             </button>
                         </div>
-                        {catContent(mobileView as SettingsCat)}
+                        <div className="m3-panel-in" key={mobileView}>{catContent(mobileView as SettingsCat)}</div>
                     </>
                 )}
             </div>
