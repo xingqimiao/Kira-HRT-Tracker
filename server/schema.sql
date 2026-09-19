@@ -2,11 +2,17 @@
 --
 -- Two deliberate choices worth knowing before reading the tables:
 --
--- 1. Health records are stored as ciphertext. A `medication_events` row cannot be
---    read without the user's DEK, which exists server-side only while that user
---    has an active unlock (see src/session.ts). That rules out SQL-level reporting
---    or analytics over doses — a cost accepted on purpose, because the product's
---    privacy claim is the thing being protected.
+-- 1. Health records are stored as ciphertext. A `records` row holds one sealed
+--    AES-256-GCM payload; only `user_id`, `taken_at` and `category` are readable, so
+--    the timeline can be ordered and paged without decrypting every row. That rules
+--    out SQL-level reporting or analytics over doses — a cost accepted on purpose.
+--
+--    Do not read that as "the operator cannot see the data", which is what an earlier
+--    version of this comment implied. The server holds `ENCRYPTION_KEY` and decrypts
+--    on read, and a standard-mode account's DEK is *also* wrapped under
+--    `SERVER_DEK_KEY`, so it can be opened with no live unlock at all. The honest
+--    bound is narrower: a stolen database dump is unreadable on its own. See
+--    `payloadCrypto.ts` and `docs/auth-design.md` §5.
 --
 -- 2. Loose JSON is a `jsonb` column, not shredded into columns. The domain model
 --    in logic.ts (`DoseEvent.extras` varies per route and ester) is already
@@ -312,59 +318,19 @@ ALTER TABLE oauth_states ALTER COLUMN code_verifier DROP NOT NULL;
 -- ---------------------------------------------------------------------------
 -- Health records — encrypted at rest
 -- ---------------------------------------------------------------------------
--- Record ids are `text`, not `uuid`, because the domain treats them as opaque
--- client-supplied strings: the app generates uuid v4 in practice but accepts any
--- string id on import (`typeof item.id === 'string' ? item.id : uuidv4()`), and
--- hand-written exports in the wild carry ids like `dose-2024-01-01`. Declaring
--- them `uuid` adds a constraint the model never had and rejects real history on
--- import. The length bound is the actual thing worth enforcing.
+-- Two tables used to live here: `medication_events` and `lab_results`, each a
+-- per-event row with its own AES-GCM envelope in a `jsonb` column, a `version` for
+-- optimistic locking and a `deleted_at` for soft deletion. They were replaced by the
+-- single `records` table further down, which stores one sealed payload per record and
+-- is what the app, the export and MCP all read and write now.
 --
--- The primary key is (user_id, id), NOT id alone. Ids are client-generated, so
--- nothing guarantees they are unique across accounts — and importing the same
--- export into two accounts (a shared routine, a re-test) is legitimate. A global
--- id key made the second import fail with a duplicate-key error, which is a
--- constraint the domain never asked for. Record identity is scoped to its owner.
---
--- `payload` is an AES-GCM envelope: {"cloud":1,"iv":...,"data":...} holding the
--- plaintext record. `version` implements optimistic locking, so two clients
--- editing the same record cannot silently clobber each other — the loser gets a
--- conflict and re-reads, rather than losing a dose entry.
---
--- `occurred_at` is duplicated out of the ciphertext in the clear, on purpose:
--- the server needs to order and range-filter a timeline, and a timestamp alone
--- leaks far less than the record it belongs to. `user_id` is likewise cleartext
--- by necessity (see ARCHITECTURE.md).
-CREATE TABLE IF NOT EXISTS medication_events (
-    id              text NOT NULL CHECK (length(id) BETWEEN 1 AND 200),
-    user_id         uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    PRIMARY KEY (user_id, id),
-    occurred_at     timestamptz NOT NULL,
-    payload         jsonb NOT NULL,
-    version         integer NOT NULL DEFAULT 1,
-    deleted_at      timestamptz,
-    created_at      timestamptz NOT NULL DEFAULT now(),
-    updated_at      timestamptz NOT NULL DEFAULT now()
-);
--- Timeline reads filter by user and order by time; this serves them from the
--- index with no sort step.
-CREATE INDEX IF NOT EXISTS idx_medication_events_user_time
-    ON medication_events(user_id, occurred_at DESC)
-    WHERE deleted_at IS NULL;
-
-CREATE TABLE IF NOT EXISTS lab_results (
-    id              text NOT NULL CHECK (length(id) BETWEEN 1 AND 200),
-    user_id         uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    PRIMARY KEY (user_id, id),
-    occurred_at     timestamptz NOT NULL,
-    payload         jsonb NOT NULL,
-    version         integer NOT NULL DEFAULT 1,
-    deleted_at      timestamptz,
-    created_at      timestamptz NOT NULL DEFAULT now(),
-    updated_at      timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_lab_results_user_time
-    ON lab_results(user_id, occurred_at DESC)
-    WHERE deleted_at IS NULL;
+-- They are dropped rather than left in place. Nothing has written to them since the
+-- store moved, so leaving them would only preserve a second, contradictory description
+-- of where a dose lives — which is the sort of thing a later change starts reading
+-- again by mistake. `DROP TABLE IF EXISTS` keeps this file re-runnable, and the
+-- `CASCADE` is not needed: their only foreign key was to `users`, which still exists.
+DROP TABLE IF EXISTS medication_events;
+DROP TABLE IF EXISTS lab_results;
 
 -- Per-user model settings: body weight, active HRT mode, PK parameter overrides,
 -- calibration method. One row per user — the settings a simulation cannot run
