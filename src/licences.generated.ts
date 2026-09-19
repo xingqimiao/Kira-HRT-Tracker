@@ -28,7 +28,7 @@ export interface RuntimeLicence {
     licence: string;
 }
 
-export const GENERATED_AT = "2026-09-18";
+export const GENERATED_AT = "2026-09-19";
 
 export const UPSTREAM_WORKS: UpstreamWork[] = [
     {
@@ -59,31 +59,7 @@ export const UPSTREAM_WORKS: UpstreamWork[] = [
 
 export const RUNTIME_LICENCES: RuntimeLicence[] = [
     {
-        "name": "@types/bcryptjs",
-        "licence": "MIT"
-    },
-    {
-        "name": "@types/file-saver",
-        "licence": "MIT"
-    },
-    {
         "name": "@types/uuid",
-        "licence": "MIT"
-    },
-    {
-        "name": "bcryptjs",
-        "licence": "BSD-3-Clause"
-    },
-    {
-        "name": "clsx",
-        "licence": "MIT"
-    },
-    {
-        "name": "file-saver",
-        "licence": "MIT"
-    },
-    {
-        "name": "jose",
         "licence": "MIT"
     },
     {
@@ -95,14 +71,6 @@ export const RUNTIME_LICENCES: RuntimeLicence[] = [
         "licence": "MIT"
     },
     {
-        "name": "jszip",
-        "licence": "(MIT OR GPL-3.0-or-later)"
-    },
-    {
-        "name": "prop-types",
-        "licence": "MIT"
-    },
-    {
         "name": "react",
         "licence": "MIT"
     },
@@ -111,19 +79,11 @@ export const RUNTIME_LICENCES: RuntimeLicence[] = [
         "licence": "MIT"
     },
     {
-        "name": "react-easy-crop",
-        "licence": "MIT"
-    },
-    {
         "name": "reicon",
         "licence": "MIT"
     },
     {
         "name": "reicon-mcp",
-        "licence": "MIT"
-    },
-    {
-        "name": "tailwind-merge",
         "licence": "MIT"
     },
     {
