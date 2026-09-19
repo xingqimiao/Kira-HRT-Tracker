@@ -18,7 +18,7 @@ import assert from 'node:assert/strict';
 import { test, before, after } from 'node:test';
 import type { Server } from 'node:http';
 
-import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
+import { bootPostgres, useDatabase, startApiServer, teardown, call, TEST_ENCRYPTION_KEY, type PostgresHandle } from './pg.ts';
 import { setConfigForTesting } from '../src/config.ts';
 import { resetRateLimits } from '../src/http.ts';
 import { registerAccount } from './helpers.ts';
@@ -37,7 +37,9 @@ before(async () => {
     port: 0,
     databaseUrl: '',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
-    encryptionKey: null,
+    // This suite writes records directly through the store, which seals every payload
+    // and refuses rather than writing plaintext.
+    encryptionKey: TEST_ENCRYPTION_KEY,
     google: null,
     turnstile: null,
     webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
@@ -97,31 +99,35 @@ test('it reports the exact counts the database holds', async () => {
   );
 });
 
-test('record counts match the rows, and exclude deleted ones', async () => {
+test('record counts match the rows, and a deletion drops one', async () => {
   const account = await registerAccount(base, { username: 'has-records' });
 
-  // A live record, inserted directly: the point is the endpoint's count, not the
-  // write path, which has its own tests.
-  await getPool().query(
-    `INSERT INTO medication_events (id, user_id, occurred_at, payload)
-     VALUES ('stats-live-1', $1, now(), '{"route":"injection"}'::jsonb)`,
-    [account.userId],
-  );
+  // Written through the store rather than over HTTP: the point is the endpoint's
+  // count, not the write path, which has its own tests.
+  const { RecordService } = await import('../src/records.ts');
+  const ctx = { userId: account.userId };
+  const dose = await RecordService.put(ctx, {
+    id: `dose:transfem:stats-${Date.now()}`,
+    takenAt: Date.now(),
+    category: 'dose',
+    data: { id: 'stats-dose', timeH: Date.now() / 3_600_000, doseMG: 5, ester: 'EV', route: 'injection' },
+  });
+  assert.ok(dose.ok, 'the probe dose was written');
 
   const withLive = await call(base, '/stats');
   const { rows } = await getPool().query<{ n: string }>(
-    `SELECT count(*) AS n FROM medication_events WHERE deleted_at IS NULL`,
+    `SELECT count(*) AS n FROM records WHERE category = 'dose'`,
   );
   assert.equal(withLive.body.records.doses, Number(rows[0].n), 'matches the live row count');
 
-  // A soft-deleted record must not be counted: the user has removed it from their
+  // A record the user removed must not be counted: they have removed it from their
   // own view, and reporting it would claim the service holds data it does not.
-  await getPool().query(`UPDATE medication_events SET deleted_at = now() WHERE id = 'stats-live-1'`);
+  await RecordService.remove(ctx, dose.ok ? dose.id : '');
   const afterDelete = await call(base, '/stats');
   assert.equal(
     afterDelete.body.records.doses,
     withLive.body.records.doses - 1,
-    'soft-deleting a row drops the count',
+    'deleting a record drops the count',
   );
 });
 

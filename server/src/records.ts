@@ -32,6 +32,7 @@ import { randomUUID } from 'node:crypto';
 import { getPool } from './db.ts';
 import { getConfig } from './config.ts';
 import { decryptPayload, encryptPayload } from './payloadCrypto.ts';
+import { settings } from './settings.ts';
 
 /** The kinds of record the store carries. Kept narrow so a typo cannot create one. */
 export const RECORD_CATEGORIES = ['dose', 'lab', 'note', 'setting'] as const;
@@ -223,6 +224,69 @@ export const RecordService = {
         return (rowCount ?? 0) > 0;
     },
 
+    /**
+     * One record by its exact id, or null.
+     *
+     * Exact-id rather than a filter, because the id is the client's own address for
+     * the row and callers that hold one are resolving it directly. A row belonging to
+     * another account reads as absent rather than as a refusal — the same answer an id
+     * that never existed gets, so a prober learns nothing from the difference.
+     */
+    async get(ctx: { userId: string }, id: string): Promise<StoredRecord | null> {
+        const { rows } = await getPool().query<{
+            id: string; taken_at: Date; category: string; payload_encrypted: string; updated_at: Date;
+        }>(
+            `SELECT id, taken_at, category, payload_encrypted, updated_at
+               FROM records WHERE user_id = $1 AND id = $2`,
+            [ctx.userId, id],
+        );
+        if (rows.length === 0) return null;
+        const row = rows[0];
+        try {
+            return {
+                id: row.id,
+                takenAt: row.taken_at.getTime(),
+                category: isCategory(row.category) ? row.category : 'dose',
+                data: decryptPayload(row.payload_encrypted, requireKey()),
+                updatedAt: row.updated_at.getTime(),
+            };
+        } catch {
+            // Indistinguishable from "no such record" on purpose: a caller cannot act
+            // on the difference, and one unreadable row must not become an error page.
+            return null;
+        }
+    },
+
+    /**
+     * Every record in one category, decrypted.
+     *
+     * Read a page at a time, walking backwards by `taken_at`, because the store caps a
+     * single response and a caller that silently received one page would believe a long
+     * history was short. The loop is bounded so a cursor that cannot advance ends the
+     * walk instead of repeating a page forever.
+     */
+    async all(
+        ctx: { userId: string },
+        category?: string,
+    ): Promise<{ records: StoredRecord[]; unreadable: number }> {
+        const pageSize = 1000;
+        const records: StoredRecord[] = [];
+        let unreadable = 0;
+        let before: number | undefined;
+
+        for (let page = 0; page < 100; page++) {
+            const listed = await RecordService.list(ctx, { limit: pageSize, category, before });
+            records.push(...listed.records);
+            unreadable += listed.unreadable;
+            if (listed.records.length < pageSize) break;
+            const oldest = listed.records[listed.records.length - 1].takenAt;
+            if (before !== undefined && oldest >= before) break;
+            before = oldest;
+        }
+
+        return { records, unreadable };
+    },
+
     /** How many records the account holds, without decrypting anything. */
     async count(ctx: { userId: string }): Promise<number> {
         const { rows } = await getPool().query<{ n: string }>(
@@ -231,4 +295,204 @@ export const RecordService = {
         );
         return Number(rows[0].n);
     },
+
+    /** The same count split by `category`, for the endpoints that report a breakdown. */
+    async countByCategory(ctx: { userId: string }): Promise<Record<string, number>> {
+        const { rows } = await getPool().query<{ category: string; n: string }>(
+            `SELECT category, count(*) AS n FROM records WHERE user_id = $1 GROUP BY category`,
+            [ctx.userId],
+        );
+        const counts: Record<string, number> = {};
+        for (const row of rows) counts[row.category] = Number(row.n);
+        return counts;
+    },
 };
+
+// ---------------------------------------------------------------------------
+// Reassembly — the account's records in the app's own export shape
+// ---------------------------------------------------------------------------
+
+type Mode = 'transfem' | 'transmasc';
+const MODES: readonly Mode[] = ['transfem', 'transmasc'];
+
+/**
+ * Rebuild the app's own payload from the account's records.
+ *
+ * This is what the browser merges against and what `hrt_sync_state` returns, so it
+ * has to be the shape the app already knows how to read: `version`, the two mode
+ * blocks with their collections and tombstone maps, and the scalars that travel
+ * beside them.
+ *
+ * A record whose id this version cannot parse is dropped rather than guessed at —
+ * it belongs to a newer client, and inventing a home for it would misfile someone's
+ * data — and the count is returned so the caller can notice.
+ */
+export async function buildExportPayload(ctx: { userId: string }): Promise<{
+    version: number;
+    weight?: number;
+    modes: Record<Mode, {
+        events: unknown[];
+        labResults: unknown[];
+        doseTemplates: unknown[];
+        quickDoses: unknown[];
+        deletions: { events: Record<string, number>; labResults: Record<string, number>; doseTemplates: Record<string, number> };
+    }>;
+    appState: Record<string, unknown> | null;
+    /** Records this version could not file. Non-zero only against a newer client. */
+    unknown: number;
+}> {
+    const [all, userSettings] = await Promise.all([
+        RecordService.all(ctx),
+        settings.get(ctx.userId),
+    ]);
+
+    const modeFor = () => ({
+        events: [] as unknown[],
+        labResults: [] as unknown[],
+        doseTemplates: [] as unknown[],
+        quickDoses: [] as unknown[],
+        deletions: {
+            events: {} as Record<string, number>,
+            labResults: {} as Record<string, number>,
+            doseTemplates: {} as Record<string, number>,
+        },
+    });
+
+    const modes: Record<Mode, ReturnType<typeof modeFor>> = {
+        transfem: modeFor(),
+        transmasc: modeFor(),
+    };
+
+    let weight: number | undefined;
+    let unknown = 0;
+
+    for (const record of all.records) {
+        const parts = record.id.split(':');
+        const head = parts[0];
+        const mode = parts[1] as Mode;
+
+        if (MODES.includes(mode)) {
+            const block = modes[mode];
+            // The record's own `category` is authoritative for which collection it
+            // belongs to; the id prefix only says which of the app's two sides it is.
+            if (head === 'dose') { block.events.push(record.data); continue; }
+            if (head === 'lab') { block.labResults.push(record.data); continue; }
+            if (head === 'tpl') { block.doseTemplates.push(record.data); continue; }
+            if (head === 'quick') { block.quickDoses.push(record.data); continue; }
+            if (head === 'del') {
+                const kind = parts[2] as keyof ReturnType<typeof modeFor>['deletions'];
+                if (kind && kind in block.deletions) {
+                    block.deletions[kind] = { ...(record.data as Record<string, number>) };
+                    continue;
+                }
+            }
+        }
+
+        if (head === 'scalar') {
+            const body = record.data as { value?: unknown; stamp?: number } | null;
+            if (parts[1] === 'weight') {
+                if (typeof body?.value === 'number') weight = body.value;
+                continue;
+            }
+            // `pkParams` and `appSettings` scalars are carried by the record store for
+            // completeness; the settings table is where this deployment reads them from,
+            // and `appState` below is the blob the app actually consumes.
+            if (parts[1] === 'pkParams' || parts[1] === 'appSettings') continue;
+        }
+
+        unknown += 1;
+    }
+
+    // Weight and the app-only collections live in `user_settings`, which is where the
+    // settings routes write them; the record store does not carry them on this
+    // deployment. Reading them here keeps one export shape for both sources.
+    if (userSettings?.bodyWeightKg != null) weight = userSettings.bodyWeightKg;
+
+    const appState = (userSettings?.appState ?? null) as
+        | { modes?: Record<string, { doseTemplates?: unknown[]; quickDoses?: unknown[] }> }
+        | null;
+    if (appState?.modes) {
+        for (const mode of MODES) {
+            const block = appState.modes[mode];
+            if (!block) continue;
+            if (Array.isArray(block.doseTemplates)) modes[mode].doseTemplates = block.doseTemplates;
+            if (Array.isArray(block.quickDoses)) modes[mode].quickDoses = block.quickDoses;
+        }
+    }
+
+    return {
+        version: 2,
+        ...(weight != null ? { weight } : {}),
+        modes,
+        appState,
+        unknown,
+    };
+}
+
+/** Counts by kind for an account, for verifying a write landed. */
+export async function accountRecordCounts(userId: string): Promise<{ doses: number; labs: number }> {
+    const { rows } = await getPool().query<{ doses: string; labs: string }>(
+        `SELECT
+           (SELECT count(*) FROM records WHERE user_id = $1 AND category = 'dose') AS doses,
+           (SELECT count(*) FROM records WHERE user_id = $1 AND category = 'lab')  AS labs`,
+        [userId],
+    );
+    return { doses: Number(rows[0].doses), labs: Number(rows[0].labs) };
+}
+
+/**
+ * The public aggregate the status page publishes.
+ *
+ * Counts only, and deliberately so: every number is a `COUNT(*)` over a table that
+ * holds no readable value (record bodies are ciphertext the server cannot open),
+ * plus the deletion log, which by construction names nobody — see its schema
+ * comment. The one thing worth stating plainly is what is *absent*: no ids, no
+ * usernames, no timestamps tied to an account, nothing joinable, and no per-record
+ * data of any kind. Re-identification needs a row that points at a person, and
+ * there is none here.
+ *
+ * This is the same *class* of aggregate the app's own Transparency Centre used to
+ * publish; that page read the legacy Worker, and this is the Core's equivalent.
+ */
+export async function publicStats(now = new Date()): Promise<{
+    ok: true;
+    users: { total: number; new_24h: number; new_7d: number };
+    records: { doses: number; labs: number };
+    deletions: { self: number; admin: number };
+    generated_at: string;
+}> {
+    const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const { rows } = await getPool().query<{
+        total_users: string; new_24h: string; new_7d: string;
+        doses: string; labs: string; self_deletions: string; admin_deletions: string;
+    }>(
+        // `users` needs no soft-delete filter — unlinking and deletion both remove the
+        // row outright, so every row in the table is a live account. Deletion from the
+        // record store is physical for the same reason, so no `deleted_at` filter here
+        // either: a record the user removed is not reported as data the service holds.
+        `SELECT
+           (SELECT count(*) FROM users)                                    AS total_users,
+           (SELECT count(*) FROM users WHERE created_at >= $1)             AS new_24h,
+           (SELECT count(*) FROM users WHERE created_at >= $2)             AS new_7d,
+           (SELECT count(*) FROM records WHERE category = 'dose')          AS doses,
+           (SELECT count(*) FROM records WHERE category = 'lab')           AS labs,
+           (SELECT count(*) FROM deletion_log WHERE reason = 'self')       AS self_deletions,
+           (SELECT count(*) FROM deletion_log WHERE reason = 'admin')      AS admin_deletions`,
+        [dayAgo, weekAgo],
+    );
+
+    const row = rows[0];
+    return {
+        ok: true,
+        users: {
+            total: Number(row.total_users),
+            new_24h: Number(row.new_24h),
+            new_7d: Number(row.new_7d),
+        },
+        records: { doses: Number(row.doses), labs: Number(row.labs) },
+        deletions: { self: Number(row.self_deletions), admin: Number(row.admin_deletions) },
+        generated_at: now.toISOString(),
+    };
+}

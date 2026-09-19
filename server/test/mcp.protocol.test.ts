@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { test, before, after } from 'node:test';
 import type { Server } from 'node:http';
 
-import { bootPostgres, useDatabase, startApiServer, teardown, type PostgresHandle } from './pg.ts';
+import { bootPostgres, useDatabase, startApiServer, teardown, TEST_ENCRYPTION_KEY, type PostgresHandle } from './pg.ts';
 import { registerAccount } from './helpers.ts';
 import { setConfigForTesting } from '../src/config.ts';
 
@@ -32,7 +32,10 @@ before(async () => {
     port: 0,
     databaseUrl: '',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
-    encryptionKey: null,
+    // The add tools write records, and the store seals every payload: without a key
+    // it refuses rather than writing plaintext, which is the behaviour under test in
+    // `check-records.mjs` rather than something to work around here.
+    encryptionKey: TEST_ENCRYPTION_KEY,
     google: null,
     turnstile: null,
     webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
@@ -98,6 +101,19 @@ test('an MCP client can list and call tools', async () => {
     arguments: { route: 'injection', ester: 'EV', dose_mg: 5, at: new Date().toISOString() },
   });
   assert.ok(!added.isError, `add_medication failed: ${JSON.stringify(added.content)}`);
+  const addedBody = JSON.parse((added.content as any)[0].text);
+  assert.equal(addedBody.record_id, `dose:transfem:${addedBody.id}`, 'the record is addressed as the app addresses it');
+
+  // The same row must be readable through the browser's own route, in the app's own
+  // payload shape: MCP and the web app share one store, so a record an agent writes
+  // is a record the user sees, not a parallel copy of one.
+  const listed = await fetch(`${base}/api/records`, { headers: { Authorization: `Bearer ${token}` } });
+  const { records } = (await listed.json()) as { records: { id: string; data: Record<string, unknown> }[] };
+  assert.equal(records.length, 1, 'the agent-written dose is in the record store');
+  assert.equal(records[0].id, addedBody.record_id);
+  assert.equal(records[0].data.route, 'injection');
+  assert.equal(records[0].data.ester, 'EV');
+  assert.equal(records[0].data.doseMG, 5);
 
   const timeline = await client.callTool({ name: 'hrt_get_timeline', arguments: { limit: 10 } });
   assert.ok(!timeline.isError, 'timeline should succeed');

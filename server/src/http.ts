@@ -24,10 +24,9 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 
 import { getConfig } from './config.ts';
 import { buildServer, makeBearerResolver } from './mcp.ts';
-import { MedicationService, LabService, TimelineService, PKSimulationService } from './core.ts';
 import { AccountService } from './accounts.ts';
 import { isGoogleConfigured } from './oauth.ts';
-import { RecordService } from './records.ts';
+import { RecordService, buildExportPayload, publicStats } from './records.ts';
 import { getPool } from './db.ts';
 import { MAX_PASSKEYS_PER_ACCOUNT } from './webauthn.ts';
 import { ShareService } from './shares.ts';
@@ -43,7 +42,6 @@ import {
   revokeOtherSessions,
 } from './session.ts';
 import { verifyTurnstile } from './turnstile.ts';
-import { importPayload, buildExportPayload, publicStats } from './import.ts';
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
@@ -692,18 +690,16 @@ export function createRequestHandler() {
         // What the account currently holds, so a client can show it before deleting
         // and so a user can reconcile counts against their own export. Deliberately
         // counts rather than contents: the contents are already available through the
-        // export and sync endpoints, and this endpoint's job is to answer "is this
+        // export and record endpoints, and this endpoint's job is to answer "is this
         // the account I think it is".
         const ctx = await contextFor(req);
         if (!ctx) return send(res, 401, { error: 'authentication required' });
-        const { getPool } = await import('./db.ts');
+        const counts = await RecordService.countByCategory(ctx);
         const { rows } = await getPool().query<{
-          doses: string; labs: string; x_links: string; created_at: Date;
+          x_links: string; created_at: Date;
           privacy_mode: string; encryption_metadata: unknown; x_avatar_url: string | null;
         }>(
           `SELECT
-             (SELECT count(*) FROM medication_events WHERE user_id = $1 AND deleted_at IS NULL) AS doses,
-             (SELECT count(*) FROM lab_results      WHERE user_id = $1 AND deleted_at IS NULL) AS labs,
              (SELECT count(*) FROM oauth_accounts       WHERE user_id = $1)                      AS x_links,
              (SELECT created_at FROM users WHERE id = $1)                                     AS created_at,
              (SELECT privacy_mode FROM users WHERE id = $1)                                   AS privacy_mode,
@@ -722,8 +718,8 @@ export function createRequestHandler() {
         const wrappers = (row?.encryption_metadata as { wrappers?: Record<string, unknown> } | null)?.wrappers;
         return send(res, 200, {
           created_at: row?.created_at?.toISOString() ?? null,
-          dose_count: Number(row?.doses ?? 0),
-          lab_count: Number(row?.labs ?? 0),
+          dose_count: counts.dose ?? 0,
+          lab_count: counts.lab ?? 0,
           x_links: Number(row?.x_links ?? 0),
           x_login_available: AccountService.xLoginAvailable(),
           x_avatar_url: row?.x_avatar_url ?? null,
@@ -841,42 +837,6 @@ export function createRequestHandler() {
       // The client sends and receives plaintext JSON; sealing and opening happen here.
       // `user_id` and `taken_at` are the only things the database can read.
 
-      // --- Legacy migration -------------------------------------------------
-      //
-      // Accounts that predate the record store have their data in the older tables,
-      // encrypted under a per-user key the server may not hold (an `advanced` account
-      // has no `server` wrapper). The app can still read that payload through
-      // `/api/sync`, so the migration runs from the client: it fetches the legacy
-      // payload, where it is already plaintext, and writes it into the record store
-      // through the normal encrypted path.
-      //
-      // Idempotent, and cheap to ask: an account with no legacy rows reports
-      // `needed: false` and the client stops asking on future logins.
-      if (path === '/api/records/migrate-needed' && req.method === 'GET') {
-        const ctx = await requireBoundCtx();
-        if (!ctx) return;
-        const [legacy, stored] = await Promise.all([
-          getPool().query<{ doses: string; labs: string }>(
-            `SELECT (SELECT count(*) FROM medication_events WHERE user_id = $1)::text AS doses,
-                    (SELECT count(*) FROM lab_results      WHERE user_id = $1)::text AS labs`,
-            [ctx.userId],
-          ),
-          RecordService.count(ctx),
-        ]);
-        // Two columns rather than one concatenated string: `+` does not concatenate in
-        // PostgreSQL, so reaching for it fails at runtime rather than at review — which
-        // is how this was found.
-        const legacyCount = legacy.rows[0]
-          ? Number(legacy.rows[0].doses) + Number(legacy.rows[0].labs)
-          : 0;
-        return send(res, 200, {
-          // Only needed when there is legacy data the record store has not got.
-          needed: legacyCount > 0 && stored === 0,
-          legacy_count: legacyCount,
-          stored_count: stored,
-        });
-      }
-
       if (path === '/api/records' && req.method === 'GET') {
         const ctx = await requireBoundCtx();
         if (!ctx) return;
@@ -936,112 +896,15 @@ export function createRequestHandler() {
         return send(res, 200, { ok: true });
       }
 
-      // --- Sync ------------------------------------------------------------
-      if (path === '/api/sync' && req.method === 'POST') {
-        const ctx = await requireCtx();
+      // --- Export ----------------------------------------------------------
+      //
+      // The account's records in the app's own payload shape. One route, because the
+      // app already knows how to merge that shape and a second reader of records would
+      // be a second implementation of the same rules.
+      if (path === '/api/export' && req.method === 'GET') {
+        const ctx = await requireBoundCtx();
         if (!ctx) return;
-        const body = (await readBody(req, 8_000_000)) as
-          | { payload?: unknown; push?: boolean; updateExisting?: boolean }
-          | undefined;
-        if (body?.push !== false) {
-          const summary = await importPayload(ctx, body?.payload, {
-            updateExisting: body?.updateExisting ?? true,
-            // A sync never revives a deleted record: the app's merge treats a
-            // tombstone as authoritative, so resurrecting would undo every deletion.
-            resurrect: false,
-          });
-          if (summary.eventsRejected.length || summary.labsRejected.length) {
-            // Report rejections alongside the state rather than failing: the valid
-            // records did land, and the app should show what was skipped.
-            const state = await buildExportPayload(ctx);
-            return send(res, 200, { state, summary });
-          }
-        }
-        return send(res, 200, { state: await buildExportPayload(ctx) });
-      }
-
-      // --- Medications -----------------------------------------------------
-      if (path === '/api/medications' && req.method === 'GET') {
-        const ctx = await requireCtx();
-        if (!ctx) return;
-        const limit = Number(url.searchParams.get('limit') ?? 200);
-        const records = await MedicationService.list(ctx, { limit });
-        return send(
-          res,
-          200,
-          records.map((r) => ({
-            id: r.value.id,
-            at: new Date(r.value.timeH * 3_600_000).toISOString(),
-            route: r.value.route,
-            ester: r.value.ester,
-            dose_mg: r.value.doseMG,
-            extras: r.value.extras,
-            version: r.version,
-          })),
-        );
-      }
-      if (path === '/api/medications' && req.method === 'POST') {
-        const ctx = await requireCtx();
-        if (!ctx) return;
-        const result = await MedicationService.add(ctx, await readBody(req));
-        if (!result.ok) return send(res, 400, { error: result.error });
-        return send(res, 201, { id: result.value.value.id, version: result.value.version });
-      }
-      const medMatch = path.match(/^\/api\/medications\/([^/]+)$/);
-      if (medMatch) {
-        const ctx = await requireCtx();
-        if (!ctx) return;
-        const id = decodeURIComponent(medMatch[1]);
-        if (req.method === 'DELETE') {
-          const version = url.searchParams.get('version');
-          const removed = await MedicationService.remove(ctx, id, version ? Number(version) : undefined);
-          return send(res, removed ? 200 : 404, { removed });
-        }
-        if (req.method === 'GET') {
-          const record = await MedicationService.get(ctx, id);
-          if (!record) return send(res, 404, { error: 'not found' });
-          return send(res, 200, { ...record.value, version: record.version });
-        }
-      }
-
-      // --- Labs ------------------------------------------------------------
-      if (path === '/api/labs' && req.method === 'GET') {
-        const ctx = await requireCtx();
-        if (!ctx) return;
-        const limit = Number(url.searchParams.get('limit') ?? 200);
-        const records = await LabService.list(ctx, { limit });
-        return send(res, 200, records.map((r) => ({ ...r.value, version: r.version })));
-      }
-      if (path === '/api/labs' && req.method === 'POST') {
-        const ctx = await requireCtx();
-        if (!ctx) return;
-        const result = await LabService.add(ctx, await readBody(req));
-        if (!result.ok) return send(res, 400, { error: result.error });
-        return send(res, 201, { id: result.value.value.id, version: result.value.version });
-      }
-
-      // --- Timeline --------------------------------------------------------
-      if (path === '/api/timeline' && req.method === 'GET') {
-        const ctx = await requireCtx();
-        if (!ctx) return;
-        const limit = Number(url.searchParams.get('limit') ?? 100);
-        return send(res, 200, await TimelineService.get(ctx, { limit }));
-      }
-
-      // --- Prediction ------------------------------------------------------
-      if (path === '/api/predict' && req.method === 'POST') {
-        const ctx = await requireCtx();
-        if (!ctx) return;
-        const body = (await readBody(req)) as Record<string, unknown> | undefined;
-        const result = await PKSimulationService.predict(ctx, {
-          analyte: body?.analyte as 'e2' | 't' | undefined,
-          fromDays: body?.from_days as number | undefined,
-          toDays: body?.to_days as number | undefined,
-          points: body?.points as number | undefined,
-          withCalibration: body?.with_calibration as boolean | undefined,
-        });
-        if (!result.ok) return send(res, 400, { error: result.error });
-        return send(res, 200, result.value);
+        return send(res, 200, await buildExportPayload(ctx));
       }
 
       // --- Agent tokens ----------------------------------------------------

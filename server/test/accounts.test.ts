@@ -18,7 +18,7 @@ import assert from 'node:assert/strict';
 import { test, before, after } from 'node:test';
 import type { Server } from 'node:http';
 
-import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
+import { bootPostgres, useDatabase, startApiServer, teardown, call, TEST_ENCRYPTION_KEY, type PostgresHandle } from './pg.ts';
 import { setConfigForTesting } from '../src/config.ts';
 import { resetRateLimits } from '../src/http.ts';
 import { closeUserSessions } from '../src/session.ts';
@@ -45,7 +45,9 @@ before(async () => {
     port: 0,
     databaseUrl: '',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
-    encryptionKey: null,
+    // The record store seals every payload; a suite that writes records must carry a
+    // key, because the store refuses rather than writing plaintext.
+    encryptionKey: TEST_ENCRYPTION_KEY,
     turnstile: null,
     webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
@@ -56,8 +58,7 @@ before(async () => {
     rateLimits: { register: 1000, login: 1000, resume: 1000, windowMs: 60_000 },
   });
 
-  pg = await bootPostgres({ dir: './.pgdata-accounts', port: 55440, database: 'hrt_accounts' });
-  await useDatabase(pg);
+  pg = await bootPostgres({ dir: './.pgdata-accounts', port: 55440, database: 'hrt_accounts' });  await useDatabase(pg);
   ({ server, base } = await startApiServer());
 }, { timeout: 180_000 });
 
@@ -156,11 +157,11 @@ test('changing the password re-keys access without touching records', async () =
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` },
     body: JSON.stringify({ body_weight_kg: 70 }),
   });
-  await call(
-    base,
-    '/api/medications',
-    json({ route: 'injection', ester: 'EV', dose_mg: 5, at: new Date().toISOString() }, account.token),
-  );
+  await call(base, '/api/records', json({
+    takenAt: Date.now(),
+    category: 'dose',
+    data: { id: 'pwd-dose-1', timeH: Date.now() / 3_600_000, doseMG: 5, ester: 'EV', route: 'injection', extras: {} },
+  }, account.token));
 
   const newPassword = 'a-different-password-2';
   const changed = await call(
@@ -186,9 +187,9 @@ test('changing the password re-keys access without touching records', async () =
     json({ username: account.username, password: newPassword }),
   );
   assert.equal(newLogin.status, 200, JSON.stringify(newLogin.body));
-  const meds = await call(base, '/api/medications', auth(newLogin.body.token));
-  assert.equal(meds.body.length, 1, 'records survive a password change');
-  assert.equal(meds.body[0].dose_mg, 5, 'and decrypt correctly');
+  const meds = await call(base, `/api/records?category=dose`, auth(newLogin.body.token));
+  assert.equal(meds.body.records.length, 1, 'records survive a password change');
+  assert.equal(meds.body.records[0].data.doseMG, 5, 'and decrypt correctly');
 });
 
 // ---------------------------------------------------------------------------
@@ -433,7 +434,7 @@ test('X login reuses an existing unlock when the account is already unlocked', a
     const exchanged = await call(base, '/auth/x/exchange', json({ code: oneTimeCode }));
     assert.equal(exchanged.status, 200);
     assert.ok(exchanged.body.token, 'a live unlock is reused');
-    const meds = await call(base, '/api/medications', auth(exchanged.body.token));
+    const meds = await call(base, '/api/records', auth(exchanged.body.token));
     assert.equal(meds.status, 200, 'and the session works');
   } finally {
     x.restore();

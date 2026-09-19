@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import { test, before, after } from 'node:test';
 import type { Server } from 'node:http';
 
-import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
+import { bootPostgres, useDatabase, startApiServer, teardown, call, TEST_ENCRYPTION_KEY, type PostgresHandle } from './pg.ts';
 import { setConfigForTesting } from '../src/config.ts';
 import { resetRateLimits } from '../src/http.ts';
 import { registerAccount, signIn } from './helpers.ts';
@@ -37,7 +37,9 @@ before(async () => {
     port: 0,
     databaseUrl: '',
     serverDekKey: SERVER_DEK_KEY,
-    encryptionKey: null,
+    // The record store seals every payload; a suite that writes records must carry a
+    // key, because the store refuses rather than writing plaintext.
+    encryptionKey: TEST_ENCRYPTION_KEY,
     google: null,
     turnstile: null,
     webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
@@ -127,30 +129,30 @@ test('a switch rewraps the DEK and leaves every record ciphertext untouched', as
   resetRateLimits();
   const account = await registerAccount(base, { privacyMode: 'standard' });
 
+  const now = Date.now();
+  const inner = `bytecheck-${now}`;
+  const id = `dose:transfem:${inner}`;
   const created = await call(
     base,
-    '/api/medications',
+    '/api/records',
     json(
       {
-        route: 'injection',
-        ester: 'EV',
-        dose_mg: 6,
-        at: new Date().toISOString(),
-        extras: {},
-        id: `bytecheck-${Date.now()}`,
+        id,
+        takenAt: now,
+        category: 'dose',
+        data: { id: inner, timeH: now / 3_600_000, doseMG: 6, ester: 'EV', route: 'injection', extras: {} },
       },
       account.token,
     ),
   );
   assert.equal(created.status, 201, JSON.stringify(created.body));
-  const id = created.body.id;
 
   const readPayload = async () => {
-    const { rows } = await getPool().query<{ payload: unknown }>(
-      `SELECT payload FROM medication_events WHERE id = $1`,
+    const { rows } = await getPool().query<{ payload_encrypted: string }>(
+      `SELECT payload_encrypted FROM records WHERE id = $1`,
       [id],
     );
-    return JSON.stringify(rows[0].payload);
+    return rows[0].payload_encrypted;
   };
 
   const before = await readPayload();
@@ -176,7 +178,7 @@ test('a switch rewraps the DEK and leaves every record ciphertext untouched', as
   assert.equal(await readPayload(), before, 'advanced -> standard does not either');
 
   // And the account still reads its records after both switches.
-  const back = await call(base, '/api/medications', auth(account.token));
+  const back = await call(base, '/api/records', auth(account.token));
   assert.equal(back.status, 200);
 });
 
@@ -201,7 +203,7 @@ test('X sign-in in standard mode reaches the records; in advanced it does not', 
   const standardUser = await getUser(standard.username);
   const standardToken = await xSignInRedeem(standardUser);
   assert.ok(standardToken, 'standard mode hands back a real session');
-  const okRead = await call(base, '/api/medications', auth(standardToken!));
+  const okRead = await call(base, '/api/records', auth(standardToken!));
   assert.equal(okRead.status, 200, 'and it reads records');
 
   // Advanced: X proves identity, and the key still needs the password.
@@ -231,7 +233,7 @@ test('a locked session unlocks with the password, and rejects a wrong one', asyn
   );
   assert.equal(right.status, 200, JSON.stringify(right.body));
   assert.ok(right.body.token, 'a real session comes back');
-  const meds = await call(base, '/api/medications', auth(right.body.token));
+  const meds = await call(base, '/api/records', auth(right.body.token));
   assert.equal(meds.status, 200, 'and it works');
 });
 
@@ -273,7 +275,7 @@ test('a durable token reaches records in standard mode but not advanced', async 
     // Sign out, dropping the live unlock.
     await call(base, '/auth/logout', json({}, account.token));
 
-    const read = await call(base, '/api/medications', auth(apiToken));
+    const read = await call(base, '/api/records', auth(apiToken));
     if (mode === 'standard') {
       assert.equal(read.status, 200, 'standard: the server key is enough for a live token');
     } else {

@@ -201,7 +201,7 @@ test('an advanced account with a passkey refuses a durable token until a passkey
   // with a passkey registered the reason is now specifically a step-up.
   closeUserSessions(account.userId);
 
-  const stepUpRequired = await call(base, '/api/medications', auth(apiToken));
+  const stepUpRequired = await call(base, '/api/records', auth(apiToken));
   assert.equal(stepUpRequired.status, 401, 'a durable token alone is not enough here');
 
   // The MCP layer reports the *specific* reason, which is what an agent relays.

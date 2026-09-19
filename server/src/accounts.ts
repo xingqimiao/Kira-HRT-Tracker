@@ -33,7 +33,7 @@ import { promisify } from 'node:util';
 
 import { getPool, withTransaction } from './db.ts';
 import { getConfig } from './config.ts';
-import { settings } from './store.ts';
+import { settings } from './settings.ts';
 import {
   createUserKeyMaterial,
   rewrapForNewPassword,
@@ -1465,8 +1465,10 @@ export const AccountService = {
         reason,
         user.created_at,
       ]);
-      // Cascades to api_tokens, oauth_accounts, oauth_states,
-      // medication_events, lab_results and user_settings.
+      // Cascades to api_tokens, oauth_accounts, oauth_states, records and
+      // user_settings. `auth_events` is deleted above rather than here because its
+      // foreign key is ON DELETE SET NULL — a deliberate mismatch, since the audit
+      // trail is the one place a delete must not be able to erase.
       await client.query(`DELETE FROM users WHERE id = $1`, [user.id]);
     });
 
@@ -1776,7 +1778,7 @@ export const AccountService = {
       timezone?: unknown;
     },
   ): Promise<Result<unknown>> {
-    const update: Partial<import('./store.ts').UserSettings> = {};
+    const update: Partial<import('./settings.ts').UserSettings> = {};
 
     if (patch.body_weight_kg !== undefined) {
       const weight: Result<number> = parseBodyWeight(patch.body_weight_kg);

@@ -88,14 +88,16 @@ try {
         if (parts.length !== 3) throw new Error(`stored form is not iv:tag:ciphertext: ${stored.slice(0, 40)}`)
     })
 
-    await check('the two addressing columns are the only readable ones', async () => {
+    await check('no plaintext column survives but the ones that address a row', async () => {
         const { rows } = await getPool().query(
             `SELECT column_name FROM information_schema.columns
               WHERE table_schema = 'public' AND table_name = 'records'
               ORDER BY column_name`,
         )
         const names = rows.map((r) => r.column_name)
-        const expected = ['category', 'client_id', 'created_at', 'id', 'payload_encrypted', 'taken_at', 'updated_at', 'user_id']
+        // `client_id` was in this list until the id became the client's own identity;
+        // a second key could only disagree with the first, and did.
+        const expected = ['category', 'created_at', 'id', 'payload_encrypted', 'taken_at', 'updated_at', 'user_id']
         if (names.join(',') !== expected.join(',')) throw new Error(`columns are: ${names.join(',')}`)
     })
 
@@ -103,8 +105,10 @@ try {
         const payload = { med_name: 'same', dosage: 'same' }
         const a = await RecordService.put(ctx, { takenAt: Date.now(), data: payload })
         const b = await RecordService.put(ctx, { takenAt: Date.now(), data: payload })
+        // `text[]`, not `uuid[]`: the ids are the client's structured strings
+        // (`dose:transfem:…`), which is why the column is text in the first place.
         const { rows } = await getPool().query(
-            `SELECT id, payload_encrypted FROM records WHERE id = ANY($1::uuid[])`,
+            `SELECT id, payload_encrypted FROM records WHERE id = ANY($1::text[])`,
             [[a.id, b.id]],
         )
         if (rows.length !== 2) throw new Error('expected two rows')
@@ -131,12 +135,15 @@ try {
         if (bogus.records.length !== 0) throw new Error('an unknown category returned rows')
     })
 
-    await check('a re-sent write with the same client id updates rather than duplicates', async () => {
+    await check('a re-sent write with the same id updates rather than duplicates', async () => {
+        // The id is the idempotency key. This used to pass a separate `clientId`; the
+        // column is gone, because a second key can only disagree with the first — and
+        // did, producing a primary-key violation on every re-sync once both applied.
         const first = await RecordService.put(ctx, {
-            takenAt: Date.now(), clientId: 'offline-1', data: { note: 'first' },
+            takenAt: Date.now(), id: 'dose:transfem:offline-1', data: { note: 'first' },
         })
         const second = await RecordService.put(ctx, {
-            takenAt: Date.now(), clientId: 'offline-1', data: { note: 'second' },
+            takenAt: Date.now(), id: 'dose:transfem:offline-1', data: { note: 'second' },
         })
         if (!first.ok || !second.ok) throw new Error('a write failed')
         if (first.id !== second.id) throw new Error('the retry created a second row')
@@ -162,9 +169,11 @@ try {
     })
 
     await check('a corrupt row is counted and does not hide the rest', async () => {
+        // The id is explicit because the column has no default any more — it is the
+        // client's own key, so the server never invents one for a row it did not write.
         await getPool().query(
-            `INSERT INTO records (user_id, taken_at, category, payload_encrypted)
-             VALUES ($1, now(), 'dose', 'AAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAA==:BBBB')`,
+            `INSERT INTO records (user_id, taken_at, category, payload_encrypted, id)
+             VALUES ($1, now(), 'dose', 'AAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAA==:BBBB', 'dose:transfem:corrupt')`,
             [ctx.userId],
         )
         const { records, unreadable } = await RecordService.list(ctx, {})

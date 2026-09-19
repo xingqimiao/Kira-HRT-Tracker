@@ -15,7 +15,6 @@
 import assert from 'node:assert/strict';
 
 import { call } from './pg.ts';
-
 export interface TestAccount {
   userId: string;
   username: string;
@@ -81,6 +80,64 @@ export async function signIn(
 /** Convenience for the many tests that only need "an authenticated header". */
 export function authHeader(token: string): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
+}
+
+/**
+ * A page of the account's records, as `GET /api/records` returns it.
+ *
+ * The record store is the only business-data transport left, so this is the read
+ * every suite that used to call `/api/medications` or `/api/labs` goes through.
+ * Returns the raw body so a test can assert on `unreadable` as well as the rows.
+ */
+export async function listRecords(
+  base: string,
+  token: string,
+  query: { limit?: number; category?: string } = {},
+): Promise<{ records: any[]; unreadable: number }> {
+  const params = new URLSearchParams();
+  if (query.limit !== undefined) params.set('limit', String(query.limit));
+  if (query.category !== undefined) params.set('category', query.category);
+  const suffix = params.toString() ? `?${params}` : '';
+  const res = await call(base, `/api/records${suffix}`, { headers: authHeader(token) });
+  assert.equal(res.status, 200, `listing records failed: ${JSON.stringify(res.body)}`);
+  return res.body as { records: any[]; unreadable: number };
+}
+
+/**
+ * Write one record the way the app does: plaintext JSON in, ciphertext at rest.
+ *
+ * The suite's config must carry an `encryptionKey`, because the store refuses to
+ * write a payload it cannot seal — and that refusal is the point of the module
+ * rather than an obstacle to work around here.
+ */
+export async function putRecord(
+  base: string,
+  token: string,
+  body: { id: string; takenAt: number; category: string; data: unknown },
+): Promise<{ status: number; body: any }> {
+  return await call(base, '/api/records', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * A registered account together with the key that opens its records.
+ *
+ * The DEK lives in the server's session store, and reading it from there is how the
+ * MCP layer obtains it — so a suite that drives the core services directly uses the
+ * same path the adapter does rather than a test-only back door.
+ */
+export async function registerAccountWithKey(
+  base: string,
+  opts: { username?: string; privacyMode?: 'standard' | 'advanced' } = {},
+): Promise<TestAccount & { dek: string }> {
+  const account = await registerAccount(base, opts);
+  const { lookupSession } = await import('../src/session.ts');
+  const session = lookupSession(account.token);
+  assert.ok(session, 'the session from registration resolves');
+  return { ...account, dek: session.dek };
 }
 
 export { freshUsername };

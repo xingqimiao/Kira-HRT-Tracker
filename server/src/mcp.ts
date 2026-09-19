@@ -30,7 +30,7 @@ import {
 } from './core.ts';
 import type { AuthContext, ContextDenial } from './types.ts';
 
-import { buildExportPayload } from './import.ts';
+import { buildExportPayload } from './records.ts';
 import { ShareService } from './shares.ts';
 import { SL_TIER_ORDER, GEL_SITE_ORDER, PK_PARAM_RANGES } from './engine.ts';
 
@@ -129,14 +129,19 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
       const r = await withContext((ctx) => MedicationService.list(ctx, { limit }));
       if ('error' in r) return toolError(r.error);
       return toolResult(
-        r.value.map((rec) => ({
-          id: rec.value.id,
-          at: new Date(rec.value.timeH * 3_600_000).toISOString(),
-          route: rec.value.route,
-          ester: rec.value.ester,
-          dose_mg: rec.value.doseMG,
-          extras: rec.value.extras,
-          version: rec.version,
+        r.value.records.map((rec) => ({
+          // The id the app minted, and the address the store filed it under. Both are
+          // reported because a caller replaying a write needs the first and the delete
+          // tool needs the second, and neither is derivable from the other alone.
+          id: rec.data.id,
+          record_id: rec.id,
+          mode: rec.mode,
+          at: new Date(rec.data.timeH * 3_600_000).toISOString(),
+          route: rec.data.route,
+          ester: rec.data.ester,
+          dose_mg: rec.data.doseMG,
+          extras: rec.data.extras,
+          version: rec.updatedAt,
         })),
       );
     },
@@ -153,12 +158,14 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
       const r = await withContext((ctx) => LabService.list(ctx, { limit }));
       if ('error' in r) return toolError(r.error);
       return toolResult(
-        r.value.map((rec) => ({
-          id: rec.value.id,
-          at: new Date(rec.value.timeH * 3_600_000).toISOString(),
-          value: rec.value.concValue,
-          unit: rec.value.unit,
-          version: rec.version,
+        r.value.records.map((rec) => ({
+          id: rec.data.id,
+          record_id: rec.id,
+          mode: rec.mode,
+          at: new Date(rec.data.timeH * 3_600_000).toISOString(),
+          value: rec.data.concValue,
+          unit: rec.data.unit,
+          version: rec.updatedAt,
         })),
       );
     },
@@ -266,12 +273,13 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
       if (!r.value.ok) return toolError(r.value.error);
       const rec = r.value.value;
       return toolResult({
-        id: rec.value.id,
-        at: new Date(rec.value.timeH * 3_600_000).toISOString(),
-        route: rec.value.route,
-        ester: rec.value.ester,
-        dose_mg: rec.value.doseMG,
-        version: rec.version,
+        id: rec.data.id,
+        record_id: rec.id,
+        at: new Date(rec.data.timeH * 3_600_000).toISOString(),
+        route: rec.data.route,
+        ester: rec.data.ester,
+        dose_mg: rec.data.doseMG,
+        version: rec.updatedAt,
       });
     },
   );
@@ -296,11 +304,12 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
       if (!r.value.ok) return toolError(r.value.error);
       const rec = r.value.value;
       return toolResult({
-        id: rec.value.id,
-        at: new Date(rec.value.timeH * 3_600_000).toISOString(),
-        value: rec.value.concValue,
-        unit: rec.value.unit,
-        version: rec.version,
+        id: rec.data.id,
+        record_id: rec.id,
+        at: new Date(rec.data.timeH * 3_600_000).toISOString(),
+        value: rec.data.concValue,
+        unit: rec.data.unit,
+        version: rec.updatedAt,
       });
     },
   );
@@ -344,7 +353,7 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         'this is not reversible from the agent interface.',
       inputSchema: {
         kind: z.enum(['dose', 'lab']),
-        id: z.string().describe('Record id from a list tool'),
+        id: z.string().describe('The `record_id` from a list tool, or the record id itself'),
       },
     },
     async ({ kind, id }) => {

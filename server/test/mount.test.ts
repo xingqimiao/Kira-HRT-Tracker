@@ -18,7 +18,7 @@ import assert from 'node:assert/strict';
 import { test, before, after } from 'node:test';
 import type { Server } from 'node:http';
 
-import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
+import { bootPostgres, useDatabase, startApiServer, teardown, call, TEST_ENCRYPTION_KEY, type PostgresHandle } from './pg.ts';
 import { setConfigForTesting } from '../src/config.ts';
 
 let pg: PostgresHandle;
@@ -37,7 +37,9 @@ before(async () => {
     port: 0,
     databaseUrl: '',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
-    encryptionKey: null,
+    // The record store seals every payload; a suite that writes records must carry a
+    // key, because the store refuses rather than writing plaintext.
+    encryptionKey: TEST_ENCRYPTION_KEY,
     google: null,
     turnstile: null,
     webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
@@ -122,12 +124,17 @@ test('authentication routes live inside the mount, matching the host convention'
   });
   const med = await call(
     host,
-    `${MOUNT}/api/medications`,
-    json({ route: 'injection', ester: 'EV', dose_mg: 5, at: new Date().toISOString() }, token),
+    `${MOUNT}/api/records`,
+    json({
+      id: 'dose:transfem:mount-1',
+      takenAt: Date.now(),
+      category: 'dose',
+      data: { id: 'mount-1', timeH: Date.now() / 3_600_000, doseMG: 5, ester: 'EV', route: 'injection', extras: {} },
+    }, token),
   );
   assert.equal(med.status, 201, JSON.stringify(med.body));
-  const list = await call(host, `${MOUNT}/api/medications`, { headers: { Authorization: `Bearer ${token}` } });
-  assert.equal(list.body.length, 1, 'the record round-trips through the mount');
+  const list = await call(host, `${MOUNT}/api/records`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(list.body.records.length, 1, 'the record round-trips through the mount');
 });
 
 test('the MCP endpoint works under the mount', async () => {

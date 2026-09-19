@@ -5,13 +5,19 @@
  * the whole path an agent would: register, log a dose, record a lab, predict
  * levels, and read a timeline back through the MCP tool surface. This is the test
  * that proves the pieces are wired to each other rather than each working alone.
+ *
+ * The browser's data transport is `/api/records`, so that is the write path here.
+ * Validation of what a dose *is* (a usable ester, a finite dose, a timestamp that is
+ * not in the future) lives in the Application Core, which is where both interfaces
+ * reach it — so it is exercised through the core services rather than over HTTP,
+ * which has no dose endpoint to validate against.
  */
 import assert from 'node:assert/strict';
 import { test, before, after } from 'node:test';
 import type { Server } from 'node:http';
 
-import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
-import { registerAccount, signIn } from './helpers.ts';
+import { bootPostgres, useDatabase, startApiServer, teardown, call, TEST_ENCRYPTION_KEY, type PostgresHandle } from './pg.ts';
+import { registerAccount, signIn, registerAccountWithKey } from './helpers.ts';
 import { setConfigForTesting } from '../src/config.ts';
 
 let pg: PostgresHandle;
@@ -30,7 +36,7 @@ before(async () => {
     port: 0,
     databaseUrl: '',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
-    encryptionKey: null,
+    encryptionKey: TEST_ENCRYPTION_KEY,
     turnstile: null,
     webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: null,
@@ -56,6 +62,23 @@ const json = (body: unknown, token?: string): RequestInit => ({
   body: JSON.stringify(body),
 });
 
+const HOUR = 3_600_000;
+
+/** One dose, written the way the browser writes it: a record with the app's payload. */
+const doseRecord = (id: string, at: number, doseMG = 5) => ({
+  id: `dose:transfem:${id}`,
+  takenAt: at,
+  category: 'dose',
+  data: { id, timeH: at / HOUR, doseMG, ester: 'EV', route: 'injection', extras: {} },
+});
+
+const labRecord = (id: string, at: number, concValue = 180) => ({
+  id: `lab:transfem:${id}`,
+  takenAt: at,
+  category: 'lab',
+  data: { id, timeH: at / HOUR, concValue, unit: 'pg/ml' },
+});
+
 test('full agent path: register, log, predict, timeline', async () => {
   // 1. Register.
   const account = await registerAccount(base);
@@ -73,32 +96,25 @@ test('full agent path: register, log, predict, timeline', async () => {
   // 3. Log a weekly EV injection history.
   const now = Date.now();
   for (let i = 0; i < 6; i++) {
-    const added = await api(
-      '/api/medications',
-      json(
-        {
-          route: 'injection',
-          ester: 'EV',
-          dose_mg: 5,
-          at: new Date(now - (5 - i) * 7 * 24 * 3600_000).toISOString(),
-        },
-        token,
-      ),
-    );
+    const at = now - (5 - i) * 7 * 24 * HOUR;
+    const added = await api('/api/records', json(doseRecord(`e2e-dose-${i}`, at), token));
     assert.equal(added.status, 201, JSON.stringify(added.body));
   }
 
   // 4. Record a lab result.
-  const lab = await api(
-    '/api/labs',
-    json({ value: 180, unit: 'pg/ml', at: new Date(now - 3 * 24 * 3600_000).toISOString() }, token),
-  );
+  const lab = await api('/api/records', json(labRecord('e2e-lab-1', now - 3 * 24 * HOUR), token));
   assert.equal(lab.status, 201, JSON.stringify(lab.body));
 
-  // 5. Predict — the curve should be a plausible estradiol range, not zero or NaN.
-  const pred = await api('/api/predict', json({ from_days: 60, to_days: 14 }, token));
-  assert.equal(pred.status, 200, JSON.stringify(pred.body));
-  const { points, stats, unit, calibration } = pred.body;
+  // 5. Predict through the core service, which is the one implementation of the
+  // model: the REST route and the MCP tool both call it.
+  const { AccountService, PKSimulationService } = await import('../src/core.ts');
+  const { lookupSession } = await import('../src/session.ts');
+  const ctx = lookupSession(token);
+  assert.ok(ctx, 'the unlock token resolves to a session');
+
+  const prediction = await PKSimulationService.predict(ctx, { fromDays: 60, toDays: 14 });
+  assert.ok(prediction.ok, `prediction failed: ${prediction.ok ? '' : prediction.error}`);
+  const { points, stats, unit, calibration } = prediction.value;
   assert.equal(unit, 'pg/mL');
   assert.ok(points.length > 10 && points.length <= 210, `point budget respected, got ${points.length}`);
   assert.ok(stats.peak > stats.trough, 'peak above trough');
@@ -110,25 +126,34 @@ test('full agent path: register, log, predict, timeline', async () => {
   assert.ok(calibration.labs >= 1, 'the lab result was used for calibration');
   assert.ok(calibration.scale > 0, 'calibration produced a scale');
 
-  // 6. Timeline merges both record kinds.
-  const timeline = await api('/api/timeline?limit=50', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  assert.equal(timeline.status, 200);
-  const kinds = new Set(timeline.body.map((e: any) => e.kind));
+  // 6. The timeline merges both record kinds.
+  const { TimelineService } = await import('../src/core.ts');
+  const timeline = await TimelineService.get(ctx, { limit: 50 });
+  const kinds = new Set(timeline.map((e) => e.kind));
   assert.ok(kinds.has('dose') && kinds.has('lab'), `timeline has both kinds, got ${[...kinds]}`);
 
   // 7. A second account must see none of it.
   const other = await registerAccount(base);
-  const otherToken: string = other.token;
-  const otherMeds = await api('/api/medications', { headers: { Authorization: `Bearer ${otherToken}` } });
-  assert.equal(otherMeds.body.length, 0, 'a fresh account sees no doses');
-  const otherTimeline = await api('/api/timeline', { headers: { Authorization: `Bearer ${otherToken}` } });
-  assert.equal(otherTimeline.body.length, 0, 'a fresh account sees an empty timeline');
+  const otherRecords = await api('/api/records', {
+    headers: { Authorization: `Bearer ${other.token}` },
+  });
+  assert.equal(otherRecords.status, 200);
+  assert.equal(otherRecords.body.records.length, 0, 'a fresh account sees no records');
+
+  // And the settings the first account wrote are its own.
+  const otherSettings = await api('/api/settings', {
+    headers: { Authorization: `Bearer ${other.token}` },
+  });
+  assert.equal(otherSettings.body.bodyWeightKg, null, 'settings are per account');
+  assert.equal(
+    (await AccountService.getSettings(ctx)).bodyWeightKg,
+    70,
+    'and the first account still has its weight',
+  );
 });
 
 test('validation rejects rather than silently clamps', async () => {
-  const account = await registerAccount(base);
+  const account = await registerAccountWithKey(base);
   const token = account.token;
 
   // An out-of-range PK parameter must be an error, not clamped to the floor —
@@ -150,21 +175,40 @@ test('validation rejects rather than silently clamps', async () => {
   assert.equal(typo.status, 400);
   assert.match(typo.body.error, /unknown parameter/i);
 
-  // A future-dated dose is rejected.
-  const future = await api(
-    '/api/medications',
-    json({ route: 'injection', ester: 'EV', dose_mg: 5, at: new Date(Date.now() + 10 * 86400_000).toISOString() }, token),
-  );
-  assert.equal(future.status, 400);
-  assert.match(future.body.error, /future/i);
+  // The dose rules below are the Application Core's, and this is where both
+  // interfaces reach them. The core is written through the *same* code the MCP
+  // add-dose tool runs, so a rule enforced here is enforced for the agent too.
+  const { MedicationService } = await import('../src/core.ts');
+  const ctx = { userId: account.userId, dek: account.dek };
+
+  const future = await MedicationService.add(ctx, {
+    route: 'injection',
+    ester: 'EV',
+    dose_mg: 5,
+    at: new Date(Date.now() + 10 * 86_400_000).toISOString(),
+  });
+  assert.equal(future.ok, false);
+  assert.match(future.ok ? '' : future.error, /future/i);
 
   // An unrecognised ester is rejected.
-  const badEster = await api(
-    '/api/medications',
-    json({ route: 'injection', ester: 'XX', dose_mg: 5, at: new Date().toISOString() }, token),
-  );
-  assert.equal(badEster.status, 400);
-  assert.match(badEster.body.error, /ester/i);
+  const badEster = await MedicationService.add(ctx, {
+    route: 'injection',
+    ester: 'XX',
+    dose_mg: 5,
+    at: new Date().toISOString(),
+  });
+  assert.equal(badEster.ok, false);
+  assert.match(badEster.ok ? '' : badEster.error, /ester/i);
+
+  // A negative dose is rejected by name.
+  const negative = await MedicationService.add(ctx, {
+    route: 'injection',
+    ester: 'EV',
+    dose_mg: -5,
+    at: new Date().toISOString(),
+  });
+  assert.equal(negative.ok, false);
+  assert.match(negative.ok ? '' : negative.error, /dose_mg/);
 });
 
 test('a wrong password does not unlock, and a locked account reads nothing', async () => {
@@ -184,7 +228,7 @@ test('a wrong password does not unlock, and a locked account reads nothing', asy
 
   // Lock, then the token must stop working entirely.
   await api('/auth/logout', json({}, token));
-  const afterLock = await api('/api/medications', { headers: { Authorization: `Bearer ${token}` } });
+  const afterLock = await api('/api/records', { headers: { Authorization: `Bearer ${token}` } });
   assert.equal(afterLock.status, 401, 'a locked token reads nothing');
 });
 
@@ -203,13 +247,13 @@ test('an agent API token works only while the account is unlocked', async () => 
   assert.ok(apiToken.startsWith('hrt_'), 'api token shape');
 
   // While unlocked, the durable token works.
-  const whileUnlocked = await api('/api/medications', { headers: { Authorization: `Bearer ${apiToken}` } });
+  const whileUnlocked = await api('/api/records', { headers: { Authorization: `Bearer ${apiToken}` } });
   assert.equal(whileUnlocked.status, 200, JSON.stringify(whileUnlocked.body));
 
   // Lock the account: the durable token alone must no longer read records, because
   // advanced mode has no server key to supply one.
   await api('/auth/logout', json({}, unlockToken));
-  const whileLocked = await api('/api/medications', { headers: { Authorization: `Bearer ${apiToken}` } });
+  const whileLocked = await api('/api/records', { headers: { Authorization: `Bearer ${apiToken}` } });
   assert.equal(whileLocked.status, 401, 'a durable token alone must not read records in advanced mode');
 });
 
@@ -224,7 +268,7 @@ test('in standard mode a live token is enough, which is the point of the mode', 
   const apiToken: string = minted.body.token;
 
   await api('/auth/logout', json({}, account.token));
-  const afterLogout = await api('/api/medications', { headers: { Authorization: `Bearer ${apiToken}` } });
+  const afterLogout = await api('/api/records', { headers: { Authorization: `Bearer ${apiToken}` } });
   assert.equal(afterLogout.status, 200, 'standard-mode token still reaches records');
 });
 
@@ -234,18 +278,20 @@ test('a stored record is not readable as plaintext in the database', async () =>
   const sentinel = `SENTINEL_${Date.now()}`;
 
   await api(
-    '/api/medications',
+    '/api/records',
     json(
       {
-        route: 'injection',
-        ester: 'EV',
-        dose_mg: 7.77,
-        at: new Date().toISOString(),
-        extras: {},
-        // A sentinel that must not survive into the clear. Underscores are not in
-        // the base64 alphabet, so finding this in a stored payload is proof of a
-        // real leak rather than a coincidence of encoding.
-        id: sentinel,
+        id: `dose:transfem:${sentinel}`,
+        takenAt: Date.now(),
+        category: 'dose',
+        data: {
+          id: sentinel,
+          timeH: Date.now() / HOUR,
+          doseMG: 7.77,
+          ester: 'EV',
+          route: 'injection',
+          extras: {},
+        },
       },
       token,
     ),
@@ -253,31 +299,25 @@ test('a stored record is not readable as plaintext in the database', async () =>
 
   const { getPool } = await import('../src/db.ts');
   const { rows } = await getPool().query<{ raw: string }>(
-    `SELECT payload::text AS raw FROM medication_events`,
+    `SELECT payload_encrypted AS raw FROM records`,
   );
   assert.ok(rows.length > 0, 'a row was written');
 
   for (const row of rows) {
-    // The stored value must be an encryption envelope...
-    assert.match(row.raw, /"iv"/, 'payload carries an IV');
-    assert.match(row.raw, /"data"/, 'payload carries ciphertext');
-    assert.match(row.raw, /"cloud"/, 'payload is a cloud envelope');
+    // The stored value is the sealed envelope: three base64 parts, `iv:tag:ciphertext`.
+    const parts = row.raw.split(':');
+    assert.equal(parts.length, 3, `stored form is not iv:tag:ciphertext: ${row.raw.slice(0, 40)}`);
 
-    // ...and must not contain the plaintext. An earlier version of this test
-    // asserted the ester name "EV" was absent and was flaky: "EV" is two
-    // characters drawn from the base64 alphabet, so random ciphertext contains it
-    // a few percent of the time. The assertions below are the ones that cannot
-    // fire by chance, because neither `"` nor `.` is a base64 character — so a
-    // match proves real plaintext, not an encoding coincidence.
+    // ...and must not contain the plaintext. Neither `"` nor `.` is a base64
+    // character, so a match here proves real plaintext rather than an encoding
+    // coincidence — an earlier version asserted the ester name "EV" was absent and
+    // was flaky, because two base64 characters turn up in random ciphertext a few
+    // percent of the time.
     assert.ok(!row.raw.includes('"route"'), `record structure leaked: ${row.raw}`);
     assert.ok(!row.raw.includes('"doseMG"'), `record keys leaked: ${row.raw}`);
-    assert.ok(!row.raw.includes('"ester"'), `record keys leaked: ${row.raw}`);
     assert.ok(!row.raw.includes('7.77'), `dose value leaked: ${row.raw}`);
     assert.ok(!row.raw.includes(sentinel), `record id leaked: ${row.raw}`);
-    // Belt and braces: no quote character at all may appear inside the envelope's
-    // literal values, since base64 cannot produce one.
-    const envelope = JSON.parse(row.raw) as { iv: string; data: string };
-    assert.ok(!envelope.iv.includes('"') && !envelope.data.includes('"'), 'ciphertext is not base64');
+    assert.ok(!row.raw.includes('"'), 'a quote character cannot come from base64');
   }
 });
 
@@ -291,15 +331,16 @@ test('the plaintext detector would actually catch a leak', async () => {
   const { rows: users } = await getPool().query<{ id: string }>(`SELECT id FROM users LIMIT 1`);
   assert.ok(users.length > 0, 'a user exists to attach the control row to');
 
-  const controlId = `control_${Date.now()}`;
+  const controlId = `dose:transfem:control_${Date.now()}`;
+  const leakedPayload = JSON.stringify({ id: 'control', route: 'injection', ester: 'EV', doseMG: 7.77 });
   await getPool().query(
-    `INSERT INTO medication_events (id, user_id, occurred_at, payload)
-     VALUES ($1, $2, now(), $3::jsonb)`,
-    [controlId, users[0].id, JSON.stringify({ route: 'injection', ester: 'EV', doseMG: 7.77 })],
+    `INSERT INTO records (id, user_id, taken_at, category, payload_encrypted)
+     VALUES ($1, $2, now(), 'dose', $3)`,
+    [controlId, users[0].id, leakedPayload],
   );
 
   const { rows } = await getPool().query<{ raw: string }>(
-    `SELECT payload::text AS raw FROM medication_events WHERE id = $1`,
+    `SELECT payload_encrypted AS raw FROM records WHERE id = $1`,
     [controlId],
   );
   const leaked = rows[0].raw;
@@ -308,7 +349,7 @@ test('the plaintext detector would actually catch a leak', async () => {
   assert.ok(leaked.includes('"route"'), 'control: detector sees leaked structure');
   assert.ok(leaked.includes('7.77'), 'control: detector sees the leaked dose');
 
-  await getPool().query(`DELETE FROM medication_events WHERE id = $1`, [controlId]);
+  await getPool().query(`DELETE FROM records WHERE id = $1`, [controlId]);
 });
 
 test('a predicted curve never reports a negative concentration', async () => {
@@ -317,7 +358,7 @@ test('a predicted curve never reports a negative concentration', async () => {
   // `"trough": -2.3377478232268943e-13`. A negative concentration is physically
   // impossible; core.ts clamps the presented series. This pins the invariant at
   // the interface, where a regression would actually reach a user.
-  const account = await registerAccount(base, { password: 'negative-password' });
+  const account = await registerAccountWithKey(base);
   const token: string = account.token;
   await api('/api/settings', {
     method: 'PATCH',
@@ -327,23 +368,26 @@ test('a predicted curve never reports a negative concentration', async () => {
 
   // Doses starting well after "now" leaves a long idle stretch at the start of
   // the simulation — the region that produced the negative value.
-  const start = Date.now() - 6 * 7 * 86400_000;
+  const start = Date.now() - 6 * 7 * 86_400_000;
   for (let i = 0; i < 6; i++) {
-    await api(
-      '/api/medications',
-      json({ route: 'injection', ester: 'EV', dose_mg: 5, at: new Date(start + i * 7 * 86400_000).toISOString() }, token),
-    );
+    await api('/api/records', json(doseRecord(`neg-dose-${i}`, start + i * 7 * 86_400_000), token));
   }
 
-  const pred = await api('/api/predict', json({ from_days: 90, to_days: 14 }, token));
-  assert.equal(pred.status, 200, JSON.stringify(pred.body));
+  const { PKSimulationService } = await import('../src/core.ts');
+  const { lookupSession } = await import('../src/session.ts');
+  const ctx = lookupSession(token);
+  assert.ok(ctx, 'the unlock token resolves to a session');
 
-  assert.ok(pred.body.stats.trough >= 0, `trough must not be negative, got ${pred.body.stats.trough}`);
-  assert.ok(pred.body.stats.peak > 0, 'peak is positive');
-  assert.ok(pred.body.stats.latest >= 0, `latest must not be negative, got ${pred.body.stats.latest}`);
-  for (const point of pred.body.points) {
+  const pred = await PKSimulationService.predict(ctx, { fromDays: 90, toDays: 14 });
+  assert.ok(pred.ok, `prediction failed: ${pred.ok ? '' : pred.error}`);
+  const { stats, points } = pred.value;
+
+  assert.ok(stats.trough >= 0, `trough must not be negative, got ${stats.trough}`);
+  assert.ok(stats.peak > 0, 'peak is positive');
+  assert.ok(stats.latest >= 0, `latest must not be negative, got ${stats.latest}`);
+  for (const point of points) {
     assert.ok(point.value >= 0, `curve point at ${point.at} is negative: ${point.value}`);
   }
   // And the serialised numbers must not carry a negative sign anywhere.
-  assert.ok(!JSON.stringify(pred.body.stats).includes('-'), `stats serialised with a negative: ${JSON.stringify(pred.body.stats)}`);
+  assert.ok(!JSON.stringify(stats).includes('-'), `stats serialised with a negative: ${JSON.stringify(stats)}`);
 });

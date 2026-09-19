@@ -122,14 +122,6 @@ function describe(status: number, what: string, detail?: string): CoreSyncError 
  * disappeared".
  */
 export async function readCoreState(token: string): Promise<SyncPayload> {
-  // Accounts that predate the record store still hold their history in the older
-  // tables, under a key the server may not have. Reading the record store first would
-  // return an empty payload, and an empty payload is not harmless here: the app's
-  // `applyRemote` writes whatever it is given, so a pull of nothing *erases* the local
-  // history, and the next push publishes that emptying to the account. So the legacy
-  // payload is migrated in before anything is read.
-  await migrateLegacyIfNeeded(token);
-
   const docs: RecordDoc[] = [];
   let before: number | undefined;
 
@@ -173,81 +165,13 @@ export async function readCoreState(token: string): Promise<SyncPayload> {
 }
 
 /**
- * Accounts whose history still lives in the pre-record tables, remembered per account.
- *
- * Cached so the check is one request per account rather than one per sync, and so a
- * finished migration stops asking.
- */
-const migrationChecked = new Set<string>();
-
-/**
- * Move a pre-record account's history into the encrypted record store, once.
- *
- * The legacy payload is fetched from `/api/sync`, which returns it in plaintext — the
- * server builds that response from the stored rows — and then written back through the
- * normal record endpoint, which encrypts it. So the migration needs no key the app does
- * not already have, and it works for an account the server itself cannot decrypt.
- *
- * Best-effort by design: if the legacy read fails the sync continues against the record
- * store, because refusing to sync at all would be worse than syncing what already
- * landed. The check is not cached in that case, so the next sync retries.
- */
-async function migrateLegacyIfNeeded(token: string): Promise<void> {
-  if (migrationChecked.has(token)) return;
-
+ * Push local state and get the account's records back.
+async function errorDetail(res: Response): Promise<string | undefined> {
   try {
-    const probe = await apiFetch(apiEndpoint('/api/records/migrate-needed'), {
-      headers: authHeaders(token),
-    });
-    if (!probe.ok) {
-      // Only an answer settles the question. A refusal — an unbound account's 403, or
-      // the 401 a locked one gets — is a state the user leaves without reloading, and
-      // caching it would skip the migration for the rest of the tab's life.
-      if (probe.status !== 401 && probe.status !== 403) migrationChecked.add(token);
-      return;
-    }
-    const status = (await probe.json()) as { needed?: boolean; legacy_count?: number };
-    if (!status.needed) {
-      migrationChecked.add(token);
-      return;
-    }
-
-    const res = await apiFetch(apiEndpoint('/api/sync'), {
-      method: 'POST',
-      headers: authHeaders(token),
-      // `push: false` — this is a read. The write happens below, through the record
-      // endpoint, so the legacy tables are never written to again.
-      body: JSON.stringify({ push: false }),
-    });
-    if (!res.ok) return;
-
-    const body = (await res.json()) as { state?: SyncPayload };
-    if (!body.state) return;
-
-    const docs = payloadToRecords(body.state);
-    let written = 0;
-    for (const doc of docs) {
-      const post = await apiFetch(apiEndpoint('/api/records'), {
-        method: 'POST',
-        headers: authHeaders(token),
-        body: JSON.stringify({
-          id: doc.id,
-          takenAt: doc.takenAt,
-          category: doc.category,
-          data: doc.data,
-        }),
-      });
-      if (post.ok) written += 1;
-    }
-
-    // Only stop asking once something actually landed; a partial migration should be
-    // retried rather than declared done.
-    if (written > 0) {
-      migrationChecked.add(token);
-      console.info(`[sync] migrated ${written} legacy record(s) into the encrypted store`);
-    }
+    const body = (await res.json()) as { error?: string };
+    return body?.error;
   } catch {
-    // Swallowed on purpose: see the note above. The next sync tries again.
+    return undefined;
   }
 }
 

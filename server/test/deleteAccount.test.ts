@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 import { test, before, after } from 'node:test';
 import type { Server } from 'node:http';
 
-import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
+import { bootPostgres, useDatabase, startApiServer, teardown, call, TEST_ENCRYPTION_KEY, type PostgresHandle } from './pg.ts';
 import { registerAccount } from './helpers.ts';
 import { setConfigForTesting } from '../src/config.ts';
 
@@ -34,7 +34,9 @@ before(async () => {
     port: 0,
     databaseUrl: '',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
-    encryptionKey: null,
+    // The record store seals every payload; a suite that writes records must carry a
+    // key, because the store refuses rather than writing plaintext.
+    encryptionKey: TEST_ENCRYPTION_KEY,
     turnstile: null,
     webauthn: { rpId: 'hrt.test', rpName: 'Kira Tracker', origins: ['https://hrt.test', 'https://api.hrt.test'] },
     x: null,
@@ -79,8 +81,7 @@ async function userIdFor(username: string): Promise<string> {
  * table that references `users` without a cascade is caught here rather than shipped.
  */
 const USER_SCOPED_TABLES = [
-  'medication_events',
-  'lab_results',
+  'records',
   'user_settings',
   'api_tokens',
   'oauth_accounts',
@@ -96,6 +97,13 @@ async function countFor(table: string, userId: string): Promise<number> {
   return rows[0].n;
 }
 
+/** The account's records of one kind, as `GET /api/records` reports them. */
+async function records(token: string, category: string) {
+  const res = await call(base, `/api/records?category=${category}`, auth(token));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  return res.body.records as unknown[];
+}
+
 /** Populate the account across every table so the cascade is genuinely exercised. */
 async function populate(account: { token: string }): Promise<void> {
   await call(base, '/api/settings', {
@@ -103,12 +111,16 @@ async function populate(account: { token: string }): Promise<void> {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` },
     body: JSON.stringify({ body_weight_kg: 70 }),
   });
-  await call(
-    base,
-    '/api/medications',
-    json({ route: 'injection', ester: 'EV', dose_mg: 5, at: new Date().toISOString() }, account.token),
-  );
-  await call(base, '/api/labs', json({ value: 180, unit: 'pg/ml', at: new Date().toISOString() }, account.token));
+  await call(base, '/api/records', json({
+    takenAt: Date.now(),
+    category: 'dose',
+    data: { id: 'del-dose-1', timeH: Date.now() / 3_600_000, doseMG: 5, ester: 'EV', route: 'injection', extras: {} },
+  }, account.token));
+  await call(base, '/api/records', json({
+    takenAt: Date.now(),
+    category: 'lab',
+    data: { id: 'del-lab-1', timeH: Date.now() / 3_600_000, concValue: 180, unit: 'pg/ml' },
+  }, account.token));
   await call(base, '/api/tokens', json({ name: 'agent' }, account.token));
 }
 
@@ -151,13 +163,15 @@ test('deletion is complete: no user-scoped row survives', async () => {
   const userId = await userIdFor(account.username);
 
   // Guard against a vacuous test: the tables must actually hold rows beforehand.
+  // Five tables referenced the account before the record store replaced the two
+  // clinical ones; four is the floor now, and the assertion names why.
   const populated: string[] = [];
   for (const table of USER_SCOPED_TABLES) {
     const n = await countFor(table, userId);
     if (n > 0) populated.push(`${table}=${n}`);
   }
   assert.ok(
-    populated.length >= 5,
+    populated.length >= 4,
     `expected several populated tables before deletion, got: ${populated.join(', ') || 'none'}`,
   );
 
@@ -181,7 +195,7 @@ test('deletion is complete: no user-scoped row survives', async () => {
 
   // The old session must stop working, which the cascade cannot do because sessions
   // live in process memory.
-  const afterDelete = await call(base, '/api/medications', auth(account.token));
+  const afterDelete = await call(base, '/api/records', auth(account.token));
   assert.equal(afterDelete.status, 401, 'the deleted account token stops working');
 });
 
@@ -268,11 +282,11 @@ test('a deleted username can be registered again and starts empty', async () => 
   const again = await registerAccount(base, { username: account.username, password: 'a-different-password-2' });
   assert.ok(again.token, 'the username is reusable after deletion');
 
-  const meds = await call(base, '/api/medications', auth(again.token));
-  assert.equal(meds.body.length, 0, 'the new account starts with no records');
+  const stillEmpty = await records(again.token, 'dose');
+  assert.equal(stillEmpty.length, 0, 'the new account starts with no doses');
 
-  const labs = await call(base, '/api/labs', auth(again.token));
-  assert.equal(labs.body.length, 0, 'and no lab results');
+  const labs = await records(again.token, 'lab');
+  assert.equal(labs.length, 0, 'and no lab results');
 
   const summary = await call(base, '/auth/account', auth(again.token));
   assert.equal(summary.body.dose_count, 0);
@@ -296,10 +310,10 @@ test('deleting one account leaves another untouched', async () => {
   );
 
   // The cascade must be scoped to one account.
-  assert.equal(await countFor('medication_events', bystanderId), 1, 'the bystander kept its dose');
+  assert.equal(await countFor('records', bystanderId), 2, 'the bystander kept its dose and its lab');
   assert.equal(await countFor('user_settings', bystanderId), 1, 'and its settings');
 
-  const stillWorks = await call(base, '/api/medications', auth(bystander.token));
+  const stillWorks = await call(base, '/api/records', auth(bystander.token));
   assert.equal(stillWorks.status, 200, 'the bystander session still works');
-  assert.equal(stillWorks.body.length, 1);
+  assert.equal(stillWorks.body.records.length, 2);
 });
