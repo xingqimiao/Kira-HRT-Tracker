@@ -18,7 +18,7 @@ const SESSIONS_I18N = {
         "core.sessions.revoke_others": "退出其他所有设备",
         "core.sessions.notice_revoked": "已退出该设备。",
         "core.sessions.notice_revoked_others": "已退出其他所有设备。",
-        "core.sessions.note": "会话只在你解锁期间存在：30 分钟无活动即失效，服务器重启也会全部失效。",
+        "core.sessions.note": "会话保存在服务器内存中：一段时间无活动后自动失效，服务器重启也会让全部会话失效。",
     },
     "zh-TW": {
         "core.sessions.section": "登入裝置",
@@ -30,7 +30,7 @@ const SESSIONS_I18N = {
         "core.sessions.revoke_others": "登出其餘所有裝置",
         "core.sessions.notice_revoked": "已登出該裝置。",
         "core.sessions.notice_revoked_others": "已登出其餘所有裝置。",
-        "core.sessions.note": "工作階段只在你解鎖期間存在：30 分鐘無活動即失效，伺服器重啟也會全部失效。",
+        "core.sessions.note": "工作階段儲存在伺服器記憶體中：一段時間無活動後自動失效，伺服器重啟也會讓全部工作階段失效。",
     },
     "yue": {
         "core.sessions.section": "登入咗嘅裝置",
@@ -42,7 +42,7 @@ const SESSIONS_I18N = {
         "core.sessions.revoke_others": "登出其他所有裝置",
         "core.sessions.notice_revoked": "登出咗呢部機。",
         "core.sessions.notice_revoked_others": "登出咗其他所有裝置。",
-        "core.sessions.note": "工作階段淨係喺你解鎖嗰陣存在：30 分鐘冇活動就失效，伺服器重啟都會全部失效。",
+        "core.sessions.note": "工作階段擺喺伺服器記憶體度：一段時間冇活動就自動失效，伺服器重啟都會令全部工作階段失效。",
     },
     "en": {
         "core.sessions.section": "Signed-in devices",
@@ -54,7 +54,7 @@ const SESSIONS_I18N = {
         "core.sessions.revoke_others": "Sign out all other devices",
         "core.sessions.notice_revoked": "Signed out that device.",
         "core.sessions.notice_revoked_others": "Signed out all other devices.",
-        "core.sessions.note": "Sessions exist only while you are unlocked: they expire after 30 minutes of inactivity, and restarting the server ends all of them.",
+        "core.sessions.note": "Sessions live in the server's memory: they expire after a period of inactivity, and restarting the server ends all of them.",
     },
     "ja": {
         "core.sessions.section": "ログイン中の端末",
@@ -66,7 +66,7 @@ const SESSIONS_I18N = {
         "core.sessions.revoke_others": "他のすべての端末をログアウト",
         "core.sessions.notice_revoked": "この端末をログアウトしました。",
         "core.sessions.notice_revoked_others": "他のすべての端末をログアウトしました。",
-        "core.sessions.note": "セッションは解錠中のみ存在します。30 分操作がないと失効し、サーバーの再起動でもすべて失効します。",
+        "core.sessions.note": "セッションはサーバーのメモリ上にあります。一定時間操作がないと失効し、サーバーの再起動でもすべて失効します。",
     },
     "ko": {
         "core.sessions.section": "로그인한 기기",
@@ -78,7 +78,7 @@ const SESSIONS_I18N = {
         "core.sessions.revoke_others": "다른 모든 기기 로그아웃",
         "core.sessions.notice_revoked": "해당 기기를 로그아웃했습니다.",
         "core.sessions.notice_revoked_others": "다른 모든 기기를 로그아웃했습니다.",
-        "core.sessions.note": "세션은 잠금 해제 중에만 존재합니다. 30분간 활동이 없으면 만료되고, 서버를 재시작하면 모두 사라집니다.",
+        "core.sessions.note": "세션은 서버 메모리에 있습니다. 일정 시간 활동이 없으면 만료되고, 서버를 재시작하면 모두 사라집니다.",
     },
     "tr": {
         "core.sessions.section": "Oturum açık cihazlar",
@@ -90,7 +90,7 @@ const SESSIONS_I18N = {
         "core.sessions.revoke_others": "Diğer tüm cihazların oturumunu kapat",
         "core.sessions.notice_revoked": "O cihazın oturumu kapatıldı.",
         "core.sessions.notice_revoked_others": "Diğer tüm cihazların oturumu kapatıldı.",
-        "core.sessions.note": "Oturumlar yalnızca kilit açıkken vardır: 30 dakika işlem olmazsa sona erer ve sunucu yeniden başlatıldığında hepsi biter.",
+        "core.sessions.note": "Oturumlar sunucunun belleğinde tutulur: belirli bir süre işlem olmazsa sona erer ve sunucu yeniden başlatıldığında hepsi biter.",
     },
 } as const;
 
