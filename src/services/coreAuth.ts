@@ -301,20 +301,6 @@ export const coreAuth = {
     );
   },
 
-  /** Switch privacy mode. Re-wraps the data key; records are never re-encrypted. */
-  async switchPrivacyMode(
-    token: string,
-    mode: PrivacyMode,
-    currentPassword: string,
-  ): Promise<PrivacyMode> {
-    const raw = await request<any>('/auth/privacy-mode', {
-      method: 'POST',
-      token,
-      body: JSON.stringify({ privacy_mode: mode, current_password: currentPassword }),
-    });
-    return raw.privacy_mode === 'advanced' ? 'advanced' : 'standard';
-  },
-
   /** Create or replace the recovery key. The plaintext is returned once, here only. */
   async createRecoveryKey(token: string, currentPassword: string): Promise<string> {
     const raw = await request<any>('/auth/recovery-key', {
@@ -382,15 +368,26 @@ export const coreAuth = {
    *
    * Returns the URL to send the browser to. `purpose: 'link'` attaches a provider
    * account to the signed-in one and needs a token.
+   *
+   * `intent: 'register'` tells the server this start came from the sign-up screen, so
+   * it asks for human verification before minting an authorization URL — that is the
+   * path that can create an account. A plain sign-in sends no intent and is not
+   * gated: for an account created through a provider, the provider *is* the only way
+   * in, so a blocked challenge must not be able to lock someone out of their records.
    */
   async startOAuth(
     provider: LoginProvider,
     purpose: 'login' | 'link',
-    token?: string,
+    opts: { token?: string; turnstileToken?: string; intent?: 'register' } = {},
   ): Promise<{ authorizeUrl: string; state: string }> {
+    const query = new URLSearchParams();
+    if (purpose === 'link') query.set('purpose', 'link');
+    if (opts.intent) query.set('intent', opts.intent);
+    if (opts.turnstileToken) query.set('turnstile_token', opts.turnstileToken);
+    const suffix = query.toString() ? `?${query.toString()}` : '';
     const raw = await request<any>(
-      `/auth/${provider}/start${purpose === 'link' ? '?purpose=link' : ''}`,
-      token ? { token } : {},
+      `/auth/${provider}/start${suffix}`,
+      opts.token ? { token: opts.token } : {},
     );
     return { authorizeUrl: raw.authorize_url, state: raw.state };
   },

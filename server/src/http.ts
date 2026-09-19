@@ -404,6 +404,23 @@ export function createRequestHandler() {
           const ctx = await contextFor(req);
           if (!ctx) return send(res, 401, { error: 'authentication required to link an account' });
           userId = ctx.userId;
+        } else if (url.searchParams.get('intent') === 'register') {
+          // Human verification, asked for only when the caller says it is signing up.
+          //
+          // Not on every login start, deliberately: a provider sign-in is the *only*
+          // way into an account created through a provider, and those accounts have
+          // no password. Gating that would mean a blocked or adblocked Turnstile
+          // locks the account's owner out of their own records. So the challenge is
+          // tied to the path that creates an account, where bulk abuse actually is —
+          // and `intent` is a claim the client makes, so a script that omits it skips
+          // this check. That is the honest bound of this gate: it stops form-driven
+          // abuse and scripted signup from the app, not a determined client.
+          const human = await verifyTurnstile(
+            url.searchParams.get('turnstile_token'),
+            ['oauth', 'register'],
+            clientIp(req),
+          );
+          if (!human.ok) return send(res, 403, { error: human.error });
         }
         const result = await AccountService.startGoogleAuthorization({
           purpose: wantsLink ? 'link' : 'login',
@@ -450,6 +467,15 @@ export function createRequestHandler() {
           const ctx = await contextFor(req);
           if (!ctx) return send(res, 401, { error: 'authentication required to link an account' });
           userId = ctx.userId;
+        } else if (url.searchParams.get('intent') === 'register') {
+          // See the Google route above: same gate, same reason, and the same
+          // deliberate exemption for a plain sign-in.
+          const human = await verifyTurnstile(
+            url.searchParams.get('turnstile_token'),
+            ['oauth', 'register'],
+            clientIp(req),
+          );
+          if (!human.ok) return send(res, 403, { error: human.error });
         }
         const result = await AccountService.startXAuthorization({
           purpose: wantsLink ? 'link' : 'login',

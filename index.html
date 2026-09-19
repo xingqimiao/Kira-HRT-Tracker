@@ -19,25 +19,35 @@
     <meta name="twitter:description" content="Dose logging and pharmacokinetic estimates. Private by default.">
     <meta name="twitter:image" content="https://hrt.kiramyao.com/og.png">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-    <!-- Cloudflare Turnstile, human verification on the register and X-setup forms.
-         Loaded with the page (async/defer) and rendered explicitly by
-         TurnstileWidget, because this is a third-party request the privacy policy
-         now discloses. -->
+    <!-- Cloudflare Turnstile, human verification on the register form and on the start
+         of a third-party sign-in. Loaded with the page (async/defer) and rendered
+         explicitly by TurnstileWidget, because this is a third-party request the
+         privacy policy now discloses. -->
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <title>Kira Tracker</title>
     <!-- The app is a client-rendered SPA, so without this the page served to a client
          that does not run JavaScript — a crawler, a link-preview bot, or the reviewer
          checking our OAuth branding — is an empty shell. Google's brand verification
          requires the home page to be publicly accessible, to say what the app does and
-         to link to the privacy policy and terms, and it does not execute JavaScript.
-         This is the real content, in the initial HTML. `index.tsx` drops it before the
-         first React render, so a browser never sees both. -->
+         to link to the privacy policy, and it does not execute JavaScript.
+
+         Visible to those clients, invisible to browsers. This script runs while the
+         head is still parsing — before anything is painted — so a browser never sees
+         the fallback at all rather than seeing it flash and then vanish. A client that
+         does not run the script never gets the `js` class, so it still reads the whole
+         block below. `index.tsx` also empties `#root` before the first render, which is
+         belt and braces: this hides it, that removes it. -->
+    <script>document.documentElement.className += ' js';</script>
     <style>
         .boot-fallback {
             max-width: 46rem;
             margin: 0 auto;
             padding: 2.5rem 1.25rem;
             font: 16px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+        }
+
+        html.js .boot-fallback {
+            display: none;
         }
 
         .boot-fallback h1 {

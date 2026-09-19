@@ -2,13 +2,12 @@ import React, { useState } from 'react';
 import Icon from './Icon';
 import { Loader2, AlertTriangle, X } from '../icons';
 
-import TurnstileWidget from './TurnstileWidget';
+import TurnstileWidget, { TURNSTILE_CONFIGURED } from './TurnstileWidget';
 import {
     coreAuth,
     CoreAuthError,
     PROVIDER_NAMES,
     type LoginProvider,
-    type PrivacyMode,
 } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -65,12 +64,19 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
     // Null until `/health` has answered, so neither button is offered on a guess.
     const [providers, setProviders] = useState<{ x: boolean; google: boolean } | null>(null);
 
-    // Registration: the chosen data-security mode, and the human-verification token.
-    const [privacyMode, setPrivacyMode] = useState<PrivacyMode>('standard');
+    // Registration: the human-verification token, and the reset that forces a fresh
+    // challenge after a rejected submit (a solved token is single use).
     const [turnstileToken, setTurnstileToken] = useState('');
-    // Bumped to force a fresh challenge after a rejected submit, since a solved
-    // token is single use.
     const [turnstileReset, setTurnstileReset] = useState(0);
+
+    /**
+     * Whether the challenge is satisfied, or whether there is none to satisfy.
+     *
+     * A deployment with no Turnstile configured reports an empty token and expects
+     * submission anyway, so gating on the token alone would disable every button on
+     * it. `TURNSTILE_CONFIGURED` is the build-time half of that distinction.
+     */
+    const verified = !TURNSTILE_CONFIGURED || turnstileToken !== '';
 
     // Data unlock (advanced mode): which factor, and the secret for it.
     const [unlockFactor, setUnlockFactor] = useState<'password' | 'recovery'>('password');
@@ -138,7 +144,7 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
             if (isLogin) {
                 await session.signIn(username, password);
             } else {
-                await session.register(username, password, { privacyMode, turnstileToken });
+                await session.register(username, password, { turnstileToken });
             }
             finish();
         } catch (err) {
@@ -178,7 +184,12 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
         setError(null);
         setBusy(true);
         try {
-            const { authorizeUrl } = await coreAuth.startOAuth(provider, 'login');
+            const { authorizeUrl } = await coreAuth.startOAuth(provider, 'login', {
+                turnstileToken,
+                // Only the sign-up screen asks the server for verification; see the
+                // note on `startOAuth` for why a plain sign-in must not be gated.
+                ...(isLogin ? {} : { intent: 'register' as const }),
+            });
             // Full navigation, not a popup: the callback is on the API host and returns
             // the browser to a landing route, which a popup would break out of.
             window.location.href = authorizeUrl;
@@ -280,115 +291,56 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
 
             {/* ── Credentials ────────────────────────────────────────────────── */}
             {screen === 'credentials' && (
-                <form onSubmit={handleCredentials} className="space-y-4">
+                <form onSubmit={handleCredentials} className="space-y-5">
                     <p className="text-sm text-[var(--color-m3-on-surface-variant)]  !mt-0">
                         {isLogin ? t('core.signin.intro') : t('core.signup.intro')}
                     </p>
 
-                    <div className="space-y-1.5">
-                        <label className="text-sm" htmlFor="core-username">{t('core.username')}</label>
-                        <input
-                            id="core-username"
-                            className="input-base"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            autoComplete="username"
-                            autoCapitalize="none"
-                            autoCorrect="off"
-                            required
-                            minLength={3}
-                            maxLength={30}
-                        />
-                    </div>
+                    {/* Fields, grouped. MD3 puts related inputs in one block with a
+                        consistent 16dp rhythm rather than one gap per element. */}
+                    <div className="space-y-4">
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium" htmlFor="core-username">
+                                {t('core.username')}
+                            </label>
+                            <input
+                                id="core-username"
+                                className="input-base"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                                autoComplete="username"
+                                autoCapitalize="none"
+                                autoCorrect="off"
+                                required
+                                minLength={3}
+                                maxLength={30}
+                            />
+                        </div>
 
-                    <div className="space-y-1.5">
-                        <label className="text-sm" htmlFor="core-password">{t('core.password')}</label>
-                        <input
-                            id="core-password"
-                            type="password"
-                            className="input-base"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            autoComplete={isLogin ? 'current-password' : 'new-password'}
-                            required
-                            minLength={8}
-                        />
-                        {!isLogin && (
-                            <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">
-                                {t('core.signup.hint')}
-                            </p>
-                        )}
-                    </div>
-
-                    {!isLogin && (
-                        <fieldset className="space-y-2 border-0 p-0 m-0">
-                            <legend className="text-sm font-medium mb-1">
-                                {t('core.privacy.choose_title')}
-                            </legend>
-                            {/* A radio group, not a pair of toggles: the two modes are one
-                                mutually exclusive choice, so `aria-pressed` on two buttons
-                                described it wrongly and left screen readers with no group
-                                label. Native inputs keep roving focus and arrow keys for
-                                free; the ring is what MD3 specifies — 2dp outline, 20dp,
-                                filled 10dp core when selected. */}
-                            {(['standard', 'advanced'] as PrivacyMode[]).map((mode) => {
-                                const selected = privacyMode === mode;
-                                return (
-                                    <label
-                                        key={mode}
-                                        className={`flex min-h-12 w-full cursor-pointer items-start gap-3 rounded-xl border p-3 text-left transition-colors ${
-                                            selected
-                                                ? 'border-[var(--color-m3-primary)] bg-[var(--color-m3-primary-container)]'
-                                                : 'border-[var(--color-m3-outline-variant)] hover:bg-[var(--color-m3-surface-container)]'
-                                        }`}
-                                        style={{ transitionDuration: 'var(--md-sys-motion-duration-short3)' }}
-                                    >
-                                        <input
-                                            type="radio"
-                                            name="privacy-mode"
-                                            value={mode}
-                                            checked={selected}
-                                            onChange={() => setPrivacyMode(mode)}
-                                            className="peer sr-only"
-                                        />
-                                        <span
-                                            aria-hidden="true"
-                                            className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--color-m3-primary)] peer-focus-visible:ring-offset-2 ${
-                                                selected
-                                                    ? 'border-[var(--color-m3-primary)]'
-                                                    : 'border-[var(--color-m3-outline)]'
-                                            }`}
-                                        >
-                                            {selected && (
-                                                <span className="h-2.5 w-2.5 rounded-full bg-[var(--color-m3-primary)]" />
-                                            )}
-                                        </span>
-                                        <span className="min-w-0">
-                                            <span className="block text-sm font-medium text-[var(--color-m3-on-surface)]">
-                                                {mode === 'standard'
-                                                    ? t('core.privacy.standard_name')
-                                                    : t('core.privacy.advanced_name')}
-                                            </span>
-                                            <span className="mt-1 block text-xs text-[var(--color-m3-on-surface-variant)]">
-                                                {mode === 'standard'
-                                                    ? t('core.privacy.standard_blurb')
-                                                    : t('core.privacy.advanced_blurb')}
-                                            </span>
-                                        </span>
-                                    </label>
-                                );
-                            })}
-                            {privacyMode === 'advanced' && (
-                                <p className="text-xs text-[var(--color-m3-on-surface-variant)]">
-                                    {t('core.privacy.advanced_warning')}
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium" htmlFor="core-password">
+                                {t('core.password')}
+                            </label>
+                            <input
+                                id="core-password"
+                                type="password"
+                                className="input-base"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                autoComplete={isLogin ? 'current-password' : 'new-password'}
+                                required
+                                minLength={8}
+                            />
+                            {!isLogin && (
+                                // Supporting text belongs to its field rather than loose in
+                                // the form, where it stops reading as advice about the
+                                // password above it.
+                                <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">
+                                    {t('core.signup.hint')}
                                 </p>
                             )}
-                        </fieldset>
-                    )}
-
-                    {!isLogin && (
-                        <TurnstileWidget action="register" onToken={setTurnstileToken} resetSignal={turnstileReset} />
-                    )}
+                        </div>
+                    </div>
 
                     {error && (
                         <p className="text-xs flex items-start gap-1.5 text-[#B3261E]" role="alert">
@@ -396,13 +348,34 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                             <span>{error}</span>
                         </p>
                     )}
-                    <button type="submit" disabled={busy} className="btn-primary w-full">
+
+                    {/* On the register screen the challenge sits above the submit, because
+                        it gates that button *and* the provider buttons below the divider —
+                        one placement, one token, both paths. On the login screen the password
+                        button is not gated (it has its own lockout), so the widget belongs
+                        with the providers instead. */}
+                    {!isLogin && (
+                        <>
+                            <TurnstileWidget action="register" onToken={setTurnstileToken} resetSignal={turnstileReset} />
+                            {TURNSTILE_CONFIGURED && !verified && (
+                                <p className="text-xs text-center text-[var(--color-m3-on-surface-variant)] !mt-2">
+                                    {t('core.oauth.verify_required')}
+                                </p>
+                            )}
+                        </>
+                    )}
+
+                    <button
+                        type="submit"
+                        disabled={busy || (!isLogin && !verified)}
+                        className="btn-primary w-full"
+                    >
                         {busy && <Icon icon={Loader2} size={16} className="animate-spin" />}
                         {isLogin ? t('core.sign_in') : t('core.create_account')}
                     </button>
 
                     {(providers?.x || providers?.google) && (
-                        <>
+                        <div className="space-y-3">
                             <div className="flex items-center gap-2">
                                 {/* MD3 divider: 1dp of outline-variant, no shadow. */}
                                 <div className="h-px flex-1 bg-[var(--color-m3-outline-variant)]" />
@@ -411,56 +384,68 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                                 </span>
                                 <div className="h-px flex-1 bg-[var(--color-m3-outline-variant)]" />
                             </div>
-                            {(['x', 'google'] as LoginProvider[]).filter(p => providers?.[p]).map(provider => (
-                                <button
-                                    key={provider}
-                                    type="button"
-                                    onClick={() => handleProvider(provider)}
-                                    disabled={busy}
-                                    aria-label={t('core.oauth.continue').replace('{provider}', PROVIDER_NAMES[provider])}
-                                    className="btn-secondary w-full"
-                                >
-                                    {t('core.oauth.continue').replace('{provider}', PROVIDER_NAMES[provider])}
-                                </button>
-                            ))}
+
+                            <div className="space-y-2">
+                                {(['x', 'google'] as LoginProvider[]).filter(p => providers?.[p]).map(provider => (
+                                    <button
+                                        key={provider}
+                                        type="button"
+                                        onClick={() => handleProvider(provider)}
+                                        disabled={busy || (!isLogin && !verified)}
+                                        aria-label={t('core.oauth.continue').replace('{provider}', PROVIDER_NAMES[provider])}
+                                        className="btn-secondary w-full"
+                                    >
+                                        {t('core.oauth.continue').replace('{provider}', PROVIDER_NAMES[provider])}
+                                    </button>
+                                ))}
+                            </div>
+
                             {/* Stated up front, because the alternative is a user discovering
-                                mid-flow that the button did not do what they expected. */}
-                            <p className="text-xs text-center text-[var(--color-m3-on-surface-variant)] ">
-                                {t('core.oauth.note')}
-                            </p>
-                        </>
+                                mid-flow that the button did not do what they expected. Shown
+                                only while registering: that is where the gate it describes
+                                applies. */}
+                            {!isLogin && (
+                                <p className="text-xs text-center text-[var(--color-m3-on-surface-variant)] ">
+                                    {t('core.oauth.note')}
+                                </p>
+                            )}
+                        </div>
                     )}
 
-                    <div className="pt-1 text-center text-sm text-[var(--color-m3-on-surface-variant)] ">
-                        {isLogin ? t('core.signin.no_account') : t('core.signin.has_account')}{' '}
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setIsLogin(v => !v);
-                                setError(null);
-                            }}
-                            className="text-[var(--color-m3-primary)]  hover:underline"
-                        >
-                            {isLogin ? t('core.signin.go_register') : t('core.signin.go_login')}
-                        </button>
-                    </div>
-
-                    {/* Only where an account is actually created, and opened in a new tab so
-                        reading it does not throw away a half-filled form. The whole sentence
-                        is the link: split into a label and a fragment it would read as
-                        broken grammar in half the seven languages this app ships. */}
-                    {!isLogin && (
-                        <p className="text-xs text-center">
-                            <a
-                                href="/privacy"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-[var(--color-m3-on-surface-variant)]  underline underline-offset-2 hover:text-[var(--color-m3-primary)]"
+                    {/* One footer block, so the way out of this form and the legal line
+                        read as a single closing section instead of two stray paragraphs. */}
+                    <div className="space-y-2 pt-1">
+                        <p className="text-center text-sm text-[var(--color-m3-on-surface-variant)] ">
+                            {isLogin ? t('core.signin.no_account') : t('core.signin.has_account')}{' '}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsLogin(v => !v);
+                                    setError(null);
+                                }}
+                                className="text-[var(--color-m3-primary)]  hover:underline"
                             >
-                                {t('core.signup.privacy')}
-                            </a>
+                                {isLogin ? t('core.signin.go_register') : t('core.signin.go_login')}
+                            </button>
                         </p>
-                    )}
+
+                        {/* Only where an account is actually created, and opened in a new tab so
+                            reading it does not throw away a half-filled form. The whole sentence
+                            is the link: split into a label and a fragment it would read as
+                            broken grammar in half the seven languages this app ships. */}
+                        {!isLogin && (
+                            <p className="text-xs text-center">
+                                <a
+                                    href="/privacy"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[var(--color-m3-on-surface-variant)]  underline underline-offset-2 hover:text-[var(--color-m3-primary)]"
+                                >
+                                    {t('core.signup.privacy')}
+                                </a>
+                            </p>
+                        )}
+                    </div>
                 </form>
             )}
         </>

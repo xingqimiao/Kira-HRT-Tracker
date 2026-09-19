@@ -3,7 +3,7 @@ import Icon from '../components/Icon';
 import { useTranslation } from '../contexts/LanguageContext';
 import { AlertTriangle, Check, Copy, KeyRound, Loader2, LogOut, Lock, MonitorSmartphone, RefreshCw, Trash2, Unlink } from '../icons';
 
-import { coreAuth, CoreAuthError, PROVIDER_NAMES, type AccountSummary, type LoginMethods, type OAuthLink, type PrivacyMode, type SessionInfo } from '../services/coreAuth';
+import { coreAuth, CoreAuthError, PROVIDER_NAMES, type AccountSummary, type LoginMethods, type OAuthLink, type SessionInfo } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
 
 /**
@@ -31,14 +31,7 @@ interface CoreAccountSettingsProps {
   onDeleted: () => void;
 }
 
-type Dialog = null | 'password' | 'unlink' | 'delete' | 'privacy' | 'recoveryKey';
-
-/** What each mode actually does, in the words the spec asked for. */
-function privacyCopy(t: (k: string) => string, mode: PrivacyMode) {
-  return mode === 'advanced'
-    ? { name: t('core.privacy.advanced_name'), blurb: t('core.privacy.advanced_desc') }
-    : { name: t('core.privacy.standard_name'), blurb: t('core.privacy.standard_desc') };
-}
+type Dialog = null | 'password' | 'unlink' | 'delete' | 'recoveryKey';
 
 /**
  * A date for display, or null when there is not one to show.
@@ -180,7 +173,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
     setBusy(true);
     setError(null);
     try {
-      const { authorizeUrl } = await coreAuth.startOAuth(provider, 'link', token ?? undefined);
+      const { authorizeUrl } = await coreAuth.startOAuth(provider, 'link', { token: token ?? undefined });
       window.location.href = authorizeUrl;
     } catch (err) {
       setError(describe(err));
@@ -340,42 +333,32 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
           </section>
         )}
 
-        {/* ── Privacy mode ─────────────────────────────────────────────────── */}
+        {/* ── Recovery key ─────────────────────────────────────────────────── */}
+        {/* No mode row any more. The account used to be offered a choice between a
+            standard mode (the server holds a key it can open) and an advanced one
+            (only your own credentials open it), and the UI had a switcher for it.
+            That choice is gone from the product: there is one arrangement now, so
+            there is nothing to display and nothing to switch. What remains is the
+            recovery key, which is real and worth keeping — it is the way back in
+            when the password is forgotten. */}
         <section className="mb-6">
-          <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{t('core.privacy.section')}</span>
+          <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>
+            {t('core.privacy.recovery_section')}
+          </span>
 
           <div className="mt-2 flex flex-col">
             <Row
-              icon={<Icon icon={Lock} size={17} />}
-              title={summary ? privacyCopy(t, summary.privacyMode).name : t('core.privacy.section')}
-              subtitle={summary ? privacyCopy(t, summary.privacyMode).blurb : undefined}
-              right={summary ? <span className={`text-xs ${muted}`}>{t('core.privacy.manage')}</span> : undefined}
-              onClick={summary ? () => setDialog('privacy') : undefined}
+              icon={<Icon icon={KeyRound} size={17} />}
+              title={summary?.hasRecoveryKey ? t('core.privacy.replace_recovery') : t('core.privacy.create_recovery')}
+              subtitle={
+                summary?.hasRecoveryKey
+                  ? t('core.privacy.recovery_exists')
+                  : t('core.privacy.recovery_recommend')
+              }
+              onClick={() => setDialog('recoveryKey')}
               disabled={busy}
             />
-
-            {/* Only offered in advanced mode, because only advanced has no server key
-                to fall back on. Shown as "replace" once one exists. */}
-            {summary?.privacyMode === 'advanced' && (
-              <Row
-                icon={<Icon icon={KeyRound} size={17} />}
-                title={summary.hasRecoveryKey ? t('core.privacy.replace_recovery') : t('core.privacy.create_recovery')}
-                subtitle={
-                  summary.hasRecoveryKey
-                    ? t('core.privacy.recovery_exists')
-                    : t('core.privacy.recovery_recommend')
-                }
-                onClick={() => setDialog('recoveryKey')}
-                disabled={busy}
-              />
-            )}
           </div>
-
-          <p className={`text-xs mt-2 ${muted}`}>
-            {summary?.privacyMode === 'advanced'
-              ? t('core.privacy.advanced_warning')
-              : t('core.privacy.standard_note')}
-          </p>
         </section>
 
         {/* ── Signed-in devices ────────────────────────────────────────────── */}
@@ -467,25 +450,6 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
             await run(async () => {
               await coreAuth.changePassword(token!, current, next);
               setNotice(t('core.acct.notice_pw_changed'));
-            });
-            setDialog(null);
-          }}
-          describeError={describe}
-        />
-      )}
-
-      {dialog === 'privacy' && summary && (
-        <PrivacyDialog
-          busy={busy}
-          current={summary.privacyMode}
-          serverRecoveryAvailable={summary.serverRecoveryAvailable}
-          onClose={() => { setDialog(null); setError(null); }}
-          onSubmit={async (mode, currentPassword) => {
-            await run(async () => {
-              const next = await coreAuth.switchPrivacyMode(token!, mode, currentPassword);
-              await refresh();
-              if (next === 'advanced') setNotice(t('core.privacy.notice_advanced'));
-              else setNotice(t('core.privacy.notice_standard'));
             });
             setDialog(null);
           }}
@@ -719,102 +683,12 @@ const PasswordDialog: React.FC<{
 };
 
 /**
- * Switch privacy mode.
- *
- * Given as a consequence-first screen rather than a toggle: both directions change
- * what the server can do with an account, and the advanced direction in particular can
- * make data unrecoverable. The credential asked for is the *current password*, because
- * this changes how the data key is protected.
- */
-const PrivacyDialog: React.FC<{
-  busy: boolean;
-  current: PrivacyMode;
-  serverRecoveryAvailable: boolean;
-  onClose: () => void;
-  onSubmit: (mode: PrivacyMode, currentPassword: string) => Promise<void>;
-  describeError: (e: unknown) => string;
-}> = ({ busy, current, serverRecoveryAvailable, onClose, onSubmit, describeError }) => {
-  const { t } = useTranslation();
-  const [mode, setMode] = useState<PrivacyMode>(current === 'standard' ? 'advanced' : 'standard');
-  const [password, setPassword] = useState('');
-  const [localError, setLocalError] = useState<string | null>(null);
-
-  return (
-    <Dialog title={t('core.privacy.dialog_title')} onClose={onClose}>
-      <form
-        className="space-y-3 mt-1"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setLocalError(null);
-          try {
-            await onSubmit(mode, password);
-          } catch (err) {
-            setLocalError(describeError(err));
-          }
-        }}
-      >
-        <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">
-          {t('core.privacy.dialog_intro').replace('{mode}', privacyCopy(t, current).name)}
-        </p>
-
-        {(['standard', 'advanced'] as PrivacyMode[]).map((m) => {
-          const selected = mode === m;
-          const disabled = m === 'standard' && !serverRecoveryAvailable;
-          return (
-            <button
-              key={m}
-              type="button"
-              disabled={disabled}
-              onClick={() => setMode(m)}
-              aria-pressed={selected}
-              className={`w-full rounded-xl border p-3 text-left  transition-colors disabled:opacity-50 ${
-                selected
-                  ? 'border-[var(--color-m3-primary)] bg-[var(--color-m3-surface-container)]'
-                  : 'border-[var(--color-m3-outline-variant)]'
-              }`}
-              style={{ transitionDuration: 'var(--md-sys-motion-duration-short3)' }}
-            >
-              <span className="flex items-center gap-2">
-                <span
-                  className={`h-4 w-4 shrink-0 rounded-full border-2 ${
-                    selected
-                      ? 'border-[var(--color-m3-primary)] bg-[var(--color-m3-primary)]'
-                      : 'border-[var(--color-m3-outline-variant)]'
-                  }`}
-                />
-                <span className="text-sm font-medium">
-                  {m === 'standard' ? t('core.privacy.standard_name') : t('core.privacy.advanced_name')}
-                </span>
-              </span>
-              <span className="mt-1 block pl-6 text-xs text-[var(--color-m3-on-surface-variant)]">
-                {m === 'standard' ? t('core.privacy.standard_desc') : t('core.privacy.advanced_desc')}
-              </span>
-            </button>
-          );
-        })}
-
-        {/* The consequence, stated before the action rather than after it. */}
-        {mode === 'advanced' && (
-          <p className="callout !text-[0.75rem]">{t('core.privacy.advanced_warning')}</p>
-        )}
-        {mode === 'standard' && (
-          <p className="callout !text-[0.75rem]">{t('core.privacy.downgrade_warning')}</p>
-        )}
-
-        <Field label={t('core.pw.current')} type="password" value={password} onChange={setPassword} autoFocus />
-        {localError && <p className="text-xs text-[#B3261E]" role="alert">{localError}</p>}
-        <Submit busy={busy} disabled={!password}>{t('core.privacy.switch_submit')}</Submit>
-      </form>
-    </Dialog>
-  );
-};
-
-/**
  * Create a recovery key.
  *
  * The plaintext is shown exactly once and the only way out is an explicit "I have
  * saved it", because a recovery key the user never wrote down is a recovery key that
- * does not exist — and in advanced mode this is the last line of defence.
+ * does not exist — and it is the only way back into an account whose password is
+ * forgotten.
  */
 const RecoveryKeyDialog: React.FC<{
   busy: boolean;

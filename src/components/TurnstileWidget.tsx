@@ -25,6 +25,17 @@ const SITE_KEY =
   ((import.meta as unknown as { env?: Record<string, string | undefined> }).env
     ?.VITE_TURNSTILE_SITE_KEY) ?? '0x4AAAAAAE7AY8cxIQH4Q71c';
 
+/**
+ * Whether this deployment asks for human verification at all.
+ *
+ * The form needs this to tell "no challenge to solve" apart from "a challenge was
+ * shown and is not solved yet": both report an empty token, and gating on the token
+ * alone would disable every submit button on a self-hosted instance that has no
+ * widget. Exported rather than passed down because it is a build-time constant, not
+ * state.
+ */
+export const TURNSTILE_CONFIGURED = Boolean(SITE_KEY);
+
 interface TurnstileApi {
   render: (
     el: HTMLElement,
@@ -49,7 +60,7 @@ declare global {
 
 interface Props {
     /** The action the token is minted for; the server checks it matches. */
-    action: 'register' | 'x_setup';
+    action: 'register' | 'oauth';
     /** Called with the token, or '' when it expires or the widget fails. */
     onToken: (token: string) => void;
     /**
