@@ -181,9 +181,9 @@ npx vite build                                                            # 必�
 |---|---|---|---|
 | 1 | **git 标签** `pre-rewrite-7ebba7b` | 指向 `7ebba7b`，成本最低、最耐久 | 只是想回到某个文件 |
 | 2 | **独立工作副本** `E:\HRT-pre-rewrite\` | `git worktree`，detached 在 `pre-rewrite-7ebba7b`；**已复制 `node_modules` 并实测能 `npx vite build` 成功**（产出 `sw-7ebba7b.js`、`VITE_API_ORIGIN` 已写入） | 想**并排对照**旧界面，或在旧代码上验证一个想法 |
-| 3 | **完整历史包** `C:\Users\fkxw2\hrt-backups\hrt-7ebba7b.bundle`（7.7 MB） | `git bundle --all`，含全部分支与标签；`git bundle verify` 已通过（"complete history"） | 仓库本身被搞坏/被删时重建 |
-| 4 | **补丁串** `hrt-7ebba7b-full.patch`（15.6 MB） | `git format-patch` 全量，**纯文本、不依赖 git 历史** | 想要一份能阅读、能选择性 `git am` 的文本记录 |
-| 5 | **源码快照** `worktree-7ebba7b-src.tar.gz`（3.8 MB） | 工作树的 tar（排除 `node_modules`/`dist`/`.git`/`public/ocr`） | 不装 git 也能取回源码 |
+| 3 | **完整历史包** `C:\Users\fkxw2\hrt-backups\hrt-pre-rewrite.bundle          sha256:ee0497268ef3eef5
+pre-rewrite-full.patch          sha256:fd3fe71d0e78112a
+worktree-pre-rewrite-src.tar.gz sha256:7ef0df23d268b45f`（3.8 MB） | 工作树的 tar（排除 `node_modules`/`dist`/`.git`/`public/ocr`） | 不装 git 也能取回源码 |
 
 同目录另有 sha256（前 16 位，用于事后校验没被动过）：
 ```
