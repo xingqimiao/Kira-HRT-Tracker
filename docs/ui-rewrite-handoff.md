@@ -173,55 +173,61 @@ npx vite build                                                            # 必�
 
 ## 9. 可复原性：重写前的备份（**开工前先看这一节**）
 
-用户要求「需要可复原（即需要备份）」。**重写会大范围删改 `src/components/*` 与 `src/pages/*`，所以下面五个恢复点已经建好，都可以独立回退。**
+用户要求「需要可复原（即需要备份）」。重写会大范围删改 `src/components/*` 与 `src/pages/*`，
+所以**五个恢复点已经建好，每一个都实测可用**。开工前先读这一节，并在动手前确认第 1、2 项还在。
 
-### 五个恢复点（都已实测存在）
+### 五个恢复点
 
 | # | 位置 | 是什么 | 什么时候用它 |
 |---|---|---|---|
-| 1 | **git 标签** `pre-rewrite-7ebba7b` | 指向 `7ebba7b`，成本最低、最耐久 | 只是想回到某个文件 |
-| 2 | **独立工作副本** `E:\HRT-pre-rewrite\` | `git worktree`，detached 在 `pre-rewrite-7ebba7b`；**已复制 `node_modules` 并实测能 `npx vite build` 成功**（产出 `sw-7ebba7b.js`、`VITE_API_ORIGIN` 已写入） | 想**并排对照**旧界面，或在旧代码上验证一个想法 |
-| 3 | **完整历史包** `C:\Users\fkxw2\hrt-backups\hrt-pre-rewrite.bundle          sha256:ee0497268ef3eef5
-pre-rewrite-full.patch          sha256:fd3fe71d0e78112a
-worktree-pre-rewrite-src.tar.gz sha256:7ef0df23d268b45f`（3.8 MB） | 工作树的 tar（排除 `node_modules`/`dist`/`.git`/`public/ocr`） | 不装 git 也能取回源码 |
+| 1 | **git 标签 `pre-rewrite`**（=`f09fcd2`） | 指向重写前的最后一次提交，成本最低、最耐久 | 只是想把某个文件取回来 |
+| 2 | **独立并列副本 `E:\HRT-pre-rewrite\`** | `git worktree`，detached 在 `pre-rewrite`；**已复制 `node_modules` 与 `public/ocr`，实测 `npx vite build` 成功** | 想**并排对照**旧界面；或在旧代码上验证一个想法 |
+| 3 | **完整历史包 `C:\Users\fkxw2\hrt-backups\hrt-pre-rewrite.bundle`**（7.7 MB） | `git bundle --all`，含全部提交/分支/标签；已验证「complete history」，并**实测 clone 回滚成功** | 仓库本身被搞坏或被删时重建 |
+| 4 | **全量补丁串 `pre-rewrite-full.patch`**（22 MB） | `git format-patch` 全量，**纯文本、不依赖 git 历史** | 想要能阅读、能选择性 `git am` 的文本记录 |
+| 5 | **源码快照 `worktree-pre-rewrite-src.tar.gz`**（3.8 MB） | 工作树的 tar（排除 `node_modules`/`dist`/`.git`/`public/ocr`） | 不装 git 也能取回源码 |
 
-同目录另有 sha256（前 16 位，用于事后校验没被动过）：
+3/4/5 都在 `C:\Users\fkxw2\hrt-backups\`，同目录另有 sha256（前 16 位，用于事后确认文件没被动过）：
+
 ```
-hrt-7ebba7b.bundle          sha256:9ac8c435a1ce3ec5
-hrt-7ebba7b-full.patch      sha256:38f7a6de0cef578a
-worktree-7ebba7b-src.tar.gz sha256:3d410b332e637a94
+hrt-pre-rewrite.bundle          sha256:ee0497268ef3eef5
+pre-rewrite-full.patch          sha256:fd3fe71d0e78112a
+worktree-pre-rewrite-src.tar.gz sha256:7ef0df23d268b45f
 ```
 
 ### 怎么回退（三条路，按场景选）
 
 ```powershell
-# A. 只想丢掉当前改动、回到重写前（磁盘上已有备份，故 --hard 安全）
-git -C E:\HRT checkout -- .            # 先试软的：只丢工作区未暂存
-git -C E:\HRT reset --hard pre-rewrite-7ebba7b   # 彻底回去（会丢未提交的改动，先确认备份还在）
-git -C E:\HRT clean -fd                # 再清掉新增的文件（会删 untracked，先看 git status）
+# A. 丢掉当前改动、回到重写前（备份都在磁盘上，所以 --hard 是安全的）
+git -C E:\HRT checkout -- .                       # 先试软的：只丢工作区未暂存
+git -C E:\HRT reset --hard pre-rewrite            # 彻底回去（会丢未提交的改动，先确认备份还在）
+git -C E:\HRT clean -fd                           # 再清新增文件（会删 untracked，先看 git status）
 
-# B. 想在新分支上比着旧代码做（推荐：不破坏当前工作）
-git -C E:\HRT checkout -b rewrite pre-rewrite-7ebba7b
+# B. 想比着旧代码做（推荐：不破坏当前工作）
+git -C E:\HRT checkout -b rewrite pre-rewrite
 
 # C. 仓库被彻底搞坏：从 bundle 重建
-git clone C:\Users\fkxw2\hrt-backups\hrt-7ebba7b.bundle E:\HRT-restored
+git clone C:\Users\fkxw2\hrt-backups\hrt-pre-rewrite.bundle E:\HRT-restored
 ```
 
 ### 操作纪律（避免「备份了但用不上」）
 
-1. **重写在一个新分支上做**：`git checkout -b rewrite`。这样 `main` 本身始终停在 `7ebba7b`，`git diff main` 就是本轮全部改动。
-2. **每完成一个组件就 commit**（不比一次大 commit 难，但回退粒度从「整个重写」变成「一个组件」）。
-3. **删文件前先确认它进了标签**：`git ls-files <path>` 能列出来就说明在 `7ebba7b` 里、可恢复；`git ls-files --others` 里出现过的文件**不在**版本控制里（例如本轮新写的交接单 `docs/ui-rewrite-handoff.md` 当时还是 untracked），删了就真没了 —— 提交它。
-4. **不要 `git push --force`、不要 `git reset --hard` 后再 `git gc --prune=now`**：备份点 1/2/3 都依赖对象还在。
-5. 本轮**不上传**（不 push、不部署），所以线上 `hrt.kiramyao.com` 自动是一份可用的参照 —— 出问题时它可以当第 6 个恢复点。
+1. **重写在新分支上做**：`git checkout -b rewrite`。这样 `main` 始终停在 `pre-rewrite`，`git diff pre-rewrite` 就是本轮全部改动。
+2. **每完成一个组件就 commit**：回退粒度从「整个重写」降到一个组件。
+3. **删文件前先确认它在版本控制里**：`git ls-files <path>` 能列出来就可恢复；`git ls-files --others` 里的文件**不在**任何提交中，删了就真没了 —— 先提交它。
+4. **不要 `git push --force`；不要 `reset --hard` 之后跑 `git gc --prune=now`** —— 恢复点 1/2/3 都依赖这些对象还在。
+5. **本轮不 push、不部署**，所以线上 `hrt.kiramyao.com` 本身就是一份可对照的旧版本，出问题时可以当第 6 个恢复点。
 
 ### 曲线与试管也在这套保护里
 
-`ResultChart.tsx`/`BloodVial.tsx` 属于「不变」范围，但万一被误改：`git checkout pre-rewrite-7ebba7b -- src/components/ResultChart.tsx src/components/BloodVial.tsx` 即可单独取回，或用第 2 项并排对照。
+`ResultChart.tsx` / `BloodVial.tsx` 属于「不变」范围；万一被误改，单独取回即可：
+
+```powershell
+git -C E:\HRT checkout pre-rewrite -- src/components/ResultChart.tsx src/components/BloodVial.tsx
+```
 
 ---
 
-## 9. 敏感信息（不要打印、不要提交）
+## 10. 敏感信息（不要打印、不要提交）
 
 - 生产密钥与 `DATABASE_URL` 在服务器 `/srv/hrt/.env`。
 - Cloudflare 凭据：`C:\Users\fkxw2\Downloads\cloudflarewrite.txt` 与 `E:\cloudflare.txt`（后者含 S3 access/secret key）；account id 见 runtime memory。
@@ -231,7 +237,15 @@ git clone C:\Users\fkxw2\hrt-backups\hrt-7ebba7b.bundle E:\HRT-restored
 
 ---
 
-## 10. 完成判据（建议写进 commit message）
+## 11. 完成后要更新的东西
+
+1. 把本轮结果写进 `docs/md3-audit.md`（分数与遗留），并新建一份交付记录。
+2. 重新生成备份点（重写后的状态），命名用 `post-rewrite-<commit>`，并更新本文件的 §9 表。
+3. **不要** push，**不要** 部署 —— 等用户明确指令。
+
+---
+
+## 12. 完成判据
 
 - [ ] `src/pages/*` 里不再出现手写的 `px-N py-N text-X` 布局工具类，页面只做「组合组件 + 传数据」。
 - [ ] 每个组件都能指到 `material-3/references/component-catalog.md` 里的哪一节。
