@@ -210,6 +210,35 @@ const toOAuthLink = (raw: any): OAuthLink => ({
   lastLoginAt: raw.lastLoginAt ?? null,
 });
 
+/**
+ * Carry "keep me signed in" across a provider round trip.
+ *
+ * The box lives on the sign-in screen and leaving for X or Google unloads that screen,
+ * so the choice has to be parked somewhere the landing route can read when it exchanges
+ * the one-time code. It is a preference, not a credential — localStorage is the right
+ * shelf — and it is cleared on read so a later sign-in does not inherit it.
+ */
+const KEEP_SIGNED_IN_KEY = 'hrt_core_keep';
+
+function rememberKeepSignedIn(): void {
+  try {
+    window.localStorage.setItem(KEEP_SIGNED_IN_KEY, '1');
+  } catch {
+    // Private mode or a full quota: the sign-in still works, it just takes the
+    // ordinary session. Not worth failing a login over.
+  }
+}
+
+function takeKeepSignedIn(): boolean {
+  try {
+    const kept = window.localStorage.getItem(KEEP_SIGNED_IN_KEY) === '1';
+    window.localStorage.removeItem(KEEP_SIGNED_IN_KEY);
+    return kept;
+  } catch {
+    return false;
+  }
+}
+
 export const coreAuth = {
   // --- Registration ---------------------------------------------------------
 
@@ -338,8 +367,9 @@ export const coreAuth = {
   async startOAuth(
     provider: LoginProvider,
     purpose: 'login' | 'link',
-    opts: { token?: string; turnstileToken?: string; intent?: 'register' } = {},
+    opts: { token?: string; turnstileToken?: string; intent?: 'register'; persistent?: boolean } = {},
   ): Promise<{ authorizeUrl: string; state: string }> {
+    if (opts.persistent) rememberKeepSignedIn();
     const query = new URLSearchParams();
     if (purpose === 'link') query.set('purpose', 'link');
     if (opts.intent) query.set('intent', opts.intent);
@@ -363,9 +393,11 @@ export const coreAuth = {
     provider: LoginProvider,
     code: string,
   ): Promise<{ userId: string; username: string; token: string | null }> {
+    // Reading the parked preference here is deliberate: this is the one call both
+    // provider flows make, and it is the only moment the choice is still available.
     const raw = await request<any>(`/auth/${provider}/exchange`, {
       method: 'POST',
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ code, ...(takeKeepSignedIn() ? { persistent: true } : {}) }),
     });
     return {
       userId: raw.user_id,

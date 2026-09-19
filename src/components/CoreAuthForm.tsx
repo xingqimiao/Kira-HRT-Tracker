@@ -165,6 +165,9 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                 // Only the sign-up screen asks the server for verification; see the
                 // note on `startOAuth` for why a plain sign-in must not be gated.
                 ...(isLogin ? {} : { intent: 'register' as const }),
+                // Carried through the round trip by the service, because this screen is
+                // unloaded the moment the browser leaves for the provider.
+                persistent: keepSignedIn,
             });
             // Full navigation, not a popup: the callback is on the API host and returns
             // the browser to a landing route, which a popup would break out of.
