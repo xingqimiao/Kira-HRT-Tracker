@@ -207,14 +207,14 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
           ← {t('core.back')}
         </button>
 
-        <h1 className="text-xl font-semibold mb-1">{t('core.acct.title')}</h1>
+        <h1 className="text-m3-title-xl mb-1">{t('core.acct.title')}</h1>
         <p className={`text-xs mb-6 ${muted}`}>
           {t('core.acct.signed_in_as')} <span className="font-medium">{session.user?.username}</span>
           {createdDate ? ` · ${t('core.acct.created').replace('{date}', createdDate)}` : ''}
         </p>
 
         {notice && (
-          <p className="callout !text-[0.75rem] mb-4" role="status">{notice}</p>
+          <p className="callout !text-m3-label-medium mb-4" role="status">{notice}</p>
         )}
         {error && (
           <p
@@ -259,7 +259,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
             <div className="mt-2 flex flex-col">
               {links.length === 0 ? (
                 <Row
-                  icon={<span className="text-[15px] font-semibold">𝕏</span>}
+                  icon={<span className="text-m3-title-medium font-semibold">𝕏</span>}
                   title={t('core.acct.connect').replace('{provider}', 'X')}
                   subtitle={t('core.acct.connect_sub').replace('{provider}', 'X')}
                   onClick={() => handleLink('x')}
@@ -281,7 +281,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
                         onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
                       />
                     ) : (
-                      <span className="text-[15px] font-semibold">𝕏</span>
+                      <span className="text-m3-title-medium font-semibold">𝕏</span>
                     )}
                     title={l.handle ? `@${l.handle}` : t('core.acct.x_section')}
                     subtitle={linkSubtitle(t, l, t('core.acct.x_section'))}
@@ -310,7 +310,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
             <div className="mt-2 flex flex-col">
               {methods?.providers.includes('google') ? (
                 <Row
-                  icon={<span className="text-[15px] font-semibold">G</span>}
+                  icon={<span className="text-m3-title-medium font-semibold">G</span>}
                   title={t('core.acct.google_section')}
                   subtitle={linkSubtitle(t, methods.links.find((l) => l.provider === 'google'), t('core.acct.google_section'))}
                   right={canDetach('google') ? <Icon icon={Unlink} size={15} className={muted} /> : undefined}
@@ -318,7 +318,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
                 />
               ) : (
                 <Row
-                  icon={<span className="text-[15px] font-semibold">G</span>}
+                  icon={<span className="text-m3-title-medium font-semibold">G</span>}
                   title={t('core.acct.connect').replace('{provider}', 'Google')}
                   subtitle={t('core.acct.connect_sub').replace('{provider}', 'Google')}
                   onClick={() => handleLink('google')}
@@ -702,7 +702,7 @@ const DeleteDialog: React.FC<{
 
   return (
     <Dialog title={t('core.del.title')} onClose={onClose} danger>
-      <div className="callout !text-[0.75rem] mb-3">
+      <div className="callout !text-m3-label-medium mb-3">
         <strong>{t('core.del.warning')}</strong>
         {summary && (
           <> {t('core.del.warning_counts').replace('{doses}', String(summary.doseCount)).replace('{labs}', String(summary.labCount))}</>

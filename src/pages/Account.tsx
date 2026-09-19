@@ -103,7 +103,7 @@ const Account: React.FC<AccountProps> = ({
 
     return (
         <div className="relative pb-32 px-6 md:px-10">
-            <h1 className={`sticky top-0 z-20 -mx-6 md:-mx-10 px-6 md:px-10 pt-8 pb-3 mb-3 bg-[var(--color-m3-surface-dim)]  text-xl font-semibold ${on}`}>
+            <h1 className={`sticky top-0 z-20 -mx-6 md:-mx-10 px-6 md:px-10 pt-8 pb-3 mb-3 bg-[var(--color-m3-surface-dim)]  text-m3-title-xl ${on}`}>
                 {t('account.title')}
             </h1>
 
@@ -180,7 +180,7 @@ const Account: React.FC<AccountProps> = ({
                         has been saved. */}
                     <div className={`flex items-center justify-between gap-3 py-4 ${divider}`}>
                         <div className="min-w-0">
-                            <p className={`text-[0.9375rem] ${on}`}>{t('sync.title')}</p>
+                            <p className={`text-m3-body-medium ${on}`}>{t('sync.title')}</p>
                             <p className={`text-xs ${muted} mt-0.5`}>
                                 {t(`sync.status.${syncStatus}`)}
                                 {lastSyncedAt !== null && syncStatus !== 'off' && (

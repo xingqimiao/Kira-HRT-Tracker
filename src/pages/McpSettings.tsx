@@ -44,8 +44,8 @@ const MCP_TOOLS: { name: string; input: string; returns: string }[] = [
 
 const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
 const sectionLabel = 'text-xs font-semibold text-[var(--color-m3-on-surface-variant)] ';
-const body = 'text-[0.9375rem] leading-relaxed text-[var(--color-m3-on-surface)] ';
-const muted = 'text-[0.8125rem] leading-relaxed text-[var(--color-m3-on-surface-variant)] ';
+const body = 'text-m3-body-medium leading-relaxed text-[var(--color-m3-on-surface)] ';
+const muted = 'text-m3-body-compact leading-relaxed text-[var(--color-m3-on-surface-variant)] ';
 const codeBlock =
     'w-full overflow-x-auto rounded-md bg-[var(--color-m3-surface-container)] px-3 py-2 ' +
     'font-mono text-xs leading-relaxed text-[var(--color-m3-on-surface)] whitespace-pre';

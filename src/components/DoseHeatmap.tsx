@@ -362,14 +362,14 @@ const DoseHeatmap = ({
                         className="absolute z-20 pointer-events-none px-2.5 py-1.5 rounded-md bg-[var(--color-m3-surface-bright)]  border border-[var(--color-m3-outline-variant)] "
                         style={{ left: tipLeft, top: tipTop }}
                     >
-                        <div className="text-[0.625rem] whitespace-nowrap text-[var(--color-m3-on-surface-variant)] ">
+                        <div className="m3-text-note whitespace-nowrap">
                             {dayLabel(hover.date)}
                         </div>
                         <div className="text-xs font-medium whitespace-nowrap text-[var(--color-m3-on-surface)] ">
                             {hover.count > 0 ? doseLabel(hover.count) : t('heatmap.none')}
                         </div>
                         {hoverMg.map(([ester, mg]) => (
-                            <div key={ester} className="text-[0.625rem] whitespace-nowrap tabular-nums text-[var(--color-m3-on-surface-variant)] ">
+                            <div key={ester} className="m3-text-note whitespace-nowrap tabular-nums">
                                 {ester} · {mg.toFixed(2)} mg
                             </div>
                         ))}

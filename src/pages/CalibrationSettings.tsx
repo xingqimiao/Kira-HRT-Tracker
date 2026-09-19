@@ -73,9 +73,9 @@ const OptionCard: React.FC<{
 
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                    <span className={`text-[0.9375rem] ${selected ? `font-semibold ${on}` : on}`}>{title}</span>
+                    <span className={`text-m3-body-medium ${selected ? `font-semibold ${on}` : on}`}>{title}</span>
                     {badge && (
-                        <span className="text-[0.625rem] font-medium px-1.5 py-0.5 rounded-full text-[var(--color-m3-primary)]  border border-[var(--color-m3-primary)]/30">
+                        <span className="m3-text-2xs font-medium px-1.5 py-0.5 rounded-full text-[var(--color-m3-primary)]  border border-[var(--color-m3-primary)]/30">
                             {badge}
                         </span>
                     )}
@@ -137,19 +137,19 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({ method, setMe
                             badge={recommended ? t('cal.recommended') : undefined}
                             onClick={() => setMethod(value)}
                         >
-                            <p className={`text-[0.8125rem] leading-snug ${muted} mt-1`}>
+                            <p className={`text-m3-body-compact leading-snug ${muted} mt-1`}>
                                 {t(`cal.desc.${value}`)}
                             </p>
 
                             <ul className="mt-3 space-y-1.5">
                                 {pros.map(k => (
-                                    <li key={k} className="flex items-start gap-2 text-[0.78125rem] leading-snug">
+                                    <li key={k} className="flex items-start gap-2 m3-text-2xs leading-snug">
                                         <Icon icon={Check} size={13} className="mt-[3px] shrink-0 text-cos-success/80 " />
                                         <span className={muted}>{t(k)}</span>
                                     </li>
                                 ))}
                                 {cons.map(k => (
-                                    <li key={k} className="flex items-start gap-2 text-[0.78125rem] leading-snug">
+                                    <li key={k} className="flex items-start gap-2 m3-text-2xs leading-snug">
                                         <Icon icon={Minus} size={13} className={`mt-[3px] shrink-0 ${muted}`} />
                                         <span className={muted}>{t(k)}</span>
                                     </li>
@@ -163,7 +163,7 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({ method, setMe
                     Only meaningful once a learning method is selected. */}
                 {method !== 'off' && (
                     <div className="mt-8">
-            <p className={`text-[0.8125rem] font-semibold ${muted} mb-2`}>
+            <p className={`text-m3-title-small ${muted} mb-2`}>
                             {t('cal.history')}
                         </p>
                         <div className="space-y-2.5">
@@ -175,7 +175,7 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({ method, setMe
                                     title={t(`cal.${hm}`)}
                                     onClick={() => setHistoryMode(hm)}
                                 >
-                                    <p className={`text-[0.8125rem] leading-snug ${muted} mt-1`}>
+                                    <p className={`text-m3-body-compact leading-snug ${muted} mt-1`}>
                                         {t(`cal.desc.${hm}`)}
                                     </p>
                                 </OptionCard>
@@ -187,7 +187,7 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({ method, setMe
                 {/* Current fit */}
                 {showFit && (
                     <div className="mt-8">
-            <p className={`text-[0.8125rem] font-semibold ${muted} mb-1`}>
+            <p className={`text-m3-title-small ${muted} mb-1`}>
                             {t('cal.current')}
                         </p>
                         {stats.map(({ label, value }) => (
@@ -200,7 +200,7 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({ method, setMe
                 )}
 
                 {/* Attribution: the learning models mirror those on hrt.transmtf.com. */}
-                <p className={`text-[0.6875rem] leading-snug ${muted} mt-8`}>
+                <p className={`m3-text-2xs leading-snug ${muted} mt-8`}>
                     {t('cal.source')}
                 </p>
             </div>

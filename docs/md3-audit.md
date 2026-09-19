@@ -57,10 +57,41 @@ by reading computed values in both themes from the built bundle.
   existing utilities already sit close to the scale (`text-sm` is exactly
   body-medium, 14/20).
 
-## Next
+## Typography pass (same day, after the first deploy)
 
-1. Apply the typescale where it is semantically wrong today: headings that are
-   `text-xs`/body weight, labels that are not 500, the 10px nav label.
+The scale is no longer just tokens. Every size that was written by hand is now a
+role:
+
+- **Page titles** were `text-xl font-semibold` in eleven files. The scale has no
+  22/600, so the role the app actually uses got a name: `title-xl` (30/36, 500).
+  Naming it is what lets the next person find every page title.
+- **The numbers** were `text-4xl font-light` with a `md:text-5xl` step. They are
+  `display-large` (57/64, 400) now — including on phones, because the reading is
+  the point of the screen and 36px was smaller than what it replaced.
+- **The 10px labels** (chart axes, chips) went to the spec floor, label-small
+  (11/16, 500), and the sentence-length 10px notes to body-small (12/16).
+- **`text-[15px]`, `text-[13px]`, `text-[11px]`, `text-[12px]`** — 49 call sites —
+  are body-medium / body-compact / label-small / body-small. There are now no
+  pixel sizes in the JSX at all.
+- **Headings stopped being bold body text.** `text-sm font-semibold` on a heading
+  became title-small (14/20, 500); the modal and card titles moved onto the scale
+  too. Emphasis by size, not by weight, is the rule that was being broken most.
+
+Two things the browser caught that reading could not:
+
+1. A rule that set `svg text { font-size: … }` to make in-chart labels follow the
+   desktop scale. A `font-size` *attribute* is a presentation attribute with the
+   specificity of a stylesheet rule, so that override replaced every chart's real
+   size with 16px and made the axes louder than the data. The chart already
+   handles its own scale in JS (`ResultChart.tsx` reads the root font size); the
+   rule was unnecessary as well as wrong, and it also matched the icon SVGs and
+   pinned them to 16px until it was scoped away — then removed.
+2. The empty state's `--` placeholders used `--color-m3-outline-variant`, the
+   divider colour, so at 57px they were nearly invisible: the CPA column looked
+   like it had failed to render. That is the same trap the earlier session
+   recorded for the CPA placeholder at 53px.
+
+## Next
 2. Replace `--ui-scale` with window size classes + a constraint on the reading
    column, and add a navigation rail at ≥840dp.
 3. Remaining components in order: bottom sheet (the dialogs' compact form

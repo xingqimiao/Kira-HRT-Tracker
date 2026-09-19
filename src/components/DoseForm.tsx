@@ -669,7 +669,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
             {/* Header */}
             {!isInline && !hideHeader && (
                 <div className="px-6 py-4 border-b border-[var(--color-m3-outline-variant)]  flex justify-between items-center shrink-0">
-                    <h3 className="text-base font-semibold text-[var(--color-m3-on-surface)] ">
+                    <h3 className="text-m3-title-medium text-[var(--color-m3-on-surface)] ">
                         {eventToEdit ? t('modal.dose.edit_title') : t('modal.dose.add_title')}
                     </h3>
                     <div className="flex gap-2 items-center">
@@ -684,7 +684,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
             {/* Inline Header (Simpler) */}
             {isInline && !hideHeader && (
                 <div className="pb-4 border-b border-[var(--color-m3-outline-variant)]  flex justify-between items-center">
-          <span className="text-[0.8125rem] font-semibold text-[var(--color-m3-on-surface-variant)] ">
+          <span className="text-m3-title-small text-[var(--color-m3-on-surface-variant)] ">
                         {t('timeline.add_title')}
                     </span>
                     {renderLoadTemplateControl()}
@@ -699,7 +699,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                         onClick={() => setIsDatePickerOpen(v => !v)}
                         className="w-full flex items-center justify-between py-[18px] border-b border-[var(--color-m3-outline-variant)]  text-start"
                     >
-                        <span className="text-[0.9375rem] text-[var(--color-m3-on-surface)] ">{t('field.time')}</span>
+                        <span className="text-m3-body-medium text-[var(--color-m3-on-surface)] ">{t('field.time')}</span>
                         <div className="flex items-center gap-1.5 text-[var(--color-m3-on-surface-variant)] ">
                             <span className="text-sm tabular-nums">
                                 {dateStr ? new Date(dateStr).toLocaleString(LOCALE_MAP[lang] || 'en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
@@ -842,7 +842,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                                 <div className="flex gap-2">
                                     <Icon icon={AlertTriangle} className="w-4 h-4 text-cos-warning shrink-0 mt-0.5" />
                                     <div>
-                                        <span className="text-sm font-semibold text-[var(--color-m3-on-surface)] ">{t('inj.guide.title')}</span>
+                                        <span className="text-m3-title-small text-[var(--color-m3-on-surface)] ">{t('inj.guide.title')}</span>
                                         <p className="text-sm text-cos-warning  mt-0.5">{t('inj.guide.safety')}</p>
                                     </div>
                                 </div>
@@ -851,7 +851,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                                 <div className="space-y-1.5 pl-6">
                                     <p className="text-sm text-[var(--color-m3-on-surface-variant)] ">{t('inj.guide.route_methods')}</p>
                                     <p className="text-xs font-medium text-cos-error ">{t('inj.guide.route_warn')}</p>
-                                    <p className="text-sm font-semibold text-[var(--color-m3-on-surface)]  mt-1">{t('inj.guide.dosage_title')}</p>
+                                    <p className="text-m3-title-small text-[var(--color-m3-on-surface)]  mt-1">{t('inj.guide.dosage_title')}</p>
                                     <ul className="text-sm text-[var(--color-m3-on-surface-variant)]  space-y-0.5 list-disc list-inside">
                                         <li>{t('inj.guide.dosage_ev')}</li>
                                         <li>{t('inj.guide.dosage_ec')}</li>
@@ -873,7 +873,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
 
                                 {/* Precautions */}
                                 <div className="pl-6 space-y-1">
-                                    <p className="text-sm font-semibold text-[var(--color-m3-on-surface)] ">{t('inj.guide.notes_title')}</p>
+                                    <p className="text-m3-title-small text-[var(--color-m3-on-surface)] ">{t('inj.guide.notes_title')}</p>
                                     <ul className="text-xs text-[var(--color-m3-on-surface-variant)]  space-y-1.5 list-disc list-inside leading-relaxed">
                                         <li>{t('inj.guide.note_1')}</li>
                                         <li>{t('inj.guide.note_2')}</li>
@@ -909,7 +909,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                             <div className="mt-3 p-3 rounded-[var(--radius-lg)] border border-[var(--color-m3-outline-variant)]  bg-[var(--color-m3-surface-container-low)]  flex gap-3">
                                 <Icon icon={Info} className="w-5 h-5 text-[var(--color-m3-on-surface-variant)]  shrink-0 mt-0.5" />
                                 <div className="space-y-1.5">
-                                    <span className="text-sm font-bold text-[var(--color-m3-on-surface)] ">{t('dose.guide.title')}</span>
+                                    <span className="text-m3-title-small text-[var(--color-m3-on-surface)] ">{t('dose.guide.title')}</span>
                                     <ul className="space-y-1 mt-1">
                                         {(['rec', 'combo', 'ultralow'] as const).map(key => (
                                             <li key={key} className="flex items-start gap-1.5 text-xs text-[var(--color-m3-on-surface-variant)]  leading-relaxed">
@@ -939,12 +939,12 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                                         {t('dose.guide.current')}: {doseGuide.value !== null ? `${formatGuideNumber(doseGuide.value)} ${guideUnitLabel}` : t('dose.guide.current_blank')}
                                     </p>
                                     {guideRangeText && (
-                                        <p className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)]  leading-snug">
+                                        <p className="m3-text-note leading-snug">
                                             {t('dose.guide.reference')}: {guideRangeText}
                                         </p>
                                     )}
                                     {doseGuide.showRateHint && (
-                                        <p className="text-[0.6875rem] text-cos-warning  leading-snug">
+                                        <p className="m3-text-2xs text-cos-warning  leading-snug">
                                             {t('dose.guide.patch_rate_hint')}
                                         </p>
                                     )}

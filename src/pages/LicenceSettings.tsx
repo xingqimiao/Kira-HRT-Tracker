@@ -37,8 +37,8 @@ import { UPSTREAM_WORKS, RUNTIME_LICENCES, GENERATED_AT } from '../licences.gene
 
 const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
 const sectionLabel = 'text-xs font-semibold text-[var(--color-m3-on-surface-variant)] ';
-const body = 'text-[0.9375rem] leading-relaxed text-[var(--color-m3-on-surface)] ';
-const muted = 'text-[0.8125rem] leading-relaxed text-[var(--color-m3-on-surface-variant)] ';
+const body = 'text-m3-body-medium leading-relaxed text-[var(--color-m3-on-surface)] ';
+const muted = 'text-m3-body-compact leading-relaxed text-[var(--color-m3-on-surface-variant)] ';
 const mono = 'font-mono text-xs text-[var(--color-m3-on-surface-variant)] ';
 
 const LicenceSettings: React.FC<LicenceSettingsProps> = ({ onBack, appVersion }) => {

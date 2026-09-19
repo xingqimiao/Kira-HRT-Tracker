@@ -50,7 +50,7 @@ const Sidebar: React.FC<SidebarProps> = ({ navItems, currentView, onViewChange }
                     would be the only fictional thing on the page. */}
                 <button
                     onClick={() => onViewChange('home')}
-                    className="shrink-0 text-[0.9375rem] font-semibold tracking-tight text-[var(--color-m3-on-surface)]"
+                    className="shrink-0 text-m3-body-medium font-semibold tracking-tight text-[var(--color-m3-on-surface)]"
                 >
                     Kira Tracker
                 </button>

@@ -48,8 +48,8 @@ type SettingsCat = 'general' | 'data' | 'about';
 type MobileView = 'list' | SettingsCat;
 
 const rowBase = "w-full flex items-center justify-between py-[18px] border-b border-[var(--color-m3-outline-variant)]  text-start";
-const rowLabel = "text-[0.9375rem] text-[var(--color-m3-on-surface)] ";
-const rowValue = "flex items-center gap-1 text-[0.9375rem] text-[var(--color-m3-on-surface-variant)] ";
+const rowLabel = "text-m3-body-medium text-[var(--color-m3-on-surface)] ";
+const rowValue = "flex items-center gap-1 text-m3-body-medium text-[var(--color-m3-on-surface-variant)] ";
 const muted = "text-[var(--color-m3-on-surface-variant)] ";
 const on = "text-[var(--color-m3-on-surface)] ";
 
@@ -185,7 +185,7 @@ const Settings: React.FC<SettingsProps> = ({
                 disabled={!events.length}
                 className={`${rowBase} border-b-0 ${!events.length ? 'opacity-40 cursor-not-allowed' : ''}`}
             >
-                <span className={`text-[0.9375rem] ${events.length ? 'text-cos-error ' : rowLabel}`}>
+                <span className={`text-m3-body-medium ${events.length ? 'text-cos-error ' : rowLabel}`}>
                     {t('drawer.clear')}
                 </span>
             </button>
@@ -262,14 +262,14 @@ const Settings: React.FC<SettingsProps> = ({
 
             {/* ── Left category nav (desktop) ─────────────────────────── */}
             <nav className="hidden md:flex flex-col w-52 shrink-0 px-3 gap-0.5 border-r border-[var(--color-m3-outline-variant)] ">
-                <p className={`px-3 py-1.5 mb-3 text-xl font-semibold ${on}`}>
+                <p className={`px-3 py-1.5 mb-3 text-m3-title-xl ${on}`}>
                     {t('nav.settings')}
                 </p>
                 {cats.map(({ id, label, icon }) => (
                     <button
                         key={id}
                         onClick={() => selectCat(id)}
-                        className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[0.9375rem] text-start
+                        className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-m3-body-medium text-start
                             ${cat === id
                                 ? `bg-[var(--color-m3-surface-container)]  ${on} font-medium`
                                 : `${muted} hover:bg-[var(--color-m3-surface-container)]  hover:${on}`
@@ -283,7 +283,7 @@ const Settings: React.FC<SettingsProps> = ({
 
             {/* ── Desktop content ─────────────────────────────────────── */}
             <div className="hidden md:block flex-1 px-10 max-w-2xl">
-                <h2 className={`text-xl font-semibold ${on} mb-6`}>
+                <h2 className={`text-m3-title-xl ${on} mb-6`}>
                     {cats.find(c => c.id === cat)?.label}
                 </h2>
                 {catContent(cat)}
@@ -295,7 +295,7 @@ const Settings: React.FC<SettingsProps> = ({
             <div className="md:hidden flex-1 self-start px-6 pb-32">
                 {mobileView === 'list' ? (
                     <>
-                        <h1 className={`sticky top-0 z-20 -mx-6 px-6 pt-2 pb-3 mb-3 bg-[var(--color-m3-surface-dim)]  text-xl font-semibold ${on}`}>{t('nav.settings')}</h1>
+                        <h1 className={`sticky top-0 z-20 -mx-6 px-6 pt-2 pb-3 mb-3 bg-[var(--color-m3-surface-dim)]  text-m3-title-xl ${on}`}>{t('nav.settings')}</h1>
                         {cats.map(({ id, label, icon, hint }) => (
                             <button
                                 key={id}
@@ -307,7 +307,7 @@ const Settings: React.FC<SettingsProps> = ({
                                         <Icon icon={icon} size={18} strokeWidth={1.75} className={muted} />
                                     </div>
                                     <div className="text-start">
-                                        <p className={`text-[0.9375rem] font-medium ${on}`}>{label}</p>
+                                        <p className={`text-m3-body-medium font-medium ${on}`}>{label}</p>
                                         <p className={`text-xs ${muted} mt-0.5 leading-relaxed`}>{hint}</p>
                                     </div>
                                 </div>
@@ -323,7 +323,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 className="flex items-center gap-2 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] "
                             >
                                 <Icon icon={ArrowLeft} size={18} className={`${muted} shrink-0`} />
-                                <h1 className={`text-xl font-semibold ${on}`}>
+                                <h1 className={`text-m3-title-xl ${on}`}>
                                     {cats.find(c => c.id === mobileView)?.label}
                                 </h1>
                             </button>

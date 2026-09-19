@@ -562,7 +562,7 @@ const ResultChart = ({
         );
     }
 
-    const chipBase = 'px-2 py-0.5 text-[0.6875rem] rounded-md transition-colors';
+    const chipBase = 'px-2 py-0.5 m3-text-2xs rounded-md transition-colors';
     const chipOn = 'text-body font-medium border border-[var(--color-m3-outline-variant)] ';
     const chipOff = 'text-muted hover:text-body';
 
@@ -570,12 +570,12 @@ const ResultChart = ({
         <div className="w-full">
             {/* Header: title + range chips — flat, matching the page */}
             <div className="flex items-center justify-between gap-3 mb-2">
-                <h2 className="text-sm text-[var(--color-m3-on-surface-variant)]  truncate">
+                <h2 className="text-m3-title-small text-[var(--color-m3-on-surface-variant)]  truncate">
                     {title ?? t('chart.title')}
                 </h2>
                 <div className="flex items-center gap-2 shrink-0">
                     {Math.abs(calFactor - 1) > 0.001 && (
-                        <span className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)]  opacity-70 tabular-nums">
+                        <span className="m3-text-note opacity-70 tabular-nums">
                             ×{calFactor.toFixed(2)}
                         </span>
                     )}
@@ -594,7 +594,7 @@ const ResultChart = ({
             </div>
 
             {/* Legend — always visible so each line is labelled, on mobile too */}
-            <div className="flex items-center gap-4 mb-1 text-[0.6875rem] text-[var(--color-m3-on-surface-variant)] ">
+            <div className="flex items-center gap-4 mb-1 m3-text-2xs text-[var(--color-m3-on-surface-variant)] ">
                 <span className="flex items-center gap-1.5">
                     <span className="w-3.5 h-[2px] rounded-full" style={{ background: c.primary }} />
                     {primaryMeta.label}
@@ -795,21 +795,21 @@ const ResultChart = ({
                             transform: `translate(${X(hoverPt!.t) > mL + plotW * 0.6 ? '-100%' : '0'}, -100%)`,
                         }}
                     >
-                        <div className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)]  mb-0.5 whitespace-nowrap">
+                        <div className="m3-text-note mb-0.5 whitespace-nowrap">
                             {formatDate(new Date(hoverPt!.t), lang, timeZone)} · {formatTime(new Date(hoverPt!.t), timeZone)}
                         </div>
                         <div className="flex items-baseline gap-1 whitespace-nowrap">
                             <span className="text-sm font-medium tabular-nums" style={{ color: c.primary }}>
                                 {hoverPt!.p.toFixed(primaryMeta.decimals)}
                             </span>
-                            <span className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)] ">{primaryMeta.unit}</span>
+                            <span className="m3-text-note">{primaryMeta.unit}</span>
                         </div>
                         {hasSecondary && hoverPt!.s != null && (
                             <div className="flex items-baseline gap-1 whitespace-nowrap">
                                 <span className="text-xs font-medium tabular-nums" style={{ color: c.second }}>
                                     {hoverPt!.s.toFixed(2)}
                                 </span>
-                                <span className="text-[0.625rem] text-[var(--color-m3-on-surface-variant)] ">ng/ml</span>
+                                <span className="m3-text-note">ng/ml</span>
                             </div>
                         )}
                     </div>

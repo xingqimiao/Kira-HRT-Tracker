@@ -160,7 +160,7 @@ const PKParamsPage: React.FC<PKParamsPageProps> = ({ pkParams, onSave, onReset, 
                             onClick={() => toggleSection(section.key)}
                             className={`w-full flex items-center justify-between py-4 ${divider} text-start`}
                         >
-              <span className="text-[0.8125rem] font-semibold text-[var(--color-m3-on-surface-variant)] ">
+              <span className="text-m3-title-small text-[var(--color-m3-on-surface-variant)] ">
                                 {t(section.titleKey)}
                             </span>
                             <Icon icon={ChevronDown}
@@ -219,7 +219,7 @@ const PKParamsPage: React.FC<PKParamsPageProps> = ({ pkParams, onSave, onReset, 
                     onClick={handleSave}
                     className={`w-full flex items-center justify-between py-[18px] ${divider} text-start`}
                 >
-                    <span className="text-[0.9375rem] font-medium text-[var(--color-m3-on-surface)] ">{t('btn.save')}</span>
+                    <span className="text-m3-body-medium font-medium text-[var(--color-m3-on-surface)] ">{t('btn.save')}</span>
                     {saved && (
                         <span className="text-xs text-cos-success  font-medium">{t('pk.saved')}</span>
                     )}
@@ -231,7 +231,7 @@ const PKParamsPage: React.FC<PKParamsPageProps> = ({ pkParams, onSave, onReset, 
                     className="w-full flex items-center gap-2 py-[18px] text-start"
                 >
                     <Icon icon={RotateCcw} size={14} className="text-cos-error " />
-                    <span className="text-[0.9375rem] text-cos-error ">{t('pk.reset')}</span>
+                    <span className="text-m3-body-medium text-cos-error ">{t('pk.reset')}</span>
                 </button>
             </div>
         </div>

@@ -90,7 +90,7 @@ const Lab: React.FC<LabProps> = ({
         <div className="relative pb-32">
             {/* Header */}
             <div className="mx-auto w-full sticky top-0 z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-4 flex items-center justify-between max-w-2xl">
-                <h1 className={`text-xl font-semibold ${on}`}>
+                <h1 className={`text-m3-title-xl ${on}`}>
                     {t('lab.title')}
                 </h1>
                 <div className="flex items-center gap-1">
@@ -174,7 +174,7 @@ const Lab: React.FC<LabProps> = ({
                     className="w-full flex items-center justify-between gap-3 py-4 text-start outline-none focus:outline-none focus-visible:outline-none hover:bg-[var(--color-m3-surface-container)]  border-b border-[var(--color-m3-outline-variant)] "
                 >
                     <div className="min-w-0">
-                        <p className={`text-[0.9375rem] ${on}`}>{t('cal.settings')}</p>
+                        <p className={`text-m3-body-medium ${on}`}>{t('cal.settings')}</p>
                         <p className={`text-xs ${muted} mt-0.5 tabular-nums`}>{calSummary}</p>
                     </div>
                     <Icon icon={ChevronRight} size={16} className={`${muted} shrink-0`} />

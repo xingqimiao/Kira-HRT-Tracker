@@ -98,7 +98,7 @@ const SublingualFields: React.FC<SublingualFieldsProps> = ({
                                 className="flex-1 h-1 accent-[var(--color-m3-primary)]"
                             />
                         </div>
-                        <p className="text-[0.6875rem] text-[var(--color-m3-on-surface-variant)] ">{t('sl.theta_approx')}: {thetaFromHold(customHoldValue).toFixed(3)} (Keep E2)</p>
+                        <p className="m3-text-2xs text-[var(--color-m3-on-surface-variant)] ">{t('sl.theta_approx')}: {thetaFromHold(customHoldValue).toFixed(3)} (Keep E2)</p>
                     </div>
                 )}
             </div>

@@ -74,7 +74,7 @@ const BindCredentials: React.FC<BindCredentialsProps> = ({ session, onDone }) =>
       <div className="flex-1 overflow-y-auto scrollbar-hide">
         <div className="mx-auto w-full max-w-[32rem] px-6 pb-20 pt-8 md:px-8 md:pt-10">
           <header className="mb-6">
-            <h1 className="text-xl font-semibold">{t('core.bind.title')}</h1>
+            <h1 className="text-m3-title-xl">{t('core.bind.title')}</h1>
             {/* The real reason, in one line: not a formality, but the thing that keeps
                 the records reachable if the provider account is ever lost. */}
             <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)]">

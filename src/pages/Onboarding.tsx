@@ -151,8 +151,8 @@ const Point: React.FC<PointProps> = ({ mark, title, desc, state = 'done', durati
                 <PixelMark key={playKey} name={mark} size={28} state={state} duration={duration} />
             </div>
             <div>
-                <p className={`text-[0.9375rem] font-medium ${state === 'asleep' ? 'text-muted' : 'text-body'}`}>{title}</p>
-                <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-muted">{desc}</p>
+                <p className={`text-m3-body-medium font-medium ${state === 'asleep' ? 'text-muted' : 'text-body'}`}>{title}</p>
+                <p className="mt-0.5 text-m3-body-compact leading-relaxed text-muted">{desc}</p>
             </div>
         </>
     );
@@ -216,7 +216,7 @@ const HowStep: React.FC<{ curve: CurveData | null }> = ({ curve }) => {
     return (
         <>
             <Head>
-                <h1 className="text-2xl font-semibold text-body">{t('onboarding.how_title')}</h1>
+                <h1 className="text-m3-headline-small text-body">{t('onboarding.how_title')}</h1>
                 <p className="mt-3 text-sm leading-relaxed text-muted">{t('onboarding.how_subtitle')}</p>
             </Head>
             {/* The three rows below say what the app does; this says it. The
@@ -237,7 +237,7 @@ const HowStep: React.FC<{ curve: CurveData | null }> = ({ curve }) => {
                             <button
                                 type="button"
                                 onClick={() => play(0)}
-                                className="ms-auto rounded-md px-1.5 py-0.5 text-[0.75rem] text-[var(--color-m3-primary)] hover:bg-[var(--color-m3-surface-container)]  "
+                                className="ms-auto rounded-md px-1.5 py-0.5 text-m3-body-small text-[var(--color-m3-primary)] hover:bg-[var(--color-m3-surface-container)]  "
                             >
                                 {t('onboarding.how_replay')}
                             </button>
@@ -258,7 +258,7 @@ const HowStep: React.FC<{ curve: CurveData | null }> = ({ curve }) => {
                         onClick={() => play(i as Beat)}
                     />
                 ))}
-                <p className="mt-5 text-[0.8125rem] leading-relaxed text-muted">{t('onboarding.how_note')}</p>
+                <p className="mt-5 text-m3-body-compact leading-relaxed text-muted">{t('onboarding.how_note')}</p>
             </Body>
         </>
     );
@@ -353,7 +353,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, onDone }) => {
                         size={96}
                     />
                 </div>
-                <h1 className="mt-6 text-2xl font-semibold text-body">{t('onboarding.welcome_title')}</h1>
+                <h1 className="text-m3-headline-small mt-6 text-body">{t('onboarding.welcome_title')}</h1>
                 {/* Every translation of the sentence stacked into one grid cell,
                     the inactive ones hidden but still taking up their space, so
                     the box is as tall as the longest one at whatever width this
@@ -401,7 +401,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, onDone }) => {
                         aria-pressed={lang === value}
                         className={`flex w-full items-center justify-between gap-4 py-3.5 text-start ${divider} last:border-b-0`}
                     >
-                        <span className={`text-[0.9375rem] text-body ${lang === value ? 'font-semibold' : ''}`}>
+                        <span className={`text-m3-body-medium text-body ${lang === value ? 'font-semibold' : ''}`}>
                             {label}
                         </span>
                         {lang === value && <Tick />}
@@ -411,7 +411,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, onDone }) => {
         </div>,
 
         <div key="mode" className="pt-8">
-            <h1 className="text-2xl font-semibold text-body">{t('onboarding.mode_title')}</h1>
+            <h1 className="text-m3-headline-small text-body">{t('onboarding.mode_title')}</h1>
             <p className="mt-3 text-sm leading-relaxed text-muted">{t('onboarding.mode_subtitle')}</p>
             <div className="mt-6">
                 {modeOptions.map(({ value, labelKey, descKey }) => (
@@ -421,10 +421,10 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, onDone }) => {
                         className={`flex w-full items-center justify-between gap-4 py-4 text-start ${divider} last:border-b-0`}
                     >
                         <span>
-                            <span className={`block text-[0.9375rem] text-body ${mode === value ? 'font-semibold' : ''}`}>
+                            <span className={`block text-m3-body-medium text-body ${mode === value ? 'font-semibold' : ''}`}>
                                 {t(labelKey)}
                             </span>
-                            <span className="mt-0.5 block text-[0.8125rem] leading-relaxed text-muted">
+                            <span className="mt-0.5 block text-m3-body-compact leading-relaxed text-muted">
                                 {t(descKey)}
                             </span>
                         </span>
@@ -440,7 +440,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, onDone }) => {
            index 2 and `CHART_STEP` needs no change — the warning about
            incrementing it only applies to a step placed ahead of the chart. */
         <div key="mcp" className="pt-8">
-            <h1 className="text-2xl font-semibold text-body">{t('onboarding.mcp_title')}</h1>
+            <h1 className="text-m3-headline-small text-body">{t('onboarding.mcp_title')}</h1>
             <p className="mt-3 text-sm leading-relaxed text-muted">{t('onboarding.mcp_subtitle')}</p>
             <div className="mt-5 rounded-md bg-[var(--color-m3-surface-container)]  px-3 py-2">
                 <code className="font-mono text-xs leading-relaxed text-body">
@@ -451,11 +451,11 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, onDone }) => {
                 <Point mark="lock" title={t('onboarding.mcp_unlock')} desc={t('onboarding.mcp_unlock_desc')} />
                 <Point mark="check" title={t('onboarding.mcp_confirm')} desc={t('onboarding.mcp_confirm_desc')} />
             </div>
-            <p className="mt-4 text-[0.8125rem] leading-relaxed text-muted">{t('onboarding.mcp_more')}</p>
+            <p className="mt-4 text-m3-body-compact leading-relaxed text-muted">{t('onboarding.mcp_more')}</p>
         </div>,
 
         <div key="privacy" className="pt-8">
-            <h1 className="text-2xl font-semibold text-body">{t('onboarding.privacy_title')}</h1>
+            <h1 className="text-m3-headline-small text-body">{t('onboarding.privacy_title')}</h1>
             <p className="mt-3 text-sm leading-relaxed text-muted">{t('onboarding.privacy_subtitle')}</p>
             <div className="mt-4">
                 <Point mark="lock" title={t('onboarding.privacy_local')} desc={t('onboarding.privacy_local_desc')} />
@@ -477,7 +477,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, onDone }) => {
             <div className="flex shrink-0 justify-end px-4 pt-[calc(0.75rem+env(safe-area-inset-top,0px))]">
                 <button
                     onClick={onDone}
-                    className={`rounded-lg px-2 py-1.5 text-[0.8125rem] text-muted hover:bg-[var(--color-m3-surface-container)]  ${isLast ? 'invisible' : ''}`}
+                    className={`rounded-lg px-2 py-1.5 text-m3-body-compact text-muted hover:bg-[var(--color-m3-surface-container)]  ${isLast ? 'invisible' : ''}`}
                     tabIndex={isLast ? -1 : 0}
                 >
                     {t('onboarding.skip')}

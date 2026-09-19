@@ -188,7 +188,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-primary-container)]">
                                     <Icon icon={Check} size={14} strokeWidth={2.25} />
                                 </span>
-                                <p className="text-[0.9375rem] font-medium">{copy.created}</p>
+                                <p className="text-m3-body-medium font-medium">{copy.created}</p>
                                 {createdShare.live && (
                                     <span className={liveBadgeClass}>{copy.liveBadge}</span>
                                 )}
@@ -209,7 +209,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                                     id="created-share-link"
                                     readOnly
                                     value={createdShare.url}
-                                    className="min-w-0 flex-1 select-all truncate border-0 bg-transparent py-2.5 font-mono text-[0.8125rem] text-body outline-none"
+                                    className="min-w-0 flex-1 select-all truncate border-0 bg-transparent py-2.5 font-mono text-m3-body-compact text-body outline-none"
                                     onFocus={(event) => event.currentTarget.select()}
                                 />
                                 {/* Both labels share one grid cell so the button keeps a single
@@ -217,7 +217,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                                 <button
                                     type="button"
                                     onClick={handleCopy}
-                                    className="-mr-2 grid shrink-0 place-items-center self-end rounded-md px-2.5 py-2 text-[0.9375rem] font-medium text-[var(--color-m3-primary)] transition-colors hover:bg-[var(--color-m3-surface-container)]  sm:self-auto"
+                                    className="-mr-2 grid shrink-0 place-items-center self-end rounded-md px-2.5 py-2 text-m3-body-medium font-medium text-[var(--color-m3-primary)] transition-colors hover:bg-[var(--color-m3-surface-container)]  sm:self-auto"
                                 >
                                     <span className={`col-start-1 row-start-1 inline-flex items-center gap-1.5 ${copied ? 'invisible' : ''}`}>
                                         <Icon icon={Copy} size={14} />
@@ -241,7 +241,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                             </div>
 
                             <div className="mb-5 flex items-center justify-between gap-4 border-b border-[var(--color-m3-outline-variant)] py-[18px] ">
-                                <label htmlFor="share-live-toggle" className="cursor-pointer text-[0.9375rem] font-medium text-body">
+                                <label htmlFor="share-live-toggle" className="cursor-pointer text-m3-body-medium font-medium text-body">
                                     {copy.liveToggle}
                                 </label>
                                 <Switch id="share-live-toggle" checked={liveEnabled} onChange={setLiveEnabled} />
@@ -296,7 +296,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                                     aria-expanded={isExpiryPickerOpen}
                                     className="flex w-full items-center justify-between border-b border-[var(--color-m3-outline-variant)] py-[18px] text-start "
                                 >
-                                    <span className="text-[0.9375rem] text-body">{copy.expiryLabel}</span>
+                                    <span className="text-m3-body-medium text-body">{copy.expiryLabel}</span>
                                     <span className="flex items-center gap-1.5 text-muted">
                                         <span className="text-sm tabular-nums">
                                             {expiresAtInput ? formatStamp(new Date(expiresAtInput).getTime(), lang) : '—'}
@@ -337,7 +337,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                     )}
 
                     <div className="pb-6 pt-5">
-                        <h3 className="text-[0.9375rem] font-medium text-body">{copy.manageTitle}</h3>
+                        <h3 className="text-m3-body-medium font-medium text-body">{copy.manageTitle}</h3>
                         <p className="mt-1 text-sm leading-relaxed text-muted">{copy.manageDescription}</p>
                         {sharesLoading ? (
                             <div className="flex items-center gap-2 py-4 text-sm text-muted">

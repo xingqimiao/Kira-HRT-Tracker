@@ -984,9 +984,10 @@ body {
 }
 
 .modal-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
+    font-size: var(--md-sys-typescale-title-medium-size);
+    line-height: var(--md-sys-typescale-title-medium-line-height);
+    font-weight: var(--md-sys-typescale-title-medium-weight);
+    letter-spacing: var(--md-sys-typescale-title-medium-tracking);
     color: var(--color-m3-on-surface);
     margin-bottom: 0.75rem;
 }
@@ -1216,10 +1217,10 @@ body {
 
 /* A page or card heading — the largest thing on a screen. */
 .m3-card-title {
-    font-size: 1.375rem;
-    line-height: 1.375;
-    font-weight: 600;
-    letter-spacing: -0.01em;
+    font-size: var(--md-sys-typescale-title-large-size);
+    line-height: var(--md-sys-typescale-title-large-line-height);
+    font-weight: var(--md-sys-typescale-title-large-weight);
+    letter-spacing: var(--md-sys-typescale-title-large-tracking);
     color: var(--color-m3-on-surface);
 }
 
@@ -1881,6 +1882,90 @@ select,
     min-width: 48px;
     min-height: 48px;
 }
+
+/* ── The typescale, on elements ──────────────────────────────────────────────
+   The tokens above are values; these are the roles, applied by writing the
+   token set out on the element that carries it. An .m3- utility (Tailwind reads
+   this same @theme block) makes them composable in the same className string as
+   the rest of the app's layout classes, without a second styling system.
+
+   Two sizes exist here and nowhere in the spec. .m3-typescale-title-xl (30/36)
+   names the page title this app uses on every screen — the spec's nearest is
+   headline-small at 24, which would shrink a 22px design and make the numbers
+   on the home card compete with it. .m3-typescale-body-compact (13/18) is its
+   supporting text. Both are declared once, with the reason, rather than as
+   arbitrary values at the call sites.
+
+   Line heights and tracking come from the tokens, not from Tailwind's defaults:
+   that pairing is what the scale *is*. */
+.m3-typescale-display-large   { font-size: var(--md-sys-typescale-display-large-size);   line-height: var(--md-sys-typescale-display-large-line-height);   font-weight: var(--md-sys-typescale-display-large-weight);   letter-spacing: var(--md-sys-typescale-display-large-tracking); }
+.m3-typescale-display-medium  { font-size: var(--md-sys-typescale-display-medium-size);  line-height: var(--md-sys-typescale-display-medium-line-height);  font-weight: var(--md-sys-typescale-display-medium-weight);  letter-spacing: var(--md-sys-typescale-display-medium-tracking); }
+.m3-typescale-display-small   { font-size: var(--md-sys-typescale-display-small-size);   line-height: var(--md-sys-typescale-display-small-line-height);   font-weight: var(--md-sys-typescale-display-small-weight);   letter-spacing: var(--md-sys-typescale-display-small-tracking); }
+.m3-typescale-headline-large  { font-size: var(--md-sys-typescale-headline-large-size);  line-height: var(--md-sys-typescale-headline-large-line-height);  font-weight: var(--md-sys-typescale-headline-large-weight);  letter-spacing: var(--md-sys-typescale-headline-large-tracking); }
+.m3-typescale-headline-medium { font-size: var(--md-sys-typescale-headline-medium-size); line-height: var(--md-sys-typescale-headline-medium-line-height); font-weight: var(--md-sys-typescale-headline-medium-weight); letter-spacing: var(--md-sys-typescale-headline-medium-tracking); }
+.m3-typescale-headline-small  { font-size: var(--md-sys-typescale-headline-small-size);  line-height: var(--md-sys-typescale-headline-small-line-height);  font-weight: var(--md-sys-typescale-headline-small-weight);  letter-spacing: var(--md-sys-typescale-headline-small-tracking); }
+.m3-typescale-title-xl        { font-size: 1.875rem; line-height: 2.25rem; font-weight: 500; letter-spacing: -0.01em; }
+.m3-typescale-title-large     { font-size: var(--md-sys-typescale-title-large-size);     line-height: var(--md-sys-typescale-title-large-line-height);     font-weight: var(--md-sys-typescale-title-large-weight);     letter-spacing: var(--md-sys-typescale-title-large-tracking); }
+.m3-typescale-title-medium    { font-size: var(--md-sys-typescale-title-medium-size);    line-height: var(--md-sys-typescale-title-medium-line-height);    font-weight: var(--md-sys-typescale-title-medium-weight);    letter-spacing: var(--md-sys-typescale-title-medium-tracking); }
+.m3-typescale-title-small     { font-size: var(--md-sys-typescale-title-small-size);     line-height: var(--md-sys-typescale-title-small-line-height);     font-weight: var(--md-sys-typescale-title-small-weight);     letter-spacing: var(--md-sys-typescale-title-small-tracking); }
+.m3-typescale-body-large      { font-size: var(--md-sys-typescale-body-large-size);      line-height: var(--md-sys-typescale-body-large-line-height);      font-weight: var(--md-sys-typescale-body-large-weight);      letter-spacing: var(--md-sys-typescale-body-large-tracking); }
+.m3-typescale-body-medium     { font-size: var(--md-sys-typescale-body-medium-size);     line-height: var(--md-sys-typescale-body-medium-line-height);     font-weight: var(--md-sys-typescale-body-medium-weight);     letter-spacing: var(--md-sys-typescale-body-medium-tracking); }
+.m3-typescale-body-small      { font-size: var(--md-sys-typescale-body-small-size);      line-height: var(--md-sys-typescale-body-small-line-height);      font-weight: var(--md-sys-typescale-body-small-weight);      letter-spacing: var(--md-sys-typescale-body-small-tracking); }
+.m3-typescale-body-compact    { font-size: 0.8125rem; line-height: 1.125rem; font-weight: 400; letter-spacing: 0.2px; }
+.m3-typescale-label-large     { font-size: var(--md-sys-typescale-label-large-size);     line-height: var(--md-sys-typescale-label-large-line-height);     font-weight: var(--md-sys-typescale-label-large-weight);     letter-spacing: var(--md-sys-typescale-label-large-tracking); }
+.m3-typescale-label-medium    { font-size: var(--md-sys-typescale-label-medium-size);    line-height: var(--md-sys-typescale-label-medium-line-height);    font-weight: var(--md-sys-typescale-label-medium-weight);    letter-spacing: var(--md-sys-typescale-label-medium-tracking); }
+.m3-typescale-label-small     { font-size: var(--md-sys-typescale-label-small-size);     line-height: var(--md-sys-typescale-label-small-line-height);     font-weight: var(--md-sys-typescale-label-small-weight);     letter-spacing: var(--md-sys-typescale-label-small-tracking); }
+
+/* Tailwind resolves .m3-typescale-* above, but the utilities it generates for
+   this @theme block are what the JSX uses (text-m3-*), so both spellings have to
+   land: the class for hand-written CSS, the utility for className. */
+.text-m3-display-large   { font-size: var(--md-sys-typescale-display-large-size);   line-height: var(--md-sys-typescale-display-large-line-height);   font-weight: var(--md-sys-typescale-display-large-weight);   letter-spacing: var(--md-sys-typescale-display-large-tracking); }
+.text-m3-headline-small  { font-size: var(--md-sys-typescale-headline-small-size);  line-height: var(--md-sys-typescale-headline-small-line-height);  font-weight: var(--md-sys-typescale-headline-small-weight);  letter-spacing: var(--md-sys-typescale-headline-small-tracking); }
+.text-m3-title-xl        { font-size: 1.875rem; line-height: 2.25rem; font-weight: 500; letter-spacing: -0.01em; }
+.text-m3-title-large     { font-size: var(--md-sys-typescale-title-large-size);     line-height: var(--md-sys-typescale-title-large-line-height);     font-weight: var(--md-sys-typescale-title-large-weight);     letter-spacing: var(--md-sys-typescale-title-large-tracking); }
+.text-m3-title-medium    { font-size: var(--md-sys-typescale-title-medium-size);    line-height: var(--md-sys-typescale-title-medium-line-height);    font-weight: var(--md-sys-typescale-title-medium-weight);    letter-spacing: var(--md-sys-typescale-title-medium-tracking); }
+.text-m3-title-small     { font-size: var(--md-sys-typescale-title-small-size);     line-height: var(--md-sys-typescale-title-small-line-height);     font-weight: var(--md-sys-typescale-title-small-weight);     letter-spacing: var(--md-sys-typescale-title-small-tracking); }
+.text-m3-body-large      { font-size: var(--md-sys-typescale-body-large-size);      line-height: var(--md-sys-typescale-body-large-line-height);      font-weight: var(--md-sys-typescale-body-large-weight);      letter-spacing: var(--md-sys-typescale-body-large-tracking); }
+.text-m3-body-medium     { font-size: var(--md-sys-typescale-body-medium-size);     line-height: var(--md-sys-typescale-body-medium-line-height);     font-weight: var(--md-sys-typescale-body-medium-weight);     letter-spacing: var(--md-sys-typescale-body-medium-tracking); }
+.text-m3-body-small      { font-size: var(--md-sys-typescale-body-small-size);      line-height: var(--md-sys-typescale-body-small-line-height);      font-weight: var(--md-sys-typescale-body-small-weight);      letter-spacing: var(--md-sys-typescale-body-small-tracking); }
+.text-m3-body-compact    { font-size: 0.8125rem; line-height: 1.125rem; font-weight: 400; letter-spacing: 0.2px; }
+.text-m3-label-large     { font-size: var(--md-sys-typescale-label-large-size);     line-height: var(--md-sys-typescale-label-large-line-height);     font-weight: var(--md-sys-typescale-label-large-weight);     letter-spacing: var(--md-sys-typescale-label-large-tracking); }
+.text-m3-label-medium    { font-size: var(--md-sys-typescale-label-medium-size);    line-height: var(--md-sys-typescale-label-medium-line-height);    font-weight: var(--md-sys-typescale-label-medium-weight);    letter-spacing: var(--md-sys-typescale-label-medium-tracking); }
+.text-m3-label-small     { font-size: var(--md-sys-typescale-label-small-size);     line-height: var(--md-sys-typescale-label-small-line-height);     font-weight: var(--md-sys-typescale-label-small-weight);     letter-spacing: var(--md-sys-typescale-label-small-tracking); }
+
+/* The 10px/11px labels (chart axes, chip text) were below the scale on purpose —
+   dense data furniture. The spec's floor is label-small (11/16, 500). They move
+   there so every size in the app is a token.
+
+   Every one of these is in rem, and the #1 test caught why that matters: the
+   root font size is scaled by --ui-scale on large windows, and an SVG that has
+   been scaled by viewBox does not zoom with the page. Text inside it is for the
+   screen, not for the drawing, so it has to follow the root — otherwise the axis
+   labels shrink relative to the numbers they label on a wide monitor. A 1rem
+   factor on the *root's own* size keeps the control over the size in the rule
+   below while making it relative. (A rem on :root resolves against the browser's
+   initial size, not the modified root, so this is not circular.) */
+:root { --m3-text-2xs-size: 0.6875rem; }
+
+.m3-text-2xs {
+    font-size: calc(var(--m3-text-2xs-size) * var(--ui-scale, 1) * 1rem);
+    line-height: calc(var(--m3-text-2xs-size) * var(--ui-scale, 1) * 1rem * 16 / 11);
+    font-weight: var(--md-sys-typescale-label-small-weight);
+    letter-spacing: 0.3px;
+}
+
+/* The side notes: "Dose level reference", "currently entered:", and the two
+   chips that label what a row is. They were 12/16 and 11/16 — a label size
+   carrying a sentence. body-small (12/16) is the role for a short explanation,
+   and label-small's weight moves to 500 only where the text is a label. */
+.m3-text-note {
+    font-size: calc(0.75rem * var(--ui-scale, 1) * 1rem);
+    line-height: calc(0.75rem * var(--ui-scale, 1) * 1rem * 16 / 12);
+    font-weight: 400;
+    letter-spacing: 0.3px;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
 
 /* ── Buttons ─────────────────────────────────────────────────────────────────
    Five emphasis levels and five sizes. The level says what a button *means*:

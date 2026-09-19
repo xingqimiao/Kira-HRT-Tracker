@@ -8,7 +8,7 @@ import { DoseAdvisory as Advisory, HormoneLevelAdvisory } from '../../logic';
 // a sentence, flush with the page margin, colored to signal caution and nothing
 // more. Shared between Home (below the chart) and the dose entry form.
 export const DoseAdvisoryLine: React.FC<{ advisory: Advisory; t: (k: string) => string }> = ({ advisory, t }) => (
-    <p className="flex items-start gap-1.5 text-[0.8125rem] leading-snug text-cos-warning/90 ">
+    <p className="flex items-start gap-1.5 text-m3-body-compact leading-snug text-cos-warning/90 ">
         <Icon icon={AlertCircle} size={14} strokeWidth={1.75} className="mt-[3px] shrink-0" />
         <span>{t(`advisory.${advisory.kind}.body`)}</span>
     </p>
@@ -17,7 +17,7 @@ export const DoseAdvisoryLine: React.FC<{ advisory: Advisory; t: (k: string) => 
 // Same plain-text treatment, for the lab-based estradiol+testosterone combo
 // heads-up. Shared between Home (below the chart) and the Lab page.
 export const HormoneLevelAdvisoryLine: React.FC<{ advisory: HormoneLevelAdvisory; t: (k: string) => string }> = ({ advisory, t }) => (
-    <p className="flex items-start gap-1.5 text-[0.8125rem] leading-snug text-cos-warning/90 ">
+    <p className="flex items-start gap-1.5 text-m3-body-compact leading-snug text-cos-warning/90 ">
         <Icon icon={AlertCircle} size={14} strokeWidth={1.75} className="mt-[3px] shrink-0" />
         <span>{t(`advisory.hormone_${advisory.kind}.body`)}</span>
     </p>

@@ -50,7 +50,7 @@ const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ theme, setTheme
                         onClick={() => setTheme(value)}
                         className="w-full flex items-center justify-between py-4 border-b border-[var(--color-m3-outline-variant)]  last:border-b-0 text-start"
                     >
-                        <span className={`text-[0.9375rem] ${theme === value
+                        <span className={`text-m3-body-medium ${theme === value
                             ? 'font-semibold text-[var(--color-m3-on-surface)] '
                             : 'text-[var(--color-m3-on-surface)] '
                         }`}>{t(labelKey)}</span>
@@ -66,7 +66,7 @@ const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ theme, setTheme
                     {t('settings.key_color')}
                 </p>
                 <div className="w-full flex items-center justify-between py-4">
-                    <span className="text-[0.9375rem] text-[var(--color-m3-on-surface)] ">
+                    <span className="text-m3-body-medium text-[var(--color-m3-on-surface)] ">
                         {t(`settings.key_color.${keyColor}`)}
                     </span>
                     <div className="flex items-center gap-2.5">

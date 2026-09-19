@@ -14,7 +14,7 @@ interface ExportSectionProps {
 }
 
 const rowBase = "flex items-start justify-between py-[18px] border-b border-[var(--color-m3-outline-variant)] ";
-const rowLabel = "text-[0.9375rem] text-[var(--color-m3-on-surface)] ";
+const rowLabel = "text-m3-body-medium text-[var(--color-m3-on-surface)] ";
 const rowDesc = "text-xs text-[var(--color-m3-on-surface-variant)]  mt-0.5";
 const actionBtn = "text-sm font-medium text-[var(--color-m3-primary)]  shrink-0 ml-6 mt-0.5";
 

@@ -57,7 +57,7 @@ class ErrorBoundary extends React.Component<Props, State> {
             return (
                 <div className="flex flex-col items-center justify-center min-h-[50vh] p-8 text-center">
                     <Icon icon={AlertTriangle} size={32} strokeWidth={1.5} className="text-cos-error  mb-4" />
-                    <h2 className="text-lg font-semibold text-[var(--color-m3-on-surface)]  mb-2">
+                    <h2 className="text-m3-title-large text-[var(--color-m3-on-surface)]  mb-2">
                         {tr('error.title')}
                     </h2>
                     <p className="text-sm text-[var(--color-m3-on-surface-variant)]  mb-6 max-w-md leading-relaxed">

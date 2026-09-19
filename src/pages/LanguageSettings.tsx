@@ -35,7 +35,7 @@ const LanguageSettings: React.FC<LanguageSettingsProps> = ({ lang, setLang, lang
                         onClick={() => setLang(value as Lang)}
                         className="w-full flex items-center justify-between py-4 border-b border-[var(--color-m3-outline-variant)]  last:border-b-0 text-start"
                     >
-                        <span className={`text-[0.9375rem] ${lang === value
+                        <span className={`text-m3-body-medium ${lang === value
                             ? 'font-semibold text-[var(--color-m3-on-surface)] '
                             : 'text-[var(--color-m3-on-surface)] '
                         }`}>

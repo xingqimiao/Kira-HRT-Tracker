@@ -323,7 +323,7 @@ const OnboardingCurve: React.FC<OnboardingCurveProps> = ({ data, beat, playKey, 
             that has to be read whether or not the sequence ever plays, so it
             sits directly under the chart rather than below a legend that only
             arrives with the last beat. */}
-        <p className="mt-2 text-[0.75rem] leading-relaxed text-muted">{caption}</p>
+        <p className="mt-2 text-m3-body-small leading-relaxed text-muted">{caption}</p>
 
         {/* Laid out from the first frame and only made visible in the last
             beat, so its arrival does not shove the rows below it down the
@@ -331,7 +331,7 @@ const OnboardingCurve: React.FC<OnboardingCurveProps> = ({ data, beat, playKey, 
         {data && (
             <div
                 key={playKey}
-                className={`mt-1.5 flex items-center gap-4 text-[0.6875rem] text-muted ${beat === 2 ? 'oc-legend-in' : 'invisible'}`}
+                className={`mt-1.5 flex items-center gap-4 m3-text-2xs text-muted ${beat === 2 ? 'oc-legend-in' : 'invisible'}`}
             >
                 {/* One series in two states, so both swatches are the same
                     colour and only the dashes tell them apart. */}

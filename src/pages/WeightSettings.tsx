@@ -53,7 +53,7 @@ const WeightSettings: React.FC<WeightSettingsProps> = ({ weight, onSave, onBack 
                             inputMode="decimal"
                             value={weightStr}
                             onChange={(e) => setWeightStr(e.target.value)}
-                            className="text-4xl font-light tabular-nums text-[var(--color-m3-on-surface)]  w-28 bg-transparent border-b-2 border-[var(--color-m3-outline-variant)]  focus:border-[var(--color-m3-primary)] outline-none pb-1 text-center"
+                            className="text-m3-display-large tabular-nums text-[var(--color-m3-on-surface)]  w-28 bg-transparent border-b-2 border-[var(--color-m3-outline-variant)]  focus:border-[var(--color-m3-primary)] outline-none pb-1 text-center"
                             placeholder="0.0"
                             style={{ fontSize: '40px' }}
                             autoFocus
@@ -69,7 +69,7 @@ const WeightSettings: React.FC<WeightSettingsProps> = ({ weight, onSave, onBack 
                     onClick={handleSave}
                     className={`w-full flex items-center py-[18px] ${divider} text-start`}
                 >
-                    <span className="text-[0.9375rem] font-medium text-[var(--color-m3-primary)] ">
+                    <span className="text-m3-body-medium font-medium text-[var(--color-m3-primary)] ">
                         {t('btn.save')}
                     </span>
                 </button>

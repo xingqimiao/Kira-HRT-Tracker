@@ -131,7 +131,7 @@ const History: React.FC<HistoryProps> = ({
         <div className="relative pb-32">
             <div className="mx-auto w-full sticky top-0 z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3 flex items-center justify-between max-w-2xl">
                 <div>
-                    <h1 className={`text-xl font-semibold ${on}`}>
+                    <h1 className={`text-m3-title-xl ${on}`}>
                         {t('timeline.title')}
                     </h1>
                     <p className={`text-sm ${muted} mt-0.5`}>
@@ -272,7 +272,7 @@ const History: React.FC<HistoryProps> = ({
                                                         {ev.route === Route.patchRemove ? t('route.patchRemove') : t(`ester.${ev.ester}`)}
                                                     </span>
                                                     {isFuture && (
-                                                        <span className={`shrink-0 text-[0.6875rem] font-medium ${muted} px-1.5 py-0.5 rounded bg-[var(--color-m3-surface-container)] `}>
+                                                        <span className={`shrink-0 m3-text-2xs ${muted} px-1.5 py-0.5 rounded bg-[var(--color-m3-surface-container)] `}>
                                                             {t('timeline.future')}
                                                         </span>
                                                     )}

@@ -174,7 +174,7 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
                         <div className="mb-5 flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-primary-container)]">
                             <Icon icon={LockKeyhole} size={18} strokeWidth={1.75} />
                         </div>
-                        <h1 className="text-xl font-semibold text-body">{copy.unlockTitle}</h1>
+                        <h1 className="text-m3-title-xl text-body">{copy.unlockTitle}</h1>
                         <p className="mt-2 text-sm leading-relaxed text-muted">{copy.unlockDescription}</p>
                         <form onSubmit={handleUnlock} className="mt-6">
                             <label htmlFor="shared-record-password" className="mb-1.5 block text-xs font-medium text-muted">
@@ -227,7 +227,7 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
                 <main className="mx-auto flex min-h-[70vh] max-w-md items-center px-6 py-16 text-center">
                     <div className="w-full">
                         <Icon icon={AlertCircle} size={28} strokeWidth={1.5} className="mx-auto mb-4 text-muted" />
-                        <h1 className="text-xl font-semibold text-body">
+                        <h1 className="text-m3-title-xl text-body">
                             {expired ? copy.expiredTitle : copy.unavailableTitle}
                         </h1>
                         <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
@@ -291,7 +291,7 @@ const SharedRecord = ({ details }: { details: ShareDetails }) => {
                 <section className="border-b border-[var(--color-m3-outline-variant)] pb-8">
                     <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
                         <div>
-                            <h1 className="text-3xl font-medium tracking-tight text-body md:text-4xl">{copy.publicTitle}</h1>
+                            <h1 className="text-m3-headline-large text-body md:text-m3-display-large">{copy.publicTitle}</h1>
                             <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">{copy.disclaimer}</p>
                         </div>
                         {details.passwordRequired && (
@@ -319,7 +319,7 @@ const SharedRecord = ({ details }: { details: ShareDetails }) => {
 
                 <section className="pb-5 pt-8" aria-labelledby="shared-chart-title">
                     <div className="mb-4 flex items-center justify-between gap-4">
-                        <h2 id="shared-chart-title" className="text-lg font-semibold text-body">{copy.chartTitle}</h2>
+                        <h2 id="shared-chart-title" className="text-m3-title-large text-body">{copy.chartTitle}</h2>
                         <span className="text-xs text-muted">{timeZone}</span>
                     </div>
                     <ResultChart
@@ -333,7 +333,7 @@ const SharedRecord = ({ details }: { details: ShareDetails }) => {
 
                 <section aria-labelledby="shared-history-title">
                     <div className="mb-6 flex items-end justify-between gap-4">
-                        <h2 id="shared-history-title" className="text-lg font-semibold text-body">{copy.historyTitle}</h2>
+                        <h2 id="shared-history-title" className="text-m3-title-large text-body">{copy.historyTitle}</h2>
                         <span className="text-xs tabular-nums text-muted">{snapshot.events.length} {copy.records}</span>
                     </div>
 
@@ -343,7 +343,7 @@ const SharedRecord = ({ details }: { details: ShareDetails }) => {
                         <div className="grid gap-x-12 lg:grid-cols-2">
                             {groups.map(group => (
                                 <div key={group.label} className="mb-7 break-inside-avoid">
-                  <h3 className="mb-1 border-b border-[var(--color-m3-outline-variant)] pb-2 text-xs font-semibold text-muted">
+                  <h3 className="text-m3-title-small mb-1 border-b border-[var(--color-m3-outline-variant)] pb-2 text-muted">
                                         {group.label}
                                     </h3>
                                     {group.events.map(event => (

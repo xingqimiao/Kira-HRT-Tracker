@@ -200,7 +200,7 @@ const Page: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 /** The page heading, matching the app's other pages rather than a dialog's. */
 const PageHeader: React.FC<{ title: string; intro?: string }> = ({ title, intro }) => (
   <header className="mb-6">
-    <h1 className="text-xl font-semibold">{title}</h1>
+    <h1 className="text-m3-title-xl">{title}</h1>
     {intro && (
       <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)]">
         {intro}

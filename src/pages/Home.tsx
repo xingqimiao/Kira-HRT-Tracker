@@ -106,7 +106,7 @@ const Home: React.FC<HomeProps> = ({
 
     const on = "text-[var(--color-m3-on-surface)] ";
     const muted = "text-[var(--color-m3-on-surface-variant)] ";
-    const dim = "text-[var(--color-m3-outline-variant)] ";
+    const dim = "text-[var(--color-m3-on-surface-variant)] opacity-35 ";
 
     return (
         <div className="mx-auto w-full max-w-[1040px] px-4 sm:px-6 md:px-8">
@@ -180,11 +180,11 @@ const Home: React.FC<HomeProps> = ({
                                     <span className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
                                         {currentT > 0 ? (
                                             <>
-                                                <span data-vial-sprayable className={`text-4xl md:text-5xl font-light leading-none tabular-nums ${on}`}><AnimatedNumber value={currentT} decimals={0} /></span>
+                                                <span data-vial-sprayable className={`text-m3-display-large leading-none tabular-nums ${on}`}><AnimatedNumber value={currentT} decimals={0} /></span>
                                                 <span className={`text-xs lowercase ${muted}`}>ng/dl</span>
                                             </>
                                         ) : (
-                                            <span className={`text-4xl md:text-5xl font-light leading-none ${dim}`}>--</span>
+                                            <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
                                         )}
                                     </span>
                                     {vial}
@@ -197,11 +197,11 @@ const Home: React.FC<HomeProps> = ({
                                 <div className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
                                     {currentT > 0 ? (
                                         <>
-                                            <span data-vial-sprayable className={`text-4xl md:text-5xl font-light leading-none tabular-nums ${on}`}><AnimatedNumber value={currentT / 28.842} decimals={1} /></span>
+                                            <span data-vial-sprayable className={`text-m3-display-large leading-none tabular-nums ${on}`}><AnimatedNumber value={currentT / 28.842} decimals={1} /></span>
                                             <span className={`text-xs lowercase ${muted}`}>nmol/l</span>
                                         </>
                                     ) : (
-                                        <span className={`text-4xl md:text-5xl font-light leading-none ${dim}`}>--</span>
+                                        <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
                                     )}
                                 </div>
                             </div>
@@ -218,11 +218,11 @@ const Home: React.FC<HomeProps> = ({
                                     <span className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
                                         {currentLevel > 0 ? (
                                             <>
-                                                <span data-vial-sprayable className={`text-4xl md:text-5xl font-light leading-none tabular-nums ${on}`}><AnimatedNumber value={currentLevel} decimals={1} /></span>
+                                                <span data-vial-sprayable className={`text-m3-display-large leading-none tabular-nums ${on}`}><AnimatedNumber value={currentLevel} decimals={1} /></span>
                                                 <span className={`text-xs lowercase ${muted}`}>pg/ml</span>
                                             </>
                                         ) : (
-                                            <span className={`text-4xl md:text-5xl font-light leading-none ${dim}`}>--</span>
+                                            <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
                                         )}
                                     </span>
                                     {vial}
@@ -233,18 +233,18 @@ const Home: React.FC<HomeProps> = ({
                                 <div className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
                                     {currentCPA > 0 ? (
                                         <>
-                                            <span data-vial-sprayable className={`text-4xl md:text-5xl font-light leading-none tabular-nums ${on}`}><AnimatedNumber value={currentCPA} decimals={1} /></span>
+                                            <span data-vial-sprayable className={`text-m3-display-large leading-none tabular-nums ${on}`}><AnimatedNumber value={currentCPA} decimals={1} /></span>
                                             <span className={`text-xs lowercase ${muted}`}>ng/ml</span>
                                         </>
                                     ) : (
-                                        // E2's placeholder is `text-4xl md:text-5xl font-light
+                                        // E2's placeholder is `text-m3-display-large
                                         // leading-none ${dim}`; this one was a size smaller
                                         // and used the *muted text* role, so the two dashes
                                         // read as different states rather than as the same
                                         // absence. `leading-none` is the half that moves the
                                         // glyph: without it the taller default line-height
                                         // pushed this one a few px down.
-                                        <span className={`text-4xl md:text-5xl font-light leading-none ${dim}`}>--</span>
+                                        <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
                                     )}
                                 </div>
                             </div>
@@ -270,7 +270,7 @@ const Home: React.FC<HomeProps> = ({
                         <p className={`text-sm ${muted} mb-6 max-w-xs`}>{t('home.empty_subtitle')}</p>
                         <button
                             onClick={onNavigateToHistory}
-                            className="btn-secondary"
+                            className="m3-btn m3-btn-filled"
                         >
                             {t('home.empty_cta')}
                         </button>
