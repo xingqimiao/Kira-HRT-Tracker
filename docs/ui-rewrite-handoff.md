@@ -180,7 +180,7 @@ npx vite build                                                            # 必�
 
 | # | 位置 | 是什么 | 什么时候用它 |
 |---|---|---|---|
-| 1 | **git 标签 `pre-rewrite`**（=`f09fcd2`） | 指向重写前的最后一次提交，成本最低、最耐久 | 只是想把某个文件取回来 |
+| 1 | **git 标签 `pre-rewrite`**（=`fff7c27`） | 指向重写前的最后一次提交，成本最低、最耐久 | 只是想把某个文件取回来 |
 | 2 | **独立并列副本 `E:\HRT-pre-rewrite\`** | `git worktree`，detached 在 `pre-rewrite`；**已复制 `node_modules` 与 `public/ocr`，实测 `npx vite build` 成功** | 想**并排对照**旧界面；或在旧代码上验证一个想法 |
 | 3 | **完整历史包 `C:\Users\fkxw2\hrt-backups\hrt-pre-rewrite.bundle`**（7.7 MB） | `git bundle --all`，含全部提交/分支/标签；已验证「complete history」，并**实测 clone 回滚成功** | 仓库本身被搞坏或被删时重建 |
 | 4 | **全量补丁串 `pre-rewrite-full.patch`**（22 MB） | `git format-patch` 全量，**纯文本、不依赖 git 历史** | 想要能阅读、能选择性 `git am` 的文本记录 |
@@ -189,9 +189,9 @@ npx vite build                                                            # 必�
 3/4/5 都在 `C:\Users\fkxw2\hrt-backups\`，同目录另有 sha256（前 16 位，用于事后确认文件没被动过）：
 
 ```
-hrt-pre-rewrite.bundle          sha256:ee0497268ef3eef5
-pre-rewrite-full.patch          sha256:fd3fe71d0e78112a
-worktree-pre-rewrite-src.tar.gz sha256:7ef0df23d268b45f
+hrt-pre-rewrite.bundle          sha256:18d0da0795b906a7
+pre-rewrite-full.patch          sha256:f9a1d2dd18700e78
+worktree-pre-rewrite-src.tar.gz sha256:2951f6c35058a495
 ```
 
 ### 怎么回退（三条路，按场景选）
