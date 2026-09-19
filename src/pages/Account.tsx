@@ -50,21 +50,20 @@ const muted = settingsMuted;
  *
  * ── What changed, and why ────────────────────────────────────────────────────
  *
- * This page used to present **two** sign-ins at once. The inline form was the
- * legacy Worker's (cloud backup, its own password, its own session list) and the
- * Core — the backend that actually holds the records — was a pair of rows opening a
- * *modal* underneath it. So the form a visitor saw first belonged to the backend
+ * This page used to present **two** sign-ins at once. The inline form belonged to a
+ * second, legacy backend (cloud backup, its own password, its own session list) and
+ * the Core — the backend that actually holds the records — was a pair of rows opening
+ * a *modal* underneath it. So the form a visitor saw first belonged to the backend
  * they did not need, and the one that owned their data was hidden behind a link.
  *
- * That is backwards, and it was visible the moment you signed in: the Worker form
+ * That was backwards, and it was visible the moment you signed in: the other form
  * stayed on screen while the Core showed as signed in. Two identities, two
  * credential stores, no way to tell from the page which one you were in.
  *
  * Now there is one form, and it is the Core's: the same `CoreAuthForm` the modal
- * renders, so the two cannot drift. The Worker's rows (cloud backup, its password,
- * its session list, profile and avatar) are gone from this page
- * with it. They are not deleted — the Worker still exists as the legacy backend —
- * but nothing here pretends it is how you sign in.
+ * renders, so the two cannot drift. The second backend's rows (cloud backup, its
+ * password, its session list, profile and avatar) went with that backend when it was
+ * removed.
  */
 const Account: React.FC<AccountProps> = ({
     session,

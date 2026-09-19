@@ -27,8 +27,8 @@ interface SidebarProps {
  * than a band cut out of it. Links are pills and the current one is *filled*, which is
  * the only state signal — no underline competing with it.
  *
- * Sub-views (a settings screen, the sessions list) are owned by the section they were
- * opened from, so the pill for that section stays lit while you are inside it.
+ * Sub-views (a settings screen, the account security page) are owned by the section
+ * they were opened from, so the pill for that section stays lit while you are inside it.
  *
  * Desktop only: on a phone the floating bottom bar in App.tsx is the navigation, and
  * two of them would be one too many.
@@ -37,15 +37,11 @@ const Sidebar: React.FC<SidebarProps> = ({ navItems, currentView, onViewChange }
     /** A view belongs to the section it drills out of until it drills somewhere else. */
     const sectionFor = (view: string): string => {
         if (view.startsWith('settings-') || view === 'pk-params') return 'settings';
-        if (view === 'sessions' || view === 'change-password') return 'account';
         if (view === 'lab-calibration') return 'lab';
         return view;
     };
 
     const section = sectionFor(currentView);
-    // Admin lives behind Settings on every screen size, so the bar does not need a
-    // sixth destination for it.
-    const visible = navItems.filter(item => item.id !== 'admin');
 
     return (
         <nav className="m3-navbar hidden px-4 md:flex md:px-6" aria-label="Primary">
@@ -60,7 +56,7 @@ const Sidebar: React.FC<SidebarProps> = ({ navItems, currentView, onViewChange }
                 </button>
 
                 <div className="ml-auto flex items-center gap-1">
-                    {visible.map(item => {
+                    {navItems.map(item => {
                         const isActive = section === item.id;
                         return (
                             <button

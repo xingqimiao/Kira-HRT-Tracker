@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { Home, ListTodo, Settings as SettingsIcon, UserCircle, ShieldCheck, CalibrationCurve } from '../icons';
+import { Home, ListTodo, Settings as SettingsIcon, UserCircle, CalibrationCurve } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 
-export type ViewKey = 'home' | 'share' | 'history' | 'lab' | 'lab-calibration' | 'settings' | 'account' | 'admin' | 'sessions' | 'change-password' | 'edit-profile' | 'edit-avatar' | 'pk-params' | 'settings-hrt-mode' | 'settings-language' | 'settings-appearance' | 'settings-weight' | 'settings-export' | 'settings-import' | 'settings-security' | 'settings-mcp' | 'settings-licences';
+export type ViewKey = 'home' | 'share' | 'history' | 'lab' | 'lab-calibration' | 'settings' | 'account' | 'pk-params' | 'settings-hrt-mode' | 'settings-language' | 'settings-appearance' | 'settings-weight' | 'settings-export' | 'settings-import' | 'settings-security' | 'settings-mcp' | 'settings-licences';
 
 /**
  * `initialView` exists for the X landing: it renders instead of the app shell, so it
@@ -10,7 +10,7 @@ export type ViewKey = 'home' | 'share' | 'history' | 'lab' | 'lab-calibration' |
  * as an initial state rather than navigating in an effect means the very first paint is
  * the right tab — no flash of Home, and no dependence on effect timing.
  */
-export const useAppNavigation = (user: any, initialView: ViewKey = 'home') => {
+export const useAppNavigation = (initialView: ViewKey = 'home') => {
     const { t } = useTranslation();
 
     // --- State ---
@@ -18,7 +18,7 @@ export const useAppNavigation = (user: any, initialView: ViewKey = 'home') => {
     const [transitionDirection, setTransitionDirection] = useState<'forward' | 'backward'>('forward');
     const mainScrollRef = useRef<HTMLDivElement>(null);
 
-    const viewOrder: ViewKey[] = ['home', 'share', 'history', 'lab', 'lab-calibration', 'settings', 'account', 'sessions', 'change-password', 'edit-profile', 'edit-avatar', 'pk-params', 'settings-hrt-mode', 'settings-language', 'settings-appearance', 'settings-weight', 'settings-export', 'settings-import', 'settings-security', 'settings-mcp', 'settings-licences', 'admin'];
+    const viewOrder: ViewKey[] = ['home', 'share', 'history', 'lab', 'lab-calibration', 'settings', 'account', 'pk-params', 'settings-hrt-mode', 'settings-language', 'settings-appearance', 'settings-weight', 'settings-export', 'settings-import', 'settings-security', 'settings-mcp', 'settings-licences'];
 
     // --- Actions ---
     const handleViewChange = (view: ViewKey) => {
@@ -44,10 +44,6 @@ export const useAppNavigation = (user: any, initialView: ViewKey = 'home') => {
         { id: 'settings', label: t('nav.settings'), icon: SettingsIcon },
         { id: 'account', label: t('nav.account'), icon: UserCircle },
     ];
-
-    if (user?.isAdmin) {
-        navItems.push({ id: 'admin', label: t('nav.admin'), icon: ShieldCheck });
-    }
 
     return {
         currentView,

@@ -1,17 +1,10 @@
 /**
  * Two-way sync against the Application Core.
  *
- * A sibling of `useCloudSync`, with the same contract (`buildPayload` /
- * `applyRemote` / status / `syncNow`) so either can drive the app. The difference
- * is where the other side lives: the Core's `/api/sync` holds structured records
- * rather than an encrypted blob.
- *
- * That difference removes work rather than adding it. `useCloudSync` carries a
- * revision-CAS dance — remembering the newest backup id it reconciled with,
- * probing up to three of them — purely because the blob store has no
- * compare-and-swap, so a push that had not looked first would silently overwrite
- * another device's write and undo its deletions. The Core enforces per-record
- * optimistic locking server-side, so this hook can simply "merge, then push".
+ * The Core's `/api/sync` holds structured records rather than an encrypted blob, which
+ * is what keeps this hook small: there is no revision-CAS dance to perform, because
+ * the Core enforces per-record optimistic locking server-side, so this hook can
+ * simply "merge, then push".
  *
  * The merge itself is NOT reimplemented here: `mergeSyncStates` is the app's own
  * engine, and its tombstone and newest-wins rules were written against real bugs
@@ -46,7 +39,7 @@ interface Options {
   enabled: boolean;
   /** True once the data layer holds this account's records — never sync before. */
   ready: boolean;
-  /** Outside the app's convention: matches `useCloudSync` so they are interchangeable. */
+  /** Builds the payload to upload; called at fire time, never captured. */
   buildPayload: () => any;
   applyRemote: (state: SyncState) => void;
   /** Local data. Changes schedule a push; the values themselves are unused. */

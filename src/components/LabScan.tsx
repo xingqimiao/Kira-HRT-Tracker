@@ -47,8 +47,7 @@ const MAX_EDGE = 2400;
 /**
  * Prepare an image for recognition: grayscale, contrast-stretched, upscaled.
  *
- * Reuses `createImage` from `cropImage` — the same loader the avatar cropper uses —
- * rather than a second `new Image()` wrapper.
+ * Reuses `createImage` from `cropImage` rather than a second `new Image()` wrapper.
  *
  * Deliberately NOT a hard binarisation. A global threshold is the obvious move and it
  * is the wrong one here: the reports people photograph have a gradient across them

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import Icon from '../components/Icon';
 import Switch from '../components/Switch';
-import { ChevronRight, Settings2, Database, Info, ArrowLeft, Globe, ShieldCheck } from '../icons';
+import { ChevronRight, Settings2, Database, Info, ArrowLeft, Globe } from '../icons';
 import type { IconComponent } from '../icons';
 import { Lang } from '../i18n/translations';
 import { AppTheme } from '../constants';
@@ -40,9 +40,8 @@ interface SettingsProps {
     onNavigateToImport: () => void;
     autoSync: boolean;
     setAutoSync: (v: boolean) => void;
+    /** Whether anyone is signed in — the auto-sync toggle only means something then. */
     isLoggedIn: boolean;
-    isAdmin: boolean;
-    onNavigateToAdmin: () => void;
 }
 
 type SettingsCat = 'general' | 'data' | 'about';
@@ -64,7 +63,6 @@ const Settings: React.FC<SettingsProps> = ({
     weight, pkParams, onNavigateToPKParams, onNavigateToHRTMode,
     onNavigateToLanguage, onNavigateToAppearance, onNavigateToWeight,
     onNavigateToExport, onNavigateToImport, autoSync, setAutoSync, isLoggedIn,
-    isAdmin, onNavigateToAdmin,
 }) => {
     const { mode } = useHRTMode();
     const { showVial, setShowVial } = useVial();
@@ -155,7 +153,7 @@ const Settings: React.FC<SettingsProps> = ({
 
             <button
                 onClick={() => navTo(onNavigateToPKParams, 'general')}
-                className={`${rowBase} ${isAdmin ? 'md:border-b-0' : 'border-b-0'}`}
+                className={`${rowBase} border-b-0`}
             >
                 <span className={rowLabel}>{t('settings.pk_params')}</span>
                 <span className={rowValue}>
@@ -167,21 +165,6 @@ const Settings: React.FC<SettingsProps> = ({
                     <Icon icon={ChevronRight} size={15} />
                 </span>
             </button>
-
-            {/* Desktop reaches the admin area from the left nav rail; on mobile that
-                rail doesn't exist, so this is the only way in. */}
-            {isAdmin && (
-                <button
-                    onClick={() => navTo(onNavigateToAdmin, 'general')}
-                    className={`${rowBase} border-b-0 md:hidden`}
-                >
-                    <span className={rowLabel}>{t('admin.dashboard')}</span>
-                    <span className={rowValue}>
-                        <Icon icon={ShieldCheck} size={14} className="opacity-50" />
-                        <Icon icon={ChevronRight} size={15} />
-                    </span>
-                </button>
-            )}
         </div>
     );
 

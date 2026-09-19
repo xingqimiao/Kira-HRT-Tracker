@@ -9,7 +9,6 @@ import { DoseEvent, decompressData, encryptData, decryptData } from '../logic';
 import { useAppData } from './hooks/useAppData';
 import { useAppNavigation, ViewKey } from './hooks/useAppNavigation';
 import { useLiveShareSync } from './hooks/useLiveShareSync';
-import { useCloudSync } from './hooks/useCloudSync';
 import { useCoreSync } from './hooks/useCoreSync';
 import { onAppSettingsApplied } from './utils/appSettings';
 import { setAuthLandingIntent, takeAuthLandingIntent } from './utils/authLandingIntent';
@@ -21,9 +20,7 @@ import Sidebar from './components/Sidebar';
 import Icon from './components/Icon';
 import PasswordInputModal from './components/PasswordInputModal';
 import DisclaimerModal from './components/DisclaimerModal';
-import AuthModal from './components/AuthModal';
 import CoreAuthModal from './components/CoreAuthModal';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { useCoreSession, CoreSessionProvider } from './hooks/useCoreSession';
 
 // Pages
@@ -33,7 +30,6 @@ import Lab from './pages/Lab';
 import CalibrationSettings from './pages/CalibrationSettings';
 import Settings from './pages/Settings';
 import Account from './pages/Account';
-import Admin from './pages/Admin';
 import CoreAccountSettings from './pages/CoreAccountSettings';
 import BindCredentials from './pages/BindCredentials';
 import OAuthLanding from './pages/OAuthLanding';
@@ -55,16 +51,12 @@ const AppContent = () => {
     const { t, lang, setLang } = useTranslation();
     const { showDialog } = useDialog();
     const { mode } = useHRTMode();
-    const { user, token } = useAuth();
 
     /**
-     * The Application Core session, alongside the legacy Worker one.
+     * The Application Core session — the only one there is.
      *
-     * Both exist during the migration and they are not the same thing: the Core holds
-     * the key to the records, the Worker session drives cloud backup.
-     * The Core is now the primary way in — it is what the server actually protects
-     * records with — and the data layer below is scoped to whichever identity is
-     * present, preferring Core.
+     * It holds the key to the records and identifies the account the data layer
+     * below is scoped to.
      */
     const coreSession = useCoreSession();
 
@@ -119,7 +111,7 @@ const AppContent = () => {
     } = useAppData(showDialog, coreSession.user?.userId ?? null);
 
     useLiveShareSync({
-        authToken: token,
+        authToken: coreSession.token,
         mode,
         events,
         simulation,
@@ -132,7 +124,7 @@ const AppContent = () => {
         handleViewChange,
         mainScrollRef,
         navItems,
-    } = useAppNavigation(user, landingIntent?.view);
+    } = useAppNavigation(landingIntent?.view);
 
 
     // --- Local UI State (Modals & Forms) ---
@@ -143,7 +135,6 @@ const AppContent = () => {
     const [isPasswordInputOpen, setIsPasswordInputOpen] = useState(false);
     const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
     const [isQuickAddLabOpen, setIsQuickAddLabOpen] = useState(false);
-    const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
     const [isDisclaimerOpen, setIsDisclaimerOpen] = useState(false);
     const [pendingImportText, setPendingImportText] = useState<string | null>(null);
 
@@ -191,46 +182,12 @@ const AppContent = () => {
         localStorage.setItem('app-auto-backup', String(autoSync));
     }, [autoSync]);
 
-    // Two-way sync with the cloud backup: pull, reconcile, push. Replaces both
-    // the upload-only auto-backup and the startup "your data differs" prompt —
-    // the prompt could only add records the cloud had and this device lacked, so
-    // edits and deletions stayed unresolved and it reappeared every launch.
-    // The legacy Worker cloud backup. Still runs, but has no UI surface now that the
-    // account page is Core-only — see the note in Account.tsx. Kept rather than
-    // removed so an existing backup keeps being maintained; unbind the result to say
-    // so honestly, instead of deleting the user data path silently.
-    useCloudSync({
-        token,
-        userId: user?.id ?? null,
-        enabled: autoSync,
-        // Never touch the cloud while the data layer is mid-switch between
-        // accounts or modes: the payload would mix one account's in-memory
-        // records with another's storage keys.
-        ready: readyScope === scope,
-        buildPayload: buildExportPayload,
-        applyRemote: applySyncedState,
-        events,
-        labResults,
-        doseTemplates,
-        weight,
-        pkParams,
-    });
-
-    /**
-     * Two-way sync against the Application Core — the path that actually stores the
-     * records.
-     *
-     * Both sync hooks run, and they are not redundant: this one puts doses and labs
-     * in the Core's structured, encrypted store (where an agent can read them and
-     * where account deletion can genuinely remove them), while `useCloudSync` above
-     * maintains the legacy encrypted backup blob for the existing Worker deployment.
-     * They share `buildExportPayload` / `applySyncedState` and the app's own merge
-     * engine, so neither duplicates the merge rules.
-     *
-     * Gated on `coreSession.isSignedIn`: without a Core session there is no key
-     * server-side, so a push would 401 — and, worse, a *pull* would silently do
-     * nothing while looking like it worked.
-     */
+    // Two-way sync with the Application Core — the path that actually stores the
+    // records.
+    //
+    // Gated on `coreSession.isSignedIn`: without a Core session there is no key
+    // server-side, so a push would 401 — and, worse, a *pull* would silently do
+    // nothing while looking like it worked.
     const coreSyncState = useCoreSync({
         token: coreSession.token,
         userId: coreSession.user?.userId ?? null,
@@ -468,16 +425,14 @@ const AppContent = () => {
                             /* Same reason as ShareSettings below: the share feature
                                authenticates against the Core. */
                             authToken={coreSession.token}
-                            onAuthRequired={() => setIsAuthModalOpen(true)}
+                            onAuthRequired={() => setIsCoreAuthOpen(true)}
                             doseTemplates={doseTemplates}
                             onAddEvent={addEvent}
                             onRemoveEvent={deleteEvent}
                         />
                     )}
 
-                    {/* Shares live on the Core, so this is the Core session's token.
-                        It was given the Worker token, which is a separate identity — a
-                        user signed in to the Core was asked to sign in again. */}
+                    {/* Shares live on the Core, so this is the Core session's token. */}
                     {currentView === 'share' && coreSession.token && (
                         <ShareSettings
                             onBack={() => handleViewChange('home')}
@@ -569,9 +524,7 @@ const AppContent = () => {
                             onNavigateToImport={() => handleViewChange('settings-import')}
                             autoSync={autoSync}
                             setAutoSync={setAutoSync}
-                            isLoggedIn={!!user}
-                            isAdmin={!!user?.isAdmin}
-                            onNavigateToAdmin={() => handleViewChange('admin')}
+                            isLoggedIn={coreSession.isSignedIn}
                         />
                     )}
 
@@ -674,17 +627,13 @@ const AppContent = () => {
                             onBack={() => handleViewChange('settings')}
                         />
                     )}
-
-                    {currentView === 'admin' && user?.isAdmin && (
-                        <Admin />
-                    )}
                     </div>
                 </div>
 
                 {/* Bottom Navigation — floating island */}
                 <nav className="fixed left-4 right-4 bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] z-40 md:hidden rounded-2xl bg-[var(--color-m3-surface-bright)]  border border-[var(--color-m3-outline-variant)]  shadow-[var(--shadow-m3-3)]">
                     <div className="flex items-stretch p-1.5 gap-1">
-                        {navItems.filter(item => item.id !== 'admin').map(({ id, icon, label }) => {
+                        {navItems.map(({ id, icon, label }) => {
                             const activeTab = ({
                                 'home': 'home',
                                 'history': 'history',
@@ -701,10 +650,6 @@ const AppContent = () => {
                                 'settings-licences': 'settings',
                                 'pk-params': 'settings',
                                 'account': 'account',
-                                'sessions': 'account',
-                                // Mobile reaches admin from Settings → General, so the
-                                // settings tab is the one that should read as active.
-                                'admin': 'settings',
                             } as Record<string, string>)[currentView] ?? currentView;
                             const isActive = activeTab === id;
                             const isDisabled = false;
@@ -774,13 +719,7 @@ const AppContent = () => {
                 onImportJson={importEventsFromJson}
             />
 
-            <AuthModal
-                isOpen={isAuthModalOpen}
-                onClose={() => setIsAuthModalOpen(false)}
-            />
-
-            {/* The Core sign-in. Rendered alongside the legacy modal during the
-                migration: the Core is what actually protects records. */}
+            {/* The one sign-in in the app: the Core is what protects the records. */}
             <CoreAuthModal
                 isOpen={isCoreAuthOpen}
                 onClose={() => { setIsCoreAuthOpen(false); setPrefillUsername(''); }}
@@ -848,8 +787,7 @@ const App = () => {
             <LanguageProvider>
                 <HRTModeProvider>
                     <DialogProvider>
-                        <AuthProvider>
-                            <CoreSessionProvider>
+                        <CoreSessionProvider>
                             <ErrorBoundary>
                                 <OAuthLanding provider={authCallbackProvider} navigate={(view, options) => {
                                     // The destination is persisted, not used here: this
@@ -867,8 +805,7 @@ const App = () => {
                                     window.location.reload();
                                 }} />
                             </ErrorBoundary>
-                            </CoreSessionProvider>
-                        </AuthProvider>
+                        </CoreSessionProvider>
                     </DialogProvider>
                 </HRTModeProvider>
             </LanguageProvider>
@@ -887,13 +824,11 @@ const App = () => {
                         </ErrorBoundary>
                     ) : (
                         <DialogProvider>
-                            <AuthProvider>
-                                <VialProvider>
-                                    <ErrorBoundary>
-                                        <AppContent />
-                                    </ErrorBoundary>
-                                </VialProvider>
-                            </AuthProvider>
+                            <VialProvider>
+                                <ErrorBoundary>
+                                    <AppContent />
+                                </ErrorBoundary>
+                            </VialProvider>
                         </DialogProvider>
                     )}
                 </CoreSessionProvider>
