@@ -189,9 +189,13 @@ npx vite build                                                            # 必�
 3/4/5 都在 `C:\Users\fkxw2\hrt-backups\`，同目录另有 sha256（前 16 位，用于事后确认文件没被动过）：
 
 ```
-hrt-pre-rewrite.bundle          sha256:edead706f949d056
+# 校验（bundle 内嵌 ref，故每次移动标签后都要重新生成、重新取校验）
+hrt-pre-rewrite.bundle          sha256:bf91c03b92095b95
 pre-rewrite-full.patch          sha256:f9a1d2dd18700e78
 worktree-pre-rewrite-src.tar.gz sha256:2951f6c35058a495
+# 复查命令（PowerShell）
+# Get-FileHash C:\Users\fkxw2\hrt-backups\hrt-pre-rewrite.bundle -Algorithm SHA256
+# git -C E:\HRT bundle verify C:\Users\fkxw2\hrt-backups\hrt-pre-rewrite.bundle
 ```
 
 ### 怎么回退（三条路，按场景选）
