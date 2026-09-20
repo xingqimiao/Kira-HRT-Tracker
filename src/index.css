@@ -1321,6 +1321,36 @@ body {
     border-radius: var(--md-sys-shape-corner-full);
     cursor: pointer;
 }
+.m3-rail-brand__glyph { display: inline-flex; }
+
+/* The mark's answer to a press: it swells a little and turns one full circle,
+   then settles.
+   Frequency gate: the only thing on the rail that is not a destination, pressed
+   rarely — so it may animate, where the destinations may not. Purpose: feedback
+   plus a little delight at the rare tier. Tool: a keyframe, because a full turn
+   has to start from zero every time rather than retarget from wherever it got to.
+   Properties: transform only. Curve and duration: the strengthened ease-out over
+   460ms — fast while the eye is on the mark, slow as it lands, no overshoot. */
+@keyframes m3-brand-spin {
+    0%   { transform: scale(1) rotate(0deg); }
+    35%  { transform: scale(1.14) rotate(126deg); }
+    100% { transform: scale(1) rotate(360deg); }
+}
+.m3-rail-brand__glyph.is-spinning {
+    animation: m3-brand-spin 460ms var(--ease-out) both;
+}
+
+/* Reduced motion keeps the feedback and drops the travel: a press, no turn. */
+@keyframes m3-brand-press {
+    0%   { transform: scale(1); }
+    50%  { transform: scale(1.10); }
+    100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .m3-rail-brand__glyph.is-spinning {
+        animation: m3-brand-press 160ms var(--ease-out) both;
+    }
+}
 
 /* The compact-and-medium navigation: the app's floating island, unchanged, with
    the spec's items inside it. Hidden once the rail takes over. */
