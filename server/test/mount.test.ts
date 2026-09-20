@@ -78,6 +78,32 @@ test('health answers inside the mount and not outside it', async () => {
   }
 });
 
+test('the MCP readiness route answers without a token', async () => {
+  // A status page polls this. It has to answer without a credential — `/mcp` itself
+  // resolves a bearer first, so an unauthenticated probe would get 401 and a probe
+  // with a token would be reporting the credential's state, not the service's.
+  const res = await call(host, `${MOUNT}/mcp/health`);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.service, 'hrt-mcp', 'the response says which surface answered');
+  assert.equal(res.body.mount, `${MOUNT}/mcp`, 'and where the MCP endpoint lives');
+  assert.equal(typeof res.body.protocol, 'string', 'a probe can compare the protocol version');
+
+  // It describes the service, never an account: no identifiers in the body.
+  const body = JSON.stringify(res.body);
+  for (const word of ['token', 'user', 'account']) {
+    assert.ok(!body.includes(word), `the readiness body must not mention ${word}`);
+  }
+
+  // A write verb is not a readiness check.
+  const posted = await call(host, `${MOUNT}/mcp/health`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  assert.equal(posted.status, 405);
+
+  // And it lives inside the mount like everything else.
+  const outside = await call(host, '/mcp/health');
+  assert.equal(outside.status, 404);
+});
+
 test('the bare mount prefix resolves to the mount root', async () => {
   // `/hrt` (no trailing slash) is a valid request for the mount root, not a
   // mismatch — treating it as one makes the prefix awkward to probe.

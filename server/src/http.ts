@@ -23,7 +23,13 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 import { getConfig } from './config.ts';
-import { buildServer, makeBearerResolver } from './mcp.ts';
+import {
+  buildServer,
+  makeBearerResolver,
+  MCP_PROTOCOL_VERSION,
+  MCP_SERVER_NAME,
+  MCP_SERVER_VERSION,
+} from './mcp.ts';
 import { AccountService } from './accounts.ts';
 import { isGoogleConfigured } from './oauth.ts';
 import { RecordService, buildExportPayload, publicStats } from './records.ts';
@@ -308,6 +314,30 @@ export function createRequestHandler() {
           mount: getConfig().basePath || '/',
           x_login: AccountService.xLoginAvailable(),
           google_login: googleLoginAvailable(),
+        });
+        return;
+      }
+
+      // --- MCP readiness ---------------------------------------------------
+      //
+      // A status page has to answer "is the MCP endpoint up?" without holding an
+      // agent token, and `/mcp` itself cannot answer it: it resolves a bearer
+      // first, so an unauthenticated probe gets 401 and a probe with a token
+      // would be reporting the *credential's* state rather than the service's.
+      // This is the tokenless half — the adapter is mounted, and which protocol
+      // version it speaks. It says nothing about any account.
+      if (path === '/mcp/health') {
+        if (req.method !== 'GET') {
+          send(res, 405, { error: 'method not allowed; GET on the MCP health route' });
+          return;
+        }
+        send(res, 200, {
+          ok: true,
+          service: 'hrt-mcp',
+          mount: `${getConfig().basePath || ''}/mcp`,
+          server: MCP_SERVER_NAME,
+          version: MCP_SERVER_VERSION,
+          protocol: MCP_PROTOCOL_VERSION,
         });
         return;
       }

@@ -55,9 +55,21 @@ const SAFETY_NOTE =
   'It is informational only and must not be used to decide a dose. Report it as an estimate, ' +
   'and direct any dosing question to the user\'s prescriber.';
 
+/**
+ * What `GET /mcp/health` reports, and what the server calls itself.
+ *
+ * Exported because the health route has to answer the same question the adapter
+ * does, and a second copy of either string would be a second thing to forget to
+ * bump. The SDK negotiates a protocol version per session; this is the one the
+ * deployment is built against, which is what a monitoring probe can act on.
+ */
+export const MCP_SERVER_NAME = 'hrt-tracker';
+export const MCP_SERVER_VERSION = '0.1.0';
+export const MCP_PROTOCOL_VERSION = '2025-06-18';
+
 export function buildServer(resolveContext: ContextResolver): McpServer {
   const server = new McpServer(
-    { name: 'hrt-tracker', version: '0.1.0' },
+    { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
     {
       instructions:
         'Tools for a personal HRT record: logged doses, lab results, and modelled hormone levels. ' +
