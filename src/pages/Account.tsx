@@ -150,31 +150,33 @@ const Account: React.FC<AccountProps> = ({
                             <p className={`${on} font-semibold text-lg truncate`}>
                                 {session.user?.username ?? t('core.acct.signed_in_as')}
                             </p>
-                            {summary?.createdAt && (
-                                <p className={`text-xs ${muted} tabular-nums`}>
-                                    {t('core.acct.created').replace('{date}', summary.createdAt.slice(0, 10))}
-                                </p>
-                            )}
+                            {/* Held open rather than conditionally rendered: this line and
+                                the counts below both come from the server, and letting them
+                                appear a beat after the page slid in read as the pane moving
+                                on its own. The height is theirs from the first frame. */}
+                            <p className={`text-xs ${muted} tabular-nums`}>
+                                {summary?.createdAt
+                                    ? t('core.acct.created').replace('{date}', summary.createdAt.slice(0, 10))
+                                    : '\u00A0'}
+                            </p>
                         </div>
                     </div>
 
                     {/* What the account holds. Counts only — the record contents are
                         ciphertext server-side, so this is all that can be shown. */}
-                    {summary && (
-                        <div className={`py-4 ${divider}`}>
-                            <span className={sectionLabel}>{t('core.acct.your_records')}</span>
-                            <div className="flex gap-8">
-                                <div>
-                                    <p className={`${on} text-2xl font-semibold tabular-nums`}>{summary.doseCount}</p>
-                                    <p className={`text-xs ${muted}`}>{t('core.acct.doses')}</p>
-                                </div>
-                                <div>
-                                    <p className={`${on} text-2xl font-semibold tabular-nums`}>{summary.labCount}</p>
-                                    <p className={`text-xs ${muted}`}>{t('core.acct.labs')}</p>
-                                </div>
+                    <div className={`py-4 ${divider}`}>
+                        <span className={sectionLabel}>{t('core.acct.your_records')}</span>
+                        <div className="flex gap-8">
+                            <div>
+                                <p className={`${on} text-2xl font-semibold tabular-nums`}>{summary ? summary.doseCount : '—'}</p>
+                                <p className={`text-xs ${muted}`}>{t('core.acct.doses')}</p>
+                            </div>
+                            <div>
+                                <p className={`${on} text-2xl font-semibold tabular-nums`}>{summary ? summary.labCount : '—'}</p>
+                                <p className={`text-xs ${muted}`}>{t('core.acct.labs')}</p>
                             </div>
                         </div>
-                    )}
+                    </div>
 
                     {/* Sync. Beside the record counts because the two answer one
                         question between them: what the account holds, and whether it
