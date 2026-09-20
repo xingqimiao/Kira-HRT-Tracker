@@ -426,6 +426,14 @@
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
     --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
     --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+    /* The one curve here that goes outside 0–1: it dips below the start (the
+       wind-up) and past the end (the overshoot), so the value it interpolates
+       turns back a little and then overshoots before it settles.
+       easings.net's easeInOutBack, taken whole rather than hand-rolled — the
+       /animate rule is to cite a curve, never to invent one. It is only for a
+       decorative one-shot: an overshoot on a control the user is waiting on reads
+       as the interface wobbling. */
+    --ease-in-out-back: cubic-bezier(0.68, -0.6, 0.32, 1.6);
 
 }
 
@@ -1329,19 +1337,20 @@ body {
    rarely — so it may animate, where the destinations may not. Purpose: feedback
    plus a little delight at the rare tier. Tool: a keyframe, because a full turn
    has to start from zero every time rather than retarget from wherever it got to.
-   Properties: transform only. Curve: the spec's own accelerate curve over 460ms —
-   it winds up slowly and then the turn comes all at once.
-   That is the one easing the usual rules would refuse on a UI control (a slow
-   start delays the moment the user is watching), and it is deliberate here: this
-   is a decorative one-shot on a mark nobody is waiting on, not a control that has
-   to answer. The curve is the material-3 motion token rather than an invented one. */
+   Properties: transform only. Curve: --ease-in-out-back over 460ms — it eases in,
+   overshoots, and springs back.
+   Both halves of that are deliberate and both are things the usual rules refuse on
+   a UI control: a slow start delays the moment the user is watching, and an
+   overshoot reads as the interface wobbling. Neither applies here — this is a
+   decorative one-shot on a mark nobody is waiting on. It is also the only place
+   the overshoot curve is used. */
 @keyframes m3-brand-spin {
     0%   { transform: scale(1) rotate(0deg); }
     35%  { transform: scale(1.14) rotate(126deg); }
     100% { transform: scale(1) rotate(360deg); }
 }
 .m3-rail-brand__glyph.is-spinning {
-    animation: m3-brand-spin 460ms var(--md-sys-motion-easing-emphasized-accelerate) both;
+    animation: m3-brand-spin 460ms var(--ease-in-out-back) both;
 }
 
 /* Reduced motion keeps the feedback and drops the travel: a press, no turn. */
