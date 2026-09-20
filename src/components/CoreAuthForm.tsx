@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import Icon from './Icon';
+import { GoogleBrand, XBrand } from '../icons/brand';
 import { AlertTriangle, X } from '../icons';
 import { Progress } from './ui';
 
@@ -316,6 +317,7 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                                         aria-label={t('core.oauth.continue').replace('{provider}', PROVIDER_NAMES[provider])}
                                         className="btn-secondary w-full"
                                     >
+                                        {provider === 'x' ? <XBrand size={17} /> : <GoogleBrand size={18} />}
                                         {t('core.oauth.continue').replace('{provider}', PROVIDER_NAMES[provider])}
                                     </button>
                                 ))}

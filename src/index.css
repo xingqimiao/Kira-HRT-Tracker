@@ -1376,6 +1376,20 @@ body {
     }
 }
 
+/* The provider marks in the sign-in form. The files have no width or height of
+   their own — they are viewBox-only, which is how the providers publish them — so
+   the wrapper sets the box and the drawing fills it. */
+.m3-brand-mark {
+    display: inline-flex;
+    flex: none;
+    line-height: 0;
+}
+.m3-brand-mark > svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
 /* The compact-and-medium navigation: the app's floating island, unchanged, with
    the spec's items inside it. Hidden once the rail takes over. */
 .m3-navigation-bar {
