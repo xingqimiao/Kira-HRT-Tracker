@@ -1337,27 +1337,38 @@ body {
    rarely — so it may animate, where the destinations may not. Purpose: feedback
    plus a little delight at the rare tier. Tool: a keyframe, because a full turn
    has to start from zero every time rather than retarget from wherever it got to.
-   Properties: transform only. Curve: --ease-in-out-back over 460ms — it eases in,
-   overshoots, and springs back.
-   Both halves of that are deliberate and both are things the usual rules refuse on
-   a UI control: a slow start delays the moment the user is watching, and an
-   overshoot reads as the interface wobbling. Neither applies here — this is a
-   decorative one-shot on a mark nobody is waiting on. It is also the only place
-   the overshoot curve is used. */
-@keyframes m3-brand-spin {
-    0%   { transform: scale(1) rotate(0deg); }
-    35%  { transform: scale(1.14) rotate(126deg); }
-    100% { transform: scale(1) rotate(360deg); }
+   Properties: `rotate` and `scale` as *separate* properties, not the transform
+   shorthand — the two halves run on different clocks, and one transform between
+   them would force a single keyframe list. That list is what made the mark stall:
+   a swell that peaked at 35% and then had 65% of the timeline to crawl back down
+   meant the size stopped changing for a sixth of a second while the turn crossed
+   its own peak.
+   The turn is --ease-in-out-back over 520ms: eases in, overshoots the full circle,
+   springs back. The swell is its own short pop, over well before the turn lands.
+   Both are things the usual rules refuse on a UI control — a slow start delays the
+   moment the user is watching, an overshoot reads as the interface wobbling — and
+   neither applies to a decorative one-shot on a mark nobody is waiting on. This is
+   the only place the overshoot curve is used. */
+@keyframes m3-brand-turn {
+    from { rotate: 0deg; }
+    to   { rotate: 360deg; }
+}
+@keyframes m3-brand-swell {
+    0%   { scale: 1; }
+    45%  { scale: 1.14; }
+    100% { scale: 1; }
 }
 .m3-rail-brand__glyph.is-spinning {
-    animation: m3-brand-spin 460ms var(--ease-in-out-back) both;
+    animation:
+        m3-brand-turn 520ms var(--ease-in-out-back) both,
+        m3-brand-swell 300ms var(--ease-out) both;
 }
 
 /* Reduced motion keeps the feedback and drops the travel: a press, no turn. */
 @keyframes m3-brand-press {
-    0%   { transform: scale(1); }
-    50%  { transform: scale(1.10); }
-    100% { transform: scale(1); }
+    0%   { scale: 1; }
+    50%  { scale: 1.10; }
+    100% { scale: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
     .m3-rail-brand__glyph.is-spinning {
