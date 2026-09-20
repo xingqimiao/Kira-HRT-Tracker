@@ -27,7 +27,6 @@ interface SettingsProps {
     onShowIntro: () => void;
     /** Opens the open-source licence notice. */
     onOpenLicences?: () => void;
-    appVersion: string;
     weight: number;
     setIsWeightModalOpen: (isOpen: boolean) => void;
     pkParams: PKCustomParams | null;
@@ -58,7 +57,7 @@ let _savedMobileView: MobileView = 'list';
 
 const Settings: React.FC<SettingsProps> = ({
     t, lang, theme, languageOptions, onClearAllEvents, events,
-    showDialog, setIsDisclaimerOpen, onShowIntro, appVersion,
+    showDialog, setIsDisclaimerOpen, onShowIntro,
     onOpenLicences,
     weight, pkParams, onNavigateToPKParams, onNavigateToHRTMode,
     onNavigateToLanguage, onNavigateToAppearance, onNavigateToWeight,
@@ -246,8 +245,6 @@ const Settings: React.FC<SettingsProps> = ({
                 <span className={rowLabel}>{t('settings.show_intro')}</span>
                 <Icon icon={ChevronRight} size={15} className={muted} />
             </button>
-
-            <p className={`mt-10 text-xs ${muted}`}>{appVersion}</p>
         </div>
     );
 

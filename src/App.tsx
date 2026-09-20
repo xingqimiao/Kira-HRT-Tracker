@@ -513,7 +513,6 @@ const AppContent = () => {
                             setIsDisclaimerOpen={setIsDisclaimerOpen}
                             onShowIntro={() => setShowOnboarding(true)}
                             onOpenLicences={() => handleViewChange('settings-licences')}
-                            appVersion={APP_VERSION}
                             weight={weight}
                             setIsWeightModalOpen={setIsWeightModalOpen}
                             pkParams={pkParams}
