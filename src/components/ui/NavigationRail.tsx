@@ -1,6 +1,6 @@
 import React from 'react';
 import Icon from '../Icon';
-import { TestTube } from '../../icons';
+import { TestTube2 } from '../../icons';
 import type { IconComponent } from '../../icons';
 
 export interface NavDestination {
@@ -39,7 +39,7 @@ const NavigationRail: React.FC<{
             aria-label={brandLabel}
             onClick={() => onNavigate('home')}
         >
-            <Icon icon={TestTube} size={24} />
+            <Icon icon={TestTube2} size={24} />
         </button>
         {items.map(item => {
             const isActive = item.id === activeId;
