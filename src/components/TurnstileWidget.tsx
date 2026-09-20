@@ -58,6 +58,17 @@ declare global {
   }
 }
 
+/**
+ * The height the widget takes once Cloudflare has rendered it.
+ *
+ * Measured through Playwright against a `vite preview` build, from 320px to 1280px
+ * wide: the managed widget's box is a fixed 300x71 in every case, before and after the
+ * token solves. Reserved on the container so the form is already its final height
+ * before the third-party script arrives, instead of growing by 71px when it does.
+ * `min-height` rather than `height` so a future widget taller than this is not clipped.
+ */
+const WIDGET_BOX_HEIGHT = 71;
+
 interface Props {
     /** The action the token is minted for; the server checks it matches. */
     action: 'register' | 'oauth';
@@ -133,7 +144,13 @@ const TurnstileWidget: React.FC<Props> = ({ action, onToken, resetSignal = 0 }) 
     }, [resetSignal]);
 
     if (!SITE_KEY) return null;
-    return <div ref={box} className="flex justify-center" />;
+    return (
+        <div
+            ref={box}
+            className="flex justify-center"
+            style={{ minHeight: WIDGET_BOX_HEIGHT }}
+        />
+    );
 };
 
 export default TurnstileWidget;

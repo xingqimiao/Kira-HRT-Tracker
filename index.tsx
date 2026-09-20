@@ -2,9 +2,15 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import './src/index.css';
 import App from './src/App';
+import { primeLoginProviders } from './src/services/coreAuth';
 import { watchForAppUpdates } from './src/utils/swUpdate';
 import { preventPinchZoom } from './src/utils/preventPinchZoom';
 import { applyStoredTheme } from './src/utils/themeInit';
+
+// Start the sign-in provider probe with the bundle rather than when the sign-in form
+// appears. The form reads the answer synchronously, so on a normal visit the provider
+// buttons are part of its first paint instead of popping in a round trip later.
+void primeLoginProviders();
 
 // Before the first render, not in an effect: `/auth/x/callback`, a share link and
 // the onboarding gate all render outside `AppContent` (where the app's own theme

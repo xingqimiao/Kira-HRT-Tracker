@@ -525,6 +525,46 @@ export const coreAuth = {
 };
 
 /**
+ * The one `/health` answer, kept after it lands.
+ *
+ * The sign-in form used to start this request in an effect, which meant the buttons
+ * could not exist until a round trip that only began when the user was already
+ * looking at the form. The probe starts with the app instead (see
+ * `primeLoginProviders`), and this is where its answer waits so the form can read it
+ * synchronously and paint the buttons in its first render.
+ */
+let providerAnswer: { x: boolean; google: boolean } | null = null;
+let providerRequest: Promise<{ x: boolean; google: boolean }> | null = null;
+
+/**
+ * The provider answer if `/health` has already replied, or `null` while it has not.
+ *
+ * Synchronous on purpose: a resolved promise still costs a microtask, and a microtask
+ * is a second render — enough to make the buttons a paint late, which is the bug.
+ */
+export function loginProvidersIfKnown(): { x: boolean; google: boolean } | null {
+  return providerAnswer;
+}
+
+/**
+ * Start the one `/health` probe and share its answer.
+ *
+ * Call it as early as the app can run, not when the form mounts, so the request
+ * overlaps the rest of boot. Repeat calls share the one request. Its meaning is
+ * `loginProviders`' and is unchanged: an unreadable probe resolves to neither
+ * provider.
+ */
+export function primeLoginProviders(): Promise<{ x: boolean; google: boolean }> {
+  if (!providerRequest) {
+    providerRequest = coreAuth.loginProviders().then(answer => {
+      providerAnswer = answer;
+      return answer;
+    });
+  }
+  return providerRequest;
+}
+
+/**
  * Where the browser lands after a provider authorization, read from the current URL.
  *
  * `handle` is X's alone: Google is asked for the `openid` scope only, so it sends no

@@ -9,6 +9,8 @@ import {
     coreAuth,
     CoreAuthError,
     PROVIDER_NAMES,
+    loginProvidersIfKnown,
+    primeLoginProviders,
     type LoginProvider,
 } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
@@ -29,6 +31,20 @@ import { useTranslation } from '../contexts/LanguageContext';
  * That could only happen to an advanced-mode account, and advanced mode is gone, so
  * a provider sign-in now always yields a real session and there is nothing to unlock.
  */
+
+/**
+ * The height its provider block takes once the buttons are in.
+ *
+ * Measured on the real form through Playwright against a `vite preview` build (see
+ * the fix's report): divider plus two 40px pill buttons is 116px. Reserved while
+ * `/health` is still in flight, so the footer below cannot jump when the answer
+ * lands. The app-level probe normally settles before this form renders at all.
+ *
+ * ponytail: the largest case only. A deployment that offers a single provider settles
+ * 48px shorter; that is a self-hosted edge and the reserved box is still the right
+ * shape for it to land inside.
+ */
+const PROVIDER_BLOCK_HEIGHT = 116;
 
 interface CoreAuthFormProps {
     session: CoreSession;
@@ -63,7 +79,11 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     // Null until `/health` has answered, so neither button is offered on a guess.
-    const [providers, setProviders] = useState<{ x: boolean; google: boolean } | null>(null);
+    // Initialised from the app-level probe rather than `null`: if the answer is already
+    // in hand this stone is part of the first paint, not a second one.
+    const [providers, setProviders] = useState<{ x: boolean; google: boolean } | null>(
+        () => loginProvidersIfKnown(),
+    );
 
     // Registration: the human-verification token, and the reset that forces a fresh
     // challenge after a rejected submit (a solved token is single use).
@@ -88,17 +108,19 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
         if (active && initialUsername) setUsername(initialUsername);
     }, [active, initialUsername]);
 
-    // Ask which providers are offered once, when the form becomes active.
+    // Join the app-level `/health` probe once the form becomes active. The probe was
+    // started at app boot, so this is usually already settled; when it is not, the
+    // reserved placeholder below keeps its arrival from moving the footer.
     React.useEffect(() => {
-        if (!active) return;
+        if (!active || providers) return;
         let cancelled = false;
-        void coreAuth.loginProviders().then(v => {
+        void primeLoginProviders().then(v => {
             if (!cancelled) setProviders(v);
         });
         return () => {
             cancelled = true;
         };
-    }, [active]);
+    }, [active, providers]);
 
     /** The message for a failure, per kind. `provider` names the one that was refused. */
     function describe(error: unknown, provider?: LoginProvider): string {
@@ -279,8 +301,15 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                     {!isLogin && (
                         <>
                             <TurnstileWidget action="register" onToken={setTurnstileToken} resetSignal={turnstileReset} />
-                            {TURNSTILE_CONFIGURED && !verified && (
-                                <p className="text-xs text-center text-[var(--color-m3-on-surface-variant)] !mt-2">
+                            {TURNSTILE_CONFIGURED && (
+                                /* Kept in the flow while solved, just hidden: unmounting it
+                                   would move the submit button and the provider block below it
+                                   the moment the token lands. Same trick the intro's stacked
+                                   subtitles use to hold a box open. */
+                                <p
+                                    className={`text-xs text-center text-[var(--color-m3-on-surface-variant)] !mt-2${verified ? ' invisible' : ''}`}
+                                    aria-hidden={verified || undefined}
+                                >
                                     {t('core.oauth.verify_required')}
                                 </p>
                             )}
@@ -296,7 +325,16 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                         {isLogin ? t('core.sign_in') : t('core.create_account')}
                     </button>
 
-                    {(providers?.x || providers?.google) && (
+                    {providers === null ? (
+                        /* Neither button may be offered on a guess, but the block is
+                           coming either way, so hold its place while the probe lands
+                           rather than letting the footer jump when it does. */
+                        <div
+                            className="space-y-3"
+                            style={{ minHeight: PROVIDER_BLOCK_HEIGHT }}
+                            aria-hidden="true"
+                        />
+                    ) : (providers.x || providers.google) && (
                         <div className="space-y-3">
                             <div className="flex items-center gap-2">
                                 {/* MD3 divider: 1dp of outline-variant, no shadow. */}
