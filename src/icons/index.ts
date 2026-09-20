@@ -65,6 +65,7 @@ export {
     ShieldOff,
     Sticker,
     Syringe,
+    TestTube,
     Trash,
     Trash2,
     Upload,

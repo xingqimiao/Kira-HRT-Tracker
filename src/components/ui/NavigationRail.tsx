@@ -1,6 +1,6 @@
 import React from 'react';
 import Icon from '../Icon';
-import { Droplet } from '../../icons';
+import { TestTube } from '../../icons';
 import type { IconComponent } from '../../icons';
 
 export interface NavDestination {
@@ -17,8 +17,9 @@ export interface NavDestination {
  * asked for: a wide window buys a rail and a wider reading column, not a larger
  * scale of the same phone layout.
  *
- * The top slot carries the app's droplet, because there is no logo and inventing
- * one would be the only fictional mark in the product.
+ * The top slot carries a test tube. There is no logo, and a drawn wordmark would
+ * be the only invented mark in the product — so it is the thing the app is about,
+ * from the icon set, rather than a mark nobody has seen before.
  *
  * No motion: a destination is chosen dozens of times a day, which is the /animate
  * tier that gets no animation at all.
@@ -38,7 +39,7 @@ const NavigationRail: React.FC<{
             aria-label={brandLabel}
             onClick={() => onNavigate('home')}
         >
-            <Icon icon={Droplet} size={24} />
+            <Icon icon={TestTube} size={24} />
         </button>
         {items.map(item => {
             const isActive = item.id === activeId;
