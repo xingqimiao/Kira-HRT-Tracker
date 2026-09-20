@@ -21,14 +21,58 @@ export enum Ester {
     T = "T",    // Unesterified testosterone (gel / patch base)
     TC = "TC",  // Testosterone Cypionate
     TE = "TE",  // Testosterone Enanthate
-    TU = "TU"   // Testosterone Undecanoate
+    TU = "TU",  // Testosterone Undecanoate
+    // Anti-androgens that are not estrogens and are not modelled. They live in this
+    // enum because a record has to name its drug somehow and "ester" is the field it
+    // has; nothing outside the recorder may assume an Ester is a hormone. See
+    // UNMODELLED_COMPOUNDS and docs/monitoring-reference.md for why all three are
+    // recorded but never simulated.
+    SPIRO = "SPIRO", // Spironolactone
+    BICAL = "BICAL"  // Bicalutamide
 }
 
 // Set of testosterone-based esters (used to route simulation into the T curve).
 export const T_ESTERS: ReadonlySet<Ester> = new Set<Ester>([Ester.T, Ester.TC, Ester.TE, Ester.TU]);
 
+// Anti-androgens — NOT estrogens and NOT testosterone. Written as a set rather than
+// left as `ester === Ester.CPA` at each site, so another anti-androgen is a
+// one-line change instead of a hunt. Both facts are true of all three members:
+//
+//   * None has an **estradiol equivalent**. A 12.5 mg CPA tablet is not 12.5 mg
+//     of estradiol, and printing a molar ratio in the same slot where a real one
+//     appears for EV implies the drug contributes estrogen. The sources say CPA
+//     does not produce estradiol at all (docs/monitoring-reference.md).
+//   * None is **simulated**. No source proposes measuring any of the three drugs'
+//     plasma level, which is the direct justification for replacing a concentration
+//     curve with monitoring and adherence. All get the "recorded, not modelled"
+//     treatment that Route.patchRemove already gets.
+export const ANTIANDROGENS: ReadonlySet<Ester> = new Set<Ester>([Ester.CPA, Ester.SPIRO, Ester.BICAL]);
+
+// Compounds this model draws no concentration curve for. Today the same three as
+// ANTIANDROGENS, but kept a separate set because they are two different claims:
+// one is about the class (what the E2/T branches must not claim), the other about
+// the model (who gets a curve). A future unmodelled non-antiandrogen would join
+// only this one.
+export const UNMODELLED_COMPOUNDS: ReadonlySet<Ester> = new Set<Ester>([Ester.CPA, Ester.SPIRO, Ester.BICAL]);
+
 export function isTestosteroneEster(e: Ester): boolean {
     return T_ESTERS.has(e);
+}
+
+/** True for an anti-androgen (CPA, spironolactone, bicalutamide) — the class the E2/T branches must not claim. */
+export function isAntiandrogen(e: Ester): boolean {
+    return ANTIANDROGENS.has(e);
+}
+
+/**
+ * True for a compound this model has no curve for (all three anti-androgens today).
+ * Callers use it in place of "is this an estrogen?" so a compound that is neither
+ * an estrogen nor a testosterone ester cannot be mistaken for one — which is
+ * exactly what would put a logged spironolactone dose into the E2 curve, or
+ * leave a CPA curve on a chart that is supposed to draw none.
+ */
+export function isUnmodelledCompound(e: Ester): boolean {
+    return UNMODELLED_COMPOUNDS.has(e);
 }
 
 // HRT mode used by the UI/storage layer. Not persisted inside DoseEvent.
@@ -70,6 +114,18 @@ export interface DoseEvent {
     updatedAt?: number;
 }
 
+/**
+ * The subset of records a concentration chart may draw.
+ *
+ * A record of an unmodelled compound still exists and still belongs in the
+ * timeline, the export and the counts; it contributes no curve point and no chart
+ * marker. The chart is frozen and derives its series from the event list it is
+ * handed, so which series exist is decided here, upstream, rather than inside it.
+ */
+export function modelledEvents(events: DoseEvent[]): DoseEvent[] {
+    return events.filter(e => !isUnmodelledCompound(e.ester));
+}
+
 export interface SimulationResult {
     timeH: number[];
     concPGmL: number[];
@@ -90,6 +146,34 @@ export interface LabResult {
     unit: 'pg/ml' | 'pmol/l' | 'ng/dl' | 'nmol/l';
     // Epoch ms of the last edit — see DoseEvent.updatedAt.
     updatedAt?: number;
+    // --- Monitoring bloods carried by the same draw -------------------------
+    // Prolactin / ALT / AST / potassium are part of the lab result rather than a
+    // parallel store, so they sync, export and survive a new device exactly like an
+    // E2 or T reading. Optional: a draw carries any subset (or none) of them.
+    prolactin?: number;
+    /** The report's ULN for prolactin — the >3x rule is stated against it. */
+    prolactinUln?: number;
+    alt?: number;
+    /** The report's ULN for ALT — the >2x rule is stated against it. */
+    altUln?: number;
+    ast?: number;
+    potassium?: number;
+    /**
+     * True when the record holds monitoring bloods only and no estradiol /
+     * testosterone reading.
+     *
+     * `concValue` and `unit` stay required — the frozen chart and
+     * `OnboardingCurve` read them unconditionally — so such a record carries a
+     * neutral `0` plus an E2 unit placeholder. Every hormone reader must skip
+     * these (see `isMonitoringOnlyLab`); without that guard the placeholder
+     * would be plotted and calibrated as an E2 level of zero.
+     */
+    monitoringOnly?: boolean;
+}
+
+/** True for a record that holds monitoring bloods only — see `monitoringOnly`. */
+export function isMonitoringOnlyLab(lab: LabResult): boolean {
+    return lab.monitoringOnly === true;
 }
 
 export function convertToPgMl(val: number, unit: 'pg/ml' | 'pmol/l' | 'ng/dl' | 'nmol/l'): number {
@@ -188,10 +272,15 @@ function _injectionWeeklyRate(events: DoseEvent[], nowH: number, pred: (e: DoseE
 export function getDoseAdvisory(events: DoseEvent[], nowH: number = Date.now() / (1000 * 60 * 60)): DoseAdvisory | null {
     if (!events.length) return null;
 
-    const isE2 = (e: DoseEvent) => !isTestosteroneEster(e.ester) && e.ester !== Ester.CPA;
+    const isE2 = (e: DoseEvent) => !isTestosteroneEster(e.ester) && !isAntiandrogen(e.ester);
     const isT = (e: DoseEvent) => isTestosteroneEster(e.ester);
 
     // Daily-dosed families: heaviest single-day total in the trailing 14 days.
+    // Spironolactone is deliberately not counted here: it is dosed at 25–200 mg/day,
+    // an order of magnitude above the CPA ceiling below, so folding the two into one
+    // "anti-androgen" family would fire the CPA warning on every ordinary spiro day.
+    // Its own advisory is left for whoever adds the PK curve — inventing a ceiling
+    // for a compound the app does not model would be a number without a source.
     const cpaPerDay = _maxDailyDose(events, nowH, 14, e => e.ester === Ester.CPA);
     const e2DailyPerDay = _maxDailyDose(events, nowH, 14, e => isE2(e) && _isDailyRoute(e.route));
     const tDailyPerDay = _maxDailyDose(events, nowH, 14, e => isT(e) && (e.route === Route.gel || e.route === Route.patchApply));
@@ -249,8 +338,11 @@ export interface HormoneLevelAdvisory {
  * are high at once. Requires at least one lab of each hormone. Not medical advice.
  */
 export function getHormoneLevelAdvisory(results: LabResult[]): HormoneLevelAdvisory | null {
-    const e2Labs = results.filter(r => !isT_LabUnit(r.unit));
-    const tLabs = results.filter(r => isT_LabUnit(r.unit));
+    // Monitoring-only records carry a 0 / 'pmol/l' placeholder and must not be
+    // read as an estradiol of zero — see LabResult.monitoringOnly.
+    const hormoneLabs = results.filter(r => !isMonitoringOnlyLab(r));
+    const e2Labs = hormoneLabs.filter(r => !isT_LabUnit(r.unit));
+    const tLabs = hormoneLabs.filter(r => isT_LabUnit(r.unit));
     if (!e2Labs.length || !tLabs.length) return null;
 
     const latestE2 = e2Labs.reduce((a, b) => (b.timeH > a.timeH ? b : a));
@@ -262,6 +354,237 @@ export function getHormoneLevelAdvisory(results: LabResult[]): HormoneLevelAdvis
     if (e2 < e2LowPgMl && t < tLowNgDl) return { kind: 'both_low' };
     if (e2 > e2HighPgMl && t > tHighNgDl) return { kind: 'both_high' };
     return null;
+}
+
+// --- Anti-androgen monitoring (evidence, not instructions) ---
+//
+// Neither anti-androgen has a curve here, and no source proposes measuring either
+// drug's plasma level. What the sources do propose is monitoring
+// (docs/monitoring-reference.md), so this section turns a logged lab into a notice
+// that names its threshold and its source. It is deliberately not an instruction:
+// the app does not tell anyone to start, stop, image or re-test anything.
+//
+// Every number below is quoted from that document, and the row it came from is in
+// the comment. Where the document says "not stated", nothing is invented here.
+
+export type MonitoringAnalyte = 'PRL' | 'ALT' | 'AST' | 'K';
+
+/**
+ * One monitoring analyte as carried by a `LabResult`.
+ *
+ * The ULN is the upper limit of normal printed on the user's own lab report. Both
+ * ratio rules (>3× for prolactin, >2× for ALT) are stated against it, not an
+ * absolute value, so it can only come from the report. Absent, the ratio notice
+ * does not fire rather than firing on a guessed range — the wiki is explicit that
+ * reference values differ by reagent and method.
+ */
+export interface MonitoringValue {
+    analyte: MonitoringAnalyte;
+    /** The measured value, in the unit the sources quote (see MONITORING_UNIT). */
+    value: number;
+    /** The report's ULN, when the analyte has a ratio rule. */
+    uln?: number;
+}
+
+export type MonitoringNoticeKind = 'prl' | 'alt' | 'k' | 'cpa_cumulative';
+
+export interface MonitoringNotice {
+    kind: MonitoringNoticeKind;
+    /** Measured value for a lab notice, in the unit above. */
+    value?: number;
+    /** The report's ULN, where the rule is a multiple of it. */
+    uln?: number;
+    /** Cumulative CPA exposure in grams, for the meningioma notice. */
+    grams?: number;
+}
+
+/** The unit each analyte is quoted in by the sources; the form stores these. */
+export const MONITORING_UNIT: Record<MonitoringAnalyte, string> = {
+    PRL: 'ng/mL',
+    ALT: 'U/L',
+    AST: 'U/L',
+    K: 'mmol/L',
+};
+
+/**
+ * The monitoring bloods one lab result carries, in the order the form offers them.
+ *
+ * A single record can hold any subset, so callers must not assume one analyte per
+ * record the way the old parallel `MonitoringLab` list did.
+ */
+export function monitoringValues(lab: LabResult): MonitoringValue[] {
+    const out: MonitoringValue[] = [];
+    const num = (v: number | undefined): v is number => typeof v === 'number' && Number.isFinite(v);
+    if (num(lab.prolactin)) {
+        out.push({ analyte: 'PRL', value: lab.prolactin, ...(num(lab.prolactinUln) && lab.prolactinUln > 0 ? { uln: lab.prolactinUln } : {}) });
+    }
+    if (num(lab.alt)) {
+        out.push({ analyte: 'ALT', value: lab.alt, ...(num(lab.altUln) && lab.altUln > 0 ? { uln: lab.altUln } : {}) });
+    }
+    if (num(lab.ast)) out.push({ analyte: 'AST', value: lab.ast });
+    if (num(lab.potassium)) out.push({ analyte: 'K', value: lab.potassium });
+    return out;
+}
+
+/** Prolactin action point: > 3× ULN (W — 监测 §泌乳素). */
+export const PROLACTIN_ULN_MULTIPLE = 3;
+/** ALT action point: > 2× ULN (FDA CASODEX §5.1 — the only ×ULN figure found). */
+export const ALT_ULN_MULTIPLE = 2;
+/** Potassium must be < 5.0 mmol/L before starting spironolactone (W — 螺内酯 §注意事项). */
+export const POTASSIUM_CEILING_MMOL_L = 5.0;
+/** Meningioma education / MRI threshold: cumulative CPA ≥ 10 g (W — 色普龙 §副作用; SfE). */
+export const CPA_CUMULATIVE_THRESHOLD_G = 10;
+
+/** Total CPA ever recorded, in grams, across the whole history. */
+export function cumulativeCpaGrams(events: DoseEvent[]): number {
+    let mg = 0;
+    for (const e of events) if (e.ester === Ester.CPA) mg += e.doseMG;
+    return mg / 1000;
+}
+
+/**
+ * How the Home card's anti-androgen reading is chosen.
+ *
+ *  - 'auto'       : CPA reads as today's mg on a dose day and as the time since
+ *                   the last dose in between; spironolactone and bicalutamide —
+ *                   dosed daily — always read as today's total.
+ *  - 'today'      : always today's total mg.
+ *  - 'since'      : always the time since the last dose.
+ *  - 'cumulative' : the pre-existing reading — CPA exposure in grams, the figure
+ *                   the >=10 g meningioma notice is stated against.
+ */
+export type AntiandrogenChartMode = 'auto' | 'today' | 'since' | 'cumulative';
+
+export const ANTIANDROGEN_CHART_MODES: readonly AntiandrogenChartMode[] = ['auto', 'today', 'since', 'cumulative'];
+
+/** Fall back to 'auto' for anything a store or a synced payload hands us that we do not know. */
+export function normalizeAntiandrogenChartMode(raw: string | null | undefined): AntiandrogenChartMode {
+    return (ANTIANDROGEN_CHART_MODES as readonly string[]).includes(raw ?? '')
+        ? raw as AntiandrogenChartMode
+        : 'auto';
+}
+
+/**
+ * What the Home card's anti-androgen column should read.
+ *
+ * `none` keeps the card's existing `--` placeholder; `grams` is the cumulative
+ * figure the monitoring notice also uses; `dose` is mg taken today and `since` is
+ * how long ago the last dose was (`sinceH` hours, so the caller renders it in the
+ * reader's language rather than baking a string in here).
+ */
+export type AntiandrogenReading =
+    | { kind: 'none' }
+    | { kind: 'dose'; ester: Ester; mgToday: number }
+    | { kind: 'since'; ester: Ester; sinceH: number }
+    | { kind: 'grams'; grams: number };
+
+/** Local calendar day, so "today" is the user's midnight, not UTC's. */
+function localDayKey(hoursSinceEpoch: number): string {
+    const d = new Date(hoursSinceEpoch * 3600000);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+/**
+ * The anti-androgen reading for the Home card.
+ *
+ * The drug is detected from the records rather than assumed: someone on
+ * spironolactone should not be shown a CPA-shaped number, and the two need
+ * different readings because they are dosed on different schedules. When several
+ * anti-androgens are present (a switch, or an old record that was never deleted)
+ * the one with the most recent dose wins — that is the drug currently being
+ * taken, and it is the only one whose "today" can be non-zero. Showing an older
+ * compound's 0 mg would read as "you took none today" when the truth is "that
+ * drug is no longer used".
+ */
+export function antiandrogenReading(
+    events: DoseEvent[],
+    nowH: number = Date.now() / (1000 * 60 * 60),
+    mode: AntiandrogenChartMode = 'auto',
+): AntiandrogenReading {
+    // Cumulative is CPA-only by definition — it is the >=10 g meningioma figure —
+    // so it keeps the pre-existing "nothing to show" reading at zero grams.
+    if (mode === 'cumulative') {
+        const grams = cumulativeCpaGrams(events);
+        return grams > 0 ? { kind: 'grams', grams } : { kind: 'none' };
+    }
+
+    let latest: DoseEvent | null = null;
+    for (const e of events) {
+        if (!isAntiandrogen(e.ester)) continue;
+        if (!latest || e.timeH > latest.timeH) latest = e;
+    }
+    if (!latest) return { kind: 'none' };
+
+    const ester = latest.ester;
+    const sinceH = Math.max(0, nowH - latest.timeH);
+    if (mode === 'since') return { kind: 'since', ester, sinceH };
+
+    const today = localDayKey(nowH);
+    let mgToday = 0;
+    for (const e of events) {
+        if (e.ester === ester && localDayKey(e.timeH) === today) mgToday += e.doseMG;
+    }
+
+    // CPA is taken every 1–3 days, so a mg count says nothing on the days in
+    // between; the useful reading there is how long ago the last dose was. The
+    // daily-dosed compounds keep the mg total, zero included.
+    if (mode === 'auto' && ester === Ester.CPA && mgToday === 0) {
+        return { kind: 'since', ester, sinceH };
+    }
+    return { kind: 'dose', ester, mgToday };
+}
+
+
+/**
+ * Notices for the latest reading of each analyte plus cumulative CPA exposure,
+ * read straight off the lab results (a monitoring-only record and a record that
+ * also carries E2/T are treated identically — only the analytes matter here).
+ *
+ * Strict `>` for the two ratios and for potassium's "must be < 5.0": a value exactly
+ * on the line is at the line, not past it. Cumulative CPA fires at `>=` 10 g because
+ * both sources state the threshold as "≥ 10 g" / "> 10 g" and the earlier of the two
+ * is the point the user should see the accumulated number.
+ *
+ * AST is accepted by the form but has no action threshold in the sources, so it
+ * never produces a notice — the honest reading rather than a fabricated one.
+ */
+export function getMonitoringNotices(labs: LabResult[], events: DoseEvent[]): MonitoringNotice[] {
+    const out: MonitoringNotice[] = [];
+    // Most recent reading of each analyte, by the draw's time. A later write wins
+    // a timestamp tie, matching the old per-analyte store's rule.
+    const latest: Partial<Record<MonitoringAnalyte, MonitoringValue>> = {};
+    const latestAt: Partial<Record<MonitoringAnalyte, number>> = {};
+    for (const lab of labs) {
+        for (const value of monitoringValues(lab)) {
+            const heldAt = latestAt[value.analyte];
+            if (heldAt === undefined || lab.timeH >= heldAt) {
+                latest[value.analyte] = value;
+                latestAt[value.analyte] = lab.timeH;
+            }
+        }
+    }
+
+    const prl = latest.PRL;
+    if (prl && typeof prl.uln === 'number' && prl.uln > 0 && prl.value > PROLACTIN_ULN_MULTIPLE * prl.uln) {
+        out.push({ kind: 'prl', value: prl.value, uln: prl.uln });
+    }
+
+    const alt = latest.ALT;
+    if (alt && typeof alt.uln === 'number' && alt.uln > 0 && alt.value > ALT_ULN_MULTIPLE * alt.uln) {
+        out.push({ kind: 'alt', value: alt.value, uln: alt.uln });
+    }
+
+    const k = latest.K;
+    if (k && k.value >= POTASSIUM_CEILING_MMOL_L) {
+        out.push({ kind: 'k', value: k.value });
+    }
+
+    const grams = cumulativeCpaGrams(events);
+    if (grams >= CPA_CUMULATIVE_THRESHOLD_G) {
+        out.push({ kind: 'cpa_cumulative', grams });
+    }
+
+    return out;
 }
 
 /**
@@ -356,7 +679,9 @@ export function computeCalibrationPoints(sim: SimulationResult | null, results: 
     };
 
     return results
-        .filter(r => !isT_LabUnit(r.unit))
+        // A monitoring-only record's placeholder 0 would otherwise be converted to
+        // an "E2 of 0" and produce a NaN ratio.
+        .filter(r => !isMonitoringOnlyLab(r) && !isT_LabUnit(r.unit))
         .map(r => {
             const obs = convertToPgMl(r.concValue, r.unit);
             let pred = interpolateConcentration_E2(sim, r.timeH);
@@ -812,7 +1137,6 @@ export async function decompressData(base64: string): Promise<string> {
 
 const CorePK = {
     vdPerKG: 2.0, // L/kg for E2
-    vdPerKG_CPA: 14.0, // L/kg for CPA (Cyproterone Acetate, ~986L/70kg)
     kClear: 0.41,
     kClearInjection: 0.041,
     depotK1Corr: 1.0
@@ -825,7 +1149,15 @@ const EsterInfo = {
     [Ester.EC]: { name: "Estradiol Cypionate", mw: 396.58 },
     [Ester.EN]: { name: "Estradiol Enanthate", mw: 384.56 },
     [Ester.EU]: { name: "Estradiol Undecylate", mw: 440.66 },
+    // CPA and spironolactone keep an entry so the record-level lookup stays total,
+    // but getToE2Factor refuses every unmodelled compound before looking here: no
+    // ratio converts any of them to estradiol. Their molecular weights are genuine
+    // (CPA C24H32O4S, 416.94 g/mol; spironolactone C24H32O4S, 416.57 g/mol) and
+    // neither is used for a conversion. Bicalutamide has no entry on purpose: no
+    // source in docs/monitoring-reference.md states a molecular weight, and the
+    // guard above means nothing ever reads it.
     [Ester.CPA]: { name: "Cyproterone Acetate", mw: 416.94 },
+    [Ester.SPIRO]: { name: "Spironolactone", mw: 416.57 },
     // Testosterone esters (MW = parent + ester group)
     [Ester.T]:  { name: "Testosterone",           mw: 288.42 },
     [Ester.TC]: { name: "Testosterone Cypionate", mw: 412.60 },
@@ -833,7 +1165,25 @@ const EsterInfo = {
     [Ester.TU]: { name: "Testosterone Undecanoate", mw: 456.70 }
 };
 
+/**
+ * mg of the named compound → mg of estradiol equivalent (or, for a testosterone
+ * ester, mg of free testosterone).
+ *
+ * Returns 0 for every unmodelled compound, CPA included. That zero is load-bearing
+ * rather than a placeholder: there is no ratio that converts an anti-androgen to
+ * estradiol, and because this factor multiplies straight into the E2 curve, any
+ * non-zero answer would be a fabricated number *in the chart*. It also used to be
+ * printed as "E2 eq" beside a CPA record, which reads as a claim that the dose
+ * contributes estrogen — the sources say CPA does not produce estradiol. The guard
+ * sits here, at the one conversion every caller shares, rather than at each call
+ * site where one omission is silent.
+ *
+ * Was `EsterInfo[Ester.E2].mw / EsterInfo[ester].mw` with no guard at all: adding a
+ * compound to the enum without adding it to EsterInfo returned NaN, which
+ * propagates silently into the displayed concentration.
+ */
 export function getToE2Factor(ester: Ester): number {
+    if (isUnmodelledCompound(ester)) return 0;
     if (ester === Ester.E2) return 1.0;
     if (isTestosteroneEster(ester)) {
         // "to‑T" factor: mg of ester → mg of free testosterone
@@ -1025,6 +1375,17 @@ export const DEFAULT_PK_PARAMS: PKCustomParams = {
 export const BODY_WEIGHT_KG_MIN = 20;
 export const BODY_WEIGHT_KG_MAX = 400;
 export const DOSE_MG_MAX = 10000;
+/**
+ * Highest daily spironolactone dose this app will accept in one record, in mg.
+ *
+ * 400 mg/day is the conventional maximum for spironolactone (FDA label: 400 mg/day
+ * in adults for oedema; 100–200 mg/day is the usual feminizing range and 25–200 mg
+ * is the range the dose guide shows). This is a per-record sanity ceiling, not a
+ * recommendation, and it is deliberately 2× the top of the range the app suggests:
+ * rejecting a real prescription because it is unusual would be worse than accepting
+ * a large one, and the record is only ever stored, never simulated.
+ */
+export const SPIRO_MG_MAX_PER_DAY = 400;
 /** Hours since 1970: 1970-01-01 through roughly the year 2140. */
 export const EVENT_TIME_H_MIN = 0;
 export const EVENT_TIME_H_MAX = 1_500_000;
@@ -1168,6 +1529,13 @@ export function getBioavailabilityMultiplier(
     ester: Ester,
     extras: Partial<Record<ExtraKey, number>> = {}
 ): number {
+    // Spironolactone is not absorbed as anything this model tracks, on any route.
+    // CPA deliberately does NOT take this branch: it is simulated with its own
+    // hand-written parameters in resolveParams, and short-circuiting here would
+    // remove the CPA curve. The guard is stated rather than inherited from
+    // getToE2Factor returning 0, because two zeros agreeing is not a guarantee.
+    if (isUnmodelledCompound(ester)) return 0;
+
     const mwFactor = getToE2Factor(ester);
 
     // Transmasculine (testosterone) path
@@ -1244,6 +1612,16 @@ function resolveParams(event: DoseEvent): PKParams {
     const defaultK3 = event.route === Route.injection ? _activePKParams.e2_kClearInj : _activePKParams.e2_kClear;
     const toE2 = getToE2Factor(event.ester);
     const extras = event.extras ?? {};
+
+    // A compound with no curve: a real, storable record that contributes to no
+    // concentration series on any route. F = 0 zeroes the contribution; the
+    // non-zero k3 is what keeps the event from pinning the active window open
+    // forever (computeMaxLifetimeH returns Infinity when every rate is 0). This is
+    // the same "recorded, not modelled" shape as Route.patchRemove, applied to a
+    // drug that does get stored, listed and exported.
+    if (isUnmodelledCompound(event.ester)) {
+        return { Frac_fast: 0, k1_fast: 0, k1_slow: 0, k2: 0, k3: defaultK3, F: 0, rateMGh: 0, F_fast: 0, F_slow: 0 };
+    }
 
     // Transmasculine (testosterone) path — use the dedicated T PK parameters.
     if (isTestosteroneEster(event.ester)) {
@@ -1358,22 +1736,6 @@ function resolveParams(event: DoseEvent): PKParams {
             return { Frac_fast: 0, k1_fast: 0, k1_slow: 0, k2: 0, k3: defaultK3, F: 0, rateMGh: 0, F_fast: 0, F_slow: 0 };
 
         case Route.oral: {
-            // === 针对 CPA 的特殊处理开始 ===
-            if (event.ester === Ester.CPA) {
-                return {
-                    Frac_fast: 1.0,
-                    k1_fast: 1.0,
-                    k1_slow: 0,
-                    k2: 0,
-                    k3: 0.017,
-                    F: 0.7,
-                    rateMGh: 0,
-                    F_fast: 0.7,
-                    F_slow: 0.7
-                };
-            }
-            // === 针对 CPA 的特殊处理结束 ===
-
             const k1Value = event.ester === Ester.EV ? OralPK.kAbsEV : OralPK.kAbsE2;
             const k2Value = event.ester === Ester.EV ? (EsterPK.k2[Ester.EV] || 0) : 0;
             const F = _activePKParams.e2_oral_bio * toE2;
@@ -1646,9 +2008,10 @@ export function runSimulation(events: DoseEvent[], bodyWeightKG: number): Simula
     const totalHours = endTime - startTime;
     const steps = Math.min(100000, Math.max(2000, Math.ceil(totalHours)));
 
-    // Different Vd for E2, CPA and T
+    // Different Vd for E2 and T. Anti-androgens are never simulated, so they have
+    // no distribution volume here; `concPGmL_CPA` stays in the result shape only
+    // because the chart and the share snapshot index it, and it is zeros throughout.
     const plasmaVolumeML_E2 = CorePK.vdPerKG * bodyWeightKG * 1000; // E2: ~2.0 L/kg
-    const plasmaVolumeML_CPA = CorePK.vdPerKG_CPA * bodyWeightKG * 1000; // CPA: ~14.0 L/kg
     const plasmaVolumeML_T = T_CorePK.vdPerKG * bodyWeightKG * 1000; // T: ~1.0 L/kg
 
     const timeH: number[] = [];
@@ -1709,13 +2072,16 @@ export function runSimulation(events: DoseEvent[], bodyWeightKG: number): Simula
         }
 
         let totalAmountMG_E2 = 0;
-        let totalAmountMG_CPA = 0;
         let totalAmountMG_T = 0;
 
         for (const { model, ester } of active) {
             const amount = model.amount(t);
-            if (ester === Ester.CPA) {
-                totalAmountMG_CPA += amount;
+            // An unmodelled compound is dropped here rather than accumulated into any
+            // bucket: its amount() is 0 by construction (F = 0) and it has no
+            // concentration series of its own. Naming it explicitly is what stops a
+            // future non-zero F from landing in whichever bucket `else` happens to be.
+            if (isUnmodelledCompound(ester)) {
+                // no bucket: recorded, not modelled
             } else if (T_ESTERS.has(ester)) {
                 totalAmountMG_T += amount;
             } else {
@@ -1726,19 +2092,16 @@ export function runSimulation(events: DoseEvent[], bodyWeightKG: number): Simula
         // E2: pg/mL (using E2 Vd)
         const currentConc_E2 = (totalAmountMG_E2 * 1e9) / plasmaVolumeML_E2;
 
-        // CPA: ng/mL (using CPA Vd, convert from mg to ng: 1e6 instead of 1e9)
-        const currentConc_CPA = (totalAmountMG_CPA * 1e6) / plasmaVolumeML_CPA;
-
         // T: ng/dL (mg → ng: *1e6; mL → dL: /100 → factor 1e8/V_mL)
         const currentConc_T = (totalAmountMG_T * 1e8) / plasmaVolumeML_T;
 
-        // Total in pg/mL (convert CPA from ng/mL to pg/mL for compatibility)
-        const currentConc = currentConc_E2 + (currentConc_CPA * 1000);
+        // The combined series carries E2 alone now that CPA is not simulated.
+        const currentConc = currentConc_E2;
 
         timeH.push(t);
         concPGmL.push(currentConc);
         concPGmL_E2.push(currentConc_E2); // pg/mL
-        concPGmL_CPA.push(currentConc_CPA); // ng/mL
+        concPGmL_CPA.push(0); // ng/mL — anti-androgens are recorded, not modelled
         concNGdL_T.push(currentConc_T); // ng/dL
 
         if (i > 0) {

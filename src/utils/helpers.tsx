@@ -101,6 +101,10 @@ export const getEsterIcon = (ester: Ester) => {
         case Ester.EC: return <Icon icon={Orbit} className={iconMuted} />;
         case Ester.EN: return <Icon icon={Dna} className={iconMuted} />;
         case Ester.EU: return <Icon icon={FlaskConical} className={iconMuted} />;
+        // Share CPA's shield: all three are anti-androgens, and the icon is the one
+        // place the timeline says what class of drug a record is without a tooltip.
+        case Ester.SPIRO: return <Icon icon={Shield} className={iconMuted} />;
+        case Ester.BICAL: return <Icon icon={Shield} className={iconMuted} />;
         default: return <Icon icon={FlaskConical} className={iconMuted} />;
     }
 };

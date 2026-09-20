@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import Icon from '../components/Icon';
 import { Plus, ChevronRight, Scan } from '../icons';
-import { LabResult, CalibrationMethod, CalibrationResult, CalibrationPoint, getHormoneLevelAdvisory } from '../../logic';
+import { LabResult, DoseEvent, MONITORING_UNIT, getMonitoringNotices, isMonitoringOnlyLab, monitoringValues, CalibrationMethod, CalibrationResult, CalibrationPoint, getHormoneLevelAdvisory } from '../../logic';
 import { Lang } from '../i18n/translations';
 import { formatDate, formatTime } from '../utils/helpers';
 import LabResultForm from '../components/LabResultForm';
@@ -10,12 +10,15 @@ import { suggestSelection, type HormoneCandidate, type LabUnit } from '../utils/
 import BloodVial from '../components/BloodVial';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { HormoneLevelAdvisoryLine } from '../components/DoseAdvisory';
+import MonitoringNoticeLine from '../components/MonitoringNotice';
 
 interface LabProps {
     t: (key: string) => string;
     isQuickAddLabOpen: boolean;
     setIsQuickAddLabOpen: (isOpen: boolean) => void;
     labResults: LabResult[];
+    /** Every dose record, for the cumulative-CPA notice. */
+    events: DoseEvent[];
     onSaveLabResult: (res: LabResult) => void;
     onDeleteLabResult: (id: string) => void;
     onClearLabResults: () => void;
@@ -30,6 +33,7 @@ const Lab: React.FC<LabProps> = ({
     isQuickAddLabOpen,
     setIsQuickAddLabOpen,
     labResults,
+    events,
     onSaveLabResult,
     onDeleteLabResult,
     onClearLabResults,
@@ -72,6 +76,9 @@ const Lab: React.FC<LabProps> = ({
 
     const hasCal = calibration.points.length > 0;
     const hormoneAdvisory = useMemo(() => getHormoneLevelAdvisory(labResults), [labResults]);
+    // Evidence notices for the monitoring bloods and cumulative CPA exposure. Pure
+    // thresholds from docs/monitoring-reference.md — see `getMonitoringNotices`.
+    const notices = useMemo(() => getMonitoringNotices(labResults, events), [labResults, events]);
 
     // One-line summary of the active calibration for the settings entry row.
     // Before any usable labs exist there's no fit to show, so we fall back to
@@ -168,6 +175,14 @@ const Lab: React.FC<LabProps> = ({
                     </div>
                 )}
 
+                {notices.length > 0 && (
+                    <div className="pb-4 space-y-1.5">
+                        {notices.map(notice => (
+                            <MonitoringNoticeLine key={notice.kind} notice={notice} t={t} />
+                        ))}
+                    </div>
+                )}
+
                 {/* Calibration settings entry — always available; how labs feed the estimate */}
                 <button
                     onClick={onOpenCalibrationSettings}
@@ -207,12 +222,23 @@ const Lab: React.FC<LabProps> = ({
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center justify-between mb-1">
                                                     <span className={`font-medium ${on} text-sm`}>
-                                                        {res.concValue} {res.unit}
+                                                        {isMonitoringOnlyLab(res)
+                                                            ? t('monitor.section')
+                                                            : `${res.concValue} ${res.unit}`}
                                                     </span>
                                                     <span className={`text-xs tabular-nums ${muted} shrink-0`}>
                                                         {formatTime(d)}
                                                     </span>
                                                 </div>
+                                                {monitoringValues(res).length > 0 && (
+                                                    // Monitoring bloods travel on the lab result, so they
+                                                    // are listed here rather than in a parallel section.
+                                                    <p className={`text-xs ${muted} tabular-nums mt-0.5`}>
+                                                        {monitoringValues(res)
+                                                            .map(mv => `${t(`monitor.${mv.analyte.toLowerCase()}`)} ${mv.value} ${MONITORING_UNIT[mv.analyte]}${mv.uln !== undefined ? ` (${t('monitor.uln')} ${mv.uln})` : ''}`)
+                                                            .join(' · ')}
+                                                    </p>
+                                                )}
                                                 <div className="flex items-center justify-between gap-2">
                                                     <span className={`text-xs ${muted}`}>{formatDate(d, lang)}</span>
                                                     {pt && (
@@ -265,6 +291,7 @@ const Lab: React.FC<LabProps> = ({
                         </div>
                     </div>
                 )}
+
             </div>
         </div>
     );

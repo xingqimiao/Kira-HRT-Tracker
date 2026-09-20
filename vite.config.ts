@@ -121,10 +121,27 @@ export default defineConfig(() => {
               // The OCR assets, cached on first use. CacheFirst because they are
               // content-addressed by version in the path — the URL changes when the
               // version does, so a cached copy can never be stale.
+              //
+              // That held only while the file existed. Caddy's SPA fallback
+              // (`try_files {path} /index.html`) answers a *missing* `/ocr/*` path
+              // with the shell — a 200 `text/html` — and `statuses: [0, 200]` cannot
+              // tell the shell from the asset, so CacheFirst stored the shell and
+              // served it for a year. tesseract.js wrote that HTML as
+              // `chi_sim.traineddata`, initialised without the Chinese model, and
+              // every later scan read the label as noise and reported "no usable
+              // values" — surviving the deploy that shipped the real file, because a
+              // runtime cache is not invalidated by a new service worker.
+              //
+              // Two changes, and both are needed. The cache *name* is bumped so no
+              // client reads an entry an earlier deploy poisoned: a runtime cache
+              // outlives the worker that wrote it and `cleanupOutdatedCaches` only
+              // touches the precache, so replacing the file cannot heal it. And the
+              // plugin refuses to store an HTML response at all, so the hole cannot
+              // reopen if a wrong path is answered with 200 again.
               urlPattern: /\/ocr\/.*\.(?:js|wasm|gz)$/i,
               handler: 'CacheFirst',
               options: {
-                cacheName: 'ocr-assets',
+                cacheName: 'ocr-assets-v2',
                 expiration: {
                   // A handful of files, but the variants are per-feature-detection
                   // so only one or two will ever be fetched by a given device.
@@ -132,6 +149,15 @@ export default defineConfig(() => {
                   maxAgeSeconds: 60 * 60 * 24 * 365,
                 },
                 cacheableResponse: { statuses: [0, 200] },
+                plugins: [
+                  {
+                    // A 200 is not enough — the SPA shell is a 200 too.
+                    cacheWillUpdate: async ({ response }: { response: Response }) => {
+                      const type = response?.headers.get('content-type') ?? '';
+                      return /text\/html/i.test(type) ? null : response;
+                    },
+                  },
+                ],
               },
             },
             {

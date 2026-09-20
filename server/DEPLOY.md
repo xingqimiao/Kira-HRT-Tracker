@@ -346,8 +346,35 @@ api.kiramyao.com {
 hrt.kiramyao.com {
     encode zstd gzip
     root * /srv/hrt-web
-    try_files {path} /index.html
-    file_server
+
+    # The SPA shell belongs to a *navigation*, never to a missing asset.
+    #
+    # A site-level `try_files {path} /index.html` answers every unmatched path with
+    # the shell, and Caddy's static handler reports that as a 200 `text/html`. For
+    # `/ocr/*` that is worse than a 404: those files are cached by URL (the service
+    # worker's `ocr-assets` cache in `vite.config.ts`, plus the browser's own
+    # cache), so a single missing language file is stored *as* the language file and
+    # served for a year. tesseract.js then initialises without Chinese, reads a
+    # Chinese label as noise, and reports "no usable values" on a perfectly legible
+    # report — and no redeploy can clear it, because the poisoned copy is in the
+    # client. A local `vite preview` cannot reproduce this, because it answers the
+    # same missing path with a real 404.
+    #
+    # `file_server` alone returns 404 for anything not on disk, so the asset paths
+    # are matched without the fallback. `/sw-*.js` is here for the same reason: a
+    # stale service worker's script URL must 404 (which makes the browser drop the
+    # registration) rather than be answered with an HTML document that cannot parse
+    # as a worker, which would pin the client to the old build.
+    @asset path /assets/* /ocr/* /sw-*.js
+    handle @asset {
+        file_server
+    }
+
+    # Everything else is the SPA.
+    handle {
+        try_files {path} /index.html
+        file_server
+    }
 
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"

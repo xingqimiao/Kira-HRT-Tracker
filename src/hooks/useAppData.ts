@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { DoseEvent, Route, Ester, SimulationResult, runSimulation, interpolateConcentration_E2, interpolateConcentration_CPA, interpolateConcentration_T, LabResult, computeCalibration, CalibrationMethod, CalibrationHistoryMode, normalizeCalibrationMethod, isTestosteroneEster, isT_LabUnit, PKCustomParams, applyPKOverrides, sanitizePKParams, isPlausibleBodyWeightKG,
-         BODY_WEIGHT_KG_MIN, BODY_WEIGHT_KG_MAX, DOSE_MG_MAX,
+import { DoseEvent, Route, Ester, SimulationResult, runSimulation, interpolateConcentration_E2, interpolateConcentration_T, LabResult, computeCalibration, CalibrationMethod, CalibrationHistoryMode, normalizeCalibrationMethod, AntiandrogenChartMode, normalizeAntiandrogenChartMode, isTestosteroneEster, isT_LabUnit, PKCustomParams, applyPKOverrides, sanitizePKParams, isPlausibleBodyWeightKG,
+         BODY_WEIGHT_KG_MIN, BODY_WEIGHT_KG_MAX, DOSE_MG_MAX, SPIRO_MG_MAX_PER_DAY,
          EVENT_TIME_H_MIN, EVENT_TIME_H_MAX } from '../../logic';
 import { createDayLabelFormatter, toDayKey } from '../utils/helpers';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -11,6 +11,8 @@ import {
     pruneTombstones, sanitizeTombstones,
 } from '../utils/syncMerge';
 import { applyAppSettings, appSettingsStamp, readAppSettings, touchAppSettings } from '../utils/appSettings';
+import { JournalEntry, sanitizeJournalEntries } from '../utils/bodyJournal';
+import { normalizeHrtStartDate } from '../utils/hrtStart';
 
 /** Namespace used while signed out. Its keys are the original, un-prefixed ones. */
 const LOCAL_OWNER = 'local';
@@ -30,9 +32,9 @@ const nsFor = (owner: string, suffix: string) =>
 const modeKeyFor = (owner: string, mode: 'transfem' | 'transmasc', suffix: string) =>
     nsFor(owner, mode === 'transmasc' ? `masc-${suffix}` : suffix);
 
-const MODE_SUFFIXES = ['events', 'lab-results', 'dose-templates', 'quick-doses', 'deletions'] as const;
+const MODE_SUFFIXES = ['events', 'lab-results', 'dose-templates', 'quick-doses', 'journal', 'deletions'] as const;
 const SHARED_SUFFIXES = [
-    'weight', 'pk-params', 'cal-method', 'cal-history-mode',
+    'weight', 'pk-params', 'cal-method', 'cal-history-mode', 'aa-chart', 'hrt-start',
     'weight-at', 'pk-params-at',
 ] as const;
 
@@ -212,8 +214,37 @@ export const useAppData = (
         localStorage.setItem(sharedKey('cal-history-mode'), m);
         touchAppSettings();
     };
+    // Which reading the Home card's anti-androgen column shows. Account-scoped and
+    // synced exactly like the two calibration settings above: it is a display
+    // preference, so it rides the settings bag rather than the records.
+    const [aaChartMode, setAaChartModeState] = useState<AntiandrogenChartMode>(() =>
+        normalizeAntiandrogenChartMode(localStorage.getItem(sharedKey('aa-chart')))
+    );
+    const setAaChartMode = (m: AntiandrogenChartMode) => {
+        setAaChartModeState(m);
+        localStorage.setItem(sharedKey('aa-chart'), m);
+        touchAppSettings();
+    };
+    // The day the user's HRT began, as `YYYY-MM-DD`. A plain string setting like
+    // the three above, for the same reason: it is written in the intro, well
+    // before there is any record to attach it to, and it has to reach the next
+    // device with the account rather than staying in this browser.
+    const [hrtStartDate, setHrtStartDateState] = useState<string>(() =>
+        normalizeHrtStartDate(localStorage.getItem(sharedKey('hrt-start'))) ?? ''
+    );
+    const setHrtStartDate = (value: string) => {
+        const normalized = normalizeHrtStartDate(value) ?? '';
+        setHrtStartDateState(normalized);
+        if (normalized) localStorage.setItem(sharedKey('hrt-start'), normalized);
+        else localStorage.removeItem(sharedKey('hrt-start'));
+        touchAppSettings();
+    };
     const [doseTemplates, setDoseTemplates] = useState<DoseTemplate[]>(() => loadJSON(keyFor(mode, 'dose-templates'), [] as DoseTemplate[]));
     const [quickDoses, setQuickDoses] = useState<QuickDose[]>(() => loadJSON(keyFor(mode, 'quick-doses'), [] as QuickDose[]));
+    // The private body-and-mood log. Unlike the monitoring bloods and quick
+    // doses above, this one *is* a record: it is exported and synced, so it has
+    // tombstones and a real merge path (see "journal" in syncMerge.ts).
+    const [journal, setJournal] = useState<JournalEntry[]>(() => loadJSON(keyFor(mode, 'journal'), [] as JournalEntry[]));
     const [pkParams, setPkParamsState] = useState<PKCustomParams | null>(() => {
         const saved = localStorage.getItem(sharedKey('pk-params'));
         if (!saved) return null;
@@ -258,11 +289,14 @@ export const useAppData = (
         setLabResults(loadJSON(keyFor(mode, 'lab-results'), [] as LabResult[]));
         setDoseTemplates(loadJSON(keyFor(mode, 'dose-templates'), [] as DoseTemplate[]));
         setQuickDoses(loadJSON(keyFor(mode, 'quick-doses'), [] as QuickDose[]));
+        setJournal(loadJSON(keyFor(mode, 'journal'), [] as JournalEntry[]));
         // Mode-independent, but still per-account, so they reload on the same beat.
         const savedWeight = localStorage.getItem(sharedKey('weight'));
         setWeightState(savedWeight ? parseFloat(savedWeight) : 70.0);
         setCalibrationMethodState(normalizeCalibrationMethod(localStorage.getItem(sharedKey('cal-method'))));
         setCalibrationHistoryModeState(localStorage.getItem(sharedKey('cal-history-mode')) === 'forward' ? 'forward' : 'retrospective');
+        setAaChartModeState(normalizeAntiandrogenChartMode(localStorage.getItem(sharedKey('aa-chart'))));
+        setHrtStartDateState(normalizeHrtStartDate(localStorage.getItem(sharedKey('hrt-start'))) ?? '');
         setPkParamsState(sanitizePKParams(loadJSON<unknown>(sharedKey('pk-params'), null)));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [scope]);
@@ -291,7 +325,7 @@ export const useAppData = (
         loadedScopeRef.current = scope;
         setReadyScope(prev => (prev === scope ? prev : scope));
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [events, labResults, doseTemplates, quickDoses]);
+    }, [events, labResults, doseTemplates, quickDoses, journal]);
 
 
     useEffect(() => {
@@ -327,6 +361,10 @@ export const useAppData = (
         if (loadedScopeRef.current !== scope) return;
         localStorage.setItem(keyFor(mode, 'quick-doses'), JSON.stringify(quickDoses));
     }, [quickDoses, scope]);
+    useEffect(() => {
+        if (loadedScopeRef.current !== scope) return;
+        localStorage.setItem(keyFor(mode, 'journal'), JSON.stringify(journal));
+    }, [journal, scope]);
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 60000);
@@ -358,13 +396,6 @@ export const useAppData = (
         const baseE2 = interpolateConcentration_E2(simulation, h) || 0;
         return baseE2 * calibrationFn(h);
     }, [simulation, currentTime, calibrationFn]);
-
-    const currentCPA = useMemo(() => {
-        if (!simulation) return 0;
-        const h = currentTime.getTime() / 3600000;
-        const concCPA = interpolateConcentration_CPA(simulation, h) || 0;
-        return concCPA;
-    }, [simulation, currentTime]);
 
     // Total testosterone (ng/dL) at the current time — only meaningful in transmasc mode.
     const currentT = useMemo(() => {
@@ -482,6 +513,22 @@ export const useAppData = (
         });
     }
 
+    // A check-in is added, edited, or deleted like a dose: the tombstone is what
+    // stops another device pulling a deleted entry back out of the cloud.
+    const addJournalEntry = (entry: JournalEntry) => {
+        forgetDeletions('journal', [entry.id]);
+        setJournal(prev => [...prev, stamp(entry)]);
+    };
+    const updateJournalEntry = (entry: JournalEntry) => {
+        forgetDeletions('journal', [entry.id]);
+        const next = stamp(entry);
+        setJournal(prev => prev.map(p => p.id === entry.id ? next : p));
+    };
+    const deleteJournalEntry = (id: string) => {
+        recordDeletions('journal', [id]);
+        setJournal(prev => prev.filter(e => e.id !== id));
+    };
+
     const addTemplate = (template: DoseTemplate) => {
         forgetDeletions('doseTemplates', [template.id]);
         setDoseTemplates(prev => [...prev, stamp(template)]);
@@ -537,7 +584,13 @@ export const useAppData = (
                 id: typeof item.id === 'string' ? item.id : uuidv4(),
                 route,
                 timeH: timeNum,
-                doseMG: Number.isFinite(doseNum) ? Math.min(DOSE_MG_MAX, Math.max(0, doseNum)) : 0,
+                // The ceiling is per compound: `DOSE_MG_MAX` is estradiol's, and an
+                // anti-androgen is dosed in the hundreds of mg, so importing a 200 mg
+                // spironolactone record must not clip it to 10 g… it would not, but a
+                // future edit lowering DOSE_MG_MAX to an estradiol-sized bound would.
+                doseMG: Number.isFinite(doseNum)
+                    ? Math.min(validEster === Ester.SPIRO ? SPIRO_MG_MAX_PER_DAY : DOSE_MG_MAX, Math.max(0, doseNum))
+                    : 0,
                 ester: validEster,
                 extras: sanitizedExtras,
                 updatedAt: keepStamp(item)
@@ -548,18 +601,46 @@ export const useAppData = (
     const sanitizeImportedLabResults = (raw: any): LabResult[] => {
         if (!Array.isArray(raw)) return [];
         if (raw.length > MAX_IMPORT_ENTRIES) throw new Error('Too many entries');
+        // A record may carry an estradiol/testosterone reading, monitoring bloods,
+        // or both. The old parallel `monitoring-labs` store is gone, so any payload
+        // still carrying those fields is read here.
+        const num = (v: unknown): number | undefined => {
+            if (v === null || v === undefined || v === '') return undefined;
+            const n = Number(v);
+            return Number.isFinite(n) && n >= 0 ? n : undefined;
+        };
         return raw.map((item: any) => {
             if (!item || typeof item !== 'object') return null;
-            const { timeH, concValue, unit } = item;
-            const timeNum = Number(timeH);
-            const valNum = Number(concValue);
-            if (!Number.isFinite(timeNum) || !Number.isFinite(valNum)) return null;
-            const unitVal = (unit === 'pg/ml' || unit === 'pmol/l' || unit === 'ng/dl' || unit === 'nmol/l') ? unit : 'pmol/l';
+            const timeNum = Number(item.timeH);
+            if (!Number.isFinite(timeNum)) return null;
+            const valNum = num(item.concValue);
+            const prolactin = num(item.prolactin);
+            const alt = num(item.alt);
+            const ast = num(item.ast);
+            const potassium = num(item.potassium);
+            const hasMonitoring = prolactin !== undefined || alt !== undefined || ast !== undefined || potassium !== undefined;
+            // Neither a hormone nor a monitoring reading: nothing to store.
+            if (valNum === undefined && !hasMonitoring) return null;
+            // Explicit flag wins; otherwise a record with no hormone value is
+            // monitoring-only by construction.
+            const monitoringOnly = item.monitoringOnly === true || valNum === undefined;
+            const unitVal = (item.unit === 'pg/ml' || item.unit === 'pmol/l' || item.unit === 'ng/dl' || item.unit === 'nmol/l') ? item.unit : 'pmol/l';
+            const prolactinUln = num(item.prolactinUln);
+            const altUln = num(item.altUln);
             return {
                 id: typeof item.id === 'string' ? item.id : uuidv4(),
                 timeH: timeNum,
-                concValue: valNum,
+                // A monitoring-only record keeps the neutral placeholder the type
+                // requires; `monitoringOnly` is what tells readers to ignore it.
+                concValue: valNum ?? 0,
                 unit: unitVal,
+                ...(prolactin !== undefined ? { prolactin } : {}),
+                ...(prolactin !== undefined && prolactinUln !== undefined ? { prolactinUln } : {}),
+                ...(alt !== undefined ? { alt } : {}),
+                ...(alt !== undefined && altUln !== undefined ? { altUln } : {}),
+                ...(ast !== undefined ? { ast } : {}),
+                ...(potassium !== undefined ? { potassium } : {}),
+                ...(monitoringOnly ? { monitoringOnly: true } : {}),
                 updatedAt: keepStamp(item)
             } as LabResult;
         }).filter((item): item is LabResult => item !== null);
@@ -608,7 +689,8 @@ export const useAppData = (
             // records what it drops as deletions: silence used to cost a wipe
             // this device might get back from another one, and would now cost
             // the same wipe on every device.
-            const replaced = { events: false, labResults: false, doseTemplates: false };
+            const replaced = { events: false, labResults: false, doseTemplates: false, journal: false };
+            let newJournal: JournalEntry[] = [];
 
             // New multi-mode payload: { modes: { transfem: {...}, transmasc: {...} } }
             if (parsed && typeof parsed === 'object' && parsed.modes && typeof parsed.modes === 'object') {
@@ -623,6 +705,7 @@ export const useAppData = (
                         if (Array.isArray(block.events)) { newEvents = evs; replaced.events = true; }
                         if (Array.isArray(block.labResults)) { newLabs = ls; replaced.labResults = true; }
                         if (Array.isArray(block.doseTemplates)) { newTemplates = tmps; replaced.doseTemplates = true; }
+                        if (Array.isArray(block.journal)) { newJournal = sanitizeJournalEntries(block.journal); replaced.journal = true; }
                     } else {
                         // Write other mode's data straight to localStorage.
                         if (Array.isArray(block.events)) {
@@ -638,6 +721,12 @@ export const useAppData = (
                         if (Array.isArray(block.doseTemplates)) {
                             reconcileReplacement(m, 'doseTemplates', loadJSON<DoseTemplate[]>(keyFor(m, 'dose-templates'), []), tmps);
                             localStorage.setItem(keyFor(m, 'dose-templates'), JSON.stringify(tmps));
+                            importedOtherMode = true;
+                        }
+                        if (Array.isArray(block.journal)) {
+                            const jour = sanitizeJournalEntries(block.journal);
+                            reconcileReplacement(m, 'journal', loadJSON<JournalEntry[]>(keyFor(m, 'journal'), []), jour);
+                            localStorage.setItem(keyFor(m, 'journal'), JSON.stringify(jour));
                             importedOtherMode = true;
                         }
                     }
@@ -667,6 +756,10 @@ export const useAppData = (
                     newTemplates = sanitizeImportedTemplates(parsed.doseTemplates);
                     replaced.doseTemplates = true;
                 }
+                if (Array.isArray(parsed.journal)) {
+                    newJournal = sanitizeJournalEntries(parsed.journal);
+                    replaced.journal = true;
+                }
                 if (parsed.pkParams && typeof parsed.pkParams === 'object') {
                     newPkParams = sanitizePKParams(parsed.pkParams) ?? undefined;
                 }
@@ -678,6 +771,11 @@ export const useAppData = (
             if (!('modes' in (parsed || {}))) {
                 const otherMode: 'transfem' | 'transmasc' = mode === 'transmasc' ? 'transfem' : 'transmasc';
                 const eventBelongs = (e: DoseEvent) =>
+                    // Only a testosterone ester belongs to transmasc. Spironolactone
+                    // is an anti-androgen and sits in a transfem regimen, so it must not
+                    // be mistakable for a T record — which the bare `!isTestosteroneEster`
+                    // test this replaces would have done if it had been written the other
+                    // way round.
                     mode === 'transmasc' ? isTestosteroneEster(e.ester) : !isTestosteroneEster(e.ester);
                 const keepEvs: DoseEvent[] = [];
                 const otherEvs: DoseEvent[] = [];
@@ -711,7 +809,7 @@ export const useAppData = (
                 }
             }
 
-            if (!importedOtherMode && !newEvents.length && !newWeight && !newLabs.length && !newTemplates.length && !newPkParams) throw new Error('No valid entries');
+            if (!importedOtherMode && !newEvents.length && !newWeight && !newLabs.length && !newTemplates.length && !newJournal.length && !newPkParams) throw new Error('No valid entries');
 
             // A replace-import states the whole set for each kind it mentions,
             // so anything it drops from one is a deletion. Recording it is what
@@ -728,6 +826,10 @@ export const useAppData = (
             if (replaced.doseTemplates) {
                 reconcileReplacement(mode, 'doseTemplates', doseTemplates, newTemplates);
                 setDoseTemplates(newTemplates);
+            }
+            if (replaced.journal) {
+                reconcileReplacement(mode, 'journal', journal, newJournal);
+                setJournal(newJournal);
             }
             if (newWeight !== undefined) setWeight(newWeight);
             if (newPkParams !== undefined) setPkParams(newPkParams);
@@ -747,6 +849,7 @@ export const useAppData = (
             let incomingWeight: number | undefined = undefined;
             let incomingLabs: LabResult[] = [];
             let incomingTemplates: DoseTemplate[] = [];
+            let incomingJournal: JournalEntry[] = [];
             let mergedOther = 0;
 
             if (parsed && typeof parsed === 'object' && parsed.modes && typeof parsed.modes === 'object') {
@@ -761,26 +864,33 @@ export const useAppData = (
                         incomingEvents = evs;
                         incomingLabs = ls;
                         incomingTemplates = tmps;
+                        if (Array.isArray(block.journal)) incomingJournal = sanitizeJournalEntries(block.journal);
                     } else {
                         // Merge into the other mode's localStorage directly.
                         const existingEvs = loadJSON<DoseEvent[]>(keyFor(m, 'events'), []);
                         const existingLs = loadJSON<LabResult[]>(keyFor(m, 'lab-results'), []);
                         const existingTmps = loadJSON<DoseTemplate[]>(keyFor(m, 'dose-templates'), []);
+                        const existingJour = loadJSON<JournalEntry[]>(keyFor(m, 'journal'), []);
                         const evIds = new Set(existingEvs.map(e => e.id));
                         const lsIds = new Set(existingLs.map(l => l.id));
                         const tmpIds = new Set(existingTmps.map(tm => tm.id));
+                        const jourIds = new Set(existingJour.map(j => j.id));
                         const newEvs = evs.filter(e => !evIds.has(e.id));
                         const newLs = ls.filter(l => !lsIds.has(l.id));
                         const newTmps = tmps.filter(tm => !tmpIds.has(tm.id));
+                        const jour = Array.isArray(block.journal) ? sanitizeJournalEntries(block.journal) : [];
+                        const newJour = jour.filter(j => !jourIds.has(j.id));
                         // An explicit merge is the user asking for these records
                         // back, so any tombstone standing in the way goes.
                         forgetDeletions('events', evs.map(e => e.id), m);
                         forgetDeletions('labResults', ls.map(l => l.id), m);
                         forgetDeletions('doseTemplates', tmps.map(tm => tm.id), m);
+                        forgetDeletions('journal', jour.map(j => j.id), m);
                         if (newEvs.length) localStorage.setItem(keyFor(m, 'events'), JSON.stringify([...existingEvs, ...newEvs]));
                         if (newLs.length) localStorage.setItem(keyFor(m, 'lab-results'), JSON.stringify([...existingLs, ...newLs]));
                         if (newTmps.length) localStorage.setItem(keyFor(m, 'dose-templates'), JSON.stringify([...existingTmps, ...newTmps]));
-                        mergedOther += newEvs.length + newLs.length;
+                        if (newJour.length) localStorage.setItem(keyFor(m, 'journal'), JSON.stringify([...existingJour, ...newJour]));
+                        mergedOther += newEvs.length + newLs.length + newJour.length;
                     }
                 }
                 if (typeof parsed.weight === 'number' && parsed.weight > 0) incomingWeight = parsed.weight;
@@ -791,6 +901,7 @@ export const useAppData = (
                 if (typeof parsed.weight === 'number' && parsed.weight > 0) incomingWeight = parsed.weight;
                 if (Array.isArray(parsed.labResults)) incomingLabs = sanitizeImportedLabResults(parsed.labResults);
                 if (Array.isArray(parsed.doseTemplates)) incomingTemplates = sanitizeImportedTemplates(parsed.doseTemplates);
+                if (Array.isArray(parsed.journal)) incomingJournal = sanitizeJournalEntries(parsed.journal);
             }
 
             // v1 flat-format safety (merge): siphon wrong-mode events *and labs*
@@ -799,6 +910,11 @@ export const useAppData = (
             if (!('modes' in (parsed || {}))) {
                 const otherMode: 'transfem' | 'transmasc' = mode === 'transmasc' ? 'transfem' : 'transmasc';
                 const eventBelongs = (e: DoseEvent) =>
+                    // Only a testosterone ester belongs to transmasc. Spironolactone
+                    // is an anti-androgen and sits in a transfem regimen, so it must not
+                    // be mistakable for a T record — which the bare `!isTestosteroneEster`
+                    // test this replaces would have done if it had been written the other
+                    // way round.
                     mode === 'transmasc' ? isTestosteroneEster(e.ester) : !isTestosteroneEster(e.ester);
                 const keepEvs: DoseEvent[] = [];
                 const otherEvs: DoseEvent[] = [];
@@ -832,7 +948,7 @@ export const useAppData = (
                 }
             }
 
-            if (!mergedOther && !incomingEvents.length && !incomingWeight && !incomingLabs.length && !incomingTemplates.length) throw new Error('No valid entries');
+            if (!mergedOther && !incomingEvents.length && !incomingWeight && !incomingLabs.length && !incomingTemplates.length && !incomingJournal.length) throw new Error('No valid entries');
 
             let merged = mergedOther;
 
@@ -868,6 +984,14 @@ export const useAppData = (
                 if (newOnes.length > 0) setDoseTemplates(prev => [...prev, ...newOnes]);
             }
 
+            if (incomingJournal.length > 0) {
+                const existingIds = new Set(journal.map(e => e.id));
+                const newOnes = incomingJournal.filter(e => !existingIds.has(e.id));
+                merged += newOnes.length;
+                forgetDeletions('journal', incomingJournal.map(e => e.id));
+                if (newOnes.length > 0) setJournal(prev => [...prev, ...newOnes]);
+            }
+
             showDialog('alert', (t('account.merge_success') as string).replace('{n}', String(merged)));
             return true;
         } catch (err) {
@@ -883,6 +1007,7 @@ export const useAppData = (
             labResults: loadJSON<LabResult[]>(keyFor(m, 'lab-results'), []),
             doseTemplates: loadJSON<DoseTemplate[]>(keyFor(m, 'dose-templates'), []),
             quickDoses: loadJSON<QuickDose[]>(keyFor(m, 'quick-doses'), []),
+            journal: loadJSON<JournalEntry[]>(keyFor(m, 'journal'), []),
             deletions: readTombstones(m),
         });
         const modes = {
@@ -891,12 +1016,13 @@ export const useAppData = (
         };
         // Overlay current in-memory state for the active mode.
         modes[mode] = {
-            events, labResults, doseTemplates, quickDoses,
+            events, labResults, doseTemplates, quickDoses, journal,
             deletions: readTombstones(mode),
         };
 
         return {
-            meta: { version: 2, exportedAt: new Date().toISOString() },
+            // 3 adds the journal collection to each mode block.
+            meta: { version: 3, exportedAt: new Date().toISOString() },
             mode,
             weight,
             // Last-write stamps for the two values sync can't merge per record.
@@ -934,6 +1060,10 @@ export const useAppData = (
                     ...readAppSettings(),
                     calMethod: calibrationMethod,
                     calHistoryMode: calibrationHistoryMode,
+                    aaChartMode,
+                    // Absent when never answered, which is exactly how "skipped"
+                    // has to travel: an empty string is not a date.
+                    ...(hrtStartDate ? { hrtStartDate } : {}),
                 },
                 // The stamp lives inside the blob because `appState` is the only
                 // part the Core stores verbatim — a sibling top-level field would
@@ -963,6 +1093,7 @@ export const useAppData = (
             labResults: sanitizeImportedLabResults(state.modes[m].labResults),
             doseTemplates: sanitizeImportedTemplates(state.modes[m].doseTemplates),
             quickDoses: state.modes[m].quickDoses ?? [],
+            journal: sanitizeJournalEntries(state.modes[m].journal ?? []),
             deletions: state.modes[m].deletions,
         }));
 
@@ -972,11 +1103,13 @@ export const useAppData = (
             localStorage.setItem(keyFor(block.m, 'lab-results'), JSON.stringify(block.labResults));
             localStorage.setItem(keyFor(block.m, 'dose-templates'), JSON.stringify(block.doseTemplates));
             localStorage.setItem(keyFor(block.m, 'quick-doses'), JSON.stringify(block.quickDoses));
+            localStorage.setItem(keyFor(block.m, 'journal'), JSON.stringify(block.journal));
             if (block.m === mode) {
                 setEvents(block.events);
                 setLabResults(block.labResults);
                 setDoseTemplates(block.doseTemplates);
                 setQuickDoses(block.quickDoses);
+                setJournal(block.journal);
             }
         }
 
@@ -985,7 +1118,7 @@ export const useAppData = (
         // contexts that own them have to be told, or the theme on screen stays
         // the one this device booted with until the next reload.
         if (state.appSettings) {
-            const { calMethod, calHistoryMode, ...global } = state.appSettings;
+            const { calMethod, calHistoryMode, aaChartMode, hrtStartDate, ...global } = state.appSettings;
             // The merge's stamp is handed to `applyAppSettings` so this device
             // records the account's settings as *adopted*, not as an edit of its
             // own — otherwise it would immediately look newer and push the same
@@ -1000,6 +1133,19 @@ export const useAppData = (
                 const normalized: CalibrationHistoryMode = calHistoryMode === 'forward' ? 'forward' : 'retrospective';
                 setCalibrationHistoryModeState(normalized);
                 localStorage.setItem(sharedKey('cal-history-mode'), normalized);
+            }
+            if (aaChartMode) {
+                const normalized = normalizeAntiandrogenChartMode(aaChartMode);
+                setAaChartModeState(normalized);
+                localStorage.setItem(sharedKey('aa-chart'), normalized);
+            }
+            // Set on the raw setters, not `setHrtStartDate`: adopting the
+            // account's value must not stamp it as this device's edit.
+            if (hrtStartDate !== undefined) {
+                const normalized = normalizeHrtStartDate(hrtStartDate) ?? '';
+                setHrtStartDateState(normalized);
+                if (normalized) localStorage.setItem(sharedKey('hrt-start'), normalized);
+                else localStorage.removeItem(sharedKey('hrt-start'));
             }
         }
 
@@ -1035,14 +1181,16 @@ export const useAppData = (
         calibrationFn,
         calibrationMethod, setCalibrationMethod,
         calibrationHistoryMode, setCalibrationHistoryMode,
+        aaChartMode, setAaChartMode,
+        hrtStartDate, setHrtStartDate,
         calibration,
         currentLevel,
-        currentCPA,
         currentT,
         currentStatus,
         groupedEvents,
         addEvent, addEvents, updateEvent, deleteEvent, deleteEvents, clearAllEvents,
         addLabResult, updateLabResult, deleteLabResult, clearLabResults,
+        journal, setJournal, addJournalEntry, updateJournalEntry, deleteJournalEntry,
         addTemplate, deleteTemplate,
         addQuickDose, deleteQuickDose,
         processImportedData,

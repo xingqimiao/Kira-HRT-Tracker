@@ -51,6 +51,9 @@ interface Options {
   /** Account-scoped settings, same contract as the data above. */
   calibrationMethod: unknown;
   calibrationHistoryMode: unknown;
+  aaChartMode: unknown;
+  /** The HRT start date, `YYYY-MM-DD` or '' — see useAppData. */
+  hrtStartDate: unknown;
 }
 
 /** Absorb a burst of edits (a dose form can set several fields) into one push. */
@@ -70,6 +73,8 @@ export const useCoreSync = ({
   pkParams,
   calibrationMethod,
   calibrationHistoryMode,
+  aaChartMode,
+  hrtStartDate,
 }: Options): CoreSyncState => {
   const [status, setStatus] = useState<CoreSyncStatus>('off');
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
@@ -200,7 +205,7 @@ export const useCoreSync = ({
   // actually changes, which is what makes it a usable dependency.
   const localFingerprint = JSON.stringify([
     events, labResults, doseTemplates, weight, pkParams,
-    readAppSettings(), calibrationMethod, calibrationHistoryMode,
+    readAppSettings(), calibrationMethod, calibrationHistoryMode, aaChartMode, hrtStartDate,
   ]);
   useEffect(() => {
     if (!activeRef.current) return;

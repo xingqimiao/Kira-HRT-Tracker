@@ -6,9 +6,17 @@ import OnboardingCurve, { useOnboardingCurve, BEATS, type Beat, type CurveData }
 import { useTranslation } from '../contexts/LanguageContext';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { Lang, TRANSLATIONS } from '../i18n/translations';
-import { MCP_ENDPOINT } from '../constants';
+import CopyRow from '../components/CopyRow';
+import IntroCard from '../components/IntroCard';
+import { QuickAddPreview } from '../components/HomeQuickAdd';
+import Icon from '../components/Icon';
+import { Check, Plus } from '../icons';
+import { buildMcpInstallPrompt } from '../utils/mcpInstallPrompt';
 
 const ONBOARDING_KEY = 'app-onboarded';
+
+/** One definition, shared with the AI-assistant settings page. */
+const INSTALL_PROMPT = buildMcpInstallPrompt();
 
 /**
  * Anyone with records on this device has been using the app since before there
@@ -52,19 +60,54 @@ const Tick: React.FC = () => (
  * invisible against the block, so the block's accent takes that part. Index
  * order matches `steps` in the component below.
  */
-const STEP_ROLES = [
-    { surface: '--md-sys-color-primary-container', on: '--md-sys-color-on-primary-container', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' },
-    { surface: '--md-sys-color-secondary-container', on: '--md-sys-color-on-secondary-container', accent: '--md-sys-color-secondary', accentOn: '--md-sys-color-on-secondary' },
+interface StepRoles {
+    surface: string;
+    on: string;
+    accent: string;
+    accentOn: string;
+}
+
+const PRIMARY: StepRoles = { surface: '--md-sys-color-primary-container', on: '--md-sys-color-on-primary-container', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' };
+const SECONDARY: StepRoles = { surface: '--md-sys-color-secondary-container', on: '--md-sys-color-on-secondary-container', accent: '--md-sys-color-secondary', accentOn: '--md-sys-color-on-secondary' };
+const TERTIARY: StepRoles = { surface: '--md-sys-color-tertiary-container', on: '--md-sys-color-on-tertiary-container', accent: '--md-sys-color-tertiary', accentOn: '--md-sys-color-on-tertiary' };
+
+/**
+ * One full-bleed colour block per step, named by M3 role — never a raw hex.
+ *
+ * Keyed by step rather than indexed by position: this flow has had steps
+ * inserted into it (the assistant step, and now the start-date and keep steps),
+ * and an index-keyed table silently repaints every step after the insertion
+ * point. Keyed, an existing step keeps the block it always had.
+ *
+ * `surface`/`on` are the block's own pair. `accent`/`accentOn` fill a selected
+ * option: filling it with the block's own container role would make the option
+ * invisible against the block, so the block's accent takes that part.
+ */
+const STEP_ROLES: Record<string, StepRoles> = {
+    welcome: PRIMARY,
+    // The closing card answers the greeting, so it wears the greeting's role.
+    sendoff: PRIMARY,
+    mode: SECONDARY,
     // The chart step uses the page surface, not a container step above it:
     // OnboardingCurve draws its own surface assumptions, and its hollow markers
     // are filled with --color-m3-surface-dim. On a container-high block they no
     // longer matched the surface they sit on, so the "hollow" read as a slightly
     // wrong grey dot. surface-dim is exactly what the drawing expects in both
     // themes.
-    { surface: '--md-sys-color-surface-dim', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' },
-    { surface: '--md-sys-color-tertiary-container', on: '--md-sys-color-on-tertiary-container', accent: '--md-sys-color-tertiary', accentOn: '--md-sys-color-on-tertiary' },
-    { surface: '--md-sys-color-surface-container-highest', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' },
-] as const;
+    how: { surface: '--md-sys-color-surface-dim', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' },
+    started: TERTIARY,
+    // The two "what you can do" steps wear adjacent surface containers: they are
+    // siblings in the story (save a template, then save the account), and giving
+    // them the same role keeps the slide between them from changing colour twice.
+    quick: { surface: '--md-sys-color-surface-container', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' },
+    account: { surface: '--md-sys-color-surface-container-high', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' },
+    pwa: SECONDARY,
+    mcp: TERTIARY,
+    privacy: { surface: '--md-sys-color-surface-container-highest', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' },
+};
+
+/** Step order, for the colour lookup above; `steps` holds the panels themselves. */
+const STEP_KEYS = ['welcome', 'mode', 'how', 'started', 'quick', 'account', 'pwa', 'mcp', 'privacy', 'sendoff'] as const;
 
 /**
  * The three slots of the "how it works" step, and the only step that splits in
@@ -285,9 +328,125 @@ const HowStep: React.FC<{ curve: CurveData | null }> = ({ curve }) => {
     );
 };
 
+/**
+ * The five stripes, top to bottom.
+ *
+ * These are the flag's own colours rather than theme roles, deliberately: a pride
+ * flag whose hues followed the app's palette would be a different flag, and the
+ * light blue has no M3 role to borrow. Everything around it — the frame, the type,
+ * the ink — is themed; only the flag is literal, because only the flag is a
+ * reference to something outside this app.
+ */
+const TRANS_FLAG_COLOURS = ['#5BCEFA', '#F5A9B8', '#FFFFFF', '#F5A9B8', '#5BCEFA'];
+
+/**
+ * The send-off's flag, drawn inline rather than shipped as a file.
+ *
+ * Five rectangles in a 3:2 viewBox: crisp at any size and in either theme, one
+ * kilobyte of markup instead of a second image to compress and cache. It is the
+ * one thing on the closing screen that is not the app's own drawing, which is the
+ * point of it.
+ */
+const TransFlag: React.FC = () => {
+    const { t } = useTranslation();
+    const stripe = 40 / TRANS_FLAG_COLOURS.length;
+    return (
+        <svg
+            viewBox="0 0 60 40"
+            className="w-full"
+            role="img"
+            aria-label={t('onboarding.sendoff_flag_alt')}
+        >
+            {TRANS_FLAG_COLOURS.map((fill, i) => (
+                <rect key={i} x="0" y={i * stripe} width="60" height={stripe} fill={fill} />
+            ))}
+        </svg>
+    );
+};
+
+/**
+ * The signed-in account page as a picture.
+ *
+ * Modelled on `Account.tsx`'s own identity row and its sync row, at the roles that
+ * page uses, so the picture is what signing up actually looks like rather than an
+ * illustration of the idea. The avatar is a real circular crop of the supplied image
+ * — `border-radius: 50%` plus `object-fit: cover` — which is the whole of what a
+ * cropper would have done to a square source.
+ */
+const AccountPreview: React.FC = () => {
+    const { t } = useTranslation();
+    return (
+        <div className="w-full rounded-[var(--md-sys-shape-corner-large)] border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-dim)] p-4 text-[var(--color-m3-on-surface)]">
+            <div className="flex items-center gap-3.5">
+                <img
+                    src="/intro-avatar.webp"
+                    alt=""
+                    width={512}
+                    height={512}
+                    className="h-16 w-16 shrink-0 rounded-full object-cover"
+                />
+                <div className="min-w-0">
+                    <p className="truncate text-lg font-semibold">KiraMyao</p>
+                    <p className="text-xs text-[var(--color-m3-on-surface-variant)]">
+                        {t('core.acct.signed_in_as')} KiraMyao
+                    </p>
+                </div>
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-3 border-t border-[var(--color-m3-outline-variant)] pt-3">
+                <p className="text-m3-body-medium">{t('sync.title')}</p>
+                <span className="inline-flex items-center gap-1.5 text-m3-body-compact text-[var(--color-m3-primary)]">
+                    <Icon icon={Check} size={14} strokeWidth={1.5} />
+                    {t('sync.status.synced')}
+                </span>
+            </div>
+        </div>
+    );
+};
+
+/**
+ * The install step's picture: the app's own icon, with the add affordance beside it
+ * and the browser's name for that action underneath.
+ *
+ * Built from markup rather than a screenshot because the control it describes lives
+ * in the browser's chrome, not in this app — a picture of someone else's address bar
+ * would go stale on the next browser release, while the icon and the label are ours
+ * and the user's language. The icon is the shipped PWA icon, so what the card shows
+ * is what lands on the home screen.
+ */
+const PwaVisual: React.FC = () => {
+    const { t } = useTranslation();
+    return (
+        <div className="flex w-full flex-col items-center gap-5 py-6">
+            <div className="relative">
+                <img
+                    src="/pwa-512x512.png"
+                    alt=""
+                    width={512}
+                    height={512}
+                    className="h-28 w-28 rounded-[var(--md-sys-shape-corner-large)] border border-[var(--color-m3-outline-variant)]"
+                />
+                <span className="absolute -bottom-2 -right-2 flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-m3-primary)] text-[var(--color-m3-on-primary)]">
+                    <Icon icon={Plus} size={18} strokeWidth={2} />
+                </span>
+            </div>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-m3-outline)] px-4 py-2 text-m3-title-medium text-[var(--color-m3-on-surface)]">
+                {t('onboarding.pwa_add')}
+            </span>
+        </div>
+    );
+};
+
 interface OnboardingProps {
     /** Same list Settings uses, rather than a second copy that can drift. */
     languageOptions: { value: string; label: string }[];
+    /** `YYYY-MM-DD`, or '' when the question was skipped. */
+    hrtStartDate: string;
+    /**
+     * Commits the answer. Goes through the data layer rather than straight to
+     * localStorage because the setting is account-scoped: the layer knows which
+     * account's namespace to write (and to adopt the signed-out value into).
+     */
+    onHrtStartChange: (value: string) => void;
     onDone: () => void;
 }
 
@@ -301,12 +460,17 @@ interface OnboardingProps {
  * invite tabbing away halfway through, leaving language and mode on defaults
  * that the flow exists to ask about.
  */
-const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, onDone }) => {
+const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, onHrtStartChange, onDone }) => {
     const { t, lang, setLang } = useTranslation();
     const { mode, setMode, isTransmasc } = useHRTMode();
     const curve = useOnboardingCurve(isTransmasc);
 
     const [step, setStep] = useState(0);
+    // The native picker is capped at today: a start date in the future would
+    // make the account line read as a negative — or be discarded — either way
+    // the input would be the only place the mistake was visible.
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     // Only so the step change slides the way the app's view changes do.
     const [direction, setDirection] = useState<'forward' | 'backward'>('forward');
 
@@ -459,19 +623,83 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, onDone }) => {
         /* Inserted after the chart step rather than before it, so the chart keeps
            index 2 and `CHART_STEP` needs no change — the warning about
            incrementing it only applies to a step placed ahead of the chart. */
-        <div key="mcp" className="pt-8">
-            <h1 className="intro-title text-m3-display-large break-words">{t('onboarding.mcp_title')}</h1>
-            <p className="mt-3 text-m3-body-large intro-muted">{t('onboarding.mcp_subtitle')}</p>
-            <div className="mt-5 rounded-2xl bg-[var(--color-m3-surface-container)] px-4 py-3">
-                <code className="block break-all font-mono text-m3-body-large">
-                    {MCP_ENDPOINT}
-                </code>
-            </div>
+        /* The card holds a real <input type="date">, because a day count needs a date
+           and a text field would have to re-implement the picker. Framed like every
+           other visual so the one question that is answered by typing rather than by
+           reading still belongs to the same flow. */
+        <IntroCard
+            key="started"
+            title={t('onboarding.start_title')}
+            description={t('onboarding.start_subtitle')}
+            visual={
+                <label className="flex w-full cursor-pointer flex-col gap-2 text-start">
+                    <span className="text-m3-title-medium text-[var(--color-m3-on-surface)]">
+                        {t('onboarding.start_label')}
+                    </span>
+                    <input
+                        type="date"
+                        value={hrtStartDate}
+                        max={today}
+                        onChange={(e) => onHrtStartChange(e.target.value)}
+                        className="w-full bg-transparent text-m3-title-large text-[var(--color-m3-on-surface)] outline-none dark:[color-scheme:dark]"
+                    />
+                    <span className="text-m3-body-medium text-[var(--color-m3-on-surface-variant)]">
+                        {t('onboarding.start_hint')}
+                    </span>
+                </label>
+            }
+        />,
+
+        <IntroCard
+            key="quick"
+            title={t('onboarding.quick_title')}
+            description={t('onboarding.quick_subtitle')}
+            visual={<QuickAddPreview />}
+        />,
+
+        <IntroCard
+            key="account"
+            title={t('onboarding.account_title')}
+            description={t('onboarding.account_subtitle')}
+            visual={<AccountPreview />}
+        />,
+
+        <IntroCard
+            key="pwa"
+            title={t('onboarding.pwa_title')}
+            description={t('onboarding.pwa_subtitle')}
+            visual={<PwaVisual />}
+        />,
+
+        /* The assistant step: the picture, what the token actually is, and the prompt
+           to hand over. The endpoint is not printed on its own here — it is inside
+           the prompt below, and a second copy beside it was one more string to keep
+           in step with the constant. */
+        <div key="mcp">
+            <IntroCard
+                framed={false}
+                title={t('onboarding.mcp_title')}
+                description={t('onboarding.mcp_subtitle')}
+                visual={
+                    <img
+                        src="/mcp.webp"
+                        alt={t('mcp.image_alt')}
+                        width={900}
+                        height={672}
+                        loading="lazy"
+                        className="w-full"
+                    />
+                }
+            />
             <div className="mt-4">
-                <Point mark="lock" title={t('onboarding.mcp_unlock')} desc={t('onboarding.mcp_unlock_desc')} />
-                <Point mark="check" title={t('onboarding.mcp_confirm')} desc={t('onboarding.mcp_confirm_desc')} />
+                <Point mark="caution" title={t('onboarding.mcp_token')} desc={t('onboarding.mcp_token_desc')} />
             </div>
-            <p className="mt-4 text-m3-body-large intro-muted">{t('onboarding.mcp_more')}</p>
+            {/* The reader can hand this straight to their own assistant instead of
+                wiring the client up by hand — one selectable block, not a field per
+                value. Same text as the AI-assistant settings page. */}
+            <p className="mt-5 text-m3-body-large">{t('onboarding.mcp_prompt')}</p>
+            <CopyRow value={INSTALL_PROMPT} hint={t('onboarding.mcp_prompt_hint')} />
+            <p className="mt-2 text-m3-body-large intro-muted">{t('onboarding.mcp_more')}</p>
         </div>,
 
         <div key="privacy" className="pt-8">
@@ -483,10 +711,21 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, onDone }) => {
                 <Point mark="caution" title={t('onboarding.privacy_medical')} desc={t('onboarding.privacy_medical_desc')} />
             </div>
         </div>,
+
+        /* The send-off. The flag is the farewell — the one screen that faces outward
+           rather than at the app — and the sentence under it is the greeting's
+           answer, in the display type the greeting used. */
+        <IntroCard
+            key="sendoff"
+            framed={false}
+            title={t('onboarding.sendoff_line')}
+            description={t('onboarding.sendoff_subtitle')}
+            visual={<TransFlag />}
+        />,
     ];
 
     const isLast = step === steps.length - 1;
-    const roles = STEP_ROLES[step];
+    const roles = STEP_ROLES[STEP_KEYS[step]];
 
     const go = (next: number) => {
         setDirection(next > step ? 'forward' : 'backward');
@@ -553,8 +792,12 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, onDone }) => {
                 <div className="mx-auto flex w-full max-w-md flex-col gap-3">
                     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
                         <div className="justify-self-start">
+                            {/* `whitespace-nowrap` because the ring row grows with every step
+                                added, and at ten steps the 1fr track it shares is narrower than
+                                the label — the grid's min-content floor should decide the split,
+                                not a wrap. */}
                             {step > 0 && (
-                                <button onClick={() => go(step - 1)} className="btn-secondary">
+                                <button onClick={() => go(step - 1)} className="btn-secondary whitespace-nowrap">
                                     {t('onboarding.back')}
                                 </button>
                             )}

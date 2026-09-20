@@ -1,7 +1,7 @@
 import React from 'react';
 import Icon from '../components/Icon';
 import { Info, Share2 } from '../icons';
-import { DoseEvent, SimulationResult, LabResult, getDoseAdvisory, getHormoneLevelAdvisory, isT_LabUnit } from '../../logic';
+import { DoseEvent, SimulationResult, LabResult, AntiandrogenChartMode, getDoseAdvisory, getHormoneLevelAdvisory, isT_LabUnit, isMonitoringOnlyLab, modelledEvents, antiandrogenReading } from '../../logic';
 import ResultChart from '../components/ResultChart';
 import DoseHeatmap from '../components/DoseHeatmap';
 import EstimateInfoModal from '../components/EstimateInfoModal';
@@ -15,6 +15,7 @@ import { AppTheme } from '../constants';
 import { useTranslation } from '../contexts/LanguageContext';
 import { getShareCopy } from '../i18n/share';
 import { Tooltip } from '../components/ui';
+import { formatRelative } from '../utils/helpers';
 
 /** Drawn width of the vial, in px. Height follows the canvas' 18:42. */
 const VIAL_SIZE = 44;
@@ -22,7 +23,6 @@ const VIAL_SIZE = 44;
 interface HomeProps {
     t: (key: string) => string;
     currentLevel: number;
-    currentCPA: number;
     currentT: number;
     currentStatus: { label: string, color: string, bg: string, border: string } | null;
     events: DoseEvent[];
@@ -41,12 +41,15 @@ interface HomeProps {
     onAddEvent: (e: DoseEvent) => void;
     /** The undo for a one-tap add, once the notice has closed. */
     onRemoveEvent: (id: string) => void;
+    /** Which reading the anti-androgen column shows — see antiandrogenReading. */
+    aaChartMode: AntiandrogenChartMode;
+    /** "Now" for that reading, so "today" rolls over when the day does. */
+    nowMs: number;
 }
 
 const Home: React.FC<HomeProps> = ({
     t,
     currentLevel,
-    currentCPA,
     currentT,
     currentStatus,
     events,
@@ -63,6 +66,8 @@ const Home: React.FC<HomeProps> = ({
     doseTemplates,
     onAddEvent,
     onRemoveEvent,
+    aaChartMode,
+    nowMs,
 }) => {
     const isDarkMode = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     const [isEstimateInfoOpen, setIsEstimateInfoOpen] = React.useState(false);
@@ -74,8 +79,36 @@ const Home: React.FC<HomeProps> = ({
     // toward calibration when there's no lab yet to anchor the estimate.
     const doseAdvisory = React.useMemo(() => getDoseAdvisory(events), [events]);
     const hormoneAdvisory = React.useMemo(() => getHormoneLevelAdvisory(labResults), [labResults]);
-    const hasLabForMode = labResults.some(l => (isTransmasc ? isT_LabUnit(l.unit) : !isT_LabUnit(l.unit)));
+    // Only the compounds the model simulates reach the chart; an anti-androgen
+    // record keeps its row in the timeline below without adding a curve or an axis.
+    const chartEvents = React.useMemo(() => modelledEvents(events), [events]);
+    // The chart and the "have you calibrated" nudge only read hormone labs; a
+    // monitoring-only record carries a placeholder 0/pg-mL and would be plotted as
+    // an estradiol of zero. See LabResult.monitoringOnly.
+    const hormoneLabs = React.useMemo(() => labResults.filter(l => !isMonitoringOnlyLab(l)), [labResults]);
+    const hasLabForMode = hormoneLabs.some(l => (isTransmasc ? isT_LabUnit(l.unit) : !isT_LabUnit(l.unit)));
     const showCalibrate = events.length > 0 && !hasLabForMode;
+    // Anti-androgens are recorded, not modelled, so their "current concentration"
+    // is structurally zero. What the column shows is derived from the records
+    // instead: the drug the user actually logs, and either today's mg or the time
+    // since the last dose — see antiandrogenReading. Cumulative CPA grams, the
+    // figure the ≥10 g monitoring notice quotes, is one of the settings rather
+    // than the only reading.
+    const antiandrogen = React.useMemo(
+        () => antiandrogenReading(events, nowMs / 3_600_000, aaChartMode),
+        [events, nowMs, aaChartMode],
+    );
+    // Names the drug the reading is about. 'none' keeps the column's old CPA
+    // heading, and 'grams' is CPA by definition; the rest carry their own compound.
+    const aaHeading = antiandrogen.kind === 'grams'
+        ? t('ester.CPA')
+        : antiandrogen.kind === 'none'
+            ? t('label.cpa_chart')
+            : t(`ester.${antiandrogen.ester}`);
+    // mg doses are whole numbers (25, 50, 100) far more often than not, and this
+    // trims without losing the quarter-tablet sizes (12.5, 6.25).
+    const mgDecimals = (v: number) => (Number.isInteger(v) ? 0 : Number.isInteger(v * 10) ? 1 : 2);
+    const nowSec = nowMs / 1000;
 
     // The vial stands in the gap between the two readings, so it has to be
     // rendered inside whichever mode branch is active. It shows the current
@@ -91,7 +124,7 @@ const Home: React.FC<HomeProps> = ({
     // rim. Measured at both type sizes (36px and 52.8px) — with `leading-none` on the
     // number the rim lands within a pixel of the box top at each.
     const vialOffset = -(VIAL_SIZE * 6) / 42;
-    const vial = (events.length > 0 || labResults.length > 0) ? (
+    const vial = (events.length > 0 || hormoneLabs.length > 0) ? (
         <span className="flex shrink-0 self-start" style={{ marginTop: vialOffset }}>
             {/* Sized against the reading beside it. The canvas is 26 wide but the tube is
                 only 14 of those columns (the rest is spill room), so the drawn vial is
@@ -232,21 +265,40 @@ const Home: React.FC<HomeProps> = ({
                                 </div>
                             </div>
                             <div className="min-w-0">
-                                <p className={`text-xs font-semibold ${muted} mb-2`}>{t('label.cpa_chart')}</p>
+                                <p className={`text-xs font-semibold ${muted} mb-2`}>{aaHeading}</p>
                                 <div className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
-                                    {currentCPA > 0 ? (
+                                    {antiandrogen.kind === 'grams' && (
                                         <>
-                                            <span data-vial-sprayable className={`text-m3-display-large leading-none tabular-nums ${on}`}><AnimatedNumber value={currentCPA} decimals={1} /></span>
-                                            <span className={`text-xs lowercase ${muted}`}>ng/ml</span>
+                                            {/* Cumulative grams, not a concentration: CPA has no
+                                                curve, and the monitoring notice quotes the same
+                                                figure against the ≥10 g threshold. Two decimals
+                                                because a 12.5 mg tablet is 0.0125 g. */}
+                                            <span data-vial-sprayable className={`text-m3-display-large leading-none tabular-nums ${on}`}><AnimatedNumber value={antiandrogen.grams} decimals={2} /></span>
+                                            <span className={`text-xs lowercase ${muted}`}>g</span>
                                         </>
-                                    ) : (
+                                    )}
+                                    {antiandrogen.kind === 'dose' && (
+                                        <>
+                                            {/* Today's total, the reading the daily-dosed
+                                                anti-androgens use and CPA uses on a dose day. */}
+                                            <span data-vial-sprayable className={`text-m3-display-large leading-none tabular-nums ${on}`}><AnimatedNumber value={antiandrogen.mgToday} decimals={mgDecimals(antiandrogen.mgToday)} /></span>
+                                            <span className={`text-xs lowercase ${muted}`}>mg</span>
+                                        </>
+                                    )}
+                                    {antiandrogen.kind === 'since' && (
+                                        // How long ago the last dose was, in the reader's own
+                                        // relative-time wording — the honest reading for a drug
+                                        // taken every few days, where a mg count says nothing.
+                                        <span className={`text-m3-display-large leading-none ${on}`}>
+                                            {formatRelative(nowSec - antiandrogen.sinceH * 3600, nowSec, t)}
+                                        </span>
+                                    )}
+                                    {antiandrogen.kind === 'none' && (
                                         // E2's placeholder is `text-m3-display-large
-                                        // leading-none ${dim}`; this one was a size smaller
-                                        // and used the *muted text* role, so the two dashes
-                                        // read as different states rather than as the same
-                                        // absence. `leading-none` is the half that moves the
-                                        // glyph: without it the taller default line-height
-                                        // pushed this one a few px down.
+                                        // leading-none ${dim}`; this one matches it now. The
+                                        // old cumulative reading used a smaller size and the
+                                        // *muted text* role, so the two dashes read as different
+                                        // states rather than as the same absence.
                                         <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
                                     )}
                                 </div>
@@ -283,9 +335,9 @@ const Home: React.FC<HomeProps> = ({
                         <div className="min-w-0 2xl:flex-[3]">
                             <ResultChart
                                 sim={simulation}
-                                events={events}
+                                events={chartEvents}
                                 onPointClick={onEditEvent}
-                                labResults={labResults}
+                                labResults={hormoneLabs}
                                 calibrationFn={calibrationFn}
                                 isDarkMode={isDarkMode}
                             />

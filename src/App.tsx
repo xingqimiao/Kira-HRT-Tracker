@@ -89,14 +89,17 @@ const AppContent = () => {
         calibrationFn,
         calibrationMethod, setCalibrationMethod,
         calibrationHistoryMode, setCalibrationHistoryMode,
+        aaChartMode, setAaChartMode,
+        hrtStartDate, setHrtStartDate,
         calibration,
         currentLevel,
-        currentCPA,
         currentT,
         currentStatus,
+        currentTime,
         groupedEvents,
         addEvent, addEvents, updateEvent, deleteEvent, deleteEvents, clearAllEvents,
         addLabResult, updateLabResult, deleteLabResult, clearLabResults,
+        journal, addJournalEntry, updateJournalEntry, deleteJournalEntry,
         addTemplate, deleteTemplate,
         addQuickDose, deleteQuickDose,
         quickDoses,
@@ -200,6 +203,8 @@ const AppContent = () => {
         pkParams,
         calibrationMethod,
         calibrationHistoryMode,
+        aaChartMode,
+        hrtStartDate,
     });
 
     useEffect(() => {
@@ -361,6 +366,10 @@ const AppContent = () => {
         return (
             <Onboarding
                 languageOptions={languageOptions}
+                /* So the start-date step opens on whatever is already saved, and
+                   writes through the data layer that knows the account. */
+                hrtStartDate={hrtStartDate}
+                onHrtStartChange={setHrtStartDate}
                 onDone={() => { markOnboardingSeen(); setShowOnboarding(false); }}
             />
         );
@@ -412,7 +421,6 @@ const AppContent = () => {
                         <Home
                             t={t}
                             currentLevel={currentLevel}
-                            currentCPA={currentCPA}
                             currentT={currentT}
                             currentStatus={currentStatus}
                             events={events}
@@ -431,6 +439,8 @@ const AppContent = () => {
                             doseTemplates={doseTemplates}
                             onAddEvent={addEvent}
                             onRemoveEvent={deleteEvent}
+                            aaChartMode={aaChartMode}
+                            nowMs={currentTime.getTime()}
                         />
                     )}
 
@@ -462,6 +472,12 @@ const AppContent = () => {
                             onSaveTemplate={addTemplate}
                             onDeleteTemplate={deleteTemplate}
                             groupedEvents={groupedEvents}
+                            journal={journal}
+                            onSaveJournalEntry={e => {
+                                if (journal.find(p => p.id === e.id)) updateJournalEntry(e);
+                                else addJournalEntry(e);
+                            }}
+                            onDeleteJournalEntry={deleteJournalEntry}
                         />
                     )}
 
@@ -471,6 +487,7 @@ const AppContent = () => {
                             isQuickAddLabOpen={isQuickAddLabOpen}
                             setIsQuickAddLabOpen={setIsQuickAddLabOpen}
                             labResults={labResults}
+                            events={events}
                             onSaveLabResult={r => {
                                 if (labResults.find(prev => prev.id === r.id)) updateLabResult(r);
                                 else addLabResult(r);
@@ -526,6 +543,8 @@ const AppContent = () => {
                             autoSync={autoSync}
                             setAutoSync={setAutoSync}
                             isLoggedIn={coreSession.isSignedIn}
+                            aaChartMode={aaChartMode}
+                            setAaChartMode={setAaChartMode}
                         />
                     )}
 
@@ -602,6 +621,7 @@ const AppContent = () => {
                             /* Offered by the account page while `recovery_risk` says the
                                account has one way in and it is a provider. */
                             onBindCredentials={() => setBindRequested(true)}
+                            hrtStartDate={hrtStartDate}
                         />
                     )}
 

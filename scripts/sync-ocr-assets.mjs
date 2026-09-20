@@ -26,7 +26,7 @@
  * build, which is the LSTM one.
  */
 import { copyFileSync, mkdirSync, existsSync, statSync, readdirSync } from 'node:fs'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const ROOT = resolve(import.meta.dirname, '..')
@@ -80,10 +80,31 @@ function human(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`
 }
 
+/**
+ * A traineddata file is gzip. Assert it here rather than trusting the server.
+ *
+ * The failure this prevents is not a broken build but a silently poisoned client:
+ * Caddy answers a missing `/ocr/*` path with a 200 `text/html` SPA shell (see
+ * `server/DEPLOY.md`), and every layer above caches by URL, so a non-gzip byte
+ * stream served at a `.gz` URL is stored *as* the language file and served or read
+ * for a year — tesseract.js then initialises without that language and reads its
+ * script as noise. Two magic bytes turn that into a failed prebuild.
+ */
+function assertGzip(buf, label) {
+  if (buf.length < 2 || buf[0] !== 0x1f || buf[1] !== 0x8b) {
+    const head = [...buf.subarray(0, 4)].map((b) => b.toString(16).padStart(2, '0')).join(' ')
+    throw new Error(
+      `${label} is not gzip (starts ${head || 'empty'})`
+      + ' — delete it and rerun to re-download, do not ship it',
+    )
+  }
+}
+
 async function download(url, dest) {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`fetch failed ${res.status} for ${url}`)
   const buf = Buffer.from(await res.arrayBuffer())
+  assertGzip(buf, url)
   writeFileSync(dest, buf)
   return buf.length
 }
@@ -121,6 +142,10 @@ async function main() {
   for (const lang of TRAINEDDATA_LANGS) {
     const trained = join(OUT, `${lang}.traineddata.gz`)
     if (existsSync(trained)) {
+      // Kept rather than re-downloaded, so it is the already-present file that most
+      // needs the check — a half-written or hand-placed one would otherwise be
+      // shipped as-is by every build from here on.
+      assertGzip(readFileSync(trained), trained)
       total += statSync(trained).size
       process.stdout.write(
         `${lang}: trained data already present, kept (${human(statSync(trained).size)})\n`,

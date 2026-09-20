@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Icon from './Icon';
 import { useTranslation } from '../contexts/LanguageContext';
-import { LabResult, isT_LabUnit } from '../../logic';
+import { LabResult, MONITORING_UNIT, isT_LabUnit } from '../../logic';
 import { Check, Trash2, X, ChevronDown } from '../icons';
 import { v4 as uuidv4 } from 'uuid';
 import DateTimePicker from './DateTimePicker';
@@ -85,6 +85,30 @@ const HormoneValueField: React.FC<{
     </div>
 );
 
+// One monitoring analyte, at the unit the sources quote it in. The unit is a
+// label, not a toggle: unlike E2/T these have no second unit the app converts.
+const MonitorField: React.FC<{
+    label: string;
+    unit: string;
+    value: string;
+    onChange: (v: string) => void;
+}> = ({ label, unit, value, onChange }) => (
+    <div>
+        <label className="block text-xs font-semibold text-cos-on-surface-variant pl-1 mb-1.5">
+            {label} <span className="font-normal opacity-70">{unit}</span>
+        </label>
+        <input
+            type="number"
+            inputMode="decimal"
+            placeholder="0.0"
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            className="w-full bg-[var(--color-m3-surface-container-lowest)]  border border-[var(--color-m3-outline-variant)]  rounded-md px-3 py-2 outline-none focus:border-[var(--color-m3-primary)] text-[var(--color-m3-on-surface)]  placeholder:text-[var(--color-m3-on-surface-variant)] tabular-nums"
+            style={{ fontSize: '16px' }}
+        />
+    </div>
+);
+
 const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onCancel, onDelete, initialValues }) => {
     const { t, lang } = useTranslation();
     const [dateStr, setDateStr] = useState("");
@@ -103,6 +127,15 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
     const [tUnit, setTUnit] = useState<LabUnit>(DEFAULT_T_UNIT);
     const [tValue, setTValue] = useState("");
 
+    // Monitoring bloods. Optional and independent of the two hormones above: a
+    // single draw may carry any subset, and an empty field saves nothing.
+    const [prlValue, setPrlValue] = useState("");
+    const [prlUln, setPrlUln] = useState("");
+    const [altValue, setAltValue] = useState("");
+    const [altUln, setAltUln] = useState("");
+    const [astValue, setAstValue] = useState("");
+    const [kValue, setKValue] = useState("");
+
     useEffect(() => {
         if (resultToEdit) {
             const d = new Date(resultToEdit.timeH * 3600000);
@@ -110,6 +143,16 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
             setDateStr(iso);
             setEditValue(resultToEdit.concValue.toString());
             setEditUnit(resultToEdit.unit);
+            // Prefill the monitoring fields so editing a record cannot silently drop
+            // the bloods that were saved with it. A monitoring-only record has no
+            // hormone field to show (see below); its placeholder value round-trips.
+            const str = (v: number | undefined) => (typeof v === 'number' && Number.isFinite(v) ? String(v) : "");
+            setPrlValue(str(resultToEdit.prolactin));
+            setPrlUln(str(resultToEdit.prolactinUln));
+            setAltValue(str(resultToEdit.alt));
+            setAltUln(str(resultToEdit.altUln));
+            setAstValue(str(resultToEdit.ast));
+            setKValue(str(resultToEdit.potassium));
         } else {
             const now = new Date();
             const iso = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
@@ -121,20 +164,58 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
             setTValue(initialValues?.T ? String(initialValues.T.value) : "");
             setE2Unit(initialValues?.E2?.unit ?? DEFAULT_E2_UNIT);
             setTUnit(initialValues?.T?.unit ?? DEFAULT_T_UNIT);
+            setPrlValue(""); setPrlUln("");
+            setAltValue(""); setAltUln("");
+            setAstValue(""); setKValue("");
         }
         // `initialValues` is in the dependency list so a scan handed to an already-open
         // form applies, rather than being silently dropped until the next reopen.
     }, [resultToEdit, initialValues]);
+
+    // Monitoring bloods are optional fields of the lab result being saved. The ULN
+    // is carried only when the report printed one; without it the ratio rule cannot
+    // be evaluated, and the sources warn that reference values differ by lab,
+    // reagent and method — so a guessed range is exactly the number not to invent.
+    const monitorFields = () => {
+        const num = (raw: string) => {
+            const n = parseFloat(raw);
+            return raw.trim() !== '' && Number.isFinite(n) && n >= 0 ? n : undefined;
+        };
+        const prolactin = num(prlValue);
+        const alt = num(altValue);
+        const ast = num(astValue);
+        const potassium = num(kValue);
+        const prolactinUln = num(prlUln);
+        const altUlnValue = num(altUln);
+        return {
+            ...(prolactin !== undefined ? { prolactin } : {}),
+            ...(prolactin !== undefined && prolactinUln !== undefined && prolactinUln > 0 ? { prolactinUln } : {}),
+            ...(alt !== undefined ? { alt } : {}),
+            ...(alt !== undefined && altUlnValue !== undefined && altUlnValue > 0 ? { altUln: altUlnValue } : {}),
+            ...(ast !== undefined ? { ast } : {}),
+            ...(potassium !== undefined ? { potassium } : {}),
+        };
+    };
 
     const handleSave = () => {
         if (!dateStr) return;
         const timeH = new Date(dateStr).getTime() / 3600000;
         if (isNaN(timeH)) return;
 
+        const monitoring = monitorFields();
+        const hasMonitoring = Object.keys(monitoring).length > 0;
+
         if (resultToEdit) {
+            // A monitoring-only record keeps its neutral placeholder and just gets its
+            // analytes rewritten.
+            if (resultToEdit.monitoringOnly) {
+                if (!hasMonitoring) return;
+                onSave({ id: resultToEdit.id, timeH, concValue: 0, unit: resultToEdit.unit, monitoringOnly: true, ...monitoring });
+                return;
+            }
             const numValue = parseFloat(editValue);
             if (!editValue || isNaN(numValue) || numValue < 0) return;
-            onSave({ id: resultToEdit.id, timeH, concValue: numValue, unit: editUnit });
+            onSave({ id: resultToEdit.id, timeH, concValue: numValue, unit: editUnit, ...monitoring });
             return;
         }
 
@@ -142,12 +223,34 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
         const tNum = parseFloat(tValue);
         const hasE2 = e2Value.trim() !== '' && Number.isFinite(e2Num) && e2Num >= 0;
         const hasT = tValue.trim() !== '' && Number.isFinite(tNum) && tNum >= 0;
-        if (!hasE2 && !hasT) return;
-        if (hasE2) onSave({ id: uuidv4(), timeH, concValue: e2Num, unit: e2Unit });
-        if (hasT) onSave({ id: uuidv4(), timeH, concValue: tNum, unit: tUnit });
+
+        if (!hasE2 && !hasT && !hasMonitoring) return;
+
+        // One draw can carry E2, T and monitoring bloods. The monitoring values ride
+        // on the estradiol record when there is one, otherwise on the testosterone
+        // record, so one draw stays one row with its analytes attached. Only a draw
+        // with no hormone reading gets a record of its own.
+        if (hasE2) onSave({ id: uuidv4(), timeH, concValue: e2Num, unit: e2Unit, ...monitoring });
+        if (hasT) onSave({ id: uuidv4(), timeH, concValue: tNum, unit: tUnit, ...(hasE2 ? {} : monitoring) });
+        if (!hasE2 && !hasT && hasMonitoring) {
+            onSave({ id: uuidv4(), timeH, concValue: 0, unit: DEFAULT_E2_UNIT, monitoringOnly: true, ...monitoring });
+        }
+
+        // Everything saved, so clear the boxes. The form only collapses on save (it
+        // stays mounted), so without this a second open would still hold the previous
+        // draw's numbers and a second save would silently duplicate the record —
+        // which is worse for a lab result than an empty field.
+        setE2Value(""); setTValue("");
+        setPrlValue(""); setPrlUln("");
+        setAltValue(""); setAltUln("");
+        setAstValue(""); setKValue("");
     };
 
-    const canSave = resultToEdit ? !!editValue : (!!e2Value || !!tValue);
+    const canSave = resultToEdit
+        ? (resultToEdit.monitoringOnly
+            ? (!!prlValue || !!altValue || !!astValue || !!kValue)
+            : !!editValue)
+        : (!!e2Value || !!tValue || !!prlValue || !!altValue || !!astValue || !!kValue);
     const editIsT = isT_LabUnit(editUnit);
 
     return (
@@ -183,16 +286,20 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
                 />
 
                 {resultToEdit ? (
-                    <div className={`py-[18px] ${divider}`}>
-                        <HormoneValueField
-                            label={editIsT ? t('lab.value_t') : t('lab.value')}
-                            units={editIsT ? T_UNITS : E2_UNITS}
-                            unit={editUnit}
-                            onUnitChange={setEditUnit}
-                            value={editValue}
-                            onValueChange={setEditValue}
-                        />
-                    </div>
+                    // A monitoring-only record has no hormone reading; showing the
+                    // E2/T field would invite writing its 0 placeholder back.
+                    resultToEdit.monitoringOnly ? null : (
+                        <div className={`py-[18px] ${divider}`}>
+                            <HormoneValueField
+                                label={editIsT ? t('lab.value_t') : t('lab.value')}
+                                units={editIsT ? T_UNITS : E2_UNITS}
+                                unit={editUnit}
+                                onUnitChange={setEditUnit}
+                                value={editValue}
+                                onValueChange={setEditValue}
+                            />
+                        </div>
+                    )
                 ) : (
                     <>
                         <div className={`py-[18px] ${divider}`}>
@@ -220,6 +327,28 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
                         </p>
                     </>
                 )}
+
+                {/* Monitoring bloods. Part of the lab result being saved, not a
+                    parallel store: only the parameters with a sourced threshold are
+                    offered (prolactin, ALT, AST, potassium), and everything the
+                    sources leave "not stated" stays off the form rather than being
+                    guessed at. */}
+                <div className={`py-[18px] ${divider}`}>
+                    <span className="text-m3-body-medium text-[var(--color-m3-on-surface)] ">
+                        {t('monitor.section')}
+                    </span>
+                    <p className="text-xs text-[var(--color-m3-on-surface-variant)]  mt-1">
+                        {t('monitor.hint')}
+                    </p>
+                    <div className="grid grid-cols-2 gap-4 mt-3">
+                        <MonitorField label={t('monitor.prl')} unit={MONITORING_UNIT.PRL} value={prlValue} onChange={setPrlValue} />
+                        <MonitorField label={t('monitor.prl_uln')} unit={MONITORING_UNIT.PRL} value={prlUln} onChange={setPrlUln} />
+                        <MonitorField label={t('monitor.alt')} unit={MONITORING_UNIT.ALT} value={altValue} onChange={setAltValue} />
+                        <MonitorField label={t('monitor.alt_uln')} unit={MONITORING_UNIT.ALT} value={altUln} onChange={setAltUln} />
+                        <MonitorField label={t('monitor.ast')} unit={MONITORING_UNIT.AST} value={astValue} onChange={setAstValue} />
+                        <MonitorField label={t('monitor.k')} unit={MONITORING_UNIT.K} value={kValue} onChange={setKValue} />
+                    </div>
+                </div>
             </div>
 
             {/* Footer */}

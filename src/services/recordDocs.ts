@@ -21,6 +21,7 @@
  *   lab:<mode>:<id>           a lab result
  *   tpl:<mode>:<id>           a dose template
  *   quick:<mode>:<id>         a quick dose
+ *   journal:<mode>:<id>       a private body-and-mood check-in
  *   del:<mode>:events         the tombstone map for one kind
  *   scalar:<name>             weight / pkParams / appSettings, with its stamp
  *
@@ -39,7 +40,7 @@ import type { SyncPayload } from './coreSync';
 /** Records the server stores: `kind` is coarse, `data` is the payload. */
 export interface RecordDoc {
     id: string;
-    category: 'dose' | 'lab' | 'note' | 'setting';
+    category: 'dose' | 'lab' | 'note' | 'setting' | 'journal';
     /** Epoch ms. Drives ordering and paging server-side. */
     takenAt: number;
     data: unknown;
@@ -50,6 +51,7 @@ interface ModePayload {
     labResults?: unknown[];
     doseTemplates?: unknown[];
     quickDoses?: unknown[];
+    journal?: unknown[];
     deletions?: Record<string, Record<string, number>>;
 }
 
@@ -135,6 +137,18 @@ export function payloadToRecords(payload: SyncPayload): RecordDoc[] {
             push(`quick:${mode}:${id}`, 'setting', stampOf(quick), quick);
         }
 
+        for (const entry of block.journal ?? []) {
+            const id = idOf(entry);
+            if (!id) continue;
+            // Like a dose, a check-in carries its own time; the server sorts and
+            // pages by it.
+            const timeH = (entry as { timeH?: unknown }).timeH;
+            const takenAt = typeof timeH === 'number' && Number.isFinite(timeH)
+                ? timeH * 3_600_000
+                : stampOf(entry);
+            push(`journal:${mode}:${id}`, 'journal', takenAt, entry);
+        }
+
         for (const kind of ['events', 'labResults', 'doseTemplates'] as const) {
             const map = block.deletions?.[kind];
             if (!map || Object.keys(map).length === 0) continue;
@@ -172,13 +186,14 @@ export function payloadToRecords(payload: SyncPayload): RecordDoc[] {
  */
 export function recordsToPayload(records: RecordDoc[]): { payload: SyncPayload; unknown: number } {
     const modes: Record<string, ModePayload> = {
-        transfem: { events: [], labResults: [], doseTemplates: [], quickDoses: [], deletions: {} },
-        transmasc: { events: [], labResults: [], doseTemplates: [], quickDoses: [], deletions: {} },
+        transfem: { events: [], labResults: [], doseTemplates: [], quickDoses: [], journal: [], deletions: {} },
+        transmasc: { events: [], labResults: [], doseTemplates: [], quickDoses: [], journal: [], deletions: {} },
     };
     // `version` is the payload's own format marker, and the app's reader checks it.
     // Omitted, `normalizeSyncState` and its callers see a payload claiming no version —
     // which is what a v1 export looks like, and is read differently on purpose.
-    const payload: Record<string, unknown> = { version: 2, meta: { version: 2 } };
+    // 3 adds the journal collection to each mode block.
+    const payload: Record<string, unknown> = { version: 3, meta: { version: 3 } };
     let unknown = 0;
 
     for (const record of records) {
@@ -192,6 +207,7 @@ export function recordsToPayload(records: RecordDoc[]): { payload: SyncPayload; 
             if (head === 'lab') { block.labResults!.push(record.data); continue; }
             if (head === 'tpl') { block.doseTemplates!.push(record.data); continue; }
             if (head === 'quick') { block.quickDoses!.push(record.data); continue; }
+            if (head === 'journal') { block.journal!.push(record.data); continue; }
             if (head === 'del') {
                 const kind = parts[2];
                 if (kind) {
@@ -226,6 +242,7 @@ export function recordsToPayload(records: RecordDoc[]): { payload: SyncPayload; 
             && (block.labResults?.length ?? 0) === 0
             && (block.doseTemplates?.length ?? 0) === 0
             && (block.quickDoses?.length ?? 0) === 0
+            && (block.journal?.length ?? 0) === 0
             && Object.keys(block.deletions ?? {}).length === 0;
         if (!empty) outModes[mode] = block;
     }

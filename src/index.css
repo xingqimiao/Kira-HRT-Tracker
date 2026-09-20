@@ -1585,6 +1585,14 @@ select,
     outline-color: var(--color-m3-primary);
 }
 
+/* The thumb's centre, per state, measured from the track's leading edge.
+   Off: 4dp in + an 8dp radius = 12px, which is the spec's leading inset.
+   On:  28dp centre (52 - 4 - 24 + 12... the same 4dp inset at the other end).
+   These are the two positions MD3 actually names; a percentage would follow the
+   track's width instead of its geometry, and the track is a fixed 52x32. */
+.m3-switch { --m3-switch-thumb-centre: 12px; }
+.m3-switch[aria-checked="true"] { --m3-switch-thumb-centre: 36px; }
+
 /* The knob is centred on `left` and pulled back by half its own size, so the two
    states differ only in centre and diameter — no per-state transform to keep in
    sync with the size. Centres: an 16px knob sits at 26 in a 52px track, a 24px
@@ -1592,7 +1600,7 @@ select,
 .m3-switch__thumb {
     position: absolute;
     top: 50%;
-    left: 26px;
+    left: var(--m3-switch-thumb-centre, 12px);
     width: 16px;
     height: 16px;
     border-radius: var(--radius-full);
@@ -1605,7 +1613,6 @@ select,
 }
 
 .m3-switch[aria-checked="true"] .m3-switch__thumb {
-    left: 36px;
     width: 24px;
     height: 24px;
     background-color: var(--color-m3-on-primary);

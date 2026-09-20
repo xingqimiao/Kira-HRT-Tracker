@@ -33,8 +33,8 @@ import { isTestosteroneEster, isT_LabUnit } from '../../logic';
 export type ModeKey = 'transfem' | 'transmasc';
 export const MODE_KEYS: readonly ModeKey[] = ['transfem', 'transmasc'];
 
-export type RecordKind = 'events' | 'labResults' | 'doseTemplates';
-export const RECORD_KINDS: readonly RecordKind[] = ['events', 'labResults', 'doseTemplates'];
+export type RecordKind = 'events' | 'labResults' | 'doseTemplates' | 'journal';
+export const RECORD_KINDS: readonly RecordKind[] = ['events', 'labResults', 'doseTemplates', 'journal'];
 
 /** id -> epoch ms the record was deleted. */
 export type TombstoneMap = Record<string, number>;
@@ -50,6 +50,11 @@ export interface ModeBlock {
      * carries them in `app_state.modes[mode].quickDoses`.
      */
     quickDoses: any[];
+    /**
+     * Private body-and-mood check-ins. One person's own records, stored like every
+     * other collection and merged by the same union-plus-tombstone rules.
+     */
+    journal: any[];
     deletions: Tombstones;
 }
 
@@ -75,11 +80,19 @@ export interface AppSettings {
     showVial?: boolean;
     calMethod?: string;
     calHistoryMode?: string;
+    /** How the Home card's anti-androgen column reads — see antiandrogenReading. */
+    aaChartMode?: string;
+    /**
+     * `YYYY-MM-DD` the user's HRT began, or absent when they never said. Only the
+     * account line "HRT started N days ago" reads it — see hrtStart.ts.
+     */
+    hrtStartDate?: string;
 }
 
 /** Every key `sanitizeAppSettings` will carry. An unknown key is dropped. */
 export const APP_SETTING_KEYS: readonly (keyof AppSettings)[] = [
-    'theme', 'keyColor', 'lang', 'hrtMode', 'showVial', 'calMethod', 'calHistoryMode',
+    'theme', 'keyColor', 'lang', 'hrtMode', 'showVial', 'calMethod', 'calHistoryMode', 'aaChartMode',
+    'hrtStartDate',
 ];
 
 export interface SyncState {
@@ -142,11 +155,11 @@ export const TOMBSTONE_MAX_PER_KIND = 5000;
 // --- Shapes -----------------------------------------------------------------
 
 export function emptyTombstones(): Tombstones {
-    return { events: {}, labResults: {}, doseTemplates: {} };
+    return { events: {}, labResults: {}, doseTemplates: {}, journal: {} };
 }
 
 function emptyModeBlock(): ModeBlock {
-    return { events: [], labResults: [], doseTemplates: [], quickDoses: [], deletions: emptyTombstones() };
+    return { events: [], labResults: [], doseTemplates: [], quickDoses: [], journal: [], deletions: emptyTombstones() };
 }
 
 export function emptySyncState(): SyncState {
@@ -184,6 +197,7 @@ export function sanitizeTombstones(raw: unknown): Tombstones {
         events: sanitizeTombstoneMap(src.events),
         labResults: sanitizeTombstoneMap(src.labResults),
         doseTemplates: sanitizeTombstoneMap(src.doseTemplates),
+        journal: sanitizeTombstoneMap(src.journal),
     };
 }
 
@@ -239,6 +253,7 @@ export function pruneTombstones(t: Tombstones, now: number): Tombstones {
         events: pruneTombstoneMap(t.events, now),
         labResults: pruneTombstoneMap(t.labResults, now),
         doseTemplates: pruneTombstoneMap(t.doseTemplates, now),
+        journal: pruneTombstoneMap(t.journal, now),
     };
 }
 
@@ -298,6 +313,7 @@ export function normalizeSyncState(payload: unknown): SyncState {
                 labResults: asArray(block.labResults),
                 doseTemplates: asArray(block.doseTemplates),
                 quickDoses: asArray(block.quickDoses),
+                journal: asArray(block.journal),
                 deletions: sanitizeTombstones(block.deletions),
             };
         }
@@ -340,8 +356,15 @@ export function normalizeSyncState(payload: unknown): SyncState {
  */
 const CONTENT_FIELDS: Record<RecordKind, readonly string[]> = {
     events: ['route', 'ester', 'doseMG', 'timeH', 'extras'],
-    labResults: ['unit', 'concValue', 'timeH'],
+    // Monitoring bloods are part of the record, so a later edit to prolactin/ALT/K
+    // has to show up as a content change; omitting them made the merge treat the two
+    // versions as the same record and keep whichever copy it already held.
+    labResults: ['unit', 'concValue', 'timeH', 'monitoringOnly', 'prolactin', 'prolactinUln', 'alt', 'altUln', 'ast', 'potassium'],
     doseTemplates: ['name', 'route', 'ester', 'doseMG', 'extras'],
+    // Everything a check-in holds. The scales may be absent ("not answered"),
+    // which stableString renders as an empty slot, so one answered scale is
+    // enough to make an edit visible.
+    journal: ['timeH', 'urinaryTolerance', 'skinOil', 'hairLoss', 'bodyHair', 'moodTolerance', 'symptoms', 'note'],
 };
 
 export function stableString(value: unknown): string {
@@ -544,12 +567,14 @@ export function mergeSyncStates(local: SyncState, remote: SyncState | null): Mer
             events: mergeTombstoneMaps(local.modes[m].deletions.events, remote.modes[m].deletions.events),
             labResults: mergeTombstoneMaps(local.modes[m].deletions.labResults, remote.modes[m].deletions.labResults),
             doseTemplates: mergeTombstoneMaps(local.modes[m].deletions.doseTemplates, remote.modes[m].deletions.doseTemplates),
+            journal: mergeTombstoneMaps(local.modes[m].deletions.journal, remote.modes[m].deletions.journal),
         };
         merged.modes[m] = {
             events: mergeKind('events', local.modes[m].events, remote.modes[m].events, deletions.events, stats),
             labResults: mergeKind('labResults', local.modes[m].labResults, remote.modes[m].labResults, deletions.labResults, stats),
             doseTemplates: mergeKind('doseTemplates', local.modes[m].doseTemplates, remote.modes[m].doseTemplates, deletions.doseTemplates, stats),
             quickDoses: mergeQuickDoses(local.modes[m].quickDoses, remote.modes[m].quickDoses),
+            journal: mergeKind('journal', local.modes[m].journal, remote.modes[m].journal, deletions.journal, stats),
             deletions,
         };
     }

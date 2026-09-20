@@ -224,7 +224,7 @@ function withRemoteTombstones(local: SyncPayload, remote: SyncPayload): SyncPayl
     const theirs = remoteModes[mode]?.deletions;
     if (!mine && !theirs) continue;
     const deletions: Record<string, Record<string, number>> = {};
-    for (const kind of ['events', 'labResults', 'doseTemplates']) {
+    for (const kind of ['events', 'labResults', 'doseTemplates', 'journal']) {
       const combined = mergeTombstones(mine?.[kind], theirs?.[kind]);
       if (Object.keys(combined).length > 0) deletions[kind] = combined;
     }
@@ -311,7 +311,7 @@ export async function syncWithCore(
  */
 export function toLocalPayload(state: SyncPayload): SyncPayload {
   return {
-    version: state.version ?? 2,
+    version: state.version ?? 3,
     ...(typeof state.weight === 'number' ? { weight: state.weight } : {}),
     modes: state.modes ?? {},
     ...(state.appState ? { appState: state.appState } : {}),

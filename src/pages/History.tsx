@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Icon from '../components/Icon';
 import { Plus, Check, Trash2, ListChecks } from '../icons';
 import { v4 as uuidv4 } from 'uuid';
-import { DoseEvent, Route, Ester, ExtraKey, getToE2Factor, isTestosteroneEster } from '../../logic';
+import { DoseEvent, Route, Ester, ExtraKey, getToE2Factor, isTestosteroneEster, isAntiandrogen } from '../../logic';
 import { formatTime } from '../utils/helpers';
 import { useDialog } from '../contexts/DialogContext';
 import DoseForm from '../components/DoseForm';
@@ -11,6 +11,8 @@ import { useHRTMode } from '../contexts/HRTModeContext';
 import { DoseTemplate } from '../components/DoseFormModal';
 import { DoseDayGroup } from '../hooks/useAppData';
 import Switch from '../components/Switch';
+import JournalCheckIn from '../components/JournalCheckIn';
+import { JournalEntry } from '../utils/bodyJournal';
 
 // Trim trailing zeros so wear durations read "3.5" / "7" rather than "3.50".
 const formatWearDays = (days: number): string =>
@@ -35,6 +37,9 @@ interface HistoryProps {
     onSaveTemplate: (t: DoseTemplate) => void;
     onDeleteTemplate: (id: string) => void;
     groupedEvents: DoseDayGroup[];
+    journal: JournalEntry[];
+    onSaveJournalEntry: (entry: JournalEntry) => void;
+    onDeleteJournalEntry: (id: string) => void;
 }
 
 const History: React.FC<HistoryProps> = ({
@@ -48,7 +53,10 @@ const History: React.FC<HistoryProps> = ({
     onDeleteEvents,
     onSaveTemplate,
     onDeleteTemplate,
-    groupedEvents
+    groupedEvents,
+    journal,
+    onSaveJournalEntry,
+    onDeleteJournalEntry,
 }) => {
     const { isTransmasc } = useHRTMode();
     const { showDialog } = useDialog();
@@ -232,6 +240,18 @@ const History: React.FC<HistoryProps> = ({
                 </div>
             </div>
 
+            {/* The check-in sits above the log, not after it. Filed at the bottom it
+                was reachable only by scrolling past every dose — a year of records is
+                hundreds of rows, which made a one-line note the least accessible
+                thing on the page. Above the list it is the first thing under the
+                header, and the log still reads newest-first below it. It keeps its
+                own heading and count, so its place is legible either way. */}
+            <JournalCheckIn
+                entries={journal}
+                onSave={onSaveJournalEntry}
+                onDelete={onDeleteJournalEntry}
+            />
+
             {groupedEvents.length === 0 && (
                 <div className="mx-auto w-full px-6 md:px-8 flex flex-col items-center text-center py-20 max-w-2xl text-[var(--color-m3-on-surface-variant)] ">
                     {/* Empty, because it is: no doses logged, nothing in the tube. */}
@@ -297,7 +317,7 @@ const History: React.FC<HistoryProps> = ({
                                                     <>
                                                         <span className="opacity-40">·</span>
                                                         <span className="text-[var(--color-m3-on-surface)]  font-medium">{`${ev.doseMG.toFixed(2)} mg`}</span>
-                                                        {ev.ester !== Ester.E2 && ev.ester !== Ester.CPA && !isTestosteroneEster(ev.ester) && (
+                                                        {ev.ester !== Ester.E2 && !isAntiandrogen(ev.ester) && !isTestosteroneEster(ev.ester) && (
                                                             <span className="opacity-70">
                                                                 {`(${t('label.e2')} eq: ${(ev.doseMG * getToE2Factor(ev.ester)).toFixed(2)} mg)`}
                                                             </span>

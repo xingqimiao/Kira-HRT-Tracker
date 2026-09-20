@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from '../../contexts/LanguageContext';
-import { Route, Ester } from '../../../logic';
+import { Route, Ester, isAntiandrogen } from '../../../logic';
 
 interface OralFieldsProps {
     ester: Ester;
@@ -20,11 +20,15 @@ const OralFields: React.FC<OralFieldsProps> = ({
     route
 }) => {
     const { t } = useTranslation();
+    // An anti-androgen has no estradiol content, so it gets the raw-mg input and
+    // nothing else. `getToE2Factor` returns 0 for it, and a calculated "0.000 mg E2"
+    // beside a real 100 mg dose would be a number with no referent.
+    const antiandrogen = isAntiandrogen(ester);
 
     return (
         <div className="grid grid-cols-2 gap-4">
             {(ester !== Ester.E2) && (
-                <div className={`space-y-1.5 ${(ester === Ester.EV && route === Route.oral) || ester === Ester.CPA ? 'col-span-2' : ''}`}>
+                <div className={`space-y-1.5 ${(ester === Ester.EV && route === Route.oral) || antiandrogen ? 'col-span-2' : ''}`}>
                     <label className="block text-xs font-semibold text-cos-on-surface-variant  pl-1">{t('field.dose_raw')}</label>
                     <input
                         type="number" inputMode="decimal"
@@ -38,7 +42,7 @@ const OralFields: React.FC<OralFieldsProps> = ({
                 </div>
             )}
 
-            {!(ester === Ester.EV && route === Route.oral) && ester !== Ester.CPA && (
+            {!(ester === Ester.EV && route === Route.oral) && !antiandrogen && (
                 <div className={`space-y-1.5 ${(ester === Ester.E2) ? "col-span-2" : ""}`}>
                     <label className="block text-xs font-semibold text-cos-on-surface-variant  pl-1">
                         {t('field.dose_e2')}

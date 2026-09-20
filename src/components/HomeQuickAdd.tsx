@@ -28,6 +28,25 @@ interface HomeQuickAddProps {
 const UNDO_MS = 6000;
 
 /**
+ * The trigger's look, in one place: the live button and the intro's showcase both
+ * render from this, so the picture of the button cannot drift from the button.
+ *
+ * `large` is the only difference, and it exists because the intro has the card to
+ * itself while the overview's title row does not — on a 390px card the live button
+ * drops its words (the label was what overflowed) and keeps only the glyphs, which
+ * would make a showcase with no words a picture of a nondescript icon. The colour,
+ * edge, radius and gap stay the same at both sizes.
+ */
+const triggerClass = (open: boolean, empty: boolean, large = false) =>
+    `inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-m3-outline-variant)] font-medium transition-colors ${
+        large ? 'h-12 pe-3 ps-4 text-sm' : 'h-9 px-2.5 text-xs sm:pl-3 sm:pr-2'
+    } ${
+        open
+            ? 'bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-surface)]'
+            : 'text-[var(--color-m3-on-surface-variant)] hover:bg-[var(--color-m3-surface-container)] hover:text-[var(--color-m3-on-surface)]'
+    } ${empty ? 'cursor-not-allowed opacity-40' : ''}`;
+
+/**
  * The overview page's one-tap "log a dose I already saved".
  *
  * One button, not a row of them: a person with eight templates would otherwise
@@ -36,9 +55,12 @@ const UNDO_MS = 6000;
  * the whole point is not walking to the history page — so the undo lives in the
  * confirmation rather than in a form.
  *
- * It renders `null` with no templates. The page's own empty state already offers
- * "record a dose", which is the honest next step for someone who has never saved
- * one — a second button next to it would only be a dead end.
+ * With no templates it renders disabled rather than nothing, and says why in its
+ * hint. It used to render `null`, on the reasoning that the page's empty state
+ * already offers "record a dose" — but that left a hole in the card's corner where
+ * the control appears as soon as one template exists, and the person who has never
+ * saved one is exactly the person who needs to be told the feature is there. The
+ * Share button beside it is disabled in the same way for the same reason.
  *
  * Sized and spaced for a card's corner slot rather than dropped in the flow: the
  * parent decides where it sits, so there is no margin of its own to fight.
@@ -49,7 +71,7 @@ const HomeQuickAdd: React.FC<HomeQuickAddProps> = ({ templates, onAddEvent, onRe
     const [undo, setUndo] = React.useState<{ id: string; name: string } | null>(null);
     const buttonRef = React.useRef<HTMLButtonElement>(null);
 
-    if (templates.length === 0) return null;
+    const empty = templates.length === 0;
 
     // Most recently made first. Templates carry no "last used" stamp, and adding
     // one means touching the data shape and every device's stored copy — not worth
@@ -70,16 +92,16 @@ const HomeQuickAdd: React.FC<HomeQuickAddProps> = ({ templates, onAddEvent, onRe
                     ref={buttonRef}
                     type="button"
                     onClick={() => setOpen((v) => !v)}
+                    disabled={empty}
                     aria-expanded={open}
                     aria-haspopup="menu"
                     aria-label={t('quickadd.button')}
-                    className={`inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--color-m3-outline-variant)] px-2.5 text-xs font-medium transition-colors sm:pl-3 sm:pr-2 ${
-                        open
-                            ? 'bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-surface)]'
-                            : 'text-[var(--color-m3-on-surface-variant)] hover:bg-[var(--color-m3-surface-container)] hover:text-[var(--color-m3-on-surface)]'
-                    }`}
+                    className={triggerClass(open, empty)}
                     style={{ transitionDuration: 'var(--md-sys-motion-duration-short3)' }}
-                    title={t('quickadd.button_hint')}
+                    /* The hint doubles as the explanation when there is nothing to
+                       log yet: the same words that describe the feature tell you
+                       what is missing. */
+                    title={empty ? t('quickadd.empty_hint') : t('quickadd.button_hint')}
                 >
                     <Icon icon={Bookmark} size={13} />
                     {/* Label only from `sm` up: on a 390px card the title row has room for
@@ -111,6 +133,34 @@ const HomeQuickAdd: React.FC<HomeQuickAddProps> = ({ templates, onAddEvent, onRe
                 document.body,
             )}
         </>
+    );
+};
+
+/**
+ * The trigger as a picture, for the intro step that introduces it.
+ *
+ * Not the live control: the intro cannot log a dose (there is no record yet), so a
+ * real `HomeQuickAdd` would either be dead or would fire against an empty store.
+ * Rendering the same markup in a non-interactive shell keeps the picture honest —
+ * it is the button, not a drawing of one — while staying keyboard-inert, because
+ * the step's own controls are the only things a keyboard should reach there.
+ *
+ * Worded through `t()` like the button, so the picture is in the reader's language.
+ */
+export const QuickAddPreview: React.FC = () => {
+    const { t } = useTranslation();
+    return (
+        <button
+            type="button"
+            tabIndex={-1}
+            aria-hidden="true"
+            title={t('quickadd.button_hint')}
+            className={`${triggerClass(false, false, true)} cursor-default`}
+        >
+            <Icon icon={Bookmark} size={18} />
+            <span>{t('quickadd.button')}</span>
+            <Icon icon={ChevronDown} size={18} />
+        </button>
     );
 };
 

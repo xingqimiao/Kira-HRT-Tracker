@@ -179,6 +179,22 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
                 workerPath: '/ocr/worker.min.js',
                 corePath: '/ocr/core',
                 langPath: '/ocr',
+                // Spelled out even though `true` is tesseract.js's current default. The
+                // default only decides the filename: with `false` the worker asks for
+                // `/ocr/chi_sim.traineddata`, which is not on the server, and Caddy's
+                // SPA fallback answers that with `200 text/html` instead of 404 — so
+                // the wrong filename would not present as a failure, it would present
+                // as the wrong *content*. A default is not a contract; this one is
+                // pinned to the file that the build actually writes.
+                gzip: true,
+                // Namespaced away from tesseract.js's default (`./`). It reads its own
+                // IndexedDB cache *before* the network, and an earlier deploy poisoned
+                // `./chi_sim.traineddata` with the SPA shell (see `vite.config.ts`).
+                // Fixing the server and the service worker was not enough on its own:
+                // that cache entry outlives both, so a returning browser kept reading
+                // garbage as Chinese and reporting "no usable values". A new key is a
+                // miss, and a miss fetches the real file.
+                cachePath: 'ocr-v2',
                 logger: (m: any) => {
                     if (m?.status === 'recognizing text' && typeof m.progress === 'number') {
                         setState({ kind: 'recognising', progress: m.progress });

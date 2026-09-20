@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Icon from '../components/Icon';
 import { AlertCircle, Clock3, Eye, EyeOff, LockKeyhole } from '../icons';
 import { Progress } from '../components/ui';
-import { DoseEvent, Ester, ExtraKey, getToE2Factor, isTestosteroneEster, Route } from '../../logic';
+import { DoseEvent, Ester, ExtraKey, getToE2Factor, isTestosteroneEster, isAntiandrogen, modelledEvents, Route } from '../../logic';
 import ResultChart from '../components/ResultChart';
 import { useTranslation } from '../contexts/LanguageContext';
 import { getShareCopy } from '../i18n/share';
@@ -255,6 +255,9 @@ const SharedRecord = ({ details }: { details: ShareDetails }) => {
     const { snapshot } = details;
     const locale = LOCALE_MAP[lang] || 'en-US';
     const timeZone = snapshot.timezone || 'UTC';
+    // The chart plots modelled compounds only — see `modelledEvents`. The record
+    // list below still shows every shared dose, CPA included.
+    const chartEvents = useMemo(() => modelledEvents(snapshot.events), [snapshot.events]);
 
     const formatDateTime = (timestamp: number) => new Intl.DateTimeFormat(locale, {
         dateStyle: 'medium',
@@ -325,7 +328,7 @@ const SharedRecord = ({ details }: { details: ShareDetails }) => {
                     </div>
                     <ResultChart
                         sim={snapshot.simulation}
-                        events={snapshot.events}
+                        events={chartEvents}
                         mode={snapshot.mode}
                         timeZone={timeZone}
                         title={t('chart.title')}
@@ -392,7 +395,7 @@ const DoseHistoryRow = ({ event, time }: { event: DoseEvent; time: string }) => 
                         <>
                             <span aria-hidden="true">·</span>
                             <span className="font-medium text-body">{event.doseMG.toFixed(2)} mg</span>
-                            {event.ester !== Ester.E2 && event.ester !== Ester.CPA && !isTestosteroneEster(event.ester) && (
+                            {event.ester !== Ester.E2 && !isAntiandrogen(event.ester) && !isTestosteroneEster(event.ester) && (
                                 <span>({t('label.e2')} eq: {(event.doseMG * getToE2Factor(event.ester)).toFixed(2)} mg)</span>
                             )}
                             {isTestosteroneEster(event.ester) && event.ester !== Ester.T && (

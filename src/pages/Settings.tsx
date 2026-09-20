@@ -5,7 +5,7 @@ import { ChevronRight, Settings2, Database, Info, ArrowLeft, Globe } from '../ic
 import type { IconComponent } from '../icons';
 import { Lang } from '../i18n/translations';
 import { AppTheme } from '../constants';
-import { DoseEvent, PKCustomParams } from '../../logic';
+import { AntiandrogenChartMode, ANTIANDROGEN_CHART_MODES, DoseEvent, PKCustomParams } from '../../logic';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { useVial } from '../contexts/VialContext';
 
@@ -41,6 +41,9 @@ interface SettingsProps {
     setAutoSync: (v: boolean) => void;
     /** Whether anyone is signed in — the auto-sync toggle only means something then. */
     isLoggedIn: boolean;
+    /** Which reading the Home card's anti-androgen column shows. */
+    aaChartMode: AntiandrogenChartMode;
+    setAaChartMode: (m: AntiandrogenChartMode) => void;
 }
 
 type SettingsCat = 'general' | 'data' | 'about';
@@ -62,6 +65,7 @@ const Settings: React.FC<SettingsProps> = ({
     weight, pkParams, onNavigateToPKParams, onNavigateToHRTMode,
     onNavigateToLanguage, onNavigateToAppearance, onNavigateToWeight,
     onNavigateToExport, onNavigateToImport, autoSync, setAutoSync, isLoggedIn,
+    aaChartMode, setAaChartMode,
 }) => {
     const { mode } = useHRTMode();
     const { showVial, setShowVial } = useVial();
@@ -149,6 +153,30 @@ const Settings: React.FC<SettingsProps> = ({
                 </div>
                 <Switch checked={showVial} onChange={setShowVial} />
             </div>
+
+            {/* Only meaningful in transfem mode: the anti-androgen column this
+                controls does not exist on the transmasc overview. */}
+            {mode === 'transfem' && (
+                <div className="w-full py-[18px] border-b border-[var(--color-m3-outline-variant)]">
+                    <p className={rowLabel}>{t('settings.aa_display')}</p>
+                    <p className={`text-xs ${muted} mt-0.5`}>{t('settings.aa_display_desc')}</p>
+                    {/* The app's own button tokens, as a segmented control: one
+                        selected segment (filled) against the rest (outlined). */}
+                    <div className="mt-3 flex flex-wrap gap-1" role="group" aria-label={t('settings.aa_display')}>
+                        {ANTIANDROGEN_CHART_MODES.map(m => (
+                            <button
+                                key={m}
+                                type="button"
+                                aria-pressed={aaChartMode === m}
+                                onClick={() => setAaChartMode(m)}
+                                className={`m3-btn m3-btn-sm ${aaChartMode === m ? 'm3-btn-filled' : 'm3-btn-outlined'}`}
+                            >
+                                {t(`settings.aa_display.${m}`)}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             <button
                 onClick={() => navTo(onNavigateToPKParams, 'general')}

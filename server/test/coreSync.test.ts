@@ -76,7 +76,7 @@ const nowH = () => Date.now() / 3_600_000;
 function appPayload() {
   const t = nowH();
   return {
-    version: 2,
+    version: 3,
     weight: 72.5,
     modes: {
       transfem: {
@@ -87,9 +87,16 @@ function appPayload() {
         labResults: [{ id: 'cs-l1', concValue: 190, unit: 'pg/ml', timeH: t - 100, updatedAt: Date.now() }],
         doseTemplates: [],
         quickDoses: [],
-        deletions: { events: {}, labResults: {}, doseTemplates: {} },
+        journal: [{
+          id: 'cs-j1',
+          timeH: t - 50,
+          updatedAt: Date.now(),
+          urinaryTolerance: 3,
+          symptoms: { liver: [], meningioma: ['tinnitus'], hyperkalemia: [] },
+        }],
+        deletions: { events: {}, labResults: {}, doseTemplates: {}, journal: {} },
       },
-      transmasc: { events: [], labResults: [], doseTemplates: [], quickDoses: [], deletions: { events: {}, labResults: {}, doseTemplates: {} } },
+      transmasc: { events: [], labResults: [], doseTemplates: [], quickDoses: [], journal: [], deletions: { events: {}, labResults: {}, doseTemplates: {}, journal: {} } },
     },
   };
 }
@@ -101,17 +108,24 @@ test('the client adapter pushes and reads back through the real server', async (
     const token = await newAccount();
 
     const result = await syncWithCore(token, appPayload());
-    assert.equal(result.state.version, 2);
+    assert.equal(result.state.version, 3);
     assert.equal(result.state.weight, 72.5, 'weight round-trips');
     const modes = result.state.modes as any;
     assert.equal(modes.transfem.events.length, 2, 'both doses came back');
     assert.equal(modes.transfem.labResults.length, 1, 'the lab came back');
+    // A journal entry takes the new category through the real store and back. If
+    // the head were unrecognised it would be counted into the unknown counter and
+    // dropped here, rather than on a page.
+    assert.equal(modes.transfem.journal.length, 1, 'the check-in came back');
+    assert.equal(modes.transfem.journal[0].urinaryTolerance, 3);
+    assert.deepEqual(modes.transfem.journal[0].symptoms.meningioma, ['tinnitus']);
 
     // And the app's own reader accepts what the Core returned — the actual
     // interop claim, not just that the JSON parses.
     const asState = normalizeSyncState(result.state);
     assert.equal(asState.modes.transfem.events.length, 2);
     assert.equal(asState.modes.transfem.labResults.length, 1);
+    assert.equal(asState.modes.transfem.journal.length, 1);
     assert.equal(asState.weight, 72.5);
   } finally {
     restore();

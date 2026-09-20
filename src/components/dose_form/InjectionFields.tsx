@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from '../../contexts/LanguageContext';
-import { Route, Ester, isTestosteroneEster } from '../../../logic';
+import { Route, Ester, isTestosteroneEster, isAntiandrogen } from '../../../logic';
 
 interface InjectionFieldsProps {
     ester: Ester;
@@ -21,6 +21,9 @@ const InjectionFields: React.FC<InjectionFieldsProps> = ({
 }) => {
     const { t } = useTranslation();
     const isT = isTestosteroneEster(ester);
+    // An injected anti-androgen is still an anti-androgen: no T or E2 equivalent
+    // exists for it, and `getToE2Factor` returns 0.
+    const antiandrogen = isAntiandrogen(ester);
     const equivLabelKey = isT ? 'field.dose_t' : 'field.dose_e2';
 
     return (
@@ -39,7 +42,7 @@ const InjectionFields: React.FC<InjectionFieldsProps> = ({
                     />
                 </div>
             )}
-            {!(ester === Ester.EV && route === Route.injection) && ester !== Ester.CPA && (
+            {!(ester === Ester.EV && route === Route.injection) && !antiandrogen && (
                 <div className={`space-y-2 ${(ester === Ester.E2) ? "col-span-2" : ""}`}>
                     <label className="block text-xs font-semibold text-cos-on-surface-variant  pl-1">
                         {t(equivLabelKey)}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from '../../contexts/LanguageContext';
-import { Route, Ester, SL_TIER_ORDER, SublingualTierParams } from '../../../logic';
+import { Route, Ester, SL_TIER_ORDER, SublingualTierParams, isAntiandrogen } from '../../../logic';
 import CustomSelect from '../CustomSelect';
 
 interface SublingualFieldsProps {
@@ -39,6 +39,8 @@ const SublingualFields: React.FC<SublingualFieldsProps> = ({
     route
 }) => {
     const { t } = useTranslation();
+    // A sublingual anti-androgen has no E2/T equivalent; `getToE2Factor` is 0 for it.
+    const antiandrogen = isAntiandrogen(ester);
 
     const handleCustomHoldChange = (str: string) => {
         setCustomHoldInput(str);
@@ -119,7 +121,7 @@ const SublingualFields: React.FC<SublingualFieldsProps> = ({
                     </div>
                 )}
 
-                {!(ester === Ester.EV && route === Route.sublingual) && ester !== Ester.CPA && (
+                {!(ester === Ester.EV && route === Route.sublingual) && !antiandrogen && (
                     <div className={`space-y-2 ${(ester === Ester.E2) ? "col-span-2" : ""}`}>
                         <label className="block text-xs font-semibold text-cos-on-surface-variant  pl-1">
                             {t('field.dose_e2')}

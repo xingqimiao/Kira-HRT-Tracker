@@ -35,7 +35,7 @@ import { decryptPayload, encryptPayload } from './payloadCrypto.ts';
 import { settings } from './settings.ts';
 
 /** The kinds of record the store carries. Kept narrow so a typo cannot create one. */
-export const RECORD_CATEGORIES = ['dose', 'lab', 'note', 'setting'] as const;
+export const RECORD_CATEGORIES = ['dose', 'lab', 'note', 'setting', 'journal'] as const;
 export type RecordCategory = (typeof RECORD_CATEGORIES)[number];
 
 export interface StoredRecord {
@@ -335,7 +335,13 @@ export async function buildExportPayload(ctx: { userId: string }): Promise<{
         labResults: unknown[];
         doseTemplates: unknown[];
         quickDoses: unknown[];
-        deletions: { events: Record<string, number>; labResults: Record<string, number>; doseTemplates: Record<string, number> };
+        journal: unknown[];
+        deletions: {
+            events: Record<string, number>;
+            labResults: Record<string, number>;
+            doseTemplates: Record<string, number>;
+            journal: Record<string, number>;
+        };
     }>;
     appState: Record<string, unknown> | null;
     /** Records this version could not file. Non-zero only against a newer client. */
@@ -351,10 +357,12 @@ export async function buildExportPayload(ctx: { userId: string }): Promise<{
         labResults: [] as unknown[],
         doseTemplates: [] as unknown[],
         quickDoses: [] as unknown[],
+        journal: [] as unknown[],
         deletions: {
             events: {} as Record<string, number>,
             labResults: {} as Record<string, number>,
             doseTemplates: {} as Record<string, number>,
+            journal: {} as Record<string, number>,
         },
     });
 
@@ -379,6 +387,10 @@ export async function buildExportPayload(ctx: { userId: string }): Promise<{
             if (head === 'lab') { block.labResults.push(record.data); continue; }
             if (head === 'tpl') { block.doseTemplates.push(record.data); continue; }
             if (head === 'quick') { block.quickDoses.push(record.data); continue; }
+            // A body/mood check-in. Its own collection so it survives export and
+            // hrt_sync_state — without this head every entry is counted into
+            // unknown and silently never leaves the server.
+            if (head === 'journal') { block.journal.push(record.data); continue; }
             if (head === 'del') {
                 const kind = parts[2] as keyof ReturnType<typeof modeFor>['deletions'];
                 if (kind && kind in block.deletions) {
@@ -421,7 +433,9 @@ export async function buildExportPayload(ctx: { userId: string }): Promise<{
     }
 
     return {
-        version: 2,
+        // 3 adds the journal collection to each mode block. A v2 reader drops it
+        // (it reads by shape), so the bump is what tells the two apart.
+        version: 3,
         ...(weight != null ? { weight } : {}),
         modes,
         appState,

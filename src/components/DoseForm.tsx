@@ -5,7 +5,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
 import CustomSelect from './CustomSelect';
 import DateTimePicker from './DateTimePicker';
-import { Route, Ester, ExtraKey, DoseEvent, SL_TIER_ORDER, SublingualTierParams, getBioavailabilityMultiplier, getToE2Factor, getDoseAdvisory } from '../../logic';
+import { Route, Ester, ExtraKey, DoseEvent, SL_TIER_ORDER, SublingualTierParams, getBioavailabilityMultiplier, getToE2Factor, getDoseAdvisory, isAntiandrogen, isUnmodelledCompound, SPIRO_MG_MAX_PER_DAY } from '../../logic';
 import { Save, Trash2, Info, Bookmark, BookmarkPlus, X, ChevronDown, Check, AlertTriangle, ExternalLink } from '../icons';
 import { DoseAdvisoryLine } from './DoseAdvisory';
 import { LOCALE_MAP } from '../utils/helpers';
@@ -28,6 +28,68 @@ export interface DoseTemplate {
 }
 
 type DoseLevelKey = 'low' | 'medium' | 'high' | 'very_high' | 'above';
+
+/**
+ * Does this compound have an estradiol-equivalent dose that is worth asking the
+ * user for, at all?
+ *
+ * False for the anti-androgens — CPA included. `getToE2Factor` still returns a
+ * molar ratio for CPA (the timeline prints it as an informational "E2 eq"), but it
+ * is not a *dose of estradiol*, so the form does not offer the two-way input it
+ * offers for EV: there is nothing to type into it that means anything. The rule is
+ * the antiandrogen set, not `getToE2Factor(e) === 0`, precisely because CPA's
+ * factor is non-zero and must stay that way.
+ */
+const hasE2Equivalent = (e: Ester) => !isAntiandrogen(e);
+
+/**
+ * The dose ceilings the *form* refuses, keyed by compound. `DOSE_MG_MAX` is the
+ * per-value bound the importer applies; the anti-androgens are dosed in the
+ * hundreds of mg, so E2's 10 g ceiling says nothing about them.
+ *
+ * CPA's 100 mg is its own ceiling and predates this change — a regular CPA dose is
+ * 10–12.5 mg, so the old bound was already ~8× the real one.
+ *
+ * Bicalutamide's 50 mg is the top of the 25–50 mg/day range the wiki gives
+ * (docs/monitoring-reference.md §3.2, W — 抗雄药物/比卡鲁胺 §使用方式与用量), which
+ * is a usual-dose range rather than a stated maximum; it is used the same way as
+ * spironolactone's, as the highest dose the form will accept in one record.
+ */
+const DOSE_CEILING_MG: Partial<Record<Ester, number>> = {
+    [Ester.CPA]: 100,
+    [Ester.SPIRO]: SPIRO_MG_MAX_PER_DAY,
+    [Ester.BICAL]: 50,
+};
+
+/**
+ * The dose a form must never put in the box on the user's behalf.
+ *
+ * Empty for the anti-androgens. E2-defaulting is a real convenience (a blank E2 box
+ * pre-filled with 2 mg is what most people were going to type), but the
+ * anti-androgens are taken across a range a person titrates within — 25–200 mg for
+ * spironolactone and 25–50 mg for bicalutamide (docs/monitoring-reference.md §2.2,
+ * §3.2) — so any single pre-filled value would look like the app's recommendation
+ * and be saved unread. For them the honest default is "you tell me".
+ */
+const DEFAULT_DOSE_MG: Partial<Record<Ester, string>> = {
+    [Ester.SPIRO]: '',
+    [Ester.BICAL]: '',
+};
+
+/**
+ * What an empty `rawDose` box is seeded with, keyed on route then ester.
+ *
+ * Returns `undefined` rather than falling back to `'0'` where the compound has no
+ * default: seeding a zero would leave a plausible-looking value in the box, which
+ * is the same failure as seeding a wrong one.
+ */
+const defaultDoseString = (r: Route, e: Ester): string | undefined => {
+    const explicit = DEFAULT_DOSE_MG[e];
+    if (explicit !== undefined) return explicit;
+    if (r === Route.sublingual) return '1';
+    if (r === Route.oral) return '2';
+    return undefined;
+};
 
 type DoseGuideConfig = {
     unitKey: 'mg_day' | 'ug_day' | 'mg_week';
@@ -144,6 +206,9 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
     const [dateStr, setDateStr] = useState("");
     const { isTransmasc } = useHRTMode();
     const [route, setRoute] = useState<Route>(Route.injection);
+    // Fresh add starts on estradiol. The equivalence hidden below needs
+    // `hasE2Equivalent(ester)`, which is declared at module scope, so this stays a
+    // literal and cannot drift from it.
     const [ester, setEster] = useState<Ester>(isTransmasc ? Ester.TC : Ester.EV);
 
     const [rawDose, setRawDose] = useState("");
@@ -196,15 +261,14 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                 setPatchMode("dose");
                 const factor = getToE2Factor(eventToEdit.ester);
                 const e2Val = eventToEdit.doseMG * factor;
-                setE2Dose(e2Val.toFixed(3));
-
-                if (eventToEdit.ester !== Ester.E2) {
-                    setRawDose(eventToEdit.doseMG.toFixed(3));
-                    setLastEditedField('raw');
-                } else {
-                    setRawDose(eventToEdit.doseMG.toFixed(3));
-                    setLastEditedField('bio');
-                }
+                // An unmodelled compound gets an empty equivalent, not `0.000`: the
+                // field is hidden for it, and a stale "0.000" would still be what
+                // handleSave reads back if the user switches ester without retyping.
+                setE2Dose(hasE2Equivalent(eventToEdit.ester) ? e2Val.toFixed(3) : "");
+                setRawDose(eventToEdit.doseMG.toFixed(3));
+                // The raw box is the source of truth whenever there is no usable
+                // equivalent to round-trip through.
+                setLastEditedField(hasE2Equivalent(eventToEdit.ester) && eventToEdit.ester === Ester.E2 ? 'bio' : 'raw');
             }
 
             if (eventToEdit.route === Route.sublingual) {
@@ -250,8 +314,12 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
             const now = new Date();
             const iso = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
             setDateStr(iso);
-            setRoute(isTransmasc ? Route.injection : Route.sublingual);
-            setEster(isTransmasc ? Ester.TC : Ester.EV);
+            const initialRoute = isTransmasc ? Route.injection : Route.sublingual;
+            const initialEster = isTransmasc ? Ester.TC : Ester.EV;
+            setRoute(initialRoute);
+            setEster(initialEster);
+            // Empty, never a number: the user has not entered a dose yet, and a
+            // pre-filled one is indistinguishable from a typed one at save time.
             setRawDose("");
             setE2Dose("");
             setPatchMode("rate");
@@ -275,6 +343,14 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
     const handleRawChange = (val: string) => {
         setRawDose(val);
         setLastEditedField('raw');
+        // No estradiol equivalent exists for an anti-androgen, and `getToE2Factor`
+        // returns 0 for it — so `v * 0` would print "0.000 mg" beside a 100 mg
+        // spironolactone dose. The field is hidden for these compounds; this keeps
+        // the state behind it empty too, so saving can never fall back to it.
+        if (!hasE2Equivalent(ester)) {
+            setE2Dose("");
+            return;
+        }
         const v = parseFloat(val);
         if (!isNaN(v)) {
             const factor = getToE2Factor(ester) || 1;
@@ -288,6 +364,14 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
     const handleE2Change = (val: string) => {
         setE2Dose(val);
         setLastEditedField('bio');
+        // Unreachable through the UI (the equivalent input is hidden for these
+        // compounds) but not through the code path: `v / 0` is Infinity, which
+        // `Number.isFinite` at save time would then reject with "enter a positive
+        // dose" while the user stares at a filled-in box.
+        if (!hasE2Equivalent(ester)) {
+            setRawDose(val);
+            return;
+        }
         const v = parseFloat(val);
         if (!isNaN(v)) {
             const factor = getToE2Factor(ester) || 1;
@@ -310,6 +394,49 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
         if (isInitializingRef.current || lastEditedField !== 'bio' || !e2Dose) return;
         handleE2Change(e2Dose);
     }, [bioMultiplier, ester, route]);
+
+    // The last (route, ester) pair the form seeded, and the exact string it wrote.
+    // The value is kept so a later switch can tell "still holds what we seeded" from
+    // "the user typed something" — `lastEditedField` cannot, because seeding goes
+    // through the same handler a keystroke does and marks itself 'raw' either way.
+    const seededForRef = useRef<{ key: string; value: string } | null>(null);
+
+    /**
+     * Carries the dose box to the value the newly-picked (route, ester) is taken at.
+     *
+     * Three cases, and the third is the one that bit:
+     *
+     *   1. The box is empty and the compound has a default → fill it in. A blank
+     *      estradiol box pre-filled with 2 mg is what most people were going to type.
+     *   2. The box holds something the user typed → leave it alone.
+     *   3. The compound has *no* default (spironolactone) → clear the box.
+     *
+     * Case 3 exists because `rawDose` survives an ester change. Picking EV seeds 1.5,
+     * then picking spironolactone would otherwise leave that 1.5 sitting in the box —
+     * a real-looking dose, an order of magnitude below anything anyone takes, that the
+     * user can save without touching. A blank box with a "0.0" placeholder reads as
+     * "not yet entered"; a pre-filled number inside spironolactone's range would read
+     * as advice, and this app does not give dosing advice it cannot model.
+     *
+     * Whether the box may be overwritten is decided by comparing it to the string this
+     * effect last wrote. If they match (or it is empty) nothing has been typed since,
+     * and the box is ours to set; otherwise the user is mid-edit and we leave it alone.
+     */
+    useEffect(() => {
+        if (isInitializingRef.current) return;
+        const key = `${route}:${ester}`;
+        if (seededForRef.current?.key === key) return;
+        const untouched = rawDose === '' || rawDose === seededForRef.current?.value;
+        const seeded = defaultDoseString(route, ester) ?? '';
+        if (!untouched) {
+            // The user typed a dose; remember the pair so we stop reconsidering it, but
+            // do not touch what they wrote.
+            seededForRef.current = { key, value: seededForRef.current?.value ?? '' };
+            return;
+        }
+        seededForRef.current = { key, value: seeded };
+        if (rawDose !== seeded) handleRawChange(seeded);
+    }, [route, ester]);
 
     const [isSaving, setIsSaving] = useState(false);
     const isSavingRef = useRef(false);
@@ -444,6 +571,14 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
             finalDose = raw;
         } else if (route !== Route.patchRemove) {
             const rawVal = parseFloat(rawDose);
+            // E2's per-dose bound is not every compound's bound: an anti-androgen is
+            // dosed in the hundreds of mg. Checked before either branch below, so it
+            // covers the raw path and the equivalent path alike.
+            const ceiling = DOSE_CEILING_MG[ester];
+            if (ceiling !== undefined && Number.isFinite(rawVal) && rawVal > ceiling) {
+                failSave(t('error.doseTooHigh'));
+                return;
+            }
             if (ester !== Ester.E2 && lastEditedField === 'raw') {
                 // doseMG is stored in raw-ester mg, and the raw field is what the
                 // user typed (or a template/quick-dose filled). Use it directly:
@@ -511,11 +646,15 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                     return [Ester.T];
             }
         }
+        // The oral anti-androgens sit together because the list is where a user looks
+        // for them. None offers an estradiol-equivalent field, and none draws a curve;
+        // see `isUnmodelledCompound` in logic.ts for what they do instead. All three
+        // are oral-only in practice, which is why they appear only on this route.
         switch (route) {
             case Route.injection:
                 return [Ester.EB, Ester.EV, Ester.EC, Ester.EN, Ester.EU];
             case Route.oral:
-                return [Ester.E2, Ester.EV, Ester.CPA];
+                return [Ester.E2, Ester.EV, Ester.CPA, Ester.SPIRO, Ester.BICAL];
             case Route.sublingual:
                 return [Ester.E2, Ester.EV];
             default:
@@ -548,7 +687,9 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
     }, [availableEsters, ester]);
 
     const doseGuide = useMemo(() => {
-        if (ester === Ester.CPA) return null;
+        // DOSE_GUIDE_CONFIG's thresholds are estradiol's. They are meaningless for
+        // an anti-androgen, whose own range is shown as the dose hint below instead.
+        if (isAntiandrogen(ester)) return null;
         // The built-in dose thresholds (DOSE_GUIDE_CONFIG) are calibrated for
         // feminizing HRT (E2). They would be misleading for testosterone dosing,
         // so skip the guide entirely in transmasc mode.
@@ -904,7 +1045,11 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                             </div>
                         )}
 
-                        {/* CPA dosage hint */}
+                        {/* Dosage hint for the anti-androgens: they have no modelled curve,
+                            so this card is where their range lives — and, for
+                            spironolactone, where the app says out loud that it is recording
+                            the dose without drawing anything for it. CPA's three bullets
+                            predate it and are kept as they were. */}
                         {ester === Ester.CPA && (
                             <div className="mt-3 p-3 rounded-[var(--radius-lg)] border border-[var(--color-m3-outline-variant)]  bg-[var(--color-m3-surface-container-low)]  flex gap-3">
                                 <Icon icon={Info} className="w-5 h-5 text-[var(--color-m3-on-surface-variant)]  shrink-0 mt-0.5" />
@@ -918,6 +1063,26 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                                             </li>
                                         ))}
                                     </ul>
+                                </div>
+                            </div>
+                        )}
+
+                        {ester === Ester.SPIRO && (
+                            <div className="mt-3 p-3 rounded-[var(--radius-lg)] border border-[var(--color-m3-outline-variant)]  bg-[var(--color-m3-surface-container-low)]  flex gap-3">
+                                <Icon icon={Info} className="w-5 h-5 text-[var(--color-m3-on-surface-variant)]  shrink-0 mt-0.5" />
+                                <div className="space-y-1.5">
+                                    <span className="text-m3-title-small text-[var(--color-m3-on-surface)] ">{t('dose.guide.title')}</span>
+                                    <ul className="space-y-1 mt-1">
+                                        {(['rec', 'titrate'] as const).map(key => (
+                                            <li key={key} className="flex items-start gap-1.5 text-xs text-[var(--color-m3-on-surface-variant)]  leading-relaxed">
+                                                <span className="mt-1.5 w-1 h-1 rounded-full bg-[var(--color-m3-on-surface-variant)]  shrink-0" />
+                                                {t(`dose.guide.spiro_hint.${key}`)}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                    <p className="text-xs text-[var(--color-m3-on-surface-variant)] leading-relaxed pt-0.5">
+                                        {t('dose.guide.spiro_not_modelled')}
+                                    </p>
                                 </div>
                             </div>
                         )}

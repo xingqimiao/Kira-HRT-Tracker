@@ -1,6 +1,34 @@
 import { jsPDF } from 'jspdf';
 import { autoTable } from 'jspdf-autotable';
-import { DoseEvent, LabResult, Ester, isTestosteroneEster, isT_LabUnit } from '../../logic';
+import { DoseEvent, LabResult, Ester, isTestosteroneEster, isT_LabUnit, isMonitoringOnlyLab, monitoringValues, MONITORING_UNIT } from '../../logic';
+
+/**
+ * The compound a record names, for the CSV's "item" column.
+ *
+ * Every non-estrogen used to land in the final `else` and be exported as
+ * "Estradiol", so a logged spironolactone dose would have been written into a CSV
+ * as estradiol. Exhaustive by way of a `switch` on the enum: adding a compound now
+ * fails the type check here instead of silently returning a wrong name.
+ */
+const exportCompoundName = (ester: Ester): string => {
+    switch (ester) {
+        case Ester.SPIRO: return 'Spironolactone';
+        case Ester.BICAL: return 'Bicalutamide';
+        case Ester.CPA: return 'Cyproterone Acetate';
+        case Ester.T:
+        case Ester.TC:
+        case Ester.TE:
+        case Ester.TU:
+            return 'Testosterone';
+        case Ester.E2:
+        case Ester.EB:
+        case Ester.EV:
+        case Ester.EC:
+        case Ester.EN:
+        case Ester.EU:
+            return 'Estradiol';
+    }
+};
 import { formatDate } from '../utils/helpers';
 import { Lang, TRANSLATIONS } from '../i18n/translations';
 
@@ -33,24 +61,37 @@ export const exportToCSV = (data: ExportData): string => {
         rows.push([
             t('export.val.dose'),
             date,
-            isTestosteroneEster(e.ester) ? 'Testosterone' : e.ester === Ester.CPA ? 'Cyproterone Acetate' : 'Estradiol',
+            exportCompoundName(e.ester),
             e.doseMG,
             'mg',
             `${e.route} - ${e.ester}`
         ]);
     });
 
-    // Labs
+    // Labs. A result may carry an E2/T reading, monitoring bloods, or both, so each
+    // analyte gets its own row rather than being folded into one line.
     labResults.forEach(l => {
         const date = formatDate(new Date(l.timeH * 3600000), lang);
-        rows.push([
-            t('export.val.lab'),
-            date,
-            isT_LabUnit(l.unit) ? 'Testosterone' : 'Estradiol',
-            l.concValue,
-            l.unit,
-            '-'
-        ]);
+        if (!isMonitoringOnlyLab(l)) {
+            rows.push([
+                t('export.val.lab'),
+                date,
+                isT_LabUnit(l.unit) ? 'Testosterone' : 'Estradiol',
+                l.concValue,
+                l.unit,
+                '-'
+            ]);
+        }
+        for (const mv of monitoringValues(l)) {
+            rows.push([
+                t('export.val.lab'),
+                date,
+                t(`monitor.${mv.analyte.toLowerCase()}`),
+                mv.value,
+                MONITORING_UNIT[mv.analyte],
+                mv.uln !== undefined ? `${t('monitor.uln')} ${mv.uln}` : '-'
+            ]);
+        }
     });
 
     return rows.map(r => r.join(',')).join('\n');
@@ -103,11 +144,15 @@ export const buildPDFDocument = (data: ExportData, generatedAt = new Date()) => 
     doc.setFontSize(14);
     doc.text(tSafe('export.pdf.labs'), 14, finalY + 15);
 
-    const labRows = labResults.map(l => [
-        formatDate(new Date(l.timeH * 3600000), safeLang as Lang),
-        getLabTestLabel(l),
-        `${l.concValue} ${l.unit}`
-    ]);
+    const labRows = labResults.flatMap(l => {
+        const date = formatDate(new Date(l.timeH * 3600000), safeLang as Lang);
+        const rows: string[][] = [];
+        if (!isMonitoringOnlyLab(l)) rows.push([date, getLabTestLabel(l), `${l.concValue} ${l.unit}`]);
+        for (const mv of monitoringValues(l)) {
+            rows.push([date, tSafe(`monitor.${mv.analyte.toLowerCase()}`), `${mv.value} ${MONITORING_UNIT[mv.analyte]}`]);
+        }
+        return rows;
+    });
 
     autoTable(doc, {
         startY: finalY + 20,

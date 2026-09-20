@@ -7,6 +7,8 @@ import { useDialog } from '../contexts/DialogContext';
 import { coreAuth, type ApiToken } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
 import { MCP_ENDPOINT } from '../constants';
+import CopyRow from '../components/CopyRow';
+import { buildMcpInstallPrompt } from '../utils/mcpInstallPrompt';
 
 interface McpSettingsProps {
     session: CoreSession;
@@ -50,40 +52,6 @@ const muted = 'text-m3-body-compact leading-relaxed text-[var(--color-m3-on-surf
 const codeBlock =
     'w-full overflow-x-auto rounded-md bg-[var(--color-m3-surface-container)] px-3 py-2 ' +
     'font-mono text-xs leading-relaxed text-[var(--color-m3-on-surface)] whitespace-pre';
-
-/**
- * A code value with a copy control. `hint` is the caption; after a copy it becomes
- * the confirmation, so the control needs no label of its own.
- */
-const CopyRow: React.FC<{ value: string; hint: string }> = ({ value, hint }) => {
-    const { t } = useTranslation();
-    const [copied, setCopied] = useState(false);
-    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    const copy = () => {
-        navigator.clipboard.writeText(value).then(() => {
-            if (timerRef.current) clearTimeout(timerRef.current);
-            setCopied(true);
-            timerRef.current = setTimeout(() => setCopied(false), 2000);
-        });
-    };
-
-    return (
-        <div className="py-4">
-            <div className="flex items-start gap-3">
-                <code className={`${codeBlock} flex-1`}>{value}</code>
-                <button
-                    onClick={copy}
-                    className="m3-icon-button shrink-0"
-                    aria-label={copied ? t('mcp.copied') : t('mcp.copy')}
-                >
-                    <Icon icon={copied ? Check : Copy} size={16} strokeWidth={1.5} />
-                </button>
-            </div>
-            <p className={`mt-2 ${muted}`}>{copied ? t('mcp.copied') : hint}</p>
-        </div>
-    );
-};
 
 /**
  * Token management: mint, list, revoke.
@@ -265,54 +233,10 @@ const McpSettings: React.FC<McpSettingsProps> = ({ session, onBack, onSignIn }) 
   }
 }`;
 
-    /**
-     * The install prompt: paste this into an AI assistant and it configures itself.
-     *
-     * Written to be self-contained, because the reader is an assistant that has never
-     * heard of this service. So it states the transport, the auth header, where the
-     * config lives per client, how to tell it worked, and — importantly — what the token
-     * really is: a full credential. The prompt says plainly that it reads and writes the
-     * records with no browser session, and that signing out does not stop it.
-     *
-     * The token is left as a placeholder on purpose. A prompt is often pasted into a chat
-     * that keeps history, and a real token in a transcript is a leaked token.
-     */
-    const installPrompt = [
-        'Add an MCP server to my AI client by editing its configuration file yourself.',
-        '',
-        `Server name: kira-tracker`,
-        `Transport:  Streamable HTTP (POST only)`,
-        `URL:        ${MCP_ENDPOINT}`,
-        'Auth:       header \`Authorization: Bearer <TOKEN>\`',
-        '',
-        'Steps:',
-        '1. Find my client\'s MCP config file and show me the path before you change it.',
-        '   Common locations: claude_desktop_config.json for Claude Desktop,',
-        '   .cursor/mcp.json for Cursor, .vscode/mcp.json for VS Code.',
-        '2. Add this entry under "mcpServers":',
-        '',
-        '   {',
-        '     "kira-tracker": {',
-        '       "type": "http",',
-        `       "url": "${MCP_ENDPOINT}",`,
-        '       "headers": { "Authorization": "Bearer <TOKEN>" }',
-        '     }',
-        '   }',
-        '',
-        '3. Replace <TOKEN> with the token I give you. Ask me for it if I have not.',
-        '4. Restart the client, then call hrt_reference to confirm it works. That tool',
-        '   needs no records and no unlock, so it is the right one to test with.',
-        '',
-        'Two things to expect:',
-        '- The token is a full credential for my records: it reads and writes them with no',
-        '  browser session and no unlock, and signing out does not stop it. Only revoking',
-        '  the token or changing my password does.',
-        '- hrt_create_share publishes a link that anyone can open. Confirm with me before',
-        '  calling it, and propose an expiry rather than picking one silently.',
-        '',
-        'Start with hrt_reference to learn the accepted routes, esters and units, then',
-        'hrt_get_timeline to see what I have already logged.',
-    ].join('\n');
+    // One definition of the prompt, shared with the onboarding step that hands
+    // the reader the same block — see utils/mcpInstallPrompt.ts for why it reads
+    // the way it does.
+    const installPrompt = buildMcpInstallPrompt(MCP_ENDPOINT);
 
     return (
         <div className="relative pb-32">
@@ -387,10 +311,20 @@ const McpSettings: React.FC<McpSettingsProps> = ({ session, onBack, onSignIn }) 
                     </div>
                 </section>
 
-                {/* The honest caveat. */}
+                {/* What the token actually is, stated before the endpoint and the
+                    prompt rather than after them — it is the one thing a reader has
+                    to know before they paste a credential anywhere. */}
+                <section className={`py-4 ${divider}`}>
+                    <p className="text-xs font-semibold text-cos-warning">{t('mcp.token_warning_label')}</p>
+                    <p className={`mt-1 ${body}`}>{t('mcp.token_warning_desc')}</p>
+                </section>
+
+                {/* And where the records it reaches actually live. The old copy
+                    here promised the opposite — "locked unless you unlock in the
+                    web app" — which the server never checked. */}
                 <section className="py-4">
-                    <p className="text-xs font-semibold text-cos-warning">{t('mcp.requirement_label')}</p>
-                    <p className={`mt-1 ${body}`}>{t('mcp.requirement_desc')}</p>
+                    <p className={sectionLabel}>{t('mcp.storage_label')}</p>
+                    <p className={`mt-1 ${body}`}>{t('mcp.storage_desc')}</p>
                 </section>
             </div>
         </div>

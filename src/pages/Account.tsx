@@ -9,6 +9,7 @@ import { useDialog } from '../contexts/DialogContext';
 import { coreAuth, type AccountSummary, type LoginMethods } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
 import type { CoreSyncStatus } from '../hooks/useCoreSync';
+import { hrtDaysSince } from '../utils/hrtStart';
 
 interface AccountProps {
     session: CoreSession;
@@ -39,6 +40,13 @@ interface AccountProps {
     initialUsername?: string;
     /** Opens the fallback-credential screen, offered while this account has no password. */
     onBindCredentials: () => void;
+    /**
+     * `YYYY-MM-DD` from the intro's start-date question, or '' when it was
+     * skipped — in which case the day-count line is not rendered at all. An
+     * account-scoped setting, so it arrives here through the same bag as the
+     * calibration preferences.
+     */
+    hrtStartDate?: string;
 }
 
 const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
@@ -75,8 +83,12 @@ const Account: React.FC<AccountProps> = ({
     onSyncNow,
     initialUsername,
     onBindCredentials,
+    hrtStartDate,
 }) => {
     const { t } = useTranslation();
+    // Null when the date is absent, unusable, or still in the future — the line
+    // then simply does not render.
+    const daysSinceStart = hrtDaysSince(hrtStartDate);
     const { showDialog } = useDialog();
     const [summary, setSummary] = useState<AccountSummary | null>(null);
     const [methods, setMethods] = useState<LoginMethods | null>(null);
@@ -162,6 +174,17 @@ const Account: React.FC<AccountProps> = ({
                         </div>
                     </div>
 
+                    {/* The one thing the intro's date question is for. Its own row
+                        rather than a caption on the identity block: it is a fact
+                        about the person, not about the sign-in. */}
+                    {daysSinceStart !== null && (
+                        <div className={`py-4 ${divider}`}>
+                            <p className={`text-m3-body-medium ${on}`}>
+                                {t('account.hrt_started').replace('{days}', String(daysSinceStart))}
+                            </p>
+                        </div>
+                    )}
+
                     {/* What the account holds. Counts only — the record contents are
                         ciphertext server-side, so this is all that can be shown. */}
                     <div className={`py-4 ${divider}`}>
@@ -236,6 +259,31 @@ const Account: React.FC<AccountProps> = ({
                     <CoreAuthForm session={session} initialUsername={initialUsername} />
                 </div>
             )}
+
+            {/* Fixed rather than a last row: the page scrolls, and the credit belongs
+                on the bottom edge whether or not anyone has scrolled to the end. It
+                clears the shell's own geometry explicitly — the floating bar's 92px
+                below 840px, and the rail's 80px gutter above it — because neither is
+                this page's to change. The strip is click-through so it cannot swallow
+                a tap on the content under it; only the link takes the pointer. */}
+            {/* Sticky inside the page rather than fixed to the window. A fixed strip
+                has to re-derive the shell's geometry by hand — the rail's 80px and the
+                floating bar's 92px — and any error there shows up as a credit that is
+                centred on the window while every other line is centred beside the rail.
+                Living in the page's own container means it shares the box the heading
+                and the form are centred in, so it cannot drift. The negative bottom
+                keeps it on the viewport edge until the page is short enough to scroll
+                past it; the wrapper is click-through so it cannot swallow a tap. */}
+            <footer className="pointer-events-none sticky bottom-2 z-10 mt-8 -mb-24 text-center">
+                <a
+                    href="https://kiramyao.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="pointer-events-auto inline-block py-3 text-m3-body-compact text-[var(--color-m3-on-surface-variant)] transition-colors hover:text-[var(--color-m3-primary)]"
+                >
+                    Powered by KiraEqual
+                </a>
+            </footer>
         </div>
     );
 };
