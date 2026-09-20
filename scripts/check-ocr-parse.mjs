@@ -335,6 +335,26 @@ check('a Chinese-only testosterone label resolves too', () => {
     assert.equal(found[0]?.analyte, 'T')
 })
 
+check('a label the recogniser spaced out is still a label', () => {
+    // Verbatim from tesseract, which puts a space between every pair of Chinese
+    // characters: a correctly read `*雌二醇` arrives as `* 雌 二 醇`. Without joining
+    // them the row is dropped even though the label was read perfectly.
+    const found = findHormoneValues('* 雌 二 醇 396.53 <143 pmol/L')
+    assert.equal(found.length, 1, `expected one reading, got ${JSON.stringify(found)}`)
+    assert.equal(found[0].value, 396.53)
+    assert.equal(found[0].analyte, 'E2')
+    assert.equal(found[0].unit, 'pmol/l')
+})
+
+check('the out-of-range arrow misread as a trailing 1 is not a third decimal', () => {
+    // The recogniser reads the `↑` printed after `396.53` as `1` and glues it to the
+    // number, so the value arrives as `396.531`. The result must stay 396.53.
+    const found = findHormoneValues('* 雌 二 醇 396.531 <143 pmol/L')
+    assert.equal(found.length, 1, `expected one reading, got ${JSON.stringify(found)}`)
+    assert.equal(found[0].value, 396.53, 'the arrow is not a third decimal')
+    assert.equal(found[0].unit, 'pmol/l')
+})
+
 // --- report -----------------------------------------------------------------
 
 const failed = results.filter(([status]) => status === 'fail')

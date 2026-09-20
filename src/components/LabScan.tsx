@@ -76,9 +76,12 @@ async function prepareImage(dataUrl: string): Promise<string> {
     const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const px = frame.data;
     for (let i = 0; i < px.length; i += 4) {
-        // Rec. 601 luma, the same weights the eye uses — a plain average would make
-        // red ink look darker than blue ink of the same lightness.
-        const grey = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+        // The darkest channel, not Rec. 601 luma. On a report printed in colour —
+        // a pink result card, a stamped form — the luma of coloured ink sits close
+        // to the paper's, so converting to grey by luma alone washes the digits
+        // out. The minimum channel keeps the ink's full darkness. For ordinary
+        // black-on-white print all three channels agree, so nothing changes there.
+        const grey = Math.min(px[i], px[i + 1], px[i + 2]);
         px[i] = grey;
         px[i + 1] = grey;
         px[i + 2] = grey;

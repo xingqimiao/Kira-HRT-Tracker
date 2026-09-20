@@ -72,6 +72,14 @@ public/ocr/
 # by a check script). Never part of the app.
 /tmp/
 
+# Diagnostic images and throwaway .mjs probes left at the root by an agent or a
+# check script. The real rule is not to `git add -A` while a background task is
+# still working: one such add swept ~75 of these, plus two traineddata files, into
+# a commit that then had to be rewritten.
+scratch-*
+/*.traineddata
+/*-zoom.png
+
 # One-off edit scripts. They are written to make a single change to a file, applied,
 # and deleted — but they keep surviving `git add -A` because they exist for the few
 # seconds between writing and running. Ignoring the pattern is cheaper than noticing

@@ -180,6 +180,15 @@ export function normalizeText(raw) {
         .replace(/[．。]/g, '.')
         .replace(/[／]/g, '/')
         .replace(/：/g, ':')
+        // The out-of-range marker. A report prints `396.53↑` and the recogniser reads
+        // the arrow as a trailing `1` glued to the value, so it arrives as `396.531`
+        // and would be reported with three decimals. Drop that digit when it follows a
+        // two-decimal value — the shape of every result in the units below — and a
+        // reference bound is what comes next. A genuine three-decimal value is not a
+        // form these analysers print, so the cost of the guess is a third decimal that
+        // never occurs; a two-decimal value ending in `1` is never touched.
+        .replace(/[↑↓⇡⇣]/g, ' ')
+        .replace(/(\d+\.\d{2})1(?=\s*(?:[<>≤≥＜＞]|$))/gm, '$1')
         // A decimal comma, but not a thousands separator: `45,2` → `45.2`, while
         // `1,234` is left alone because the lookahead refuses a third digit.
         .replace(/(\d),(\d{1,2})(?!\d)/g, '$1.$2')
@@ -187,6 +196,11 @@ export function normalizeText(raw) {
         .replace(/[，、,]/g, ' ')
         // Collapse runs of spaces.
         .replace(/[ \t\u00a0]+/g, ' ')
+        // The recogniser spaces out Chinese: `雌二醇` comes back as `雌 二 醇`, and the
+        // labels below are written without those spaces, so the row would be dropped for
+        // a reason that has nothing to do with the reader. Join the characters back up.
+        // Newlines are left alone, so two rows are never merged.
+        .replace(/([\u3400-\u4dbf\u4e00-\u9fff]) (?=[\u3400-\u4dbf\u4e00-\u9fff])/g, '$1')
 }
 
 /**
