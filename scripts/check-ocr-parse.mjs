@@ -355,6 +355,53 @@ check('the out-of-range arrow misread as a trailing 1 is not a third decimal', (
     assert.equal(found[0].unit, 'pmol/l')
 })
 
+check('the REAL chi_sim misread of the label is still a label', () => {
+    // Verbatim from tesseract.js 7 with `eng+chi_sim`, run in node against the actual
+    // failing screenshot (the pink result card, photographed off a screen), served by
+    // the deployed `/ocr/` assets. Every digit and the whole unit are correct; the
+    // recogniser returned `惟二醇` for `雌二醇`, and that one character was the entire
+    // difference between "no usable values" and a reading.
+    //
+    // Pinned as the *whole* recognised text rather than the row alone, because the
+    // failure was never the row — the row is perfect. It is the label that is wrong,
+    // and this is the string the app actually handed the parser.
+    const realOutput = [
+        'If = BE',
+        'f=" | |',
+        '|',
+        '项 目 结果 参考 单位',
+        '* 惟 二 醇 396.531 <143 pmol/L',
+    ].join('\n')
+
+    const found = findHormoneValues(realOutput)
+    assert.equal(found.length, 1, `expected one reading, got ${JSON.stringify(found)}`)
+    assert.equal(found[0].analyte, 'E2')
+    assert.equal(found[0].value, 396.53, 'the result column, and the arrow is not a third decimal')
+    assert.equal(found[0].unit, 'pmol/l')
+
+    // The header row and the two garbage lines above it must not produce anything.
+    assert.ok(!found.some((c) => String(c.source).includes('单位')), 'the unit header is not a reading')
+})
+
+check('the confusable label characters are folded, and nothing else is', () => {
+    // 隹-based look-alikes for 雌. Each is a real reading the recogniser can return.
+    for (const label of ['唯二醇', '惟二醇', '睢二醇', '雎二醇', '准二醇']) {
+        const found = findHormoneValues(`${label} 396.53 <143 pmol/L`)
+        assert.equal(found.length, 1, `${label} should resolve as estradiol`)
+        assert.equal(found[0].analyte, 'E2')
+        assert.equal(found[0].value, 396.53)
+    }
+
+    // The substitution is containment-safe: it cannot manufacture a value. A folded
+    // label with no usable number beside it is still nothing. (2026 is *not* out of
+    // bounds in pmol/L — that unit's ceiling is 8000 — so the probe is 99999.)
+    assert.deepEqual(findHormoneValues('惟二醇 99999 pmol/L'), [], 'out of bounds is still refused')
+    assert.deepEqual(findHormoneValues('惟二醇 45.2 nmol/L'), [], 'a T unit under an E2 label is still refused')
+
+    // And the exclusions still win over the folded label.
+    assert.deepEqual(findHormoneValues('游离惟二醇 1.2 pg/mL'), [], 'the free fraction is still excluded')
+})
+
 // --- report -----------------------------------------------------------------
 
 const failed = results.filter(([status]) => status === 'fail')

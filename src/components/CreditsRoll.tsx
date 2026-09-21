@@ -587,7 +587,9 @@ export const CreditsRoll: React.FC<CreditsRollProps> = ({ onClose }) => {
             audioRef.current.play().catch(() => {});
         }
 
-        if (phase === 'fade-in' || phase === 'hold') {
+        if (phase === 'ended') {
+            handleExit();
+        } else if (phase === 'fade-in' || phase === 'hold') {
             clearCurrentTimer();
             setPhase('fade-out');
             timerRef.current = setTimeout(() => {
@@ -663,11 +665,13 @@ export const CreditsRoll: React.FC<CreditsRollProps> = ({ onClose }) => {
                     setPhase('fade-in');
                 } else {
                     setPhase('ended');
-                    timerRef.current = setTimeout(() => {
-                        handleExit();
-                    }, 1500);
                 }
             }, pauseAfterDuration);
+        } else if (phase === 'ended') {
+            // 终章黑场收尾：由状态机（而非手动推进）负责自动退出
+            timerRef.current = setTimeout(() => {
+                handleExit();
+            }, 1500);
         }
 
         return () => {

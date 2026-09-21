@@ -88,6 +88,51 @@ const LABELS = {
 }
 
 /**
+ * Label characters the recogniser confuses, applied before the label is matched.
+ *
+ * The third instance of the same bug, and the reason it kept coming back is that the
+ * first two fixes were about the *model* rather than the *characters*. Loading
+ * `chi_sim` and joining the spaces the recogniser inserts between CJK characters
+ * (see `normalizeText`) both assume the model reads the character correctly once it
+ * has it. It does not have to: on the real report — a pink result card photographed
+ * off a screen, the exact case `prepareImage` documents — `雌二醇` came back as
+ * `惟二醇`. The digits and the unit were perfect, the row was perfectly legible, and
+ * the parser returned nothing because one character of the label was wrong.
+ *
+ * A closed character set is what makes this safe. The label has to be recognised as
+ * *a hormone label* — there is no way to read `惟二醇` as anything else — so folding
+ * the confusable characters onto their canonical form cannot invent a match the way
+ * a fuzzy or edit-distance comparison could. `雌` is the only character here that
+ * actually failed, and its variants are all visually near-identical at the small
+ * point size a photographed result row is set in (`隹` is the same component with a
+ * different radical).
+ *
+ * Deliberately *not* applied to the whole line: `唯`/`惟` are ordinary words that
+ * appear in Chinese report prose, and `准`/`睾` are unrelated. Only the label is
+ * matched through this table, so a substitution can only ever affect whether a label
+ * was found, never what the value or unit beside it says. That containment is the
+ * safety property — the number still has to come from the digits, unmodified.
+ *
+ * Trade-off, stated honestly: `唯二醇` (the correct word for estradiol in some
+ * regions) is *not* in the list because it is not what this lab printed and adding a
+ * spelling nobody writes buys nothing. The cost of a miss here is one more
+ * unrecognised character, which is exactly the bug being fixed.
+ */
+const LABEL_CONFUSIONS: [RegExp, string][] = [
+    // 雌 (cí, "female") — the one that actually failed: 惟 (wéi) is what chi_sim
+    // returns for it on a photographed result card. 睢/雎/唯/准 are the same shape
+    // and the same failure mode.
+    [/[惟睢雎唯准隹]/g, '雌'],
+]
+
+/** Fold the confusable label characters onto their canonical form. */
+function canonicalLabel(text: string): string {
+    let out = text
+    for (const [pattern, to] of LABEL_CONFUSIONS) out = out.replace(pattern, to)
+    return out
+}
+
+/**
  * Text that means this line is NOT the analyte, however much it looks like it.
  *
  * The dangerous near-misses on a hormone panel: the binding globulins and the free
@@ -418,7 +463,10 @@ function labelContext(line: string, index: number, matchLength: number): Analyte
     const centre = index + matchLength
     const windowStart = Math.max(0, centre - 24)
     const windowEnd = Math.min(line.length, centre + 20)
-    const window = line.slice(windowStart, windowEnd).toLowerCase()
+    // Folded onto the canonical form before matching — see `LABEL_CONFUSIONS`. Only
+    // the window is rewritten, and only for the purpose of finding a label, so a
+    // substitution here cannot reach the value or the unit.
+    const window = canonicalLabel(line.slice(windowStart, windowEnd)).toLowerCase()
 
     for (const [analyte, labels] of Object.entries(LABELS) as [Analyte, string[]][]) {
         if (labels.some((label) => matchesLabel(window, label))) return analyte
