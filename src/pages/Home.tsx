@@ -289,7 +289,13 @@ const Home: React.FC<HomeProps> = ({
                                         // How long ago the last dose was, in the reader's own
                                         // relative-time wording — the honest reading for a drug
                                         // taken every few days, where a mg count says nothing.
-                                        <span className={`text-m3-display-large leading-none ${on}`}>
+                                        // Relative time is words, not a number: "3 天前" is
+                                        // two glyphs where "12.5 mg" is five, and on a narrow
+                                        // phone at display scale that difference is the whole
+                                        // column. The numeric siblings can carry the display
+                                        // size; this one steps down to the headline role, which
+                                        // is what the card's hierarchy wants anyway.
+                                        <span className={`text-m3-headline-small leading-none ${on}`}>
                                             {formatRelative(nowSec - antiandrogen.sinceH * 3600, nowSec, t)}
                                         </span>
                                     )}

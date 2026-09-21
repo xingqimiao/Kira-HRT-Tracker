@@ -886,6 +886,34 @@ export function getRecheckReminders(
 }
 
 /**
+ * The due-date identity a dismissal is stored under.
+ *
+ * A reminder is silenced for one *due date*, not forever: startH:intervalMonths
+ * changes when the next boundary arrives, which is what brings it back. Both the
+ * write (the dismiss button) and the read (the filter below) have to agree on it
+ * character for character, so it lives here once rather than being spelled out at
+ * each call site.
+ */
+export const recheckDueKey = (r: Pick<RecheckReminder, 'startH' | 'intervalMonths'>): string =>
+    `${r.startH}:${r.intervalMonths}`;
+
+/**
+ * The reminders that are actually shown, in schedule order.
+ *
+ * A dismissed reminder is not rendered, and the collapsed summary's count is the
+ * length of *this* list — so the summary always describes exactly what opening
+ * the panel reveals. Counting `getRecheckReminders` directly instead would let a
+ * summary claim three while the panel showed two.
+ */
+export function visibleRecheckReminders(
+    reminders: RecheckReminder[],
+    dismissed: Record<string, string> | undefined,
+): RecheckReminder[] {
+    if (!dismissed) return reminders;
+    return reminders.filter(r => dismissed[r.kind] !== recheckDueKey(r));
+}
+
+/**
  * How lab results are used to calibrate the E2 estimate.
  *  - 'off'      : ignore labs, show the raw model.
  *  - 'average'  : amplitude-only regression — one personal scale (log-space

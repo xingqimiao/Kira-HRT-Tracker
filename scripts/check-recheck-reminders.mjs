@@ -20,6 +20,8 @@ import {
   Ester,
   Route,
   getRecheckReminders,
+  visibleRecheckReminders,
+  recheckDueKey,
   LIVER_RECHECK_INTERVAL_MONTHS,
   LIVER_RECHECK_EARLY_INTERVAL_MONTHS,
   LIVER_RECHECK_FIRST_PHASE_MONTHS,
@@ -276,6 +278,57 @@ check('the reminder kind set is closed to the three sourced schedules', () => {
   assert.deepEqual(getRecheckReminders(events, NOW).map(r => r.kind), ['liver_cpa', 'liver_bical', 'potassium_spiro']);
 });
 
+
+// ---------------------------------------------------------------------------
+// The collapsed summary's count — what is shown is what is counted
+// ---------------------------------------------------------------------------
+
+check('nothing dismissed means every due reminder is counted', () => {
+  const rs = getRecheckReminders([ev(Ester.CPA, 12.5, 20), ev(Ester.EV, 5, 20)], NOW);
+  assert.equal(rs.length, 2);
+  assert.equal(visibleRecheckReminders(rs, {}).length, 2);
+});
+
+check('a dismissed reminder leaves the count — three due, one closed, two shown', () => {
+  const rs = getRecheckReminders(
+    [ev(Ester.CPA, 12.5, 20), ev(Ester.BICAL, 50, 20), ev(Ester.EV, 5, 20)],
+    NOW,
+  );
+  assert.equal(rs.length, 3, 'the three sourced schedules are all due');
+  const cpa = rs.find(r => r.kind === 'liver_cpa');
+  const shown = visibleRecheckReminders(rs, { liver_cpa: recheckDueKey(cpa) });
+  assert.equal(shown.length, 2, 'the closed one is not counted, because it is not shown');
+  assert.ok(!shown.some(r => r.kind === 'liver_cpa'));
+});
+
+check('a dismissal for one interval does not silence the next boundary', () => {
+  const [at3] = getRecheckReminders([ev(Ester.EV, 5, 3.1)], NOW);
+  const dismissed = { estradiol: recheckDueKey(at3) };
+  assert.equal(visibleRecheckReminders([at3], dismissed).length, 0, 'closed at this due date');
+  // Three months later the boundary has moved, so the key no longer matches.
+  const [at6] = getRecheckReminders([ev(Ester.EV, 5, 6.1)], NOW);
+  assert.notEqual(recheckDueKey(at6), recheckDueKey(at3));
+  assert.equal(visibleRecheckReminders([at6], dismissed).length, 1, 'a later boundary brings it back');
+});
+
+check('a dismissal is read against its own kind, not just its due key', () => {
+  // Different start points, so the two reminders do NOT share a due key: the
+  // stored value is compared under the reminder's own kind, and a key filed
+  // under another kind must not silence this one.
+  const rs = getRecheckReminders([ev(Ester.CPA, 12.5, 20), ev(Ester.EV, 5, 12)], NOW);
+  const cpa = rs.find(r => r.kind === 'liver_cpa');
+  const e2 = rs.find(r => r.kind === 'estradiol');
+  assert.notEqual(recheckDueKey(cpa), recheckDueKey(e2), 'the fixtures must differ for this to test anything');
+  const shown = visibleRecheckReminders(rs, { estradiol: recheckDueKey(cpa) });
+  assert.equal(shown.length, 2, 'a key filed under another kind hides nothing');
+  // …and the same key under the right kind does hide it.
+  assert.equal(visibleRecheckReminders(rs, { liver_cpa: recheckDueKey(cpa) }).length, 1);
+});
+
+check('no dismissed map at all shows everything', () => {
+  const rs = getRecheckReminders([ev(Ester.CPA, 12.5, 20)], NOW);
+  assert.equal(visibleRecheckReminders(rs, undefined).length, 1);
+});
 for (const [status, name, detail] of results) {
   console.log(`${status === 'pass' ? 'ok  ' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`);
 }

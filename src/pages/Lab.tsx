@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import Icon from '../components/Icon';
 import { Plus, ChevronRight, Scan } from '../icons';
-import { LabResult, DoseEvent, MONITORING_UNIT, getMonitoringNotices, getRecheckReminders, isMonitoringOnlyLab, monitoringValues, CalibrationMethod, CalibrationResult, CalibrationPoint, getHormoneLevelAdvisory, Ester, RecheckIntervals, OcrModelTier } from '../../logic';
+import { LabResult, DoseEvent, MONITORING_UNIT, getMonitoringNotices, getRecheckReminders, visibleRecheckReminders, recheckDueKey, isMonitoringOnlyLab, monitoringValues, CalibrationMethod, CalibrationResult, CalibrationPoint, getHormoneLevelAdvisory, Ester, RecheckIntervals, OcrModelTier } from '../../logic';
 import { Lang } from '../i18n/translations';
 import { formatDate, formatTime, LOCALE_MAP } from '../utils/helpers';
 import LabResultForm from '../components/LabResultForm';
@@ -10,7 +10,7 @@ import { suggestSelection, type HormoneCandidate, type LabUnit } from '../utils/
 import BloodVial from '../components/BloodVial';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { HormoneLevelAdvisoryLine } from '../components/DoseAdvisory';
-import MonitoringNoticeLine, { RecheckReminderLine, SpironolactonePrecautions } from '../components/MonitoringNotice';
+import MonitoringNoticeLine, { RecheckReminderGroup, RecheckReminderLine, SpironolactonePrecautions } from '../components/MonitoringNotice';
 import JournalCheckIn from '../components/JournalCheckIn';
 import { JournalEntry } from '../utils/bodyJournal';
 
@@ -107,6 +107,26 @@ const Lab: React.FC<LabProps> = ({
     // The precautions belong to one compound and are shown only when that compound
     // is actually recorded — advice for a drug nobody is taking is noise.
     const onSpironolactone = useMemo(() => events.some(e => e.ester === Ester.SPIRO), [events]);
+
+    /**
+     * A dismissed reminder is not rendered, and therefore not counted.
+     *
+     * The count the collapsed summary prints has to match what opening it would
+     * reveal, so it is computed from this list rather than from `rechecks`. That
+     * is what makes dismissing one of three read "2": the dismissed kind leaves
+     * the list, and the summary and the panel are two views of the same array
+     * instead of two independent counts that can disagree.
+     *
+     * The identity is still the due date — a later interval boundary changes
+     * `startH:intervalMonths` and the reminder comes back on its own.
+     */
+    const visibleRechecks = useMemo(
+        () => visibleRecheckReminders(rechecks, dismissedRechecks),
+        [rechecks, dismissedRechecks],
+    );
+
+    const formatRecheckDate = (h: number) =>
+        new Date(h * 3600000).toLocaleDateString(LOCALE_MAP[lang] || 'en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 
     // One-line summary of the active calibration for the settings entry row.
     // Before any usable labs exist there's no fit to show, so we fall back to
@@ -212,18 +232,29 @@ const Lab: React.FC<LabProps> = ({
                     </div>
                 )}
 
-                {(rechecks.length > 0 || onSpironolactone) && (
+                {(visibleRechecks.length > 0 || onSpironolactone) && (
                     <div className="pb-4 space-y-2.5">
-                        {rechecks.map(reminder => (
+                        {/* Collapsed at two or more — see `RecheckReminderGroup`. One
+                            reminder is left as its own panel because a disclosure
+                            around a single block is a click that hides the evidence
+                            and buys nothing. */}
+                        {visibleRechecks.length > 1 ? (
+                            <RecheckReminderGroup
+                                reminders={visibleRechecks}
+                                t={t}
+                                formatDate={formatRecheckDate}
+                                onDismiss={reminder => onDismissRecheck(reminder.kind, recheckDueKey(reminder))}
+                            />
+                        ) : visibleRechecks.map(reminder => (
                             <RecheckReminderLine
                                 key={reminder.kind}
                                 reminder={reminder}
                                 t={t}
-                                formatDate={(h) => new Date(h * 3600000).toLocaleDateString(LOCALE_MAP[lang] || 'en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                                formatDate={formatRecheckDate}
                                 // The due date is the identity: a later interval
                                 // boundary must bring the reminder back.
-                                dismissed={dismissedRechecks[reminder.kind] === `${reminder.startH}:${reminder.intervalMonths}`}
-                                onDismiss={() => onDismissRecheck(reminder.kind, `${reminder.startH}:${reminder.intervalMonths}`)}
+                                dismissed={false}
+                                onDismiss={() => onDismissRecheck(reminder.kind, recheckDueKey(reminder))}
                             />
                         ))}
                         {onSpironolactone && <SpironolactonePrecautions t={t} />}

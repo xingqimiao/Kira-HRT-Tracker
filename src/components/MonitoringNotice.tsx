@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import Icon from './Icon';
-import { AlertCircle, AlertTriangle, CircleOff, Droplet, ExternalLink, Info, X } from '../icons';
+import { AlertCircle, AlertTriangle, ChevronDown, CircleOff, Droplet, ExternalLink, Info, X } from '../icons';
 import { MonitoringNotice, RecheckReminder, Ester } from '../../logic';
 
 /**
@@ -208,9 +208,10 @@ export const RecheckReminderLine: React.FC<{
                             <Icon icon={AlertCircle} size={13} strokeWidth={2} className="mt-[3px] shrink-0" />
                             <span>{t('monitor.recheck.e2_safety')}</span>
                         </p>
-                        {/* The 3-month claim's own wording, quoted rather than
-                            paraphrased, under the source links printed with the body. */}
-                        <p className="mt-0.5 opacity-80">{t('monitor.recheck.e2_interval')}</p>
+                        {/* The documents are named by the links on the line above, so
+                            their sentences are not repeated here. A link and the quoted
+                            text beside it say the same thing twice, and the panel is
+                            already the longest thing on this page. */}
                         <p className="mt-0.5">
                             {t('monitor.recheck.e2_trough')}{' '}
                             <span className="opacity-70">{t('monitor.sources')}</span>{' '}
@@ -238,6 +239,99 @@ export const RecheckReminderLine: React.FC<{
             >
                 <Icon icon={X} size={14} strokeWidth={2} />
             </button>
+        </div>
+    );
+};
+
+/**
+ * Every due re-check, as one disclosure.
+ *
+ * One reminder on its own is already a single readable block, so collapsing it
+ * behind a click would add a step and hide the sources for no gain — hence the
+ * group only forms at **two or more** (`RecheckReminderGroup` is not rendered
+ * for one). Past that the stacked panels are a wall: each carries its own body,
+ * its own 出处 links and its own dismiss control, so N of them is N walls.
+ *
+ * The count is derived by the caller from the reminders it is about to render,
+ * which is the only definition that cannot drift: a dismissed reminder is not
+ * rendered at all (`visibleRechecks`), so it is not counted either. The summary
+ * says what is on screen, not what the schedule computed.
+ *
+ * The collapsed header deliberately carries the `monitor.recheck.e2_safety` line
+ * when any expanded reminder would show it. That sentence is the one piece of
+ * this feature that is advice rather than evidence — "if you have severe mood or
+ * other problems, consult a doctor" — and it is the reason someone opens this at
+ * all. A disclosure that keeps the evidence and drops the escalation is hiding
+ * the half of the message that matters when it is closed, which is the state it
+ * spends most of its life in. The evidence stays inside (it is long and per
+ * claim); the warning does not.
+ *
+ * The container is a real M3 surface: `surface-container` on
+ * `shape-corner-medium`, title-medium for the summary, and the header is a
+ * full-width button so the whole row is the target. Motion reuses the shared
+ * `.disclosure` grid-template-rows technique — see `PKParams` — and inherits
+ * its `prefers-reduced-motion` rule, so it opens instantly rather than being
+ * unreachable.
+ */
+export const RecheckReminderGroup: React.FC<{
+    reminders: RecheckReminder[];
+    t: (k: string) => string;
+    formatDate: (h: number) => string;
+    onDismiss: (reminder: RecheckReminder) => void;
+}> = ({ reminders, t, formatDate, onDismiss }) => {
+    const [open, setOpen] = useState(false);
+    const panelId = useId();
+    // The safety line rides on the summary because it must survive being closed —
+    // see the note above. It is present whenever any child would show it.
+    const showSafety = reminders.some(r => r.kind === 'estradiol');
+    const count = reminders.length;
+
+    return (
+        <div className="rounded-[var(--md-sys-shape-corner-medium)] bg-[var(--color-m3-surface-container)] text-[var(--color-m3-on-surface)]">
+            <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                aria-expanded={open}
+                aria-controls={panelId}
+                className="w-full flex items-start gap-2 px-3 py-2.5 text-start rounded-[var(--md-sys-shape-corner-medium)] outline-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-m3-primary)] hover:bg-[var(--color-m3-surface-container-high)]"
+            >
+                <Icon icon={AlertTriangle} size={15} strokeWidth={1.75} className="mt-[3px] shrink-0 text-cos-warning" />
+                <span className="min-w-0 flex-1">
+                    <span className="block text-m3-title-small">
+                        {count === 1 ? t('monitor.recheck.summary_one') : t('monitor.recheck.summary').replace('{n}', String(count))}
+                    </span>
+                    {showSafety && (
+                        <span className="mt-0.5 flex items-start gap-1.5 font-medium text-cos-warning">
+                            <Icon icon={AlertCircle} size={13} strokeWidth={2} className="mt-[2px] shrink-0" />
+                            <span className="text-m3-body-compact leading-snug">{t('monitor.recheck.e2_safety')}</span>
+                        </span>
+                    )}
+                </span>
+                <Icon
+                    icon={ChevronDown}
+                    size={16}
+                    className={`chev mt-0.5 shrink-0 text-[var(--color-m3-on-surface-variant)] ${open ? 'rotate-180' : ''}`}
+                />
+            </button>
+            <div id={panelId} className="disclosure" data-open={open}>
+                <div className="disclosure-inner">
+                    <div className="px-3 pb-3 space-y-2.5">
+                        {reminders.map(reminder => (
+                            <RecheckReminderLine
+                                key={reminder.kind}
+                                reminder={reminder}
+                                t={t}
+                                formatDate={formatDate}
+                                // Always false: a dismissed reminder never
+                                // reaches this list, which is why the count above
+                                // and the blocks below cannot disagree.
+                                dismissed={false}
+                                onDismiss={() => onDismiss(reminder)}
+                            />
+                        ))}
+                    </div>
+                </div>
+            </div>
         </div>
     );
 };
