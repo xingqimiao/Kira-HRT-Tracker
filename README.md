@@ -1,5 +1,7 @@
 # Kira HRT Tracker
 
+![Kira HRT Tracker — dose logging, pharmacokinetic estimates, private by default](public/og.png)
+
 **Kira HRT Tracker** — an agent-friendly HRT tracker: log medications and lab results, follow treatment history, and see pharmacokinetic estimates of hormone levels over time.
 
 **Kira HRT Tracker**（HRT 记录工具）——面向 AI 助手友好的 HRT 记录工具：记录用药与化验结果、跟踪治疗历程，并提供基于药代动力学模型的激素水平估算。
