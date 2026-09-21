@@ -152,18 +152,15 @@ const LicenceSettings: React.FC<LicenceSettingsProps> = ({ onBack, appVersion })
 
                 <p className={`mt-6 ${muted}`}>
                     {t('licence.generated').replace('{version}', appVersion).replace('{date}', GENERATED_AT)}
-                </p>
-
-                {/* 隐藏彩蛋入口：极低调、安静、不起眼 */}
-                <div className="mt-20 pt-8 pb-12 text-center border-t border-dashed border-[var(--color-m3-outline-variant)]/30">
+                    {' · '}
                     <button
                         type="button"
                         onClick={handleTriggerEasterEgg}
-                        className="text-xs text-[var(--color-m3-on-surface-variant)]/40 hover:text-[var(--color-m3-on-surface-variant)]/80 transition-colors duration-500 select-none tracking-wider"
+                        className="hover:underline text-[var(--color-m3-on-surface-variant)] transition-colors"
                     >
-                        这里好像还有点东西。
+                        演职员与致谢片尾
                     </button>
-                </div>
+                </p>
             </div>
         </div>
 
