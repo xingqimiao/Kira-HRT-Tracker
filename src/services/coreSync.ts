@@ -20,8 +20,9 @@
  * `syncWithCore` reads first, merges, then writes. That ordering is deliberate and is
  * kept: pushing without looking would overwrite whatever another device wrote since this
  * one last synced. What the record store removes is the *cost* of that read — it is
- * paged, so a large history does not arrive in one response — and it lets the write be
- * an upsert per record rather than a rewrite of every row.
+ * paged, so a large history does not arrive in one response — and each direction is one
+ * request that does not grow with the history: the read, and a batched upsert whose
+ * response carries the resulting state, so no read follows the write.
  *
  * ── Encryption is the server's job here ──────────────────────────────────────
  *
@@ -164,17 +165,6 @@ export async function readCoreState(token: string): Promise<SyncPayload> {
   return payload;
 }
 
-/**
- * Push local state and get the account's records back.
-async function errorDetail(res: Response): Promise<string | undefined> {
-  try {
-    const body = (await res.json()) as { error?: string };
-    return body?.error;
-  } catch {
-    return undefined;
-  }
-}
-
 /** The server's error text, when it sent one. */
 async function errorDetail(res: Response): Promise<string | undefined> {
   try {
@@ -242,48 +232,31 @@ function withRemoteTombstones(local: SyncPayload, remote: SyncPayload): SyncPayl
  * signature compatibility and is a no-op here — the record store upserts by id, so
  * "create what is missing" and "write what I have" are the same operation, and the
  * merge that decides what to write already happened on this side.
+ *
+ * `remote` is the read the caller already made. Given it, this makes no read of its
+ * own; without it (a standalone call), it reads once. The invariant is unchanged
+ * either way — `withRemoteTombstones` only runs on a payload that came from a read.
+ *
+ * The push is one batched request rather than one POST per record, so the round-trip
+ * count does not grow with the number of records. The response carries the account's
+ * state, so no read follows the write; `state` therefore comes from the server
+ * rather than from a second round trip.
  */
 export async function syncWithCore(
   token: string,
   payload: SyncPayload,
-  _opts: { updateExisting?: boolean } = {},
+  opts: { updateExisting?: boolean; remote?: SyncPayload } = {},
 ): Promise<SyncResult> {
   // Read first, always. Pushing without looking would drop the account's tombstones
   // (see `withRemoteTombstones`) and, on any record this device has never seen, would
   // be writing blind.
-  const remote = await readCoreState(token);
+  const remote = opts.remote ?? await readCoreState(token);
   const outgoing = withRemoteTombstones(payload, remote);
 
   const docs = payloadToRecords(outgoing);
-
-  // Sequential rather than concurrent: a burst of parallel writes against a pool this
-  // small contends more than it overlaps, and a partial failure is easier to reason
-  // about when the order is the order the records were produced.
   const rejected: { reason: string; id: string }[] = [];
-  for (const doc of docs) {
-    const res = await apiFetch(apiEndpoint('/api/records'), {
-      method: 'POST',
-      headers: authHeaders(token),
-      body: JSON.stringify({
-        id: doc.id,
-        takenAt: doc.takenAt,
-        category: doc.category,
-        data: doc.data,
-      }),
-    });
-    if (!res.ok) {
-      if (res.status === 401) throw describe(401, 'sync');
-      const detail = await errorDetail(res);
-      // An incomplete account is refused on every record, so reporting it per-record
-      // would bury the one thing the user has to act on under a list of rejections.
-      if (res.status === 403 && detail === 'account_incomplete') throw describe(403, 'sync', detail);
-      rejected.push({ reason: detail ?? `status ${res.status}`, id: doc.id });
-    }
-  }
 
-  const state = await readCoreState(token);
-  return {
-    state,
+  const summary = () => ({
     ...(rejected.length
       ? {
           summary: {
@@ -299,7 +272,50 @@ export async function syncWithCore(
           },
         }
       : {}),
+  });
+
+  if (docs.length === 0) return { state: remote, ...summary() };
+
+  const res = await apiFetch(apiEndpoint('/api/records/batch'), {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      records: docs.map((doc) => ({
+        id: doc.id,
+        takenAt: doc.takenAt,
+        category: doc.category,
+        data: doc.data,
+      })),
+    }),
+  });
+
+  if (!res.ok) {
+    if (res.status === 401) throw describe(401, 'sync');
+    const detail = await errorDetail(res);
+    // An incomplete account is refused on every record, so reporting it per-record
+    // would bury the one thing the user has to act on under a list of rejections.
+    if (res.status === 403 && detail === 'account_incomplete') throw describe(403, 'sync', detail);
+    // The whole request was refused, so every record in it was. Naming each one is
+    // the honest answer: silence here is a user believing a record was saved.
+    for (const doc of docs) rejected.push({ reason: detail ?? `status ${res.status}`, id: doc.id });
+    return { state: remote, ...summary() };
+  }
+
+  const body = (await res.json()) as {
+    rejected?: { id?: unknown; reason?: unknown }[];
+    state?: SyncPayload | null;
   };
+  for (const refusal of body.rejected ?? []) {
+    rejected.push({
+      reason: String(refusal?.reason ?? 'rejected'),
+      id: String(refusal?.id ?? ''),
+    });
+  }
+
+  // The write response carries the post-write state. A response that omitted it
+  // (reassembly failed server-side after the write landed) falls back to the read
+  // this call already has rather than reporting a state it does not hold.
+  return { state: body.state ?? remote, ...summary() };
 }
 
 /**

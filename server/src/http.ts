@@ -864,6 +864,29 @@ export function createRequestHandler() {
         return send(res, 201, { id: result.id });
       }
 
+      // The batch form of the same write. It exists so a sync costs one round trip
+      // rather than one per record, and it returns the account's state with the
+      // result so the caller does not have to fetch what it just stored. The body
+      // is a whole history, so the route's own cap is well above the default; the
+      // per-record size check still applies inside `putMany`.
+      if (path === '/api/records/batch' && req.method === 'POST') {
+        const ctx = await requireBoundCtx();
+        if (!ctx) return;
+        const body = (await readBody(req, 8_000_000)) as { records?: unknown } | undefined;
+        const result = await RecordService.putMany(ctx, body?.records);
+        if (!result.ok) return send(res, 400, { error: result.error });
+        // Reassembly reads every row again; if it throws after a write that already
+        // committed, the write result is still true, so the state is omitted rather
+        // than turning a successful write into a failure.
+        let state: unknown = null;
+        try {
+          state = await buildExportPayload(ctx);
+        } catch {
+          state = null;
+        }
+        return send(res, 200, { written: result.written, rejected: result.rejected, state });
+      }
+
       const recordMatch = path.match(/^\/api\/records\/([^/]+)$/);
       if (recordMatch) {
         const ctx = await requireBoundCtx();

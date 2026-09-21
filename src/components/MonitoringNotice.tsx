@@ -140,10 +140,11 @@ const SourceLinks: React.FC<{ sources: { label: string; url: string }[] }> = ({ 
  *
  * This is the same posture as `MonitoringNoticeLine` and deliberately so — it
  * says a draw is *due*, never that anything is wrong. The two facts it has to
- * carry for that to be honest are both on screen: which dose the schedule was
- * anchored to (with its date), and the interval's source. The line that names the
- * first-logged-dose weakness is always shown rather than tucked away, because the
- * anchor is the one part of this the app has to guess at.
+ * carry for that to be honest are both on screen: which date the schedule was
+ * anchored to, and the interval's source. The line that names the anchor's
+ * weakness is always shown rather than tucked away, because the anchor is the one
+ * part of this the app has to infer. Estradiol can be anchored to the last logged
+ * check, and then the copy says so rather than claiming a first dose.
  *
  * It can be closed, because a reminder that cannot be silenced teaches people to
  * ignore reminders — but closing only collapses it to a row that opens it again,
@@ -191,7 +192,9 @@ export const RecheckReminderLine: React.FC<{
                     {t('monitor.recheck.title')}
                 </p>
                 <p className="mt-0.5">
-                    {t(RECHECK_BODY[reminder.kind])
+                    {t(reminder.kind === 'estradiol' && reminder.basis === 'last_check'
+                        ? 'monitor.recheck.estradiol_check'
+                        : RECHECK_BODY[reminder.kind])
                         .replace('{drug}', t(`ester.${reminder.ester}`))
                         .replace('{months}', String(reminder.intervalMonths))}{' '}
                     <span className="opacity-70">{t('monitor.sources')}</span>{' '}
@@ -223,11 +226,13 @@ export const RecheckReminderLine: React.FC<{
                     </>
                 )}
                 <p className="mt-0.5 opacity-80">
-                    {t('monitor.recheck.basis')
+                    {t(reminder.basis === 'last_check' ? 'monitor.recheck.basis_check' : 'monitor.recheck.basis')
                         .replace('{drug}', t(`ester.${reminder.ester}`))
                         .replace('{date}', formatDate(reminder.startH))}
                 </p>
-                <p className="mt-0.5 opacity-70">{t('monitor.recheck.weakness')}</p>
+                <p className="mt-0.5 opacity-70">
+                    {t(reminder.basis === 'last_check' ? 'monitor.recheck.weakness_check' : 'monitor.recheck.weakness')}
+                </p>
             </div>
             {/* Always writes the dismissal (a no-op when it is already stored),
                 then collapses a re-opened row. */}

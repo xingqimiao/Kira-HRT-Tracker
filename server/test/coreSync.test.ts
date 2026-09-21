@@ -71,7 +71,47 @@ async function newAccount(): Promise<string> {
   return account.token;
 }
 
+/**
+ * The same origin shim, plus a count of every request that went out.
+ *
+ * A sync's cost is measured in round trips, and a round trip is a network event
+ * rather than a line of code — so it is counted at the only place that can see
+ * one. Composed here rather than in each test so the two shims cannot disagree.
+ */
+function instrumentFetch(origin: string): { calls: () => number; restore: () => void } {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    calls += 1;
+    const url = typeof input === 'string' && input.startsWith('/') ? `${origin}${input}` : input;
+    return original(url as RequestInfo, init);
+  }) as typeof fetch;
+  return {
+    calls: () => calls,
+    restore: () => {
+      globalThis.fetch = original;
+    },
+  };
+}
+
 const nowH = () => Date.now() / 3_600_000;
+
+/** A payload carrying `count` doses, otherwise in the app's own shape. */
+function payloadWith(count: number) {
+  const t = nowH();
+  const events = Array.from({ length: count }, (_, i) => ({
+    id: `rt-${i}`, route: 'injection', ester: 'EV', doseMG: 5, timeH: t - i, extras: {}, updatedAt: Date.now(),
+  }));
+  const block = (rows: unknown[]) => ({
+    events: rows, labResults: [], doseTemplates: [], quickDoses: [], journal: [],
+    deletions: { events: {}, labResults: {}, doseTemplates: {}, journal: {} },
+  });
+  return {
+    version: 3,
+    weight: 70,
+    modes: { transfem: block(events), transmasc: block([]) },
+  };
+}
 
 /** A payload in the app's own shape, as `buildExportPayload` would emit. */
 function appPayload() {
@@ -131,6 +171,31 @@ test('the client adapter pushes and reads back through the real server', async (
   } finally {
     restore();
   }
+});
+
+test('a sync costs a constant number of round trips, not one per record', async () => {
+  const { syncWithCore } = await import('../../src/services/coreSync.ts');
+  const token = await newAccount();
+
+  const one = instrumentFetch(base);
+  const oneStart = Date.now();
+  await syncWithCore(token, payloadWith(1));
+  const oneMs = Date.now() - oneStart;
+  const oneCalls = one.calls();
+  one.restore();
+
+  const many = instrumentFetch(base);
+  const manyStart = Date.now();
+  await syncWithCore(token, payloadWith(20));
+  const manyMs = Date.now() - manyStart;
+  const manyCalls = many.calls();
+  many.restore();
+
+  console.log(`[measure] 1 record: ${oneCalls} round trips, ${oneMs}ms`);
+  console.log(`[measure] 20 records: ${manyCalls} round trips, ${manyMs}ms`);
+
+  assert.equal(manyCalls, oneCalls, 'a sync must not add a round trip per record');
+  assert.ok(manyCalls <= 3, `expected a constant few round trips, got ${manyCalls}`);
 });
 
 test('a locked account reports locked rather than a generic failure', async () => {

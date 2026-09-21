@@ -645,6 +645,17 @@ export function getMonitoringNotices(labs: LabResult[], events: DoseEvent[]): Mo
 // started spironolactone last year and only began logging this month gets a
 // schedule anchored a year late. That failure is a delay, not a false alarm,
 // which is the direction to err in for a reminder that says "this is due".
+//
+// That first-logged-dose anchor is the whole story only until the first re-check.
+// After it, counting from the first dose is simply wrong: someone who started
+// years ago and has been re-checking on schedule is told they are overdue
+// forever, because nothing in the first-dose arithmetic knows a check happened.
+// A lab result carries the date it was drawn, so for estradiol the anchor is the
+// **most recent logged estradiol check**, falling back to the first dose only
+// when none is logged. The anti-androgen schedules keep the first-dose anchor:
+// their intervals are *phased* (monthly for the first 6 / 3 months for the first
+// year) relative to therapy start, so a check resets the interval but not the
+// phase, which this function does not model.
 
 export type RecheckKind = 'liver_cpa' | 'liver_bical' | 'potassium_spiro' | 'estradiol';
 
@@ -652,12 +663,16 @@ export interface RecheckReminder {
     kind: RecheckKind;
     /** The compound in the app's own vocabulary, so the UI names the right drug. */
     ester: Ester;
-    /** When the first dose of that compound was logged, in hours since epoch. */
+    /**
+     * The date the schedule is counted from, in hours since epoch — the last
+     * logged check when there is one, otherwise the first logged dose of the
+     * compound. See `basis` for which of the two it is.
+     */
     startH: number;
     /** The interval that has elapsed, in months, as the source states it. */
     intervalMonths: number;
-    /** `anchor` is the logged first dose; the UI has to say which it used. */
-    basis: 'first_dose';
+    /** Which date `startH` is: the logged first dose, or the most recent logged check. */
+    basis: 'first_dose' | 'last_check';
     /** Whole months since `startH`, for the copy to quote. */
     elapsedMonths: number;
     /**
@@ -777,6 +792,24 @@ function firstDoseH(events: DoseEvent[], ester: Ester): number | undefined {
 }
 
 /**
+ * The most recent logged estradiol check, or undefined when there is none.
+ *
+ * A lab result carries the date the blood was drawn, which is the one input the
+ * app has for "when this was last checked". A monitoring-only record is not one:
+ * it carries a placeholder E2 plus an E2 unit the form requires, so reading it as
+ * a check would let a potassium-only draw silence the estradiol reminder. A
+ * testosterone-unit lab is not estradiol at all. Both are skipped.
+ */
+function lastEstradiolCheckH(results: LabResult[]): number | undefined {
+    let last: number | undefined;
+    for (const r of results) {
+        if (isMonitoringOnlyLab(r) || isT_LabUnit(r.unit)) continue;
+        if (last === undefined || r.timeH > last) last = r.timeH;
+    }
+    return last;
+}
+
+/**
  * The next interval boundary strictly after `elapsedMonths`, for a schedule that
  * is `earlyMonths` for the first `phaseMonths` and `months` thereafter.
  *
@@ -825,6 +858,13 @@ function nextBoundaryMonths(elapsedMonths: number, phaseMonths: number, earlyMon
  *   * prolactin → no source states an interval → never a reminder;
  *   * a compound logged but not yet past its first boundary → nothing yet.
  *
+ * The anchor is the last logged check where the caller supplies one (estradiol
+ * only today — see `lastEstradiolCheckH`), otherwise the first logged dose. A
+ * user who has been re-checking on schedule is therefore never told they are
+ * overdue for a check they already had. `results` is the lab list that makes
+ * that possible; a caller that omits it, or has no lab results, keeps the
+ * first-dose behaviour exactly.
+ *
  * ponytail: the boundary is counted in whole months off a fixed 30.44-day month,
  * so it can sit a day either side of the calendar date for a start logged near a
  * month end. The upgrade path, if it ever matters, is a real calendar-month walk
@@ -835,6 +875,8 @@ export function getRecheckReminders(
     events: DoseEvent[],
     nowH: number = Date.now() / (1000 * 60 * 60),
     intervals: unknown = DEFAULT_RECHECK_INTERVALS,
+    /** Lab results, for the anchor of the estradiol check. Optional so callers that only have doses still work. */
+    results: LabResult[] = [],
 ): RecheckReminder[] {
     const out: RecheckReminder[] = [];
     const cfg = normalizeRecheckIntervals(intervals);
@@ -849,20 +891,37 @@ export function getRecheckReminders(
         earlyMonths: number,
         months: number,
         isCustom: boolean,
+        // The most recent logged check of this compound, when the caller has one.
+        // The anti-androgen schedules pass none: their intervals are phased from
+        // therapy start, which a check does not reset (see the note above).
+        checkH?: number,
     ): void => {
-        const startH = firstDoseH(events, ester);
+        const firstH = firstDoseH(events, ester);
         // No logged dose of this compound: the app cannot know when the schedule
         // started, and a reminder with an invented start would be a false alarm.
-        if (startH === undefined) return;
-        const elapsedH = nowH - startH;
-        // A dose logged "in the future" (clock skew, an import) is not elapsed time.
+        if (firstH === undefined) return;
+        // The interval runs from the last check once one is logged after the
+        // first dose. A check drawn before it is a baseline, not a re-check, so it
+        // does not move the anchor back before the start.
+        const anchorH = checkH !== undefined && checkH > firstH ? checkH : firstH;
+        const elapsedH = nowH - anchorH;
+        // A dose or check logged "in the future" (clock skew, an import) is not
+        // elapsed time.
         if (elapsedH < 0) return;
         const elapsedMonths = elapsedH / (RECHECK_HOURS_PER_DAY * RECHECK_DAYS_PER_MONTH);
         const boundary = nextBoundaryMonths(elapsedMonths, phaseMonths, earlyMonths, months);
         // Boundary 0 means the first interval has not elapsed yet — a dose logged
         // today must not read as "due", which is the false alarm this guards.
         if (boundary <= 0) return;
-        out.push({ kind, ester, startH, intervalMonths: boundary, basis: 'first_dose', elapsedMonths: Math.floor(elapsedMonths), customized: isCustom });
+        out.push({
+            kind,
+            ester,
+            startH: anchorH,
+            intervalMonths: boundary,
+            basis: anchorH === firstH ? 'first_dose' : 'last_check',
+            elapsedMonths: Math.floor(elapsedMonths),
+            customized: isCustom,
+        });
     };
 
     due('liver_cpa', Ester.CPA, cfg.liverFirstPhaseMonths, cfg.liverEarlyMonths, cfg.liverMonths, customized(['liverFirstPhaseMonths', 'liverEarlyMonths', 'liverMonths']));
@@ -870,8 +929,10 @@ export function getRecheckReminders(
     due('potassium_spiro', Ester.SPIRO, cfg.potassiumFirstPhaseMonths, cfg.potassiumEarlyMonths, cfg.potassiumMonths, customized(['potassiumFirstPhaseMonths', 'potassiumEarlyMonths', 'potassiumMonths']));
 
     // Estradiol: one reminder, for the ester the person actually takes — the one on
-    // their latest logged estrogen dose — anchored to that ester's first logged dose,
-    // the same rule as the compounds above. Passing a phase of 0 with the interval
+    // their latest logged estrogen dose. Its anchor is the last logged estradiol
+    // check when there is one, because the interval it reports is "re-check every N
+    // months" — counted from the previous check. The first dose is the fallback for
+    // someone who has never logged a check. Passing a phase of 0 with the interval
     // as its own "early" interval makes nextBoundaryMonths walk plain multiples.
     let latestE2: DoseEvent | undefined;
     for (const e of events) {
@@ -879,7 +940,7 @@ export function getRecheckReminders(
         if (latestE2 === undefined || e.timeH > latestE2.timeH) latestE2 = e;
     }
     if (latestE2) {
-        due('estradiol', latestE2.ester, 0, cfg.estradiolMonths, cfg.estradiolMonths, customized(['estradiolMonths']));
+        due('estradiol', latestE2.ester, 0, cfg.estradiolMonths, cfg.estradiolMonths, customized(['estradiolMonths']), lastEstradiolCheckH(results));
     }
 
     return out;

@@ -206,4 +206,62 @@ test('a v1 row sealed under the platform key still opens', async () => {
   );
 });
 
+test('a batch write reports the records it refused instead of dropping them', async () => {
+  const { token } = await freshAccount();
+
+  const wrote = await call(base, '/api/records/batch', json({
+    records: [
+      { id: 'batch-ok-1', takenAt: Date.now(), category: 'dose', data: { med_name: 'BATCH_OK' } },
+      { id: 'batch-bad-1', takenAt: 'not a date', category: 'dose', data: { med_name: 'BATCH_BAD' } },
+      { id: 'batch-bad-2', takenAt: Date.now(), category: 'nonsense', data: { med_name: 'BATCH_BAD_2' } },
+    ],
+  }, token));
+  assert.equal(wrote.status, 200, JSON.stringify(wrote.body));
+  assert.deepEqual(wrote.body.written, ['batch-ok-1'], 'only the valid record was written');
+
+  const refused = wrote.body.rejected as { id: string; reason: string }[];
+  assert.deepEqual(
+    refused.map((r) => r.id).sort(),
+    ['batch-bad-1', 'batch-bad-2'],
+    'each refused record is reported by id',
+  );
+  assert.ok(
+    refused.every((r) => typeof r.reason === 'string' && r.reason !== ''),
+    'every refusal names a reason',
+  );
+
+  const listed = await call(base, '/api/records', bearer(token));
+  const ids = (listed.body.records as { id: string }[]).map((r) => r.id);
+  assert.ok(ids.includes('batch-ok-1'), 'the accepted record landed');
+  assert.ok(!ids.includes('batch-bad-1'), 'the refused record was not stored');
+});
+
+test('a batch cannot write an id another account owns', async () => {
+  const owner = await freshAccount();
+  const other = await freshAccount();
+  const shared = 'batch-cross-account-1';
+
+  const first = await call(base, '/api/records', json({
+    id: shared, takenAt: Date.now(), category: 'dose', data: { med_name: 'OWNER' },
+  }, owner.token));
+  assert.equal(first.status, 201, 'seeding the owner record failed: ' + JSON.stringify(first.body));
+
+  const second = await call(base, '/api/records/batch', json({
+    records: [{ id: shared, takenAt: Date.now(), category: 'dose', data: { med_name: 'INTRUDER' } }],
+  }, other.token));
+  assert.equal(second.status, 200, JSON.stringify(second.body));
+  assert.deepEqual(second.body.written, [], 'the foreign id was not written');
+  assert.deepEqual(
+    second.body.rejected,
+    [{ id: shared, reason: 'id_unavailable' }],
+    'the refusal is reported rather than silently skipped',
+  );
+
+  // And the owner copy is untouched by the refused write.
+  const ownerList = await call(base, '/api/records', bearer(owner.token));
+  const row = (ownerList.body.records as { id: string; data: { med_name: string } }[])
+    .find((r) => r.id === shared);
+  assert.equal(row?.data.med_name, 'OWNER');
+});
+
 

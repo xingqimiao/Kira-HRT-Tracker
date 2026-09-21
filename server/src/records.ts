@@ -33,7 +33,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { getPool } from './db.ts';
+import { getPool, withTransaction } from './db.ts';
 import { getConfig } from './config.ts';
 import { openPayload, sealPayload } from './payloadCrypto.ts';
 import { settings } from './settings.ts';
@@ -122,6 +122,52 @@ function parseTakenAt(raw: unknown): number | null {
 
 const MAX_BODY_BYTES = 256 * 1024;
 
+/** Rows per INSERT statement in a batch. Bounded so one statement stays clear of the parameter cap. */
+const INSERT_CHUNK = 500;
+
+/** One validated, sealed record, ready to insert. */
+interface PreparedRecord {
+    id: string;
+    takenAt: number;
+    category: RecordCategory;
+    sealed: string;
+}
+
+/**
+ * Validate and seal one write, or say which id was refused and why.
+ *
+ * Shared by the single and batch writes so the two cannot drift: a record the
+ * batch accepts is one the single write accepts, and a refusal reports the same
+ * id and the same reason either way.
+ */
+function prepareRecord(
+    ctx: AuthContext,
+    body: { id?: unknown; takenAt?: unknown; category?: unknown; data?: unknown } | undefined,
+): { ok: true; value: PreparedRecord } | { ok: false; id: string; error: string } {
+    // A client may supply the row id; otherwise the server mints one. The id is
+    // deliberately a plain string: the client's ids are structured
+    // (`dose:transfem:<id>`), which is what makes a retry idempotent and a row
+    // traceable back to what it holds.
+    const id = typeof body?.id === 'string' && body.id.trim() !== ''
+        ? body.id.trim()
+        : `srv:${randomUUID()}`;
+
+    const takenAt = parseTakenAt(body?.takenAt);
+    if (takenAt === null) return { ok: false, id, error: 'takenAt: must be a date or epoch milliseconds' };
+
+    const category = body?.category === undefined ? 'dose' : body.category;
+    if (!isCategory(category)) {
+        return { ok: false, id, error: `category: must be one of ${RECORD_CATEGORIES.join(', ')}` };
+    }
+
+    if (body?.data === undefined || body.data === null) return { ok: false, id, error: 'data: required' };
+
+    const sealed = seal(body.data, ctx);
+    if (sealed.length > MAX_BODY_BYTES) return { ok: false, id, error: 'data: too large' };
+
+    return { ok: true, value: { id, takenAt, category, sealed } };
+}
+
 export const RecordService = {
     /**
      * Store one record, encrypting the payload on the way in.
@@ -135,36 +181,14 @@ export const RecordService = {
         ctx: AuthContext,
         body: { id?: unknown; takenAt?: unknown; category?: unknown; data?: unknown },
     ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
-        const takenAt = parseTakenAt(body?.takenAt);
-        if (takenAt === null) return { ok: false, error: 'takenAt: must be a date or epoch milliseconds' };
+        const prepared = prepareRecord(ctx, body);
+        if (!prepared.ok) return { ok: false, error: prepared.error };
+        const { id, takenAt, category, sealed } = prepared.value;
 
-        const category = body?.category === undefined ? 'dose' : body.category;
-        if (!isCategory(category)) {
-            return { ok: false, error: `category: must be one of ${RECORD_CATEGORIES.join(', ')}` };
-        }
-
-        if (body?.data === undefined || body.data === null) {
-            return { ok: false, error: 'data: required' };
-        }
-
-        const sealed = seal(body.data, ctx);
-        if (sealed.length > MAX_BODY_BYTES) {
-            return { ok: false, error: 'data: too large' };
-        }
-
-        // A client may supply the row id; otherwise the server mints one. The id is
-        // deliberately a plain string: the client's ids are structured
-        // (`dose:transfem:<id>`), which is what makes a retry idempotent and a row
-        // traceable back to what it holds.
-        //
         // Conflict target is the id alone. There is no second key: an id already
         // *is* the client's identity for the record, so a separate client id could
         // only disagree with it — and did, producing a primary-key violation on every
         // re-sync once both constraints were in play.
-        const id = typeof body?.id === 'string' && body.id.trim() !== ''
-            ? body.id.trim()
-            : `srv:${randomUUID()}`;
-
         const { rows } = await getPool().query<{ id: string }>(
             `INSERT INTO records (user_id, taken_at, category, payload_encrypted, id)
              VALUES ($1, to_timestamp($2 / 1000.0), $3, $4, $5)
@@ -182,6 +206,83 @@ export const RecordService = {
         // reported as a conflict either — that would confirm the id exists.
         if (rows.length === 0) return { ok: false, error: 'id_unavailable' };
         return { ok: true, id: rows[0].id };
+    },
+
+    /**
+     * Store many records in one request.
+     *
+     * One multi-row upsert per chunk, not a loop of single writes: the point is a
+     * constant number of *client* round trips, and a statement per record would
+     * move the same N writes behind a single connection. Every record is validated
+     * and sealed by the same `prepareRecord` the single write uses, so a refusal
+     * reports the same id and reason it always did.
+     *
+     * A repeated id is applied last-wins. One INSERT cannot touch the same row
+     * twice, so duplicates are collapsed to their last copy before the statement —
+     * which is what the sequential loop this replaces did by writing them in order.
+     *
+     * There is no positional ordering guarantee between records, and none is
+     * needed: the writes are independent and keyed by id, so each outcome is
+     * reported by id rather than by position. The whole batch is one transaction,
+     * which replaces the old "wrote the first k, then failed" partial-write window
+     * with all-or-nothing — reported per id either way.
+     */
+    async putMany(
+        ctx: AuthContext,
+        items: unknown,
+    ): Promise<
+        | { ok: true; written: string[]; rejected: { id: string; reason: string }[] }
+        | { ok: false; error: string }
+    > {
+        if (!Array.isArray(items)) return { ok: false, error: 'records: must be an array' };
+
+        const rejected: { id: string; reason: string }[] = [];
+        const pending = new Map<string, PreparedRecord>();
+        for (const raw of items) {
+            const prepared = prepareRecord(ctx, raw as { id?: unknown; takenAt?: unknown; category?: unknown; data?: unknown });
+            if (prepared.ok) pending.set(prepared.value.id, prepared.value);
+            else rejected.push({ id: prepared.id, reason: prepared.error });
+        }
+
+        const records = [...pending.values()];
+        const written: string[] = [];
+        if (records.length === 0) return { ok: true, written, rejected };
+
+        await withTransaction(async (client) => {
+            for (let start = 0; start < records.length; start += INSERT_CHUNK) {
+                const chunk = records.slice(start, start + INSERT_CHUNK);
+                const values: unknown[] = [ctx.userId];
+                const tuples = chunk.map((record) => {
+                    const at = values.length + 1;
+                    values.push(record.takenAt, record.category, record.sealed, record.id);
+                    return `($1, to_timestamp($${at} / 1000.0), $${at + 1}, $${at + 2}, $${at + 3})`;
+                });
+
+                const { rows } = await client.query<{ id: string }>(
+                    `INSERT INTO records (user_id, taken_at, category, payload_encrypted, id)
+                     VALUES ${tuples.join(', ')}
+                     ON CONFLICT (id) DO UPDATE
+                        SET taken_at = EXCLUDED.taken_at,
+                            category = EXCLUDED.category,
+                            payload_encrypted = EXCLUDED.payload_encrypted,
+                            updated_at = now()
+                      WHERE records.user_id = EXCLUDED.user_id
+                     RETURNING id`,
+                    values,
+                );
+
+                // A row the upsert did not return is one whose id another account
+                // owns. It is skipped silently by the conflict clause, so it has to
+                // be reported explicitly — the same refusal the single write gives.
+                const landed = new Set(rows.map((row) => row.id));
+                for (const record of chunk) {
+                    if (landed.has(record.id)) written.push(record.id);
+                    else rejected.push({ id: record.id, reason: 'id_unavailable' });
+                }
+            }
+        });
+
+        return { ok: true, written, rejected };
     },
 
     /**

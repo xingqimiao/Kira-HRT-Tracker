@@ -100,10 +100,15 @@ const Lab: React.FC<LabProps> = ({
     // thresholds from docs/monitoring-reference.md — see `getMonitoringNotices`.
     const notices = useMemo(() => getMonitoringNotices(labResults, events), [labResults, events]);
     // Re-check reminders are due-date notices, not value notices: they need a start
-    // point and no source states one in the app's terms, so the anchor is the first
-    // LOGGED dose of that compound and a compound with no logged dose gets nothing
-    // rather than a guessed schedule. See `getRecheckReminders`.
-    const rechecks = useMemo(() => getRecheckReminders(events, undefined, recheckIntervals), [events, recheckIntervals]);
+    // point and no source states one in the app's terms. For estradiol the anchor is
+    // the last logged check, falling back to the first LOGGED dose of that compound;
+    // a compound with no logged dose gets nothing rather than a guessed schedule. The
+    // lab list is passed so the check the user already had silences the reminder. See
+    // `getRecheckReminders`.
+    const rechecks = useMemo(
+        () => getRecheckReminders(events, undefined, recheckIntervals, labResults),
+        [events, recheckIntervals, labResults],
+    );
     // The precautions belong to one compound and are shown only when that compound
     // is actually recorded — advice for a drug nobody is taking is noise.
     const onSpironolactone = useMemo(() => events.some(e => e.ester === Ester.SPIRO), [events]);

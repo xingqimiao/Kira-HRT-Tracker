@@ -169,11 +169,15 @@ export const useCoreSync = ({
       // the account's settings has to publish them back, or the device that
       // changed nothing would keep re-reading the same values and the one that
       // did change something would never have its write acknowledged.
+      // The read above is handed in rather than made again inside `syncWithCore`:
+      // the merge already used it, and a second read of the same records is a whole
+      // round trip for an answer this call is holding.
       const pushed = await syncWithCore(authToken, {
         ...toLocalPayload(merged.merged as any),
         appState: toAppState(merged.merged),
       }, {
         updateExisting: true,
+        remote: remoteState,
       });
 
       // Surface records the server refused rather than reporting a clean sync.

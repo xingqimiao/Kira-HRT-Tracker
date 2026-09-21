@@ -6,7 +6,9 @@
  * of this feature that can go wrong quietly: a wrong boundary still renders a
  * plausible sentence, and a reminder with no logged dose would be the app
  * inventing a start date it was never given. This pins both, plus the two
- * deliberate silences (prolactin has no interval; nothing logged means silence).
+ * deliberate silences (prolactin has no interval; nothing logged means silence),
+ * and the estradiol anchor: the interval runs from the last logged check, not
+ * from a first dose that may be years old.
  *
  *   node --experimental-transform-types --import ./server/resolve-hook.mjs scripts/check-recheck-reminders.mjs
  *
@@ -48,7 +50,18 @@ const ev = (ester, mg, monthsAgo) => ({
   extras: {},
 });
 
-const kinds = (events, nowH = NOW, intervals) => getRecheckReminders(events, nowH, intervals).map(r => r.kind);
+// A logged lab draw. Only the fields the re-check anchor reads are set; a plain
+// estradiol reading unless overridden.
+const lab = (monthsAgo, overrides = {}) => ({
+  id: `lab-${monthsAgo}`,
+  timeH: NOW - monthsAgo * MONTH_D * DAY_H,
+  concValue: 150,
+  unit: 'pg/ml',
+  ...overrides,
+});
+
+const kinds = (events, nowH = NOW, intervals, results = []) =>
+  getRecheckReminders(events, nowH, intervals, results).map(r => r.kind);
 
 const results = [];
 function check(name, fn) {
@@ -250,6 +263,74 @@ check('an out-of-range or junk interval falls back rather than producing a bad d
   assert.equal(n.estradiolMonths, 1, 'zero is clamped to the minimum, never a zero-month interval');
   assert.equal(n.liverMonths, DEFAULT_RECHECK_INTERVALS.liverMonths, 'junk falls back to the default');
   assert.equal(n.potassiumMonths, 120, 'clamped, not dropped');
+});
+
+// ---------------------------------------------------------------------------
+// The anchor is the last check, not the first dose — the bug this pins.
+//
+// A first dose logged long ago used to be the only start point the app had, so
+// someone who started years back and has been re-checking on schedule was told
+// they were overdue forever. An estradiol lab result carries the date of the
+// check, so that is the anchor; the first dose stays the fallback for someone
+// who has never logged one. The liver and potassium schedules keep the first
+// dose because their intervals are phased from therapy start (see below).
+// ---------------------------------------------------------------------------
+
+check('a dose from long ago plus a recent check is not overdue', () => {
+  const events = [ev(Ester.EV, 5, 40)];
+  assert.deepEqual(kinds(events), ['estradiol'], 'with no check, the first dose is the only anchor');
+  assert.deepEqual(kinds(events, NOW, undefined, [lab(1)]), [], 'a check one month ago resets the clock');
+});
+
+check('a dose from long ago with no check still fires', () => {
+  const [r] = getRecheckReminders([ev(Ester.EV, 5, 40)], NOW, undefined, []);
+  assert.equal(r.kind, 'estradiol');
+  assert.equal(r.basis, 'first_dose', 'no check logged means the first dose is still the anchor');
+});
+
+check('a check older than one interval fires again', () => {
+  assert.deepEqual(kinds([ev(Ester.EV, 5, 40)], NOW, undefined, [lab(3.5)]), ['estradiol'], 'past the 3-month boundary since the last check');
+  assert.deepEqual(kinds([ev(Ester.EV, 5, 40)], NOW, undefined, [lab(2.5)]), [], 'inside it, not yet');
+});
+
+check('the reminder is anchored to the last check, and says so', () => {
+  const recent = lab(3.5);
+  const [r] = getRecheckReminders([ev(Ester.EV, 5, 40)], NOW, undefined, [recent]);
+  assert.equal(r.startH, recent.timeH, 'the check date, not the first dose');
+  assert.equal(r.basis, 'last_check');
+  assert.equal(r.intervalMonths, DEFAULT_RECHECK_INTERVALS.estradiolMonths);
+});
+
+check('the latest check wins when several are logged', () => {
+  const [r] = getRecheckReminders([ev(Ester.EV, 5, 40)], NOW, undefined, [lab(9), lab(4.5), lab(12)]);
+  assert.equal(r.intervalMonths, DEFAULT_RECHECK_INTERVALS.estradiolMonths, 'anchored to the 4.5-month-old check');
+});
+
+check('a check logged before the first dose is a baseline, not a re-check', () => {
+  const events = [ev(Ester.EV, 5, 10)]; // started 10 months ago
+  const [r] = getRecheckReminders(events, NOW, undefined, [lab(12)]); // drawn before starting
+  assert.equal(r.basis, 'first_dose', 'the anchor does not move before the first dose');
+  assert.equal(r.intervalMonths, 9, 'still counted from the first dose');
+});
+
+check('a monitoring-only record is not a check', () => {
+  // The placeholder 0 / 'pmol/l' is not an estradiol reading — see isMonitoringOnlyLab.
+  const record = lab(1, { monitoringOnly: true, concValue: 0, unit: 'pmol/l', potassium: 4.2 });
+  assert.deepEqual(kinds([ev(Ester.EV, 5, 40)], NOW, undefined, [record]), ['estradiol'], 'a potassium-only record must not silence the estradiol re-check');
+});
+
+check('a testosterone-unit lab is not an estradiol check', () => {
+  assert.deepEqual(kinds([ev(Ester.EV, 5, 40)], NOW, undefined, [lab(1, { unit: 'ng/dl', concValue: 500 })]), ['estradiol']);
+});
+
+check('the liver and potassium anchors stay the first dose, even with labs logged', () => {
+  // The fix is estradiol-specific: the anti-androgen schedules are phased from
+  // therapy start, so a lab does not move their anchor. Nothing here changes.
+  const events = [ev(Ester.CPA, 12.5, 20), ev(Ester.SPIRO, 100, 20)];
+  const labs = [lab(1, { alt: 20, potassium: 4.2 })];
+  assert.deepEqual(kinds(events, NOW, undefined, labs), ['liver_cpa', 'potassium_spiro'], 'still anchored to the first dose');
+  const [r] = getRecheckReminders(events, NOW, undefined, labs);
+  assert.equal(r.basis, 'first_dose');
 });
 
 // ---------------------------------------------------------------------------
