@@ -67,6 +67,7 @@ import {
   XOAuthError,
   type XProfile,
 } from './oauth.ts';
+import { withAvatarImage } from './avatars.ts';
 import { parseBodyWeight, parsePKParams } from './domain.ts';
 import type { Result } from './domain.ts';
 import type { AuthContext, ContextDenial } from './types.ts';
@@ -657,7 +658,11 @@ export const AccountService = {
     let profile;
     try {
       const tokens = await exchangeCode(config, { code: query.code, codeVerifier: pending.code_verifier });
-      profile = await fetchProfile(tokens.accessToken);
+      // Copy the picture onto our own origin here, at the one moment an access token is
+      // in hand. After this call nothing in the app ever contacts X again — the account
+      // page reads the stored copy, so opening settings is not a request that names the
+      // visitor to X.
+      profile = await withAvatarImage(await fetchProfile(tokens.accessToken));
     } catch (error) {
       const detail = error instanceof XOAuthError ? error.detail : undefined;
       void detail;
@@ -678,9 +683,15 @@ export const AccountService = {
         return { ok: false, error: 'that X account is already linked to a different account' };
       }
       await getPool().query(
-        `INSERT INTO oauth_accounts (user_id, provider, provider_user_id, handle, avatar_url)
-         VALUES ($1, 'x', $2, $3, $4)`,
-        [pending.user_id, profile.id, profile.handle, profile.avatarUrl],
+        `INSERT INTO oauth_accounts
+           (user_id, provider, provider_user_id, handle, avatar_url,
+            avatar_image, avatar_content_type, avatar_fetched_at)
+         VALUES ($1, 'x', $2, $3, $4, $5, $6,
+                 CASE WHEN $5::bytea IS NULL THEN NULL ELSE now() END)`,
+        [
+          pending.user_id, profile.id, profile.handle, profile.avatarUrl,
+          profile.avatarImage, profile.avatarContentType,
+        ],
       );
       await this.recordAuthEvent(pending.user_id, 'x_linked');
       return { ok: true, value: { outcome: 'link', handle: profile.handle } };
@@ -700,9 +711,14 @@ export const AccountService = {
       // erase a picture that was working.
       await getPool().query(
         `UPDATE oauth_accounts
-            SET handle = $1, avatar_url = COALESCE($2, avatar_url), last_login_at = now()
-          WHERE provider = 'x' AND provider_user_id = $3`,
-        [profile.handle, profile.avatarUrl, profile.id],
+            SET handle = $1,
+                avatar_url = COALESCE($2, avatar_url),
+                avatar_image = COALESCE($3, avatar_image),
+                avatar_content_type = COALESCE($4, avatar_content_type),
+                avatar_fetched_at = CASE WHEN $3::bytea IS NULL THEN avatar_fetched_at ELSE now() END,
+                last_login_at = now()
+          WHERE provider = 'x' AND provider_user_id = $5`,
+        [profile.handle, profile.avatarUrl, profile.avatarImage, profile.avatarContentType, profile.id],
       );
 
       const user = await loadUser({ id: userId });
@@ -801,10 +817,15 @@ export const AccountService = {
 
     let profile;
     try {
-      profile = await exchangeGoogleCode(config, { code: query.code, nonce });
+      profile = await withAvatarImage(await exchangeGoogleCode(config, { code: query.code, nonce }));
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : 'Google authorization failed' };
     }
+
+    // The picture the browser is allowed to show is the copy on our own origin, never
+    // the URL Google handed over — see `avatars.ts` for why. `withAvatarImage` has
+    // already cleared `avatarUrl` when it could not make that copy, so what is stored
+    // here and what that route will serve cannot disagree.
 
     if (pending.purpose === 'link') {
       if (!pending.user_id) return { ok: false, error: 'link authorization had no account' };
@@ -819,9 +840,15 @@ export const AccountService = {
         return { ok: false, error: 'that Google account is already linked to a different account' };
       }
       await getPool().query(
-        `INSERT INTO oauth_accounts (user_id, provider, provider_user_id, handle, avatar_url)
-         VALUES ($1, 'google', $2, $3, $4)`,
-        [pending.user_id, profile.id, profile.handle, profile.avatarUrl],
+        `INSERT INTO oauth_accounts
+           (user_id, provider, provider_user_id, handle, avatar_url,
+            avatar_image, avatar_content_type, avatar_fetched_at)
+         VALUES ($1, 'google', $2, $3, $4, $5, $6,
+                 CASE WHEN $5::bytea IS NULL THEN NULL ELSE now() END)`,
+        [
+          pending.user_id, profile.id, profile.handle, profile.avatarUrl,
+          profile.avatarImage, profile.avatarContentType,
+        ],
       );
       await this.recordAuthEvent(pending.user_id, 'google_linked');
       return { ok: true, value: { outcome: 'link', handle: profile.handle } };
@@ -834,10 +861,20 @@ export const AccountService = {
 
     if (link.rows.length > 0) {
       const userId = link.rows[0].user_id;
+      // The picture is refreshed on every sign-in, not only at link time: people change
+      // it, and Google is the only source for it. `COALESCE` on both the bytes and the
+      // URL is what makes a sign-in that could not fetch one keep the picture that was
+      // already there instead of erasing it — the same rule X's `avatar_url` update has
+      // always used, now applied to the copy the browser actually loads.
       await getPool().query(
-        `UPDATE oauth_accounts SET last_login_at = now()
+        `UPDATE oauth_accounts
+            SET avatar_url = COALESCE($2, avatar_url),
+                avatar_image = COALESCE($3, avatar_image),
+                avatar_content_type = COALESCE($4, avatar_content_type),
+                avatar_fetched_at = CASE WHEN $3::bytea IS NULL THEN avatar_fetched_at ELSE now() END,
+                last_login_at = now()
           WHERE provider = 'google' AND provider_user_id = $1`,
-        [profile.id],
+        [profile.id, profile.avatarUrl, profile.avatarImage, profile.avatarContentType],
       );
       const user = await loadUser({ id: userId });
       if (!user) return { ok: false, error: 'linked account no longer exists' };
@@ -864,7 +901,14 @@ export const AccountService = {
    */
   async createAccountFromOAuth(
     provider: 'x' | 'google',
-    profile: { id: string; handle: string | null; displayName: string | null; avatarUrl: string | null },
+    // The two avatar fields are optional in the type because this method is also called
+    // directly (by a test, and by any future caller building a profile by hand) with the
+    // identity alone. The scope of a *real* sign-in is the one path that can supply
+    // bytes, and it always goes through `withAvatarImage` first.
+    profile: {
+      id: string; handle: string | null; displayName: string | null; avatarUrl: string | null;
+      avatarImage?: Buffer | null; avatarContentType?: string | null;
+    },
   ): Promise<Result<AccountRow>> {
     const base = usernameFromHandle(profile.handle);
     // Key material is created per attempt, with the server wrapper and no password
@@ -892,10 +936,21 @@ export const AccountService = {
           [userId, candidate, profile.displayName ?? profile.handle, JSON.stringify(metadata)],
         );
         const user = rows[0];
+        // Both providers come through here on a first sign-in, so this is the one place
+        // the stored avatar has to be written for a brand-new account. `profile.avatarImage`
+        // is set by `withAvatarImage` on each provider's own path; when it is null the
+        // columns stay null and the account simply has no picture, which is a state the UI
+        // already renders.
         await getPool().query(
-          `INSERT INTO oauth_accounts (user_id, provider, provider_user_id, handle, avatar_url)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [user.id, provider, profile.id, profile.handle, profile.avatarUrl],
+          `INSERT INTO oauth_accounts
+             (user_id, provider, provider_user_id, handle, avatar_url,
+              avatar_image, avatar_content_type, avatar_fetched_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7,
+                   CASE WHEN $6::bytea IS NULL THEN NULL ELSE now() END)`,
+          [
+            user.id, provider, profile.id, profile.handle, profile.avatarUrl,
+            profile.avatarImage ?? null, profile.avatarContentType ?? null,
+          ],
         );
         await settings.upsert(user.id, { hrtMode: 'transfem' }).catch(() => undefined);
         await this.recordAuthEvent(user.id, `${provider}_account_created`);

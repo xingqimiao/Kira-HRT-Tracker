@@ -31,6 +31,7 @@ import {
   MCP_SERVER_VERSION,
 } from './mcp.ts';
 import { AccountService } from './accounts.ts';
+import { avatarEtag, avatarForUser } from './avatars.ts';
 import { isGoogleConfigured } from './oauth.ts';
 import { RecordService, buildExportPayload, publicStats } from './records.ts';
 import { getPool } from './db.ts';
@@ -239,6 +240,23 @@ function appUrl(path: string, params?: Record<string, string>): string {
   const url = new URL(path, getConfig().publicOrigin);
   if (params) for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   return url.toString();
+}
+
+/**
+ * Where an account's stored avatar is served from — an absolute URL on the web app's
+ * own origin, because that is the origin the browser's CSP permits for the image.
+ *
+ * Absolute rather than relative on purpose: a path like `/auth/avatar/<id>` would
+ * resolve against the *web app's* host, which is not a host this service is mounted on.
+ * A relative URL only works when the API is same-origin with the app, and these two are
+ * deliberately on different hosts.
+ *
+ * The shape of the URL is what keeps the picture from becoming a beacon, so it is worth
+ * stating: the id is the image's ETag, so the URL changes whenever the picture does, and
+ * a browser that already holds the bytes revalidates instead of downloading them again.
+ */
+function avatarPath(userId: string, etag?: string): string {
+  return `${getConfig().apiBaseUrl}/auth/avatar/${encodeURIComponent(userId)}${etag ?? ''}`;
 }
 
 /**
@@ -611,18 +629,19 @@ export function createRequestHandler() {
         const ctx = await contextFor(req);
         if (!ctx) return send(res, 401, { error: 'authentication required' });
         const counts = await RecordService.countByCategory(ctx);
-        const { rows } = await getPool().query<{
-          x_links: string; created_at: Date; x_avatar_url: string | null;
-        }>(
-          `SELECT
+        // The row type is an alias rather than an inline `query<{ ... }>` literal, which
+        // Node's type-stripper mis-reads across lines as a TSX element and then fails on
+        // at the first semicolon. The bundle build would not catch it; `npm test` does.
+        type Counts = { x_links: string; created_at: Date; has_avatar: boolean };
+        const { rows } = await getPool().query<Counts>(`
+          SELECT
              (SELECT count(*) FROM oauth_accounts       WHERE user_id = $1)                      AS x_links,
              (SELECT created_at FROM users WHERE id = $1)                                     AS created_at,
-             -- The linked X avatar, for the account header. It is already stored; the
-             -- summary simply never surfaced it, so the page had nothing but a generic
-             -- glyph to draw. Null when no X account is linked.
-             (SELECT avatar_url FROM oauth_accounts
-               WHERE user_id = $1 AND provider = 'x' AND avatar_url IS NOT NULL
-               ORDER BY linked_at ASC LIMIT 1)                                                 AS x_avatar_url`,
+             -- Whether *any* provider left a picture for the header — not X's only.
+             -- The avatar_url column is the provider's own URL, which the browser is not
+             -- allowed to load (see avatars.ts), so what is reported here is the image.
+             (SELECT count(*) FROM oauth_accounts
+               WHERE user_id = $1 AND avatar_image IS NOT NULL) > 0                          AS has_avatar`,
           [ctx.userId],
         );
         const row = rows[0];
@@ -632,8 +651,58 @@ export function createRequestHandler() {
           lab_count: counts.lab ?? 0,
           x_links: Number(row?.x_links ?? 0),
           x_login_available: AccountService.xLoginAvailable(),
-          x_avatar_url: row?.x_avatar_url ?? null,
+          // A path on our own origin, never the provider's URL: `img-src 'self'` is
+          // what the web app is served with, so an external avatar URL would be blocked
+          // by the browser even though it was stored correctly.
+          //
+          // This field used to be `x_avatar_url`, and it was X's URL. The name changed
+          // because the value did: anyone reading it has to be able to see that it is a
+          // per-account URL rather than a constant, or they will cache it and serve one
+          // person's picture to another.
+          avatar_url: row?.has_avatar ? avatarPath(ctx.userId) : null,
         });
+      }
+
+      // --- Auth: stored avatar ---------------------------------------------
+      //
+      // The image is served from the **web app's** origin rather than this one. That is
+      // not a preference: the app is served with `img-src 'self' data: blob:`, so a URL
+      // on the API host would be blocked by the browser, and the account header would
+      // show a placeholder exactly as it does today. The bytes live in this database
+      // (`avatars.ts` says why they are not on disk in the web root), so this route has
+      // to exist somewhere and this is the only service that holds them. The Caddy block
+      // that puts it on `PUBLIC_ORIGIN` is in DEPLOY.md §3.
+      //
+      // Deliberately unauthenticated, and deliberately a plain URL: an `<img src>` cannot
+      // send an Authorization header. What makes that safe is that the id is an opaque
+      // uuid — the picture is public in the same weak sense an avatar always is, and
+      // nothing about the account is readable from it. The trade is stated in DEPLOY.md
+      // because it is a real one: anyone who learns a user's id can fetch that user's
+      // picture. Adding a signed per-image token would close it, at the cost of a URL
+      // that changes on a schedule and therefore of a request per expiry.
+      const avatarMatch = path.match(/^\/auth\/avatar\/([0-9a-f-]{36})$/);
+      if (avatarMatch && req.method === 'GET') {
+        const avatar = await avatarForUser(avatarMatch[1]);
+        if (!avatar) return send(res, 404, { error: 'no avatar' });
+
+        // The id is the image's identity, so the URL can be cached; the revalidation is
+        // what keeps a new picture from being shadowed by an old one, and a 304 is the
+        // whole point of the scheme — it is the request that never happens. `private`
+        // because this is one account's picture, and `nosniff` is already applied to
+        // every response by `applyCommonHeaders`.
+        const etag = avatarEtag(avatar);
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+        if (req.headers['if-none-match'] === etag) {
+          res.writeHead(304).end();
+          return;
+        }
+
+        // The content type is one of png/jpeg/webp by construction — `fetchAvatarImage`
+        // refuses anything else — so nothing here can be served as HTML or SVG.
+        res.writeHead(200, { 'Content-Type': avatar.contentType });
+        res.end(avatar.bytes);
+        return;
       }
 
       if (path === '/auth/x/links' && req.method === 'GET') {

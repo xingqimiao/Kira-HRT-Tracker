@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
 import { useTranslation, LanguageProvider } from './contexts/LanguageContext';
 import { useDialog, DialogProvider } from './contexts/DialogContext';
 import { HRTModeProvider, useHRTMode } from './contexts/HRTModeContext';
@@ -44,6 +44,8 @@ import McpSettings from './pages/McpSettings';
 import PublicShare from './pages/PublicShare';
 import ShareSettings from './pages/ShareSettings';
 import Onboarding, { markOnboardingSeen, shouldShowOnboarding } from './pages/Onboarding';
+import HrtMilestoneEffect from './components/HrtMilestoneEffect';
+import { armMilestone, clearArmedMilestone } from './utils/hrtMilestone';
 
 const AppContent = () => {
     const { t, lang, setLang } = useTranslation();
@@ -91,6 +93,7 @@ const AppContent = () => {
         calibrationHistoryMode, setCalibrationHistoryMode,
         aaChartMode, setAaChartMode,
         hrtStartDate, setHrtStartDate,
+        pendingMilestone,
         calibration,
         currentLevel,
         currentT,
@@ -192,6 +195,25 @@ const AppContent = () => {
     // the hook's `enabled` is documented as "the user's preference", and `autoSync`
     // is that preference — passing only the session left the Settings toggle
     // connected to nothing, so records kept syncing with it switched off.
+    /**
+     * The milestone this visit should celebrate, as `<days>:<cake|confetti>`.
+     *
+     * Splitting it here rather than in the account page is what puts the notice
+     * *above* the shell's scroll container instead of inside a page: the banner is
+     * a notice about the account, not a row of it, and it should still be up when
+     * someone has scrolled the settings list. Which day is a milestone is
+     * arithmetic (`milestoneFor`); "has this one been shown yet" is a stored fact,
+     * and both are already answered by the data layer before this point.
+     */
+    const celebration = armMilestone(pendingMilestone);
+
+    /**
+     * Cleared once the notice has shown itself, so a later mount in the same
+     * session does not replay it. Not on unmount — see the note on
+     * `armMilestone` in src/utils/hrtMilestone.ts for why.
+     */
+    const onMilestoneDone = useCallback(() => clearArmedMilestone(), []);
+
     const coreSyncState = useCoreSync({
         token: coreSession.token,
         userId: coreSession.user?.userId ?? null,
@@ -409,6 +431,24 @@ const AppContent = () => {
             onNavigate={(v) => handleViewChange(v as ViewKey)}
             navLabel="Primary"
         >
+                {/* The milestone notice sits *between* the navigation and the
+                    scrolling content, so it is in the shell rather than in a page.
+
+                    In flow, not fixed: it takes its own strip of the layout, so it
+                    covers no row of the page, cannot collide with the floating
+                    bottom navigation (which is fixed to the viewport floor), and
+                    needs no z-index dance with the rail — as a child of
+                    `.m3-shell-body` it inherits the same 80px offset the content
+                    does, so from 840 up it starts beside the rail rather than
+                    under it. That strip is the element's own `height` and it is
+                    measured from the bar and tweened on the same token the bar
+                    animates in on, so the page is pushed rather than jumped. See
+                    the block in index.css. */}
+                <HrtMilestoneEffect
+                    milestone={celebration?.milestone ?? null}
+                    days={celebration?.days ?? 0}
+                    onDone={onMilestoneDone}
+                />
                 <div
                     ref={mainScrollRef}
                     key={currentView}

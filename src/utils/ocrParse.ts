@@ -116,7 +116,7 @@ const EXCLUSIONS = [
  * Wide enough to keep every real reading, tight enough to refuse the failures that
  * matter: a misread year (`2026`), a page number, a patient ID.
  */
-const BOUNDS = {
+const BOUNDS: Record<LabUnit, { min: number; max: number }> = {
     'pg/ml': { min: 1, max: 2000 },
     'pmol/l': { min: 1, max: 8000 },
     'ng/dl': { min: 1, max: 3000 },
@@ -135,8 +135,8 @@ const BOUNDS = {
  * unit stays unknown, which is what keeps a made-up conversion out of the record.
  */
 const UNIT_NICKNAMES = (() => {
-    const map = new Map()
-    const known = Object.keys(UNIT_ANALYTES)
+    const map = new Map<string, LabUnit>()
+    const known = Object.keys(UNIT_ANALYTES) as LabUnit[]
     for (const unit of known) {
         map.set(unit, unit)
         // Every `l` in a real unit also arrives as `I`, `i`, `1` or `|`. Generated
@@ -154,7 +154,7 @@ const UNIT_NICKNAMES = (() => {
     // always wins, and so these cannot shadow one.
     for (const [from, to] of [
         ['pgml', 'pg/ml'], ['pmoll', 'pmol/l'], ['ngdl', 'ng/dl'], ['nmoll', 'nmol/l'],
-    ]) {
+    ] as [string, LabUnit][]) {
         if (!map.has(from)) map.set(from, to)
     }
     return map
@@ -170,7 +170,7 @@ const UNIT_NICKNAMES = (() => {
  *     decimal, so a thousands separator is left alone.
  *   - Runs of spaces, which the layout leaves everywhere.
  */
-export function normalizeText(raw) {
+export function normalizeText(raw: unknown): string {
     if (typeof raw !== 'string') return ''
     return raw
         // Full-width digits and letters → ASCII.
@@ -210,7 +210,7 @@ export function normalizeText(raw) {
  * corrupt a value. See `UNIT_NICKNAMES` for why this is a lookup rather than a
  * character rewrite.
  */
-export function canonicalUnit(token) {
+export function canonicalUnit(token: unknown): LabUnit | null {
     const cleaned = String(token ?? '')
         .toLowerCase()
         // Strip anything that is not a letter, digit or slash — the regex may have
@@ -228,18 +228,18 @@ export function canonicalUnit(token) {
  * silently pick one. The UI shows them and the user confirms — that is also the
  * safety property, since nothing reaches the record without a human pressing save.
  */
-export function findHormoneValues(rawText) {
+export function findHormoneValues(rawText: unknown): HormoneCandidate[] {
     const text = normalizeText(rawText)
     if (!text) return []
 
-    const out = []
+    const out: HormoneCandidate[] = []
     for (const line of text.split(/\r?\n/)) {
         out.push(...valuesInLine(line))
     }
 
     // Deduplicate identical (analyte, value, unit) triples — a report printed in two
     // columns can otherwise offer the same reading twice.
-    const seen = new Set()
+    const seen = new Set<string>()
     return out.filter((c) => {
         const key = `${c.analyte}|${c.value}|${c.unit}`
         if (seen.has(key)) return false
@@ -259,7 +259,7 @@ export function findHormoneValues(rawText) {
  * Walked backwards over spaces so `< 143` and `<143` both count. The widened forms are
  * included because Chinese typesetting uses them.
  */
-function isReferenceBound(line, index) {
+function isReferenceBound(line: string, index: number): boolean {
     let i = index - 1
     while (i >= 0 && /\s/.test(line[i])) i--
     if (i < 0) return false
@@ -285,8 +285,8 @@ function isReferenceBound(line, index) {
  * outside every unit's bounds and is refused a step later anyway, whereas refusing to
  * treat `-joined digits as a range would miss the real ranges, which are common.
  */
-function referenceSpans(line) {
-    const spans = []
+function referenceSpans(line: string): [number, number][] {
+    const spans: [number, number][] = []
     const bound = /[<>≤≥＜＞]\s*(\d+(?:\.\d+)?)/g
     let m
     while ((m = bound.exec(line)) !== null) {
@@ -300,7 +300,7 @@ function referenceSpans(line) {
 }
 
 /** Whether a number at `index` falls inside one of those spans. */
-function isReference(index, spans) {
+function isReference(index: number, spans: [number, number][]): boolean {
     return spans.some(([from, to]) => index >= from && index < to)
 }
 
@@ -319,7 +319,7 @@ function isReference(index, spans) {
  *   - exactly one distinct unit, since a wrong unit changes what the number means;
  *   - the label within the usual window, and matching that unit's analyte.
  */
-function tableRowValue(line, spans) {
+function tableRowValue(line: string, spans: [number, number][]): HormoneCandidate | null {
     const numbers = [...line.matchAll(/\d+(?:\.\d+)?/g)]
         .filter((m) => !isReference(m.index, spans))
         // The bracketed abbreviation is part of the *label*, and it contains a digit:
@@ -350,11 +350,11 @@ function tableRowValue(line, spans) {
     return { analyte: UNIT_ANALYTES[unit], value, unit, source: line.trim().slice(0, 120) }
 }
 
-function valuesInLine(line) {
+function valuesInLine(line: string): HormoneCandidate[] {
     const lower = line.toLowerCase()
     if (EXCLUSIONS.some((x) => lower.includes(x))) return []
 
-    const results = []
+    const results: HormoneCandidate[] = []
     const spans = referenceSpans(line)
     // A number followed by a unit, which is the shape on most reports: `45.2 pg/mL`.
     // The unit alternation is `[A-Za-z]` rather than `[a-z]` because OCR emits the
@@ -371,7 +371,7 @@ function valuesInLine(line) {
         const value = Number(match[1])
         const unit = canonicalUnit(match[2])
         if (unit === null || !Number.isFinite(value)) continue
-        const analyte = UNIT_ANALYTES[unit]
+        const analyte = UNIT_ANALYTES[unit] as Analyte
         const bounds = BOUNDS[unit]
         if (value < bounds.min || value > bounds.max) continue
 
@@ -414,20 +414,20 @@ function valuesInLine(line) {
  * A window rather than the whole line because a two-column report puts the next row's
  * label on this line, and matching anywhere would attribute it to the wrong analyte.
  */
-function labelContext(line, index, matchLength) {
+function labelContext(line: string, index: number, matchLength: number): Analyte | null {
     const centre = index + matchLength
     const windowStart = Math.max(0, centre - 24)
     const windowEnd = Math.min(line.length, centre + 20)
     const window = line.slice(windowStart, windowEnd).toLowerCase()
 
-    for (const [analyte, labels] of Object.entries(LABELS)) {
+    for (const [analyte, labels] of Object.entries(LABELS) as [Analyte, string[]][]) {
         if (labels.some((label) => matchesLabel(window, label))) return analyte
     }
     return null
 }
 
 /** A label match that respects boundaries for the short Latin abbreviations. */
-function matchesLabel(window, label) {
+function matchesLabel(window: string, label: string): boolean {
     if (label.length > 2) return window.includes(label)
     // A one- or two-character abbreviation must sit on its own.
     return new RegExp(`(^|[^a-z0-9])${label}([^a-z0-9]|$)`, 'i').test(window)

@@ -29,6 +29,7 @@ function configWith(turnstile: Config['turnstile']): Config {
     port: 0,
     databaseUrl: '',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    keysFromCredentials: [],
     encryptionKey: null,
     google: null,
     turnstile,

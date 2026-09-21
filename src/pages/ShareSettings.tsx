@@ -29,7 +29,7 @@ const toLocalDateTimeValue = (timestamp: number): string => {
 // `toLocaleString()` renders seconds, which makes every timestamp in the list
 // read as noise. Share stamps only ever matter to the minute.
 const formatStamp = (timestamp: number, lang: string): string =>
-    new Date(timestamp).toLocaleString(LOCALE_MAP[lang] || 'en-US', {
+    new Date(timestamp).toLocaleString((LOCALE_MAP as Record<string, string>)[lang] || 'en-US', {
         month: 'short',
         day: 'numeric',
         year: 'numeric',

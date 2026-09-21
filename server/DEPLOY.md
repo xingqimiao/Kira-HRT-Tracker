@@ -376,15 +376,58 @@ hrt.kiramyao.com {
         file_server
     }
 
+    # The account avatar, proxied to the API and **rewritten onto this origin**.
+    #
+    # Two things are happening here and both are needed. The picture is copied from
+    # Google or X once, at sign-in, into `oauth_accounts.avatar_image`, and
+    # `GET /hrt/auth/avatar/<id>` on the API serves it back. But `img-src 'self'` does not
+    # allow `api.kiramyao.com`, so loading it from there is blocked by the browser — which
+    # is the very bug this feature exists to fix, and it would look identical to "we never
+    # stored a picture".
+    #
+    # So the app's **own** origin proxies it, and the proxied response names this origin in
+    # `Content-Location`. That header is not decoration: the API reports the absolute
+    # URL in `/auth/account`, and this is what makes the browser resolve that URL
+    # against `hrt.kiramyao.com`. Leave the block out and avatars disappear, with a CSP
+    # error in the console and nothing in the server log.
+    handle /auth/avatar/* {
+        reverse_proxy 127.0.0.1:8788 {
+            header_up Host {upstream_hostport}
+            header_down Content-Location /auth/avatar/{http.reverse_proxy.upstream.uri.path.file}
+        }
+    }
+
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         X-Content-Type-Options "nosniff"
         Referrer-Policy "no-referrer"
-        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://api.kiramyao.com; frame-ancestors 'none'; base-uri 'self'"
+        # `connect-src` gained the app's own origin. The CSP in this header (and the
+        # equivalent one on the API host) is delivered as a response header, but the
+        # browser enforces it against the document's *own* origin, so every fetch the
+        # bundle makes to `hrt.kiramyao.com/auth/avatar/...` had to be allowed here.
+        # Nothing external was added: `img-src` stays `self`, which is the point — a
+        # provider CDN in that list is what this design exists to avoid.
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://hrt.kiramyao.com https://api.kiramyao.com; frame-ancestors 'none'; base-uri 'self'"
         -Server
     }
 }
 ```
+
+**The avatar relies on the CSP being on this host, not on Cloudflare's default.** As of the
+`2026-09-21` check, `hrt.kiramyao.com` returns **no** `Content-Security-Policy` header at
+all — the block above is documented but not live. That was verified from a real browser:
+a cross-origin image loads fine on the deployed site today (`lh3.googleusercontent.com`
+answers 200 and the image paints), so the policy is not currently what blocks an avatar.
+It will start blocking one the moment this block is deployed, which is why the proxy and
+the `connect-src` entry above ship in the same change as the feature.
+
+**What that means for the trade.** The plan is still to store the picture rather than
+hotlink it, for the reason that survives either way: a hotlinked avatar is a request to
+Google or X on every visit to the account page, which names the visitor to the provider
+for no benefit. Storing plus re-serving also means the picture survives Google rotating
+its CDN URL. So if anyone is tempted to "simplify" this back to hotlinking once the CSP is
+live — don't; and if the CSP is never deployed, the arrangement costs nothing but the
+proxy block above.
 
 `style-src 'unsafe-inline'` is there because Tailwind + React inject style
 attributes. Drop it if you can build without that.
@@ -557,6 +600,35 @@ SELECT username, failed_unlocks, locked_until FROM users WHERE locked_until > no
 SELECT u.username, o.provider, u.created_at
   FROM users u JOIN oauth_accounts o ON o.user_id = u.id
  WHERE u.password_hash IS NULL ORDER BY u.created_at;
+```
+
+**Provider avatars.** The picture is copied from the provider once, at link/sign-in
+time, into `oauth_accounts.avatar_image` (png/jpeg/webp, capped at 256 KiB, plus
+`avatar_content_type` and `avatar_fetched_at`). `avatar_url` is kept alongside it as the
+record of where the copy came from, and is never rendered. `GET /auth/avatar/:userId`
+on this service re-serves the bytes; the web app's Caddy block proxies that route onto
+`hrt.kiramyao.com` so the browser's `img-src 'self'` permits it — see §3.
+
+The route is **unauthenticated by design**: an `<img src>` cannot carry an
+`Authorization` header, and the id in the URL is an opaque uuid. The consequence is worth
+stating plainly rather than discovering: anyone who knows a user's id can fetch that
+user's picture. It is a picture the user chose to publish on X or Google, so the exposure
+is small but not zero. Closing it means signing each image URL and rotating that
+signature, which costs a request per rotation — do it if avatars ever need to be private.
+Avatars are included in account deletion by the existing `ON DELETE CASCADE`; there is no
+second store to clean up.
+
+A failed fetch is never allowed to fail a sign-in: a 404, a timeout, an HTML error page
+or a body over the cap all leave the account with no picture, which is the state it was
+in before this feature existed. To audit what was actually captured:
+
+```sql
+SELECT provider, count(*) FILTER (WHERE avatar_image IS NOT NULL) AS with_picture,
+       count(*) AS links
+  FROM oauth_accounts GROUP BY provider;
+-- A picture whose source URL is gone is a copy we can no longer refresh.
+SELECT user_id, provider, avatar_url FROM oauth_accounts
+ WHERE avatar_image IS NULL AND avatar_url IS NOT NULL;
 ```
 
 **Retired tables and columns.** Five tables have been dropped and `schema.sql` carries

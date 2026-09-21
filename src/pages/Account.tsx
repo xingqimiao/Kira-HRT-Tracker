@@ -141,19 +141,25 @@ const Account: React.FC<AccountProps> = ({
                         </div>
                     )}
 
-                    {/* Identity. The linked X avatar when there is one, and the generic
-                        glyph when there is not — the same rule the X row uses further
-                        down, so this either says "the account you linked" or reads as a
-                        deliberate placeholder rather than a missing image. */}
+                    {/* Identity. The account's avatar when there is one, and the generic
+                        glyph when there is not — the same rule the provider rows below
+                        use, so this either shows the picture copied at link/sign-in time
+                        or reads as a deliberate placeholder rather than a missing image.
+                        The URL is the API's own, re-serving that copy. It is never the
+                        provider's: `img-src 'self'` blocks those, and hotlinking one
+                        would announce every visit to this page to X or Google. */}
                     <div className={`flex items-center gap-3 py-5 ${divider}`}>
-                        {summary?.xAvatarUrl ? (
+                        {summary?.avatarUrl ? (
                             <img
-                                src={summary.xAvatarUrl}
+                                src={summary.avatarUrl}
                                 alt=""
                                 className="w-9 h-9 rounded-full object-cover shrink-0"
                                 // A broken fetch must not leave a torn glyph; degrading to
-                                // the placeholder is better than an empty hole.
-                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                                // the placeholder is better than an empty hole. `hidden`
+                                // rather than an inline display style, because React keeps
+                                // this node when the summary refreshes and a stale
+                                // `display:none` would outlive a perfectly good new URL.
+                                onError={(e) => { e.currentTarget.hidden = true; }}
                             />
                         ) : (
                             <Icon icon={UserCircle} size={36} strokeWidth={1.5} className={`${muted} shrink-0`} />

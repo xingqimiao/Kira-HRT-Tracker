@@ -193,6 +193,21 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
   const canDetach = (provider: 'x' | 'google') =>
     methods === null || methods.hasPassword || methods.providers.some((p) => p !== provider);
 
+  /**
+   * The provider the account's picture came from, named for display.
+   *
+   * Both providers write an avatar, so which one to name is decided by the same rule the
+   * server uses to pick the image: the most recently fetched one wins. Only providers
+   * that actually left a picture are considered, so the sentence never names a provider
+   * that supplied nothing.
+   */
+  const linkedProviderName = (): string | null => {
+    const withPicture = links.filter((l) => l.avatarUrl !== null);
+    if (withPicture.length === 0) return null;
+    const newest = withPicture[0].provider;
+    return newest === 'x' ? 'X' : newest === 'google' ? 'Google' : newest;
+  };
+
   // Nothing paints until the first load lands: the page used to render only the parts
   // that need no data and then grow as the summary and the X link arrived, which reads
   // as a flicker on every visit.
@@ -209,10 +224,37 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
         </button>
 
         <h1 className="text-m3-title-xl mb-1">{t('core.acct.title')}</h1>
-        <p className={`text-xs mb-6 ${muted}`}>
-          {t('core.acct.signed_in_as')} <span className="font-medium">{session.user?.username}</span>
-          {createdDate ? ` · ${t('core.acct.created').replace('{date}', createdDate)}` : ''}
-        </p>
+        {/* The account's picture, on the page that talks about the account. The URL is
+            the API's own — it re-serves the copy taken at link/sign-in time — so this
+            is not a request to X or Google and `img-src 'self'` allows it. Absent means
+            nothing is drawn: a placeholder beside a one-line "signed in as" would be
+            noise, unlike the account page header where it is the identity block. */}
+        <div className={`flex items-center gap-2.5 mb-6`}>
+          {summary?.avatarUrl && (
+            <img
+              src={summary.avatarUrl}
+              alt=""
+              className="w-8 h-8 rounded-full object-cover shrink-0"
+              onError={(e) => { e.currentTarget.hidden = true; }}
+            />
+          )}
+          <div className="min-w-0">
+            <p className={`text-xs ${muted}`}>
+              {t('core.acct.signed_in_as')} <span className="font-medium">{session.user?.username}</span>
+              {createdDate ? ` · ${t('core.acct.created').replace('{date}', createdDate)}` : ''}
+            </p>
+            {/* One sentence, shown only when there is a picture to explain it, naming
+                the provider it came from. This is the promise the design makes — no
+                request to X or Google on page load — said where a user can see it. The
+                provider name is already stored in `links`, so nothing new is fetched
+                to render this. */}
+            {summary?.avatarUrl && linkedProviderName() && (
+              <p className={`text-[11px] mt-0.5 ${muted}`}>
+                {t('core.acct.avatar_hint').replace('{provider}', linkedProviderName()!)}
+              </p>
+            )}
+          </div>
+        </div>
 
         {notice && (
           <p className="callout !text-m3-label-medium mb-4" role="status">{notice}</p>
@@ -271,8 +313,12 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
                   <Row
                     key={l.handle ?? l.linkedAt}
                     icon={l.avatarUrl ? (
-                      // The real avatar once we have one. The provider’s own image is the honest
-                      // marker that a *specific* X account is linked, which the generic glyph cannot say.
+                      // Note this is the *provider's* recorded URL, kept as the trace of
+                      // where the stored copy came from. It is drawn because it is what
+                      // marks a *specific* X account, and a picture the provider serves
+                      // is a public face, not a beacon — the app makes no request to X
+                      // until this row is rendered. The account header, which is on
+                      // screen far more often, draws the stored copy instead.
                       <img
                         src={l.avatarUrl}
                         alt=""
@@ -300,10 +346,15 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
         )}
 
         {/* ── Google ───────────────────────────────────────────────────────── */}
-        {/* Same row, same rules. No handle and no avatar by design: the app asks Google
-            for the `openid` scope only, so there is nothing to show but the name.
-            A link still shows when the deployment has stopped offering Google, or the
-            account would have no way to detach it. */}
+        {/* Same row, same rules. No handle: Google is never asked for `email`, and its
+            `sub` identifies the account without one. A link still shows when the
+            deployment has stopped offering Google, or the account would have no way to
+            detach it.
+            The picture is not drawn here for a boring reason: this row's icon slot holds
+            the letter that names the provider, and Google's picture only exists once
+            the account is linked — putting it in the slot on one branch and a "G" on the
+            other would make the same row mean two things. The account's picture is at
+            the top of this page instead. */}
         {(googleAvailable || methods?.providers.includes('google')) && (
           <section className="mb-6">
             <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{t('core.acct.google_section')}</span>

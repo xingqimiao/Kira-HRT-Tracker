@@ -129,15 +129,30 @@ export interface AccountSummary {
   labCount: number;
   xLinks: number;
   xLoginAvailable: boolean;
-  /** The linked X avatar, for the account header. Null when no X account is linked. */
-  xAvatarUrl: string | null;
+  /**
+   * The account's avatar, for the account header — a URL on the API's own host,
+   * re-serving the picture that was copied there at link/sign-in time. Null when no
+   * provider left one.
+   *
+   * It is never the provider's own URL. The app is served with `img-src 'self' data:
+   * blob:`, so a `pbs.twimg.com` or `lh3.googleusercontent.com` address would be
+   * blocked by the browser — and hotlinking it would tell that provider every time this
+   * page was opened, which is the request this whole arrangement exists to avoid.
+   */
+  avatarUrl: string | null;
 }
 
 export interface OAuthLink {
-  /** Which provider this row is. Google sends no handle and no avatar by design. */
+  /** Which provider this row is. Google sends no handle, and lately a picture. */
   provider: string;
   handle: string | null;
-  /** The avatar the provider sent, captured server-side at link/login time. */
+  /**
+   * The URL the provider served the avatar from, recorded when it was copied.
+   *
+   * This is metadata, **not** something to render: the app's `img-src` forbids it, and
+   * loading it would tell the provider every time this list was shown. The picture the
+   * page draws comes from `AccountSummary.avatarUrl`.
+   */
   avatarUrl: string | null;
   linkedAt: string | null;
   lastLoginAt: string | null;
@@ -296,7 +311,7 @@ export const coreAuth = {
       labCount: raw.lab_count,
       xLinks: raw.x_links,
       xLoginAvailable: raw.x_login_available,
-      xAvatarUrl: raw.x_avatar_url ?? null,
+      avatarUrl: raw.avatar_url ?? null,
     };
   },
 
@@ -567,8 +582,8 @@ export function primeLoginProviders(): Promise<{ x: boolean; google: boolean }> 
 /**
  * Where the browser lands after a provider authorization, read from the current URL.
  *
- * `handle` is X's alone: Google is asked for the `openid` scope only, so it sends no
- * handle and no avatar, and everything that renders one has to treat that as absent
+ * `handle` is X's alone: Google is asked for `openid profile` so it also sends a
+ * picture, but never a handle. Anything that renders one treats its absence as a state
  * rather than as a missing value to paper over.
  */
 export function readAuthCallbackParams(): {

@@ -45,6 +45,7 @@ before(async () => {
     port: 0,
     databaseUrl: '',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    keysFromCredentials: [],
     // The record store seals every payload; a suite that writes records must carry a
     // key, because the store refuses rather than writing plaintext.
     encryptionKey: TEST_ENCRYPTION_KEY,
@@ -446,17 +447,32 @@ test('a Google identity is read from the ID token, and its code becomes a sessio
   };
   const jwt = (payload: unknown) => `x.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.y`;
 
-  // Only `sub` is taken. The scope is `openid` alone, so the app must not start
-  // building a handle out of claims it never asked for — the privacy policy says we
-  // receive no name, address or picture, and this is the line that keeps that true.
+  // What is taken, and what is deliberately not, from a token that carries everything.
+  //
+  // The scope is `openid profile`, so `picture` is real and is read — see
+  // `avatars.test.ts` for the copying and serving half. `email` and `name` arrive in
+  // this token too, and neither is used: the address is not asked for at all, and the
+  // display name is still shown as the name the user chose rather than the one Google
+  // holds. Taking a claim because it was handed over is how a consent screen becomes
+  // data collection, so each one here is a decision.
   const profile = parseGoogleIdToken(
     jwt({ ...claims, email: 'someone@example.test', name: 'Someone', picture: 'https://example.test/p.png' }),
     { clientId: GOOGLE_CLIENT_ID, nonce: 'the-nonce' },
   );
   assert.equal(profile.id, claims.sub, 'the subject is the account key');
   assert.equal(profile.handle, null, 'no email was requested, so none is shown');
-  assert.equal(profile.displayName, null);
-  assert.equal(profile.avatarUrl, null);
+  assert.equal(profile.displayName, null, 'the name the user chose wins over Google’s');
+  assert.equal(profile.avatarUrl, 'https://example.test/p.png', 'the picture claim is read');
+
+  // And the claim is optional, not required: Google documents it as "might be
+  // provided", so a token without one is an ordinary account, not a failed parse.
+  for (const missing of [undefined, 42, 'http://insecure.example.test/p.png']) {
+    const withoutPicture = parseGoogleIdToken(jwt({ ...claims, picture: missing }), {
+      clientId: GOOGLE_CLIENT_ID,
+      nonce: 'the-nonce',
+    });
+    assert.equal(withoutPicture.avatarUrl, null, `picture=${String(missing)} yields no avatar`);
+  }
 
   // `nonce` is the replay guard and `aud` is what stops another client's token being
   // presented here; without the second one any Google app's token would be accepted.
@@ -637,6 +653,7 @@ test('the per-IP limiter refuses a burst of sign-in attempts', async () => {
     port: 0,
     databaseUrl: '',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    keysFromCredentials: [],
     encryptionKey: null,
     turnstile: null,
     x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
@@ -664,6 +681,7 @@ test('the per-IP limiter refuses a burst of sign-in attempts', async () => {
       port: 0,
       databaseUrl: '',
       serverDekKey: 'test-server-dek-key-0123456789abcdef',
+      keysFromCredentials: [],
       encryptionKey: null,
       turnstile: null,
       x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },

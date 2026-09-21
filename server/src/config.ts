@@ -69,9 +69,10 @@ export interface Config {
    * Google sign-in. Null until the OAuth client is configured, and the app then
    * reports Google as unconfigured rather than offering a button that cannot work.
    *
-   * Requests only the `openid` scope. That is enough because identity comes from the
-   * ID token's `sub` claim, which Google marks as always present and never reused —
-   * so no email, no name, no picture, and no second call to the userinfo endpoint.
+   * Requests `openid profile`. `openid` is what makes the ID token exist at all, and
+   * its `sub` claim — always present, never reused — is what identifies the account.
+   * `profile` is there for the picture and nothing else; see `oauth.ts` for why that
+   * scope rather than a userinfo call. No `email`: this product needs no address.
    */
   google: XOAuthConfig | null;
   /**
