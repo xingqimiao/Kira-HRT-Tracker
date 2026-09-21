@@ -35,19 +35,29 @@ import {
 const W = 1200;
 const H = 630;
 
-/** The app's dark-theme roles, from `src/index.css`. */
+/**
+ * Material Design 3 Tonal Color Hierarchy & Typography Roles:
+ * - surfaceDark: Surface Container Low / Dark (deep midnight plum with pink-purple undertone, not cold grey)
+ * - primaryContainer: Gentle low-saturation soft pink-lavender card background
+ * - onPrimaryContainer: Deep rich plum / dark red-brown for main title
+ * - onSurfaceVariant: Muted mauve-tinted grey for subtitle
+ * - urlVariant: Harmonious muted tone for domain link
+ */
 const C = {
-  surface: '#0D0D12',
-  surfaceContainer: '#1B1C22',
-  onSurface: '#F4F5F7',
-  onSurfaceVariant: '#A2A4AD',
-  primary: '#F5A9B8',
-  primaryLight: '#F8C3CD',
-  outline: '#3A3C45',
+  surfaceDark: '#150E17',
+  primaryContainer: '#F0D7E1',
+  onPrimaryContainer: '#2B101E',
+  onSurfaceVariant: '#68505C',
+  urlVariant: '#7D6370',
+
+  // Vial palette from src/index.css
+  outline: '#443348',
   vialLiquid: '#B191DB',
   vialSurface: '#C9B0E8',
   vialSheen: '#F0E9FA',
   vialSpec: '#8A63C4',
+  primary: '#F5A9B8',
+  primaryLight: '#F8C3CD',
 };
 
 const SPARKLE = ['.#.', '###', '.#.'];
@@ -121,104 +131,77 @@ function vialSvg({ scale, x, y, fill = 0.5 }) {
 }
 
 /**
- * The M3 Expressive shape language, drawn as SVG paths.
- *
- * Material's shape library -- Circle, Square, Slanted, Arch, Semicircle, Oval, Pill,
- * Triangle, Arrow, Fan, Diamond, Clamshell, Pentagon, Gem, Sunny, the cookies, the
- * clovers, Burst, Soft burst, Boom, Soft boom, Flower, Puffy, Puffy diamond,
- * Ghost-ish, Pixel circle, Pixel triangle, Bun, Heart -- is a set of masks, not
- * decoration: the point is that a container can take any of them and still hold
- * content legibly. Two are used here, and only two, because a card showing off six
- * shapes says nothing.
- *
- * `lobe` is the container. It is the Puffy family: a superellipse blended toward a
- * circle with a periodic puff, which reads as a soft squircle rather than a flower
- * once it is a whole card wide -- the one that can carry 1200x630 without the lobes
- * turning into a doily.
- *
+ * G2 curvature-continuous rounded panel:
+ * - Left edge has no rounded corners, directly running through from (0, 0) to (0, h).
+ * - Right side corners (top-right and bottom-right) are G2 continuous curves
+ *   with corner radius 80px, creating an organic, smooth squircle fillet.
+ * - Curvature κ smoothly starts at 0 on the straight line, peaks at 45°, and smoothly
+ *   returns to 0 on the vertical line, eliminating visual curvature creases.
  */
+function g2RoundedPanel(w, h, cornerRadius = 80, d = 0.8) {
+  const L = cornerRadius;
+  const b = 2 * d - 1;
+  const a = b / 2;
 
-/** A Puffy-family blob: `n` lobes, `r` where they sit, blended toward a squircle. */
-function lobe(cx, cy, r, n, phase = 0) {
-  const steps = n * 24;
-  const e = 2.6; // 2 is a circle; higher is squarer.
-  const pts = [];
-  for (let i = 0; i < steps; i++) {
-    const t = (i / steps) * Math.PI * 2;
-    const c = Math.cos(t);
-    const s = Math.sin(t);
-    const sx = Math.sign(c) * Math.abs(c) ** (2 / e);
-    const sy = Math.sign(s) * Math.abs(s) ** (2 / e);
-    const puff = 1 + 0.028 * Math.cos(n * t + phase);
-    pts.push([cx + r * sx * puff, cy + r * sy * puff]);
-  }
-  // Catmull-Rom to cubic Bezier, so the lobes are curved rather than faceted.
-  let d = `M${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`;
-  for (let i = 0; i < pts.length; i++) {
-    const p0 = pts[(i - 1 + pts.length) % pts.length];
-    const p1 = pts[i];
-    const p2 = pts[(i + 1) % pts.length];
-    const p3 = pts[(i + 2) % pts.length];
-    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
-    const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
-    d += ` C${c1[0].toFixed(2)} ${c1[1].toFixed(2)} ${c2[0].toFixed(2)} ${c2[1].toFixed(2)} ${p2[0].toFixed(2)} ${p2[1].toFixed(2)}`;
-  }
-  return `${d} Z`;
-}
+  // Top-right corner (horizontal y=0 -> vertical x=w)
+  const trP1 = [w - L + a * L, 0];
+  const trP2 = [w - L + b * L, 0];
+  const trP3 = [w - (1 - d) * L, (1 - d) * L];
 
+  const trQ1 = [w, (1 - b) * L];
+  const trQ2 = [w, (1 - a) * L];
+  const trQ3 = [w, L];
 
-/**
- * The Slanted container: Material's "Slanted" shape, the one whose right edge leans.
- *
- * Drawn as a path rather than a rect+skew, because the card needs the fill and the
- * edge to be one object: a skewed rect inside a clipped group gives the same pixels
- * and one more thing to keep in sync.
- *
- * `lean` is how far the single straight edge travels across the card's height. The
- * left edge stays vertical and the corners follow Material's large-corner radius, so
- * it reads as a container that happens to lean rather than as a parallelogram.
- */
-function slanted(w, h, lean, radius) {
-  const r = radius;
-  const topRight = w - lean;
+  // Bottom-right corner (vertical x=w -> horizontal y=h)
+  const brP1 = [w, h - L + a * L];
+  const brP2 = [w, h - L + b * L];
+  const brP3 = [w - (1 - d) * L, h - (1 - d) * L];
+
+  const brQ1 = [w - (1 - b) * L, h];
+  const brQ2 = [w - (1 - a) * L, h];
+  const brQ3 = [w - L, h];
+
+  const f = n => Number(n.toFixed(2));
+  const c = ([x, y]) => `${f(x)} ${f(y)}`;
+
   return [
-    `M0 ${r}`,
-    `Q0 0 ${r} 0`,
-    `H${topRight - r}`,
-    `Q${topRight} 0 ${topRight + lean * 0.02} ${r}`,
-    `L${w + lean * 0.02} ${h - r}`,
-    `Q${w - lean * 0.02} ${h} ${w - lean - r} ${h}`,
-    `H${r}`,
-    `Q0 ${h} 0 ${h - r}`,
-    'Z',
+    `M0 0`,
+    `H${f(w - L)}`,
+    `C${c(trP1)} ${c(trP2)} ${c(trP3)}`,
+    `C${c(trQ1)} ${c(trQ2)} ${c(trQ3)}`,
+    `L${f(w)} ${f(h - L)}`,
+    `C${c(brP1)} ${c(brP2)} ${c(brP3)}`,
+    `C${c(brQ1)} ${c(brQ2)} ${c(brQ3)}`,
+    `H0`,
+    `Z`,
   ].join(' ');
 }
 
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-  <rect width="${W}" height="${H}" fill="${C.surface}"/>
+  <!-- Deep Dark Background with Subtle Pink-Purple Undertone (Surface Container Low/Dark) -->
+  <rect width="${W}" height="${H}" fill="${C.surfaceDark}"/>
 
-  <!-- One Slanted panel filling the left half, edge to edge, no margin.
-       The earlier attempts wrapped the type in a blob that had to be laid out around,
-       and a shape with a margin reads as a sticker on a dark page. A panel that runs
-       off the top, bottom and left edges is the page: the lean is what makes it
-       Material's Slanted rather than a plain rectangle, and the right zone stays dark
-       for the vial, which was drawn for a dark ground. -->
-  <path d="${slanted(700, H, 120, 44)}" fill="${C.primary}"/>
-  <path d="${slanted(700, H, 120, 44)}" transform="translate(10 0) scale(0.985)" fill="none"/>
+  <!-- Left panel: Primary Container (Gentle low-saturation soft pink-lavender) with 80px G2 right corners -->
+  <path d="${g2RoundedPanel(700, H, 80)}" fill="${C.primaryContainer}"/>
 
   <!-- The vial, on the dark side, where its glass and glints read as intended. -->
   ${vialSvg({ scale: 8, x: 888, y: 150 })}
 
-  <!-- Wordmark, and the one line under it. Two lines, not three: at the size a link
-       preview is actually seen, a subtitle that lists features is a paragraph. -->
-  <text x="120" y="292" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif"
-        font-size="62" font-weight="600" letter-spacing="-1.5" fill="${C.surface}">Kira HRT Tracker</text>
+  <!-- Centered Typography inside the left container (center at x = 350, core block centered at y = 315) -->
+  <!-- Title: Headline Large / Display Small in Google Sans / Product Sans, SemiBold, open rounded counter -->
+  <text x="350" y="310" text-anchor="middle"
+        font-family="'Google Sans', 'Product Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="68" font-weight="600" letter-spacing="-0.5" fill="${C.onPrimaryContainer}">Kira HRT Tracker</text>
 
-  <text x="122" y="352" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif"
-        font-size="25" fill="${C.surface}" opacity="0.7">Agent-Friendly HRT Records</text>
+  <!-- Slogan: Body Medium / Label Large with wider tracking (letter-spacing: 0.8px) -->
+  <text x="350" y="370" text-anchor="middle"
+        font-family="'Google Sans', 'Product Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="24" font-weight="500" letter-spacing="0.8" fill="${C.onSurfaceVariant}">Agent-Friendly HRT Records</text>
 
-  <text x="122" y="496" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif"
-        font-size="23" fill="${C.surface}" opacity="0.66">hrt.kiramyao.com</text>
+  <!-- URL -->
+  <text x="350" y="540" text-anchor="middle"
+        font-family="'Google Sans', 'Product Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="22" font-weight="500" letter-spacing="0.3" fill="${C.urlVariant}">hrt.kiramyao.com</text>
 
 </svg>`;
 
