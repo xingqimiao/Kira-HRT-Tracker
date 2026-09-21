@@ -36,7 +36,7 @@ const MCP_TOOLS: { name: string; input: string; returns: string }[] = [
     { name: 'hrt_add_lab_result', input: 'value, unit, at', returns: 'The created lab result' },
     { name: 'hrt_update_settings', input: 'any setting field', returns: 'The updated settings' },
     { name: 'hrt_delete_record', input: 'kind, id', returns: 'Confirmation' },
-    { name: 'hrt_sync_state', input: '—', returns: 'Full record state' },
+    { name: 'hrt_sync_state', input: '—', returns: 'Full record state — the whole export, can be truncated; prefer the paginated read tools' },
     { name: 'hrt_reference', input: '—', returns: 'Routes, esters and units the app accepts' },
     // The share tools, grouped at the end because they are the only ones whose effect
     // is visible outside the account — a link anyone can open.

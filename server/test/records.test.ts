@@ -263,5 +263,74 @@ test('a batch cannot write an id another account owns', async () => {
     .find((r) => r.id === shared);
   assert.equal(row?.data.med_name, 'OWNER');
 });
+/**
+ * The weight a device syncs and the weight a prediction reads are two copies.
+ *
+ * The app keeps body weight in its own payload and travels it as the `scalar:weight`
+ * record; the PK model reads `user_settings.body_weight_kg`. These assertions pin the
+ * bridge between them — without it a device could sync a weight faithfully while
+ * `hrt_predict_levels` still refused for want of one.
+ */
+test('a synced weight reaches the setting the prediction reads', async () => {
+  const { token } = await freshAccount();
+  const stamp = Date.now();
+
+  const wrote = await call(base, '/api/records/batch', json({
+    records: [{ id: 'scalar:weight', takenAt: stamp, category: 'setting', data: { value: 56, stamp } }],
+  }, token));
+  assert.equal(wrote.status, 200, JSON.stringify(wrote.body));
+
+  const after = await call(base, '/api/settings', bearer(token));
+  assert.equal(after.body.bodyWeightKg, 56, 'the synced weight did not reach the setting');
+  // The write response is the state the client merges, so it has to agree with the
+  // setting rather than trail it by a sync.
+  assert.equal(wrote.body.state.weight, 56, 'the write response did not carry the new weight');
+});
+
+test('an older payload does not overwrite a newer setting', async () => {
+  const { token } = await freshAccount();
+
+  // A weight set through the settings screen — how `hrt_update_settings` writes it.
+  const set = await call(base, '/api/settings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ body_weight_kg: 70 }),
+  });
+  assert.equal(set.status, 200, JSON.stringify(set.body));
+
+  // An export taken before that.
+  const old = Date.now() - 3_600_000;
+  await call(base, '/api/records/batch', json({
+    records: [{ id: 'scalar:weight', takenAt: old, category: 'setting', data: { value: 56, stamp: old } }],
+  }, token));
+
+  const after = await call(base, '/api/settings', bearer(token));
+  assert.equal(after.body.bodyWeightKg, 70, 'an older export reverted a newer setting');
+});
+
+test('a payload that says nothing about weight leaves the setting alone', async () => {
+  const { token } = await freshAccount();
+
+  const set = await call(base, '/api/settings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ body_weight_kg: 70 }),
+  });
+  assert.equal(set.status, 200, JSON.stringify(set.body));
+
+  // A device with no opinion: a batch carrying no weight at all, and one carrying a
+  // `scalar:weight` whose value is explicitly absent. Neither may clear the setting.
+  const now = Date.now();
+  await call(base, '/api/records/batch', json({
+    records: [
+      { id: 'no-weight-dose', takenAt: now, category: 'dose', data: { med_name: 'X' } },
+      { id: 'scalar:weight', takenAt: now, category: 'setting', data: { value: null, stamp: now } },
+    ],
+  }, token));
+
+  const after = await call(base, '/api/settings', bearer(token));
+  assert.equal(after.body.bodyWeightKg, 70, 'a payload with no weight cleared the setting');
+});
+
 
 

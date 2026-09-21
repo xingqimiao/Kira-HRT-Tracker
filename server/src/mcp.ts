@@ -391,7 +391,10 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
       title: 'Read full record state',
       description:
         "The account's complete records in the web app's own export shape, including " +
-        'deletions. Use this when you need everything at once rather than one collection.',
+        'deletions. This is the whole export: it can run to tens of kilobytes and be ' +
+        'truncated by the result budget, so read history through the paginated tools ' +
+        '(hrt_get_timeline, hrt_list_medications, hrt_list_labs) and call this only ' +
+        'when you need everything at once.',
       inputSchema: {},
     },
     async () => {
@@ -428,6 +431,11 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         gel_sites: GEL_SITE_ORDER,
         pk_param_ranges: PK_PARAM_RANGES,
         analyte_units: { e2: ['pg/ml', 'pmol/l'], t: ['ng/dl', 'nmol/l'] },
+        // A known-bad default, stated where an agent will read it: the one tool that
+        // returns everything is also the one the result budget truncates.
+        large_reads:
+          'hrt_sync_state returns the whole export and can be truncated by the result budget. ' +
+          'Read history with hrt_get_timeline, hrt_list_medications, hrt_list_labs or hrt_get_settings instead.',
         safety: SAFETY_NOTE,
       }),
   );

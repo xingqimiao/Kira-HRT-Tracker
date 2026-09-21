@@ -113,8 +113,12 @@ and `hrt_reference` exists so an agent can learn the vocabulary before writing a
 | `hrt_predict_levels` | `at?` | Modelled concentration at a time |
 | `hrt_check_advisories` | — | Any dosage advisory the app would show |
 | `hrt_get_settings` | — | Body weight, mode, calibration |
-| `hrt_sync_state` | — | The full record state in one call |
+| `hrt_sync_state` | — | The full record state in one call. This is the whole export (~76 KB) and can be truncated by the result budget — read history with the paginated tools above instead. |
 | `hrt_reference` | — | Routes, esters, units, parameter ranges. Static: it reads no records, so it needs no key at all. |
+
+An agent reading history should use the paginated tools, not `hrt_sync_state`: that one
+returns the whole export (~76 KB) and can be truncated by the result budget, so a
+truncated read looks exactly like missing data.
 
 ### Writes
 

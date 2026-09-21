@@ -341,6 +341,13 @@ DROP TABLE IF EXISTS lab_results;
 CREATE TABLE IF NOT EXISTS user_settings (
     user_id             uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     body_weight_kg      numeric(6,2),
+    -- When body_weight_kg was last written, by whichever side wrote it. The app's
+    -- payload carries its own weightUpdatedAt, and sync resolves the two by stamp
+    -- (see settings.ts, absorbWeight): a weight typed into the settings screen must
+    -- not be undone by an export taken before it. Deliberately not the row's
+    -- updated_at, which every other setting bumps - that would let an unrelated
+    -- change block a legitimately newer weight from syncing.
+    body_weight_updated_at timestamptz,
     hrt_mode            text NOT NULL DEFAULT 'transfem'
                         CHECK (hrt_mode IN ('transfem','transmasc')),
     calibration_method  text NOT NULL DEFAULT 'mipd'
@@ -357,6 +364,11 @@ CREATE TABLE IF NOT EXISTS user_settings (
     app_state           jsonb,
     updated_at          timestamptz NOT NULL DEFAULT now()
 );
+
+-- Bring a database created by an earlier revision up to the shape above.
+-- CREATE TABLE IF NOT EXISTS cannot add a column to an existing table, so the
+-- stamp that sync resolves weight by needs this migration. A no-op when present.
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS body_weight_updated_at timestamptz;
 
 -- ---------------------------------------------------------------------------
 -- Audit

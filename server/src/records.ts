@@ -168,6 +168,40 @@ function prepareRecord(
     return { ok: true, value: { id, takenAt, category, sealed } };
 }
 
+/**
+ * The weight a `scalar:weight` record carries, or null when this record is not one.
+ *
+ * The app keeps body weight in its own payload and travels it as `scalar:weight` with
+ * `{ value, stamp }` (see `payloadToRecords` in src/services/recordDocs.ts). The PK
+ * model does not read that record — it reads `user_settings.body_weight_kg` — so the
+ * call sites below are where the two meet; `settings.absorbWeight` decides which
+ * side's stamp wins and ignores a value it cannot trust.
+ */
+function weightScalar(id: string, data: unknown): { value: number; stamp: number } | null {
+    if (id !== 'scalar:weight') return null;
+    const body = data as { value?: unknown; stamp?: unknown } | null;
+    if (!body || typeof body.value !== 'number') return null;
+    return {
+        value: body.value,
+        stamp: typeof body.stamp === 'number' && Number.isFinite(body.stamp) ? body.stamp : 0,
+    };
+}
+
+/**
+ * Reflect a synced weight into the account setting, best effort.
+ *
+ * The record is the primary write and has already committed; a settings row that
+ * fails to follow must not turn a successful sync into a failure. The next sync
+ * carries the same scalar again, so one swallowed failure loses nothing.
+ */
+async function reflectWeight(
+    ctx: AuthContext,
+    synced: { value: number; stamp: number } | null,
+): Promise<void> {
+    if (!synced) return;
+    await settings.absorbWeight(ctx.userId, synced.value, synced.stamp).catch(() => undefined);
+}
+
 export const RecordService = {
     /**
      * Store one record, encrypting the payload on the way in.
@@ -205,6 +239,7 @@ export const RecordService = {
         // An id owned by another account must not be writeable, and must not be
         // reported as a conflict either — that would confirm the id exists.
         if (rows.length === 0) return { ok: false, error: 'id_unavailable' };
+        await reflectWeight(ctx, weightScalar(id, body?.data));
         return { ok: true, id: rows[0].id };
     },
 
@@ -238,10 +273,18 @@ export const RecordService = {
 
         const rejected: { id: string; reason: string }[] = [];
         const pending = new Map<string, PreparedRecord>();
+        // A sync carries body weight as a `scalar:weight` record, but the PK model
+        // reads the settings table instead. Keep the copy that landed — a repeated id
+        // is applied last-wins — to reflect below (see `reflectWeight`).
+        let syncedWeight: { value: number; stamp: number } | null = null;
         for (const raw of items) {
             const prepared = prepareRecord(ctx, raw as { id?: unknown; takenAt?: unknown; category?: unknown; data?: unknown });
-            if (prepared.ok) pending.set(prepared.value.id, prepared.value);
-            else rejected.push({ id: prepared.id, reason: prepared.error });
+            if (prepared.ok) {
+                pending.set(prepared.value.id, prepared.value);
+                syncedWeight = weightScalar(prepared.value.id, (raw as { data?: unknown })?.data) ?? syncedWeight;
+            } else {
+                rejected.push({ id: prepared.id, reason: prepared.error });
+            }
         }
 
         const records = [...pending.values()];
@@ -282,6 +325,7 @@ export const RecordService = {
             }
         });
 
+        await reflectWeight(ctx, syncedWeight);
         return { ok: true, written, rejected };
     },
 
