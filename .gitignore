@@ -93,3 +93,10 @@ scratch-*
 
 # Scratch files used while composing a commit message.
 .tmp-*
+
+# Build output and screenshot scratch from local verification runs. Never part of the app.
+dist-milestone/
+.milestone-shots/
+vite.dev-local.config.ts
+verification/
+server/test-out.txt

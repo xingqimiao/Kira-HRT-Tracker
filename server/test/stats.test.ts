@@ -37,6 +37,7 @@ before(async () => {
     port: 0,
     databaseUrl: '',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    keysFromCredentials: [],
     // This suite writes records directly through the store, which seals every payload
     // and refuses rather than writing plaintext.
     encryptionKey: TEST_ENCRYPTION_KEY,

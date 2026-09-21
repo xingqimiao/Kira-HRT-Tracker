@@ -35,6 +35,7 @@ before(async () => {
     port: 0,
     databaseUrl: '',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    keysFromCredentials: [],
     google: null,
     // v1 platform key: records seal under each account's DEK now, but this keeps any
     // legacy row readable and matches the other record suites.

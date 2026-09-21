@@ -26,5 +26,16 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "include": [
+    "src",
+    "logic.ts",
+    "index.tsx",
+    "vite.config.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "server",
+    "dist"
+  ]
 }

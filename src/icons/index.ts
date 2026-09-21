@@ -20,6 +20,7 @@ export {
     ArrowLeft,
     Atom,
     Bookmark,
+    Cake,
     CalendarDays,
     Check,
     ChevronDown,

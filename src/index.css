@@ -2756,3 +2756,275 @@ select,
         transition: none;
     }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HRT MILESTONE — the top bar, and the 100-day burst that falls past it
+
+   Rendered by src/components/HrtMilestoneEffect.tsx, above the account page, on
+   a day that is a whole multiple of 100 (confetti) or 365 (cake). Which day is
+   which is decided in src/utils/hrtMilestone.ts; nothing here is conditional on
+   anything but which of the two the component was handed.
+
+   ── Why this is a custom component and not a spec component ──────────────────
+
+   Material 3 has no banner. Its documented web answer for one is a spec-aligned
+   custom implementation built from tokens, which is what this is. The decision
+   that comes first is dialog-or-banner, and this is a banner: an impromptu,
+   page-level notice. So it does not dim the page, takes no shadow, holds nothing
+   focusable, never moves or traps focus, and is not dismissed *instead of* the
+   page — it leaves on its own.
+
+   ── Colour ───────────────────────────────────────────────────────────────────
+
+   One paired role: primary-container behind, on-primary-container in front. A
+   container/content pair is the only colour M3 guarantees contrast for, and the
+   pair is redefined whole in each theme and under the blue key colour, so there
+   is no second rule here to keep in step.
+
+   ── Shell placement ──────────────────────────────────────────────────────────
+
+   The shell is NOT fixed, and that is the decision that makes the rail work. As
+   a child of `.m3-shell-body` it is offset by the same 80px that moves the
+   content, so from 840 up the bar starts *beside* the rail rather than under it
+   — no second copy of the rail's width in this sheet, and no strip of bar behind
+   a panel that is opaque anyway. Below 840 it spans the width, edge to edge.
+
+   It is static, not fixed, so it occupies layout: it covers nothing, and it
+   cannot collide with the floating bottom navigation, which is fixed to the
+   viewport floor. The page underneath scrolls normally while it is up, and a
+   resize takes the bar with everything else.
+
+   ── The top edge on a notched phone ──────────────────────────────────────────
+
+   `inset-block-start: 100%` of the shell's own top padding, which is the
+   status-bar inset — the same value it would take from `env(safe-area-inset-top)`
+   if this were fixed to the window, read off `<html>` instead of copied. It
+   costs nothing: that padding is zero everywhere else, and the component falls
+   back to 0 for a build without the meta tag that sets it. See
+   `apple-mobile-web-app-status-bar-style` in index.html.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Nothing in here may eat a tap or a keystroke. The shell takes no pointer events
+   at all — the confetti inside it is decoration standing over the whole page —
+   and the bar, which is not decoration, is the one child that takes the pointer
+   back. There is nothing in the bar to press, so that only stops a click landing
+   on the words instead of on the row behind them. */
+.m3-milestone-shell {
+    position: relative;
+    pointer-events: none;
+    /* The strip the bar takes out of the layout, and the whole reason the page
+       does not jump when the bar arrives.
+
+       The bar is absolutely positioned against this box, so the box's height is
+       the space the bar needs and nothing else — the bar cannot cover a row of
+       the page, and the page cannot disagree with the bar about how tall it is.
+       That height is a *transition* rather than an arrival because it is
+       measured from the bar: 0 while the bar is closed, the bar's own
+       `offsetHeight` once it is open. See the effect in the component.
+
+       Animating it is the disclosure pattern three hundred lines up, not a
+       second way to do the same thing — `.disclosure` opens by growing a grid
+       row and this is the same idea with the measurement done for it. The
+       difference is the floor: a grid row cannot go below 0 and a height cannot
+       go below 0 either, so the two ends are the same two ends, and this one
+       carries a number the component already has. `height` is used rather than
+       `grid-template-rows: 0fr -> 1fr` because this box is *positioned from*
+       — the notch inset is read off it — and a grid container is a box model
+       the bar's absolute child would then resolve `inset-inline` against for
+       no gain. */
+    height: 0;
+    transition: height var(--md-sys-motion-transition-enter);
+}
+
+.m3-milestone-shell[data-open="true"] {
+    height: var(--m3-milestone-height, 0px);
+}
+
+/* The exit is the entrance mirrored: the same distance back at the exit token,
+   which is what makes the page settle exactly where it started. */
+.m3-milestone-shell[data-state="closed"] {
+    transition: height var(--md-sys-motion-transition-exit);
+}
+
+/* The bar. Square at the top by construction: it is flush with the top of what
+   it covers, and only the corners that meet the page take a radius —
+   `extra-small`, which is what this sheet gives text fields and menus, and the
+   smallest corner that still reads as deliberate on a 48dp bar.
+
+   No shadow. A tonal container is what separates a surface in this design, which
+   is the same reason the rail draws an edge rather than lifting off the page. */
+.m3-milestone-bar {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: 0;
+    z-index: 50;
+    pointer-events: auto;
+    display: flex;
+    align-items: flex-start;
+    /* The 8dp system: 8 between glyph and text, 12/16 of padding inside. */
+    gap: var(--md-sys-space-2);
+    padding: var(--md-sys-space-3) var(--md-sys-space-4);
+    background-color: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    border-end-start-radius: var(--md-sys-shape-corner-extra-small);
+    border-end-end-radius: var(--md-sys-shape-corner-extra-small);
+    /* The entrance and the exit, from the sheet's own transition tokens: 400ms
+       emphasized-decelerate in, 200ms emphasized-accelerate out. Both are the
+       legacy easing set — M3 Expressive's springs are Compose-only and Material
+       Web, which is in maintenance, has none. Transform and opacity only, so no
+       frame of it touches layout. */
+    animation: m3-milestone-bar-in var(--md-sys-motion-transition-enter) both;
+}
+
+.m3-milestone-bar[data-state="closed"] {
+    animation: m3-milestone-bar-out var(--md-sys-motion-transition-exit) both;
+}
+
+/* Both of these are set by the component. `max-height: 100%` resolves against
+   the shell's padding box — the bar's height — so on a narrow screen a long
+   anniversary message is clipped at the line rather than allowed to grow the bar
+   down over the page. The reading area under it stays reachable either way: it
+   is the page's own scrollbar. */
+.m3-milestone-bar__text {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-height: 100%;
+    overflow: hidden;
+}
+
+/* In the container's own foreground colour, so the ornament belongs to the pair
+   instead of borrowing a fourth role. Nudged onto the title's first line rather
+   than the top of its box, which is where a 24dp glyph against 20px type sits. */
+.m3-milestone-bar__cake {
+    flex: none;
+    margin-block-start: -2px;
+    color: var(--md-sys-color-on-primary-container);
+}
+
+/* title-small for the line, body-small for the message under it: a banner is a
+   label and a sentence, not display type. */
+.m3-milestone-bar__title {
+    font-size: var(--md-sys-typescale-title-small-size);
+    line-height: var(--md-sys-typescale-title-small-line-height);
+    font-weight: var(--md-sys-typescale-title-small-weight);
+    letter-spacing: var(--md-sys-typescale-title-small-tracking);
+}
+
+/* The anniversary message, quoted. `pre-line` is the whole reason the two
+   paragraphs are stored as one key with a blank line in it rather than as two
+   keys: it is one message, and a translator should see it whole. */
+.m3-milestone-bar__body {
+    white-space: pre-line;
+    margin-block-start: var(--md-sys-space-1);
+    font-size: var(--md-sys-typescale-body-small-size);
+    line-height: var(--md-sys-typescale-body-small-line-height);
+    font-weight: var(--md-sys-typescale-body-small-weight);
+    letter-spacing: var(--md-sys-typescale-body-small-tracking);
+}
+
+/* The entrance travels the distance the bar itself occupies — it does not come
+   in from off-screen, which would be a bigger move than the thing that moved
+   deserves — and it leaves the way it arrived. */
+@keyframes m3-milestone-bar-in {
+    from { opacity: 0; transform: translateY(-100%); }
+    to   { opacity: 1; transform: none; }
+}
+@keyframes m3-milestone-bar-out {
+    from { opacity: 1; transform: none; }
+    to   { opacity: 0; transform: translateY(-100%); }
+}
+
+/* ── The burst ────────────────────────────────────────────────────────────── */
+
+/* The confetti falls past the bar rather than out of it: it starts above the top
+   edge of the viewport and lands across the whole height, so the bar keeps its
+   own shape and the two cannot disagree about where the top of the world is once
+   the bar has been pushed down by the notch inset. */
+.m3-confetti {
+    position: absolute;
+    inset: 0;
+}
+
+/* Each piece starts above the top edge so it falls *into* the viewport rather
+   than blinking into existence across the middle of it. */
+.m3-confetti__piece {
+    position: absolute;
+    top: -6vh;
+    width: 9px;
+    height: 14px;
+    border-radius: 2px;
+    opacity: 0;
+    /* fill-mode both: the piece holds the first frame during its delay (invisible)
+       and the last one after it lands (invisible), so a piece never appears
+       before its turn or lingers after it. The timings themselves arrive from
+       the component as inline `animation-*`, one piece at a time. */
+    animation-name: m3-confetti-fall;
+    animation-timing-function: cubic-bezier(0.25, 0.5, 0.5, 1);
+    animation-fill-mode: both;
+}
+
+@keyframes m3-confetti-fall {
+    0% {
+        opacity: 0;
+        transform: translate3d(0, 0, 0) rotate(0deg);
+    }
+    8% { opacity: 1; }
+    100% {
+        opacity: 0;
+        transform: translate3d(var(--confetti-x, 0px), var(--confetti-y, 90vh), 0) rotate(var(--confetti-r, 0deg));
+    }
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────────────── */
+
+/* Read the way the rest of the sheet reads it — the animations come off and the
+   end states carry the meaning. **The words are never part of this**: the bar
+   keeps its full height, its full message and its text, and it drops out of the
+   DOM the instant it is done rather than performing a slide it was asked not to
+   perform.
+
+   The confetti does NOT get a tiny duration. That would land every piece on the
+   last frame of `m3-confetti-fall`, and that frame is `opacity: 0` — so the
+   "reduced" burst would be sixty invisible pieces, which is worse than not
+   animating at all. `animation: none` alone is no better: the resting style is
+   `top: -6vh` and `opacity: 0`, i.e. off-screen and transparent. So the pieces
+   are placed directly instead, spread across the width and held still, with the
+   same tints the animation would have used: the composition without the travel.
+
+   `!important` because the component writes `animation-delay` and
+   `animation-duration` as inline styles (that is where the per-piece scatter
+   lives), and no stylesheet rule outranks an inline one. */
+@media (prefers-reduced-motion: reduce) {
+    .m3-milestone-bar,
+    .m3-milestone-bar[data-state="closed"] {
+        animation: none;
+    }
+    /* The push is motion too, so it goes with the bar's own entrance: the
+       strip is at full height the instant the bar is, and back to nothing the
+       instant it leaves. Nothing here changes *how far* the page moves — only
+       that it moves there without being tweened. */
+    .m3-milestone-shell,
+    .m3-milestone-shell[data-state="closed"] {
+        transition: none;
+    }
+    /* The anniversary bar has nothing left to animate: the cake glyph is a still
+       picture and the words are text, and both render whether or not any of this
+       applies. That is the point of the preference — the notice keeps its
+       meaning and loses only the movement. */
+    .m3-milestone-bar__cake {
+        animation: none;
+    }
+    .m3-confetti__piece {
+        animation: none !important;
+        opacity: 0.9;
+        top: 12vh;
+        border-radius: var(--md-sys-shape-corner-extra-small);
+    }
+    /* Deterministic scatter: the pieces' `left` already arrives inline from React
+       as a percentage of the width, so the still frame inherits the same spread
+       the animation starts from, and a per-piece tilt keeps it from reading as a
+       single row of rectangles. */
+    .m3-confetti__piece:nth-child(3n)   { top: 26vh; transform: rotate(24deg); }
+    .m3-confetti__piece:nth-child(3n+1) { top: 44vh; transform: rotate(-38deg); }
+    .m3-confetti__piece:nth-child(3n+2) { top: 62vh; transform: rotate(66deg); }
+}

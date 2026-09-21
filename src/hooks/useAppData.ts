@@ -12,7 +12,8 @@ import {
 } from '../utils/syncMerge';
 import { applyAppSettings, appSettingsStamp, readAppSettings, touchAppSettings } from '../utils/appSettings';
 import { JournalEntry, sanitizeJournalEntries } from '../utils/bodyJournal';
-import { normalizeHrtStartDate } from '../utils/hrtStart';
+import { hrtDaysSince, normalizeHrtStartDate } from '../utils/hrtStart';
+import { milestoneFor } from '../utils/hrtMilestone';
 
 /** Namespace used while signed out. Its keys are the original, un-prefixed ones. */
 const LOCAL_OWNER = 'local';
@@ -36,6 +37,9 @@ const MODE_SUFFIXES = ['events', 'lab-results', 'dose-templates', 'quick-doses',
 const SHARED_SUFFIXES = [
     'weight', 'pk-params', 'cal-method', 'cal-history-mode', 'aa-chart', 'hrt-start',
     'weight-at', 'pk-params-at',
+    // Which milestone this device has already celebrated, as `YYYY-MM-DD:key`.
+    // Device-local by design — see `pendingMilestone` below.
+    'hrt-milestone',
 ] as const;
 
 /**
@@ -239,6 +243,48 @@ export const useAppData = (
         else localStorage.removeItem(sharedKey('hrt-start'));
         touchAppSettings();
     };
+    /**
+     * A milestone the account page should celebrate this visit, as
+     * `<days>:<cake|confetti>`, or '' for an ordinary day.
+     *
+     * ── Where "already shown" is stored, and the multi-device answer ─────────
+     *
+     * In this device's `hrt-…-hrt-milestone` key, as `YYYY-MM-DD:key` — the
+     * *day the celebration was seen*, plus which one, so a milestone the user
+     * skipped (never opened the page that day) is still owed on the next visit
+     * rather than missed forever.
+     *
+     * It is deliberately **not** in `AppSettings`, and so does not ride the
+     * Core sync. The bag is resolved whole and newest-wins, so a device writing
+     * "I showed 365" would push its own stamp over a newer one and, worse, a
+     * device that merely *read* the account would carry another device's
+     * "shown" back with it. Celebrating twice — once here, once on the phone —
+     * is a smaller failure than a celebration silently suppressed because some
+     * other device claimed it. So: **per device.** Login on a second device and
+     * you get the burst there too, once.
+     *
+     * The key is stamped the moment the milestone is armed, not when the
+     * celebration ends: a reload mid-animation must not replay it, which is the
+     * requirement, and the cost of the other ordering is exactly that replay.
+     *
+     * Because it is stamped rather than held, this value is only correct on the
+     * mount that *did* the stamping — see `armMilestone` in
+     * src/utils/hrtMilestone.ts for the half that keeps it alive across the
+     * remount `CoreSessionProvider` performs while the session restores.
+     */
+    const [pendingMilestone] = useState<string>(() => {
+        if (!hrtStartDate) return '';
+        const days = hrtDaysSince(hrtStartDate);
+        const milestone = milestoneFor(days);
+        if (milestone === null || days === null) return '';
+        const today = toDayKey(new Date());
+        const key = sharedKey('hrt-milestone');
+        // Unreadable storage is treated as "not shown yet": the alternative is
+        // swallowing a celebration because a write once threw.
+        try { if (localStorage.getItem(key) === `${today}:${milestone}`) return ''; } catch { /* see above */ }
+        try { localStorage.setItem(key, `${today}:${milestone}`); } catch { /* see above */ }
+        return `${days}:${milestone}`;
+    });
     const [doseTemplates, setDoseTemplates] = useState<DoseTemplate[]>(() => loadJSON(keyFor(mode, 'dose-templates'), [] as DoseTemplate[]));
     const [quickDoses, setQuickDoses] = useState<QuickDose[]>(() => loadJSON(keyFor(mode, 'quick-doses'), [] as QuickDose[]));
     // The private body-and-mood log. Unlike the monitoring bloods and quick
@@ -1183,6 +1229,7 @@ export const useAppData = (
         calibrationHistoryMode, setCalibrationHistoryMode,
         aaChartMode, setAaChartMode,
         hrtStartDate, setHrtStartDate,
+        pendingMilestone,
         calibration,
         currentLevel,
         currentT,

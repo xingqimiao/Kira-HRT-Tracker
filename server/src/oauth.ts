@@ -223,12 +223,23 @@ export function isXConfigured(config: XOAuthConfig | null): config is XOAuthConf
 //      the account — Google marks it as always present and never reused. So there is
 //      no second HTTP call and no userinfo scope.
 //
-//   2. Only the `openid` scope is requested. `email` is deliberately absent: Google's
-//      own documentation says the email claim "may not be unique to this account and
-//      could change over time" and should not be the identifier, and this product does
-//      not need an address at all. `profile` is absent too, so no name or picture is
-//      requested — the account page shows the name the user chose, which is the
-//      identifier that actually matters here.
+//   2. The scope is `openid profile`. `email` is deliberately absent: Google's own
+//      documentation says the email claim "may not be unique to this account and could
+//      change over time" and should not be the identifier, and this product does not
+//      need an address at all. `profile` is present **solely** so the ID token carries
+//      `picture`; `name` comes with it as a side effect and is discarded below rather
+//      than stored, because the account page shows the name the user chose.
+//
+//      Why the scope and not a second call: `picture` is documented as "might be
+//      provided when the request scope included the string profile", so with `openid`
+//      alone it is simply not there — there was nothing to read. The two alternatives
+//      were a userinfo request (which `profile` also gates, and which would be a second
+//      network call per sign-in holding a live access token) or the OIDC `claims`
+//      parameter, which is a real widening of what this app asks a person to consent to.
+//      Adding an already-narrow, non-sensitive scope is the smaller change. It does cost
+//      something: Google re-prompts for consent, so every existing Google user sees one
+//      consent screen on their next sign-in. That is once, and their records are
+//      untouched by it.
 //
 //   3. No PKCE. Google's web client authenticates with the client secret, and the
 //      verifier would be a parameter to keep correct for no additional protection on
@@ -240,8 +251,15 @@ export function isXConfigured(config: XOAuthConfig | null): config is XOAuthConf
 const GOOGLE_AUTHORIZE_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
-/** `openid` alone — see the note above on why email and profile are not requested. */
-const GOOGLE_SCOPE = 'openid';
+/**
+ * `openid profile` — see the note above.
+ *
+ * `profile` is here for one claim, `picture`. It is the narrower half of Google's
+ * optional pair (`profile` / `email`), it maps to no Google API scope, and it is what
+ * the app actually needs to stop the account header showing a placeholder for every
+ * Google user.
+ */
+const GOOGLE_SCOPE = 'openid profile';
 
 export function buildGoogleAuthorizeUrl(
   config: XOAuthConfig,
@@ -281,6 +299,11 @@ export function buildGoogleAuthorizeUrl(
  *   - `exp` has not passed
  *   - `nonce` matches the one we generated for this flow
  *
+ * What is *read* is `sub` and, because the `profile` scope is requested, `picture`.
+ * `picture` is read defensively: it is documented as "might be provided" rather than
+ * guaranteed, so a missing or non-string claim is `null` and the account page falls back
+ * to its placeholder, which is the same thing it does today.
+ *
  * A caller that ever forwards an ID token onward must verify the signature first; this
  * function is for the request that just received it.
  */
@@ -294,7 +317,7 @@ export function parseGoogleIdToken(
   }
 
   let claims: {
-    sub?: unknown; aud?: unknown; iss?: unknown; exp?: unknown; nonce?: unknown;
+    sub?: unknown; aud?: unknown; iss?: unknown; exp?: unknown; nonce?: unknown; picture?: unknown;
   };
   try {
     claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
@@ -320,12 +343,29 @@ export function parseGoogleIdToken(
 
   return {
     id: claims.sub,
-    // No handle and no avatar: neither `email` nor `profile` was requested, and
-    // inventing one from the id would be a fabricated identity shown as fact.
+    // No handle: `email` is still not requested, and inventing one from the id would be
+    // a fabricated identity shown as fact.
     handle: null,
+    // `name` also arrives with the `profile` scope and is dropped here on purpose. It
+    // would change the account's display name, which is a product decision nobody asked
+    // for — the scope was added for the picture alone, and taking a claim just because it
+    // was handed over is how a consent screen turns into data collection.
     displayName: null,
-    avatarUrl: null,
+    avatarUrl: googlePictureUrl(claims.picture),
   };
+}
+
+/**
+ * The `picture` claim as a URL, or null.
+ *
+ * Only `https` survives. The value ends up as the argument to an outbound fetch and as
+ * the filename a later reader sees, so an unexpected scheme is dropped rather than
+ * passed on; a missing claim is ordinary (Google documents it as "might be provided"),
+ * not an error.
+ */
+function googlePictureUrl(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  return /^https:\/\//i.test(raw) ? raw : null;
 }
 
 /**

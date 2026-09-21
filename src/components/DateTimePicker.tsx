@@ -382,7 +382,7 @@ const DateTimePicker: React.FC<DateTimePickerProps> = ({
                         {inner}
                     </div>
                 </>,
-                portalTarget,
+                portalTarget!,
             )}
         </>
     );

@@ -261,6 +261,29 @@ BEGIN
   END IF;
 END $$;
 
+-- --- The avatar, copied onto our own origin ---------------------------------
+--
+-- `avatar_url` above is the *provider's* URL, and it is deliberately still kept: it is
+-- the record of where the copy below came from, and nothing renders it. The browser is
+-- not allowed to load it — the app is served with `img-src 'self' data: blob:` — and
+-- hotlinking it would also tell X or Google each time the account page was opened.
+--
+-- So the bytes are stored here, once, at link/sign-in time, and re-served from
+-- `PUBLIC_ORIGIN` by `GET /auth/avatar/:userId`. Not on disk in the web root, because
+-- that root is deployed with `rsync -a --delete` and a fetched file would not survive the
+-- next deploy; and not a bytea table of its own, because a picture belongs to exactly one
+-- OAuth link and a second table would need its own cascade and its own cleanup.
+--
+-- `avatar_fetched_at` is the freshness stamp: it is what the avatar's ETag is built
+-- from, so a new picture must write it in the same statement as the new bytes.
+--
+-- These are `ADD COLUMN`, so the migration is an owned-by-`hrt` `ALTER TABLE` on an
+-- existing table and needs no `OWNER TO` repair — the rule in `DEPLOY.md` §6 applies to
+-- changes that create or replace a table, not to this.
+ALTER TABLE oauth_accounts ADD COLUMN IF NOT EXISTS avatar_image bytea;
+ALTER TABLE oauth_accounts ADD COLUMN IF NOT EXISTS avatar_content_type text;
+ALTER TABLE oauth_accounts ADD COLUMN IF NOT EXISTS avatar_fetched_at timestamptz;
+
 -- Widen the provider allowlist. The original constraint admitted only 'x', which would
 -- make a Google link fail at insert time with a constraint error rather than a clear
 -- "unsupported provider" — the app-level check gives the better message, but the

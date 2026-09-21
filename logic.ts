@@ -1298,7 +1298,7 @@ const CorePK = {
     depotK1Corr: 1.0
 };
 
-const EsterInfo = {
+const EsterInfo: Partial<Record<Ester, { name: string; mw: number }>> = {
     [Ester.E2]: { name: "Estradiol", mw: 272.38 },
     [Ester.EB]: { name: "Estradiol Benzoate", mw: 376.50 },
     [Ester.EV]: { name: "Estradiol Valerate", mw: 356.50 },
@@ -1343,9 +1343,9 @@ export function getToE2Factor(ester: Ester): number {
     if (ester === Ester.E2) return 1.0;
     if (isTestosteroneEster(ester)) {
         // "to‑T" factor: mg of ester → mg of free testosterone
-        return EsterInfo[Ester.T].mw / EsterInfo[ester].mw;
+        return EsterInfo[Ester.T]!.mw / (EsterInfo[ester]?.mw ?? 288.42);
     }
-    return EsterInfo[Ester.E2].mw / EsterInfo[ester].mw;
+    return EsterInfo[Ester.E2]!.mw / (EsterInfo[ester]?.mw ?? 272.38);
 }
 
 // -----------------------------------------------------------------------------
@@ -1394,17 +1394,17 @@ const T_PatchPK = {
 };
 
 
-const TwoPartDepotPK = {
+const TwoPartDepotPK: { Frac_fast: Partial<Record<Ester, number>>; k1_fast: Partial<Record<Ester, number>>; k1_slow: Partial<Record<Ester, number>>; } = {
     Frac_fast: { [Ester.EB]: 0.90, [Ester.EV]: 0.40, [Ester.EC]: 0.229164549, [Ester.EN]: 0.05, [Ester.EU]: 0.08, [Ester.E2]: 1.0 },
     k1_fast: { [Ester.EB]: 0.144, [Ester.EV]: 0.0216, [Ester.EC]: 0.005035046, [Ester.EN]: 0.0010, [Ester.EU]: 0.0060, [Ester.E2]: 0.5 }, // Added non-zero k1 for E2
     k1_slow: { [Ester.EB]: 0.114, [Ester.EV]: 0.0138, [Ester.EC]: 0.004510574, [Ester.EN]: 0.0050, [Ester.EU]: 0.0022, [Ester.E2]: 0 }
 };
 
-const InjectionPK = {
+const InjectionPK: { formationFraction: Partial<Record<Ester, number>>; } = {
     formationFraction: { [Ester.EB]: 0.1092, [Ester.EV]: 0.0623, [Ester.EC]: 0.1173, [Ester.EN]: 0.12, [Ester.EU]: 0.040, [Ester.E2]: 1.0 }
 };
 
-const EsterPK = {
+const EsterPK: { k2: Partial<Record<Ester, number>>; } = {
     k2: { [Ester.EB]: 0.090, [Ester.EV]: 0.070, [Ester.EC]: 0.045, [Ester.EN]: 0.015, [Ester.EU]: 0.012, [Ester.E2]: 0 }
 };
 
@@ -1652,7 +1652,7 @@ function _getE2InjFF(ester: Ester): number {
     if (ester === Ester.EC) return p.e2_ff_EC;
     if (ester === Ester.EN) return p.e2_ff_EN;
     if (ester === Ester.EU) return p.e2_ff_EU;
-    if (ester === Ester.E2) return InjectionPK.formationFraction[Ester.E2];
+    if (ester === Ester.E2) return InjectionPK.formationFraction[Ester.E2] ?? 1.0;
     return 0.08;
 }
 
