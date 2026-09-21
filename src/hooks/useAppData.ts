@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { DoseEvent, Route, Ester, SimulationResult, runSimulation, interpolateConcentration_E2, interpolateConcentration_T, LabResult, computeCalibration, CalibrationMethod, CalibrationHistoryMode, normalizeCalibrationMethod, AntiandrogenChartMode, normalizeAntiandrogenChartMode, isTestosteroneEster, isT_LabUnit, PKCustomParams, applyPKOverrides, sanitizePKParams, isPlausibleBodyWeightKG,
+         RecheckIntervals, normalizeRecheckIntervals,
+         OcrModelTier, normalizeOcrModelTier,
          BODY_WEIGHT_KG_MIN, BODY_WEIGHT_KG_MAX, DOSE_MG_MAX, SPIRO_MG_MAX_PER_DAY,
          EVENT_TIME_H_MIN, EVENT_TIME_H_MAX } from '../../logic';
 import { createDayLabelFormatter, toDayKey } from '../utils/helpers';
@@ -36,6 +38,7 @@ const modeKeyFor = (owner: string, mode: 'transfem' | 'transmasc', suffix: strin
 const MODE_SUFFIXES = ['events', 'lab-results', 'dose-templates', 'quick-doses', 'journal', 'deletions'] as const;
 const SHARED_SUFFIXES = [
     'weight', 'pk-params', 'cal-method', 'cal-history-mode', 'aa-chart', 'hrt-start',
+    'recheck-intervals', 'ocr-model-tier',
     'weight-at', 'pk-params-at',
     // Which milestone this device has already celebrated, as `YYYY-MM-DD:key`.
     // Device-local by design — see `pendingMilestone` below.
@@ -246,6 +249,31 @@ export const useAppData = (
         else localStorage.removeItem(sharedKey('hrt-start'));
         touchAppSettings();
     };
+    // The re-check intervals, each individually adjustable in Settings. Stored as
+    // JSON under one per-account key and synced as one setting; the reminder logic
+    // (`normalizeRecheckIntervals`) fills in the default for anything absent, so a
+    // device that has never opened the page keeps the app's defaults.
+    const [recheckIntervals, setRecheckIntervalsState] = useState<RecheckIntervals>(() =>
+        normalizeRecheckIntervals(loadJSON<unknown>(sharedKey('recheck-intervals'), null))
+    );
+    const setRecheckIntervals = (next: RecheckIntervals) => {
+        const normalized = normalizeRecheckIntervals(next);
+        setRecheckIntervalsState(normalized);
+        try { localStorage.setItem(sharedKey('recheck-intervals'), JSON.stringify(normalized)); } catch { /* private mode */ }
+        touchAppSettings();
+    };
+    // Which OCR model tier the scan uses. A preference like the intervals, so it
+    // rides the settings bag; the models themselves are fetched only when a scan or
+    // a retry actually needs them, never at app start.
+    const [ocrModelTier, setOcrModelTierState] = useState<OcrModelTier>(() =>
+        normalizeOcrModelTier(localStorage.getItem(sharedKey('ocr-model-tier')))
+    );
+    const setOcrModelTier = (tier: OcrModelTier) => {
+        const normalized = normalizeOcrModelTier(tier);
+        setOcrModelTierState(normalized);
+        try { localStorage.setItem(sharedKey('ocr-model-tier'), normalized); } catch { /* private mode */ }
+        touchAppSettings();
+    };
     /**
      * Which due re-check each reminder kind was last closed at, as
      * `<startH>:<intervalMonths>` per kind.
@@ -369,6 +397,8 @@ export const useAppData = (
         setCalibrationHistoryModeState(localStorage.getItem(sharedKey('cal-history-mode')) === 'forward' ? 'forward' : 'retrospective');
         setAaChartModeState(normalizeAntiandrogenChartMode(localStorage.getItem(sharedKey('aa-chart'))));
         setHrtStartDateState(normalizeHrtStartDate(localStorage.getItem(sharedKey('hrt-start'))) ?? '');
+        setRecheckIntervalsState(normalizeRecheckIntervals(loadJSON<unknown>(sharedKey('recheck-intervals'), null)));
+        setOcrModelTierState(normalizeOcrModelTier(localStorage.getItem(sharedKey('ocr-model-tier'))));
         setDismissedRechecksState(loadJSON(sharedKey('recheck-dismissed'), {} as Record<string, string>));
         setPkParamsState(sanitizePKParams(loadJSON<unknown>(sharedKey('pk-params'), null)));
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1134,6 +1164,12 @@ export const useAppData = (
                     calMethod: calibrationMethod,
                     calHistoryMode: calibrationHistoryMode,
                     aaChartMode,
+                    // The re-check intervals ride the settings bag, so changing one
+                    // on this device reaches the next one. Always present rather than
+                    // omitted at the default, so resetting an interval to the default
+                    // propagates instead of leaving the other device customized.
+                    recheckIntervals: JSON.stringify(recheckIntervals),
+                    ocrModelTier,
                     // Absent when never answered, which is exactly how "skipped"
                     // has to travel: an empty string is not a date.
                     ...(hrtStartDate ? { hrtStartDate } : {}),
@@ -1191,7 +1227,7 @@ export const useAppData = (
         // contexts that own them have to be told, or the theme on screen stays
         // the one this device booted with until the next reload.
         if (state.appSettings) {
-            const { calMethod, calHistoryMode, aaChartMode, hrtStartDate, ...global } = state.appSettings;
+            const { calMethod, calHistoryMode, aaChartMode, hrtStartDate, recheckIntervals, ocrModelTier, ...global } = state.appSettings;
             // The merge's stamp is handed to `applyAppSettings` so this device
             // records the account's settings as *adopted*, not as an edit of its
             // own — otherwise it would immediately look newer and push the same
@@ -1211,6 +1247,18 @@ export const useAppData = (
                 const normalized = normalizeAntiandrogenChartMode(aaChartMode);
                 setAaChartModeState(normalized);
                 localStorage.setItem(sharedKey('aa-chart'), normalized);
+            }
+            // Set on the raw setter, not `setRecheckIntervals`: adopting the
+            // account's value must not stamp it as this device's edit.
+            if (recheckIntervals !== undefined) {
+                const normalized = normalizeRecheckIntervals(recheckIntervals);
+                setRecheckIntervalsState(normalized);
+                try { localStorage.setItem(sharedKey('recheck-intervals'), JSON.stringify(normalized)); } catch { /* private mode */ }
+            }
+            if (ocrModelTier !== undefined) {
+                const normalized = normalizeOcrModelTier(ocrModelTier);
+                setOcrModelTierState(normalized);
+                try { localStorage.setItem(sharedKey('ocr-model-tier'), normalized); } catch { /* private mode */ }
             }
             // Set on the raw setters, not `setHrtStartDate`: adopting the
             // account's value must not stamp it as this device's edit.
@@ -1256,6 +1304,8 @@ export const useAppData = (
         calibrationHistoryMode, setCalibrationHistoryMode,
         aaChartMode, setAaChartMode,
         hrtStartDate, setHrtStartDate,
+        recheckIntervals, setRecheckIntervals,
+        ocrModelTier, setOcrModelTier,
         dismissedRechecks, dismissRecheck,
         pendingMilestone,
         calibration,

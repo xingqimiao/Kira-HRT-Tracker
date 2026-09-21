@@ -11,12 +11,15 @@
  *
  * ── What the app needs, and why each file is here ────────────────────────────
  *
- *   1. 'det.onnx'  — the text *detector* (PP-OCRv6 DB). Finds where the lines are.
- *   2. 'rec.onnx'  — the text *recogniser*. Reads one line crop at a time.
- *   3. 'ppocrv6_dict.txt' — one character per line, index 0 is the CTC blank.
- *      Extracted from the recogniser's own 'inference.yml' rather than taken from a
- *      separate download, so the alphabet and the weights can never drift apart.
+ *   1. '<tier>_det.onnx'  — the text *detector* (PP-OCRv6 DB). Finds where lines are.
+ *   2. '<tier>_rec.onnx'  — the text *recogniser*. Reads one line crop at a time.
+ *   3. '<tier>_dict.txt' — one character per line, index 0 is the CTC blank.
+ *      Extracted from that tier's own recogniser 'inference.yml' rather than taken
+ *      from a separate download, so alphabet and weights can never drift apart.
  *   4. 'ort-wasm-simd-threaded.wasm' / '.mjs' — the ONNX Runtime Web WASM backend.
+ *
+ * The tier prefix is what makes the small pair loadable without a build step: both
+ * tiers are written here, but the browser only requests the one a scan asks for.
  *
  * ── Why nothing here may come from a CDN at runtime ─────────────────────────
  *
@@ -79,24 +82,34 @@ const SOURCE = 'https://www.modelscope.cn/models/'
  * resolves to E2 396.53 pmol/l. The tiny pair reads the same row but renders the
  * out-of-range arrow as a trailing '1' ('*雌二醇 396.53 1 <143 pmol/L'); that stray
  * number defeats the table-row fallback and the row produces no candidate at all.
- * So the choice is small, not tiny, and it is the recogniser that decides it.
+ * So it is the recogniser, not the detector, that decides this row.
+ *
+ * The app nevertheless defaults to tiny: it is a few MB, and the owner chose the
+ * smaller first scan. When a tiny scan returns nothing, LabScan offers small as a
+ * manual retry. Both pairs are shipped so that retry needs no build or network step
+ * beyond fetching the files it names.
  *
  * The medium recogniser was also tried (with the small detector): it still reads the
  * drawn report's testosterone label wrong ('辜酮(1)') and additionally misreads
  * 'nmol/L' as 'hmol/L', which the small recogniser gets right, so it is neither
  * more accurate here nor worth ~3.5× the bytes.
  */
-const DET = {
-  repo: 'PaddlePaddle/PP-OCRv6_small_det_onnx',
-  revision: '37b02eded8dbca659f8ee5d51f822ea1ebd9bcba',
-  file: 'inference.onnx',
-  out: 'det.onnx',
-}
-const REC = {
-  repo: 'PaddlePaddle/PP-OCRv6_small_rec_onnx',
-  revision: 'ba215b1cc49d9ed4459d161b96778e8643fe0c1f',
-  file: 'inference.onnx',
-  out: 'rec.onnx',
+const TIERS = {
+  // The default pair. A first scan only ever requests these files, which is why
+  // the item names in public/ocr/ carry the tier.
+  tiny: {
+    det: { repo: 'PaddlePaddle/PP-OCRv6_tiny_det_onnx', revision: '750411b8371743f219e6fd76c33372292f55f92f', file: 'inference.onnx', out: 'tiny_det.onnx' },
+    rec: { repo: 'PaddlePaddle/PP-OCRv6_tiny_rec_onnx', revision: 'a0542d3d31b789512446abc4ddbdda0d48e764e8', file: 'inference.onnx', out: 'tiny_rec.onnx' },
+    dict: 'tiny_dict.txt',
+  },
+  // The retry pair: larger and more accurate, but only fetched when a scan asks
+  // for it (selected in Settings, or the retry button after a tiny scan came back
+  // empty). Shipped beside tiny so the retry needs no build or network step.
+  small: {
+    det: { repo: 'PaddlePaddle/PP-OCRv6_small_det_onnx', revision: '37b02eded8dbca659f8ee5d51f822ea1ebd9bcba', file: 'inference.onnx', out: 'small_det.onnx' },
+    rec: { repo: 'PaddlePaddle/PP-OCRv6_small_rec_onnx', revision: 'ba215b1cc49d9ed4459d161b96778e8643fe0c1f', file: 'inference.onnx', out: 'small_rec.onnx' },
+    dict: 'small_dict.txt',
+  },
 }
 
 /** ONNX Runtime Web's WASM backend. The '.mjs' is the glue the bundle imports by URL. */
@@ -208,26 +221,29 @@ async function main() {
   let total = 0
   let copied = 0
 
-  // 1. The two models.
-  for (const model of [DET, REC]) {
-    const url = SOURCE + model.repo + '/resolve/' + model.revision + '/' + model.file
-    const dest = join(OUT, model.out)
-    const size = await download(url, dest, assertOnnx)
-    total += size
-    copied++
-    process.stdout.write(model.out + ': ' + model.repo + ' (' + human(size) + ')\n')
-  }
+  // 1. Both tiers' models. Both land in public/ocr/; which ones the browser
+  //    fetches is decided at scan time by src/utils/ppocr.ts.
+  for (const [tier, files] of Object.entries(TIERS)) {
+    for (const model of [files.det, files.rec]) {
+      const url = SOURCE + model.repo + '/resolve/' + model.revision + '/' + model.file
+      const dest = join(OUT, model.out)
+      const size = await download(url, dest, assertOnnx)
+      total += size
+      copied++
+      process.stdout.write(model.out + ': ' + model.repo + ' (' + human(size) + ')\n')
+    }
 
-  // 2. The alphabet, from the recogniser's own config — never a separate copy.
-  const configUrl = SOURCE + REC.repo + '/resolve/' + REC.revision + '/inference.yml'
-  const config = await fetch(configUrl)
-  if (!config.ok) throw new Error('fetch failed ' + config.status + ' for ' + configUrl)
-  const dict = extractDict(await config.text())
-  const dictPath = join(OUT, 'ppocrv6_dict.txt')
-  writeFileSync(dictPath, dict)
-  total += statSync(dictPath).size
-  copied++
-  process.stdout.write('ppocrv6_dict.txt: ' + (dict.split('\n').length - 1) + ' characters\n')
+    // 2. The alphabet, from this tier's recogniser config — never a separate copy.
+    const configUrl = SOURCE + files.rec.repo + '/resolve/' + files.rec.revision + '/inference.yml'
+    const config = await fetch(configUrl)
+    if (!config.ok) throw new Error('fetch failed ' + config.status + ' for ' + configUrl)
+    const dict = extractDict(await config.text())
+    const dictPath = join(OUT, files.dict)
+    writeFileSync(dictPath, dict)
+    total += statSync(dictPath).size
+    copied++
+    process.stdout.write(files.dict + ': ' + (dict.split('\n').length - 1) + ' characters\n')
+  }
 
   // 3. ONNX Runtime's WASM backend, from the pinned npm package. Both files are
   //    needed: the JS glue is imported by URL at runtime, and the glue loads the

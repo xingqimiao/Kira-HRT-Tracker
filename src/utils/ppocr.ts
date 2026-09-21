@@ -36,13 +36,23 @@
  */
 
 import * as ort from 'onnxruntime-web/wasm'
+import type { OcrModelTier } from '../../logic'
 
 /** Where the self-hosted assets live. Every request is same-origin — see sync-ocr-assets.mjs. */
 const DEFAULT_BASE = '/ocr/'
 
-const DET_FILE = 'det.onnx'
-const REC_FILE = 'rec.onnx'
-const DICT_FILE = 'ppocrv6_dict.txt'
+/**
+ * Asset file names per model tier.
+ *
+ * Both tiers are self-hosted under /ocr/, but which files the browser fetches is
+ * decided by the caller's 'tier': the default 'tiny' scan only ever requests the
+ * tiny pair. 'small' is fetched at the moment a scan or a retry asks for it, never
+ * ahead of time — that is what keeps the first scan a few MB rather than ~30 MB.
+ */
+const TIER_FILES: Record<OcrModelTier, { det: string; rec: string; dict: string }> = {
+    tiny: { det: 'tiny_det.onnx', rec: 'tiny_rec.onnx', dict: 'tiny_dict.txt' },
+    small: { det: 'small_det.onnx', rec: 'small_rec.onnx', dict: 'small_dict.txt' },
+}
 
 /**
  * The DB detector's post-processing constants, from the det model's 'inference.yml'.
@@ -75,6 +85,11 @@ export interface OcrOptions {
     base?: string
     /** Called with 0..1 as the pipeline advances. */
     onProgress?: (fraction: number) => void
+    /**
+     * Which model pair to load. Defaults to 'tiny'; 'small' is the larger, more
+     * accurate pair and is only fetched when a caller actually asks for it.
+     */
+    tier?: OcrModelTier
 }
 
 // ── the models, loaded once per page ─────────────────────────────────────────
@@ -87,15 +102,20 @@ export interface OcrOptions {
  * point the engine at a different asset directory without poisoning the cache.
  *
  * 'ponytail:' a module-level cache means the heap is never released until the tab
- * closes. Bounded by the two models and never grows, which is the ceiling worth
- * naming; if a third model is ever added, evict by URL instead.
+ * closes. Bounded today by one tier's two models — switching tier replaces the
+ * sessions rather than holding both — and never grows. If more than one tier is
+ * ever kept resident, evict by key instead.
  */
 let loaded: Promise<{ det: ort.InferenceSession; rec: ort.InferenceSession; dict: string[] }> | null = null
 let loadedKey = ''
 
-async function loadModels(base: string) {
-    if (loaded && loadedKey === base) return loaded
-    loadedKey = base
+async function loadModels(base: string, tier: OcrModelTier) {
+    // The key includes the tier: switching tiers must load the other pair rather
+    // than reuse the sessions already in hand.
+    const key = base + '|' + tier
+    if (loaded && loadedKey === key) return loaded
+    loadedKey = key
+    const files = TIER_FILES[tier]
     const pending = (async () => {
         // 1. Tell ORT where its own runtime lives. The default is a CDN URL, and a
         //    CDN request here would break the app's offline promise — so the path is
@@ -109,15 +129,15 @@ async function loadModels(base: string) {
         ort.env.wasm.numThreads = 1
 
         const [det, rec, dictText] = await Promise.all([
-            ort.InferenceSession.create(base + DET_FILE),
-            ort.InferenceSession.create(base + REC_FILE),
-            fetch(base + DICT_FILE).then((r) => {
+            ort.InferenceSession.create(base + files.det),
+            ort.InferenceSession.create(base + files.rec),
+            fetch(base + files.dict).then((r) => {
                 // A missing asset must fail here rather than be decoded as text. The
                 // deployed host answers an unknown path under a known prefix with the
                 // SPA shell and a 200, which is how tesseract.js once "loaded" a
                 // language model that was really an HTML page.
                 if (!r.ok || /text\/html/i.test(r.headers.get('content-type') ?? '')) {
-                    throw new Error('OCR dictionary missing at ' + base + DICT_FILE)
+                    throw new Error('OCR dictionary missing at ' + base + files.dict)
                 }
                 return r.text()
             }),
@@ -133,7 +153,7 @@ async function loadModels(base: string) {
         const classes = await recClassCount(rec)
         if (classes !== dict.length) {
             throw new Error(
-                'OCR dictionary has ' + dict.length + ' entries but ' + REC_FILE + ' emits ' + classes + ' classes',
+                'OCR dictionary has ' + dict.length + ' entries but ' + files.rec + ' emits ' + classes + ' classes',
             )
         }
         return { det, rec, dict }
@@ -484,10 +504,11 @@ export async function recognize(
     options: OcrOptions = {},
 ): Promise<string[]> {
     const base = options.base ?? DEFAULT_BASE
+    const tier = options.tier ?? 'tiny'
     const progress = options.onProgress ?? (() => {})
 
     progress(0)
-    const { det, rec, dict } = await loadModels(base)
+    const { det, rec, dict } = await loadModels(base, tier)
 
     // The detector sees the whole page scaled down to a bounded size. Bounded
     // rather than fixed: aspect ratio is preserved, and both sides are rounded to a

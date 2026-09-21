@@ -93,6 +93,8 @@ const AppContent = () => {
         calibrationHistoryMode, setCalibrationHistoryMode,
         aaChartMode, setAaChartMode,
         hrtStartDate, setHrtStartDate,
+        recheckIntervals, setRecheckIntervals,
+        ocrModelTier, setOcrModelTier,
         pendingMilestone,
         calibration,
         currentLevel,
@@ -231,6 +233,8 @@ const AppContent = () => {
         calibrationHistoryMode,
         aaChartMode,
         hrtStartDate,
+        recheckIntervals,
+        ocrModelTier,
     });
 
     useEffect(() => {
@@ -544,6 +548,8 @@ const AppContent = () => {
                             onDeleteJournalEntry={deleteJournalEntry}
                             dismissedRechecks={dismissedRechecks}
                             onDismissRecheck={dismissRecheck}
+                            recheckIntervals={recheckIntervals}
+                            ocrModelTier={ocrModelTier}
                         />
                     )}
 
@@ -591,6 +597,10 @@ const AppContent = () => {
                             isLoggedIn={coreSession.isSignedIn}
                             aaChartMode={aaChartMode}
                             setAaChartMode={setAaChartMode}
+                            recheckIntervals={recheckIntervals}
+                            setRecheckIntervals={setRecheckIntervals}
+                            ocrModelTier={ocrModelTier}
+                            setOcrModelTier={setOcrModelTier}
                         />
                     )}
 

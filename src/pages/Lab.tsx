@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import Icon from '../components/Icon';
 import { Plus, ChevronRight, Scan } from '../icons';
-import { LabResult, DoseEvent, MONITORING_UNIT, getMonitoringNotices, getRecheckReminders, isMonitoringOnlyLab, monitoringValues, CalibrationMethod, CalibrationResult, CalibrationPoint, getHormoneLevelAdvisory, Ester } from '../../logic';
+import { LabResult, DoseEvent, MONITORING_UNIT, getMonitoringNotices, getRecheckReminders, isMonitoringOnlyLab, monitoringValues, CalibrationMethod, CalibrationResult, CalibrationPoint, getHormoneLevelAdvisory, Ester, RecheckIntervals, OcrModelTier } from '../../logic';
 import { Lang } from '../i18n/translations';
 import { formatDate, formatTime, LOCALE_MAP } from '../utils/helpers';
 import LabResultForm from '../components/LabResultForm';
@@ -35,6 +35,10 @@ interface LabProps {
     /** Due re-check dates this account has closed, keyed by reminder kind. */
     dismissedRechecks: Record<string, string>;
     onDismissRecheck: (kind: string, due: string) => void;
+    /** The user's re-check intervals — see `RecheckIntervals` in logic.ts. */
+    recheckIntervals: RecheckIntervals;
+    /** Which OCR model tier the scan starts with; a retry may use the other one. */
+    ocrModelTier: OcrModelTier;
 }
 
 const Lab: React.FC<LabProps> = ({
@@ -55,6 +59,8 @@ const Lab: React.FC<LabProps> = ({
     onDeleteJournalEntry,
     dismissedRechecks,
     onDismissRecheck,
+    recheckIntervals,
+    ocrModelTier,
 }) => {
     const { isTransmasc } = useHRTMode();
     const [editingLabId, setEditingLabId] = useState<string | null>(null);
@@ -97,7 +103,7 @@ const Lab: React.FC<LabProps> = ({
     // point and no source states one in the app's terms, so the anchor is the first
     // LOGGED dose of that compound and a compound with no logged dose gets nothing
     // rather than a guessed schedule. See `getRecheckReminders`.
-    const rechecks = useMemo(() => getRecheckReminders(events), [events]);
+    const rechecks = useMemo(() => getRecheckReminders(events, undefined, recheckIntervals), [events, recheckIntervals]);
     // The precautions belong to one compound and are shown only when that compound
     // is actually recorded — advice for a drug nobody is taking is noise.
     const onSpironolactone = useMemo(() => events.some(e => e.ester === Ester.SPIRO), [events]);
@@ -152,6 +158,7 @@ const Lab: React.FC<LabProps> = ({
                     <div className="mx-auto w-full px-6 md:px-8 mb-6 max-w-2xl">
                         {isScanOpen && (
                             <LabScan
+                                tier={ocrModelTier}
                                 onCancel={() => setIsScanOpen(false)}
                                 onExtracted={(candidates) => {
                                     setScanned(candidates);

@@ -26,6 +26,8 @@ import {
   POTASSIUM_RECHECK_INTERVAL_MONTHS,
   POTASSIUM_RECHECK_EARLY_INTERVAL_MONTHS,
   POTASSIUM_RECHECK_FIRST_PHASE_MONTHS,
+  DEFAULT_RECHECK_INTERVALS,
+  normalizeRecheckIntervals,
 } from '../logic.ts';
 
 const DAY_H = 24;
@@ -44,7 +46,7 @@ const ev = (ester, mg, monthsAgo) => ({
   extras: {},
 });
 
-const kinds = (events, nowH = NOW) => getRecheckReminders(events, nowH).map(r => r.kind);
+const kinds = (events, nowH = NOW, intervals) => getRecheckReminders(events, nowH, intervals).map(r => r.kind);
 
 const results = [];
 function check(name, fn) {
@@ -64,8 +66,12 @@ check('no logged dose of any compound means no reminder at all', () => {
   assert.deepEqual(getRecheckReminders([], NOW), []);
 });
 
-check('an unrelated compound does not start a reminder', () => {
-  assert.deepEqual(kinds([ev(Ester.E2, 2, 40)]), [], 'estradiol is not one of the three');
+check('a testosterone ester does not start an estradiol reminder', () => {
+  assert.deepEqual(kinds([ev(Ester.TE, 50, 40)]), [], 'testosterone is not an estrogen');
+});
+
+check('estradiol now has a reminder of its own — it is the fourth kind', () => {
+  assert.deepEqual(kinds([ev(Ester.EV, 5, 40)]), ['estradiol']);
 });
 
 check('spironolactone logged does not start a liver reminder', () => {
@@ -167,6 +173,81 @@ check('spironolactone at 13 months has moved to the annual cadence', () => {
 check('spironolactone at 25 months is on a 12-month boundary, not a 3-month one', () => {
   const [r] = getRecheckReminders([ev(Ester.SPIRO, 100, 25)], NOW);
   assert.equal(r.intervalMonths, POTASSIUM_RECHECK_FIRST_PHASE_MONTHS + POTASSIUM_RECHECK_INTERVAL_MONTHS);
+});
+
+// ---------------------------------------------------------------------------
+// Estradiol — now a reminder of its own, with a user-adjustable interval.
+// The default is 3 months (owner's choice, matching MtF.wiki's US HRT review and
+// the Peking University Third Hospital follow-up); the copy quotes those and says
+// the interval is the user's own when it has been changed.
+// ---------------------------------------------------------------------------
+
+check('a first estradiol dose logged today is not due', () => {
+  assert.deepEqual(kinds([ev(Ester.EV, 5, 0)]), []);
+});
+
+check('estradiol at 3 months is due on the default 3-month interval', () => {
+  const [r] = getRecheckReminders([ev(Ester.EV, 5, 3.1)], NOW);
+  assert.equal(r.kind, 'estradiol');
+  assert.equal(r.ester, Ester.EV);
+  assert.equal(r.intervalMonths, DEFAULT_RECHECK_INTERVALS.estradiolMonths);
+  assert.equal(r.customized, false, 'the default is not labelled as the user own choice');
+});
+
+check('an estradiol ester with no logged dose produces no reminder', () => {
+  assert.ok(!kinds([ev(Ester.CPA, 12.5, 20)]).includes('estradiol'));
+});
+
+check('the reminder follows the ester on the latest logged estrogen dose', () => {
+  const events = [ev(Ester.EV, 5, 10), ev(Ester.EC, 4, 4)];
+  const [r] = getRecheckReminders(events, NOW);
+  assert.equal(r.ester, Ester.EC, 'the ester actually taken, not the first one ever logged');
+});
+
+check('an adjusted estradiol interval moves the due date', () => {
+  const events = [ev(Ester.EV, 5, 3.1)];
+  assert.deepEqual(kinds(events), ['estradiol'], 'due on the 3-month default');
+  assert.deepEqual(
+    kinds(events, NOW, { estradiolMonths: 5 }),
+    [],
+    'not due yet once the interval is set longer',
+  );
+  const [r] = getRecheckReminders([ev(Ester.EV, 5, 5.1)], NOW, { estradiolMonths: 5 });
+  assert.equal(r.intervalMonths, 5);
+  assert.equal(r.customized, true, 'a changed interval is labelled as the user own choice');
+});
+
+check('an unset interval keeps the default', () => {
+  // The stored bag may be absent or partial; anything missing must fall back.
+  assert.deepEqual(normalizeRecheckIntervals({}), DEFAULT_RECHECK_INTERVALS);
+  assert.deepEqual(normalizeRecheckIntervals(null), DEFAULT_RECHECK_INTERVALS);
+  assert.deepEqual(normalizeRecheckIntervals('not json'), DEFAULT_RECHECK_INTERVALS);
+  const [r] = getRecheckReminders([ev(Ester.EV, 5, 3.1)], NOW, {});
+  assert.equal(r.intervalMonths, DEFAULT_RECHECK_INTERVALS.estradiolMonths);
+});
+
+check('the other intervals are settings too, and an unset one keeps its default', () => {
+  const [r] = getRecheckReminders([ev(Ester.CPA, 12.5, 1.1)], NOW, {});
+  assert.equal(r.intervalMonths, LIVER_RECHECK_EARLY_INTERVAL_MONTHS);
+  // At 1.1 months the next boundary under a 2-month early interval is month 2 —
+  // not reached yet. At 2.1 it is, and the rule is the user's.
+  assert.deepEqual(kinds([ev(Ester.CPA, 12.5, 1.1)], NOW, { liverEarlyMonths: 2 }), []);
+  const [r2] = getRecheckReminders([ev(Ester.CPA, 12.5, 2.1)], NOW, { liverEarlyMonths: 2 });
+  assert.equal(r2.intervalMonths, 2);
+  assert.equal(r2.customized, true, 'it is marked as a changed interval');
+});
+
+check('a JSON string round-trips, because that is how the setting syncs', () => {
+  const bag = JSON.stringify({ ...DEFAULT_RECHECK_INTERVALS, estradiolMonths: 6 });
+  const [r] = getRecheckReminders([ev(Ester.EV, 5, 6.1)], NOW, bag);
+  assert.equal(r.intervalMonths, 6);
+});
+
+check('an out-of-range or junk interval falls back rather than producing a bad date', () => {
+  const n = normalizeRecheckIntervals({ estradiolMonths: 0, liverMonths: 'x', potassiumMonths: 9999 });
+  assert.equal(n.estradiolMonths, 1, 'zero is clamped to the minimum, never a zero-month interval');
+  assert.equal(n.liverMonths, DEFAULT_RECHECK_INTERVALS.liverMonths, 'junk falls back to the default');
+  assert.equal(n.potassiumMonths, 120, 'clamped, not dropped');
 });
 
 // ---------------------------------------------------------------------------

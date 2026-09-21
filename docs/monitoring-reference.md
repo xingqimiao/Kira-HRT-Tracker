@@ -149,6 +149,7 @@ The app should surface both and not assume one.
 | Test | Interval | Threshold / target | Action triggered | Source |
 |---|---|---|---|---|
 | **Sex-hormone panel (six items)** — E2, T, PRL are the important ones | Draw **near the next dose** (trough); "不要在服用药物之后立即进行激素检查". After a full six-item panel, only the items of interest may be checked | see per-hormone rows | — | W — *监测 §怎么查、何时查* |
+| **Estradiol (E2) re-check interval** | Once levels are stable, **about every 3 months**: "激素水平稳定后大约每 3 个月进行复查". The Peking University Third Hospital follow-up page requires "每三个月复查一次，以继续开具药物" | not stated | — | W — *美国 HRT 综述*; *北医三院 §复诊* |
 | Estradiol (E2) | with the panel | Female follicular 30–100 pg/mL, luteal 70–300 pg/mL. Non-injectable: mean 100–200 pg/mL, trough (pre-next-dose) 55–150 pg/mL, **aim > 100 pg/mL**. Injectable: **trough > 200 pg/mL** | — | W — *监测 §雌二醇 (E2)* |
 | Testosterone (T) | with the panel | Adult female 0.1–0.55 ng/mL; adult male 2.64–9.16 ng/mL | — | W — *监测 §睾酮 (T)* |
 | FSH | with the panel | Premenopausal adult female (follicular, luteal) 1.8–11.2 mIU/mL; postmenopausal 30–120 mIU/mL | Post-orchiectomy a high FSH suggests insufficient estradiol | W — *监测 §促卵泡激素 (FSH)* |
@@ -300,6 +301,10 @@ mandatory**, and both treat **hyperkalemia as the defining spironolactone hazard
   https://mtf.wiki/zh-cn/docs/medicine/antiandrogen/cyproterone
 * MtF.wiki — 螺内酯片. https://mtf.wiki/zh-cn/docs/medicine/antiandrogen/spironolactone
 * MtF.wiki — 比卡鲁胺片. https://mtf.wiki/zh-cn/docs/medicine/antiandrogen/bicalutamide
+* MtF.wiki — 美国 HRT 综述. https://mtf.wiki/zh-cn/docs/hrt/us/overview
+  (*激素水平稳定后大约每 3 个月进行复查*; links the UCSF Guideline used for the trough draw.)
+* MtF.wiki — 北医三院 (follow-up schedule). https://mtf.wiki/zh-cn/docs/hrt/puth
+  (*开始 HRT 之后要求每三个月复查一次，以继续开具药物*.)
 
 **Clinical / regulatory (C)**
 

@@ -59,6 +59,17 @@ export function isTestosteroneEster(e: Ester): boolean {
     return T_ESTERS.has(e);
 }
 
+/**
+ * Estradiol and its esters (E2, EB, EV, EC, EN, EU).
+ *
+ * Defined as "neither a testosterone ester nor an anti-androgen" — the same test
+ * the E2 dose advisory already used — so a new estrogen ester joins without a
+ * second list to keep in sync.
+ */
+export function isEstradiolEster(e: Ester): boolean {
+    return !isTestosteroneEster(e) && !isAntiandrogen(e);
+}
+
 /** True for an anti-androgen (CPA, spironolactone, bicalutamide) — the class the E2/T branches must not claim. */
 export function isAntiandrogen(e: Ester): boolean {
     return ANTIANDROGENS.has(e);
@@ -272,7 +283,7 @@ function _injectionWeeklyRate(events: DoseEvent[], nowH: number, pred: (e: DoseE
 export function getDoseAdvisory(events: DoseEvent[], nowH: number = Date.now() / (1000 * 60 * 60)): DoseAdvisory | null {
     if (!events.length) return null;
 
-    const isE2 = (e: DoseEvent) => !isTestosteroneEster(e.ester) && !isAntiandrogen(e.ester);
+    const isE2 = (e: DoseEvent) => isEstradiolEster(e.ester);
     const isT = (e: DoseEvent) => isTestosteroneEster(e.ester);
 
     // Daily-dosed families: heaviest single-day total in the trailing 14 days.
@@ -465,6 +476,28 @@ export function normalizeAntiandrogenChartMode(raw: string | null | undefined): 
 }
 
 /**
+ * Which PP-OCRv6 model tier the lab scan uses.
+ *
+ * Lives here rather than in 'src/utils/ppocr.ts' because that module imports ONNX
+ * Runtime Web at its top level and is deliberately loaded by dynamic import only —
+ * a settings screen importing the tier type from it would pull the runtime into the
+ * main bundle.
+ *
+ * 'tiny' is the default (a few MB); 'small' is the larger, more accurate pair and is
+ * fetched only when chosen or when a tiny scan returns nothing.
+ */
+export type OcrModelTier = 'tiny' | 'small';
+
+export const OCR_MODEL_TIERS: readonly OcrModelTier[] = ['tiny', 'small'];
+
+/** The owner chose tiny as the default; see the settings copy for the trade-off. */
+export const DEFAULT_OCR_MODEL_TIER: OcrModelTier = 'tiny';
+
+export function normalizeOcrModelTier(raw: string | null | undefined): OcrModelTier {
+    return raw === 'small' ? 'small' : DEFAULT_OCR_MODEL_TIER;
+}
+
+/**
  * What the Home card's anti-androgen column should read.
  *
  * `none` keeps the card's existing `--` placeholder; `grams` is the cumulative
@@ -613,7 +646,7 @@ export function getMonitoringNotices(labs: LabResult[], events: DoseEvent[]): Mo
 // schedule anchored a year late. That failure is a delay, not a false alarm,
 // which is the direction to err in for a reminder that says "this is due".
 
-export type RecheckKind = 'liver_cpa' | 'liver_bical' | 'potassium_spiro';
+export type RecheckKind = 'liver_cpa' | 'liver_bical' | 'potassium_spiro' | 'estradiol';
 
 export interface RecheckReminder {
     kind: RecheckKind;
@@ -627,6 +660,12 @@ export interface RecheckReminder {
     basis: 'first_dose';
     /** Whole months since `startH`, for the copy to quote. */
     elapsedMonths: number;
+    /**
+     * True when this reminder's interval has been changed from the app default in
+     * Settings. The copy then says the interval is the user's own, because a
+     * source-quoted cadence would no longer be what is on screen.
+     */
+    customized: boolean;
 }
 
 /**
@@ -648,6 +687,84 @@ export const LIVER_RECHECK_INTERVAL_MONTHS = 3;
 export const POTASSIUM_RECHECK_FIRST_PHASE_MONTHS = 12;
 export const POTASSIUM_RECHECK_EARLY_INTERVAL_MONTHS = 3;
 export const POTASSIUM_RECHECK_INTERVAL_MONTHS = 12;
+
+/**
+ * Every re-check interval as one user-adjustable bag.
+ *
+ * These started as the module constants above and are now settings, because the
+ * owner asked for each interval to be individually adjustable and for estradiol
+ * (which had no reminder at all) to join them. The values are numbers rather than
+ * the stored string so the date arithmetic never sees what a settings field let
+ * through; `normalizeRecheckIntervals` is the only way in.
+ */
+export interface RecheckIntervals {
+    /** Last month the liver schedule runs monthly before settling to `liverMonths`. */
+    liverFirstPhaseMonths: number;
+    /** Liver interval inside the first phase (months). */
+    liverEarlyMonths: number;
+    /** Liver interval after the first phase (months). */
+    liverMonths: number;
+    /** Last month the potassium schedule uses `potassiumEarlyMonths`. */
+    potassiumFirstPhaseMonths: number;
+    /** Potassium interval inside the first phase (months). */
+    potassiumEarlyMonths: number;
+    /** Potassium interval after the first phase (months). */
+    potassiumMonths: number;
+    /**
+     * Estradiol re-check interval (months).
+     *
+     * 3 is the app's default, set by the owner and matching MtF.wiki's 美国 HRT 综述
+     * ("激素水平稳定后大约每 3 个月进行复查") and 北医三院's follow-up schedule. The copy
+     * quotes those as the usual practice and says the interval is user-adjustable,
+     * so a changed value is labelled as the user's own rather than as sourced.
+     */
+    estradiolMonths: number;
+}
+
+export const DEFAULT_RECHECK_INTERVALS: RecheckIntervals = {
+    liverFirstPhaseMonths: LIVER_RECHECK_FIRST_PHASE_MONTHS,
+    liverEarlyMonths: LIVER_RECHECK_EARLY_INTERVAL_MONTHS,
+    liverMonths: LIVER_RECHECK_INTERVAL_MONTHS,
+    potassiumFirstPhaseMonths: POTASSIUM_RECHECK_FIRST_PHASE_MONTHS,
+    potassiumEarlyMonths: POTASSIUM_RECHECK_EARLY_INTERVAL_MONTHS,
+    potassiumMonths: POTASSIUM_RECHECK_INTERVAL_MONTHS,
+    estradiolMonths: 3,
+};
+
+/** Whole months, bounded. The bound is a typo guard, not a clinical claim. */
+const RECHECK_MIN_MONTHS = 1;
+const RECHECK_MAX_MONTHS = 120;
+
+function recheckMonths(raw: unknown, fallback: number): number {
+    const n = typeof raw === 'number' ? raw : Number(raw);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(RECHECK_MAX_MONTHS, Math.max(RECHECK_MIN_MONTHS, Math.round(n)));
+}
+
+/**
+ * Accept whatever a settings field or a synced payload holds and return a complete
+ * bag, falling back to the default per field.
+ *
+ * A JSON string is decoded because that is how the synced `AppSettings` value
+ * travels. A missing or malformed field keeps its default, which is what makes
+ * "an unset interval is the default" true here rather than at every call site.
+ */
+export function normalizeRecheckIntervals(raw: unknown): RecheckIntervals {
+    let src: unknown = raw;
+    if (typeof src === 'string') {
+        try { src = JSON.parse(src); } catch { src = null; }
+    }
+    const record = src && typeof src === 'object' && !Array.isArray(src) ? src as Record<string, unknown> : {};
+    return {
+        liverFirstPhaseMonths: recheckMonths(record.liverFirstPhaseMonths, DEFAULT_RECHECK_INTERVALS.liverFirstPhaseMonths),
+        liverEarlyMonths: recheckMonths(record.liverEarlyMonths, DEFAULT_RECHECK_INTERVALS.liverEarlyMonths),
+        liverMonths: recheckMonths(record.liverMonths, DEFAULT_RECHECK_INTERVALS.liverMonths),
+        potassiumFirstPhaseMonths: recheckMonths(record.potassiumFirstPhaseMonths, DEFAULT_RECHECK_INTERVALS.potassiumFirstPhaseMonths),
+        potassiumEarlyMonths: recheckMonths(record.potassiumEarlyMonths, DEFAULT_RECHECK_INTERVALS.potassiumEarlyMonths),
+        potassiumMonths: recheckMonths(record.potassiumMonths, DEFAULT_RECHECK_INTERVALS.potassiumMonths),
+        estradiolMonths: recheckMonths(record.estradiolMonths, DEFAULT_RECHECK_INTERVALS.estradiolMonths),
+    };
+}
 
 /** The first dose of one compound, or undefined when it was never logged. */
 function firstDoseH(events: DoseEvent[], ester: Ester): number | undefined {
@@ -717,10 +834,22 @@ function nextBoundaryMonths(elapsedMonths: number, phaseMonths: number, earlyMon
 export function getRecheckReminders(
     events: DoseEvent[],
     nowH: number = Date.now() / (1000 * 60 * 60),
+    intervals: unknown = DEFAULT_RECHECK_INTERVALS,
 ): RecheckReminder[] {
     const out: RecheckReminder[] = [];
+    const cfg = normalizeRecheckIntervals(intervals);
 
-    const due = (kind: RecheckKind, ester: Ester, phaseMonths: number, earlyMonths: number, months: number): void => {
+    const customized = (keys: (keyof RecheckIntervals)[]): boolean =>
+        keys.some(k => cfg[k] !== DEFAULT_RECHECK_INTERVALS[k]);
+
+    const due = (
+        kind: RecheckKind,
+        ester: Ester,
+        phaseMonths: number,
+        earlyMonths: number,
+        months: number,
+        isCustom: boolean,
+    ): void => {
         const startH = firstDoseH(events, ester);
         // No logged dose of this compound: the app cannot know when the schedule
         // started, and a reminder with an invented start would be a false alarm.
@@ -733,12 +862,25 @@ export function getRecheckReminders(
         // Boundary 0 means the first interval has not elapsed yet — a dose logged
         // today must not read as "due", which is the false alarm this guards.
         if (boundary <= 0) return;
-        out.push({ kind, ester, startH, intervalMonths: boundary, basis: 'first_dose', elapsedMonths: Math.floor(elapsedMonths) });
+        out.push({ kind, ester, startH, intervalMonths: boundary, basis: 'first_dose', elapsedMonths: Math.floor(elapsedMonths), customized: isCustom });
     };
 
-    due('liver_cpa', Ester.CPA, LIVER_RECHECK_FIRST_PHASE_MONTHS, LIVER_RECHECK_EARLY_INTERVAL_MONTHS, LIVER_RECHECK_INTERVAL_MONTHS);
-    due('liver_bical', Ester.BICAL, LIVER_RECHECK_FIRST_PHASE_MONTHS, LIVER_RECHECK_EARLY_INTERVAL_MONTHS, LIVER_RECHECK_INTERVAL_MONTHS);
-    due('potassium_spiro', Ester.SPIRO, POTASSIUM_RECHECK_FIRST_PHASE_MONTHS, POTASSIUM_RECHECK_EARLY_INTERVAL_MONTHS, POTASSIUM_RECHECK_INTERVAL_MONTHS);
+    due('liver_cpa', Ester.CPA, cfg.liverFirstPhaseMonths, cfg.liverEarlyMonths, cfg.liverMonths, customized(['liverFirstPhaseMonths', 'liverEarlyMonths', 'liverMonths']));
+    due('liver_bical', Ester.BICAL, cfg.liverFirstPhaseMonths, cfg.liverEarlyMonths, cfg.liverMonths, customized(['liverFirstPhaseMonths', 'liverEarlyMonths', 'liverMonths']));
+    due('potassium_spiro', Ester.SPIRO, cfg.potassiumFirstPhaseMonths, cfg.potassiumEarlyMonths, cfg.potassiumMonths, customized(['potassiumFirstPhaseMonths', 'potassiumEarlyMonths', 'potassiumMonths']));
+
+    // Estradiol: one reminder, for the ester the person actually takes — the one on
+    // their latest logged estrogen dose — anchored to that ester's first logged dose,
+    // the same rule as the compounds above. Passing a phase of 0 with the interval
+    // as its own "early" interval makes nextBoundaryMonths walk plain multiples.
+    let latestE2: DoseEvent | undefined;
+    for (const e of events) {
+        if (!isEstradiolEster(e.ester)) continue;
+        if (latestE2 === undefined || e.timeH > latestE2.timeH) latestE2 = e;
+    }
+    if (latestE2) {
+        due('estradiol', latestE2.ester, 0, cfg.estradiolMonths, cfg.estradiolMonths, customized(['estradiolMonths']));
+    }
 
     return out;
 }

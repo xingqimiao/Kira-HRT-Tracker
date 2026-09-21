@@ -8,11 +8,17 @@ import {
     type HormoneCandidate,
 } from '../utils/ocrParse';
 import { createImage } from '../utils/cropImage';
+import type { OcrModelTier } from '../../logic';
 
 interface LabScanProps {
     /** Prefill the form with what was read. The user still edits and saves it. */
     onExtracted: (candidates: HormoneCandidate[]) => void;
     onCancel: () => void;
+    /**
+     * The model tier the first attempt uses, from Settings. A scan that comes back
+     * empty can be re-run with 'small' without changing the setting.
+     */
+    tier: OcrModelTier;
 }
 
 /**
@@ -172,17 +178,26 @@ async function toPixels(dataUrl: string): Promise<{
  * ONNX Runtime into the main chunk and defeat the point. See `scripts/sync-ocr-assets.mjs`
  * for where the assets come from and `src/utils/ppocr.ts` for the pipeline itself.
  */
-const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
+const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel, tier }) => {
     const { t } = useTranslation();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [state, setState] = useState<ScanState>({ kind: 'idle' });
     const [preview, setPreview] = useState<string | null>(null);
+    /**
+     * Which tier produced the visible result.
+     *
+     * Kept and displayed on purpose: after a tiny scan fails and a small retry
+     * succeeds, the user has to be able to see that this one came from small —
+     * otherwise the setting looks like it did nothing.
+     */
+    const [usedTier, setUsedTier] = useState<OcrModelTier | null>(null);
 
     const muted = 'text-[var(--color-m3-on-surface-variant)] ';
     const on = 'text-[var(--color-m3-on-surface)] ';
 
-    const runRecognition = useCallback(async (dataUrl: string) => {
+    const runRecognition = useCallback(async (dataUrl: string, runTier: OcrModelTier) => {
         setState({ kind: 'preparing' });
+        setUsedTier(null);
         let prepared: string;
         try {
             prepared = await prepareImage(dataUrl);
@@ -212,17 +227,26 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
             // label, a value and a unit within a line. Joining everything into one
             // blob would put a row's unit next to the next row's label.
             const lines = await recognize(pixels, width, height, {
+                tier: runTier,
                 onProgress: (fraction) => setState({ kind: 'recognising', progress: fraction }),
             });
             const candidates = findHormoneValues(lines.join('\n'));
+            setUsedTier(runTier);
             setState({ kind: 'done', candidates });
         } catch (error: any) {
+            setUsedTier(runTier);
             setState({
                 kind: 'failed',
                 message: error?.message || String(error) || t('scan.error_generic'),
             });
         }
     }, [t]);
+
+    // The manual retry the owner chose over a silent automatic download: nothing
+    // under /ocr/small_* is requested until this button is pressed.
+    const retryWithSmall = () => {
+        if (preview) void runRecognition(preview, 'small');
+    };
 
     const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -235,7 +259,7 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
         reader.addEventListener('load', () => {
             const dataUrl = reader.result?.toString() ?? null;
             setPreview(dataUrl);
-            if (dataUrl) void runRecognition(dataUrl);
+            if (dataUrl) void runRecognition(dataUrl, tier);
         });
         // readAsDataURL, matching the avatar picker: it needs no object-URL
         // bookkeeping and the value survives being handed to a worker.
@@ -260,6 +284,18 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
                     <Icon icon={AlertCircle} size={14} className="shrink-0 mt-0.5" />
                     <span>{state.message}</span>
                 </div>
+            )}
+
+            {/* Offered only after a tiny run; the button names the download cost and
+                is the first and only thing that fetches the small model. */}
+            {state.kind === 'failed' && usedTier === 'tiny' && (
+                <button
+                    type="button"
+                    onClick={retryWithSmall}
+                    className="text-xs font-medium text-[var(--color-m3-primary)] underline underline-offset-2"
+                >
+                    {t('scan.retry_small')}
+                </button>
             )}
 
             {preview && (
@@ -295,13 +331,28 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
             {state.kind === 'done' && (
                 <div className="space-y-3">
                     {state.candidates.length === 0 ? (
-                        <p className={`text-sm ${muted}`}>{t('scan.nothing_found')}</p>
+                        <div className="space-y-2">
+                            <p className={`text-sm ${muted}`}>{t('scan.nothing_found')}</p>
+                            {usedTier === 'tiny' && (
+                                <button
+                                    type="button"
+                                    onClick={retryWithSmall}
+                                    className="text-xs font-medium text-[var(--color-m3-primary)] underline underline-offset-2"
+                                >
+                                    {t('scan.retry_small')}
+                                </button>
+                            )}
+                        </div>
                     ) : (
                         <>
                             <p className="text-sm font-medium text-cos-success flex items-center gap-1.5">
                                 <Icon icon={Check} size={14} />
                                 {t('scan.found').replace('{n}', String(state.candidates.length))}
                             </p>
+                            {/* Which tier read it stays on screen after a retry. */}
+                            {usedTier === 'small' && (
+                                <p className={`text-xs ${muted}`}>{t('scan.used_small')}</p>
+                            )}
                             <ul className="space-y-1">
                                 {state.candidates.map((c, i) => (
                                     <li key={i} className={`flex items-baseline justify-between py-2 text-sm border-b border-[var(--color-m3-outline-variant)] last:border-b-0`}>

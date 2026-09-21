@@ -91,12 +91,28 @@ const RECHECK_SOURCES: Record<RecheckReminder['kind'], { label: string; url: str
         { label: 'Endocrine Society', url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC9562816/' },
         { label: 'MtF.wiki', url: 'https://mtf.wiki/zh-cn/docs/medicine/antiandrogen/spironolactone' },
     ],
+    // The interval sources. The 3-month cadence is quoted by the US HRT review and
+    // the Peking University Third Hospital follow-up page; the monitoring page
+    // repeats the 3-month figure for liver function. The wording of each appears in
+    // the body key, not here — these entries are the labels and links only.
+    estradiol: [
+        { label: 'MtF.wiki · 美国HRT综述', url: 'https://mtf.wiki/zh-cn/docs/hrt/us/overview' },
+        { label: 'MtF.wiki · 北医三院', url: 'https://mtf.wiki/zh-cn/docs/hrt/puth' },
+        { label: 'MtF.wiki', url: 'https://mtf.wiki/zh-cn/docs/medicine/monitoring' },
+    ],
 };
+
+/** The trough-timing sources: the wiki's draw-before-the-next-dose line and UCSF. */
+const E2_TROUGH_SOURCES: { label: string; url: string }[] = [
+    { label: 'MtF.wiki', url: 'https://mtf.wiki/zh-cn/docs/medicine/monitoring' },
+    { label: 'UCSF', url: 'https://transcare.ucsf.edu/guidelines' },
+];
 
 const RECHECK_BODY: Record<RecheckReminder['kind'], string> = {
     liver_cpa: 'monitor.recheck.liver',
     liver_bical: 'monitor.recheck.liver',
     potassium_spiro: 'monitor.recheck.potassium',
+    estradiol: 'monitor.recheck.estradiol',
 };
 
 const SourceLinks: React.FC<{ sources: { label: string; url: string }[] }> = ({ sources }) => (
@@ -181,6 +197,30 @@ export const RecheckReminderLine: React.FC<{
                     <span className="opacity-70">{t('monitor.sources')}</span>{' '}
                     <SourceLinks sources={RECHECK_SOURCES[reminder.kind]} />
                 </p>
+                {/* Estradiol carries two things the other reminders do not: when to
+                    take the draw, and the clinician line. Both are shown in the body
+                    rather than a footnote — the safety line first, because low
+                    estradiol and mood are why someone opens this, and the answer is a
+                    doctor rather than a number. */}
+                {reminder.kind === 'estradiol' && (
+                    <>
+                        <p className="mt-1 flex items-start gap-1.5 font-medium text-cos-warning">
+                            <Icon icon={AlertCircle} size={13} strokeWidth={2} className="mt-[3px] shrink-0" />
+                            <span>{t('monitor.recheck.e2_safety')}</span>
+                        </p>
+                        {/* The 3-month claim's own wording, quoted rather than
+                            paraphrased, under the source links printed with the body. */}
+                        <p className="mt-0.5 opacity-80">{t('monitor.recheck.e2_interval')}</p>
+                        <p className="mt-0.5">
+                            {t('monitor.recheck.e2_trough')}{' '}
+                            <span className="opacity-70">{t('monitor.sources')}</span>{' '}
+                            <SourceLinks sources={E2_TROUGH_SOURCES} />
+                        </p>
+                        {reminder.customized && (
+                            <p className="mt-0.5 opacity-70">{t('monitor.recheck.custom')}</p>
+                        )}
+                    </>
+                )}
                 <p className="mt-0.5 opacity-80">
                     {t('monitor.recheck.basis')
                         .replace('{drug}', t(`ester.${reminder.ester}`))

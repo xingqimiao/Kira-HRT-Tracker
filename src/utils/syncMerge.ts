@@ -87,12 +87,22 @@ export interface AppSettings {
      * account line "HRT started N days ago" reads it — see hrtStart.ts.
      */
     hrtStartDate?: string;
+    /**
+     * The re-check intervals, JSON-encoded (see `RecheckIntervals` in logic.ts).
+     *
+     * A preference, so it syncs — unlike the *dismissal* state, which stays on the
+     * device it was closed on. A medical reminder should reappear on a second
+     * device rather than be silently suppressed by the first.
+     */
+    recheckIntervals?: string;
+    /** Which OCR model tier the lab scan uses: 'tiny' (default) or 'small'. */
+    ocrModelTier?: string;
 }
 
 /** Every key `sanitizeAppSettings` will carry. An unknown key is dropped. */
 export const APP_SETTING_KEYS: readonly (keyof AppSettings)[] = [
     'theme', 'keyColor', 'lang', 'hrtMode', 'showVial', 'calMethod', 'calHistoryMode', 'aaChartMode',
-    'hrtStartDate',
+    'hrtStartDate', 'recheckIntervals', 'ocrModelTier',
 ];
 
 export interface SyncState {

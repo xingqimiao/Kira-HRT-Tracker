@@ -192,7 +192,7 @@ function check(name, fn) {
     }
 }
 
-for (const asset of ['det.onnx', 'rec.onnx', 'ppocrv6_dict.txt']) {
+for (const asset of ['tiny_det.onnx', 'tiny_rec.onnx', 'tiny_dict.txt', 'small_det.onnx', 'small_rec.onnx', 'small_dict.txt']) {
     if (!existsSync(join(OCR, asset))) {
         process.stderr.write(
             'public/ocr/' + asset + ' is missing — run:' + '\n'
@@ -204,6 +204,17 @@ for (const asset of ['det.onnx', 'rec.onnx', 'ppocrv6_dict.txt']) {
 
 const engine = await import(pathToFileURL(join(ROOT, 'src', 'utils', 'ppocr.ts')).href)
 const { findHormoneValues } = await import(pathToFileURL(join(ROOT, 'src', 'utils', 'ocrParse.ts')).href)
+
+/**
+ * Both tiers are measured, not just the shipped default.
+ *
+ * The recorded fact this encodes: on the owner's report, tiny's recogniser reads the
+ * out-of-range arrow as a trailing '1' ('雌二醇 396.53 1 <143 pmol/L'), that stray
+ * number defeats the table-row fallback, and findHormoneValues returns no candidates
+ * at all. small reads the row correctly. If only one tier were run, the next reader
+ * would reasonably assume tiny was good enough.
+ */
+const TIERS = ['tiny', 'small']
 
 // 1. The geometry that turns detector boxes into lines, which needs no model.
 check('boxes on one visual line become one line of text', () => {
@@ -236,58 +247,91 @@ sources.push(['a drawn report with both analytes', await syntheticReport()])
 
 for (const [label, file] of sources) {
     const { pixels: px, width, height } = await pixels(file)
-    const started = Date.now()
-    const lines = await engine.recognize(px, width, height, { base })
-    const elapsed = Date.now() - started
-    const text = lines.join('\n')
-    const found = findHormoneValues(text)
+    process.stdout.write('\n================ ' + label + '  (' + width + 'x' + height + ')\n')
 
-    process.stdout.write('\n================ ' + label + '  (' + width + 'x' + height + ', '
-        + elapsed + ' ms)\n')
     if (label === 'the real report') {
         const old = await oldEngineText(file)
         process.stdout.write('\n--- tesseract.js eng+chi_sim '
             + (old.live ? '(run live)' : '(recorded)') + ' ---\n')
         process.stdout.write(old.text.trimEnd() + '\n')
     }
-    process.stdout.write('\n--- PP-OCRv6 through ONNX Runtime Web (run live) ---\n')
-    process.stdout.write(text + '\n')
-    process.stdout.write('\n--- findHormoneValues ---\n')
-    process.stdout.write(
-        (found.length
-            ? found.map((c) => c.analyte + ' ' + c.value + ' ' + c.unit + '   <- ' + c.source).join('\n')
-            : '(nothing)') + '\n',
-    )
 
-    check(label + ': the estradiol row is read', () => {
-        const e2 = found.find((c) => c.analyte === 'E2')
-        assert.ok(e2, 'no estradiol candidate in ' + JSON.stringify(text))
-        assert.equal(e2.value, 396.53, 'the result column, not the 143 reference bound')
-        assert.equal(e2.unit, 'pmol/l')
-    })
+    for (const tier of TIERS) {
+        const started = Date.now()
+        const lines = await engine.recognize(px, width, height, { base, tier })
+        const elapsed = Date.now() - started
+        const text = lines.join('\n')
+        const found = findHormoneValues(text)
 
-    if (label === 'the real report') {
-        check('the real report: the label is read as 雌二醇, with no fold needed', () => {
-            assert.ok(text.includes('雌二醇'), 'the Chinese label is legible: ' + JSON.stringify(text))
-        })
-        check('the real report: the old engine needed the fold table for the same row', () => {
-            // The one-character difference between the two engines, pinned. tesseract's
-            // 惟二醇 is what LABEL_CONFUSIONS exists for; PP-OCRv6 does not produce it.
-            const old = RECORDED_TESSERACT
-            assert.ok(old.includes('惟 二 醇'), 'tesseract misread the label')
-            assert.equal(findHormoneValues(old).length, 1, 'and the parser rescued it anyway')
-        })
-    } else {
-        check('the drawn report: a second analyte and a range are read', () => {
-            const t = found.find((c) => c.analyte === 'T')
-            assert.ok(t, 'no testosterone candidate in ' + JSON.stringify(text))
-            assert.equal(t.value, 17.4, 'the result column, not the 2.6 reference bound')
-            assert.equal(t.unit, 'nmol/l')
-            assert.ok(
-                !found.some((c) => c.value === 45.2),
-                'SHBG is in nmol/L too and must stay excluded',
-            )
-        })
+        process.stdout.write('\n--- PP-OCRv6 ' + tier + ' through ONNX Runtime Web (run live, '
+            + elapsed + ' ms) ---\n')
+        process.stdout.write(text + '\n')
+        process.stdout.write('\n--- findHormoneValues (' + tier + ') ---\n')
+        process.stdout.write(
+            (found.length
+                ? found.map((c) => c.analyte + ' ' + c.value + ' ' + c.unit + '   <- ' + c.source).join('\n')
+                : '(nothing)') + '\n',
+        )
+
+        if (label === 'the real report' && tier === 'tiny') {
+            check('tiny on the real report: the measured failure — no candidates at all', () => {
+                // Measured: tiny's recogniser reads the out-of-range arrow as a trailing
+                // '1' ('雌二醇 396.53 1 <143 pmol/L'), the stray number defeats the
+                // table-row fallback, and findHormoneValues returns nothing. This is the
+                // fact the small retry exists for, so it is asserted, not assumed away.
+                assert.equal(found.length, 0, 'tiny returned: ' + JSON.stringify(found))
+            })
+            continue
+        }
+
+        if (label === 'the real report') {
+            check('small on the real report: the estradiol row is read', () => {
+                const e2 = found.find((c) => c.analyte === 'E2')
+                assert.ok(e2, 'no estradiol candidate in ' + JSON.stringify(text))
+                assert.equal(e2.value, 396.53, 'the result column, not the 143 reference bound')
+                assert.equal(e2.unit, 'pmol/l')
+            })
+            check('small on the real report: the label is read as 雌二醇, with no fold needed', () => {
+                assert.ok(text.includes('雌二醇'), 'the Chinese label is legible: ' + JSON.stringify(text))
+            })
+            check('the real report: the old engine needed the fold table for the same row', () => {
+                // The one-character difference between the two engines, pinned. tesseract's
+                // 惟二醇 is what LABEL_CONFUSIONS exists for; PP-OCRv6 does not produce it.
+                const old = RECORDED_TESSERACT
+                assert.ok(old.includes('惟 二 醇'), 'tesseract misread the label')
+                assert.equal(findHormoneValues(old).length, 1, 'and the parser rescued it anyway')
+            })
+        } else {
+            check('the drawn report on ' + tier + ': the estradiol row is read', () => {
+                const e2 = found.find((c) => c.analyte === 'E2')
+                assert.ok(e2, 'no estradiol candidate in ' + JSON.stringify(text))
+                assert.equal(e2.value, 396.53, 'the result column, not the 143 reference bound')
+                assert.equal(e2.unit, 'pmol/l')
+            })
+
+            if (tier === 'tiny') {
+                check('the drawn report on tiny: the testosterone label is mangled, so T is not read', () => {
+                    // Measured: tiny renders 睾酮(T) as '幸响（1)', which the parser does
+                    // not accept as a T row. Recorded so tiny is never mistaken for a
+                    // full stand-in for small — it also loses this second analyte.
+                    assert.ok(
+                        !found.some((c) => c.analyte === 'T'),
+                        'tiny unexpectedly read T: ' + JSON.stringify(found),
+                    )
+                })
+            } else {
+                check('the drawn report on small: a second analyte and a range are read', () => {
+                    const t = found.find((c) => c.analyte === 'T')
+                    assert.ok(t, 'no testosterone candidate in ' + JSON.stringify(text))
+                    assert.equal(t.value, 17.4, 'the result column, not the 2.6 reference bound')
+                    assert.equal(t.unit, 'nmol/l')
+                    assert.ok(
+                        !found.some((c) => c.value === 45.2),
+                        'SHBG is in nmol/L too and must stay excluded',
+                    )
+                })
+            }
+        }
     }
 }
 

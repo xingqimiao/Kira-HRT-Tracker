@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import Icon from '../components/Icon';
 import Switch from '../components/Switch';
-import { ChevronRight, Settings2, Database, Info, ArrowLeft, Globe } from '../icons';
+import { ChevronRight, Settings2, Database, Info, ArrowLeft, Globe, CalendarDays } from '../icons';
 import type { IconComponent } from '../icons';
 import { Lang } from '../i18n/translations';
 import { AppTheme } from '../constants';
-import { AntiandrogenChartMode, ANTIANDROGEN_CHART_MODES, DoseEvent, PKCustomParams } from '../../logic';
+import { AntiandrogenChartMode, ANTIANDROGEN_CHART_MODES, DoseEvent, PKCustomParams, RecheckIntervals, OcrModelTier, OCR_MODEL_TIERS } from '../../logic';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { useVial } from '../contexts/VialContext';
 
@@ -44,9 +44,15 @@ interface SettingsProps {
     /** Which reading the Home card's anti-androgen column shows. */
     aaChartMode: AntiandrogenChartMode;
     setAaChartMode: (m: AntiandrogenChartMode) => void;
+    /** The user's re-check intervals — each individually adjustable. */
+    recheckIntervals: RecheckIntervals;
+    setRecheckIntervals: (v: RecheckIntervals) => void;
+    /** Which OCR model tier the lab scan uses. */
+    ocrModelTier: OcrModelTier;
+    setOcrModelTier: (tier: OcrModelTier) => void;
 }
 
-type SettingsCat = 'general' | 'data' | 'about';
+type SettingsCat = 'general' | 'reminders' | 'data' | 'about';
 type MobileView = 'list' | SettingsCat;
 
 const rowBase = "w-full flex items-center justify-between py-[18px] border-b border-[var(--color-m3-outline-variant)]  text-start";
@@ -66,6 +72,8 @@ const Settings: React.FC<SettingsProps> = ({
     onNavigateToLanguage, onNavigateToAppearance, onNavigateToWeight,
     onNavigateToExport, onNavigateToImport, autoSync, setAutoSync, isLoggedIn,
     aaChartMode, setAaChartMode,
+    recheckIntervals, setRecheckIntervals,
+    ocrModelTier, setOcrModelTier,
 }) => {
     const { mode } = useHRTMode();
     const { showVial, setShowVial } = useVial();
@@ -97,6 +105,7 @@ const Settings: React.FC<SettingsProps> = ({
 
     const cats: { id: SettingsCat; label: string; icon: IconComponent; hint: string }[] = [
         { id: 'general', label: t('settings.group.general'), icon: Settings2, hint: [t('settings.hrt_mode'), t('drawer.lang'), t('settings.theme')].join(' · ') },
+        { id: 'reminders', label: t('settings.group.reminders'), icon: CalendarDays, hint: [t('settings.reminders.liver'), t('settings.reminders.estradiol')].join(' · ') },
         { id: 'data',    label: t('settings.group.data'),    icon: Database,  hint: [t('export.title'), t('import.title')].join(' · ') },
         { id: 'about',   label: t('settings.group.about'),   icon: Info,      hint: [t('drawer.algorithm_credits'), t('licence.title')].join(' · ') },
     ];
@@ -152,6 +161,27 @@ const Settings: React.FC<SettingsProps> = ({
                     <p className={`text-xs ${muted} mt-0.5`}>{t('settings.blood_vial_desc')}</p>
                 </div>
                 <Switch checked={showVial} onChange={setShowVial} />
+            </div>
+
+            {/* The lab-scan model. The labels state both sides of the trade-off —
+                the small download is the reason tiny is the default, so "faster"
+                alone would be a half-truth about the choice on offer. */}
+            <div className="w-full py-[18px] border-b border-[var(--color-m3-outline-variant)]">
+                <p className={rowLabel}>{t('settings.ocr_tier')}</p>
+                <p className={`text-xs ${muted} mt-0.5`}>{t('settings.ocr_tier_desc')}</p>
+                <div className="mt-3 flex flex-wrap gap-1" role="group" aria-label={t('settings.ocr_tier')}>
+                    {OCR_MODEL_TIERS.map(tier => (
+                        <button
+                            key={tier}
+                            type="button"
+                            aria-pressed={ocrModelTier === tier}
+                            onClick={() => setOcrModelTier(tier)}
+                            className={`m3-btn m3-btn-sm ${ocrModelTier === tier ? 'm3-btn-filled' : 'm3-btn-outlined'}`}
+                        >
+                            {t(`settings.ocr_tier.${tier}`)}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             {/* Only meaningful in transfem mode: the anti-androgen column this
@@ -276,8 +306,69 @@ const Settings: React.FC<SettingsProps> = ({
         </div>
     );
 
+    /**
+     * One interval as a label plus a bounded number field.
+     *
+     * A plain function rather than a component: a component declared in the render
+     * body is a new type every render, so the field would remount and lose focus on
+     * each keystroke.
+     */
+    const intervalRow = (label: string, value: number, onChange: (n: number) => void) => (
+        <div className="flex items-center justify-between gap-3 py-2">
+            <span className="text-m3-body-medium text-[var(--color-m3-on-surface-variant)]">{label}</span>
+            <input
+                type="number"
+                min={1}
+                max={120}
+                inputMode="numeric"
+                value={value}
+                onChange={(e) => onChange(Number(e.target.value))}
+                className="w-20 py-1 text-center tabular-nums bg-transparent border-b-2 border-[var(--color-m3-outline-variant)] focus:border-[var(--color-m3-primary)] outline-none text-[var(--color-m3-on-surface)]"
+            />
+        </div>
+    );
+
+    const intervalSection = (title: string, rows: React.ReactNode) => (
+        <div className="w-full py-[18px] border-b border-[var(--color-m3-outline-variant)]">
+            <p className={rowLabel}>{title}</p>
+            <div className="mt-1">{rows}</div>
+        </div>
+    );
+
+    /**
+     * The re-check interval controls.
+     *
+     * Every value the reminder logic uses is here, so a cadence is a preference
+     * rather than a constant — including estradiol, which had no reminder before.
+     * The description names them as the app's own defaults and points at a doctor,
+     * because an interval is a number the reader can change, not advice.
+     */
+    const RemindersContent = () => (
+        <div>
+            <p className={`text-xs ${muted} py-3 leading-relaxed`}>{t('settings.reminders.desc')}</p>
+            {intervalSection(t('settings.reminders.liver'), (
+                <>
+                    {intervalRow(t('settings.reminders.phase'), recheckIntervals.liverFirstPhaseMonths, v => setRecheckIntervals({ ...recheckIntervals, liverFirstPhaseMonths: v }))}
+                    {intervalRow(t('settings.reminders.early'), recheckIntervals.liverEarlyMonths, v => setRecheckIntervals({ ...recheckIntervals, liverEarlyMonths: v }))}
+                    {intervalRow(t('settings.reminders.after'), recheckIntervals.liverMonths, v => setRecheckIntervals({ ...recheckIntervals, liverMonths: v }))}
+                </>
+            ))}
+            {intervalSection(t('settings.reminders.potassium'), (
+                <>
+                    {intervalRow(t('settings.reminders.phase'), recheckIntervals.potassiumFirstPhaseMonths, v => setRecheckIntervals({ ...recheckIntervals, potassiumFirstPhaseMonths: v }))}
+                    {intervalRow(t('settings.reminders.early'), recheckIntervals.potassiumEarlyMonths, v => setRecheckIntervals({ ...recheckIntervals, potassiumEarlyMonths: v }))}
+                    {intervalRow(t('settings.reminders.after'), recheckIntervals.potassiumMonths, v => setRecheckIntervals({ ...recheckIntervals, potassiumMonths: v }))}
+                </>
+            ))}
+            {intervalSection(t('settings.reminders.estradiol'), (
+                intervalRow(t('settings.reminders.interval'), recheckIntervals.estradiolMonths, v => setRecheckIntervals({ ...recheckIntervals, estradiolMonths: v }))
+            ))}
+        </div>
+    );
+
     const catContent = (id: SettingsCat) => {
         if (id === 'general') return <GeneralContent />;
+        if (id === 'reminders') return <RemindersContent />;
         if (id === 'data') return <DataContent />;
         return <AboutContent />;
     };

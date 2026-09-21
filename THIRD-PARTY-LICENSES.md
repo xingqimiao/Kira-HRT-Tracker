@@ -73,24 +73,31 @@ all copies or substantial portions of the software.
 
 ## PP-OCRv6 OCR models
 
-`public/ocr/det.onnx` and `public/ocr/rec.onnx` are the PP-OCRv6 *small* text
-detector and recogniser: the models the scan feature runs locally through ONNX
-Runtime Web. They are **not committed** — `scripts/sync-ocr-assets.mjs` downloads
-them, which is the only supported path — so this section is the licence record for
-files that are generated at build time rather than tracked.
+`public/ocr/tiny_det.onnx` / `tiny_rec.onnx` and `public/ocr/small_det.onnx` /
+`small_rec.onnx` are the PP-OCRv6 *tiny* and *small* text detector/recogniser pairs:
+the models the scan feature runs locally through ONNX Runtime Web. The app defaults to
+tiny and loads the small pair only when a scan or a retry asks for it. They are **not
+committed** — `scripts/sync-ocr-assets.mjs` downloads them, which is the only supported
+path — so this section is the licence record for files generated at build time rather
+than tracked.
 
-Models: `PaddlePaddle/PP-OCRv6_small_det_onnx`, revision
-`37b02eded8dbca659f8ee5d51f822ea1ebd9bcba`, and
+Models: `PaddlePaddle/PP-OCRv6_tiny_det_onnx`, revision
+`750411b8371743f219e6fd76c33372292f55f92f`; `PaddlePaddle/PP-OCRv6_tiny_rec_onnx`,
+revision `a0542d3d31b789512446abc4ddbdda0d48e764e8`;
+`PaddlePaddle/PP-OCRv6_small_det_onnx`, revision
+`37b02eded8dbca659f8ee5d51f822ea1ebd9bcba`; and
 `PaddlePaddle/PP-OCRv6_small_rec_onnx`, revision
 `ba215b1cc49d9ed4459d161b96778e8643fe0c1f`.
 
 Source (no token required):
+https://www.modelscope.cn/models/PaddlePaddle/PP-OCRv6_tiny_det_onnx
+https://www.modelscope.cn/models/PaddlePaddle/PP-OCRv6_tiny_rec_onnx
 https://www.modelscope.cn/models/PaddlePaddle/PP-OCRv6_small_det_onnx
 https://www.modelscope.cn/models/PaddlePaddle/PP-OCRv6_small_rec_onnx
 
 Upstream project: PaddleOCR, https://github.com/PaddlePaddle/PaddleOCR
 
-Licence: **Apache License 2.0**. Both model cards declare `license: apache-2.0`,
+Licence: **Apache License 2.0**. All four model cards declare `license: apache-2.0`,
 and PaddleOCR's own `LICENSE` is the standard Apache 2.0 text. The Apache 2.0
 terms are reproduced at https://www.apache.org/licenses/LICENSE-2.0 and must
 travel with any redistribution of these files.

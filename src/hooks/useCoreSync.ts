@@ -54,6 +54,10 @@ interface Options {
   aaChartMode: unknown;
   /** The HRT start date, `YYYY-MM-DD` or '' — see useAppData. */
   hrtStartDate: unknown;
+  /** The re-check intervals bag — see useAppData and `RecheckIntervals`. */
+  recheckIntervals: unknown;
+  /** The lab-scan OCR model tier — see `OcrModelTier`. */
+  ocrModelTier: unknown;
 }
 
 /** Absorb a burst of edits (a dose form can set several fields) into one push. */
@@ -75,6 +79,8 @@ export const useCoreSync = ({
   calibrationHistoryMode,
   aaChartMode,
   hrtStartDate,
+  recheckIntervals,
+  ocrModelTier,
 }: Options): CoreSyncState => {
   const [status, setStatus] = useState<CoreSyncStatus>('off');
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
@@ -225,7 +231,7 @@ export const useCoreSync = ({
   // actually changes, which is what makes it a usable dependency.
   const localFingerprint = JSON.stringify([
     events, labResults, doseTemplates, weight, pkParams,
-    readAppSettings(), calibrationMethod, calibrationHistoryMode, aaChartMode, hrtStartDate,
+    readAppSettings(), calibrationMethod, calibrationHistoryMode, aaChartMode, hrtStartDate, recheckIntervals, ocrModelTier,
   ]);
   useEffect(() => {
     if (!activeRef.current) return;

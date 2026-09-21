@@ -119,11 +119,13 @@ const LABELS = {
  * unrecognised character, which is exactly the bug being fixed.
  */
 const LABEL_CONFUSIONS: [RegExp, string][] = [
-    // 雌 (cí, "female") — the one that actually failed: 惟 (wéi) is what chi_sim
-    // returns for it on a photographed result card. 睢/雎/唯/准 are the same shape
-    // and the same failure mode.
-    [/[惟睢雎唯准隹]/g, '雌'],
-    // And the general case behind it. 雌二醇 is the only analyte this parser reads
+    // The 惟 -> 雌 entry that stood here was deleted along with the engine that
+    // needed it. It existed because chi_sim returned 惟 for 雌 on this app's own
+    // failing report; PP-OCRv6 reads 雌二醇 correctly, so the rule described an
+    // engine that is no longer present -- and the next reader would have taken it
+    // as evidence that one still was.
+    //
+    // The general case behind it stays. 雌二醇 is the only analyte this parser reads
     // that ends in 二醇, so a Chinese character in front of 二醇 is that character
     // misread. Enumerating lookalikes one at a time means shipping a character nobody
     // has seen yet to every user who photographs a report; the suffix carries the
