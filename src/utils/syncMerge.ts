@@ -97,12 +97,21 @@ export interface AppSettings {
     recheckIntervals?: string;
     /** Which OCR model tier the lab scan uses: 'tiny' (default) or 'small'. */
     ocrModelTier?: string;
+    /**
+     * IANA timezone the account's times are read in, e.g. `Asia/Tokyo`.
+     *
+     * The app has no control for it yet, so it is usually only ever written by an
+     * agent through `hrt_update_settings`. It travels with the rest of the bag
+     * anyway: a setting the server holds and the app silently drops is exactly the
+     * one-way street this transport exists to close.
+     */
+    timezone?: string;
 }
 
 /** Every key `sanitizeAppSettings` will carry. An unknown key is dropped. */
 export const APP_SETTING_KEYS: readonly (keyof AppSettings)[] = [
     'theme', 'keyColor', 'lang', 'hrtMode', 'showVial', 'calMethod', 'calHistoryMode', 'aaChartMode',
-    'hrtStartDate', 'recheckIntervals', 'ocrModelTier',
+    'hrtStartDate', 'recheckIntervals', 'ocrModelTier', 'timezone',
 ];
 
 export interface SyncState {
@@ -127,6 +136,24 @@ export interface SyncState {
     appSettings?: AppSettings;
     appSettingsUpdatedAt: number;
 }
+
+/**
+ * The scalars that travel beside the mode blocks, each with its own stamp.
+ *
+ * Listed once so the compile-time assertion below can refuse a new `SyncState`
+ * field that has no home on the record path. The transport used to name these in
+ * three places (`toLocalPayload`, `recordsToPayload`, `normalizeSyncState`) and
+ * `toLocalPayload` built only `weight`, so PK overrides were dropped before a
+ * record was ever written and nothing failed.
+ */
+export const SYNC_SCALARS = ['weight', 'pkParams', 'appSettings'] as const;
+
+type SyncScalarField = (typeof SYNC_SCALARS)[number] | `${(typeof SYNC_SCALARS)[number]}UpdatedAt`;
+type UnaccountedSyncField = Exclude<keyof SyncState, 'modes' | SyncScalarField>;
+const _everySyncFieldIsAScalar: [UnaccountedSyncField] extends [never]
+  ? true
+  : ['SyncState field is not a declared scalar', UnaccountedSyncField] = true;
+void _everySyncFieldIsAScalar;
 
 export interface MergeStats {
     /** Records the cloud had that this device did not. */

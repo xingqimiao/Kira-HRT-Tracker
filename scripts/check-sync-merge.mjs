@@ -33,6 +33,7 @@ const {
   hasContent,
   fingerprintState,
   APP_SETTING_KEYS,
+  SYNC_SCALARS,
 } = await import('../src/utils/syncMerge.ts');
 const { payloadToRecords, recordsToPayload } = await import('../src/services/recordDocs.ts');
 const { toLocalPayload } = await import('../src/services/coreSync.ts');
@@ -196,7 +197,7 @@ check('every settings key survives the round trip, not just the sampled ones', (
     theme: 'dark', keyColor: 'blue', lang: 'en', hrtMode: 'transmasc',
     showVial: true, calMethod: 'adaptive', calHistoryMode: 'forward', aaChartMode: 'auto',
     hrtStartDate: '2024-01-01', recheckIntervals: '{"liverMonths":3,"estradiolMonths":3}',
-    ocrModelTier: 'tiny',
+    ocrModelTier: 'tiny', timezone: 'Asia/Tokyo',
   };
   const s = stateWith({ appSettings: everyKey, appSettingsUpdatedAt: 777 });
   const back = normalizeSyncState({ appState: toAppState(s) });
@@ -219,7 +220,7 @@ check('every settings key survives the round trip, not just the sampled ones', (
 
 check('the settings blob becomes a record under the id the transport reads', () => {
   const s = stateWith({ appSettings: { theme: 'dark', lang: 'ja' }, appSettingsUpdatedAt: 4242 });
-  const docs = payloadToRecords({ ...toLocalPayload(s), appState: toAppState(s) });
+  const docs = payloadToRecords(toLocalPayload(s));
   const record = docs.find(d => d.id === 'scalar:appSettings');
   assert.ok(record, 'the appState blob did not become a scalar:appSettings record');
   assert.deepEqual(record.data.value.settings, { theme: 'dark', lang: 'ja' });
@@ -233,9 +234,7 @@ check('the settings blob becomes a record under the id the transport reads', () 
 
 check('a settings change survives payload -> records -> payload and the app reader', () => {
   const s = stateWith({ appSettings: { theme: 'dark', lang: 'ja' }, appSettingsUpdatedAt: 4242 });
-  const { payload: back, unknown } = recordsToPayload(
-    payloadToRecords({ ...toLocalPayload(s), appState: toAppState(s) }),
-  );
+  const { payload: back, unknown } = recordsToPayload(payloadToRecords(toLocalPayload(s)));
   assert.equal(unknown, 0, 'nothing was filed as unknown');
   const read = normalizeSyncState(back);
   assert.deepEqual(read.appSettings, { theme: 'dark', lang: 'ja' });
@@ -246,6 +245,91 @@ check('a payload that says nothing about settings writes no settings record', ()
   const s = stateWith({ appSettings: { theme: 'dark' } });
   const docs = payloadToRecords({ version: 3, modes: s.modes });
   assert.ok(!docs.some(d => d.id === 'scalar:appSettings'), 'an absent appState invented a record');
+});
+
+// --- every scalar, every direction ------------------------------------------
+//
+// The bug that started this was a scalar the write half named and the read half
+// did not. `toLocalPayload` was the worst case: it built `weight` and `modes`
+// only, so `pkParams` and both stamps were dropped before the transport ever saw
+// them. These assertions pin the whole set in one round trip, and the first one
+// fails the moment `SyncState` grows a field nobody carried.
+
+// A sample value per declared scalar. Adding a scalar to `SYNC_SCALARS` without
+// one fails the first assertion; adding one to `SyncState` at all fails `tsc`
+// (see the assertion beside the list). Between them, a scalar cannot be wired
+// into one direction and forgotten in the other without a red check.
+const SCALAR_SAMPLES = {
+  weight: 61.5,
+  pkParams: { e2_kclear: 0.4 },
+  appSettings: { theme: 'dark', lang: 'ja', hrtMode: 'transmasc', calMethod: 'ekf', timezone: 'Asia/Tokyo' },
+};
+
+check('every declared scalar has a sample that proves it travels', () => {
+  assert.deepEqual(
+    Object.keys(SCALAR_SAMPLES).sort(),
+    SYNC_SCALARS.slice().sort(),
+    'a scalar was declared on SyncState without a sample to round-trip',
+  );
+});
+
+check('every scalar survives payload -> records -> payload', () => {
+  const s = stateWith();
+  for (const key of SYNC_SCALARS) {
+    s[key] = SCALAR_SAMPLES[key];
+    s[`${key}UpdatedAt`] = 111;
+  }
+  const { payload, unknown } = recordsToPayload(payloadToRecords(toLocalPayload(s)));
+  assert.equal(unknown, 0, 'nothing was filed as unknown');
+  const back = normalizeSyncState(payload);
+  for (const key of SYNC_SCALARS) {
+    assert.deepEqual(back[key], SCALAR_SAMPLES[key], `${key} did not travel`);
+    assert.equal(back[`${key}UpdatedAt`], 111, `${key} stamp did not travel`);
+  }
+});
+
+check('a scalar the device never mentioned writes no record', () => {
+  const docs = payloadToRecords(toLocalPayload(emptySyncState()));
+  assert.ok(
+    !docs.some(d => d.id.startsWith('scalar:')),
+    'a scalar with no opinion invented a record that would then win or lose a merge',
+  );
+});
+
+check('a cleared PK override travels as a value, not as an absence', () => {
+  const s = stateWith({ pkParams: null, pkParamsUpdatedAt: 9 });
+  const back = normalizeSyncState(recordsToPayload(payloadToRecords(toLocalPayload(s))).payload);
+  assert.equal(back.pkParams, null, 'the clear was dropped and the overrides would come back');
+  assert.equal(back.pkParamsUpdatedAt, 9);
+});
+
+check('the settings row the records read carries is what the app reads', () => {
+  // Exactly the shape the server hands the client under `settings` (see
+  // buildSettingsScalars): the settings columns in the app's own payload names.
+  // This is the half that made an agent's HRT-mode change invisible in the app.
+  const fromRow = {
+    weight: 64,
+    weightUpdatedAt: 700,
+    pkParams: { e2_kclear: 0.5 },
+    pkParamsUpdatedAt: 800,
+    appState: {
+      settings: {
+        theme: 'dark', hrtMode: 'transmasc', calMethod: 'ekf',
+        calHistoryMode: 'forward', timezone: 'Asia/Tokyo',
+      },
+      settingsUpdatedAt: 900,
+    },
+  };
+  const back = normalizeSyncState({ ...recordsToPayload([]).payload, ...fromRow });
+  assert.equal(back.weight, 64);
+  assert.equal(back.weightUpdatedAt, 700);
+  assert.deepEqual(back.pkParams, { e2_kclear: 0.5 });
+  assert.equal(back.pkParamsUpdatedAt, 800);
+  assert.equal(back.appSettings.hrtMode, 'transmasc', 'an agent HRT-mode change was invisible');
+  assert.equal(back.appSettings.calMethod, 'ekf', 'an agent calibration change was invisible');
+  assert.equal(back.appSettings.calHistoryMode, 'forward');
+  assert.equal(back.appSettings.timezone, 'Asia/Tokyo', 'an agent timezone change was invisible');
+  assert.equal(back.appSettingsUpdatedAt, 900, 'the stamp an agent write moved did not survive');
 });
 
 // --- hasContent -------------------------------------------------------------

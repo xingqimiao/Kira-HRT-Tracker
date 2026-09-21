@@ -458,5 +458,167 @@ test('a partial modes write leaves the settings bag alone', async () => {
 });
 
 
+/**
+ * The settings a device syncs and the settings an agent writes are one value in two
+ * places: the `user_settings` columns the PK model reads, and the app's own payload
+ * the browser merges. The app's only read is `GET /api/records`, so a change that
+ * lands only in a column is invisible there — the gap this pins shut.
+ */
+test('a synced PK override reaches the setting the model reads', async () => {
+  const { token } = await freshAccount();
+  const stamp = Date.now();
 
+  const wrote = await call(base, '/api/records/batch', json({
+    records: [{
+      id: 'scalar:pkParams',
+      takenAt: stamp,
+      category: 'setting',
+      data: { value: { e2_kClear: 0.42 }, stamp },
+    }],
+  }, token));
+  assert.equal(wrote.status, 200, JSON.stringify(wrote.body));
 
+  const after = await call(base, '/api/settings', bearer(token));
+  assert.deepEqual(
+    after.body.pkParams,
+    { e2_kClear: 0.42 },
+    'the synced PK overrides did not reach the setting the model reads',
+  );
+  assert.equal(after.body.pkParamsUpdatedAt, stamp, 'the override stamp did not land');
+  // The write response is the state the client merges, so it has to agree with
+  // the setting rather than trail it by a sync.
+  assert.deepEqual(
+    wrote.body.state.pkParams,
+    { e2_kClear: 0.42 },
+    'the write response did not carry the new overrides',
+  );
+});
+
+test('an older PK override does not overwrite a newer one', async () => {
+  const { token } = await freshAccount();
+  const newer = Date.now();
+  const older = newer - 3_600_000;
+
+  await call(base, '/api/records/batch', json({
+    records: [{
+      id: 'scalar:pkParams', takenAt: newer, category: 'setting',
+      data: { value: { e2_kClear: 0.42 }, stamp: newer },
+    }],
+  }, token));
+  await call(base, '/api/records/batch', json({
+    records: [{
+      id: 'scalar:pkParams', takenAt: older, category: 'setting',
+      data: { value: { e2_kClear: 0.9 }, stamp: older },
+    }],
+  }, token));
+
+  const after = await call(base, '/api/settings', bearer(token));
+  assert.deepEqual(
+    after.body.pkParams,
+    { e2_kClear: 0.42 },
+    'an older export reverted a newer override',
+  );
+});
+
+test('an agent settings change reaches the read the browser makes', async () => {
+  const { token } = await freshAccount();
+
+  const set = await call(base, '/api/settings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      hrt_mode: 'transmasc',
+      calibration_method: 'ekf',
+      calibration_history: 'forward',
+      timezone: 'Asia/Tokyo',
+      pk_params: { e2_kClear: 0.42 },
+    }),
+  });
+  assert.equal(set.status, 200, JSON.stringify(set.body));
+
+  const listed = await call(base, '/api/records', bearer(token));
+  assert.equal(listed.status, 200);
+  const settings = listed.body.settings as {
+    pkParams?: unknown;
+    appState?: { settings?: Record<string, unknown>; settingsUpdatedAt?: number };
+  };
+  assert.ok(settings, 'the records read carried no settings for the browser to merge');
+  assert.equal(settings.appState?.settings?.hrtMode, 'transmasc', 'an agent HRT-mode change was invisible');
+  assert.equal(settings.appState?.settings?.calMethod, 'ekf', 'an agent calibration change was invisible');
+  assert.equal(settings.appState?.settings?.calHistoryMode, 'forward');
+  assert.equal(settings.appState?.settings?.timezone, 'Asia/Tokyo', 'an agent timezone change was invisible');
+  assert.deepEqual(settings.pkParams, { e2_kClear: 0.42 }, 'an agent PK override was invisible');
+  assert.ok(
+    typeof settings.appState?.settingsUpdatedAt === 'number' && settings.appState.settingsUpdatedAt > 0,
+    'the bag stamp did not move, so the app would keep whatever it already had',
+  );
+});
+
+test('an app settings blob projects onto the model columns', async () => {
+  const { token } = await freshAccount();
+  const stamp = Date.now();
+
+  await call(base, '/api/records/batch', json({
+    records: [{
+      id: 'scalar:appSettings',
+      takenAt: stamp,
+      category: 'setting',
+      data: {
+        value: {
+          settings: {
+            theme: 'dark',
+            hrtMode: 'transmasc',
+            calMethod: 'ou_kalman',
+            calHistoryMode: 'forward',
+            timezone: 'Asia/Tokyo',
+          },
+          settingsUpdatedAt: stamp,
+        },
+        stamp,
+      },
+    }],
+  }, token));
+
+  const after = await call(base, '/api/settings', bearer(token));
+  assert.equal(after.body.hrtMode, 'transmasc', 'the app mode never reached the model column');
+  assert.equal(after.body.calibrationMethod, 'ou_kalman');
+  assert.equal(after.body.calibrationHistory, 'forward');
+  assert.equal(after.body.timezone, 'Asia/Tokyo');
+  assert.equal(after.body.appState.settings.theme, 'dark', 'the app-only keys were dropped');
+});
+
+test('a partial settings bag does not erase the settings keys it never read', async () => {
+  const { token } = await freshAccount();
+  const first = Date.now();
+
+  await call(base, '/api/records/batch', json({
+    records: [{
+      id: 'scalar:appSettings',
+      takenAt: first,
+      category: 'setting',
+      data: { value: { settings: { theme: 'dark', lang: 'ja' }, settingsUpdatedAt: first }, stamp: first },
+    }],
+  }, token));
+
+  // A later blob that mentions only the mode — the shape a merge produces when
+  // one side has only ever seen one key, and the shape that would replace the
+  // whole `settings` object if the absorb merged only at the blob's top level.
+  const second = first + 1000;
+  await call(base, '/api/records/batch', json({
+    records: [{
+      id: 'scalar:appSettings',
+      takenAt: second,
+      category: 'setting',
+      data: { value: { settings: { hrtMode: 'transmasc' }, settingsUpdatedAt: second }, stamp: second },
+    }],
+  }, token));
+
+  const after = await call(base, '/api/settings', bearer(token));
+  assert.equal(after.body.appState.settings.hrtMode, 'transmasc', 'the newer key did not land');
+  assert.equal(
+    after.body.appState.settings.theme,
+    'dark',
+    'the settings keys the later blob never read were dropped',
+  );
+  assert.equal(after.body.appState.settings.lang, 'ja');
+});

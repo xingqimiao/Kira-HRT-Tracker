@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { readCoreState, syncWithCore, CoreSyncError, toLocalPayload } from '../services/coreSync';
-import { mergeSyncStates, fingerprintState, toAppState, type SyncState } from '../utils/syncMerge';
+import { mergeSyncStates, fingerprintState, type SyncState } from '../utils/syncMerge';
 import { normalizeSyncState } from '../utils/syncMerge';
 import { readAppSettings } from '../utils/appSettings';
 
@@ -164,18 +164,14 @@ export const useCoreSync = ({
       // already decided what wins by `updatedAt`; a second, different rule
       // server-side would fight it.
       //
-      // `appState` is rebuilt from the merged state rather than carried through
-      // `toLocalPayload`, which only knows about `modes`: a merge that adopted
-      // the account's settings has to publish them back, or the device that
-      // changed nothing would keep re-reading the same values and the one that
-      // did change something would never have its write acknowledged.
+      // `toLocalPayload` is the whole projection now — the two scalars, their
+      // stamps, the mode blocks and the app-state blob — so a merge that adopted
+      // the account's settings publishes them back and a value edited here travels
+      // with the stamp that lets the server's absorb decide against it.
       // The read above is handed in rather than made again inside `syncWithCore`:
       // the merge already used it, and a second read of the same records is a whole
       // round trip for an answer this call is holding.
-      const pushed = await syncWithCore(authToken, {
-        ...toLocalPayload(merged.merged as any),
-        appState: toAppState(merged.merged),
-      }, {
+      const pushed = await syncWithCore(authToken, toLocalPayload(merged.merged), {
         updateExisting: true,
         remote: remoteState,
       });

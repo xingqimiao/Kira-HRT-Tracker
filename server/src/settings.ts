@@ -7,29 +7,131 @@
  * the server has to *read* them — a prediction needs the body weight — and a
  * setting the server cannot open is one it cannot use.
  *
- * `app_state` is the one opaque value: dose templates, quick doses and the app's own
- * preferences ride in it verbatim. Nothing here validates or interprets it, which is
- * what lets the web app evolve its own collection shapes without a server release.
+ * ── One list, both directions ────────────────────────────────────────────────
+ *
+ * Every setting-class scalar the record path carries is named once in
+ * `SETTINGS_SCALARS` below, together with how to fold it into this table when a
+ * device writes it and how to put it back into the app's payload when anything
+ * reads it. The record path used to name those scalars in three unrelated places
+ * (`payloadToRecords`, `recordsToPayload`, `buildExportPayload`), so a field
+ * could be added to the write half alone and nothing failed — which is exactly how
+ * the app-only settings spent months travelling under one name and being read
+ * under another. Adding a field to `UserSettings` without giving it a home in
+ * that list is now a compile error.
+ *
+ * The model columns (`hrt_mode`, `calibration_method`, `calibration_history`,
+ * `timezone`) are not scalars of their own: they are the app's own settings bag
+ * seen a second way, and `APP_SETTING_BY_COLUMN` is the only place the two names
+ * meet. The bag travels as `scalar:appSettings`; the columns exist so the PK model
+ * can read them without opening a blob.
+ *
+ * `app_state` is otherwise the one opaque value: dose templates, quick doses and
+ * the app's own preferences ride in it verbatim. Nothing here validates or
+ * interprets it, which is what lets the web app evolve its own collection shapes
+ * without a server release.
  */
 import { getPool } from './db.ts';
-import { isPlausibleBodyWeightKG } from './engine.ts';
+import { CALIBRATION_METHODS, isPlausibleBodyWeightKG } from './engine.ts';
 
 export interface UserSettings {
   bodyWeightKg: number | null;
+  /** When `bodyWeightKg` was last written, by whichever side wrote it. */
+  bodyWeightUpdatedAt: number | null;
   hrtMode: 'transfem' | 'transmasc';
   calibrationMethod: string;
   calibrationHistory: string;
+  /** `null` = explicitly "no overrides". */
   pkParams: Record<string, number> | null;
+  /** When `pkParams` was last written, by whichever side wrote it. */
+  pkParamsUpdatedAt: number | null;
   timezone: string | null;
   /** App-only collections (dose templates, quick doses) carried verbatim. */
   appState: Record<string, unknown> | null;
 }
 
+/** A timestamptz column as the epoch milliseconds the app's stamps use. */
+function ms(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const at = value instanceof Date ? value.getTime() : Date.parse(String(value));
+  return Number.isFinite(at) ? at : null;
+}
+
+function jsonObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+/** One model setting: the app's key for it, and whether the model can accept it. */
+interface ModelSetting {
+  /** The key the app's own settings bag uses. */
+  readonly appKey: string;
+  /** The value as the column can hold it, or null when the bag's value is not usable. */
+  readonly accept: (value: unknown) => string | null;
+}
+
+/**
+ * The app's own name for each model setting it edits, and the value the column can
+ * hold.
+ *
+ * The column and the app's key are the same preference under two names, and this is
+ * the only place the pairing lives. Both directions are driven by it: `accept` turns
+ * a bag synced from a device into the columns (the CHECK constraints make that
+ * validation rather than a formality — a bag is opaque input from a browser), and
+ * the settings route reads the same map to put its columns into the bag.
+ */
+export const APP_SETTING_BY_COLUMN = {
+  hrtMode: {
+    appKey: 'hrtMode',
+    accept: (value: unknown) => (value === 'transfem' || value === 'transmasc' ? value : null),
+  },
+  calibrationMethod: {
+    appKey: 'calMethod',
+    accept: (value: unknown) => (typeof value === 'string'
+      && (CALIBRATION_METHODS as readonly string[]).includes(value) ? value : null),
+  },
+  calibrationHistory: {
+    appKey: 'calHistoryMode',
+    accept: (value: unknown) => (value === 'forward' || value === 'retrospective' ? value : null),
+  },
+  timezone: {
+    appKey: 'timezone',
+    accept: (value: unknown) => (typeof value === 'string' && value.length > 0 && value.length <= 64
+      ? value : null),
+  },
+} as const satisfies Partial<Record<keyof UserSettings, ModelSetting>>;
+
+/** The model columns a settings bag states; absent for each it does not, or cannot. */
+function columnsFromBag(appState: Record<string, unknown>): Partial<Record<keyof UserSettings, string>> {
+  const bag = jsonObject(appState.settings) ?? {};
+  const out: Partial<Record<keyof UserSettings, string>> = {};
+  for (const [column, spec] of Object.entries(APP_SETTING_BY_COLUMN) as [keyof UserSettings, ModelSetting][]) {
+    const value = spec.accept(bag[spec.appKey]);
+    if (value !== null) out[column] = value;
+  }
+  return out;
+}
+
+/**
+ * The settings bag as the app reads it: the stored blob, verbatim.
+ *
+ * The model columns are a projection *of this blob* (see `absorbAppState` and
+ * `mergeAppSettings`), not a second copy to fold back in on the way out. Reading
+ * them back over the blob was the obvious symmetry and the wrong one: the
+ * projection deliberately drops a value the model cannot accept — an app build
+ * that wrote `calMethod: 'adaptive'` leaves the column at its default — and
+ * overlaying the column would then replace the value the app itself chose with a
+ * default it never asked for.
+ */
+function appStateFor(userSettings: UserSettings | null): Record<string, unknown> | null {
+  return jsonObject(userSettings?.appState);
+}
+
 export const settings = {
   async get(userId: string): Promise<UserSettings | null> {
     const { rows } = await getPool().query(
-      `SELECT body_weight_kg, hrt_mode, calibration_method, calibration_history,
-              pk_params, timezone, app_state
+      `SELECT body_weight_kg, body_weight_updated_at, hrt_mode, calibration_method,
+              calibration_history, pk_params, pk_params_updated_at, timezone, app_state
          FROM user_settings WHERE user_id = $1`,
       [userId],
     );
@@ -38,10 +140,12 @@ export const settings = {
     return {
       // `numeric` comes back as a string from pg to avoid float precision loss.
       bodyWeightKg: row.body_weight_kg === null ? null : Number(row.body_weight_kg),
+      bodyWeightUpdatedAt: ms(row.body_weight_updated_at),
       hrtMode: row.hrt_mode,
       calibrationMethod: row.calibration_method,
       calibrationHistory: row.calibration_history,
       pkParams: row.pk_params,
+      pkParamsUpdatedAt: ms(row.pk_params_updated_at),
       timezone: row.timezone,
       appState: row.app_state,
     };
@@ -51,10 +155,10 @@ export const settings = {
     const { rows } = await getPool().query(
       `INSERT INTO user_settings AS s (user_id, body_weight_kg, body_weight_updated_at,
                                        hrt_mode, calibration_method, calibration_history,
-                                       pk_params, timezone, app_state, updated_at)
+                                       pk_params, pk_params_updated_at, timezone, app_state, updated_at)
        VALUES ($1, $2, CASE WHEN $2::numeric IS NULL THEN NULL ELSE now() END,
                COALESCE($3,'transfem'), COALESCE($4,'mipd'), COALESCE($5,'retrospective'),
-               $6, $7, $8, now())
+               $6, CASE WHEN $6::jsonb IS NULL THEN NULL ELSE now() END, $7, $8, now())
        ON CONFLICT (user_id) DO UPDATE SET
          body_weight_kg         = COALESCE(EXCLUDED.body_weight_kg, s.body_weight_kg),
          body_weight_updated_at = CASE WHEN EXCLUDED.body_weight_kg IS NOT NULL
@@ -63,11 +167,13 @@ export const settings = {
          calibration_method     = COALESCE(EXCLUDED.calibration_method, s.calibration_method),
          calibration_history    = COALESCE(EXCLUDED.calibration_history, s.calibration_history),
          pk_params              = COALESCE(EXCLUDED.pk_params, s.pk_params),
+         pk_params_updated_at   = CASE WHEN EXCLUDED.pk_params IS NOT NULL
+                                       THEN now() ELSE s.pk_params_updated_at END,
          timezone               = COALESCE(EXCLUDED.timezone, s.timezone),
          app_state              = COALESCE(EXCLUDED.app_state, s.app_state),
          updated_at             = now()
-       RETURNING body_weight_kg, hrt_mode, calibration_method, calibration_history,
-                 pk_params, timezone, app_state`,
+       RETURNING body_weight_kg, body_weight_updated_at, hrt_mode, calibration_method, calibration_history,
+                 pk_params, pk_params_updated_at, timezone, app_state`,
       [
         userId,
         patch.bodyWeightKg ?? null,
@@ -82,10 +188,12 @@ export const settings = {
     const row = rows[0];
     return {
       bodyWeightKg: row.body_weight_kg === null ? null : Number(row.body_weight_kg),
+      bodyWeightUpdatedAt: ms(row.body_weight_updated_at),
       hrtMode: row.hrt_mode,
       calibrationMethod: row.calibration_method,
       calibrationHistory: row.calibration_history,
       pkParams: row.pk_params,
+      pkParamsUpdatedAt: ms(row.pk_params_updated_at),
       timezone: row.timezone,
       appState: row.app_state,
     };
@@ -105,16 +213,76 @@ export const settings = {
    * `modes` collections it never read. `||` merges at the blob's top level, so an
    * unmentioned key — every collection except the one being written — survives. A
    * partial blob cannot erase it.
+   *
+   * `settings` is merged one level deeper, by the same rule and for the same
+   * reason. It is the key an agent's `updateSettings` writes into, so a blob built
+   * from a partial settings bag — the shape the merge produces when one side has
+   * only ever seen one key — would otherwise replace the whole bag and drop the
+   * theme and language it never read.
+   *
+   * The blob's own settings are also projected onto the model columns
+   * (`APP_SETTING_BY_COLUMN`), or the PK model would keep running under the mode
+   * the account was created with while the app showed another.
    */
-  async absorbAppState(userId: string, appState: Record<string, unknown>): Promise<void> {
-    if (!appState || typeof appState !== 'object' || Array.isArray(appState)) return;
+  async absorbAppState(userId: string, appState: unknown): Promise<void> {
+    const bag = jsonObject(appState);
+    if (!bag) return;
+    const columns = columnsFromBag(bag);
+    await getPool().query(
+      `INSERT INTO user_settings AS s (user_id, hrt_mode, calibration_method, calibration_history,
+                                       timezone, app_state, updated_at)
+       VALUES ($1, COALESCE($3::text,'transfem'), COALESCE($4::text,'mipd'),
+               COALESCE($5::text,'retrospective'), $6::text, $2::jsonb, now())
+       ON CONFLICT (user_id) DO UPDATE
+          SET app_state = CASE
+                WHEN EXCLUDED.app_state -> 'settings' IS NULL
+                  THEN COALESCE(s.app_state, '{}'::jsonb) || EXCLUDED.app_state
+                ELSE jsonb_set(
+                       COALESCE(s.app_state, '{}'::jsonb) || EXCLUDED.app_state,
+                       '{settings}',
+                       COALESCE(s.app_state -> 'settings', '{}'::jsonb)
+                         || (EXCLUDED.app_state -> 'settings'),
+                       true)
+              END,
+              hrt_mode = COALESCE($3::text, s.hrt_mode),
+              calibration_method = COALESCE($4::text, s.calibration_method),
+              calibration_history = COALESCE($5::text, s.calibration_history),
+              timezone = COALESCE($6::text, s.timezone),
+              updated_at = now()`,
+      [
+        userId,
+        JSON.stringify(bag),
+        columns.hrtMode ?? null,
+        columns.calibrationMethod ?? null,
+        columns.calibrationHistory ?? null,
+        columns.timezone ?? null,
+      ],
+    );
+  },
+
+  /**
+   * Merge the app-facing part of a settings write into the bag the app reads.
+   *
+   * A settings route or an agent writes the model columns directly; without this
+   * the column would be the only copy and the browser — which reads the bag —
+   * would never see the change. Merged with `||`, so a write that mentions only
+   * the mode cannot drop the theme and language it never read, and the bag's own
+   * stamp moves so the app's whole-bag merge adopts it rather than leaving the
+   * change on the server.
+   */
+  async mergeAppSettings(userId: string, patch: Record<string, unknown>, stampMs: number): Promise<void> {
+    if (Object.keys(patch).length === 0) return;
     await getPool().query(
       `INSERT INTO user_settings AS s (user_id, app_state, updated_at)
-       VALUES ($1, $2::jsonb, now())
+       VALUES ($1, jsonb_build_object('settings', $2::jsonb, 'settingsUpdatedAt', $3::bigint), now())
        ON CONFLICT (user_id) DO UPDATE
-          SET app_state = COALESCE(s.app_state, '{}'::jsonb) || EXCLUDED.app_state,
+          SET app_state = jsonb_set(
+                COALESCE(s.app_state, '{}'::jsonb) || jsonb_build_object('settingsUpdatedAt', $3::bigint),
+                '{settings}',
+                COALESCE(s.app_state -> 'settings', '{}'::jsonb) || $2::jsonb,
+                true),
               updated_at = now()`,
-      [userId, JSON.stringify(appState)],
+      [userId, JSON.stringify(patch), stampMs],
     );
   },
 
@@ -149,4 +317,124 @@ export const settings = {
       [userId, weightKg, at],
     );
   },
+
+  /**
+   * Fold PK overrides synced from a device into the setting the model reads.
+   *
+   * The same contract as `absorbWeight`, and the same reason: the app travels
+   * `pkParams` as a scalar with its own stamp, while `hrt_predict_levels` reads
+   * `user_settings.pk_params`. Before this the two never met, so an override could
+   * sync forever and the prediction would still run on the defaults.
+   *
+   * Unlike weight, `null` is a value rather than an absence: the app emits the
+   * record only when it has an opinion, and "clear every override" is that opinion.
+   * A record that says nothing at all never reaches here.
+   */
+  async absorbPKParams(userId: string, value: unknown, stampMs: unknown): Promise<void> {
+    if (value === undefined) return;
+    if (value !== null && (typeof value !== 'object' || Array.isArray(value))) return;
+    const at = typeof stampMs === 'number' && Number.isFinite(stampMs) ? stampMs : 0;
+    await getPool().query(
+      `INSERT INTO user_settings AS s (user_id, pk_params, pk_params_updated_at, updated_at)
+       VALUES ($1, $2::jsonb, to_timestamp($3 / 1000.0), now())
+       ON CONFLICT (user_id) DO UPDATE
+          SET pk_params = EXCLUDED.pk_params,
+              pk_params_updated_at = EXCLUDED.pk_params_updated_at,
+              updated_at = now()
+        WHERE s.pk_params_updated_at IS NULL
+           OR s.pk_params_updated_at < EXCLUDED.pk_params_updated_at`,
+      [userId, value === null ? null : JSON.stringify(value), at],
+    );
+  },
 };
+
+/** One settings-class scalar, and both halves of the record path's treatment of it. */
+export interface SettingsScalar {
+  /** The `UserSettings` field this scalar is. */
+  readonly key: keyof UserSettings;
+  /** The record id the app travels it as. */
+  readonly recordId: string;
+  /** Other `UserSettings` fields this scalar carries (its stamp, or its bag keys). */
+  readonly carries: readonly (keyof UserSettings)[];
+  /** Fold one record body into the settings row. */
+  readonly absorb: (userId: string, value: unknown, stamp: number) => Promise<void>;
+  /** Put the stored value into the app payload's scalar fields. */
+  readonly emit: (settings: UserSettings, out: Record<string, unknown>) => void;
+}
+
+/**
+ * Every setting-class scalar the record path carries, in one list.
+ *
+ * `absorb` is the write half (record → settings row); `emit` is the read half
+ * (settings row → the app's payload). Both halves iterate this list, so a scalar
+ * cannot be added to one and forgotten in the other. The compile-time assertion
+ * below closes the remaining hole: a new field on `UserSettings` either appears
+ * here or in `APP_SETTING_BY_COLUMN`, or the build fails.
+ */
+export const SETTINGS_SCALARS = [
+  {
+    key: 'bodyWeightKg',
+    recordId: 'scalar:weight',
+    carries: ['bodyWeightUpdatedAt'],
+    absorb: (userId: string, value: unknown, stamp: number) => settings.absorbWeight(userId, value, stamp),
+    emit: (s: UserSettings, out: Record<string, unknown>) => {
+      if (s.bodyWeightKg == null) return;
+      out.weight = s.bodyWeightKg;
+      out.weightUpdatedAt = s.bodyWeightUpdatedAt ?? 0;
+    },
+  },
+  {
+    key: 'pkParams',
+    recordId: 'scalar:pkParams',
+    carries: ['pkParamsUpdatedAt'],
+    absorb: (userId: string, value: unknown, stamp: number) => settings.absorbPKParams(userId, value, stamp),
+    emit: (s: UserSettings, out: Record<string, unknown>) => {
+      // A stamp with no value is an explicit "no overrides" rather than
+      // "unstated" — that difference is the whole reason the stamp exists.
+      if (s.pkParamsUpdatedAt == null && s.pkParams == null) return;
+      out.pkParams = s.pkParams ?? null;
+      out.pkParamsUpdatedAt = s.pkParamsUpdatedAt ?? 0;
+    },
+  },
+  {
+    key: 'appState',
+    recordId: 'scalar:appSettings',
+    carries: [],
+    absorb: (userId: string, value: unknown) => settings.absorbAppState(userId, value),
+    emit: (s: UserSettings, out: Record<string, unknown>) => {
+      const appState = appStateFor(s);
+      if (appState) out.appState = appState;
+    },
+  },
+] as const satisfies readonly SettingsScalar[];
+
+/** The scalar a record id names, or undefined when the record is not one. */
+export function settingsScalarFor(recordId: string): SettingsScalar | undefined {
+  return SETTINGS_SCALARS.find((scalar) => scalar.recordId === recordId);
+}
+
+/**
+ * The settings-class scalars in the app payload's own shape.
+ *
+ * A field is present only when the settings row holds it, so merging the result
+ * cannot clear a value the row never had. Shared by `buildExportPayload` and the
+ * records read, which is what makes the browser's read carry what an agent wrote.
+ */
+export function settingsScalars(userSettings: UserSettings | null): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (!userSettings) return out;
+  for (const scalar of SETTINGS_SCALARS) scalar.emit(userSettings, out);
+  return out;
+}
+
+// A settings field with no home above would travel one way only — the bug this
+// table exists to make impossible. The type only resolves when the union is empty.
+type CarriedSetting =
+  | (typeof SETTINGS_SCALARS)[number]['key']
+  | (typeof SETTINGS_SCALARS)[number]['carries'][number]
+  | keyof typeof APP_SETTING_BY_COLUMN;
+type UncarriedSetting = Exclude<keyof UserSettings, CarriedSetting>;
+const _everySettingTravels: [UncarriedSetting] extends [never]
+  ? true
+  : ['settings field is not carried by the record path', UncarriedSetting] = true;
+void _everySettingTravels;

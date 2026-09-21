@@ -33,6 +33,7 @@
  */
 import { apiEndpoint, apiFetch } from './apiClient';
 import { payloadToRecords, recordsToPayload, type RecordDoc } from './recordDocs';
+import { toAppState, type SyncState } from '../utils/syncMerge';
 
 /** The app's own payload shape, as `normalizeSyncState` reads it. */
 export interface SyncPayload {
@@ -125,6 +126,11 @@ function describe(status: number, what: string, detail?: string): CoreSyncError 
 export async function readCoreState(token: string): Promise<SyncPayload> {
   const docs: RecordDoc[] = [];
   let before: number | undefined;
+  // The settings row rides with the first page (see the records route): it is
+  // where a settings screen or an agent writes, and it is not a record, so it
+  // would otherwise be invisible to this read — the gap that made an agent's
+  // HRT-mode change invisible in the app.
+  let settings: Record<string, unknown> | undefined;
 
   for (let page = 0; page < 100; page++) {
     const query = new URLSearchParams({ limit: String(PAGE_SIZE) });
@@ -135,8 +141,13 @@ export async function readCoreState(token: string): Promise<SyncPayload> {
     });
     if (!res.ok) throw describe(res.status, 'read', await errorDetail(res));
 
-    const body = (await res.json()) as { records?: WireRecord[]; unreadable?: number };
+    const body = (await res.json()) as {
+      records?: WireRecord[];
+      unreadable?: number;
+      settings?: Record<string, unknown>;
+    };
     const batch = body.records ?? [];
+    settings = body.settings ?? settings;
 
     for (const row of batch) {
       docs.push({
@@ -162,7 +173,13 @@ export async function readCoreState(token: string): Promise<SyncPayload> {
     // client, and dropping it without a word is how data goes missing.
     console.warn(`[sync] ignored ${unknown} record(s) this version does not understand`);
   }
-  return payload;
+  // Applied after the records: the settings row is the authoritative copy, and the
+  // record store may still hold the scalar a device wrote before the row absorbed
+  // it. A field the row does not hold is absent, so it cannot clear one the records
+  // supplied. `appState` carries the model settings too — a settings route merges
+  // its columns into the same bag the app reads (see the server's
+  // `mergeAppSettings`) — which is how an agent's HRT-mode change reaches the app.
+  return settings ? { ...payload, ...settings } : payload;
 }
 
 /** The server's error text, when it sent one. */
@@ -319,17 +336,29 @@ export async function syncWithCore(
 }
 
 /**
- * Turn a Core state into a payload the app's `normalizeSyncState` can read.
+ * Turn a merged state into the payload the record transport splits into records.
  *
- * The record layer already hands back the app's own shape, so this is a pass-through —
- * it exists so the conversion has one home rather than being open-coded at each call
- * site.
+ * The record layer names its scalars — `scalar:weight`, `scalar:pkParams`,
+ * `scalar:appSettings` — and each one expects `{ value, stamp }`; this is the only
+ * place a `SyncState` becomes that payload. It used to build only `weight` and
+ * `modes` and leave PK overrides and both stamps behind, so an override edited on
+ * this device was dropped before it ever reached a record — and a weight arrived
+ * with no stamp, which loses to any stored one.
+ *
+ * A scalar is emitted only when the state has an opinion about it (`undefined`
+ * means "this device never said"), but `null` is an opinion for `pkParams`: it is
+ * how the user cleared every override, and omitting it would resurrect them.
  */
-export function toLocalPayload(state: SyncPayload): SyncPayload {
+export function toLocalPayload(state: SyncState): SyncPayload {
   return {
-    version: state.version ?? 3,
-    ...(typeof state.weight === 'number' ? { weight: state.weight } : {}),
-    modes: state.modes ?? {},
-    ...(state.appState ? { appState: state.appState } : {}),
+    version: 3,
+    ...(state.weight !== undefined
+      ? { weight: state.weight, weightUpdatedAt: state.weightUpdatedAt }
+      : {}),
+    ...(state.pkParams !== undefined
+      ? { pkParams: state.pkParams, pkParamsUpdatedAt: state.pkParamsUpdatedAt }
+      : {}),
+    modes: state.modes,
+    appState: toAppState(state),
   };
 }

@@ -355,6 +355,12 @@ CREATE TABLE IF NOT EXISTS user_settings (
     calibration_history text NOT NULL DEFAULT 'retrospective'
                         CHECK (calibration_history IN ('forward','retrospective')),
     pk_params           jsonb,
+    -- When pk_params was last written, by whichever side wrote it. The weight
+    -- column above carries its own stamp for the same reason and with the same
+    -- rule (see settings.ts, absorbPKParams): the row's updated_at is bumped by
+    -- every unrelated settings write, so it cannot decide whether one override
+    -- is newer than another.
+    pk_params_updated_at timestamptz,
     timezone            text,
     -- App-only collections that are not clinical records and that no agent has a
     -- use for: dose templates and quick-dose buttons the web UI remembers. They
@@ -369,6 +375,10 @@ CREATE TABLE IF NOT EXISTS user_settings (
 -- CREATE TABLE IF NOT EXISTS cannot add a column to an existing table, so the
 -- stamp that sync resolves weight by needs this migration. A no-op when present.
 ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS body_weight_updated_at timestamptz;
+-- The same migration for the PK override stamp: a row created before pk_params
+-- travelled the record path has no place to record when the override landed, and
+-- without it an older device could undo a newer one. A no-op when present.
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS pk_params_updated_at timestamptz;
 
 -- ---------------------------------------------------------------------------
 -- Audit

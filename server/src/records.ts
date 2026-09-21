@@ -36,7 +36,7 @@ import { randomUUID } from 'node:crypto';
 import { getPool, withTransaction } from './db.ts';
 import { getConfig } from './config.ts';
 import { openPayload, sealPayload } from './payloadCrypto.ts';
-import { settings } from './settings.ts';
+import { settings, settingsScalarFor, settingsScalars, type SettingsScalar } from './settings.ts';
 import type { AuthContext } from './types.ts';
 
 /** The kinds of record the store carries. Kept narrow so a typo cannot create one. */
@@ -179,66 +179,45 @@ function prepareRecord(
 }
 
 /**
- * The weight a `scalar:weight` record carries, or null when this record is not one.
+ * A settings-class scalar a record carries, ready to fold into the settings row.
  *
- * The app keeps body weight in its own payload and travels it as `scalar:weight` with
- * `{ value, stamp }` (see `payloadToRecords` in src/services/recordDocs.ts). The PK
- * model does not read that record — it reads `user_settings.body_weight_kg` — so the
- * call sites below are where the two meet; `settings.absorbWeight` decides which
- * side's stamp wins and ignores a value it cannot trust.
+ * The app travels each of these under a deterministic id (`scalar:weight`,
+ * `scalar:pkParams`, `scalar:appSettings`) with `{ value, stamp }`, and the PK
+ * model reads the matching `user_settings` column instead. Which ids are scalars,
+ * and how each folds in, is named once in `SETTINGS_SCALARS` (settings.ts); this
+ * is only the record-shaped view of one of them.
  */
-function weightScalar(id: string, data: unknown): { value: number; stamp: number } | null {
-    if (id !== 'scalar:weight') return null;
+interface SyncedScalar {
+    value: unknown;
+    stamp: number;
+    absorb: SettingsScalar['absorb'];
+}
+
+/** The scalar a record id names, or null when this record is not one. */
+function scalarOf(id: string, data: unknown): SyncedScalar | null {
+    const scalar = settingsScalarFor(id);
+    if (!scalar) return null;
     const body = data as { value?: unknown; stamp?: unknown } | null;
-    if (!body || typeof body.value !== 'number') return null;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
     return {
         value: body.value,
         stamp: typeof body.stamp === 'number' && Number.isFinite(body.stamp) ? body.stamp : 0,
+        absorb: scalar.absorb,
     };
 }
 
 /**
- * Reflect a synced weight into the account setting, best effort.
+ * Reflect the settings-class scalars a sync carried into the account settings,
+ * best effort.
  *
  * The record is the primary write and has already committed; a settings row that
  * fails to follow must not turn a successful sync into a failure. The next sync
  * carries the same scalar again, so one swallowed failure loses nothing.
  */
-async function reflectWeight(
-    ctx: AuthContext,
-    synced: { value: number; stamp: number } | null,
-): Promise<void> {
-    if (!synced) return;
-    await settings.absorbWeight(ctx.userId, synced.value, synced.stamp).catch(() => undefined);
-}
-
-/**
- * The app-state blob a `scalar:appSettings` record carries, or null when this record is not it.
- *
- * The app travels its own settings in the payload's `appState` blob (see
- * `payloadToRecords` in src/services/recordDocs.ts), which is the counterpart of
- * `scalar:weight`; the server-side readers take it from `user_settings.app_state`
- * instead, so this is where the two meet.
- */
-function appStateScalar(id: string, data: unknown): Record<string, unknown> | null {
-    if (id !== 'scalar:appSettings') return null;
-    const body = data as { value?: unknown } | null;
-    const value = body?.value;
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? value as Record<string, unknown>
-        : null;
-}
-
-/**
- * Reflect a synced app-state blob into the account setting, best effort — the
- * same contract as `reflectWeight`, for the same reason.
- */
-async function reflectAppState(
-    ctx: AuthContext,
-    synced: Record<string, unknown> | null,
-): Promise<void> {
-    if (!synced) return;
-    await settings.absorbAppState(ctx.userId, synced).catch(() => undefined);
+async function reflectSettings(ctx: AuthContext, synced: SyncedScalar[]): Promise<void> {
+    for (const scalar of synced) {
+        await scalar.absorb(ctx.userId, scalar.value, scalar.stamp).catch(() => undefined);
+    }
 }
 
 export const RecordService = {
@@ -278,8 +257,8 @@ export const RecordService = {
         // An id owned by another account must not be writeable, and must not be
         // reported as a conflict either — that would confirm the id exists.
         if (rows.length === 0) return { ok: false, error: 'id_unavailable' };
-        await reflectWeight(ctx, weightScalar(id, body?.data));
-        await reflectAppState(ctx, appStateScalar(id, body?.data));
+        const scalar = scalarOf(id, body?.data);
+        await reflectSettings(ctx, scalar ? [scalar] : []);
         return { ok: true, id: rows[0].id };
     },
 
@@ -313,18 +292,18 @@ export const RecordService = {
 
         const rejected: { id: string; reason: string }[] = [];
         const pending = new Map<string, PreparedRecord>();
-        // A sync carries body weight as a `scalar:weight` record, but the PK model
-        // reads the settings table instead. Keep the copy that landed — a repeated id
-        // is applied last-wins — to reflect below (see `reflectWeight`). The
-        // `scalar:appSettings` blob is bridged the same way (see `reflectAppState`).
-        let syncedWeight: { value: number; stamp: number } | null = null;
-        let syncedAppState: Record<string, unknown> | null = null;
+        // A sync carries the settings-class scalars — body weight, PK overrides, the
+        // app's own settings blob — as records, but the model and the export read
+        // the settings table instead. Keep the copy that landed to reflect below;
+        // a repeated id is applied last-wins, matching the upsert above it, so the
+        // map is keyed by id. Which ids are scalars is named in `SETTINGS_SCALARS`.
+        const synced = new Map<string, SyncedScalar>();
         for (const raw of items) {
             const prepared = prepareRecord(ctx, raw as { id?: unknown; takenAt?: unknown; category?: unknown; data?: unknown });
             if (prepared.ok) {
                 pending.set(prepared.value.id, prepared.value);
-                syncedWeight = weightScalar(prepared.value.id, (raw as { data?: unknown })?.data) ?? syncedWeight;
-                syncedAppState = appStateScalar(prepared.value.id, (raw as { data?: unknown })?.data) ?? syncedAppState;
+                const scalar = scalarOf(prepared.value.id, (raw as { data?: unknown })?.data);
+                if (scalar) synced.set(prepared.value.id, scalar);
             } else {
                 rejected.push({ id: prepared.id, reason: prepared.error });
             }
@@ -368,8 +347,7 @@ export const RecordService = {
             }
         });
 
-        await reflectWeight(ctx, syncedWeight);
-        await reflectAppState(ctx, syncedAppState);
+        await reflectSettings(ctx, [...synced.values()]);
         return { ok: true, written, rejected };
     },
 
@@ -552,6 +530,10 @@ const MODES: readonly Mode[] = ['transfem', 'transmasc'];
 export async function buildExportPayload(ctx: AuthContext): Promise<{
     version: number;
     weight?: number;
+    weightUpdatedAt?: number;
+    /** `null` = explicitly "no overrides", absent = this account never said. */
+    pkParams?: unknown;
+    pkParamsUpdatedAt?: number;
     modes: Record<Mode, {
         events: unknown[];
         labResults: unknown[];
@@ -593,7 +575,13 @@ export async function buildExportPayload(ctx: AuthContext): Promise<{
         transmasc: modeFor(),
     };
 
+    // The record store's copy of each scalar is the fallback; the settings row is
+    // authoritative and is overlaid below. A record that says nothing about a
+    // scalar leaves the row's answer standing (see `SETTINGS_SCALARS`).
     let weight: number | undefined;
+    let weightUpdatedAt: number | undefined;
+    let pkParams: unknown;
+    let pkParamsUpdatedAt: number | undefined;
     let unknown = 0;
 
     for (const record of all.records) {
@@ -623,26 +611,46 @@ export async function buildExportPayload(ctx: AuthContext): Promise<{
         }
 
         if (head === 'scalar') {
-            const body = record.data as { value?: unknown; stamp?: number } | null;
+            const body = record.data as { value?: unknown; stamp?: unknown } | null;
+            const stamp = typeof body?.stamp === 'number' && Number.isFinite(body.stamp) ? body.stamp : 0;
             if (parts[1] === 'weight') {
                 if (typeof body?.value === 'number') weight = body.value;
                 continue;
             }
-            // `pkParams` and `appSettings` scalars are carried by the record store for
-            // completeness; the settings table is where this deployment reads them from,
-            // and `appState` below is the blob the app actually consumes.
-            if (parts[1] === 'pkParams' || parts[1] === 'appSettings') continue;
+            if (parts[1] === 'pkParams') {
+                // `undefined` must stay distinguishable from `null`: the first means
+                // this payload never mentioned the overrides, the second that the
+                // user cleared them. Collapsing the two would resurrect a clear.
+                if (body?.value !== undefined || body?.stamp !== undefined) {
+                    pkParams = body?.value ?? null;
+                    pkParamsUpdatedAt = stamp;
+                }
+                continue;
+            }
+            // The app's settings blob is the other half of this: it is carried by
+            // the record store for completeness, while `appState` below is the blob
+            // the app actually consumes, read from the settings row.
+            if (parts[1] === 'appSettings') continue;
         }
 
         unknown += 1;
     }
 
-    // Weight and the app-only collections live in `user_settings`, which is where the
-    // settings routes write them; the record store does not carry them on this
-    // deployment. Reading them here keeps one export shape for both sources.
-    if (userSettings?.bodyWeightKg != null) weight = userSettings.bodyWeightKg;
+    // The settings row is authoritative for every settings-class scalar, and it is
+    // where the settings routes and the agent tools write theirs. `settingsScalars`
+    // is the list the record path absorbs into, so this export cannot name a scalar
+    // the write half does not know (see `SETTINGS_SCALARS`).
+    const fromRow = settingsScalars(userSettings);
+    if (typeof fromRow.weight === 'number') {
+        weight = fromRow.weight;
+        weightUpdatedAt = typeof fromRow.weightUpdatedAt === 'number' ? fromRow.weightUpdatedAt : undefined;
+    }
+    if (fromRow.pkParams !== undefined) {
+        pkParams = fromRow.pkParams;
+        pkParamsUpdatedAt = typeof fromRow.pkParamsUpdatedAt === 'number' ? fromRow.pkParamsUpdatedAt : undefined;
+    }
 
-    const appState = (userSettings?.appState ?? null) as
+    const appState = (fromRow.appState ?? null) as
         | { modes?: Record<string, { doseTemplates?: unknown[]; quickDoses?: unknown[] }> }
         | null;
     if (appState?.modes) {
@@ -659,10 +667,25 @@ export async function buildExportPayload(ctx: AuthContext): Promise<{
         // (it reads by shape), so the bump is what tells the two apart.
         version: 3,
         ...(weight != null ? { weight } : {}),
+        ...(weightUpdatedAt !== undefined ? { weightUpdatedAt } : {}),
+        ...(pkParams !== undefined ? { pkParams, pkParamsUpdatedAt } : {}),
         modes,
         appState,
         unknown,
     };
+}
+
+/**
+ * The settings-class scalars as the app's payload names them, for the records read.
+ *
+ * Two readers exist for one account's state: `/api/records` pages the records the
+ * app writes, and this returns the settings row that a settings route or an agent
+ * writes. The app's own read is the first, so without this an agent could change
+ * the HRT mode, the calibration, the timezone or the PK overrides and the browser
+ * would never hear — the same shape of gap the weight bridge closed for the model.
+ */
+export async function buildSettingsScalars(ctx: AuthContext): Promise<Record<string, unknown>> {
+    return settingsScalars(await settings.get(ctx.userId));
 }
 
 /** Counts by kind for an account, for verifying a write landed. */

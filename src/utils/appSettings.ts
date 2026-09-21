@@ -28,7 +28,7 @@ export const APP_SETTINGS_EVENT = 'app-settings-applied';
  * they are account-scoped (`hrt-u<id>-cal-method`), so the data layer, which
  * knows the owner, moves those itself.
  */
-export type GlobalSettingKey = 'theme' | 'keyColor' | 'lang' | 'hrtMode' | 'showVial';
+export type GlobalSettingKey = 'theme' | 'keyColor' | 'lang' | 'hrtMode' | 'showVial' | 'timezone';
 
 /**
  * Storage key per setting. These are the keys the owning contexts already use —
@@ -41,6 +41,10 @@ const KEYS: Record<GlobalSettingKey, string> = {
     lang: 'hrt-lang',
     hrtMode: 'hrt-mode',
     showVial: 'app-blood-vial',
+    // Written only when the account says so (an agent set it); the app has no
+    // control for it, but carrying it keeps the bag and the server's column one
+    // value rather than two that disagree. See `AppSettings.timezone`.
+    timezone: 'app-timezone',
 };
 
 /**

@@ -32,7 +32,7 @@ import { promisify } from 'node:util';
 
 import { getPool, withTransaction } from './db.ts';
 import { getConfig } from './config.ts';
-import { settings } from './settings.ts';
+import { settings, APP_SETTING_BY_COLUMN } from './settings.ts';
 import {
   createUserKeyMaterial,
   rewrapForNewPassword,
@@ -1282,10 +1282,12 @@ export const AccountService = {
     if (found) return found;
     return {
       bodyWeightKg: null,
+      bodyWeightUpdatedAt: null,
       hrtMode: 'transfem' as const,
       calibrationMethod: 'mipd',
       calibrationHistory: 'retrospective',
       pkParams: null,
+      pkParamsUpdatedAt: null,
       timezone: null,
       appState: null,
     };
@@ -1351,7 +1353,23 @@ export const AccountService = {
     if (Object.keys(update).length === 0) {
       return { ok: false, error: 'nothing to update' };
     }
-    return { ok: true, value: await settings.upsert(ctx.userId, update) };
+    await settings.upsert(ctx.userId, update);
+
+    // The model columns are the copy the PK model reads; the app reads its own
+    // settings bag. Writing only the columns is what left an agent's HRT-mode or
+    // calibration change invisible in the browser, so the same values are merged
+    // into the bag under the app's own names and the bag's stamp is moved — the
+    // app resolves that bag whole, so a value with an unmoved stamp loses to
+    // whatever the device already had. See `APP_SETTING_BY_COLUMN`.
+    const appSettings: Record<string, unknown> = {};
+    for (const column of Object.keys(APP_SETTING_BY_COLUMN) as (keyof typeof APP_SETTING_BY_COLUMN)[]) {
+      const value = update[column];
+      if (value !== undefined) appSettings[APP_SETTING_BY_COLUMN[column].appKey] = value;
+    }
+    if (Object.keys(appSettings).length > 0) {
+      await settings.mergeAppSettings(ctx.userId, appSettings, Date.now());
+    }
+    return { ok: true, value: await settings.get(ctx.userId) };
   },
 };
 

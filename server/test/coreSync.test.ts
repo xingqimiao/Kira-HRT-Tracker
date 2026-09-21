@@ -18,7 +18,7 @@ import { bootPostgres, useDatabase, startApiServer, teardown, call, type Postgre
 import { registerAccount } from './helpers.ts';
 import { setConfigForTesting } from '../src/config.ts';
 import { TEST_ENCRYPTION_KEY } from './pg.ts';
-import { mergeSyncStates, normalizeSyncState } from '../../src/utils/syncMerge.ts';
+import { emptySyncState, mergeSyncStates, normalizeSyncState } from '../../src/utils/syncMerge.ts';
 
 let pg: PostgresHandle;
 let server: Server | undefined;
@@ -205,8 +205,9 @@ test('an app-only settings change reaches the account and a second device', asyn
     const token = await newAccount();
     const stamp = 1_700_000_000_000;
 
-    // What `useCoreSync` pushes: `toLocalPayload(merged)` plus the `appState` blob
-    // `toAppState` builds. The settings ride only inside that blob.
+    // The shape `useCoreSync` pushes: `toLocalPayload(merged)`, whose `appState` is
+    // the blob `toAppState` builds. Spelled out rather than built with the client
+    // helper, so this stays a test of the server's absorption of that shape.
     const pushed = await syncWithCore(token, {
       ...appPayload(),
       appState: {
@@ -261,6 +262,72 @@ test('a locked account reports locked rather than a generic failure', async () =
       (error: unknown) =>
         error instanceof CoreSyncError && error.locked === true && error.status === 401,
     );
+  } finally {
+    restore();
+  }
+});
+
+/**
+ * An agent's settings write and a device's are one value seen by two readers.
+ *
+ * `hrt_update_settings` writes the `user_settings` columns; the browser reads
+ * records. Before the settings row rode with the records read, an agent could
+ * change the HRT mode or a PK override and the app would never hear — the gap
+ * these drive end to end through the client's real transport.
+ */
+test('an agent settings change is visible to the app read', async () => {
+  const restore = installFetchOrigin(base);
+  try {
+    const { readCoreState } = await import('../../src/services/coreSync.ts');
+    const token = await newAccount();
+
+    const set = await call(base, '/api/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        hrt_mode: 'transmasc',
+        calibration_method: 'ekf',
+        calibration_history: 'forward',
+        timezone: 'Asia/Tokyo',
+        pk_params: { e2_kClear: 0.42 },
+      }),
+    });
+    assert.equal(set.status, 200, JSON.stringify(set.body));
+
+    const asState = normalizeSyncState(await readCoreState(token));
+    assert.equal(asState.appSettings?.hrtMode, 'transmasc', 'the browser read did not see the agent mode');
+    assert.equal(asState.appSettings?.calMethod, 'ekf', 'the browser read did not see the agent calibration');
+    assert.equal(asState.appSettings?.calHistoryMode, 'forward');
+    assert.equal(asState.appSettings?.timezone, 'Asia/Tokyo', 'the browser read did not see the agent timezone');
+    assert.ok((asState.appSettingsUpdatedAt ?? 0) > 0, 'the bag stamp did not survive the read');
+    assert.deepEqual(asState.pkParams, { e2_kClear: 0.42 }, 'the browser read did not see the agent override');
+    assert.ok((asState.pkParamsUpdatedAt ?? 0) > 0, 'the override stamp did not survive the read');
+  } finally {
+    restore();
+  }
+});
+
+test('a device PK override and weight reach the account the model reads', async () => {
+  const restore = installFetchOrigin(base);
+  try {
+    const { syncWithCore, toLocalPayload } = await import('../../src/services/coreSync.ts');
+    const token = await newAccount();
+    const stamp = Date.now();
+
+    // Exactly what `useCoreSync` hands the transport after a merge.
+    await syncWithCore(token, toLocalPayload({
+      ...emptySyncState(),
+      weight: 64,
+      weightUpdatedAt: stamp,
+      pkParams: { e2_kClear: 0.42 },
+      pkParamsUpdatedAt: stamp,
+    }));
+
+    const server = await call(base, '/api/settings', { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(server.body.bodyWeightKg, 64, 'the weight never reached the setting the model reads');
+    assert.equal(server.body.bodyWeightUpdatedAt, stamp, 'the weight stamp did not reach the setting');
+    assert.deepEqual(server.body.pkParams, { e2_kClear: 0.42 }, 'the override never reached the setting');
+    assert.equal(server.body.pkParamsUpdatedAt, stamp, 'the override stamp did not reach the setting');
   } finally {
     restore();
   }

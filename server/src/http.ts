@@ -33,7 +33,7 @@ import {
 import { AccountService } from './accounts.ts';
 import { avatarEtag, avatarForUser } from './avatars.ts';
 import { isGoogleConfigured } from './oauth.ts';
-import { RecordService, buildExportPayload, publicStats } from './records.ts';
+import { RecordService, buildExportPayload, buildSettingsScalars, publicStats } from './records.ts';
 import { getPool } from './db.ts';
 import { ShareService } from './shares.ts';
 import type { AuthContext } from './types.ts';
@@ -868,6 +868,12 @@ export function createRequestHandler() {
           category: url.searchParams.get('category') ?? undefined,
           before: Number.isFinite(before) ? before : undefined,
         });
+        // The settings row is where a settings route or an agent writes, and it is
+        // not a record — so it rides with the read the app already makes rather
+        // than needing a second one. Only on the first page: the reader pages
+        // through records, and repeating a scalar on every page would be the only
+        // thing that grows with the history.
+        const settings = before === undefined ? await buildSettingsScalars(ctx) : undefined;
         return send(res, 200, {
           records: records.map((r) => ({
             id: r.id,
@@ -879,6 +885,7 @@ export function createRequestHandler() {
           // Surfaced rather than swallowed: a client that ignores this is at least not
           // being told its history is complete when it is not.
           unreadable,
+          ...(settings ? { settings } : {}),
         });
       }
 

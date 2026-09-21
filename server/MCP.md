@@ -153,10 +153,11 @@ the next sync from another device.
 
 **`hrt_update_settings` covers the settings the model reads** — body weight, HRT mode,
 calibration method and history window, timezone, and the PK parameter overrides. Those are
-settings, so they belong here. The app's *display* preferences (language, theme, HRT start
-date, re-check reminders, quick-dose buttons) ride in the opaque `appState` blob and are
-**not** writable over MCP: the blob is replaced whole, so a targeted write by an agent
-would silently drop collections it never read. They stay a client-side concern.
+settings, so they belong here, and the write reaches both readers of them: the
+`user_settings` columns the PK model uses, and the app's own settings bag (merged in, not
+replaced) that the browser syncs — so a change an agent makes is visible in the app. The
+app's *display* preferences (language, theme, HRT start date, re-check reminders,
+quick-dose buttons) have no tool and stay a client-side concern.
 
 ### Shares
 
