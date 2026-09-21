@@ -3011,6 +3011,7 @@ const SETTINGS_I18N = {
         "scan.confirm_title": "对照照片确认无误后，再填入表单。",
         "scan.keep": "保留这个结果",
         "scan.retake": "重新拍照",
+        "scan.check_pair": "请核对：这个数值和项目的位置对不上。",
     },
     "zh-TW": {
         "settings.group.reminders": "複查提醒",
@@ -3032,6 +3033,7 @@ const SETTINGS_I18N = {
         "scan.confirm_title": "對照照片確認無誤後，再填入表單。",
         "scan.keep": "保留這個結果",
         "scan.retake": "重新拍照",
+        "scan.check_pair": "請核對：這個數值和項目的位置對不上。",
     },
     "yue": {
         "settings.group.reminders": "覆查提醒",
@@ -3053,6 +3055,7 @@ const SETTINGS_I18N = {
         "scan.confirm_title": "對照張相確認冇問題，先填入表格。",
         "scan.keep": "保留呢個結果",
         "scan.retake": "再影過",
+        "scan.check_pair": "請核對：呢個數值同項目嘅位置對唔上。",
     },
     "en": {
         "settings.group.reminders": "Re-check reminders",
@@ -3074,6 +3077,7 @@ const SETTINGS_I18N = {
         "scan.confirm_title": "Check it against the photo before it fills the form.",
         "scan.keep": "Keep this reading",
         "scan.retake": "Take another photo",
+        "scan.check_pair": "Check this one: the value does not line up with its label.",
     },
     "ja": {
         "settings.group.reminders": "再検査の通知",
@@ -3095,6 +3099,7 @@ const SETTINGS_I18N = {
         "scan.confirm_title": "写真と見比べて確認してからフォームに入れてください。",
         "scan.keep": "この結果を採用",
         "scan.retake": "撮り直す",
+        "scan.check_pair": "この値は項目と位置が合っていません。写真と見比べて確認してください。",
     },
     "ko": {
         "settings.group.reminders": "재검사 알림",
@@ -3116,6 +3121,7 @@ const SETTINGS_I18N = {
         "scan.confirm_title": "사진과 대조해 확인한 뒤 양식에 채웁니다.",
         "scan.keep": "이 결과 사용",
         "scan.retake": "다시 촬영",
+        "scan.check_pair": "이 값은 항목과 위치가 맞지 않습니다. 사진과 대조해 확인하세요.",
     },
     "tr": {
         "settings.group.reminders": "Kontrol hatırlatmaları",
@@ -3137,6 +3143,7 @@ const SETTINGS_I18N = {
         "scan.confirm_title": "Formu doldurmadan önce fotoğrafla karşılaştırıp doğrulayın.",
         "scan.keep": "Bu okumayı kullan",
         "scan.retake": "Yeniden çek",
+        "scan.check_pair": "Bu değer etiketiyle hizalanmıyor. Fotoğrafla karşılaştırıp doğrulayın.",
     },
 } as const;
 

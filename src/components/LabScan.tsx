@@ -1,6 +1,6 @@
 import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Icon from './Icon';
-import { AlertCircle, Check, ImagePlus, Scan } from '../icons';
+import { AlertCircle, AlertTriangle, Check, ImagePlus, Scan } from '../icons';
 import { Progress } from './ui';
 import { useTranslation } from '../contexts/LanguageContext';
 import {
@@ -9,7 +9,7 @@ import {
     type HormoneCandidate,
 } from '../utils/ocrParse';
 import { createImage } from '../utils/cropImage';
-import { fitContent, regionToBox } from '../utils/scanBoxes';
+import { fitContent, regionToBox, verifyValueGeometry, type PairVerdict } from '../utils/scanBoxes';
 import type { OcrPage } from '../utils/ppocr';
 import type { OcrModelTier } from '../../logic';
 
@@ -249,6 +249,31 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel, tier }) => {
         });
     }, [state]);
 
+    /**
+     * The geometry's opinion on each candidate's (label, value) pair — see
+     * 'verifyValueGeometry'. 'unevaluated' is a real answer (one row, one number, no
+     * reference column), not a pass: it stays quiet on screen, but it is never the
+     * same state as a checked pair, and never the same as no candidate at all.
+     */
+    const pairVerdicts = useMemo<PairVerdict[]>(() => {
+        if (state.kind !== 'done') return [];
+        const rows = state.page.rows.map((row) => row.regions.map((region, i) => ({
+            region,
+            text: row.texts[i] ?? '',
+        })));
+        // 'candidateRow' is row → candidate; invert it to candidate → row.
+        const rowOf = new Array<number>(state.candidates.length).fill(-1);
+        candidateRow.forEach((candidate, rowIndex) => {
+            if (candidate >= 0 && rowOf[candidate] < 0) rowOf[candidate] = rowIndex;
+        });
+        return state.candidates.map((candidate, i) => rowOf[i] < 0
+            ? { status: 'unevaluated', issues: [] }
+            : verifyValueGeometry(rows, rowOf[i], candidate.value));
+    }, [state, candidateRow]);
+
+    /** A doubted pair is shown and questioned; a clean or unjudgeable one stays quiet. */
+    const hasDoubt = pairVerdicts.some((verdict) => verdict.status === 'doubt');
+
     const muted = 'text-[var(--color-m3-on-surface-variant)] ';
     const on = 'text-[var(--color-m3-on-surface)] ';
 
@@ -368,6 +393,10 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel, tier }) => {
                 candidate,
                 box: regionToBox(region, fit),
                 value: state.candidates[candidate],
+                // A box for a candidate the geometry doubted gets a separate shape and
+                // a warning marker, so it is never mistaken for a checked one — or for
+                // a box that produced no candidate at all.
+                doubt: candidate >= 0 && pairVerdicts[candidate]?.status === 'doubt',
             };
         }))
         : [];
@@ -409,23 +438,25 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel, tier }) => {
                             {/* Every box is drawn, in the pixels the engine worked in.
                                 Detector geometry is axis-aligned (see 'detectRegions'),
                                 so a rectangle is the honest shape. */}
-                            {boxes.map(({ key, candidate, box, value }) => candidate < 0 ? (
-                                /* Recessive: a dashed hairline, no badge. Dashed against
-                                   solid is the signal that still reads when the two role
-                                   colours are indistinguishable, so colour is never the
-                                   only difference. */
+                            {boxes.map(({ key, candidate, box, value, doubt }) => candidate < 0 ? (
+                                /* No candidate: a thin dashed hairline, no badge, no
+                                   warning. Three border shapes carry the states that a
+                                   hue alone would not: solid = checked pair, dashed =
+                                   nothing read here, dotted = read but doubted. */
                                 <div
                                     key={key}
                                     className="absolute rounded-[2px] border border-dashed"
                                     style={{ ...box, borderColor: 'var(--color-m3-outline)' }}
                                 />
                             ) : (
-                                /* A row that produced a value: solid, tinted, and wearing
-                                   the same number as its row in the list below. */
+                                /* A row that produced a value: wearing the same number
+                                   as its row in the list below. Solid when the geometry
+                                   checked out; dotted plus a warning marker when it did
+                                   not, so a doubted pair is visibly not a checked one. */
                                 <button
                                     key={key}
                                     type="button"
-                                    className="absolute rounded-[2px] border-2 pointer-events-auto"
+                                    className={`absolute rounded-[2px] border-2 pointer-events-auto ${doubt ? 'border-dotted' : 'border-solid'}`}
                                     onMouseEnter={() => setActive(candidate)}
                                     onMouseLeave={() => setActive((previous) => (previous === candidate ? null : previous))}
                                     onFocus={() => setActive(candidate)}
@@ -433,15 +464,15 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel, tier }) => {
                                     onClick={() => setActive(active === candidate ? null : candidate)}
                                     style={{
                                         ...box,
-                                        borderColor: 'var(--color-m3-primary)',
+                                        borderColor: doubt ? 'var(--color-m3-error)' : 'var(--color-m3-primary)',
                                         backgroundColor: active === candidate
-                                            ? 'var(--color-m3-primary-container)'
+                                            ? (doubt ? 'var(--color-m3-error-container)' : 'var(--color-m3-primary-container)')
                                             : 'transparent',
                                         boxShadow: active === candidate
-                                            ? '0 0 0 3px var(--color-m3-primary-container)'
+                                            ? `0 0 0 3px ${doubt ? 'var(--color-m3-error-container)' : 'var(--color-m3-primary-container)'}`
                                             : 'none',
                                     }}
-                                    aria-label={`${t(value.analyte === 'E2' ? 'scan.analyte_e2' : 'scan.analyte_t')} ${value.value} ${value.unit}`}
+                                    aria-label={`${t(value.analyte === 'E2' ? 'scan.analyte_e2' : 'scan.analyte_t')} ${value.value} ${value.unit}${doubt ? ' — ' + t('scan.check_pair') : ''}`}
                                     title={`${value.value} ${value.unit}`}
                                 >
                                     {/* The number, not the colour, is the link: it is the
@@ -457,6 +488,20 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel, tier }) => {
                                     >
                                         {candidate + 1}
                                     </span>
+                                    {/* A shape, not only a colour: the warning marker and
+                                        the dotted border both say "confirm this one". */}
+                                    {doubt && (
+                                        <span
+                                            aria-hidden="true"
+                                            className="absolute -right-1.5 -top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full"
+                                            style={{
+                                                backgroundColor: 'var(--color-m3-error)',
+                                                color: 'var(--color-m3-on-error)',
+                                            }}
+                                        >
+                                            <Icon icon={AlertTriangle} size={9} />
+                                        </span>
+                                    )}
                                 </button>
                             ))}
                         </div>
@@ -505,8 +550,11 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel, tier }) => {
                         </div>
                     ) : (
                         <>
-                            <p className="text-sm font-medium text-cos-success flex items-center gap-1.5">
-                                <Icon icon={Check} size={14} />
+                            {/* A clean report keeps the quiet green tick. If any pair was
+                                doubted the header changes icon and role too, so the count
+                                is never read as "all verified" when one needs a look. */}
+                            <p className={`text-sm font-medium flex items-center gap-1.5 ${hasDoubt ? 'text-[var(--color-m3-error)]' : 'text-cos-success'}`}>
+                                <Icon icon={hasDoubt ? AlertTriangle : Check} size={14} />
                                 {t('scan.found').replace('{n}', String(state.candidates.length))}
                             </p>
                             {/* Which tier read it stays on screen after a retry. */}
@@ -552,6 +600,15 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel, tier }) => {
                                                 {c.value} <span className={muted}>{c.unit}</span>
                                             </span>
                                         </button>
+                                        {/* Marked, not dropped: the value stays in the list for
+                                            the user to compare against the photo, with a plain
+                                            instruction that this one needs checking. */}
+                                        {pairVerdicts[i]?.status === 'doubt' && (
+                                            <p className="flex items-center gap-1 px-1 pb-2 text-xs text-[var(--color-m3-error)]">
+                                                <Icon icon={AlertTriangle} size={12} className="shrink-0" />
+                                                {t('scan.check_pair')}
+                                            </p>
+                                        )}
                                     </li>
                                 ))}
                             </ul>

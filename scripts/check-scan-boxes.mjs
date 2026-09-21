@@ -14,7 +14,7 @@
  */
 import assert from 'node:assert/strict'
 
-const { fitContent, regionToBox } = await import('../src/utils/scanBoxes.ts')
+const { fitContent, regionToBox, verifyValueGeometry } = await import('../src/utils/scanBoxes.ts')
 
 const results = []
 function check(name, fn) {
@@ -92,6 +92,95 @@ check('a degenerate box yields an empty fit rather than NaN positions', () => {
     assert.equal(fit.scale, 0)
     const box = regionToBox({ x0: 10, y0: 10, x1: 20, y1: 20, score: 1 }, fit)
     assert.ok(Number.isFinite(box.left) && Number.isFinite(box.top))
+})
+
+
+// ── the pair check: is the value beside its label? ───────────────────────────
+
+/** One box with its text, in original-image pixels. */
+function cell(text, x0, y0, x1, y1) {
+    return { region: { x0, y0, x1, y1, score: 1 }, text }
+}
+
+// A clean three-row report: the label is left of its value, the two share a band,
+// and the reference column (the '<143' / range boxes) is well to the right.
+check('a clean label/value pair passes every check', () => {
+    const rows = [
+        [
+            cell('雌二醇 (E2)', 10, 100, 90, 120),
+            cell('396.53', 200, 101, 260, 119),
+            cell('<143', 420, 100, 470, 120),
+            cell('pmol/L', 500, 100, 560, 120),
+        ],
+        [cell('睾酮 (T)', 10, 160, 90, 180), cell('17.4', 200, 161, 250, 179), cell('0.5-2.6', 420, 160, 480, 180)],
+        [cell('促卵泡激素', 10, 220, 90, 240), cell('5.1', 200, 221, 240, 239), cell('3.5-12.5', 410, 220, 480, 240)],
+    ]
+    const verdict = verifyValueGeometry(rows, 0, 396.53)
+    assert.equal(verdict.status, 'pass', JSON.stringify(verdict))
+})
+
+check('a label above its value is doubted on the band', () => {
+    const rows = [
+        [cell('雌二醇 (E2)', 10, 100, 90, 120), cell('396.53', 10, 140, 70, 160)],
+        [cell('睾酮 (T)', 10, 200, 90, 220), cell('17.4', 200, 201, 250, 219), cell('<143', 420, 200, 470, 220)],
+        [cell('促卵泡激素', 10, 260, 90, 280), cell('5.1', 200, 261, 240, 279), cell('3.5-12.5', 410, 260, 480, 280)],
+    ]
+    const verdict = verifyValueGeometry(rows, 0, 396.53)
+    assert.equal(verdict.status, 'doubt', JSON.stringify(verdict))
+    assert.ok(verdict.issues.includes('band'), 'band should be reported')
+})
+
+check('a value to the left of its label is doubted on the order', () => {
+    const rows = [
+        [cell('396.53', 10, 100, 70, 120), cell('雌二醇 (E2)', 200, 100, 280, 120)],
+        [cell('睾酮 (T)', 10, 160, 90, 180), cell('17.4', 200, 161, 250, 179), cell('<143', 420, 160, 470, 180)],
+        [cell('促卵泡激素', 10, 220, 90, 240), cell('5.1', 200, 221, 240, 239), cell('3.5-12.5', 410, 220, 480, 240)],
+    ]
+    const verdict = verifyValueGeometry(rows, 0, 396.53)
+    assert.equal(verdict.status, 'doubt', JSON.stringify(verdict))
+    assert.ok(verdict.issues.includes('order'), 'order should be reported')
+    assert.ok(!verdict.issues.includes('band'), 'the two are on one line')
+})
+
+check('a value in the reference column is doubted when its row has a result number too', () => {
+    // The recogniser lost the '<' of '<143', so '143' looks like a result. The real
+    // result ('396.53') is still on the row, and it does not sit in the band.
+    const rows = [
+        [
+            cell('雌二醇 (E2)', 10, 100, 90, 120),
+            cell('396.53', 200, 101, 260, 119),
+            cell('143', 420, 100, 470, 120),
+            cell('pmol/L', 500, 100, 560, 120),
+        ],
+        [cell('睾酮 (T)', 10, 160, 90, 180), cell('17.4', 200, 161, 250, 179), cell('12.4-233.0', 410, 160, 490, 180)],
+        [cell('促卵泡激素', 10, 220, 90, 240), cell('5.1', 200, 221, 240, 239), cell('3.5-12.5', 410, 220, 480, 240)],
+    ]
+    const verdict = verifyValueGeometry(rows, 0, 143)
+    assert.equal(verdict.status, 'doubt', JSON.stringify(verdict))
+    assert.ok(verdict.issues.includes('column'), 'column should be reported')
+})
+
+// The one the owner warned about: with a single row there is no reference column to
+// compare against, so the honest answer is 'unevaluated' — not a doubt and not a
+// quiet pass.
+check('a pair that cannot be checked is unevaluated, not passed and not doubted', () => {
+    const rows = [
+        [cell('雌二醇 (E2)', 10, 100, 90, 120), cell('396.53', 200, 101, 260, 119), cell('pmol/L', 500, 100, 560, 120)],
+    ]
+    const verdict = verifyValueGeometry(rows, 0, 396.53)
+    assert.equal(verdict.status, 'unevaluated', JSON.stringify(verdict))
+    assert.equal(verdict.issues.length, 0, 'an unevaluated pair reports no issue')
+})
+
+check('a lone value in the reference band is not doubted on x alone', () => {
+    const rows = [
+        [cell('雌二醇 (E2)', 10, 100, 90, 120), cell('143', 420, 100, 470, 120)],
+        [cell('睾酮 (T)', 10, 160, 90, 180), cell('17.4', 200, 161, 250, 179), cell('<143', 410, 160, 470, 180)],
+        [cell('促卵泡激素', 10, 220, 90, 240), cell('5.1', 200, 221, 240, 239), cell('3.5-12.5', 410, 220, 480, 240)],
+    ]
+    const verdict = verifyValueGeometry(rows, 0, 143)
+    assert.equal(verdict.status, 'unevaluated', JSON.stringify(verdict))
+    assert.ok(!verdict.issues.includes('column'), 'no result sibling means no column judgement')
 })
 
 const failed = results.filter(([status]) => status === 'fail')

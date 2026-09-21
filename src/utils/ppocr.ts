@@ -502,6 +502,13 @@ export interface OcrRow {
      * scales by 'page.width'/'page.height' — see 'src/utils/scanBoxes.ts'.
      */
     regions: Region[]
+    /**
+     * The text read from each box, index-aligned with 'regions' — '' for a box that
+     * read as nothing, which 'text' drops. Kept per box rather than only joined so
+     * the geometry check can tell a label's box from a value's by what it says, not
+     * just where it sits: see 'verifyValueGeometry' in 'src/utils/scanBoxes.ts'.
+     */
+    texts: string[]
     /** The row's recognised text, boxes joined with a space; '' when it read as nothing. */
     text: string
 }
@@ -556,11 +563,13 @@ export async function recognizePage(
     const out: OcrRow[] = []
     for (let i = 0; i < rows.length; i++) {
         const parts: string[] = []
+        const texts: string[] = []
         for (const box of rows[i]) {
             const text = await readBox(rec, dict, rgba, width, height, box)
+            texts.push(text)
             if (text !== '') parts.push(text)
         }
-        out.push({ regions: rows[i], text: parts.join(' ') })
+        out.push({ regions: rows[i], texts, text: parts.join(' ') })
         progress(0.35 + (0.65 * (i + 1)) / rows.length)
     }
 
