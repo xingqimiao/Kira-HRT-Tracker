@@ -587,6 +587,162 @@ export function getMonitoringNotices(labs: LabResult[], events: DoseEvent[]): Mo
     return out;
 }
 
+// --- Re-check reminders (a due date, still evidence rather than instruction) ---
+//
+// The notices above fire on a *value the user entered*. This block answers the
+// other half of the same question — when is the next draw due — using only the
+// intervals docs/monitoring-reference.md actually states:
+//
+//   * liver function on CPA / bicalutamide: "Before starting, then every 3
+//     months; monthly during the first 6 months" (§1.1 row 1, §4 row "Liver
+//     function"). Both are the same claim from the same source, so the first six
+//     months use the monthly row and everything after it uses the 3-month row.
+//   * potassium on spironolactone: "Every 3 months for the first year after
+//     initiation, then annually" (§2.1 "Potassium, per Endocrine Society").
+//   * prolactin on CPA: §1.1 says "定期检查 — periodic; **no numeric interval
+//     stated**", and §5 gap 2 repeats it. No interval exists to remind on, so
+//     none is produced.
+//
+// A start point has to come from somewhere, and no source states one in the
+// app's own terms: there is an `hrtStartDate` but no per-drug start date. The
+// honest anchor is the **first recorded dose of that compound** — it is a fact
+// the user entered, it is per-drug by construction, and where it is absent the
+// reminder is simply not produced. Its weakness is that it is the first
+// *logged* dose, which is an upper bound on the true first dose: someone who
+// started spironolactone last year and only began logging this month gets a
+// schedule anchored a year late. That failure is a delay, not a false alarm,
+// which is the direction to err in for a reminder that says "this is due".
+
+export type RecheckKind = 'liver_cpa' | 'liver_bical' | 'potassium_spiro';
+
+export interface RecheckReminder {
+    kind: RecheckKind;
+    /** The compound in the app's own vocabulary, so the UI names the right drug. */
+    ester: Ester;
+    /** When the first dose of that compound was logged, in hours since epoch. */
+    startH: number;
+    /** The interval that has elapsed, in months, as the source states it. */
+    intervalMonths: number;
+    /** `anchor` is the logged first dose; the UI has to say which it used. */
+    basis: 'first_dose';
+    /** Whole months since `startH`, for the copy to quote. */
+    elapsedMonths: number;
+}
+
+/**
+ * Days per month for the reminder arithmetic only.
+ *
+ * The sources state their intervals in calendar months ("every 3 months"), and a
+ * logged dose carries no calendar anchor to add a month to, so the interval is
+ * converted to days on a fixed 30.44-day month. A day either way does not change
+ * what the reminder is for — see the ceiling note on `getRecheckReminders`.
+ */
+const RECHECK_DAYS_PER_MONTH = 30.44;
+const RECHECK_HOURS_PER_DAY = 24;
+
+/** The liver-monitoring schedule both the wiki and the label state, in months. */
+export const LIVER_RECHECK_FIRST_PHASE_MONTHS = 6;
+export const LIVER_RECHECK_EARLY_INTERVAL_MONTHS = 1;
+export const LIVER_RECHECK_INTERVAL_MONTHS = 3;
+/** Potassium on spironolactone: every 3 months for the first year, then annually. */
+export const POTASSIUM_RECHECK_FIRST_PHASE_MONTHS = 12;
+export const POTASSIUM_RECHECK_EARLY_INTERVAL_MONTHS = 3;
+export const POTASSIUM_RECHECK_INTERVAL_MONTHS = 12;
+
+/** The first dose of one compound, or undefined when it was never logged. */
+function firstDoseH(events: DoseEvent[], ester: Ester): number | undefined {
+    let first: number | undefined;
+    for (const e of events) {
+        if (e.ester !== ester) continue;
+        if (first === undefined || e.timeH < first) first = e.timeH;
+    }
+    return first;
+}
+
+/**
+ * The next interval boundary strictly after `elapsedMonths`, for a schedule that
+ * is `earlyMonths` for the first `phaseMonths` and `months` thereafter.
+ *
+ * Returned in months and worked on the integer month, so "3 months in" fires at
+ * month 3 rather than a month and a rounding error.
+ */
+function nextBoundaryMonths(elapsedMonths: number, phaseMonths: number, earlyMonths: number, months: number): number {
+    // Walk the integer boundaries the schedule actually has: earlyMonths,
+    // 2*earlyMonths, ... up to phaseMonths, then phaseMonths + months,
+    // phaseMonths + 2*months, ... and return the latest one already reached.
+    // 0 means "before the first boundary, nothing is due yet".
+    //
+    // The walk compares on whole months with a hair of slack. Elapsed time is a
+    // float, so an exact monthly anniversary computes as 2.9999999999999902 and a
+    // bare `>=` would skip a boundary the user has in fact reached. The slack is a
+    // rounding error, not a fraction of the period — anything larger starts
+    // reporting a boundary a user has not reached yet, which is the false alarm
+    // this schedule has to avoid.
+    if (earlyMonths <= 0 || months <= 0) return phaseMonths;
+    const monthsElapsed = Math.floor(elapsedMonths + 1e-6);
+    let boundary = 0;
+    while (true) {
+        const next = boundary < phaseMonths
+            ? Math.min(boundary + earlyMonths, phaseMonths)
+            : boundary + months;
+        // `min` can land on the boundary we are already at (phaseMonths is not a
+        // multiple of earlyMonths); step once more so the loop always advances.
+        const step = next > boundary ? next : boundary + months;
+        if (step > monthsElapsed) return boundary;
+        boundary = step;
+    }
+}
+
+/**
+ * Re-check reminders that are currently **due**, one per compound the user has
+ * actually logged a dose of.
+ *
+ * A reminder is produced only when the elapsed time has reached the next interval
+ * boundary the sources state, and it reports the boundary that was reached. This
+ * is a cadence report, not a diagnosis and not an instruction, which is why it
+ * carries the interval, the elapsed time and the source rather than the word
+ * "should".
+ *
+ * Quiet by construction in every case it cannot know:
+ *   * no recorded dose of the compound → no start point → no reminder;
+ *   * prolactin → no source states an interval → never a reminder;
+ *   * a compound logged but not yet past its first boundary → nothing yet.
+ *
+ * ponytail: the boundary is counted in whole months off a fixed 30.44-day month,
+ * so it can sit a day either side of the calendar date for a start logged near a
+ * month end. The upgrade path, if it ever matters, is a real calendar-month walk
+ * from the start date — the interval is per-month, not per-day, so nothing else
+ * about the rule changes.
+ */
+export function getRecheckReminders(
+    events: DoseEvent[],
+    nowH: number = Date.now() / (1000 * 60 * 60),
+): RecheckReminder[] {
+    const out: RecheckReminder[] = [];
+
+    const due = (kind: RecheckKind, ester: Ester, phaseMonths: number, earlyMonths: number, months: number): void => {
+        const startH = firstDoseH(events, ester);
+        // No logged dose of this compound: the app cannot know when the schedule
+        // started, and a reminder with an invented start would be a false alarm.
+        if (startH === undefined) return;
+        const elapsedH = nowH - startH;
+        // A dose logged "in the future" (clock skew, an import) is not elapsed time.
+        if (elapsedH < 0) return;
+        const elapsedMonths = elapsedH / (RECHECK_HOURS_PER_DAY * RECHECK_DAYS_PER_MONTH);
+        const boundary = nextBoundaryMonths(elapsedMonths, phaseMonths, earlyMonths, months);
+        // Boundary 0 means the first interval has not elapsed yet — a dose logged
+        // today must not read as "due", which is the false alarm this guards.
+        if (boundary <= 0) return;
+        out.push({ kind, ester, startH, intervalMonths: boundary, basis: 'first_dose', elapsedMonths: Math.floor(elapsedMonths) });
+    };
+
+    due('liver_cpa', Ester.CPA, LIVER_RECHECK_FIRST_PHASE_MONTHS, LIVER_RECHECK_EARLY_INTERVAL_MONTHS, LIVER_RECHECK_INTERVAL_MONTHS);
+    due('liver_bical', Ester.BICAL, LIVER_RECHECK_FIRST_PHASE_MONTHS, LIVER_RECHECK_EARLY_INTERVAL_MONTHS, LIVER_RECHECK_INTERVAL_MONTHS);
+    due('potassium_spiro', Ester.SPIRO, POTASSIUM_RECHECK_FIRST_PHASE_MONTHS, POTASSIUM_RECHECK_EARLY_INTERVAL_MONTHS, POTASSIUM_RECHECK_INTERVAL_MONTHS);
+
+    return out;
+}
+
 /**
  * How lab results are used to calibrate the E2 estimate.
  *  - 'off'      : ignore labs, show the raw model.

@@ -15,10 +15,14 @@
  *
  * ── Not end-to-end ───────────────────────────────────────────────────────────
  *
- * The server decrypts on read, because the server is what answers the API. The claim
- * this module supports is "a stolen database dump is useless without ENCRYPTION_KEY".
- * It is not "the operator cannot read your records", and no comment here should say
- * otherwise.
+ * The server decrypts on read, because the server is what answers the API. Every
+ * record is now sealed under its own account's DEK, resolved by session.ts /
+ * accounts.ts and carried here in the AuthContext. The claim this module supports is
+ * "a stolen database dump is useless without an account's data key" — and because the
+ * key is per-account, one leaked key opens one history, not every history in the
+ * table. It is not "the operator cannot read your records": the deployment holds a
+ * server wrapper around every DEK, so it can open any of them. No comment here should
+ * say otherwise.
  *
  * ── Why reads decrypt in a loop but fail per row ─────────────────────────────
  *
@@ -31,8 +35,9 @@ import { randomUUID } from 'node:crypto';
 
 import { getPool } from './db.ts';
 import { getConfig } from './config.ts';
-import { decryptPayload, encryptPayload } from './payloadCrypto.ts';
+import { openPayload, sealPayload } from './payloadCrypto.ts';
 import { settings } from './settings.ts';
+import type { AuthContext } from './types.ts';
 
 /** The kinds of record the store carries. Kept narrow so a typo cannot create one. */
 export const RECORD_CATEGORIES = ['dose', 'lab', 'note', 'setting', 'journal'] as const;
@@ -55,15 +60,38 @@ export interface ListOptions {
     before?: number;
 }
 
-/** The key every payload needs. Fails loudly rather than writing plaintext. */
-function requireKey(): Buffer {
-    const key = getConfig().encryptionKey;
-    if (!key) {
-        // Deliberately fatal: falling back to storing plaintext would silently break
+/**
+ * The account's own data key, as the AES key that seals its records.
+ *
+ * The DEK travels as base64 of the raw 32 bytes — that is how `session.ts` mints it
+ * and how the browser's `importRawAesKey` consumes it — so decoding is the whole
+ * conversion. Deriving anything from it here would produce a key no other holder
+ * could reproduce, which is how a record becomes unreadable by its owner.
+ */
+function dekKey(ctx: AuthContext): Buffer {
+    const key = Buffer.from(ctx.dek, 'base64');
+    if (key.length !== 32) {
+        // Deliberately fatal, for the same reason the old platform-key check was:
+        // falling back to a key the reader cannot reconstruct would silently break
         // the one promise this table makes, and it would do so invisibly.
-        throw new Error('ENCRYPTION_KEY is not configured; refusing to write records');
+        throw new Error(`account data key is ${key.length} bytes, expected 32; refusing to write records`);
     }
     return key;
+}
+
+/** The v1 platform key, for rows written before per-account sealing. Null if unset. */
+function platformKey(): Buffer | null {
+    return getConfig().encryptionKey;
+}
+
+/** Seal a payload under its account's DEK, tagged so a reader knows that. */
+function seal(data: unknown, ctx: AuthContext): string {
+    return sealPayload(data, dekKey(ctx));
+}
+
+/** Open a payload with the key its version names, honouring v1 legacy rows. */
+function open(sealed: string, ctx: AuthContext): unknown {
+    return openPayload(sealed, { dek: dekKey(ctx), platform: platformKey() });
 }
 
 function isCategory(value: unknown): value is RecordCategory {
@@ -104,7 +132,7 @@ export const RecordService = {
      * client-id column to disagree with it.
      */
     async put(
-        ctx: { userId: string },
+        ctx: AuthContext,
         body: { id?: unknown; takenAt?: unknown; category?: unknown; data?: unknown },
     ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
         const takenAt = parseTakenAt(body?.takenAt);
@@ -119,7 +147,7 @@ export const RecordService = {
             return { ok: false, error: 'data: required' };
         }
 
-        const sealed = encryptPayload(body.data, requireKey());
+        const sealed = seal(body.data, ctx);
         if (sealed.length > MAX_BODY_BYTES) {
             return { ok: false, error: 'data: too large' };
         }
@@ -164,7 +192,7 @@ export const RecordService = {
      * it is at least not being lied to about a complete history.
      */
     async list(
-        ctx: { userId: string },
+        ctx: AuthContext,
         opts: ListOptions = {},
     ): Promise<{ records: StoredRecord[]; unreadable: number }> {
         const limit = Math.min(Math.max(Number(opts.limit ?? 200) || 200, 1), 1000);
@@ -193,7 +221,6 @@ export const RecordService = {
             params,
         );
 
-        const key = requireKey();
         const records: StoredRecord[] = [];
         let unreadable = 0;
 
@@ -203,7 +230,7 @@ export const RecordService = {
                     id: row.id,
                     takenAt: row.taken_at.getTime(),
                     category: isCategory(row.category) ? row.category : 'dose',
-                    data: decryptPayload(row.payload_encrypted, key),
+                    data: open(row.payload_encrypted, ctx),
                     updatedAt: row.updated_at.getTime(),
                 });
             } catch {
@@ -216,7 +243,7 @@ export const RecordService = {
     },
 
     /** True when a row was removed. Deletion is physical: there is no tombstone here. */
-    async remove(ctx: { userId: string }, id: string): Promise<boolean> {
+    async remove(ctx: AuthContext, id: string): Promise<boolean> {
         const { rowCount } = await getPool().query(
             `DELETE FROM records WHERE user_id = $1 AND id = $2`,
             [ctx.userId, id],
@@ -232,7 +259,7 @@ export const RecordService = {
      * another account reads as absent rather than as a refusal — the same answer an id
      * that never existed gets, so a prober learns nothing from the difference.
      */
-    async get(ctx: { userId: string }, id: string): Promise<StoredRecord | null> {
+    async get(ctx: AuthContext, id: string): Promise<StoredRecord | null> {
         const { rows } = await getPool().query<{
             id: string; taken_at: Date; category: string; payload_encrypted: string; updated_at: Date;
         }>(
@@ -247,7 +274,7 @@ export const RecordService = {
                 id: row.id,
                 takenAt: row.taken_at.getTime(),
                 category: isCategory(row.category) ? row.category : 'dose',
-                data: decryptPayload(row.payload_encrypted, requireKey()),
+                data: open(row.payload_encrypted, ctx),
                 updatedAt: row.updated_at.getTime(),
             };
         } catch {
@@ -266,7 +293,7 @@ export const RecordService = {
      * walk instead of repeating a page forever.
      */
     async all(
-        ctx: { userId: string },
+        ctx: AuthContext,
         category?: string,
     ): Promise<{ records: StoredRecord[]; unreadable: number }> {
         const pageSize = 1000;
@@ -288,7 +315,7 @@ export const RecordService = {
     },
 
     /** How many records the account holds, without decrypting anything. */
-    async count(ctx: { userId: string }): Promise<number> {
+    async count(ctx: AuthContext): Promise<number> {
         const { rows } = await getPool().query<{ n: string }>(
             `SELECT count(*) AS n FROM records WHERE user_id = $1`,
             [ctx.userId],
@@ -297,7 +324,7 @@ export const RecordService = {
     },
 
     /** The same count split by `category`, for the endpoints that report a breakdown. */
-    async countByCategory(ctx: { userId: string }): Promise<Record<string, number>> {
+    async countByCategory(ctx: AuthContext): Promise<Record<string, number>> {
         const { rows } = await getPool().query<{ category: string; n: string }>(
             `SELECT category, count(*) AS n FROM records WHERE user_id = $1 GROUP BY category`,
             [ctx.userId],
@@ -327,7 +354,7 @@ const MODES: readonly Mode[] = ['transfem', 'transmasc'];
  * it belongs to a newer client, and inventing a home for it would misfile someone's
  * data — and the count is returned so the caller can notice.
  */
-export async function buildExportPayload(ctx: { userId: string }): Promise<{
+export async function buildExportPayload(ctx: AuthContext): Promise<{
     version: number;
     weight?: number;
     modes: Record<Mode, {

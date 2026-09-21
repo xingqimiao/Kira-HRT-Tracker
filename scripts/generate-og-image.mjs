@@ -156,7 +156,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
 
   <!-- Wordmark. -->
   <text x="88" y="272" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif"
-        font-size="88" font-weight="600" letter-spacing="-2" fill="${C.onSurface}">Kira Tracker</text>
+        font-size="72" font-weight="600" letter-spacing="-2" fill="${C.onSurface}">Kira HRT Tracker</text>
 
   <text x="90" y="360" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif"
         font-size="27" fill="${C.onSurfaceVariant}">Dose logging · pharmacokinetic estimates · private by default</text>

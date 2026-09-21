@@ -1,6 +1,6 @@
 # Writing the Privacy Policy
 
-Published at `https://kiramyao.com/privacy` (whose §26 covers Kira Tracker specifically).
+Published at `https://kiramyao.com/privacy` (whose §26 covers Kira HRT Tracker specifically).
 The app subdomain used to serve its own copy at `hrt.kiramyao.com/privacy`; that page was
 removed on purpose, so the app now links the shared policy above.
 

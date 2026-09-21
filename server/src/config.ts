@@ -12,6 +12,8 @@
  * than on the first request that needs the value.
  */
 
+import { readFileSync } from 'node:fs';
+
 import { keyFromEnv } from './payloadCrypto.ts';
 
 export interface XOAuthConfig {
@@ -102,6 +104,14 @@ export interface Config {
    * are conservative; raise them when legitimate users hit them.
    */
   rateLimits: RateLimitConfig;
+  /**
+   * Which of the two critical keys came from a systemd credential rather than the
+   * environment. Logged once at boot: a deployment that has added
+   * `LoadCredentialEncrypted=` but is still reading `.env` looks identical from the
+   * outside, and the whole point of moving them is to be able to say which one is in
+   * force. Empty on a deployment that has not migrated, and empty is honest.
+   */
+  keysFromCredentials: string[];
 }
 
 export interface RateLimitConfig {
@@ -154,7 +164,55 @@ function requireOrigin(raw: string | undefined, name: string): string {
  * origin in production would put unlock tokens on the wire in the clear — so it
  * is an explicit opt-in rather than an inferred allowance.
  */
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+/**
+ * Fold systemd's encrypted credentials into the environment, before anything reads it.
+ *
+ * The two keys this deployment cannot lose — `ENCRYPTION_KEY`, which seals every
+ * record, and `SERVER_DEK_KEY`, which unwraps every account's data key — used to sit
+ * as plaintext lines in `/srv/hrt/.env`, on the same disk as the database they
+ * protect, and the backup habit produced nine further copies of that file before
+ * anyone counted. `systemd-creds` keeps them encrypted at rest and hands them to the
+ * process through a tmpfs directory that exists only while the service runs, so a
+ * disk image or a stray backup no longer contains them.
+ *
+ * What this does **not** buy, stated here so nobody reads it as more than it is: the
+ * server still holds both keys in memory for as long as it runs, so root on a live
+ * box sees them, and the operator can still read every record. This is encryption at
+ * rest with a server-held key, and the change is where that key lives, not who can
+ * reach it.
+ *
+ * A credential file is used rather than an environment variable because
+ * `LoadCredential=` puts the value in a file, and `systemd-creds` encrypts that file;
+ * an `Environment=` line would be readable in `/proc/<pid>/environ` and in
+ * `systemctl show`. The credential wins over the environment when both are present,
+ * so a stale line in `.env` cannot silently override what systemd injected.
+ */
+function applyCredentials(env: NodeJS.ProcessEnv, readFile: (p: string) => string): string[] {
+  const dir = env.CREDENTIALS_DIRECTORY?.trim();
+  if (!dir) return [];
+  const loaded: string[] = [];
+  for (const name of ['ENCRYPTION_KEY', 'SERVER_DEK_KEY'] as const) {
+    try {
+      const value = readFile(`${dir}/${name}`).trim();
+      if (value) {
+        env[name] = value;
+        loaded.push(name);
+      }
+    } catch {
+      // No credential of that name: leave whatever the environment already has. A
+      // deployment that has not migrated yet must keep working, and a missing file
+      // is exactly what "not migrated" looks like.
+    }
+  }
+  return loaded;
+}
+
+export function loadConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  readFile: (path: string) => string = (path) => readFileSync(path, 'utf8'),
+): Config {
+  const keysFromCredentials = applyCredentials(env, readFile);
+
   const publicOrigin = requireOrigin(env.PUBLIC_ORIGIN ?? env.VITE_PUBLIC_ORIGIN, 'PUBLIC_ORIGIN');
   const apiOrigin = requireOrigin(env.API_ORIGIN, 'API_ORIGIN');
 
@@ -330,6 +388,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     x,
     google,
     serverDekKey,
+    keysFromCredentials,
     turnstile,
     sessionTtlMinutes,
     encryptionKey,

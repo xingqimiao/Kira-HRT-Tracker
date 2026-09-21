@@ -21,7 +21,7 @@ import type { Server } from 'node:http';
 import { bootPostgres, useDatabase, startApiServer, teardown, call, TEST_ENCRYPTION_KEY, type PostgresHandle } from './pg.ts';
 import { setConfigForTesting } from '../src/config.ts';
 import { resetRateLimits } from '../src/http.ts';
-import { registerAccount } from './helpers.ts';
+import { registerAccount, registerAccountWithKey } from './helpers.ts';
 import { getPool } from '../src/db.ts';
 
 let pg: PostgresHandle;
@@ -99,12 +99,14 @@ test('it reports the exact counts the database holds', async () => {
 });
 
 test('record counts match the rows, and a deletion drops one', async () => {
-  const account = await registerAccount(base, { username: 'has-records' });
+  // The store seals under the account's DEK now, so this has to resolve the real
+  // key the way an adapter does rather than hand-building a user id.
+  const account = await registerAccountWithKey(base, { username: 'has-records' });
 
   // Written through the store rather than over HTTP: the point is the endpoint's
   // count, not the write path, which has its own tests.
   const { RecordService } = await import('../src/records.ts');
-  const ctx = { userId: account.userId };
+  const ctx = { userId: account.userId, dek: account.dek };
   const dose = await RecordService.put(ctx, {
     id: `dose:transfem:stats-${Date.now()}`,
     takenAt: Date.now(),

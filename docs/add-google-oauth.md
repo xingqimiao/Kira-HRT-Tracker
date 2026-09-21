@@ -62,7 +62,7 @@ localhost 放行 `http`，其他域名一律 `https`。
 | 字段 | 填什么 |
 |---|---|
 | User type | **External** |
-| App name | `Kira Tracker` |
+| App name | `Kira HRT Tracker` |
 | User support email | 你自己的邮箱（Google 会往这里发审核邮件，必须是你在看的地址） |
 | Application home page | `https://hrt.kiramyao.com/` |
 | Application privacy policy link | `https://kiramyao.com/privacy`（注意：与首页不同域） |
@@ -81,11 +81,13 @@ localhost 放行 `http`，其他域名一律 `https`。
 home page、privacy、以及 redirect URI 的主机（`api.kiramyao.com`）全都归到同一个
 `kiramyao.com`，所以这里**只有一行**。
 
-**一个已知的小不一致**：`LanguageContext.tsx:61` 会在中文界面把 `document.title`
-改成「Kira 记录」，而 `<title>`、侧栏品牌、manifest 和同意屏幕里写的都是
-「Kira Tracker」。不执行 JavaScript 的校验器看到的是「Kira Tracker」，所以目前
-不影响验证；但如果 Google 因为「品牌名称不一致」打回，这就是要统一的那一处
-（把品牌名保留在标题里，例如「Kira Tracker · 记录」，比改同意屏幕上的名字更安全）。
+**品牌名已统一为「Kira HRT Tracker」**：`<title>`、`#root` 里的无 JS 静态兜底、
+manifest、Open Graph / Twitter、以及 `LanguageContext.tsx` 的 `document.title` 都是
+这一个名字，中文界面不再切成「Kira 记录」。不执行 JavaScript 的校验器看到的也是
+「Kira HRT Tracker」，所以 Google 的品牌验证不会再撞上「品牌名称不一致」。唯一还
+留着旧名的用户可见处是 `NavigationRail.tsx:38` 的 `brandLabel` 默认值（那是图标按钮
+的 `aria-label`，不是正文文案），该文件本轮冻结未改；同意屏幕（Console ↔ 上面 App name）
+请一并填「Kira HRT Tracker」。
 
 ### 2.3 域名所有权（最容易漏的一步）
 
@@ -171,7 +173,7 @@ curl -s https://api.kiramyao.com/hrt/auth/google/start | python3 -m json.tool
 # 3. 政策 URL 可达，且首页静态内容里能读到应用名与政策链接。
 #    注意 hrt 子域那份页面已于 2026-09-19 删除，政策现在只在 kiramyao.com。
 curl -sI https://kiramyao.com/privacy | head -1                 # 期望 200
-curl -s https://hrt.kiramyao.com/ | grep -c 'Kira Tracker'
+curl -s https://hrt.kiramyao.com/ | grep -c 'Kira HRT Tracker'
 curl -s https://hrt.kiramyao.com/ | grep -c 'kiramyao.com/privacy'
 ```
 

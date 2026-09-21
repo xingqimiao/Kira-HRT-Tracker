@@ -7,38 +7,48 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="theme-color" content="#FFFFFF">
-    <meta name="description" content="Track HRT doses and blood test results, and model estimated hormone levels over time. Private by default.">
+    <meta name="description" content="Kira HRT is an agent-friendly HRT tracker for medications, lab results, treatment history, and pharmacokinetic hormone-level estimates.">
+    <link rel="canonical" href="https://hrt.kiramyao.com/">
+    <meta name="robots" content="index, follow">
     <meta property="og:type" content="website">
-    <meta property="og:title" content="Kira Tracker">
-    <meta property="og:description" content="Dose logging and pharmacokinetic estimates. Private by default.">
+    <meta property="og:site_name" content="Kira HRT Tracker">
+    <meta property="og:url" content="https://hrt.kiramyao.com/">
+    <meta property="og:title" content="Kira HRT - HRT Tracker &amp; Agent-Friendly HRT Records">
+    <meta property="og:description" content="Kira HRT is an agent-friendly HRT tracker for medications, lab results, treatment history, and pharmacokinetic hormone-level estimates.">
     <meta property="og:image" content="https://hrt.kiramyao.com/og.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Kira HRT Tracker — dose logging, pharmacokinetic estimates, private by default">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Kira Tracker">
-    <meta name="twitter:description" content="Dose logging and pharmacokinetic estimates. Private by default.">
+    <meta name="twitter:title" content="Kira HRT - HRT Tracker &amp; Agent-Friendly HRT Records">
+    <meta name="twitter:description" content="Kira HRT is an agent-friendly HRT tracker for medications, lab results, treatment history, and pharmacokinetic hormone-level estimates.">
     <meta name="twitter:image" content="https://hrt.kiramyao.com/og.png">
+    <meta name="twitter:image:alt" content="Kira HRT Tracker — dose logging, pharmacokinetic estimates, private by default">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <!-- Cloudflare Turnstile, human verification on the register form and on the start
          of a third-party sign-in. Loaded with the page (async/defer) and rendered
          explicitly by TurnstileWidget, because this is a third-party request the
          privacy policy now discloses. -->
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-    <title>Kira Tracker</title>
+    <title>Kira HRT - HRT Tracker &amp; Agent-Friendly HRT Records</title>
     <!-- The app is a client-rendered SPA, so without this the page served to a client
-         that does not run JavaScript — a crawler, a link-preview bot, or the reviewer
-         checking our OAuth branding — is an empty shell. Google's brand verification
-         requires the home page to be publicly accessible, to say what the app does and
-         to link to the privacy policy, and it does not execute JavaScript.
+         that does not run JavaScript — a crawler, a link-preview bot, an SEO checker,
+         or the reviewer checking our OAuth branding — is an empty shell. Google's
+         brand verification requires the home page to be publicly accessible, to say
+         what the app does and to link to the privacy policy; SEO checks read the same
+         document. Both do it without executing JavaScript, so every fact they need —
+         the title, the description, the canonical URL, the Open Graph and Twitter
+         cards, and the two claims below (agent-friendly, made by KiraEqual) — lives in
+         this served HTML and never depends on a script.
 
-         Hidden by default, revealed by `<noscript>`. The obvious version of this is the
+         Hidden by default, revealed by noscript. The obvious version of this is the
          other way round — visible, then hidden by a script that sets a class — and it
          does not work here: this site sits behind Cloudflare, whose Rocket Loader
-         rewrites every inline script's `type` to a non-executing value and re-runs it
+         rewrites every inline script's type to a non-executing value and re-runs it
          after load, so the hiding script ran too late and the block flashed on every
-         visit. Styling the no-JavaScript case from inside `<noscript>` has no script to
+         visit. Styling the no-JavaScript case from inside noscript has no script to
          defer, so it is correct before the first paint and cannot be broken by an edge
-         feature we do not control. `index.tsx` also empties `#root` before the first
+         feature we do not control. index.tsx also empties #root before the first
          render, which is belt and braces: this never lays the block out, that removes it. -->
     <style>
         .boot-fallback {
@@ -78,7 +88,7 @@
         }
     </style>
     <!-- The other half of the pair above: with scripting unavailable, show the block.
-         `<noscript>` in the head may only contain link/style/meta, which is why this is
+         noscript in the head may only contain link/style/meta, which is why this is
          a second style block rather than a rule in the first one. -->
     <noscript>
         <style>
@@ -92,13 +102,18 @@
 <body class="text-gray-900 dark:text-white transition-colors duration-300">
     <div id="root">
         <div class="boot-fallback">
-            <h1>Kira Tracker</h1>
-            <p>
-                激素替代治疗（HRT）用药与化验记录工具。记录每一次用药与化验结果，并推算血药浓度的变化曲线。
+            <h1>Kira HRT - HRT 激素治疗记录与用药追踪</h1>
+            <p lang="en">
+                Kira HRT is an agent-friendly HRT tracker for medications, lab results, treatment
+                history, and pharmacokinetic hormone-level estimates.
             </p>
-            <p>
-                A medication and blood-test tracker for hormone replacement therapy: log each dose
-                and lab result, and see an estimated concentration curve over time.
+            <!-- The Chinese title and description are the ones the owner specified, and the
+                 English pair above is the same page seen by an English crawler; a page has one
+                 `<title>` and one description, so both languages live here in the body where
+                 the markup can carry `lang` for each. -->
+            <p lang="zh-CN">
+                Kira HRT 是面向 AI Agent 的 HRT 记录工具，用于记录用药、化验结果和治疗历程，
+                并提供基于药代动力学模型的激素水平估算。
             </p>
             <h2>功能 / Features</h2>
             <ul>
@@ -108,9 +123,32 @@
                 <li>记录以 AES-256-GCM 加密保存 / Records are stored encrypted with AES-256-GCM</li>
                 <li>使用账号名与密码、X 或 Google 登录 / Sign in with a username and password, X, or Google</li>
             </ul>
-            <p>
+            <h2>AI 助手友好 / Agent-friendly</h2>
+            <p lang="zh-CN">
+                Kira HRT Tracker 提供 MCP 接口，AI 助手可以直接读取并写入你的记录，不需要你手动导出文件。
+            </p>
+            <p lang="en">
+                Kira HRT Tracker speaks MCP, so an AI assistant can read and write your record
+                directly — no manual export. The endpoint, the transport, and every tool are
+                documented in
+                <a href="https://github.com/xingqimiao/Kira-s-HRT-Tracker/blob/main/server/MCP.md">server/MCP.md</a>.
+            </p>
+            <p lang="zh-CN">
                 本工具不是医疗器械，也不提供医疗建议；估算曲线不是实测值，用药决定请遵循处方医师的意见。
-                Kira Tracker is not a medical device and does not provide medical advice.
+            </p>
+            <p lang="en">
+                Kira HRT Tracker is not a medical device and does not provide medical advice.
+            </p>
+            <h2>出品 / Made by</h2>
+            <!-- One line, not two. A page that says "Kira HRT Tracker is made by
+                 KiraEqual" and then "Made by KiraEqual" is writing for the crawler
+                 rather than for the reader, and the product name is already in the
+                 title and the h1 above. -->
+            <p lang="zh-CN">
+                由 <a href="https://kiramyao.com">KiraEqual</a> 出品。
+            </p>
+            <p lang="en">
+                Made by <a href="https://kiramyao.com">KiraEqual</a>.
             </p>
             <p>
                 <a href="https://kiramyao.com/privacy">隐私说明 / Privacy Policy</a>

@@ -16,7 +16,8 @@ import {
   bootPostgres, useDatabase, startApiServer, teardown, call,
   TEST_ENCRYPTION_KEY, type PostgresHandle,
 } from './pg.ts';
-import { registerAccount } from './helpers.ts';
+import { registerAccount, registerAccountWithKey } from './helpers.ts';
+import { DEK_SEALED_PREFIX } from '../src/payloadCrypto.ts';
 import { setConfigForTesting } from '../src/config.ts';
 
 let pg: PostgresHandle;
@@ -131,3 +132,77 @@ test('records are refused until a fallback credential is bound', async () => {
   assert.equal(after.body.has_password, true);
   assert.equal(after.body.recovery_risk, false, 'a bound account is no longer at risk');
 });
+
+test('a record is sealed under its own account, not the platform key', async () => {
+  // The property that matters here cannot be seen through the API: a store that
+  // "encrypted" every row under one shared key would pass every round trip. So this
+  // reads the column directly and tries the wrong keys against it. One leaked account
+  // key must not open another account's record, and the deployment's key must not
+  // open either.
+  const a = await registerAccountWithKey(base, {});
+  const b = await registerAccountWithKey(base, {});
+  const secret = 'PER_ACCOUNT_SEAL_PROBE_5520';
+
+  const wrote = await call(base, '/api/records', json({
+    id: 'dose:transfem:seal-probe',
+    takenAt: Date.now(),
+    category: 'dose',
+    data: { med_name: secret },
+  }, a.token));
+  assert.equal(wrote.status, 201, `write failed: ${wrote.status}`);
+
+  const { getPool } = await import('../src/db.ts');
+  const { rows } = await getPool().query<{ payload_encrypted: string }>(
+    `SELECT payload_encrypted FROM records WHERE user_id = $1 AND id = $2`,
+    [a.userId, 'dose:transfem:seal-probe'],
+  );
+  assert.ok(rows[0], 'the row was written');
+  const sealed = rows[0].payload_encrypted;
+  assert.ok(
+    sealed.startsWith(DEK_SEALED_PREFIX),
+    `expected a v2 tag, got ${sealed.slice(0, 12)}`,
+  );
+
+  const { decryptPayload } = await import('../src/payloadCrypto.ts');
+  const body = sealed.slice(DEK_SEALED_PREFIX.length);
+  const opened = decryptPayload(body, Buffer.from(a.dek, 'base64')) as { med_name: string };
+  assert.equal(opened.med_name, secret, "the owner's key did not open the row");
+  assert.throws(
+    () => decryptPayload(body, TEST_ENCRYPTION_KEY),
+    'the platform key opened a per-account row',
+  );
+  assert.throws(
+    () => decryptPayload(body, Buffer.from(b.dek, 'base64')),
+    "another account's key opened the row",
+  );
+});
+
+test('a v1 row sealed under the platform key still opens', async () => {
+  // The format carries which key sealed a row so an old backup restored into a fresh
+  // database still reads. This seeds a row in the pre-DEK shape and reads it back
+  // through the API, which is the path a restored backup takes.
+  const account = await registerAccountWithKey(base, {});
+  const secret = 'LEGACY_V1_PROBE_7741';
+  const { getPool } = await import('../src/db.ts');
+  const { encryptPayload } = await import('../src/payloadCrypto.ts');
+  const legacy = encryptPayload({ med_name: secret }, TEST_ENCRYPTION_KEY);
+
+  await getPool().query(
+    `INSERT INTO records (user_id, taken_at, category, payload_encrypted, id)
+     VALUES ($1, now(), 'dose', $2, 'dose:transfem:legacy-probe')`,
+    [account.userId, legacy],
+  );
+
+  const listed = await call(base, '/api/records', bearer(account.token));
+  const { records, unreadable } = listed.body as {
+    records: { data: { med_name: string } }[];
+    unreadable: number;
+  };
+  assert.equal(unreadable, 0, 'a v1 row must not be reported unreadable');
+  assert.ok(
+    records.some((r) => r.data?.med_name === secret),
+    'the v1 row did not open',
+  );
+});
+
+

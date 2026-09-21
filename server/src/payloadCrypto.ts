@@ -19,12 +19,19 @@
  * encryption would leak the shape of every record (which fields exist, how many), and
  * buys nothing here because the same process holds the key either way.
  *
- * ── Format ───────────────────────────────────────────────────────────────────
+ * ── Format, and the version tag ──────────────────────────────────────────────
  *
  * `"iv:tag:ciphertext"`, each part base64. AES-256-GCM, so the ciphertext carries an
  * authentication tag: a modified value fails to decrypt rather than producing a
  * plausible-looking dose. For medication history that distinction matters — refusing
  * to read is far better than confidently reading the wrong number.
+ *
+ * V1 is that three-part form, sealed under the deployment's `ENCRYPTION_KEY`.
+ * V2 is `"v2:iv:tag:ciphertext"`, sealed under the owning account's own DEK. The
+ * tag travels **inside the value** rather than in a column because a reader holding
+ * a row must know which key opens it before it tries, and a new column cannot be
+ * added by `CREATE TABLE IF NOT EXISTS` on boot. A row with no tag is v1 by
+ * definition, which is what lets an old backup still open.
  */
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
@@ -69,6 +76,47 @@ export function keyFromEnv(raw: string | undefined): Buffer {
 /** Serialise a record for storage. Stable enough that the same input seals twice. */
 function serialise(payload: unknown): Buffer {
     return Buffer.from(JSON.stringify(payload), 'utf8');
+}
+
+/**
+ * The tag on a payload sealed under an account's own DEK.
+ *
+ * Exported so callers and diagnostics do not hand-roll the string; the version is
+ * part of the value, not a convention to be remembered.
+ */
+export const DEK_SEALED_PREFIX = 'v2:';
+
+/**
+ * Seal one account's payload under its DEK, tagged as v2.
+ *
+ * The tag is what tells a later reader that this row is the account's, not the
+ * deployment's — see `openPayload`.
+ */
+export function sealPayload(payload: unknown, dekKey: Buffer): string {
+    return DEK_SEALED_PREFIX + encryptPayload(payload, dekKey);
+}
+
+/**
+ * Open a payload with the key its version says sealed it.
+ *
+ * A `v2:` row is the owning account's: it opens under the DEK the caller resolved
+ * for that account, so the row is useless to anyone holding a *different* account's
+ * key. A row with no tag is v1, sealed under the deployment's platform key before
+ * per-account sealing existed; it stays readable so an old backup restored into a
+ * fresh database still opens. A v1 row seen by a deployment with no platform key is
+ * unreadable, which every caller already reports as such rather than as empty.
+ */
+export function openPayload(
+    sealed: string,
+    keys: { dek: Buffer; platform: Buffer | null },
+): unknown {
+    if (sealed.startsWith(DEK_SEALED_PREFIX)) {
+        return decryptPayload(sealed.slice(DEK_SEALED_PREFIX.length), keys.dek);
+    }
+    if (!keys.platform) {
+        throw new Error('row is sealed under the v1 platform key, which is not configured');
+    }
+    return decryptPayload(sealed, keys.platform);
 }
 
 /**
@@ -133,7 +181,10 @@ export function decryptPayload(sealed: string, key: Buffer): unknown {
  */
 export function isEncryptedPayload(value: unknown): value is string {
     if (typeof value !== 'string') return false;
-    const parts = value.split(':');
+    const body = value.startsWith(DEK_SEALED_PREFIX)
+        ? value.slice(DEK_SEALED_PREFIX.length)
+        : value;
+    const parts = body.split(':');
     if (parts.length !== 3) return false;
     return Buffer.from(parts[0], 'base64').length === IV_BYTES
         && Buffer.from(parts[1], 'base64').length === TAG_BYTES

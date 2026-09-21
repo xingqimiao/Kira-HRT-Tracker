@@ -285,9 +285,12 @@ test('a stored record is not readable as plaintext in the database', async () =>
   assert.ok(rows.length > 0, 'a row was written');
 
   for (const row of rows) {
-    // The stored value is the sealed envelope: three base64 parts, `iv:tag:ciphertext`.
+    // The stored value is the sealed envelope: `v2:iv:tag:ciphertext` for a row
+    // sealed under the account's DEK, `iv:tag:ciphertext` for a legacy one. Either
+    // way the payload itself is three base64 parts.
     const parts = row.raw.split(':');
-    assert.equal(parts.length, 3, `stored form is not iv:tag:ciphertext: ${row.raw.slice(0, 40)}`);
+    const body = parts[0] === 'v2' ? parts.slice(1) : parts;
+    assert.equal(body.length, 3, `stored form is not [v2:]iv:tag:ciphertext: ${row.raw.slice(0, 40)}`);
 
     // ...and must not contain the plaintext. Neither `"` nor `.` is a base64
     // character, so a match here proves real plaintext rather than an encoding

@@ -58,7 +58,7 @@ export const LanguageProvider = ({ children }: { children: React.ReactNode }) =>
 
     useEffect(() => {
         localStorage.setItem('hrt-lang', lang);
-        document.title = (lang.startsWith('zh') || lang === 'yue') ? "Kira 记录" : "Kira Tracker";
+        document.title = "Kira HRT Tracker";
         document.documentElement.lang = LANG_LOCALE[lang] ?? lang;
         document.documentElement.dir = RTL_LANGS.has(lang) ? 'rtl' : 'ltr';
     }, [lang]);

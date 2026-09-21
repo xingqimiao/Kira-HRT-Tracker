@@ -124,7 +124,7 @@ function asRecord(record: StoredRecord): RecordItem {
  * user logged would read as data loss.
  */
 async function listKind<T>(
-    ctx: { userId: string },
+    ctx: AuthContext,
     kind: 'dose' | 'lab',
     opts: { limit?: number; before?: number } = {},
 ): Promise<{ records: RecordItem<T>[]; unreadable: number }> {
@@ -146,7 +146,7 @@ async function listKind<T>(
  * under the other one.
  */
 async function lookup(
-    ctx: { userId: string },
+    ctx: AuthContext,
     kind: 'dose' | 'lab',
     id: string,
     modeHint: Mode,

@@ -35,7 +35,7 @@ const NavigationRail: React.FC<{
     label: string;
     /** The brand button's accessible name. */
     brandLabel?: string;
-}> = ({ items, activeId, onNavigate, label, brandLabel = 'Kira Tracker' }) => {
+}> = ({ items, activeId, onNavigate, label, brandLabel = 'Kira HRT Tracker' }) => {
     /**
      * How many times the mark has been pressed. It is also the glyph wrapper's
      * `key`, because the spin is a keyframe animation and a keyframe replays only

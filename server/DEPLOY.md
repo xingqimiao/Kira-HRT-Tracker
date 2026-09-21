@@ -59,7 +59,7 @@ the in-app `DisclaimerModal` and the line under a shared chart
 (`src/i18n/share.ts`), both already present.
 
 The Privacy Policy lives at `https://kiramyao.com/privacy` — the wider KiraMyao Equal
-policy, whose §26 covers Kira Tracker. The app subdomain used to serve its own copy at
+policy, whose §26 covers Kira HRT Tracker. The app subdomain used to serve its own copy at
 `hrt.kiramyao.com/privacy`, added for Google's brand verification because the policy
 must be "hosted within the same domain as your application's home page"; that page and
 its `public/privacy/` source have been **removed on purpose**. The same-domain
@@ -494,7 +494,7 @@ curl -sI 'https://api.kiramyao.com/hrt/auth/x/callback?code=x&state=y' | head -3
 #    it. This is what a URL checker sees: the app subdomain has a shell that returns 200
 #    for anything, so a 200 from it proves nothing — the policy is on kiramyao.com now.
 curl -sI https://kiramyao.com/privacy | head -1                     # expect 200
-curl -s https://hrt.kiramyao.com/ | grep -c "Kira Tracker"          # >= 1
+curl -s https://hrt.kiramyao.com/ | grep -c "Kira HRT Tracker"      # >= 1
 curl -s https://hrt.kiramyao.com/ | grep -c "kiramyao.com/privacy"  # >= 1, the link
 
 # 8. One provider sign-in still ends in a session, not a dead URL: the callback hands

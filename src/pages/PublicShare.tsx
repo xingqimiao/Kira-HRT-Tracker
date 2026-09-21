@@ -41,7 +41,7 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
     };
 
     useEffect(() => {
-        document.title = `${copy.publicTitle} · Kira Tracker`;
+        document.title = `${copy.publicTitle} · Kira HRT Tracker`;
         let robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]');
         const created = !robots;
         if (!robots) {

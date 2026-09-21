@@ -17,13 +17,13 @@ import { rmSync } from 'node:fs';
 import type { Server } from 'node:http';
 
 /**
- * The record-payload key for suites that exercise `RecordService`.
+ * The v1 platform key, for suites that exercise `RecordService`.
  *
- * A fixed 32-byte value rather than a random one: a generated key would make a
- * decryption failure unreproducible. `setConfigForTesting` replaces the whole config
- * instead of merging into the loaded one, so a suite touching records has to pass this
- * — without it `requireKey()` throws, which is deliberate, since the alternative is
- * writing payloads in the clear.
+ * Records are sealed under each account's DEK now, so this is no longer needed to write
+ * one; it is kept because the store still reads v1 rows and a suite that seeds one needs
+ * the same fixed key. A fixed 32-byte value rather than a random one: a generated key
+ * would make a decryption failure unreproducible. `setConfigForTesting` replaces the
+ * whole config instead of merging into the loaded one.
  */
 export const TEST_ENCRYPTION_KEY = Buffer.alloc(32, 0x2a);
 

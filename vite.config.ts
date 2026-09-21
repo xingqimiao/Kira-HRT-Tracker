@@ -79,9 +79,9 @@ export default defineConfig(() => {
         injectRegister: 'inline',
         includeAssets: ['favicon.png', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
         manifest: {
-          name: 'Kira Tracker',
-          short_name: 'Kira Tracker',
-          description: 'Track your HRT dosage and simulate E2 levels',
+          name: 'Kira HRT Tracker',
+          short_name: 'Kira HRT Tracker',
+          description: 'Log HRT doses and blood tests, estimate hormone levels, and connect an AI assistant over MCP.',
           theme_color: '#FAF9F7',
           background_color: '#FAF9F7',
           display: 'standalone',

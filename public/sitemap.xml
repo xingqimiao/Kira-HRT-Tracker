@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One URL. The app is a client-rendered SPA behind Cloudflare: every route is
+  served the same index.html, so a per-route sitemap would list documents that
+  do not exist. The seven languages are the same document switched client-side,
+  so there are no alternate-URL entries and no hreflang alternates either.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+        <loc>https://hrt.kiramyao.com/</loc>
+        <priority>1.0</priority>
+    </url>
+</urlset>

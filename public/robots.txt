@@ -1,0 +1,16 @@
+# Kira HRT Tracker is a single-page app: one HTML document answers every route,
+# so the only public page a crawler can index is the site root. The language
+# versions are the same URL switched client-side, which is why there is no
+# per-language sitemap and no hreflang set (see index.html).
+
+User-agent: *
+Allow: /
+
+# A share link is somebody's private dosage record. Its page also sets a noindex
+# meta tag at runtime, but this stops a crawler following one in the first place.
+Disallow: /share/
+
+# OAuth callbacks and sign-in landings are transient and carry one-time codes.
+Disallow: /auth/
+
+Sitemap: https://hrt.kiramyao.com/sitemap.xml

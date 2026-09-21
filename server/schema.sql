@@ -7,12 +7,16 @@
 --    the timeline can be ordered and paged without decrypting every row. That rules
 --    out SQL-level reporting or analytics over doses — a cost accepted on purpose.
 --
+--    Each payload is sealed under its own account's DEK, not one deployment-wide key,
+--    so a single leaked account key opens one history rather than the whole table. (A
+--    `v1` row sealed under the old `ENCRYPTION_KEY` is still read; see the records
+--    section below.)
+--
 --    Do not read that as "the operator cannot see the data", which is what an earlier
---    version of this comment implied. The server holds `ENCRYPTION_KEY` and decrypts
---    on read, and a standard-mode account's DEK is *also* wrapped under
---    `SERVER_DEK_KEY`, so it can be opened with no live unlock at all. The honest
---    bound is narrower: a stolen database dump is unreadable on its own. See
---    `payloadCrypto.ts` and `docs/auth-design.md` §5.
+--    version of this comment implied. The server decrypts on read, and every account's
+--    DEK is *also* wrapped under `SERVER_DEK_KEY`, so it can be opened with no live
+--    unlock at all. The honest bound is narrower: a stolen database dump is unreadable
+--    on its own. See `payloadCrypto.ts` and `docs/auth-design.md` §5.
 --
 -- 2. Loose JSON is a `jsonb` column, not shredded into columns. The domain model
 --    in logic.ts (`DoseEvent.extras` varies per route and ester) is already
@@ -418,18 +422,21 @@ CREATE INDEX IF NOT EXISTS idx_shares_user ON shares(user_id);
 -- record (which fields exist, how many of each) while buying nothing, because the
 -- same process holds the key either way. One blob per record leaks nothing but size.
 --
--- This is encryption at rest, NOT end-to-end. The server decrypts on read, because
--- it is the server that renders nothing and the API that answers. The honest claim is
--- "a stolen database dump is useless without ENCRYPTION_KEY", and that is all this
--- table is designed to deliver.
+-- Each blob is sealed under its own account's DEK, so one leaked account key opens one
+-- history. This is encryption at rest, NOT end-to-end: the server decrypts on read,
+-- because it is the API that answers, and every DEK is also wrapped under
+-- `SERVER_DEK_KEY`. The honest claim is "a stolen database dump is useless without an
+-- account's data key", and that is all this table is designed to deliver.
 --
 --   `taken_at` is plaintext because the timeline is ordered and paged by it. It is a
 --   real privacy cost — the server learns when someone doses — and it is the price of
 --   not pulling the entire history to the client to sort it there.
 --
---   `payload_encrypted` is TEXT holding "iv:tag:ciphertext" in base64 (see
---   src/payloadCrypto.ts). TEXT rather than bytea so the column is readable in a
---   psql session during an incident, at a 33% storage cost.
+--   `payload_encrypted` is TEXT holding either "v2:iv:tag:ciphertext" (sealed under the
+--   account's DEK) or the untagged "iv:tag:ciphertext" written before this change
+--   (sealed under the old deployment-wide `ENCRYPTION_KEY`, still readable). See
+--   src/payloadCrypto.ts. TEXT rather than bytea so the column is readable in a psql
+--   session during an incident, at a 33% storage cost.
 CREATE TABLE IF NOT EXISTS records (
     -- TEXT, not uuid: the id is minted by the client, and the client's ids are
     -- human-readable and structured (`dose:transfem:<id>`), which is what makes a

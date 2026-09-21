@@ -1,16 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import Icon from '../components/Icon';
 import { Plus, ChevronRight, Scan } from '../icons';
-import { LabResult, DoseEvent, MONITORING_UNIT, getMonitoringNotices, isMonitoringOnlyLab, monitoringValues, CalibrationMethod, CalibrationResult, CalibrationPoint, getHormoneLevelAdvisory } from '../../logic';
+import { LabResult, DoseEvent, MONITORING_UNIT, getMonitoringNotices, getRecheckReminders, isMonitoringOnlyLab, monitoringValues, CalibrationMethod, CalibrationResult, CalibrationPoint, getHormoneLevelAdvisory, Ester } from '../../logic';
 import { Lang } from '../i18n/translations';
-import { formatDate, formatTime } from '../utils/helpers';
+import { formatDate, formatTime, LOCALE_MAP } from '../utils/helpers';
 import LabResultForm from '../components/LabResultForm';
 import LabScan from '../components/LabScan';
 import { suggestSelection, type HormoneCandidate, type LabUnit } from '../utils/ocrParse';
 import BloodVial from '../components/BloodVial';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { HormoneLevelAdvisoryLine } from '../components/DoseAdvisory';
-import MonitoringNoticeLine from '../components/MonitoringNotice';
+import MonitoringNoticeLine, { RecheckReminderLine, SpironolactonePrecautions } from '../components/MonitoringNotice';
 import JournalCheckIn from '../components/JournalCheckIn';
 import { JournalEntry } from '../utils/bodyJournal';
 
@@ -88,6 +88,14 @@ const Lab: React.FC<LabProps> = ({
     // Evidence notices for the monitoring bloods and cumulative CPA exposure. Pure
     // thresholds from docs/monitoring-reference.md — see `getMonitoringNotices`.
     const notices = useMemo(() => getMonitoringNotices(labResults, events), [labResults, events]);
+    // Re-check reminders are due-date notices, not value notices: they need a start
+    // point and no source states one in the app's terms, so the anchor is the first
+    // LOGGED dose of that compound and a compound with no logged dose gets nothing
+    // rather than a guessed schedule. See `getRecheckReminders`.
+    const rechecks = useMemo(() => getRecheckReminders(events), [events]);
+    // The precautions belong to one compound and are shown only when that compound
+    // is actually recorded — advice for a drug nobody is taking is noise.
+    const onSpironolactone = useMemo(() => events.some(e => e.ester === Ester.SPIRO), [events]);
 
     // One-line summary of the active calibration for the settings entry row.
     // Before any usable labs exist there's no fit to show, so we fall back to
@@ -189,6 +197,20 @@ const Lab: React.FC<LabProps> = ({
                         {notices.map(notice => (
                             <MonitoringNoticeLine key={notice.kind} notice={notice} t={t} />
                         ))}
+                    </div>
+                )}
+
+                {(rechecks.length > 0 || onSpironolactone) && (
+                    <div className="pb-4 space-y-2.5">
+                        {rechecks.map(reminder => (
+                            <RecheckReminderLine
+                                key={reminder.kind}
+                                reminder={reminder}
+                                t={t}
+                                formatDate={(h) => new Date(h * 3600000).toLocaleDateString(LOCALE_MAP[lang] || 'en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                            />
+                        ))}
+                        {onSpironolactone && <SpironolactonePrecautions t={t} />}
                     </div>
                 )}
 

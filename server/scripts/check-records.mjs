@@ -57,7 +57,10 @@ const { rows: userRows } = await getPool().query(
     `INSERT INTO users (username) VALUES ($1) RETURNING id`,
     ['records_probe'],
 )
-const ctx = { userId: userRows[0].id }
+// Records are sealed under the account's own DEK. This probe mints one directly
+// rather than going through registration, since the point here is the store.
+const dek = Buffer.alloc(32, 9).toString('base64')
+const ctx = { userId: userRows[0].id, dek }
 
 try {
     await check('a record round-trips through the service', async () => {
@@ -85,7 +88,9 @@ try {
         const stored = rows[0].payload_encrypted
         if (stored.includes(secret)) throw new Error('the plaintext is in the stored column')
         const parts = stored.split(':')
-        if (parts.length !== 3) throw new Error(`stored form is not iv:tag:ciphertext: ${stored.slice(0, 40)}`)
+        if (parts.length !== 4 || parts[0] !== 'v2') {
+            throw new Error(`stored form is not v2:iv:tag:ciphertext: ${stored.slice(0, 40)}`)
+        }
     })
 
     await check('no plaintext column survives but the ones that address a row', async () => {
@@ -186,7 +191,7 @@ try {
         const { rows: other } = await getPool().query(
             `INSERT INTO users (username) VALUES ('records_other') RETURNING id`,
         )
-        const stolen = await RecordService.remove({ userId: other[0].id }, written.id)
+        const stolen = await RecordService.remove({ userId: other[0].id, dek }, written.id)
         if (stolen) throw new Error("another account's record was deleted")
 
         const mine = await RecordService.remove(ctx, written.id)

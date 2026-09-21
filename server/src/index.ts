@@ -47,6 +47,15 @@ async function main(): Promise<void> {
   // are ordinary `main()` failures, so they print one line and exit non-zero.
   const config = getConfig();
 
+  // Say where the two critical keys came from, once. Adding LoadCredentialEncrypted
+  // and actually reading it look the same from outside the process, and the point of
+  // moving them off the disk is to be able to tell which one is in force.
+  if (config.keysFromCredentials.length > 0) {
+    process.stdout.write(`hrt-server: keys from systemd credentials: ${config.keysFromCredentials.join(', ')}\n`);
+  } else if (command === 'http' || command === 'migrate') {
+    process.stdout.write('hrt-server: keys from the environment (no systemd credentials read)\n');
+  }
+
   if (command === 'migrate') {
     await migrate();
     process.stdout.write('schema applied\n');

@@ -36,8 +36,8 @@ before(async () => {
     databaseUrl: '',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
     google: null,
-    // The record store encrypts payloads under this key; a suite that syncs must
-    // carry one: requireKey() refuses rather than writing payloads in the clear.
+    // v1 platform key: records seal under each account's DEK now, but this keeps any
+    // legacy row readable and matches the other record suites.
     encryptionKey: TEST_ENCRYPTION_KEY,
     turnstile: null,
     x: null,
