@@ -3007,6 +3007,10 @@ const SETTINGS_I18N = {
         "settings.ocr_tier.small": "small · 体积大、更准",
         "scan.retry_small": "用更大的模型（约 30 MB）再试一次",
         "scan.used_small": "本次结果是 small 模型读出的。",
+        "scan.boxes_hint": "框出的就是它读到的行，编号和下面的结果一一对应。",
+        "scan.confirm_title": "对照照片确认无误后，再填入表单。",
+        "scan.keep": "保留这个结果",
+        "scan.retake": "重新拍照",
     },
     "zh-TW": {
         "settings.group.reminders": "複查提醒",
@@ -3024,6 +3028,10 @@ const SETTINGS_I18N = {
         "settings.ocr_tier.small": "small · 體積大、更準",
         "scan.retry_small": "用更大的模型（約 30 MB）再試一次",
         "scan.used_small": "本次結果是 small 模型讀出的。",
+        "scan.boxes_hint": "框出的就是它讀到的行，編號和下面的結果一一對應。",
+        "scan.confirm_title": "對照照片確認無誤後，再填入表單。",
+        "scan.keep": "保留這個結果",
+        "scan.retake": "重新拍照",
     },
     "yue": {
         "settings.group.reminders": "覆查提醒",
@@ -3041,6 +3049,10 @@ const SETTINGS_I18N = {
         "settings.ocr_tier.small": "small · 體積大、準啲",
         "scan.retry_small": "用大啲嘅模型（大約 30 MB）再試一次",
         "scan.used_small": "今次係用 small 模型讀出嚟嘅。",
+        "scan.boxes_hint": "框住嘅就係佢讀到嘅行，編號同下面嘅結果一對一。",
+        "scan.confirm_title": "對照張相確認冇問題，先填入表格。",
+        "scan.keep": "保留呢個結果",
+        "scan.retake": "再影過",
     },
     "en": {
         "settings.group.reminders": "Re-check reminders",
@@ -3058,6 +3070,10 @@ const SETTINGS_I18N = {
         "settings.ocr_tier.small": "small · larger download, more accurate",
         "scan.retry_small": "Try the larger model (about 30 MB)",
         "scan.used_small": "This result came from the small model.",
+        "scan.boxes_hint": "The boxes are the lines it read; each number matches a result below.",
+        "scan.confirm_title": "Check it against the photo before it fills the form.",
+        "scan.keep": "Keep this reading",
+        "scan.retake": "Take another photo",
     },
     "ja": {
         "settings.group.reminders": "再検査の通知",
@@ -3075,6 +3091,10 @@ const SETTINGS_I18N = {
         "settings.ocr_tier.small": "small · ダウンロード大・より高精度",
         "scan.retry_small": "大きいモデルで再試行（約 30 MB）",
         "scan.used_small": "この結果は small モデルが読み取ったものです。",
+        "scan.boxes_hint": "枠が読み取った行です。番号は下の結果と対応します。",
+        "scan.confirm_title": "写真と見比べて確認してからフォームに入れてください。",
+        "scan.keep": "この結果を採用",
+        "scan.retake": "撮り直す",
     },
     "ko": {
         "settings.group.reminders": "재검사 알림",
@@ -3092,6 +3112,10 @@ const SETTINGS_I18N = {
         "settings.ocr_tier.small": "small · 다운로드 큼, 더 정확",
         "scan.retry_small": "더 큰 모델로 다시 시도(약 30 MB)",
         "scan.used_small": "이 결과는 small 모델이 읽은 것입니다.",
+        "scan.boxes_hint": "상자는 읽어낸 줄입니다. 번호는 아래 결과와 대응합니다.",
+        "scan.confirm_title": "사진과 대조해 확인한 뒤 양식에 채웁니다.",
+        "scan.keep": "이 결과 사용",
+        "scan.retake": "다시 촬영",
     },
     "tr": {
         "settings.group.reminders": "Kontrol hatırlatmaları",
@@ -3109,6 +3133,10 @@ const SETTINGS_I18N = {
         "settings.ocr_tier.small": "small · indirme büyük, daha doğru",
         "scan.retry_small": "Daha büyük modelle yeniden dene (yaklaşık 30 MB)",
         "scan.used_small": "Bu sonuç small modelinden geldi.",
+        "scan.boxes_hint": "Kutular okunan satırlardır; her numara aşağıdaki sonuçla eşleşir.",
+        "scan.confirm_title": "Formu doldurmadan önce fotoğrafla karşılaştırıp doğrulayın.",
+        "scan.keep": "Bu okumayı kullan",
+        "scan.retake": "Yeniden çek",
     },
 } as const;
 

@@ -1,13 +1,16 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Icon from './Icon';
 import { AlertCircle, Check, ImagePlus, Scan } from '../icons';
 import { Progress } from './ui';
 import { useTranslation } from '../contexts/LanguageContext';
 import {
     findHormoneValues,
+    normalizeText,
     type HormoneCandidate,
 } from '../utils/ocrParse';
 import { createImage } from '../utils/cropImage';
+import { fitContent, regionToBox } from '../utils/scanBoxes';
+import type { OcrPage } from '../utils/ppocr';
 import type { OcrModelTier } from '../../logic';
 
 interface LabScanProps {
@@ -32,7 +35,12 @@ type ScanState =
     | { kind: 'idle' }
     | { kind: 'preparing' }
     | { kind: 'recognising'; progress: number }
-    | { kind: 'done'; candidates: HormoneCandidate[] }
+    /**
+     * 'done' carries the whole page, not just the values: the preview draws the boxes
+     * the detector returned, and those are in the pixels the engine was handed — see
+     * 'scanBoxes' for how they become CSS pixels.
+     */
+    | { kind: 'done'; candidates: HormoneCandidate[]; page: OcrPage }
     | { kind: 'failed'; message: string };
 
 /**
@@ -191,6 +199,55 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel, tier }) => {
      * otherwise the setting looks like it did nothing.
      */
     const [usedTier, setUsedTier] = useState<OcrModelTier | null>(null);
+    /**
+     * Which candidate the pointer or keyboard is on, shared by the list row and its
+     * box. The badge number in the list and the badge number on the photo are the same
+     * reading, so this one value is what ties them together — on hover, focus or tap.
+     */
+    const [active, setActive] = useState<number | null>(null);
+
+    /**
+     * The rendered '<img>' box, so the detector's pixels can be mapped onto it.
+     *
+     * Measured rather than assumed: the preview is 'w-full max-h-64 object-contain', so
+     * its size depends on the viewport and there is a letterbox on whichever axis the
+     * image does not fill. 'fitContent' reproduces that letterbox; this only supplies
+     * the element it happens inside.
+     */
+    const imageRef = useRef<HTMLImageElement>(null);
+    const [imageBox, setImageBox] = useState<{ width: number; height: number } | null>(null);
+
+    useLayoutEffect(() => {
+        const element = imageRef.current;
+        if (!element) return;
+        const measure = () => setImageBox({ width: element.clientWidth, height: element.clientHeight });
+        measure();
+        // Catches a rotation, a window resize, and the image finishing loading — each of
+        // which moves the content box the boxes have to sit in.
+        const observer = new ResizeObserver(measure);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [preview]);
+
+    /**
+     * Which candidate, if any, each detected row produced.
+     *
+     * A candidate's 'source' is the row it was read from, after 'normalizeText'. Running
+     * the same normalisation on a row is what maps it back to its candidate. This is the
+     * only honest route: the parser is handed text and never sees the geometry, so the
+     * link has to be rebuilt from the text it kept.
+     */
+    const candidateRow = useMemo<number[]>(() => {
+        if (state.kind !== 'done') return [];
+        const first = new Map<string, number>();
+        state.candidates.forEach((candidate, index) => {
+            if (!first.has(candidate.source)) first.set(candidate.source, index);
+        });
+        return state.page.rows.map((row) => {
+            const key = normalizeText(row.text).trim().slice(0, 120);
+            return first.has(key) ? (first.get(key) as number) : -1;
+        });
+    }, [state]);
 
     const muted = 'text-[var(--color-m3-on-surface-variant)] ';
     const on = 'text-[var(--color-m3-on-surface)] ';
@@ -219,20 +276,27 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel, tier }) => {
             // is what keeps the no-external-requests promise the app makes (see the
             // font note in src/index.css). With it set, a missing file fails locally,
             // which is detectable, instead of silently reaching a CDN.
-            const { recognize } = await import('../utils/ppocr');
+            const { recognizePage } = await import('../utils/ppocr');
             const { pixels, width, height } = await toPixels(prepared);
 
             // Boxes come back grouped into visual rows, one row per line, which is the
             // shape `findHormoneValues` reads: it splits on newlines and looks for a
             // label, a value and a unit within a line. Joining everything into one
             // blob would put a row's unit next to the next row's label.
-            const lines = await recognize(pixels, width, height, {
+            //
+            // The whole page is kept, not just the lines: the preview draws every box,
+            // and 'page.width'/'height' are the pixels those box coordinates are in.
+            const page = await recognizePage(pixels, width, height, {
                 tier: runTier,
                 onProgress: (fraction) => setState({ kind: 'recognising', progress: fraction }),
             });
+            // A row read as nothing is not a line, exactly as `recognize()` would have
+            // returned it — a blank line between two real ones would split a row's label
+            // from its value.
+            const lines = page.rows.map((row) => row.text).filter((text) => text !== '');
             const candidates = findHormoneValues(lines.join('\n'));
             setUsedTier(runTier);
-            setState({ kind: 'done', candidates });
+            setState({ kind: 'done', candidates, page });
         } catch (error: any) {
             setUsedTier(runTier);
             setState({
@@ -266,11 +330,47 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel, tier }) => {
         reader.readAsDataURL(file);
     };
 
+    /**
+     * Back to the picker, with nothing kept.
+     *
+     * The retake half of the confirm step: the recognised values live only in this
+     * component's state, so clearing it is the whole of "do not save". No caller is
+     * told anything, which is the property that matters — a retake cannot prefill the
+     * form.
+     */
     const reset = () => {
         setPreview(null);
+        setImageBox(null);
+        setActive(null);
         setState({ kind: 'idle' });
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
+
+    /**
+     * The engine's pixels → the rendered preview.
+     *
+     * 'null' until the page exists and the element has been measured, and while the
+     * image has not loaded. A box drawn against a zero-size fit would be 'NaNpx' or
+     * piled at the origin, which is worse than not drawing it.
+     */
+    const fit = state.kind === 'done' && imageBox
+        ? fitContent(state.page.width, state.page.height, imageBox.width, imageBox.height)
+        : null;
+
+    // One entry per detected box, in reading order, tagged with the candidate it
+    // belongs to ('-1' when it produced none). Built here rather than inside the JSX so
+    // the mapping is one expression instead of nested comparisons at each box.
+    const boxes = state.kind === 'done' && fit
+        ? state.page.rows.flatMap((row, rowIndex) => row.regions.map((region, boxIndex) => {
+            const candidate = candidateRow[rowIndex];
+            return {
+                key: `${rowIndex}-${boxIndex}`,
+                candidate,
+                box: regionToBox(region, fit),
+                value: state.candidates[candidate],
+            };
+        }))
+        : [];
 
     return (
         <div className="space-y-5">
@@ -299,8 +399,68 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel, tier }) => {
             )}
 
             {preview && (
-                <div className="rounded-lg overflow-hidden border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-lowest)]">
-                    <img src={preview} alt="" className="w-full max-h-64 object-contain" />
+                <div className="relative rounded-lg overflow-hidden border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-lowest)]">
+                    {/* 'block' so the element is exactly the box the overlay covers;
+                        'object-contain' and the overlay's 'fitContent' are the same
+                        resize, which is what keeps a box on its own line of the page. */}
+                    <img ref={imageRef} src={preview} alt="" className="block w-full max-h-64 object-contain" />
+                    {boxes.length > 0 && (
+                        <div className="absolute inset-0 pointer-events-none">
+                            {/* Every box is drawn, in the pixels the engine worked in.
+                                Detector geometry is axis-aligned (see 'detectRegions'),
+                                so a rectangle is the honest shape. */}
+                            {boxes.map(({ key, candidate, box, value }) => candidate < 0 ? (
+                                /* Recessive: a dashed hairline, no badge. Dashed against
+                                   solid is the signal that still reads when the two role
+                                   colours are indistinguishable, so colour is never the
+                                   only difference. */
+                                <div
+                                    key={key}
+                                    className="absolute rounded-[2px] border border-dashed"
+                                    style={{ ...box, borderColor: 'var(--color-m3-outline)' }}
+                                />
+                            ) : (
+                                /* A row that produced a value: solid, tinted, and wearing
+                                   the same number as its row in the list below. */
+                                <button
+                                    key={key}
+                                    type="button"
+                                    className="absolute rounded-[2px] border-2 pointer-events-auto"
+                                    onMouseEnter={() => setActive(candidate)}
+                                    onMouseLeave={() => setActive((previous) => (previous === candidate ? null : previous))}
+                                    onFocus={() => setActive(candidate)}
+                                    onBlur={() => setActive((previous) => (previous === candidate ? null : previous))}
+                                    onClick={() => setActive(active === candidate ? null : candidate)}
+                                    style={{
+                                        ...box,
+                                        borderColor: 'var(--color-m3-primary)',
+                                        backgroundColor: active === candidate
+                                            ? 'var(--color-m3-primary-container)'
+                                            : 'transparent',
+                                        boxShadow: active === candidate
+                                            ? '0 0 0 3px var(--color-m3-primary-container)'
+                                            : 'none',
+                                    }}
+                                    aria-label={`${t(value.analyte === 'E2' ? 'scan.analyte_e2' : 'scan.analyte_t')} ${value.value} ${value.unit}`}
+                                    title={`${value.value} ${value.unit}`}
+                                >
+                                    {/* The number, not the colour, is the link: it is the
+                                        same digit on the row below, so the pair can be
+                                        matched without telling the two hues apart. */}
+                                    <span
+                                        aria-hidden="true"
+                                        className="absolute left-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-br-[2px] rounded-tl-[2px] px-1 text-[10px] font-semibold leading-none tabular-nums"
+                                        style={{
+                                            backgroundColor: 'var(--color-m3-primary)',
+                                            color: 'var(--color-m3-on-primary)',
+                                        }}
+                                    >
+                                        {candidate + 1}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -353,15 +513,45 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel, tier }) => {
                             {usedTier === 'small' && (
                                 <p className={`text-xs ${muted}`}>{t('scan.used_small')}</p>
                             )}
+                            {/* How the boxes on the photo relate to this list. Shown with
+                                the list rather than under the image, because the number it
+                                points at is in the list. */}
+                            <p className={`text-xs ${muted}`}>{t('scan.boxes_hint')}</p>
                             <ul className="space-y-1">
                                 {state.candidates.map((c, i) => (
-                                    <li key={i} className={`flex items-baseline justify-between py-2 text-sm border-b border-[var(--color-m3-outline-variant)] last:border-b-0`}>
-                                        <span className={on}>
-                                            {t(c.analyte === 'E2' ? 'scan.analyte_e2' : 'scan.analyte_t')}
-                                        </span>
-                                        <span className={`tabular-nums ${on}`}>
-                                            {c.value} <span className={muted}>{c.unit}</span>
-                                        </span>
+                                    <li key={i} className="border-b border-[var(--color-m3-outline-variant)] last:border-b-0">
+                                        {/* The row and its box identify each other two ways:
+                                            they wear the same number, and hovering, focusing or
+                                            tapping either lights both. The number is the link
+                                            that survives when the two role colours cannot be
+                                            told apart, so colour is never the only signal. */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setActive(active === i ? null : i)}
+                                            onMouseEnter={() => setActive(i)}
+                                            onMouseLeave={() => setActive((previous) => (previous === i ? null : previous))}
+                                            onFocus={() => setActive(i)}
+                                            onBlur={() => setActive((previous) => (previous === i ? null : previous))}
+                                            aria-pressed={active === i}
+                                            style={{ borderRadius: 'var(--md-sys-shape-corner-extra-small)' }}
+                                            className={`flex w-full items-baseline justify-between gap-2 px-1 py-2 text-left text-sm ${active === i ? 'bg-[var(--color-m3-surface-container)]' : ''}`}
+                                        >
+                                            <span className="flex items-baseline gap-2">
+                                                <span
+                                                    aria-hidden="true"
+                                                    className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-none tabular-nums"
+                                                    style={{ backgroundColor: 'var(--color-m3-primary)', color: 'var(--color-m3-on-primary)' }}
+                                                >
+                                                    {i + 1}
+                                                </span>
+                                                <span className={on}>
+                                                    {t(c.analyte === 'E2' ? 'scan.analyte_e2' : 'scan.analyte_t')}
+                                                </span>
+                                            </span>
+                                            <span className={`tabular-nums ${on}`}>
+                                                {c.value} <span className={muted}>{c.unit}</span>
+                                            </span>
+                                        </button>
                                     </li>
                                 ))}
                             </ul>
@@ -380,6 +570,11 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel, tier }) => {
                 </div>
             )}
 
+            {/* The confirm step's own instruction, above the choice it describes. */}
+            {state.kind === 'done' && state.candidates.length > 0 && (
+                <p className={`text-xs ${muted}`}>{t('scan.confirm_title')}</p>
+            )}
+
             <div className="flex gap-2">
                 <button
                     type="button"
@@ -389,15 +584,28 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel, tier }) => {
                     {t('btn.cancel')}
                 </button>
                 {state.kind === 'done' && state.candidates.length > 0 ? (
-                    // The only way anything leaves this screen, and it still only
-                    // *prefills* the form — the user edits and saves it themselves.
-                    <button
-                        type="button"
-                        onClick={() => onExtracted(state.candidates)}
-                        className="btn-primary flex-1"
-                    >
-                        {t('scan.use_values')}
-                    </button>
+                    <>
+                        {/* End on a choice, not an assumption. 'retake' resets this
+                            component and tells the caller nothing — see 'reset' — so the
+                            only path that reaches the form is 'keep'. Both are still on
+                            screen: the tier that read the values stays visible above. */}
+                        <button
+                            type="button"
+                            onClick={reset}
+                            className="btn-secondary flex-1"
+                        >
+                            {t('scan.retake')}
+                        </button>
+                        {/* The only way anything leaves this screen, and it still only
+                            *prefills* the form — the user edits and saves it themselves. */}
+                        <button
+                            type="button"
+                            onClick={() => onExtracted(state.candidates)}
+                            className="btn-primary flex-1"
+                        >
+                            {t('scan.keep')}
+                        </button>
+                    </>
                 ) : (
                     <button
                         type="button"

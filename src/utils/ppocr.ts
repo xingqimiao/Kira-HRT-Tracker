@@ -490,19 +490,43 @@ async function readBox(
 
 // ── the pipeline ─────────────────────────────────────────────────────────────
 
+/** One detected visual row, and the text read from it. */
+export interface OcrRow {
+    /**
+     * Every box on the row, left to right.
+     *
+     * In the pixel space of the buffer handed to 'recognizePage' — the same
+     * 'width'/'height' the caller passed in, not the detector's downscaled input.
+     * 'detectRegions' already divided the map coordinates back out by 'mapW/width',
+     * so nothing here is in model space. A caller drawing these over a preview
+     * scales by 'page.width'/'page.height' — see 'src/utils/scanBoxes.ts'.
+     */
+    regions: Region[]
+    /** The row's recognised text, boxes joined with a space; '' when it read as nothing. */
+    text: string
+}
+
+/** A page the detector and recogniser saw, plus the geometry of what was read. */
+export interface OcrPage {
+    rows: OcrRow[]
+    /** Pixel size of the buffer the regions are expressed in. */
+    width: number
+    height: number
+}
+
 /**
- * Read a page of RGBA pixels into lines of text.
+ * Read a page of RGBA pixels, keeping each line's geometry as well as its text.
  *
- * The return value is line-oriented on purpose: findHormoneValues splits on
- * newlines and reads one line at a time, and those lines have to match the visual
- * lines of the report.
+ * 'recognize' is the text-only view of this. Both must come from one run: the scan
+ * panel draws the boxes *and* the values, and running the engine twice to get each
+ * would double the seconds a scan costs and let the two disagree.
  */
-export async function recognize(
+export async function recognizePage(
     rgba: Uint8ClampedArray | Uint8Array,
     width: number,
     height: number,
     options: OcrOptions = {},
-): Promise<string[]> {
+): Promise<OcrPage> {
     const base = options.base ?? DEFAULT_BASE
     const tier = options.tier ?? 'tiny'
     const progress = options.onProgress ?? (() => {})
@@ -529,18 +553,36 @@ export async function recognize(
     const regions = detectRegions(map.data as Float32Array, mapW, mapH, mapW / width)
     const rows = rowsFromBoxes(regions)
 
-    const lines: string[] = []
+    const out: OcrRow[] = []
     for (let i = 0; i < rows.length; i++) {
         const parts: string[] = []
         for (const box of rows[i]) {
             const text = await readBox(rec, dict, rgba, width, height, box)
             if (text !== '') parts.push(text)
         }
-        if (parts.length > 0) lines.push(parts.join(' '))
+        out.push({ regions: rows[i], text: parts.join(' ') })
         progress(0.35 + (0.65 * (i + 1)) / rows.length)
     }
 
     progress(1)
-    return lines
+    return { rows: out, width, height }
+}
+
+/**
+ * Read a page of RGBA pixels into lines of text.
+ *
+ * The return value is line-oriented on purpose: findHormoneValues splits on
+ * newlines and reads one line at a time, and those lines have to match the visual
+ * lines of the report. A row the recogniser read as nothing is not a line, so it is
+ * dropped rather than becoming a blank line between two real ones.
+ */
+export async function recognize(
+    rgba: Uint8ClampedArray | Uint8Array,
+    width: number,
+    height: number,
+    options: OcrOptions = {},
+): Promise<string[]> {
+    const page = await recognizePage(rgba, width, height, options)
+    return page.rows.map((row) => row.text).filter((text) => text !== '')
 }
 
