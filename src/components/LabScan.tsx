@@ -65,6 +65,22 @@ async function prepareImage(dataUrl: string): Promise<string> {
         ? Math.min(MAX_UPSCALE, MAX_EDGE / longest)
         : Math.min(1, MAX_EDGE / longest);
 
+    // Nothing to resize: hand the file over exactly as it arrived.
+    //
+    // The canvas round-trip does not merely re-encode, it *loses* what matters. On the
+    // report this was measured against, the original JPEG reads
+    // `* 惟 二 醇 396.531 <143 pmol/L` — label legible, decimal point present — while
+    // every canvas-produced PNG of it reads `i: 396531 <143 pmol/L`: the Chinese label
+    // becomes `i:` and the decimal point disappears, which no threshold rule can put
+    // back. It was checked across min-channel grey, plain grey, luma and untouched
+    // colour, and all four PNG variants fail identically, so it is the encoding and not
+    // the pixel maths.
+    //
+    // The upscale below still earns its place for genuinely small images, where the
+    // characters are too few pixels tall for the LSTM. A large screenshot does not need
+    // it, and taking it through the canvas costs more than it adds.
+    if (linear === 1) return dataUrl;
+
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(image.width * linear);
     canvas.height = Math.round(image.height * linear);
