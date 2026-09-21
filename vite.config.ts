@@ -1,7 +1,7 @@
 import path from 'path';
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -50,6 +50,43 @@ function swStamp(): string {
 
 const SW_FILENAME = `sw-${swStamp()}.js`;
 
+/**
+ * Dev-only: serve the self-hosted ONNX Runtime glue when the engine imports it.
+ *
+ * ONNX Runtime Web does not bundle its emscripten glue; it dynamic-imports
+ * 'ort-wasm-simd-threaded.mjs' from 'env.wasm.wasmPaths' at session creation
+ * (see 'src/utils/ppocr.ts'). Vite wraps *any* dynamic import whose argument is
+ * not a string literal with '__vite__injectQuery(url, "import")', so that module
+ * is requested as '/ocr/ort-wasm-simd-threaded.mjs?import'. Vite's public-file
+ * middleware deliberately skips import requests, and the transform middleware
+ * then refuses the '/public' path with ERR_LOAD_PUBLIC_URL — the overlay.
+ *
+ * In a build there is no module graph for this URL: '/ocr/...' is just a static
+ * URL that the service worker fetches on the first scan, which is why only dev
+ * breaks. This plugin serves the file raw, byte-for-byte as the public middleware
+ * would and as the deployed origin does, and only under 'vite dev'.
+ */
+function ocrOrtGlue(): Plugin {
+  return {
+    name: 'ocr-ort-glue',
+    apply: 'serve',
+    configureServer(server) {
+      // Registered before Vite's own middlewares, so this sees the import request
+      // that the public middleware would have passed over.
+      server.middlewares.use((req, res, next) => {
+        const pathname = (req.url ?? '').split('?')[0];
+        if (!pathname.startsWith('/ocr/') || !pathname.endsWith('.mjs')) return next();
+        try {
+          res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+          res.end(readFileSync(path.resolve(import.meta.dirname, 'public', pathname.slice(1))));
+        } catch {
+          next();
+        }
+      });
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
     define: {
@@ -67,6 +104,7 @@ export default defineConfig(() => {
       }
     },
     plugins: [
+      ocrOrtGlue(),
       react(),
       VitePWA({
         registerType: 'autoUpdate',
