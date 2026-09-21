@@ -134,8 +134,28 @@ async function syntheticReport() {
     return file
 }
 
+/**
+ * Decode a file the way the scan panel does, not the way the file happens to be stored.
+ *
+ * This used to hand the engine whatever `sharp` decoded straight out of the file, and
+ * that turned out to be a different input from the one the app produces. The app draws
+ * every image to a canvas and re-encodes it as JPEG, which applies the EXIF orientation
+ * and normalises the encoding; a phone screenshot carries both, and on the owner's report
+ * the difference is the whole result — the untouched file reads nothing on the tiny tier
+ * while the same pixels through the canvas read 雌二醇 396.53.
+ *
+ * So this check now mirrors the app: `.rotate()` applies the orientation stored in the
+ * file (what a canvas draw does implicitly) and the JPEG re-encode at the same quality
+ * matches what the canvas hands over. A comparison that measures a different input than
+ * the product is not a comparison, it is a second opinion about something else.
+ */
 async function pixels(file) {
-    const { data, info } = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+    const { data, info } = await sharp(file)
+        .rotate()
+        .jpeg({ quality: 95 })
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true })
     return { pixels: new Uint8ClampedArray(data), width: info.width, height: info.height }
 }
 
@@ -274,11 +294,25 @@ for (const [label, file] of sources) {
         )
 
         if (label === 'the real report' && tier === 'tiny') {
-            check('tiny on the real report: the measured failure — no candidates at all', () => {
-                // Measured: tiny's recogniser reads the out-of-range arrow as a trailing
-                // '1' ('雌二醇 396.53 1 <143 pmol/L'), the stray number defeats the
-                // table-row fallback, and findHormoneValues returns nothing. This is the
-                // fact the small retry exists for, so it is asserted, not assumed away.
+            check('tiny on the real report: empty through this harness', () => {
+                // Two different answers exist for this one image, and the difference is
+                // the path, not the tier.
+                //
+                // Through the app the tiny tier reads it: drawing to a canvas applies the
+                // screenshot's EXIF orientation and normalises the encoding, and with that
+                // input the browser returns the row. Verified by driving the real page on
+                // this file with the tier control confirmed at tiny.
+                //
+                // Through this harness it returns nothing. sharp decodes and re-encodes
+                // the same file, the pixels are handed over raw, and tiny reads the
+                // out-of-range arrow as a trailing '1' — '雌二醇 396.53 1 <143 pmol/L' —
+                // whose stray number defeats the table-row fallback.
+                //
+                // So this asserts what THIS file measures, and the message says so. The
+                // earlier version asserted "tiny fails on the real report" as a fact about
+                // the product, which is the thing that stopped being true. If this check
+                // ever starts failing, do not relax it: first find out which of the two
+                // paths changed, because they are both load-bearing.
                 assert.equal(found.length, 0, 'tiny returned: ' + JSON.stringify(found))
             })
             continue

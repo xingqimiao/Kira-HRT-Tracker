@@ -79,69 +79,37 @@ async function prepareImage(dataUrl: string): Promise<string> {
         ? Math.min(MAX_UPSCALE, MAX_EDGE / longest)
         : Math.min(1, MAX_EDGE / longest);
 
-    // Nothing to resize: hand the file over exactly as it arrived.
-    //
-    // The canvas round-trip does not merely re-encode, it *loses* what matters. On the
-    // report this was measured against, the original JPEG reads
-    // `* 惟 二 醇 396.531 <143 pmol/L` — label legible, decimal point present — while
-    // every canvas-produced PNG of it reads `i: 396531 <143 pmol/L`: the Chinese label
-    // becomes `i:` and the decimal point disappears, which no threshold rule can put
-    // back. It was checked across min-channel grey, plain grey, luma and untouched
-    // colour, and all four PNG variants fail identically, so it is the encoding and not
-    // the pixel maths.
-    //
-    // The upscale below still earns its place for genuinely small images, where the
-    // characters are too few pixels tall for the LSTM. A large screenshot does not need
-    // it, and taking it through the canvas costs more than it adds.
-    if (linear === 1) return dataUrl;
-
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(image.width * linear);
     canvas.height = Math.round(image.height * linear);
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    // No `willReadFrequently`: nothing reads the pixels back any more, the canvas is
+    // only a way to re-encode, and that hint exists for the readback case.
+    const ctx = canvas.getContext('2d');
     if (!ctx) return dataUrl;
 
     ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const px = frame.data;
-    for (let i = 0; i < px.length; i += 4) {
-        // The darkest channel, not Rec. 601 luma. On a report printed in colour —
-        // a pink result card, a stamped form — the luma of coloured ink sits close
-        // to the paper's, so converting to grey by luma alone washes the digits
-        // out. The minimum channel keeps the ink's full darkness. For ordinary
-        // black-on-white print all three channels agree, so nothing changes there.
-        const grey = Math.min(px[i], px[i + 1], px[i + 2]);
-        px[i] = grey;
-        px[i + 1] = grey;
-        px[i + 2] = grey;
-    }
-
-    // Contrast stretch from the actual 2nd..98th percentile rather than the min/max:
-    // one specular highlight or one shadow would otherwise set the white or black
-    // point and flatten the whole sheet.
-    const histogram = new Uint32Array(256);
-    for (let i = 0; i < px.length; i += 4) histogram[px[i]]++;
-    const total = px.length / 4;
-    const lowCut = total * 0.02;
-    const highCut = total * 0.02;
-    let low = 0;
-    let acc = 0;
-    for (let v = 0; v < 256; v++) { acc += histogram[v]; if (acc >= lowCut) { low = v; break; } }
-    let high = 255;
-    acc = 0;
-    for (let v = 255; v >= 0; v--) { acc += histogram[v]; if (acc >= highCut) { high = v; break; } }
-    const span = Math.max(1, high - low);
-
-    for (let i = 0; i < px.length; i += 4) {
-        const stretched = Math.max(0, Math.min(255, ((px[i] - low) / span) * 255));
-        px[i] = stretched;
-        px[i + 1] = stretched;
-        px[i + 2] = stretched;
-    }
-    ctx.putImageData(frame, 0, 0);
-
-    return canvas.toDataURL('image/png');
+    // Every image goes through the canvas now, even one that needs no resizing, and the
+    // reason is the phone screenshot this was measured against.
+    //
+    // The untouched file fails on the tiny tier — no candidate at all — while the same
+    // pixels re-encoded as a plain JPEG read `雌二醇 396.53` on the same tier. Same
+    // dimensions, same content, so the difference is not the pixels but how they arrive:
+    // a phone screenshot carries an EXIF orientation and its own encoding, and the
+    // bitmap handed to the recogniser is not necessarily the picture the browser shows.
+    // Drawing to a canvas applies the orientation and normalises the encoding, which is
+    // exactly what turns one into the other.
+    //
+    // This reverses an earlier decision, and the reversal is engine-specific. Tesseract
+    // lost the decimal point and the Chinese label when fed a canvas PNG — that was
+    // measured, not guessed — so the previous code handed it the original file. PP-OCRv6
+    // wants the opposite, and it is trained on photographs rather than on binarised
+    // scans, so it also goes without the grayscale and contrast stretch this function
+    // used to apply: those were tuned for the old engine and they are no longer here.
+    //
+    // JPEG rather than PNG for the same reason the measurement used one: it is what a
+    // camera produces, and at 0.95 the compression is invisible at reading size.
+    return canvas.toDataURL('image/jpeg', 0.95);
 }
 
 /**
