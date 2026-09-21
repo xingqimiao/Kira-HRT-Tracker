@@ -355,7 +355,9 @@ export function createRequestHandler() {
         // header that accepts neither, and changes nothing for a client that already
         // sends both.
         const accept = String(req.headers.accept || '');
-        if (accept.includes('application/json') && !accept.includes('text/event-stream')) {
+        const namesJson = accept.includes('application/json');
+        const namesSse = accept.includes('text/event-stream');
+        if (namesJson !== namesSse) {
           req.headers.accept = 'application/json, text/event-stream';
         }
         res.on('close', () => {
