@@ -332,7 +332,32 @@ export function createRequestHandler() {
         }
         const token = bearer(req);
         const server = buildServer(makeBearerResolver(() => token));
-        const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+        // Answer with a single JSON response rather than opening an SSE stream.
+        //
+        // Every tool here is one request, one answer -- initialize, tools/list,
+        // tools/call -- so a stream buys the client nothing and costs compatibility
+        // twice over. The spec lets a client send only `Accept: application/json`,
+        // and this endpoint answered 406 for that; and between the client and here
+        // sit proxies that treat `text/event-stream` as something to buffer, which
+        // turns a 1.7 s reply into a timeout. A plain JSON body has neither problem,
+        // and it is the shape every other call this server answers already has.
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: undefined,
+          enableJsonResponse: true,
+        });
+
+        // Accept either Accept header, then answer JSON either way.
+        //
+        // The SDK validates the header before the response mode is chosen, so a
+        // client that sends only `application/json` -- which the spec permits -- was
+        // still refused with 406 even though nothing about this server needs a
+        // stream. Widening it here rather than upstream keeps the refusal for a
+        // header that accepts neither, and changes nothing for a client that already
+        // sends both.
+        const accept = String(req.headers.accept || '');
+        if (accept.includes('application/json') && !accept.includes('text/event-stream')) {
+          req.headers.accept = 'application/json, text/event-stream';
+        }
         res.on('close', () => {
           void transport.close();
           void server.close();
