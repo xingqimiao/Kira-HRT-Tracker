@@ -18,7 +18,7 @@ import { bootPostgres, useDatabase, startApiServer, teardown, call, type Postgre
 import { registerAccount } from './helpers.ts';
 import { setConfigForTesting } from '../src/config.ts';
 import { TEST_ENCRYPTION_KEY } from './pg.ts';
-import { normalizeSyncState } from '../../src/utils/syncMerge.ts';
+import { mergeSyncStates, normalizeSyncState } from '../../src/utils/syncMerge.ts';
 
 let pg: PostgresHandle;
 let server: Server | undefined;
@@ -196,6 +196,49 @@ test('a sync costs a constant number of round trips, not one per record', async 
 
   assert.equal(manyCalls, oneCalls, 'a sync must not add a round trip per record');
   assert.ok(manyCalls <= 3, `expected a constant few round trips, got ${manyCalls}`);
+});
+
+test('an app-only settings change reaches the account and a second device', async () => {
+  const restore = installFetchOrigin(base);
+  try {
+    const { syncWithCore, readCoreState } = await import('../../src/services/coreSync.ts');
+    const token = await newAccount();
+    const stamp = 1_700_000_000_000;
+
+    // What `useCoreSync` pushes: `toLocalPayload(merged)` plus the `appState` blob
+    // `toAppState` builds. The settings ride only inside that blob.
+    const pushed = await syncWithCore(token, {
+      ...appPayload(),
+      appState: {
+        modes: {
+          transfem: { doseTemplates: [], quickDoses: [] },
+          transmasc: { doseTemplates: [], quickDoses: [] },
+        },
+        settings: { theme: 'dark', lang: 'ja', calMethod: 'adaptive' },
+        settingsUpdatedAt: stamp,
+      },
+    });
+
+    // The account side: the server's own settings reader sees it.
+    const server = await call(base, '/api/settings', { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(server.body.appState.settings.theme, 'dark', 'the settings never reached the account');
+    const pushedAppState = pushed.state!.appState as { settings?: { theme?: string } } | undefined;
+    assert.equal(pushedAppState?.settings?.theme, 'dark', 'the write response did not carry them');
+
+    // The second device holds only the records, and the app's own reader has to find
+    // the settings there — this is the claim the record transport was silently breaking.
+    const asState = normalizeSyncState(await readCoreState(token));
+    assert.equal(asState.appSettings?.theme, 'dark', 'the second device did not see the theme');
+    assert.equal(asState.appSettings?.lang, 'ja');
+    assert.equal(asState.appSettings?.calMethod, 'adaptive');
+    assert.equal(asState.appSettingsUpdatedAt, stamp, 'the stamp did not survive the round trip');
+
+    // And a merge of the two picks the account's copy rather than flip-flopping.
+    const merged = mergeSyncStates(normalizeSyncState(appPayload()), asState);
+    assert.equal(merged.merged.appSettings?.theme, 'dark');
+  } finally {
+    restore();
+  }
 });
 
 test('a locked account reports locked rather than a generic failure', async () => {

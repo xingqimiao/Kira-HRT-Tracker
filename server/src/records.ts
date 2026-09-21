@@ -212,6 +212,35 @@ async function reflectWeight(
     await settings.absorbWeight(ctx.userId, synced.value, synced.stamp).catch(() => undefined);
 }
 
+/**
+ * The app-state blob a `scalar:appSettings` record carries, or null when this record is not it.
+ *
+ * The app travels its own settings in the payload's `appState` blob (see
+ * `payloadToRecords` in src/services/recordDocs.ts), which is the counterpart of
+ * `scalar:weight`; the server-side readers take it from `user_settings.app_state`
+ * instead, so this is where the two meet.
+ */
+function appStateScalar(id: string, data: unknown): Record<string, unknown> | null {
+    if (id !== 'scalar:appSettings') return null;
+    const body = data as { value?: unknown } | null;
+    const value = body?.value;
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : null;
+}
+
+/**
+ * Reflect a synced app-state blob into the account setting, best effort — the
+ * same contract as `reflectWeight`, for the same reason.
+ */
+async function reflectAppState(
+    ctx: AuthContext,
+    synced: Record<string, unknown> | null,
+): Promise<void> {
+    if (!synced) return;
+    await settings.absorbAppState(ctx.userId, synced).catch(() => undefined);
+}
+
 export const RecordService = {
     /**
      * Store one record, encrypting the payload on the way in.
@@ -250,6 +279,7 @@ export const RecordService = {
         // reported as a conflict either — that would confirm the id exists.
         if (rows.length === 0) return { ok: false, error: 'id_unavailable' };
         await reflectWeight(ctx, weightScalar(id, body?.data));
+        await reflectAppState(ctx, appStateScalar(id, body?.data));
         return { ok: true, id: rows[0].id };
     },
 
@@ -285,13 +315,16 @@ export const RecordService = {
         const pending = new Map<string, PreparedRecord>();
         // A sync carries body weight as a `scalar:weight` record, but the PK model
         // reads the settings table instead. Keep the copy that landed — a repeated id
-        // is applied last-wins — to reflect below (see `reflectWeight`).
+        // is applied last-wins — to reflect below (see `reflectWeight`). The
+        // `scalar:appSettings` blob is bridged the same way (see `reflectAppState`).
         let syncedWeight: { value: number; stamp: number } | null = null;
+        let syncedAppState: Record<string, unknown> | null = null;
         for (const raw of items) {
             const prepared = prepareRecord(ctx, raw as { id?: unknown; takenAt?: unknown; category?: unknown; data?: unknown });
             if (prepared.ok) {
                 pending.set(prepared.value.id, prepared.value);
                 syncedWeight = weightScalar(prepared.value.id, (raw as { data?: unknown })?.data) ?? syncedWeight;
+                syncedAppState = appStateScalar(prepared.value.id, (raw as { data?: unknown })?.data) ?? syncedAppState;
             } else {
                 rejected.push({ id: prepared.id, reason: prepared.error });
             }
@@ -336,6 +369,7 @@ export const RecordService = {
         });
 
         await reflectWeight(ctx, syncedWeight);
+        await reflectAppState(ctx, syncedAppState);
         return { ok: true, written, rejected };
     },
 

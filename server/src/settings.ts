@@ -92,6 +92,33 @@ export const settings = {
   },
 
   /**
+   * Fold an app-state blob synced from a device into the setting the app reads back.
+   *
+   * The record store carries it as `scalar:appSettings` — the counterpart of the
+   * `scalar:weight` record — but `hrt_get_settings`, `hrt_sync_state` and
+   * `/api/export` read `user_settings.app_state`, so the two have to meet. Nothing
+   * wrote it at all after the legacy `/api/sync` import went, which is why an
+   * app-only setting changed on one device never appeared in the account.
+   *
+   * Merged, not replaced: `upsert` assigns `app_state` whole (`COALESCE` on the
+   * column, not a merge), so a blob that mentions only `settings` would drop the
+   * `modes` collections it never read. `||` merges at the blob's top level, so an
+   * unmentioned key — every collection except the one being written — survives. A
+   * partial blob cannot erase it.
+   */
+  async absorbAppState(userId: string, appState: Record<string, unknown>): Promise<void> {
+    if (!appState || typeof appState !== 'object' || Array.isArray(appState)) return;
+    await getPool().query(
+      `INSERT INTO user_settings AS s (user_id, app_state, updated_at)
+       VALUES ($1, $2::jsonb, now())
+       ON CONFLICT (user_id) DO UPDATE
+          SET app_state = COALESCE(s.app_state, '{}'::jsonb) || EXCLUDED.app_state,
+              updated_at = now()`,
+      [userId, JSON.stringify(appState)],
+    );
+  },
+
+  /**
    * Fold a weight synced from a device into the setting the PK model reads.
    *
    * The app keeps body weight in its own payload and travels it as the `scalar:weight`

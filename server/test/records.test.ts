@@ -332,5 +332,131 @@ test('a payload that says nothing about weight leaves the setting alone', async 
   assert.equal(after.body.bodyWeightKg, 70, 'a payload with no weight cleared the setting');
 });
 
+/**
+ * The app settings a device syncs and the app settings the server stores are two
+ * copies.
+ *
+ * The app travels its whole `appState` blob as a `scalar:appSettings` record (see
+ * `payloadToRecords` in src/services/recordDocs.ts); `hrt_get_settings`, `hrt_sync_state`
+ * and `/api/export` read `user_settings.app_state`. These assertions pin the bridge —
+ * without it a setting changed on one device never reaches the account at all, which is
+ * how the display preferences came to persist nowhere but the browser that set them.
+ */
+test('a synced settings blob reaches the account the app reads back', async () => {
+  const { token } = await freshAccount();
+  const stamp = Date.now();
+
+  const wrote = await call(base, '/api/records/batch', json({
+    records: [{
+      id: 'scalar:appSettings',
+      takenAt: stamp,
+      category: 'setting',
+      data: { value: { settings: { theme: 'dark', lang: 'ja' }, settingsUpdatedAt: stamp }, stamp },
+    }],
+  }, token));
+  assert.equal(wrote.status, 200, JSON.stringify(wrote.body));
+
+  const after = await call(base, '/api/settings', bearer(token));
+  assert.deepEqual(
+    after.body.appState.settings,
+    { theme: 'dark', lang: 'ja' },
+    'the synced settings did not reach the account setting',
+  );
+  // The write response is the state the client merges, so it has to agree with the
+  // account rather than trail it by a sync.
+  assert.deepEqual(
+    wrote.body.state.appState.settings,
+    { theme: 'dark', lang: 'ja' },
+    'the write response did not carry the new settings',
+  );
+});
+
+test('a partial settings write does not erase the collections it never read', async () => {
+  const { token } = await freshAccount();
+  const first = Date.now();
+
+  // A device that read the templates writes the whole blob.
+  await call(base, '/api/records/batch', json({
+    records: [{
+      id: 'scalar:appSettings',
+      takenAt: first,
+      category: 'setting',
+      data: {
+        value: {
+          modes: {
+            transfem: { doseTemplates: [{ id: 'tpl-keep' }], quickDoses: [] },
+            transmasc: { doseTemplates: [], quickDoses: [] },
+          },
+          settings: { theme: 'dark' },
+          settingsUpdatedAt: first,
+        },
+        stamp: first,
+      },
+    }],
+  }, token));
+
+  // A later write that mentions only the settings bag — the exact shape that would
+  // drop `app_state.modes` if the column were assigned whole.
+  const second = first + 1000;
+  await call(base, '/api/records/batch', json({
+    records: [{
+      id: 'scalar:appSettings',
+      takenAt: second,
+      category: 'setting',
+      data: { value: { settings: { theme: 'light' }, settingsUpdatedAt: second }, stamp: second },
+    }],
+  }, token));
+
+  const after = await call(base, '/api/settings', bearer(token));
+  assert.equal(after.body.appState.settings.theme, 'light', 'the newer settings did not win');
+  assert.equal(
+    after.body.appState.modes.transfem.doseTemplates[0].id,
+    'tpl-keep',
+    'the collections the later write never read were dropped',
+  );
+});
+
+test('a partial modes write leaves the settings bag alone', async () => {
+  const { token } = await freshAccount();
+  const first = Date.now();
+
+  await call(base, '/api/records/batch', json({
+    records: [{
+      id: 'scalar:appSettings',
+      takenAt: first,
+      category: 'setting',
+      data: {
+        value: { settings: { theme: 'dark', lang: 'ja' }, settingsUpdatedAt: first },
+        stamp: first,
+      },
+    }],
+  }, token));
+
+  const second = first + 1000;
+  await call(base, '/api/records/batch', json({
+    records: [{
+      id: 'scalar:appSettings',
+      takenAt: second,
+      category: 'setting',
+      data: {
+        value: {
+          modes: { transfem: { doseTemplates: [{ id: 'tpl-new' }], quickDoses: [] } },
+          settingsUpdatedAt: second,
+        },
+        stamp: second,
+      },
+    }],
+  }, token));
+
+  const after = await call(base, '/api/settings', bearer(token));
+  assert.equal(
+    after.body.appState.settings.lang,
+    'ja',
+    'the settings the later write never mentioned were dropped',
+  );
+  assert.equal(after.body.appState.modes.transfem.doseTemplates[0].id, 'tpl-new');
+});
+
+
 
 

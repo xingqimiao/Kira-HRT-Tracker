@@ -34,6 +34,8 @@ const {
   fingerprintState,
   APP_SETTING_KEYS,
 } = await import('../src/utils/syncMerge.ts');
+const { payloadToRecords, recordsToPayload } = await import('../src/services/recordDocs.ts');
+const { toLocalPayload } = await import('../src/services/coreSync.ts');
 
 // --- helpers ----------------------------------------------------------------
 
@@ -205,6 +207,45 @@ check('every settings key survives the round trip, not just the sampled ones', (
     Object.keys(everyKey).sort(),
     'the key list is complete',
   );
+});
+
+// --- the settings blob through the record transport -------------------------
+//
+// The settings merge above can be perfect and still never leave the device: the
+// record transport is a second reader of the payload, and it read a scalar name
+// (`appSettings`) the sync path never builds (`appState`, from `toAppState`). So
+// no `scalar:appSettings` record was ever written. These assertions drive the
+// exact payload `useCoreSync` hands the transport.
+
+check('the settings blob becomes a record under the id the transport reads', () => {
+  const s = stateWith({ appSettings: { theme: 'dark', lang: 'ja' }, appSettingsUpdatedAt: 4242 });
+  const docs = payloadToRecords({ ...toLocalPayload(s), appState: toAppState(s) });
+  const record = docs.find(d => d.id === 'scalar:appSettings');
+  assert.ok(record, 'the appState blob did not become a scalar:appSettings record');
+  assert.deepEqual(record.data.value.settings, { theme: 'dark', lang: 'ja' });
+  assert.equal(record.data.stamp, 4242, 'the stamp travels inside the blob, not beside it');
+  assert.equal(
+    record.data.value.modes,
+    undefined,
+    'templates and quick doses travel as their own records, not a second stale copy',
+  );
+});
+
+check('a settings change survives payload -> records -> payload and the app reader', () => {
+  const s = stateWith({ appSettings: { theme: 'dark', lang: 'ja' }, appSettingsUpdatedAt: 4242 });
+  const { payload: back, unknown } = recordsToPayload(
+    payloadToRecords({ ...toLocalPayload(s), appState: toAppState(s) }),
+  );
+  assert.equal(unknown, 0, 'nothing was filed as unknown');
+  const read = normalizeSyncState(back);
+  assert.deepEqual(read.appSettings, { theme: 'dark', lang: 'ja' });
+  assert.equal(read.appSettingsUpdatedAt, 4242, 'the stamp survives the round trip');
+});
+
+check('a payload that says nothing about settings writes no settings record', () => {
+  const s = stateWith({ appSettings: { theme: 'dark' } });
+  const docs = payloadToRecords({ version: 3, modes: s.modes });
+  assert.ok(!docs.some(d => d.id === 'scalar:appSettings'), 'an absent appState invented a record');
 });
 
 // --- hasContent -------------------------------------------------------------
