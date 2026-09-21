@@ -1,4 +1,5 @@
 import React from 'react';
+import FitText from '../components/FitText';
 import Icon from '../components/Icon';
 import { Info, Share2 } from '../icons';
 import { DoseEvent, SimulationResult, LabResult, AntiandrogenChartMode, getDoseAdvisory, getHormoneLevelAdvisory, isT_LabUnit, isMonitoringOnlyLab, modelledEvents, antiandrogenReading } from '../../logic';
@@ -289,15 +290,18 @@ const Home: React.FC<HomeProps> = ({
                                         // How long ago the last dose was, in the reader's own
                                         // relative-time wording — the honest reading for a drug
                                         // taken every few days, where a mg count says nothing.
-                                        // Relative time is words, not a number: "3 天前" is
-                                        // two glyphs where "12.5 mg" is five, and on a narrow
-                                        // phone at display scale that difference is the whole
-                                        // column. The numeric siblings can carry the display
-                                        // size; this one steps down to the headline role, which
-                                        // is what the card's hierarchy wants anyway.
-                                        <span className={`text-m3-headline-small leading-none ${on}`}>
+                                        // Relative time is words, not a number: "2 天前" is
+                                        // four glyphs, "2 个月前" is five, "12 个月前" is six.
+                                        // One fixed role is wrong for most of its own values —
+                                        // big enough for the shortest overflows on the next,
+                                        // small enough for the longest makes the common case
+                                        // look half-empty — so the size is measured against
+                                        // the slot instead. It keeps the display role the
+                                        // numeric readings use, and only steps down as far as
+                                        // the text needs.
+                                        <FitText className={`text-m3-display-large leading-none ${on}`}>
                                             {formatRelative(nowSec - antiandrogen.sinceH * 3600, nowSec, t)}
-                                        </span>
+                                        </FitText>
                                     )}
                                     {antiandrogen.kind === 'none' && (
                                         // E2's placeholder is `text-m3-display-large
