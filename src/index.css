@@ -910,6 +910,27 @@ body {
     scrollbar-width: none;
 }
 
+/* Every scroller inside the app keeps its scrolling but not the browser's bar.
+ *
+ * One umbrella rule rather than an opt-out per component: the rail, the modal
+ * cards, the onboarding lists and the pickers each grew their own
+ * `.scrollbar-hide` or `::-webkit-scrollbar` exemption, and every new list (a
+ * picker panel, the copyable MCP prompt) shipped with a bar again until someone
+ * remembered. This is the one place to add it.
+ *
+ * The page's own scrollbar is deliberately NOT covered — `html`/`body` are
+ * excluded, because the bar at the window edge is the only cue that there is more
+ * below. It hides the bar's *appearance* only: `overflow` is untouched, and touch,
+ * wheel, keyboard and `scrollIntoView` all keep working.
+ */
+*:not(html):not(body) {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+*:not(html):not(body)::-webkit-scrollbar {
+    display: none;
+}
+
 .font-display {
     font-family: var(--font-display);
 }

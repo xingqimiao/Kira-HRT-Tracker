@@ -11,6 +11,8 @@ import BloodVial from '../components/BloodVial';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { HormoneLevelAdvisoryLine } from '../components/DoseAdvisory';
 import MonitoringNoticeLine from '../components/MonitoringNotice';
+import JournalCheckIn from '../components/JournalCheckIn';
+import { JournalEntry } from '../utils/bodyJournal';
 
 interface LabProps {
     t: (key: string) => string;
@@ -26,6 +28,10 @@ interface LabProps {
     calibration: CalibrationResult;
     onOpenCalibrationSettings: () => void;
     lang: Lang;
+    /** The private journal, kept on this section rather than in 记录. */
+    journal: JournalEntry[];
+    onSaveJournalEntry: (entry: JournalEntry) => void;
+    onDeleteJournalEntry: (id: string) => void;
 }
 
 const Lab: React.FC<LabProps> = ({
@@ -40,7 +46,10 @@ const Lab: React.FC<LabProps> = ({
     calibrationMethod,
     calibration,
     onOpenCalibrationSettings,
-    lang
+    lang,
+    journal,
+    onSaveJournalEntry,
+    onDeleteJournalEntry,
 }) => {
     const { isTransmasc } = useHRTMode();
     const [editingLabId, setEditingLabId] = useState<string | null>(null);
@@ -293,6 +302,15 @@ const Lab: React.FC<LabProps> = ({
                 )}
 
             </div>
+
+            {/* The private journal lives on this section (体检), not in 记录: it is a
+                record of the body, filed beside the bloods it is read with. It keeps
+                its own heading and count, so it reads as its own record either way. */}
+            <JournalCheckIn
+                entries={journal}
+                onSave={onSaveJournalEntry}
+                onDelete={onDeleteJournalEntry}
+            />
         </div>
     );
 };

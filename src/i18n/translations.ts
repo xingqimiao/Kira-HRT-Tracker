@@ -194,7 +194,7 @@ export const TRANSLATIONS_BASE = {
         "core.del.password": "密码",
         "core.del.confirm_label": "输入 DELETE 以确认",
         "core.del.submit": "永久删除",
-        "nav.lab": "校准",
+        "nav.lab": "体检",
         "nav.settings": "设置",
 
         "status.estimate": "当前估算血药浓度",
@@ -903,7 +903,7 @@ export const TRANSLATIONS_BASE = {
         "core.del.confirm_label": "Type DELETE to confirm",
         "core.del.submit": "Delete permanently",
         "nav.history": "History",
-        "nav.lab": "Calibration",
+        "nav.lab": "Checkup",
         "nav.settings": "Settings",
 
         "status.estimate": "Current Estimated Level",
@@ -1543,7 +1543,7 @@ const ZH_TW = {
     "app.title": "Kira 記錄",
     "nav.home": "總覽",
     "nav.history": "紀錄",
-    "nav.lab": "校準",
+    "nav.lab": "體檢",
     "nav.settings": "設定",
 
     "status.estimate": "目前估算濃度",
@@ -2595,10 +2595,11 @@ const MONITORING_I18N = {
     "zh": {
         "monitor.section": "监测项",
         "monitor.hint": "以下项目按监测参考中的阈值判断；每条提示都会注明出处，只陈述证据，不下指令。",
+        "monitor.uln_hint": "填化验单上印的参考上限（正常范围上限）。提示按它的倍数判断（泌乳素 3 倍、ALT 2 倍）；各实验室不同，所以不预设固定值。",
         "monitor.prl": "泌乳素 (PRL)",
-        "monitor.prl_uln": "参考上限",
+        "monitor.prl_uln": "报告参考上限",
         "monitor.alt": "ALT",
-        "monitor.alt_uln": "参考上限",
+        "monitor.alt_uln": "报告参考上限",
         "monitor.ast": "AST",
         "monitor.k": "血钾 (K)",
         "monitor.uln": "ULN",
@@ -2611,10 +2612,11 @@ const MONITORING_I18N = {
     "zh-TW": {
         "monitor.section": "監測項目",
         "monitor.hint": "以下項目依監測參考中的閾值判斷；每則提示都會註明出處，只陳述證據，不下指令。",
+        "monitor.uln_hint": "填檢驗單上印的參考上限（正常範圍上限）。提示按它的倍數判斷（泌乳素 3 倍、ALT 2 倍）；各實驗室不同，所以不預設固定值。",
         "monitor.prl": "泌乳素 (PRL)",
-        "monitor.prl_uln": "參考上限",
+        "monitor.prl_uln": "報告參考上限",
         "monitor.alt": "ALT",
-        "monitor.alt_uln": "參考上限",
+        "monitor.alt_uln": "報告參考上限",
         "monitor.ast": "AST",
         "monitor.k": "血鉀 (K)",
         "monitor.uln": "ULN",
@@ -2627,10 +2629,11 @@ const MONITORING_I18N = {
     "yue": {
         "monitor.section": "監測項目",
         "monitor.hint": "以下項目跟監測參考入面嘅閾值判斷；每則提示都會寫明出處，只講證據，唔會叫你做嘢。",
+        "monitor.uln_hint": "填化驗單上面印嘅參考上限（正常範圍上限）。提示按佢嘅倍數判斷（泌乳素 3 倍、ALT 2 倍）；每間實驗室都唔同，所以唔會預設固定值。",
         "monitor.prl": "泌乳素 (PRL)",
-        "monitor.prl_uln": "參考上限",
+        "monitor.prl_uln": "報告參考上限",
         "monitor.alt": "ALT",
-        "monitor.alt_uln": "參考上限",
+        "monitor.alt_uln": "報告參考上限",
         "monitor.ast": "AST",
         "monitor.k": "血鉀 (K)",
         "monitor.uln": "ULN",
@@ -2643,10 +2646,11 @@ const MONITORING_I18N = {
     "en": {
         "monitor.section": "Monitoring bloods",
         "monitor.hint": "Checked against the thresholds in the monitoring reference; every notice names its source and states evidence rather than an instruction.",
+        "monitor.uln_hint": "Copy the upper limit of the reference range printed on your own report. Notices use multiples of it (3× for prolactin, 2× for ALT), and labs differ, so no fixed value is assumed.",
         "monitor.prl": "Prolactin (PRL)",
-        "monitor.prl_uln": "Upper limit of normal",
+        "monitor.prl_uln": "Report reference limit",
         "monitor.alt": "ALT",
-        "monitor.alt_uln": "Upper limit of normal",
+        "monitor.alt_uln": "Report reference limit",
         "monitor.ast": "AST",
         "monitor.k": "Potassium (K)",
         "monitor.uln": "ULN",
@@ -2659,10 +2663,11 @@ const MONITORING_I18N = {
     "ja": {
         "monitor.section": "モニタリング項目",
         "monitor.hint": "モニタリング参考の閾値で判定します。各通知は出典を明示し、指示ではなく根拠を述べるだけです。",
+        "monitor.uln_hint": "検査票に印字された基準上限（基準範囲の上限）を入力します。通知はその倍数（プロラクチン3倍、ALT 2倍）で判定し、基準値は施設ごとに異なるため固定値は使いません。",
         "monitor.prl": "プロラクチン (PRL)",
-        "monitor.prl_uln": "基準上限",
+        "monitor.prl_uln": "検査票の基準上限",
         "monitor.alt": "ALT",
-        "monitor.alt_uln": "基準上限",
+        "monitor.alt_uln": "検査票の基準上限",
         "monitor.ast": "AST",
         "monitor.k": "カリウム (K)",
         "monitor.uln": "ULN",
@@ -2675,10 +2680,11 @@ const MONITORING_I18N = {
     "ko": {
         "monitor.section": "모니터링 검사",
         "monitor.hint": "모니터링 참고 자료의 기준값으로 판정합니다. 각 알림은 출처를 밝히고 지시가 아니라 근거를 제시합니다.",
+        "monitor.uln_hint": "검사지에 인쇄된 정상 상한(참고 범위의 상한)을 입력합니다. 알림은 그 배수(프로락틴 3배, ALT 2배)로 판정하며, 검사실마다 기준이 달라 고정값을 쓰지 않습니다.",
         "monitor.prl": "프로락틴 (PRL)",
-        "monitor.prl_uln": "정상 상한",
+        "monitor.prl_uln": "검사지 정상 상한",
         "monitor.alt": "ALT",
-        "monitor.alt_uln": "정상 상한",
+        "monitor.alt_uln": "검사지 정상 상한",
         "monitor.ast": "AST",
         "monitor.k": "칼륨 (K)",
         "monitor.uln": "ULN",
@@ -2691,10 +2697,11 @@ const MONITORING_I18N = {
     "tr": {
         "monitor.section": "İzlem tetkikleri",
         "monitor.hint": "İzlem referansındaki eşiklere göre değerlendirilir; her uyarı kaynağını belirtir ve talimat değil kanıt sunar.",
+        "monitor.uln_hint": "Raporunuzda basılı normal üst sınırı (referans aralığın üst sınırı) girin. Uyarılar bunun katlarına bakar (prolaktin 3×, ALT 2×) ve laboratuvara göre değiştiği için sabit bir değer varsayılmaz.",
         "monitor.prl": "Prolaktin (PRL)",
-        "monitor.prl_uln": "Normal üst sınır",
+        "monitor.prl_uln": "Rapordaki normal üst sınır",
         "monitor.alt": "ALT",
-        "monitor.alt_uln": "Normal üst sınır",
+        "monitor.alt_uln": "Rapordaki normal üst sınır",
         "monitor.ast": "AST",
         "monitor.k": "Potasyum (K)",
         "monitor.uln": "ULN",
@@ -2707,13 +2714,13 @@ const MONITORING_I18N = {
 } as const;
 
 /**
- * The private body-and-mood journal (记录).
+ * The private journal (文字记录), shown on the 体检 section.
  *
  * Its own map because it is a different feature from monitoring, and it is
  * spread last in every language below so these win each merge. Every string a
- * reader sees is here: the five self-rating scales, the register note that says
- * this is not a measurement, and the source-cited symptom groups an optional
- * check-in can record (docs/monitoring-reference.md §6.2).
+ * reader sees is here: the section heading and count, the register note that
+ * says these are the user's own words rather than a measurement, and the form's
+ * labels.
  */
 const JOURNAL_I18N = {
     "zh": {
@@ -2725,7 +2732,7 @@ const JOURNAL_I18N = {
         "journal.note": "内容",
         "journal.note_placeholder": "想写什么都可以……",
         "journal.empty": "还没有记录。",
-        "journal.delete_confirm": "删除这条体感记录？此操作不可撤销。",
+        "journal.delete_confirm": "删除这条文字记录？此操作不可撤销。",
     },
     "zh-TW": {
         "journal.section": "文字紀錄",
@@ -2736,7 +2743,7 @@ const JOURNAL_I18N = {
         "journal.note": "內容",
         "journal.note_placeholder": "想寫什麼都可以……",
         "journal.empty": "還沒有紀錄。",
-        "journal.delete_confirm": "刪除這筆體感記錄？此操作無法復原。",
+        "journal.delete_confirm": "刪除這筆文字紀錄？此操作無法復原。",
     },
     "yue": {
         "journal.section": "文字記錄",
@@ -2747,7 +2754,7 @@ const JOURNAL_I18N = {
         "journal.note": "內容",
         "journal.note_placeholder": "想寫咩都得……",
         "journal.empty": "仲未有記錄。",
-        "journal.delete_confirm": "刪除呢條體感記錄？刪咗就冇得返轉頭。",
+        "journal.delete_confirm": "刪除呢條文字記錄？刪咗就冇得返轉頭。",
     },
     "en": {
         "journal.section": "Notes",
@@ -2758,7 +2765,7 @@ const JOURNAL_I18N = {
         "journal.note": "Text",
         "journal.note_placeholder": "Whatever you want to write…",
         "journal.empty": "Nothing written yet.",
-        "journal.delete_confirm": "Delete this check-in? This cannot be undone.",
+        "journal.delete_confirm": "Delete this note? This cannot be undone.",
     },
     "ja": {
         "journal.section": "テキスト記録",
@@ -2769,7 +2776,7 @@ const JOURNAL_I18N = {
         "journal.note": "内容",
         "journal.note_placeholder": "自由に書いてください……",
         "journal.empty": "まだ記録はありません。",
-        "journal.delete_confirm": "この体感記録を削除しますか？元に戻せません。",
+        "journal.delete_confirm": "このテキスト記録を削除しますか？元に戻せません。",
     },
     "ko": {
         "journal.section": "글 기록",
@@ -2780,7 +2787,7 @@ const JOURNAL_I18N = {
         "journal.note": "내용",
         "journal.note_placeholder": "하고 싶은 말을 적어 주세요…",
         "journal.empty": "아직 기록이 없습니다.",
-        "journal.delete_confirm": "이 기록을 삭제할까요? 되돌릴 수 없습니다.",
+        "journal.delete_confirm": "이 글 기록을 삭제할까요? 되돌릴 수 없습니다.",
     },
     "tr": {
         "journal.section": "Notlar",
@@ -2791,7 +2798,7 @@ const JOURNAL_I18N = {
         "journal.note": "Metin",
         "journal.note_placeholder": "Ne yazmak isterseniz…",
         "journal.empty": "Henüz bir şey yazılmadı.",
-        "journal.delete_confirm": "Bu kaydı silmek istiyor musunuz? Geri alınamaz.",
+        "journal.delete_confirm": "Bu notu silmek istiyor musunuz? Geri alınamaz.",
     },
 } as const;
 
@@ -2811,7 +2818,7 @@ export const TRANSLATIONS = {
         "app.title": "Kira 記錄",
         "nav.home": "總覽",
         "nav.history": "記錄",
-        "nav.lab": "校準",
+        "nav.lab": "體檢",
         "nav.settings": "設定",
 
         "status.estimate": "而家估算濃度",
@@ -3331,7 +3338,7 @@ export const TRANSLATIONS = {
         "nav.home": "概要",
         "app.title": "Kira Tracker",
         "nav.history": "記録",
-        "nav.lab": "校正",
+        "nav.lab": "健診",
         "nav.settings": "設定",
 
         "status.estimate": "現在の推定濃度",
@@ -3960,7 +3967,7 @@ export const TRANSLATIONS = {
         "app.title": "Kira 추적기",
         "nav.home": "개요",
         "nav.history": "기록",
-        "nav.lab": "보정",
+        "nav.lab": "검진",
         "nav.settings": "설정",
         "nav.account": "계정",
 
@@ -4594,7 +4601,7 @@ export const TRANSLATIONS = {
         "app.title": "Kira Tracker",
         "nav.home": "Genel Bakış",
         "nav.history": "Geçmiş",
-        "nav.lab": "Kalibrasyon",
+        "nav.lab": "Kontrol",
         "nav.settings": "Ayarlar",
         "nav.account": "Hesap",
 

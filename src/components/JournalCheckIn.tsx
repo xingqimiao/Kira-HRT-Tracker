@@ -9,7 +9,7 @@ import { LOCALE_MAP } from '../utils/helpers';
 import { JournalEntry } from '../utils/bodyJournal';
 
 /**
- * The private journal, rendered inside 记录.
+ * The private journal, rendered on the 体检 (lab) section.
  *
  * One text field and a time. An earlier build put five 0–5 scales and a
  * three-group symptom checklist above the text, and the request was to keep only

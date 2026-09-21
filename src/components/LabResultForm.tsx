@@ -340,6 +340,9 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
                     <p className="text-xs text-[var(--color-m3-on-surface-variant)]  mt-1">
                         {t('monitor.hint')}
                     </p>
+                    <p className="text-xs text-[var(--color-m3-on-surface-variant)]  mt-1">
+                        {t('monitor.uln_hint')}
+                    </p>
                     <div className="grid grid-cols-2 gap-4 mt-3">
                         <MonitorField label={t('monitor.prl')} unit={MONITORING_UNIT.PRL} value={prlValue} onChange={setPrlValue} />
                         <MonitorField label={t('monitor.prl_uln')} unit={MONITORING_UNIT.PRL} value={prlUln} onChange={setPrlUln} />

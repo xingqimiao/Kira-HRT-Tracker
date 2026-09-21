@@ -32,7 +32,7 @@ const CopyRow: React.FC<{ value: string; hint: string }> = ({ value, hint }) => 
                     the one thing that made it look un-copyable. Bounded in height
                     so a long prompt cannot push the controls off the screen. */}
                 <code
-                    className="w-full max-w-full flex-1 overflow-y-auto whitespace-pre-wrap break-words rounded-md
+                    className="w-full max-w-full flex-1 select-text overflow-y-auto whitespace-pre-wrap break-words rounded-md
                         bg-[var(--color-m3-surface-container)] px-3 py-2 font-mono text-xs leading-relaxed
                         text-[var(--color-m3-on-surface)] max-h-72"
                 >

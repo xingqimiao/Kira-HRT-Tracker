@@ -116,7 +116,7 @@ const PartSelect: React.FC<PartSelectProps> = ({ label, value, options, onChange
                     role="listbox"
                     aria-label={label}
                     style={positionStyle}
-                    className="dropdown-in fixed z-[80] overflow-y-auto rounded-lg border border-[var(--color-m3-outline-variant)]  bg-cos-surface-container  shadow-[var(--shadow-m3-3)] py-1"
+                    className="dropdown-in fixed z-[80] overflow-y-auto scrollbar-hide rounded-lg border border-[var(--color-m3-outline-variant)]  bg-cos-surface-container  shadow-[var(--shadow-m3-3)] py-1"
                 >
                     {options.map(option => (
                         <button

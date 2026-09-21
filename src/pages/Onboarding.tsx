@@ -10,13 +10,23 @@ import CopyRow from '../components/CopyRow';
 import IntroCard from '../components/IntroCard';
 import { QuickAddPreview } from '../components/HomeQuickAdd';
 import Icon from '../components/Icon';
-import { Check, Plus } from '../icons';
+import DateTimePicker from '../components/DateTimePicker';
+import { Check, Plus, ChevronDown } from '../icons';
 import { buildMcpInstallPrompt } from '../utils/mcpInstallPrompt';
+import { LOCALE_MAP } from '../utils/helpers';
 
 const ONBOARDING_KEY = 'app-onboarded';
 
 /** One definition, shared with the AI-assistant settings page. */
 const INSTALL_PROMPT = buildMcpInstallPrompt();
+
+/** Local-time `YYYY-MM-DD` and back — the shape `hrtStartDate` is stored in. */
+const toYmd = (date: Date): string =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const fromYmd = (value: string): Date => {
+    const parsed = new Date(`${value}T00:00:00`);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+};
 
 /**
  * Anyone with records on this device has been using the app since before there
@@ -466,6 +476,8 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
     const curve = useOnboardingCurve(isTransmasc);
 
     const [step, setStep] = useState(0);
+    // The app's own date picker, opened from the field below and used inline.
+    const [isStartPickerOpen, setIsStartPickerOpen] = useState(false);
     // The native picker is capped at today: a start date in the future would
     // make the account line read as a negative — or be discarded — either way
     // the input would be the only place the mistake was visible.
@@ -623,30 +635,56 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
         /* Inserted after the chart step rather than before it, so the chart keeps
            index 2 and `CHART_STEP` needs no change — the warning about
            incrementing it only applies to a step placed ahead of the chart. */
-        /* The card holds a real <input type="date">, because a day count needs a date
-           and a text field would have to re-implement the picker. Framed like every
-           other visual so the one question that is answered by typing rather than by
-           reading still belongs to the same flow. */
+        /* The card holds the app's own DateTimePicker in date mode, the same component
+           the lab form uses, rather than the browser's: a day count needs a date with no
+           time, and `mode="date"` is exactly that. Framed like every other visual so the
+           one question that is answered by choosing rather than by reading still belongs
+           to the same flow. */
         <IntroCard
             key="started"
             title={t('onboarding.start_title')}
             description={t('onboarding.start_subtitle')}
             visual={
-                <label className="flex w-full cursor-pointer flex-col gap-2 text-start">
+                <div className="flex w-full flex-col gap-2 text-start">
                     <span className="text-m3-title-medium text-[var(--color-m3-on-surface)]">
                         {t('onboarding.start_label')}
                     </span>
-                    <input
-                        type="date"
-                        value={hrtStartDate}
-                        max={today}
-                        onChange={(e) => onHrtStartChange(e.target.value)}
-                        className="w-full bg-transparent text-m3-title-large text-[var(--color-m3-on-surface)] outline-none dark:[color-scheme:dark]"
+                    <button
+                        type="button"
+                        onClick={() => setIsStartPickerOpen(open => !open)}
+                        aria-expanded={isStartPickerOpen}
+                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container)] px-3 py-2.5 text-start"
+                    >
+                        <span className="text-m3-title-medium tabular-nums text-[var(--color-m3-on-surface)]">
+                            {hrtStartDate
+                                ? fromYmd(hrtStartDate).toLocaleDateString(LOCALE_MAP[lang] || 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+                                : t('date.select')}
+                        </span>
+                        <Icon
+                            icon={ChevronDown}
+                            size={16}
+                            className={`shrink-0 text-[var(--color-m3-on-surface-variant)] ${isStartPickerOpen ? 'rotate-180' : ''}`}
+                        />
+                    </button>
+                    <DateTimePicker
+                        isOpen={isStartPickerOpen}
+                        inline
+                        mode="date"
+                        onClose={() => setIsStartPickerOpen(false)}
+                        onConfirm={(date) => {
+                            // The picker has no max, but the old native input refused a
+                            // future start: it would make the account's day count negative.
+                            // Keep that guard by clamping the answer to today.
+                            const picked = toYmd(date);
+                            onHrtStartChange(picked > today ? today : picked);
+                        }}
+                        initialDate={hrtStartDate ? fromYmd(hrtStartDate) : new Date()}
+                        title={t('onboarding.start_label')}
                     />
                     <span className="text-m3-body-medium text-[var(--color-m3-on-surface-variant)]">
                         {t('onboarding.start_hint')}
                     </span>
-                </label>
+                </div>
             }
         />,
 

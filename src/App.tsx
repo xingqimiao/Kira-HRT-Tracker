@@ -188,11 +188,14 @@ const AppContent = () => {
     //
     // Gated on `coreSession.isSignedIn`: without a Core session there is no key
     // server-side, so a push would 401 — and, worse, a *pull* would silently do
-    // nothing while looking like it worked.
+    // nothing while looking like it worked. ANDed with the user's own preference:
+    // the hook's `enabled` is documented as "the user's preference", and `autoSync`
+    // is that preference — passing only the session left the Settings toggle
+    // connected to nothing, so records kept syncing with it switched off.
     const coreSyncState = useCoreSync({
         token: coreSession.token,
         userId: coreSession.user?.userId ?? null,
-        enabled: coreSession.isSignedIn,
+        enabled: coreSession.isSignedIn && autoSync,
         ready: readyScope === scope,
         buildPayload: buildExportPayload,
         applyRemote: applySyncedState,
@@ -472,12 +475,6 @@ const AppContent = () => {
                             onSaveTemplate={addTemplate}
                             onDeleteTemplate={deleteTemplate}
                             groupedEvents={groupedEvents}
-                            journal={journal}
-                            onSaveJournalEntry={e => {
-                                if (journal.find(p => p.id === e.id)) updateJournalEntry(e);
-                                else addJournalEntry(e);
-                            }}
-                            onDeleteJournalEntry={deleteJournalEntry}
                         />
                     )}
 
@@ -498,6 +495,12 @@ const AppContent = () => {
                             calibration={calibration}
                             onOpenCalibrationSettings={() => handleViewChange('lab-calibration')}
                             lang={lang}
+                            journal={journal}
+                            onSaveJournalEntry={e => {
+                                if (journal.find(p => p.id === e.id)) updateJournalEntry(e);
+                                else addJournalEntry(e);
+                            }}
+                            onDeleteJournalEntry={deleteJournalEntry}
                         />
                     )}
 
