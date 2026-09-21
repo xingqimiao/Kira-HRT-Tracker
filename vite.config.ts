@@ -105,16 +105,27 @@ export default defineConfig(() => {
           // Shared pages require the network API and should always load the
           // current application shell instead of an older precached shell.
           navigateFallbackDenylist: [/^\/share(?:\/|$)/],
-          // The OCR assets are ~22 MB and are only fetched when someone opens the
+          // The OCR assets are ~23 MB and are only fetched when someone opens the
           // scan panel. Precaching them would put that download on every install —
           // including for the overwhelming majority who never scan a report — and
           // the 2 MiB default limit makes the build fail outright on them.
           //
-          // Not precached does not mean not cached: the worker script, the WASM core
-          // and the trained data are stable, versioned paths, so the runtime cache
-          // rule below keeps them after the first scan. Served from this origin
-          // either way, never a CDN.
-          globIgnores: ['**/ocr/**'],
+          // Not precached does not mean not cached: the ONNX Runtime WASM runtime,
+          // the two PP-OCRv6 models and the character dictionary are stable,
+          // versioned paths, so the runtime cache rule below keeps them after the
+          // first scan. Served from this origin either way, never a CDN.
+          //
+          // '**/ocr/**' is the only thing keeping them out, and it is a glob over
+          // public/ — the assets are never imported by any module, so nothing else
+          // would notice if they started being precached.
+          //
+          // The ONNX Runtime WebAssembly build is a separate case in one way only: it
+          // IS imported by a module, so it lands in assets/ rather than public/ocr/,
+          // and at 14 MB it exceeds the 4 MB ceiling below — which vite-plugin-pwa
+          // treats as a build failure, not a warning. It is the OCR engine's runtime
+          // and belongs wherever the models are: fetched on first scan, then kept by
+          // the runtime cache rule. Precaching it would put 14 MB on every install.
+          globIgnores: ['**/ocr/**', '**/ort-wasm*.wasm'],
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           runtimeCaching: [
             {
@@ -138,13 +149,22 @@ export default defineConfig(() => {
               // touches the precache, so replacing the file cannot heal it. And the
               // plugin refuses to store an HTML response at all, so the hole cannot
               // reopen if a wrong path is answered with 200 again.
-              urlPattern: /\/ocr\/.*\.(?:js|wasm|gz)$/i,
+              //
+              // v3 is the same bump for a different reason: the engine changed
+              // completely, and none of the four new URLs collides with one of the
+              // old ones. `ponytail:` the retired `ocr-assets-v2` cache is not
+              // deleted — a generated service worker cannot run arbitrary cleanup
+              // code, and the only other lever would be a custom worker for ~22 MB of
+              // tesseract bytes that are never read again. Says the ceiling rather
+              // than pretending there is none.
+              urlPattern: /\/ocr\/.*\.(?:onnx|mjs|wasm|txt)$/i,
               handler: 'CacheFirst',
               options: {
-                cacheName: 'ocr-assets-v2',
+                cacheName: 'ocr-assets-v3',
                 expiration: {
-                  // A handful of files, but the variants are per-feature-detection
-                  // so only one or two will ever be fetched by a given device.
+                  // Four files per deploy: the runtime glue, its binary, the
+                  // detector, the recogniser and the alphabet. The ceiling is
+                  // headroom for a deploy or two of overlap, not for variants.
                   maxEntries: 10,
                   maxAgeSeconds: 60 * 60 * 24 * 365,
                 },

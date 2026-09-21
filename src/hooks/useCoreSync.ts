@@ -134,6 +134,26 @@ export const useCoreSync = ({
         applyRemoteRef.current(merged.merged);
       }
 
+      // Nothing to send when the merged picture is the one the server already
+      // acknowledged. The read above runs every time, so a change made on another
+      // device is still found; what this skips is the *write*, which every open,
+      // every sign-in and every manual tap was paying for a state the server already
+      // had. It is also what makes "sync now" safe to press repeatedly: the pull
+      // still happens, the write does not.
+      //
+      // `localChanged` alone would not do. A device holding data the account has
+      // never seen has nothing to adopt either, so skipping on that flag would strand
+      // the very first upload. The fingerprint is the only thing that separates
+      // "nothing changed" from "nothing adopted yet" — which is what this ref is for.
+      const seen = fingerprintState(merged.merged);
+      if (seen === lastSeenRef.current) {
+        bootstrappedForRef.current = account;
+        setLastSyncedAt(Date.now());
+        setAccountIncomplete(false);
+        setStatus('synced');
+        return;
+      }
+
       // Push the merged result. `updateExisting` is on because the merge has
       // already decided what wins by `updatedAt`; a second, different rule
       // server-side would fight it.
@@ -156,7 +176,7 @@ export const useCoreSync = ({
       const rejected =
         (pushed.summary?.eventsRejected.length ?? 0) + (pushed.summary?.labsRejected.length ?? 0);
 
-      lastSeenRef.current = fingerprintState(merged.merged);
+      lastSeenRef.current = seen;
       bootstrappedForRef.current = account;
       setLastSyncedAt(Date.now());
       setAccountIncomplete(false);

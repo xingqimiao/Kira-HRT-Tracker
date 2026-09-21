@@ -103,6 +103,7 @@ const AppContent = () => {
         addEvent, addEvents, updateEvent, deleteEvent, deleteEvents, clearAllEvents,
         addLabResult, updateLabResult, deleteLabResult, clearLabResults,
         journal, addJournalEntry, updateJournalEntry, deleteJournalEntry,
+        dismissedRechecks, dismissRecheck,
         addTemplate, deleteTemplate,
         addQuickDose, deleteQuickDose,
         quickDoses,
@@ -541,6 +542,8 @@ const AppContent = () => {
                                 else addJournalEntry(e);
                             }}
                             onDeleteJournalEntry={deleteJournalEntry}
+                            dismissedRechecks={dismissedRechecks}
+                            onDismissRecheck={dismissRecheck}
                         />
                     )}
 

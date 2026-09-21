@@ -186,8 +186,14 @@ check('a round trip through appState returns the same settings', () => {
 
 check('every settings key survives the round trip, not just the sampled ones', () => {
   const everyKey = {
+    // Every key the app can set, spelled out here so that adding one to
+    // APP_SETTING_KEYS without listing it fails this check. It went stale when
+    // aaChartMode arrived with the anti-androgen card, which meant the check was
+    // reporting a failure the app did not have -- the worst kind, because a red check
+    // that is wrong teaches people to ignore red checks.
     theme: 'dark', keyColor: 'blue', lang: 'en', hrtMode: 'transmasc',
-    showVial: true, calMethod: 'adaptive', calHistoryMode: 'forward',
+    showVial: true, calMethod: 'adaptive', calHistoryMode: 'forward', aaChartMode: 'auto',
+    hrtStartDate: '2024-01-01',
   };
   const s = stateWith({ appSettings: everyKey, appSettingsUpdatedAt: 777 });
   const back = normalizeSyncState({ appState: toAppState(s) });

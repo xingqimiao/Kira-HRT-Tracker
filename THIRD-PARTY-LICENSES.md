@@ -71,6 +71,35 @@ all copies or substantial portions of the software.
 
 ---
 
+## PP-OCRv6 OCR models
+
+`public/ocr/det.onnx` and `public/ocr/rec.onnx` are the PP-OCRv6 *small* text
+detector and recogniser: the models the scan feature runs locally through ONNX
+Runtime Web. They are **not committed** — `scripts/sync-ocr-assets.mjs` downloads
+them, which is the only supported path — so this section is the licence record for
+files that are generated at build time rather than tracked.
+
+Models: `PaddlePaddle/PP-OCRv6_small_det_onnx`, revision
+`37b02eded8dbca659f8ee5d51f822ea1ebd9bcba`, and
+`PaddlePaddle/PP-OCRv6_small_rec_onnx`, revision
+`ba215b1cc49d9ed4459d161b96778e8643fe0c1f`.
+
+Source (no token required):
+https://www.modelscope.cn/models/PaddlePaddle/PP-OCRv6_small_det_onnx
+https://www.modelscope.cn/models/PaddlePaddle/PP-OCRv6_small_rec_onnx
+
+Upstream project: PaddleOCR, https://github.com/PaddlePaddle/PaddleOCR
+
+Licence: **Apache License 2.0**. Both model cards declare `license: apache-2.0`,
+and PaddleOCR's own `LICENSE` is the standard Apache 2.0 text. The Apache 2.0
+terms are reproduced at https://www.apache.org/licenses/LICENSE-2.0 and must
+travel with any redistribution of these files.
+
+The ONNX Runtime Web runtime the models run on (`onnxruntime-web`, MIT) is an npm
+dependency and is covered by the generated in-app licence page, not here.
+
+---
+
 ## Brand marks
 
 `src/assets/brands/x.svg` and `src/assets/brands/google.svg` are the X and Google

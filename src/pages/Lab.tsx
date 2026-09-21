@@ -32,6 +32,9 @@ interface LabProps {
     journal: JournalEntry[];
     onSaveJournalEntry: (entry: JournalEntry) => void;
     onDeleteJournalEntry: (id: string) => void;
+    /** Due re-check dates this account has closed, keyed by reminder kind. */
+    dismissedRechecks: Record<string, string>;
+    onDismissRecheck: (kind: string, due: string) => void;
 }
 
 const Lab: React.FC<LabProps> = ({
@@ -50,6 +53,8 @@ const Lab: React.FC<LabProps> = ({
     journal,
     onSaveJournalEntry,
     onDeleteJournalEntry,
+    dismissedRechecks,
+    onDismissRecheck,
 }) => {
     const { isTransmasc } = useHRTMode();
     const [editingLabId, setEditingLabId] = useState<string | null>(null);
@@ -208,6 +213,10 @@ const Lab: React.FC<LabProps> = ({
                                 reminder={reminder}
                                 t={t}
                                 formatDate={(h) => new Date(h * 3600000).toLocaleDateString(LOCALE_MAP[lang] || 'en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                                // The due date is the identity: a later interval
+                                // boundary must bring the reminder back.
+                                dismissed={dismissedRechecks[reminder.kind] === `${reminder.startH}:${reminder.intervalMonths}`}
+                                onDismiss={() => onDismissRecheck(reminder.kind, `${reminder.startH}:${reminder.intervalMonths}`)}
                             />
                         ))}
                         {onSpironolactone && <SpironolactonePrecautions t={t} />}

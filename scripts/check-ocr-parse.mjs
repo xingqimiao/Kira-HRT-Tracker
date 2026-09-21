@@ -400,6 +400,19 @@ check('the confusable label characters are folded, and nothing else is', () => {
 
     // And the exclusions still win over the folded label.
     assert.deepEqual(findHormoneValues('游离惟二醇 1.2 pg/mL'), [], 'the free fraction is still excluded')
+
+    // The 睾 misreads are the same failure mode one character over. Verbatim from the
+    // PP-OCRv6 recogniser (every tier) on the drawn report in 'check-ocr-engine.mjs':
+    // 睾酮 came back as 幸酮/辜酮, and (T) as (1), so the label fold is the only
+    // signal left. See LABEL_CONFUSIONS for why this is a closed list, not a suffix
+    // rule on 酮.
+    for (const label of ['幸酮', '辜酮']) {
+        const found = findHormoneValues(`${label} 17.4 0.5-2.6 nmol/L`)
+        assert.equal(found.length, 1, `${label} should resolve as testosterone`)
+        assert.equal(found[0].analyte, 'T')
+        assert.equal(found[0].value, 17.4, 'the result column, not the 2.6 reference bound')
+    }
+    assert.deepEqual(findHormoneValues('辜酮 9999 ng/dL'), [], 'out of bounds is still refused')
 })
 
 // --- report -----------------------------------------------------------------

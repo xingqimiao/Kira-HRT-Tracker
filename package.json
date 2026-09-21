@@ -17,6 +17,7 @@
     "@types/uuid": "^10.0.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
+    "onnxruntime-web": "^1.30.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "reicon": "^1.2.4",

@@ -9,6 +9,7 @@ import { Lang, TRANSLATIONS } from '../i18n/translations';
 import CopyRow from '../components/CopyRow';
 import IntroCard from '../components/IntroCard';
 import { QuickAddPreview } from '../components/HomeQuickAdd';
+import { LabScanDemo, JournalPreview, RecheckPreview, SignInPreview } from '../components/OnboardingFeatures';
 import Icon from '../components/Icon';
 import DateTimePicker from '../components/DateTimePicker';
 import { Check, Plus, ChevronDown } from '../icons';
@@ -81,6 +82,12 @@ const PRIMARY: StepRoles = { surface: '--md-sys-color-primary-container', on: '-
 const SECONDARY: StepRoles = { surface: '--md-sys-color-secondary-container', on: '--md-sys-color-on-secondary-container', accent: '--md-sys-color-secondary', accentOn: '--md-sys-color-on-secondary' };
 const TERTIARY: StepRoles = { surface: '--md-sys-color-tertiary-container', on: '--md-sys-color-on-tertiary-container', accent: '--md-sys-color-tertiary', accentOn: '--md-sys-color-on-tertiary' };
 
+/** The two container steps the feature rows sit on — see STEP_ROLES. */
+const CONTAINER: StepRoles = { surface: '--md-sys-color-surface-container', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' };
+const CONTAINER_HIGH: StepRoles = { surface: '--md-sys-color-surface-container-high', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' };
+/** The surface the journal and reminder mocks used to sit on inside a frame — see STEP_ROLES. */
+const CONTAINER_LOWEST: StepRoles = { surface: '--md-sys-color-surface-container-lowest', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' };
+
 /**
  * One full-bleed colour block per step, named by M3 role — never a raw hex.
  *
@@ -106,18 +113,25 @@ const STEP_ROLES: Record<string, StepRoles> = {
     // themes.
     how: { surface: '--md-sys-color-surface-dim', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' },
     started: TERTIARY,
-    // The two "what you can do" steps wear adjacent surface containers: they are
-    // siblings in the story (save a template, then save the account), and giving
-    // them the same role keeps the slide between them from changing colour twice.
-    quick: { surface: '--md-sys-color-surface-container', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' },
-    account: { surface: '--md-sys-color-surface-container-high', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' },
+    // The feature steps wear one of two adjacent containers. Templates and the
+    // lab scan are two ways records arrive, so they share a ground and the slide
+    // between them does not repaint. The journal and the reminder are cards of
+    // their own, so their blocks wear the surface that card sat on and the frame
+    // comes off (the `bare` IntroCard) — one card, not a card inside a card. The
+    // X and Google sign-in and the account preview are one pair, one step up.
+    quick: CONTAINER,
+    scan: CONTAINER,
+    journal: CONTAINER_LOWEST,
+    recheck: CONTAINER_LOWEST,
+    signin: CONTAINER_HIGH,
+    account: CONTAINER_HIGH,
     pwa: SECONDARY,
     mcp: TERTIARY,
     privacy: { surface: '--md-sys-color-surface-container-highest', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' },
 };
 
 /** Step order, for the colour lookup above; `steps` holds the panels themselves. */
-const STEP_KEYS = ['welcome', 'mode', 'how', 'started', 'quick', 'account', 'pwa', 'mcp', 'privacy', 'sendoff'] as const;
+const STEP_KEYS = ['welcome', 'mode', 'how', 'started', 'quick', 'scan', 'journal', 'recheck', 'signin', 'account', 'pwa', 'mcp', 'privacy', 'sendoff'] as const;
 
 /**
  * The three slots of the "how it works" step, and the only step that splits in
@@ -151,7 +165,11 @@ const Body: React.FC<{ children: React.ReactNode }> = ({ children }) => (
  * the chart uses it for real.
  */
 const DoseRings: React.FC<{ count: number; at: number }> = ({ count, at }) => {
-    const GAP = 15, PAD = 7, MID = 9;
+    const PAD = 7, MID = 9;
+    // The ring row grows with every step added, and at this length the default
+    // 15px gap would make it wider than the back button's track can spare on a
+    // 320px screen. Tightening the gap keeps the row near 150px at any length.
+    const GAP = count > 1 ? Math.min(15, Math.floor((150 - PAD * 2) / (count - 1))) : 15;
     const width = PAD * 2 + GAP * (count - 1);
     return (
         <svg
@@ -693,6 +711,45 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
             title={t('onboarding.quick_title')}
             description={t('onboarding.quick_subtitle')}
             visual={<QuickAddPreview />}
+        />,
+
+        /* The lab scan: the other way a record gets in, straight from a photo.
+           It sits after the template step because the two answer the same
+           question — "how do I log this quickly?" — one for a dose, one for a
+           blood test. */
+        <IntroCard
+            key="scan"
+            title={t('onboarding.scan_title')}
+            description={t('onboarding.scan_subtitle')}
+            visual={<LabScanDemo />}
+        />,
+
+        /* The journal and the reminders are what the app gives back rather than
+           takes in: the private notes you keep for yourself, then the prompts
+           that come back on a schedule. */
+        <IntroCard
+            key="journal"
+            bare
+            title={t('onboarding.journal_title')}
+            description={t('onboarding.journal_subtitle')}
+            visual={<JournalPreview />}
+        />,
+
+        <IntroCard
+            key="recheck"
+            bare
+            title={t('onboarding.recheck_title')}
+            description={t('onboarding.recheck_subtitle')}
+            visual={<RecheckPreview />}
+        />,
+
+        /* Sign-in sits immediately before the account step, so the method and
+           the payoff — one tap here, sync there — read as one thought. */
+        <IntroCard
+            key="signin"
+            title={t('onboarding.signin_title')}
+            description={t('onboarding.signin_subtitle')}
+            visual={<SignInPreview />}
         />,
 
         <IntroCard

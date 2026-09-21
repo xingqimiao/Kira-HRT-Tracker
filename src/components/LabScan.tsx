@@ -130,12 +130,28 @@ async function prepareImage(dataUrl: string): Promise<string> {
     return canvas.toDataURL('image/png');
 }
 
-/** Pull the recogniser's text out of a tesseract result, tolerating its shapes. */
-function resultText(result: any): string {
-    if (!result) return '';
-    if (typeof result.data?.text === 'string') return result.data.text;
-    if (typeof result.text === 'string') return result.text;
-    return '';
+/**
+ * Decode an image to the raw RGBA pixels the recogniser works on.
+ *
+ * This is a decode, not a re-encode: the canvas is only ever read back as pixels,
+ * never written out as a new image. That distinction is the whole of the note above
+ * on 'prepareImage' — routing the page through 'toDataURL' is what turned the label
+ * into 'i:' — and it matters here because PP-OCR takes pixels rather than a data URL.
+ */
+async function toPixels(dataUrl: string): Promise<{
+    pixels: Uint8ClampedArray;
+    width: number;
+    height: number;
+}> {
+    const image = await createImage(dataUrl);
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) throw new Error('canvas 2d context unavailable');
+    ctx.drawImage(image, 0, 0);
+    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return { pixels: frame.data, width: canvas.width, height: canvas.height };
 }
 
 /**
@@ -148,12 +164,13 @@ function resultText(result: any): string {
  * misrecognised digit is a value the user sees and corrects, not one that reaches a
  * health record on its own.
  *
- * tesseract.js and its assets are **dynamically imported at the moment of scanning**,
- * never at app start. The library plus the WASM core and the trained data are ~22 MB;
- * loading any of that for a user who never scans a report would be the largest thing
- * in the bundle by an order of magnitude. The import is also why this file has no
- * top-level import of `tesseract.js` — a static one would pull it into the main chunk
- * and defeat the point.
+ * The recogniser (PP-OCRv6 through ONNX Runtime Web) and its assets are **dynamically
+ * imported at the moment of scanning**, never at app start. The runtime plus the two
+ * models are ~23 MB; loading any of that for a user who never scans a report would be
+ * the largest thing in the bundle by an order of magnitude. The import is also why
+ * this file has no top-level import of `../utils/ppocr` — a static one would pull
+ * ONNX Runtime into the main chunk and defeat the point. See `scripts/sync-ocr-assets.mjs`
+ * for where the assets come from and `src/utils/ppocr.ts` for the pipeline itself.
  */
 const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
     const { t } = useTranslation();
@@ -180,53 +197,25 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
             setState({ kind: 'recognising', progress: 0 });
             // Dynamic import: see the note above. Vite splits this into its own chunk,
             // so the main bundle is unchanged for anyone who never scans.
-            const { createWorker } = await import('tesseract.js');
+            //
+            // Every asset path is built from `/ocr/` inside the engine itself. ONNX
+            // Runtime Web's own default is a jsDelivr URL for its WASM binary, so a
+            // third-party request on scan is one forgotten line away — naming the path
+            // is what keeps the no-external-requests promise the app makes (see the
+            // font note in src/index.css). With it set, a missing file fails locally,
+            // which is detectable, instead of silently reaching a CDN.
+            const { recognize } = await import('../utils/ppocr');
+            const { pixels, width, height } = await toPixels(prepared);
 
-            // Every path is given explicitly. The defaults are jsDelivr URLs — the
-            // worker, the WASM core and the trained data all come from a CDN unless
-            // they are named here, and a third-party request on scan would break the
-            // no-external-requests promise the app makes (see the font note in
-            // src/index.css). With these set, the scan cannot reach a CDN even if a
-            // file is missing — it fails locally instead, which is detectable.
-            // Both languages: `eng` for the digits and the unit, `chi_sim` for the
-            // Chinese label. Without the second one a report that prints only `雌二醇`
-            // reads as noise and the row is lost — see scripts/sync-ocr-assets.mjs.
-            const worker = await createWorker('eng+chi_sim', 1, {
-                workerPath: '/ocr/worker.min.js',
-                corePath: '/ocr/core',
-                langPath: '/ocr',
-                // Spelled out even though `true` is tesseract.js's current default. The
-                // default only decides the filename: with `false` the worker asks for
-                // `/ocr/chi_sim.traineddata`, which is not on the server, and Caddy's
-                // SPA fallback answers that with `200 text/html` instead of 404 — so
-                // the wrong filename would not present as a failure, it would present
-                // as the wrong *content*. A default is not a contract; this one is
-                // pinned to the file that the build actually writes.
-                gzip: true,
-                // Namespaced away from tesseract.js's default (`./`). It reads its own
-                // IndexedDB cache *before* the network, and an earlier deploy poisoned
-                // `./chi_sim.traineddata` with the SPA shell (see `vite.config.ts`).
-                // Fixing the server and the service worker was not enough on its own:
-                // that cache entry outlives both, so a returning browser kept reading
-                // garbage as Chinese and reporting "no usable values". A new key is a
-                // miss, and a miss fetches the real file.
-                cachePath: 'ocr-v2',
-                logger: (m: any) => {
-                    if (m?.status === 'recognizing text' && typeof m.progress === 'number') {
-                        setState({ kind: 'recognising', progress: m.progress });
-                    }
-                },
+            // Boxes come back grouped into visual rows, one row per line, which is the
+            // shape `findHormoneValues` reads: it splits on newlines and looks for a
+            // label, a value and a unit within a line. Joining everything into one
+            // blob would put a row's unit next to the next row's label.
+            const lines = await recognize(pixels, width, height, {
+                onProgress: (fraction) => setState({ kind: 'recognising', progress: fraction }),
             });
-
-            try {
-                const result = await worker.recognize(prepared);
-                const candidates = findHormoneValues(resultText(result));
-                setState({ kind: 'done', candidates });
-            } finally {
-                // Always terminate: a live worker holds a WASM heap of tens of MB, and
-                // leaving one behind per scan would grow the tab without bound.
-                await worker.terminate();
-            }
+            const candidates = findHormoneValues(lines.join('\n'));
+            setState({ kind: 'done', candidates });
         } catch (error: any) {
             setState({
                 kind: 'failed',

@@ -21,6 +21,13 @@ interface IntroCardProps {
      * step so nothing sits between it and the reader.
      */
     framed?: boolean;
+    /**
+     * The step's surface is already the card's — see `journal`/`recheck` in
+     * STEP_ROLES — so the visual sits straight on it. Unlike unframed, it keeps
+     * the reading gutter: these visuals are cards of their own (the journal, the
+     * reminder), not a photograph that should touch both edges.
+     */
+    bare?: boolean;
 }
 
 /**
@@ -42,16 +49,17 @@ interface IntroCardProps {
  * The heading and explanation are children of the step's block, not of the frame, so
  * `.intro-title` and `.intro-muted` resolve against the block the step is painted on.
  */
-const IntroCard: React.FC<IntroCardProps> = ({ visual, title, description, framed = true }) => (
+const IntroCard: React.FC<IntroCardProps> = ({ visual, title, description, framed = true, bare = false }) => (
     <div className="pt-8">
-        {framed ? (
+        {framed && !bare ? (
             <div className="overflow-hidden rounded-[var(--md-sys-shape-corner-extra-large)] border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-lowest)]">
                 <div className="flex items-center justify-center p-4 sm:p-6">{visual}</div>
             </div>
         ) : (
-            /* Break out of the step's own 24px gutter so the picture touches both
-               edges of the reading column; the words below stay where they were. */
-            <div className="-mx-6 flex items-center justify-center">{visual}</div>
+            /* Unframed breaks out of the step's own 24px gutter so the picture
+               touches both edges of the reading column; the words below stay
+               where they were. A bare card keeps the gutter — see `bare`. */
+            <div className={`${bare ? '' : '-mx-6 '}flex items-center justify-center`}>{visual}</div>
         )}
         {title && <h1 className="intro-title mt-6 text-m3-display-large break-words">{title}</h1>}
         {description && <p className="mt-3 text-m3-body-large intro-muted">{description}</p>}

@@ -123,6 +123,26 @@ const LABEL_CONFUSIONS: [RegExp, string][] = [
     // returns for it on a photographed result card. 睢/雎/唯/准 are the same shape
     // and the same failure mode.
     [/[惟睢雎唯准隹]/g, '雌'],
+    // And the general case behind it. 雌二醇 is the only analyte this parser reads
+    // that ends in 二醇, so a Chinese character in front of 二醇 is that character
+    // misread. Enumerating lookalikes one at a time means shipping a character nobody
+    // has seen yet to every user who photographs a report; the suffix carries the
+    // meaning and the first character is what the recogniser gets wrong.
+    //
+    // Deliberately NOT the same trick for 睾酮: 酮 also ends 孕酮, and a rule on that
+    // suffix would file a progesterone result as testosterone. A wrong analyte is
+    // worse than a missed one — the missed one gets typed in by hand, the wrong one
+    // gets saved.
+    [/[\u4e00-\u9fff]二醇/g, '雌二醇'],
+    // 睾 (gāo, the first character of 睾酮) — the same failure mode as 雌 above, found
+    // by the drawn report in 'scripts/check-ocr-engine.mjs': every PP-OCRv6 tier run
+    // against it read 睾 as 幸 or 辜, which is a real testosterone row lost on any
+    // photographed report. Unlike the 二醇 suffix, this is a *closed list* and not a
+    // suffix rule: 孕酮 (progesterone) also ends in 酮, so a rule on that suffix would
+    // file a progesterone result as testosterone. 幸酮 and 辜酮 are not words, so
+    // folding either character onto 睾 cannot invent a hormone label — it can only
+    // recover 睾酮.
+    [/[辜幸]/g, '睾'],
 ]
 
 /** Fold the confusable label characters onto their canonical form. */

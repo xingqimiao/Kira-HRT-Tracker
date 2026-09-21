@@ -2758,6 +2758,70 @@ select,
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   INTRO — the lab-report scan (OnboardingFeatures.tsx)
+
+   The scan step draws a report in HTML and asks a bar to travel down it once;
+   the form beside it is where the bar ends up. Every animated node's *resting*
+   CSS is its final frame — the bar rests hidden, the two values rest visible —
+   which is the same convention OnboardingCurve uses, and the reason the
+   reduced-motion rule below is one `animation: none` rather than a second code
+   path. The words are never animated: the title, the description and the
+   caption are ordinary text and read in either mode.
+
+   Timings, all from existing tokens: the sweep is
+   --md-sys-motion-transition-persist (500ms, emphasized — it is a reading
+   gesture, so it decelerates into place); each value is
+   --md-sys-motion-transition-quick (150ms, standard), delayed by a duration
+   token (400ms, 550ms) so it lands under the bar. Nothing repeats: the bar
+   leaves and the timeline is over.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* The sweep is a full-height plane inside the sheet. Translating it -100% parks
+   its bottom edge — where the line sits — at the sheet's top, so the line
+   travels the whole sheet instead of its own 3px. */
+.onb-scan__sweep {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    animation: onb-scan-sweep var(--md-sys-motion-transition-persist) both;
+}
+
+.onb-scan__line {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    height: 3px;
+    background-color: var(--md-sys-color-primary);
+}
+
+@keyframes onb-scan-sweep {
+    0%   { opacity: 1; transform: translateY(-100%); }
+    82%  { opacity: 1; }
+    100% { opacity: 0; transform: translateY(0); }
+}
+
+/* The form's values. Resting is the finished state; the keyframe's `from` is
+   what hides them until the bar passes. */
+.onb-scan__value {
+    animation: onb-scan-value var(--md-sys-motion-transition-quick) both;
+}
+
+@keyframes onb-scan-value {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    /* The bar is the only movement and the values already rest in their final
+       state, so the demo loses the travel and keeps the meaning. */
+    .onb-scan__sweep,
+    .onb-scan__value {
+        animation: none;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    HRT MILESTONE — the top bar, and the 100-day burst that falls past it
 
    Rendered by src/components/HrtMilestoneEffect.tsx, above the account page, on

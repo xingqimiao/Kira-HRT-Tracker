@@ -354,11 +354,13 @@ hrt.kiramyao.com {
     # `/ocr/*` that is worse than a 404: those files are cached by URL (the service
     # worker's `ocr-assets` cache in `vite.config.ts`, plus the browser's own
     # cache), so a single missing language file is stored *as* the language file and
-    # served for a year. tesseract.js then initialises without Chinese, reads a
-    # Chinese label as noise, and reports "no usable values" on a perfectly legible
-    # report — and no redeploy can clear it, because the poisoned copy is in the
+    # served for a year. tesseract.js then initialised without Chinese, read a
+    # Chinese label as noise, and reported "no usable values" on a perfectly legible
+    # report — and no redeploy could clear it, because the poisoned copy is in the
     # client. A local `vite preview` cannot reproduce this, because it answers the
-    # same missing path with a real 404.
+    # same missing path with a real 404. The engine is PP-OCRv6 now and the failure
+    # mode is unchanged: a 2 KB HTML page handed to `InferenceSession.create` is
+    # either an opaque protobuf error or, worse, a model that loads and reads noise.
     #
     # `file_server` alone returns 404 for anything not on disk, so the asset paths
     # are matched without the fallback. `/sw-*.js` is here for the same reason: a
@@ -407,11 +409,31 @@ hrt.kiramyao.com {
         # bundle makes to `hrt.kiramyao.com/auth/avatar/...` had to be allowed here.
         # Nothing external was added: `img-src` stays `self`, which is the point — a
         # provider CDN in that list is what this design exists to avoid.
-        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://hrt.kiramyao.com https://api.kiramyao.com; frame-ancestors 'none'; base-uri 'self'"
+        #
+        # `'wasm-unsafe-eval'` is the one keyword the scan feature needs and cannot work
+        # without. ONNX Runtime Web compiles its WebAssembly module with
+        # `WebAssembly.instantiate`, and a bare `script-src 'self'` blocks that in every
+        # current browser — the scan fails with a CSP violation and nothing in the
+        # server log. The keyword re-enables *only* WebAssembly compilation: unlike
+        # `'unsafe-eval'` it does not allow `eval()` or `new Function()` for JavaScript,
+        # and it does not widen `connect-src`, so the runtime and the models are still
+        # fetched from this origin and nowhere else. Do not substitute the broader
+        # keyword for it.
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://hrt.kiramyao.com https://api.kiramyao.com; frame-ancestors 'none'; base-uri 'self'"
         -Server
     }
 }
 ```
+
+**What the scan needs from the policy.** The lab-report scan runs PP-OCRv6 through ONNX
+Runtime Web, which is WebAssembly, so `script-src` must carry `'wasm-unsafe-eval'` — see
+the note in the block above. Nothing else changes: the runtime, both models and the
+character dictionary are served from `/ocr/*` on this host, which `default-src 'self'`
+already allows; they load on the main thread with a single thread, so no `worker-src` and
+no COOP/COEP (`crossOriginIsolated`) headers are needed; and the ONNX Runtime WASM
+binary is fetched with `fetch()`, which `connect-src 'self'` covers. The `@asset` block
+above must keep matching `/ocr/*`: a model answered with the SPA shell instead of a
+404 is a 200 the client would otherwise cache *as* a model.
 
 **The avatar relies on the CSP being on this host, not on Cloudflare's default.** As of the
 `2026-09-21` check, `hrt.kiramyao.com` returns **no** `Content-Security-Policy` header at

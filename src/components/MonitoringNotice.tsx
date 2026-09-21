@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Icon from './Icon';
-import { AlertCircle, AlertTriangle, CircleOff, Droplet, ExternalLink, Info } from '../icons';
+import { AlertCircle, AlertTriangle, CircleOff, Droplet, ExternalLink, Info, X } from '../icons';
 import { MonitoringNotice, RecheckReminder, Ester } from '../../logic';
 
 /**
@@ -128,35 +128,79 @@ const SourceLinks: React.FC<{ sources: { label: string; url: string }[] }> = ({ 
  * anchored to (with its date), and the interval's source. The line that names the
  * first-logged-dose weakness is always shown rather than tucked away, because the
  * anchor is the one part of this the app has to guess at.
+ *
+ * It can be closed, because a reminder that cannot be silenced teaches people to
+ * ignore reminders — but closing only collapses it to a row that opens it again,
+ * so dismissing never puts the sources out of reach. The dismissal is persisted by
+ * the caller per due date; a later interval boundary resurfaces it.
  */
 export const RecheckReminderLine: React.FC<{
     reminder: RecheckReminder;
     t: (k: string) => string;
     /** Local-date formatter for the anchoring dose, supplied by the caller's locale. */
     formatDate: (h: number) => string;
-}> = ({ reminder, t, formatDate }) => (
-    <div className="flex items-start gap-1.5 text-m3-body-compact leading-snug text-[var(--color-m3-on-surface-variant)]">
-        <Icon icon={AlertTriangle} size={14} strokeWidth={1.75} className="mt-[3px] shrink-0" />
-        <div className="min-w-0">
-            <p className="font-semibold text-[var(--color-m3-on-surface)]">
-                {t('monitor.recheck.title')}
-            </p>
-            <p className="mt-0.5">
-                {t(RECHECK_BODY[reminder.kind])
-                    .replace('{drug}', t(`ester.${reminder.ester}`))
-                    .replace('{months}', String(reminder.intervalMonths))}{' '}
-                <span className="opacity-70">{t('monitor.sources')}</span>{' '}
-                <SourceLinks sources={RECHECK_SOURCES[reminder.kind]} />
-            </p>
-            <p className="mt-0.5 opacity-80">
-                {t('monitor.recheck.basis')
-                    .replace('{drug}', t(`ester.${reminder.ester}`))
-                    .replace('{date}', formatDate(reminder.startH))}
-            </p>
-            <p className="mt-0.5 opacity-70">{t('monitor.recheck.weakness')}</p>
+    /** True when this due date has already been closed on this account. */
+    dismissed: boolean;
+    /** Persist the dismissal for this due date. */
+    onDismiss: () => void;
+}> = ({ reminder, t, formatDate, dismissed, onDismiss }) => {
+    // A re-open is local, not a change of the stored dismissal: reading the
+    // sources again is not the same as asking for the reminder to return, so a
+    // reload puts the row back in the shape the user left it.
+    const [reopened, setReopened] = useState(false);
+
+    if (dismissed && !reopened) {
+        return (
+            <button
+                type="button"
+                onClick={() => setReopened(true)}
+                className="flex items-start gap-1.5 text-start text-m3-body-compact leading-snug text-[var(--color-m3-on-surface-variant)] hover:text-[var(--color-m3-on-surface)]"
+            >
+                <Icon icon={AlertTriangle} size={14} strokeWidth={1.75} className="mt-[3px] shrink-0" />
+                <span>
+                    <span className="font-semibold text-[var(--color-m3-on-surface)] underline decoration-[var(--color-m3-outline-variant)] underline-offset-2">
+                        {t('monitor.recheck.title')}
+                    </span>{' '}
+                    <span className="opacity-70">{t('monitor.recheck.show')}</span>
+                </span>
+            </button>
+        );
+    }
+
+    return (
+        <div className="flex items-start gap-1.5 text-m3-body-compact leading-snug text-[var(--color-m3-on-surface-variant)]">
+            <Icon icon={AlertTriangle} size={14} strokeWidth={1.75} className="mt-[3px] shrink-0" />
+            <div className="min-w-0 flex-1">
+                <p className="font-semibold text-[var(--color-m3-on-surface)]">
+                    {t('monitor.recheck.title')}
+                </p>
+                <p className="mt-0.5">
+                    {t(RECHECK_BODY[reminder.kind])
+                        .replace('{drug}', t(`ester.${reminder.ester}`))
+                        .replace('{months}', String(reminder.intervalMonths))}{' '}
+                    <span className="opacity-70">{t('monitor.sources')}</span>{' '}
+                    <SourceLinks sources={RECHECK_SOURCES[reminder.kind]} />
+                </p>
+                <p className="mt-0.5 opacity-80">
+                    {t('monitor.recheck.basis')
+                        .replace('{drug}', t(`ester.${reminder.ester}`))
+                        .replace('{date}', formatDate(reminder.startH))}
+                </p>
+                <p className="mt-0.5 opacity-70">{t('monitor.recheck.weakness')}</p>
+            </div>
+            {/* Always writes the dismissal (a no-op when it is already stored),
+                then collapses a re-opened row. */}
+            <button
+                type="button"
+                onClick={() => { onDismiss(); setReopened(false); }}
+                aria-label={t('monitor.recheck.dismiss')}
+                className="-mr-1 mt-0.5 shrink-0 rounded-full p-1 text-[var(--color-m3-on-surface-variant)] hover:bg-[var(--color-m3-surface-container)] hover:text-[var(--color-m3-on-surface)]"
+            >
+                <Icon icon={X} size={14} strokeWidth={2} />
+            </button>
         </div>
-    </div>
-);
+    );
+};
 
 /**
  * The spironolactone precautions, each one a line the reference states verbatim

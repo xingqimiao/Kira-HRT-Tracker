@@ -40,6 +40,9 @@ const SHARED_SUFFIXES = [
     // Which milestone this device has already celebrated, as `YYYY-MM-DD:key`.
     // Device-local by design — see `pendingMilestone` below.
     'hrt-milestone',
+    // Which due re-checks this device has closed, per reminder kind — see
+    // `dismissRecheck`. Device-local for the same reason as the milestone.
+    'recheck-dismissed',
 ] as const;
 
 /**
@@ -244,6 +247,29 @@ export const useAppData = (
         touchAppSettings();
     };
     /**
+     * Which due re-check each reminder kind was last closed at, as
+     * `<startH>:<intervalMonths>` per kind.
+     *
+     * A dismissal that only lasted the page view would not be a dismissal — the
+     * reminder would be back the moment the Lab page was re-opened. So it is
+     * stored, per account, in this device's `hrt-…-recheck-dismissed` key, and
+     * deliberately not synced or exported (like `hrt-milestone`): it records
+     * what *this* device has already shown, and showing it once more on a second
+     * device is a smaller failure than a reminder silently suppressed. The due
+     * date in the value is what brings it back — a later interval boundary
+     * writes a new one and the reminder returns on schedule.
+     */
+    const [dismissedRechecks, setDismissedRechecksState] = useState<Record<string, string>>(() =>
+        loadJSON(sharedKey('recheck-dismissed'), {} as Record<string, string>)
+    );
+    const dismissRecheck = (kind: string, due: string) => {
+        // Read storage rather than the closed-over state so two dismissals in one
+        // commit cannot lose the first.
+        const next = { ...loadJSON(sharedKey('recheck-dismissed'), {} as Record<string, string>), [kind]: due };
+        setDismissedRechecksState(next);
+        try { localStorage.setItem(sharedKey('recheck-dismissed'), JSON.stringify(next)); } catch { /* private mode */ }
+    };
+    /**
      * A milestone the account page should celebrate this visit, as
      * `<days>:<cake|confetti>`, or '' for an ordinary day.
      *
@@ -343,6 +369,7 @@ export const useAppData = (
         setCalibrationHistoryModeState(localStorage.getItem(sharedKey('cal-history-mode')) === 'forward' ? 'forward' : 'retrospective');
         setAaChartModeState(normalizeAntiandrogenChartMode(localStorage.getItem(sharedKey('aa-chart'))));
         setHrtStartDateState(normalizeHrtStartDate(localStorage.getItem(sharedKey('hrt-start'))) ?? '');
+        setDismissedRechecksState(loadJSON(sharedKey('recheck-dismissed'), {} as Record<string, string>));
         setPkParamsState(sanitizePKParams(loadJSON<unknown>(sharedKey('pk-params'), null)));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [scope]);
@@ -1229,6 +1256,7 @@ export const useAppData = (
         calibrationHistoryMode, setCalibrationHistoryMode,
         aaChartMode, setAaChartMode,
         hrtStartDate, setHrtStartDate,
+        dismissedRechecks, dismissRecheck,
         pendingMilestone,
         calibration,
         currentLevel,
