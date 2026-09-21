@@ -103,6 +103,13 @@ token is not a session; revoking the token or changing the password does. That w
 the old standard-mode behaviour and it is now the only behaviour, so the honest
 instruction to a user is "treat an agent token as a password".
 
+**What that credential deliberately cannot do is change the account's identity.** Password
+rotation, session revocation, provider link/unlink, account deletion and token management
+are web-only and have no MCP tool, so a token is a full credential *for records* rather
+than a master key for the account. That is a decision rather than an omission — the
+reasoning and the endpoint-by-endpoint list are in `MCP.md` under "Identity and destructive
+operations", and the app states the same boundary to the user on its MCP page.
+
 **Passkeys were removed, and why they could not simply stay.** The feature was built to
 protect the data key: a credential's **PRF extension output** derived the KEK that
 wrapped the DEK, registration refused any credential that did not return a PRF output,

@@ -18,26 +18,36 @@ interface McpSettingsProps {
 }
 
 /**
- * The twelve tools, mirrored from `server/src/mcp.ts`.
+ * The tool table, mirrored from `server/src/mcp.ts`.
  *
  * Described the way a documented MCP server describes its own — a table of tool,
  * input and what it returns — rather than as a bare list of names. A name alone
  * tells a reader nothing about what an agent can do with it, which was the complaint
  * that produced this rewrite.
+ *
+ * The **count is derived** (`MCP_TOOLS.length`) rather than typed into the copy, and
+ * `scripts/check-mcp-tools.mjs` asserts this list matches the server's registered
+ * tools name for name and `server/MCP.md` table for table. That is deliberate: the
+ * count in this file and the prose count in the translations were both wrong at once
+ * and nothing failed, which is exactly the drift a hardcoded number cannot catch.
  */
 const MCP_TOOLS: { name: string; input: string; returns: string }[] = [
-    { name: 'hrt_get_timeline', input: 'limit?', returns: 'Doses and labs merged, newest first' },
-    { name: 'hrt_list_medications', input: 'limit?', returns: 'Logged doses' },
-    { name: 'hrt_list_labs', input: 'limit?', returns: 'Lab results' },
-    { name: 'hrt_predict_levels', input: 'at?', returns: 'Modelled concentration at a time' },
+    { name: 'hrt_get_timeline', input: 'limit?, before?', returns: 'Doses and labs merged, newest first' },
+    { name: 'hrt_list_medications', input: 'limit?, before?', returns: 'Logged doses' },
+    { name: 'hrt_list_labs', input: 'limit?, before?', returns: 'Lab results' },
+    { name: 'hrt_list_journal', input: 'limit?, before?', returns: 'Private journal entries — the user’s own words' },
+    { name: 'hrt_list_dose_templates', input: 'limit?, before?', returns: 'Saved one-tap dose templates' },
+    { name: 'hrt_predict_levels', input: 'analyte?, from_days?, to_days?, points?, with_calibration?', returns: 'Modelled curve plus peak, trough and current level' },
     { name: 'hrt_check_advisories', input: '—', returns: 'Any dosage advisory the app would show' },
-    { name: 'hrt_get_settings', input: '—', returns: 'Body weight, mode, calibration' },
-    { name: 'hrt_add_medication', input: 'route, ester, dose_mg, at', returns: 'The created dose' },
+    { name: 'hrt_get_settings', input: '—', returns: 'Body weight, mode, calibration, PK overrides' },
+    { name: 'hrt_sync_state', input: '—', returns: 'Full record state — the whole export, can be truncated; prefer the paginated read tools' },
+    { name: 'hrt_reference', input: '—', returns: 'Routes, esters, units and the tool list itself' },
+    { name: 'hrt_add_medication', input: 'route, ester, dose_mg, at, extras?', returns: 'The created dose' },
     { name: 'hrt_add_lab_result', input: 'value, unit, at', returns: 'The created lab result' },
+    { name: 'hrt_add_journal_entry', input: 'note, at, id?', returns: 'The created journal entry' },
+    { name: 'hrt_add_dose_template', input: 'name, route, ester, dose_mg, extras?', returns: 'The saved template' },
     { name: 'hrt_update_settings', input: 'any setting field', returns: 'The updated settings' },
     { name: 'hrt_delete_record', input: 'kind, id', returns: 'Confirmation' },
-    { name: 'hrt_sync_state', input: '—', returns: 'Full record state — the whole export, can be truncated; prefer the paginated read tools' },
-    { name: 'hrt_reference', input: '—', returns: 'Routes, esters and units the app accepts' },
     // The share tools, grouped at the end because they are the only ones whose effect
     // is visible outside the account — a link anyone can open.
     { name: 'hrt_create_share', input: 'expires_in_hours, password?, live?, limit?', returns: 'A URL, shown once' },
@@ -288,7 +298,11 @@ const McpSettings: React.FC<McpSettingsProps> = ({ session, onBack, onSignIn }) 
                 {/* The tools, as a table. */}
                 <section className={`py-4 ${divider}`}>
                     <p className={sectionLabel}>{t('mcp.tools_label')}</p>
-                    <p className={`mt-1 ${muted}`}>{t('mcp.tools_desc')}</p>
+                    {/* The count comes from the table above, not from the copy: see the
+                        note on `MCP_TOOLS` for why a typed number was wrong twice. */}
+                    <p className={`mt-1 ${muted}`}>
+                        {t('mcp.tools_desc').replace('{count}', String(MCP_TOOLS.length))}
+                    </p>
                     <div className="mt-3 overflow-x-auto">
                         <table className="w-full text-start text-xs">
                             <thead>
@@ -309,6 +323,14 @@ const McpSettings: React.FC<McpSettingsProps> = ({ session, onBack, onSignIn }) 
                             </tbody>
                         </table>
                     </div>
+                </section>
+
+                {/* What the token deliberately cannot do. Stated because "everything the
+                    app can do is available over MCP" is only true with named exceptions,
+                    and an unstated exception is worse than no principle. */}
+                <section className={`py-4 ${divider}`}>
+                    <p className={sectionLabel}>{t('mcp.scope_label')}</p>
+                    <p className={`mt-1 ${body}`}>{t('mcp.scope_note')}</p>
                 </section>
 
                 {/* What the token actually is, stated before the endpoint and the

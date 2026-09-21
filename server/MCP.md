@@ -100,21 +100,32 @@ Config file locations, for reference: `claude_desktop_config.json` (Claude Deskt
 
 ## The tools
 
-Fifteen, grouped by what they touch. Every one is described for an agent to choose from,
-and `hrt_reference` exists so an agent can learn the vocabulary before writing anything.
+Nineteen, grouped by what they touch. Every one is described for an agent to choose from,
+and `hrt_reference` exists so an agent can learn the vocabulary — and the whole surface,
+because it returns its own catalogue — before writing anything.
+
+**Every tool listed here is reachable by any holder of the token**, reads and writes alike.
+There is no per-tool scope and no live unlock; the token is the whole credential. What it
+deliberately cannot reach is the list under [Identity and destructive operations](#identity-and-destructive-operations).
 
 ### Reads
 
+Every read that can return a history paginates. `limit` bounds one page and `before`
+(the oldest instant from the page just read) steps back through it; no read returns an
+unbounded history.
+
 | Tool | Input | Returns |
 |---|---|---|
-| `hrt_get_timeline` | `limit?` | Doses and labs merged, newest first. Start here. |
-| `hrt_list_medications` | `limit?` | Logged doses only |
-| `hrt_list_labs` | `limit?` | Lab results only |
-| `hrt_predict_levels` | `at?` | Modelled concentration at a time |
+| `hrt_get_timeline` | `limit?, before?` | Doses and labs merged, newest first. Start here. |
+| `hrt_list_medications` | `limit?, before?` | Logged doses only |
+| `hrt_list_labs` | `limit?, before?` | Lab results only |
+| `hrt_list_journal` | `limit?, before?` | Private journal entries — one free-text note each, newest first |
+| `hrt_list_dose_templates` | `limit?, before?` | Saved dose templates — the shapes the app offers as one-tap buttons |
+| `hrt_predict_levels` | `analyte?, from_days?, to_days?, points?, with_calibration?` | A downsampled modelled curve plus peak, trough and current level |
 | `hrt_check_advisories` | — | Any dosage advisory the app would show |
-| `hrt_get_settings` | — | Body weight, mode, calibration |
+| `hrt_get_settings` | — | Body weight, mode, calibration, PK overrides, and the app's opaque `appState` |
 | `hrt_sync_state` | — | The full record state in one call. This is the whole export (~76 KB) and can be truncated by the result budget — read history with the paginated tools above instead. |
-| `hrt_reference` | — | Routes, esters, units, parameter ranges. Static: it reads no records, so it needs no key at all. |
+| `hrt_reference` | — | Routes, esters, units, parameter ranges, and the tool catalogue. Static: it reads no records, so it needs no key at all. |
 
 An agent reading history should use the paginated tools, not `hrt_sync_state`: that one
 returns the whole export (~76 KB) and can be truncated by the result budget, so a
@@ -124,10 +135,28 @@ truncated read looks exactly like missing data.
 
 | Tool | Input | Returns |
 |---|---|---|
-| `hrt_add_medication` | `route, ester, dose_mg, at` | The created dose |
+| `hrt_add_medication` | `route, ester, dose_mg, at, extras?` | The created dose |
 | `hrt_add_lab_result` | `value, unit, at` | The created lab result |
+| `hrt_add_journal_entry` | `note, at, id?` | The created journal entry |
+| `hrt_add_dose_template` | `name, route, ester, dose_mg, extras?` | The saved template |
 | `hrt_update_settings` | any setting field | The updated settings |
 | `hrt_delete_record` | `kind, id` | Confirmation |
+
+**A journal entry is the user's own words.** `hrt_add_journal_entry` is for text they wrote
+or dictated; an agent must never compose an entry or infer how someone felt.
+`hrt_add_dose_template` saves a reusable *shape* and does not log a dose.
+
+**Deletion covers all four record kinds.** `hrt_delete_record` takes
+`kind: 'dose' | 'lab' | 'journal' | 'template'` and the `record_id` a list tool returned.
+It writes the tombstone the app's merge needs, so a deleted record does not come back on
+the next sync from another device.
+
+**`hrt_update_settings` covers the settings the model reads** — body weight, HRT mode,
+calibration method and history window, timezone, and the PK parameter overrides. Those are
+settings, so they belong here. The app's *display* preferences (language, theme, HRT start
+date, re-check reminders, quick-dose buttons) ride in the opaque `appState` blob and are
+**not** writable over MCP: the blob is replaced whole, so a targeted write by an agent
+would silently drop collections it never read. They stay a client-side concern.
 
 ### Shares
 
@@ -148,6 +177,35 @@ cannot be trusted. An agent cannot publish a lab value through a share even if i
 There is deliberately **no update tool**: a link is either frozen or live, and changing
 what someone may be reading right now is not a one-liner worth exposing. Revoke and
 create is the honest sequence.
+
+---
+
+## Identity and destructive operations
+
+The design principle is that everything the web app can do with a person's record is
+available over MCP. One class of action is deliberately excluded, and it is written down
+here rather than left as an unstated exception — **a principle with silent exceptions is
+worse than no principle at all.**
+
+**An `hrt_` token already is a complete credential.** It reaches every record, and the
+deployment holds its own copy of the key, so its holder needs nobody's presence and no
+browser session. Adding the account's *identity* operations to the same token would raise
+the blast radius without giving a person anything they would actually want:
+
+| Web-only action | Endpoint | Why it is not an MCP tool |
+|---|---|---|
+| Delete the account | `POST /auth/account/delete` | Requires the password on top of the session, precisely because it is the most destructive action the service offers. A token-only path would delete the other factor for the one action that most needs it. |
+| Change the password | `POST /auth/password` | Requires the current password and deletes every session and API token. An agent that could rotate the password could lock the owner out of their own record. |
+| List or revoke sessions | `GET /auth/sessions`, `POST /auth/sessions/revoke` | Ends a live browser unlock. An agent never holds one, so there is nothing here for it to manage. |
+| Bind or unlink X / Google | `POST /auth/credentials/bind`, `POST /auth/x/unlink`, `POST /auth/oauth/{provider}/unlink` | Changes how the account can be reached at all. Getting it wrong can strand the owner, so it needs a person who is present. |
+| Mint or revoke agent tokens | `GET/POST /api/tokens`, `DELETE /api/tokens/{id}` | A token that can mint tokens can outlive its own revocation, and one that can revoke a sibling is a denial-of-access between agents. |
+
+None of these is reachable through any MCP tool, and none should be. Revoking this agent's
+own token is one button in the app: **Account → 连接 AI 助手**.
+
+This is a decision rather than an omission, and the app states the same boundary on its own
+MCP page — `mcp.scope_label` and `mcp.scope_note` in `src/i18n/translations.ts`, in the
+reader's language, right under the tool table.
 
 ---
 
@@ -186,7 +244,9 @@ the agent's key came from the deployment's copy, not from the password. Signing 
 | A `hrt_` token reaches records without a live unlock | `server/src/accounts.ts:392`, `resolveApiContext` → `serverDekFor` → `unwrapWithServer` in `server/src/session.ts` |
 | A token is permanent by default | `server/src/accounts.ts`, `mintApiToken` — `expires_at` is NULL unless a caller passes `ttlDays` |
 | Sign-out does not stop a token | `server/src/http.ts`, `/auth/logout` → `AccountService.lock` → `closeSession`, which only removes a `ks_` unlock |
-| The only refusal is a deployment with no server copy of the key | `server/src/accounts.ts:415` returns `{ denied: 'locked' }`; `server/src/mcp.ts:85`, `withContext` turns it into a readable tool error |
+| The only refusal is a deployment with no server copy of the key | `resolveApiContext` in `server/src/accounts.ts` returns `{ denied: 'locked' }`; `withContext` in `server/src/mcp.ts` turns it into a readable tool error |
 | Shares exclude labs and weight | `server/src/shares.ts`, `assertShareable`; `server/test/shares.test.ts` |
-| The tool surface is what it says | `server/test/mcp.protocol.test.ts` asserts the names, including the three share tools |
+| The tool surface is what it says | `server/test/mcp.protocol.test.ts` asserts the full name set and the exact count, and that `hrt_reference`'s own catalogue equals what `tools/list` returns |
+| The documented count and tables match the code | `node scripts/check-mcp-tools.mjs` — parses `registerTool` names and compares them with `src/pages/McpSettings.tsx` and this file, and requires `mcp.tools_desc` to carry `{count}` rather than a typed number |
+| Identity operations are not exposed over MCP | None of `/auth/password`, `/auth/sessions*`, `/auth/account/delete`, `/auth/*/unlink`, `/auth/oauth/*/unlink` or `/api/tokens*` has an MCP counterpart; this file and `mcp.scope_note` are where the boundary is stated |
 | Expiry is enforced on read | `shares.ts`, `access` — checked per request, not by a sweeper |

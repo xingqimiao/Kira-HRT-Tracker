@@ -33,9 +33,16 @@ import {
 } from './engine.ts';
 import type { DoseEvent, LabResult, SimulationResult, PKCustomParams } from './engine.ts';
 import { RecordService } from './records.ts';
-import type { StoredRecord } from './records.ts';
-import { parseMedicationInput, parseLabInput, parsePKParams, timeHToIso } from './domain.ts';
-import type { Result } from './domain.ts';
+import type { RecordCategory, StoredRecord } from './records.ts';
+import {
+  parseMedicationInput,
+  parseLabInput,
+  parseJournalInput,
+  parseTemplateInput,
+  parsePKParams,
+  timeHToIso,
+} from './domain.ts';
+import type { JournalRecord, Result, TemplateRecord } from './domain.ts';
 import { settings } from './settings.ts';
 import { AccountService } from './accounts.ts';
 import type { AuthContext } from './types.ts';
@@ -78,13 +85,42 @@ export interface LabRecord {
 }
 
 /**
+ * The record kinds this layer writes, and how each is addressed and filed.
+ *
+ * The three fields differ on purpose and none is derivable from the others:
+ *
+ *   - `prefix` is the app's address for the record. It is what a caller sees as
+ *     `record_id`, and it is not always the kind's name — a dose template is
+ *     `tpl:` because that is what `payloadToRecords` in the app writes.
+ *   - `category` is the store's coarse plaintext column. A template is `setting`,
+ *     not `dose`: it is not a clinical event, and filing it as one would put every
+ *     saved template on the timeline and in the "doses" count.
+ *   - `deletionKind` is the tombstone map the app records a removal in, which is
+ *     again the app's naming (`doseTemplates`, not `templates`).
+ */
+type RecordKind = 'dose' | 'lab' | 'journal' | 'template';
+
+interface KindSpec {
+    prefix: string;
+    category: RecordCategory;
+    deletionKind: 'events' | 'labResults' | 'doseTemplates' | 'journal';
+}
+
+const KIND_SPEC: Record<RecordKind, KindSpec> = {
+    dose:     { prefix: 'dose',    category: 'dose',    deletionKind: 'events' },
+    lab:      { prefix: 'lab',     category: 'lab',     deletionKind: 'labResults' },
+    journal:  { prefix: 'journal', category: 'journal', deletionKind: 'journal' },
+    template: { prefix: 'tpl',     category: 'setting', deletionKind: 'doseTemplates' },
+};
+
+/**
  * The record id for one app-level record.
  *
  * The mode is part of the address because a dose belongs to one of the two records
  * the app keeps, and the same app-level id may legitimately exist in both.
  */
-function recordKey(kind: 'dose' | 'lab', mode: Mode, id: string): string {
-    return `${kind}:${mode}:${id}`;
+function recordKey(kind: RecordKind, mode: Mode, id: string): string {
+    return `${KIND_SPEC[kind].prefix}:${mode}:${id}`;
 }
 
 /** The mode inside a structured record id, or null for one this version did not mint. */
@@ -125,13 +161,17 @@ function asRecord(record: StoredRecord): RecordItem {
  */
 async function listKind<T>(
     ctx: AuthContext,
-    kind: 'dose' | 'lab',
+    kind: RecordKind,
     opts: { limit?: number; before?: number } = {},
 ): Promise<{ records: RecordItem<T>[]; unreadable: number }> {
     const { records, unreadable } = await RecordService.list(ctx, {
         limit: opts.limit,
-        category: kind,
+        category: KIND_SPEC[kind].category,
         before: opts.before,
+        // A template shares its category with the weight/PK scalars and the tombstone
+        // maps, so the category alone would page past it. The id prefix is what makes
+        // `limit` mean "templates returned" rather than "setting rows considered".
+        idPrefix: kind === 'template' ? `${KIND_SPEC[kind].prefix}:` : undefined,
     });
     return { records: records.map(asRecord) as RecordItem<T>[], unreadable };
 }
@@ -147,7 +187,7 @@ async function listKind<T>(
  */
 async function lookup(
     ctx: AuthContext,
-    kind: 'dose' | 'lab',
+    kind: RecordKind,
     id: string,
     modeHint: Mode,
 ): Promise<{ record: StoredRecord; mode: Mode } | null> {
@@ -163,26 +203,49 @@ async function lookup(
 }
 
 /**
- * Write one record and report the id the store filed it under.
+ * Write one record and report the address and instant the store filed it under.
  *
- * Only the address comes back: the caller already holds the data it just wrote, and
- * re-reading it here would be a round trip to the database to learn something this
- * process has in hand.
+ * No data comes back: the caller already holds what it just wrote, and re-reading it
+ * here would be a round trip to the database to learn something this process has in
+ * hand. The instant does come back because for a dose or a check-in it is the event's
+ * own time rather than "now", and only this function knows which of the two applied.
  */
 async function write(
     ctx: AuthContext,
-    kind: 'dose' | 'lab',
+    kind: RecordKind,
     mode: Mode,
-    data: DoseRecord | LabRecord,
-): Promise<{ id: string } | null> {
+    data: { id: string },
+): Promise<{ id: string; takenAt: number } | null> {
     const key = recordKey(kind, mode, data.id);
+    const takenAt = takenAtFor(kind, data as { timeH?: unknown; updatedAt?: unknown; createdAt?: unknown }, Date.now());
     const result = await RecordService.put(ctx, {
         id: key,
-        takenAt: takenAtOf(data, Date.now()),
-        category: kind,
+        takenAt,
+        category: KIND_SPEC[kind].category,
         data,
     });
-    return result.ok ? { id: key } : null;
+    return result.ok ? { id: key, takenAt } : null;
+}
+
+/**
+ * The instant a record is filed under.
+ *
+ * A dose, lab or check-in carries its own `timeH`, which is also the column the
+ * timeline is ordered by. A template has no time of its own, so the app stamps one
+ * (`payloadToRecords` uses the same `updatedAt`, falling back to the epoch) — this
+ * mirrors that so an agent-written template sorts where the app would put it.
+ */
+function takenAtFor(
+    kind: RecordKind,
+    data: { timeH?: unknown; updatedAt?: unknown; createdAt?: unknown },
+    fallback: number,
+): number {
+    if (kind === 'template') {
+        if (typeof data.updatedAt === 'number' && Number.isFinite(data.updatedAt)) return data.updatedAt;
+        if (typeof data.createdAt === 'number' && Number.isFinite(data.createdAt)) return data.createdAt;
+        return fallback;
+    }
+    return takenAtOf(data, fallback);
 }
 
 /** The mode a newly logged record belongs to, from the account's own setting. */
@@ -202,11 +265,11 @@ async function currentMode(ctx: AuthContext): Promise<Mode> {
  */
 async function noteDeletion(
     ctx: AuthContext,
-    kind: 'dose' | 'lab',
+    kind: RecordKind,
     mode: Mode,
     id: string,
 ): Promise<void> {
-    const mapKey = `del:${mode}:${kind === 'dose' ? 'events' : 'labResults'}`;
+    const mapKey = `del:${mode}:${KIND_SPEC[kind].deletionKind}`;
     const existing = await RecordService.get(ctx, mapKey).catch(() => null);
     const map = existing && typeof existing.data === 'object' && existing.data !== null
         ? { ...(existing.data as Record<string, number>) }
@@ -248,7 +311,7 @@ export const MedicationService = {
             value: {
                 id: stored.id,
                 mode,
-                takenAt: takenAtOf(parsed.value, Date.now()),
+                takenAt: stored.takenAt,
                 updatedAt: Date.now(),
                 data: parsed.value,
             },
@@ -272,7 +335,11 @@ export const MedicationService = {
         const found = await lookup(ctx, 'dose', id, await currentMode(ctx));
         if (!found) return false;
         const removed = await RecordService.remove(ctx, found.record.id);
-        if (removed) await noteDeletion(ctx, 'dose', found.mode, id);
+        // The tombstone is keyed by the app-level id, never by the record address: the
+        // app's map holds the id it minted, so a tombstone written under
+        // `dose:transfem:<id>` would never match and the record would come back on the
+        // next sync from a device that still holds it.
+        if (removed) await noteDeletion(ctx, 'dose', found.mode, innerIdOfKey(found.record.id));
         return removed;
     },
 };
@@ -289,15 +356,18 @@ export const LabService = {
             value: {
                 id: stored.id,
                 mode,
-                takenAt: takenAtOf(parsed.value, Date.now()),
+                takenAt: stored.takenAt,
                 updatedAt: Date.now(),
                 data: parsed.value,
             },
         };
     },
 
-    async list(ctx: AuthContext, opts: { limit?: number } = {}) {
-        return await listKind<LabRecord>(ctx, 'lab', { limit: opts.limit });
+    async list(ctx: AuthContext, opts: { limit?: number; before?: unknown } = {}) {
+        return await listKind<LabRecord>(ctx, 'lab', {
+            limit: opts.limit,
+            before: typeof opts.before === 'number' ? opts.before : undefined,
+        });
     },
 
     async get(ctx: AuthContext, id: string): Promise<LabRecord | null> {
@@ -309,7 +379,108 @@ export const LabService = {
         const found = await lookup(ctx, 'lab', id, await currentMode(ctx));
         if (!found) return false;
         const removed = await RecordService.remove(ctx, found.record.id);
-        if (removed) await noteDeletion(ctx, 'lab', found.mode, id);
+        if (removed) await noteDeletion(ctx, 'lab', found.mode, innerIdOfKey(found.record.id));
+        return removed;
+    },
+};
+
+// ---------------------------------------------------------------------------
+// JournalService — the private body journal
+// ---------------------------------------------------------------------------
+
+/**
+ * The journal is a record store collection like doses and labs, not a setting.
+ *
+ * It travels as `journal:<mode>:<id>` (see `payloadToRecords`), and the app merges
+ * it with the same union-plus-tombstone rules as everything else. Until there was a
+ * service here it was reachable only by parsing `hrt_sync_state` — read-only at
+ * best, and the whole point of the tool surface is that an agent should not have to
+ * page a 76 KB export to add one line of text.
+ */
+export const JournalService = {
+    async add(ctx: AuthContext, input: unknown): Promise<Result<RecordItem<JournalRecord>>> {
+        const parsed: Result<JournalRecord> = parseJournalInput(input, randomUUID());
+        if (!parsed.ok) return parsed;
+        const mode = await currentMode(ctx);
+        // Stamped like every other record the app writes: sync's newest-wins rule
+        // compares this, so a re-written entry has to look newer to replace one.
+        const data: JournalRecord = { ...parsed.value, updatedAt: Date.now() };
+        const stored = await write(ctx, 'journal', mode, data);
+        if (!stored) return { ok: false, error: 'could not store the record' };
+        return {
+            ok: true,
+            value: {
+                id: stored.id,
+                mode,
+                takenAt: stored.takenAt,
+                updatedAt: data.updatedAt as number,
+                data,
+            },
+        };
+    },
+
+    async list(ctx: AuthContext, opts: { limit?: number; before?: unknown } = {}) {
+        return await listKind<JournalRecord>(ctx, 'journal', {
+            limit: opts.limit,
+            before: typeof opts.before === 'number' ? opts.before : undefined,
+        });
+    },
+
+    async remove(ctx: AuthContext, id: string): Promise<boolean> {
+        const found = await lookup(ctx, 'journal', id, await currentMode(ctx));
+        if (!found) return false;
+        const removed = await RecordService.remove(ctx, found.record.id);
+        if (removed) await noteDeletion(ctx, 'journal', found.mode, innerIdOfKey(found.record.id));
+        return removed;
+    },
+};
+
+// ---------------------------------------------------------------------------
+// TemplateService — saved doses the app offers as one-tap buttons
+// ---------------------------------------------------------------------------
+
+/**
+ * A dose template is the dose record's other half: the same route/ester/dose/extras
+ * with no time, which is why applying one produces a `DoseEvent`.
+ *
+ * Filed under `tpl:<mode>:<id>` and category `setting`, exactly where the app's own
+ * sync puts it. `createdAt` is stamped here rather than accepted from the caller:
+ * it is the record's sort key (`takenAtFor`), and a wrong one would reorder the list
+ * an agent just read.
+ */
+export const TemplateService = {
+    async add(ctx: AuthContext, input: unknown): Promise<Result<RecordItem<TemplateRecord>>> {
+        const parsed: Result<Omit<TemplateRecord, 'createdAt'>> = parseTemplateInput(input, randomUUID());
+        if (!parsed.ok) return parsed;
+        const mode = await currentMode(ctx);
+        const now = Date.now();
+        const data: TemplateRecord = { ...parsed.value, createdAt: now, updatedAt: now };
+        const stored = await write(ctx, 'template', mode, data);
+        if (!stored) return { ok: false, error: 'could not store the record' };
+        return {
+            ok: true,
+            value: {
+                id: stored.id,
+                mode,
+                takenAt: stored.takenAt,
+                updatedAt: now,
+                data,
+            },
+        };
+    },
+
+    async list(ctx: AuthContext, opts: { limit?: number; before?: unknown } = {}) {
+        return await listKind<TemplateRecord>(ctx, 'template', {
+            limit: opts.limit,
+            before: typeof opts.before === 'number' ? opts.before : undefined,
+        });
+    },
+
+    async remove(ctx: AuthContext, id: string): Promise<boolean> {
+        const found = await lookup(ctx, 'template', id, await currentMode(ctx));
+        if (!found) return false;
+        const removed = await RecordService.remove(ctx, found.record.id);
+        if (removed) await noteDeletion(ctx, 'template', found.mode, innerIdOfKey(found.record.id));
         return removed;
     },
 };
@@ -330,13 +501,16 @@ export const TimelineService = {
      * first" is the single most common question an agent asks, and both the web
      * timeline and the MCP tool should answer it identically.
      */
-    async get(ctx: AuthContext, opts: { limit?: number } = {}): Promise<TimelineEntry[]> {
+    async get(ctx: AuthContext, opts: { limit?: number; before?: unknown } = {}): Promise<TimelineEntry[]> {
         const limit = Math.min(Math.max(opts.limit ?? 100, 1), 1000);
-        // Fetch up to the limit from each side, then merge down. Correct because any
-        // entry in the top `limit` overall must be in the top `limit` of its own kind.
+        // `before` is applied inside each query, not to the merged result: any entry in
+        // the top `limit` overall must be in the top `limit` of its own kind, and the
+        // same holds above a cursor. Filtering after the merge would page from the
+        // beginning of one side's history every time.
+        const before = typeof opts.before === 'number' ? opts.before : undefined;
         const [doses, labs] = await Promise.all([
-            listKind<DoseRecord>(ctx, 'dose', { limit }),
-            listKind<LabRecord>(ctx, 'lab', { limit }),
+            listKind<DoseRecord>(ctx, 'dose', { limit, before }),
+            listKind<LabRecord>(ctx, 'lab', { limit, before }),
         ]);
 
         const merged: TimelineEntry[] = [

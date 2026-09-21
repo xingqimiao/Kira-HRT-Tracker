@@ -25,6 +25,8 @@ import {
   AccountService,
   MedicationService,
   LabService,
+  JournalService,
+  TemplateService,
   TimelineService,
   PKSimulationService,
 } from './core.ts';
@@ -67,6 +69,52 @@ function toolResult(value: unknown) {
 function toolError(message: string) {
   return { isError: true, content: [{ type: 'text' as const, text: message }] };
 }
+
+/**
+ * A paging cursor, converted to the epoch milliseconds the store pages by.
+ *
+ * `before` is documented as the oldest instant from the page just read, which is what
+ * an agent actually holds. The conversion is explicit rather than passed through: the
+ * store compares a timestamp, and a string that reached it unparsed would compare as
+ * a date in 1970 — the largest page the account has, again and again.
+ */
+function pagingCursor(
+  before: string | undefined,
+): { ok: true; value: number | undefined } | { ok: false; error: string } {
+  if (before === undefined) return { ok: true, value: undefined };
+  const ms = Date.parse(before);
+  if (!Number.isFinite(ms)) {
+    return { ok: false, error: `before: not a valid ISO 8601 timestamp (got ${JSON.stringify(before)})` };
+  }
+  return { ok: true, value: ms };
+}
+
+/**
+ * The dose vocabulary, in one place because three tools now accept it.
+ *
+ * `hrt_add_medication` and `hrt_add_dose_template` take the same route and ester,
+ * and `hrt_list_dose_templates` returns them; a second copy of either list is a
+ * second thing to forget when an ester is added upstream.
+ */
+const ROUTE_VALUES = ['injection', 'oral', 'sublingual', 'gel', 'patchApply', 'patchRemove'] as const;
+const ESTER_VALUES = [
+  'E2', 'EB', 'EV', 'EC', 'EN', 'EU', 'CPA', 'SPIRO', 'BICAL', 'T', 'TC', 'TE', 'TU',
+] as const;
+
+const ESTER_DESCRIPTION =
+  'Estradiol esters: EB/EV/EC/EN/EU; E2 = unesterified; anti-androgens: CPA = cyproterone ' +
+  'acetate, SPIRO = spironolactone, BICAL = bicalutamide; T esters: TC/TE/TU';
+
+/**
+ * Route-specific numbers both a dose and a template accept.
+ *
+ * Described once so the two tools describe them identically; the ranges come from the
+ * engine's own lookup tables rather than being restated.
+ */
+const EXTRAS_DESCRIPTION =
+  `Route-specific numbers. sublingualTier: 0–${SL_TIER_ORDER.length - 1} (${SL_TIER_ORDER.join('/')}); ` +
+  `gelSite: 0–${GEL_SITE_ORDER.length - 1} (${GEL_SITE_ORDER.join('/')}); ` +
+  'concentrationMGmL and areaCM2 for gel; releaseRateUGPerDay for patches; patchWearH for planned wear hours';
 
 const SAFETY_NOTE =
   'This is a pharmacokinetic estimate from a population model, not a laboratory measurement. ' +
@@ -120,10 +168,16 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         'Start here to see what a user has been taking.',
       inputSchema: {
         limit: z.number().int().min(1).max(1000).optional().describe('Maximum entries (default 100)'),
+        before: z
+          .string()
+          .optional()
+          .describe('ISO 8601 instant. Only entries older than it, for paging back through history.'),
       },
     },
-    async ({ limit }) => {
-      const r = await withContext((ctx) => TimelineService.get(ctx, { limit }));
+    async ({ limit, before }) => {
+      const cursor = pagingCursor(before);
+      if (!cursor.ok) return toolError(cursor.error);
+      const r = await withContext((ctx) => TimelineService.get(ctx, { limit, before: cursor.value }));
       if ('error' in r) return toolError(r.error);
       return toolResult(
         r.value.map((e) =>
@@ -139,11 +193,21 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
     'hrt_list_medications',
     {
       title: 'List logged doses',
-      description: 'Doses the user has logged, newest first.',
-      inputSchema: { limit: z.number().int().min(1).max(2000).optional() },
+      description:
+        'Doses the user has logged, newest first. Page back through a long history with ' +
+        '`before` rather than raising `limit`.',
+      inputSchema: {
+        limit: z.number().int().min(1).max(1000).optional().describe('Records per page (default 100, maximum 1000)'),
+        before: z
+          .string()
+          .optional()
+          .describe('ISO 8601 instant. Only doses logged before it — pass the oldest `at` from the previous page.'),
+      },
     },
-    async ({ limit }) => {
-      const r = await withContext((ctx) => MedicationService.list(ctx, { limit }));
+    async ({ limit, before }) => {
+      const cursor = pagingCursor(before);
+      if (!cursor.ok) return toolError(cursor.error);
+      const r = await withContext((ctx) => MedicationService.list(ctx, { limit, before: cursor.value }));
       if ('error' in r) return toolError(r.error);
       return toolResult(
         r.value.records.map((rec) => ({
@@ -168,11 +232,21 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
     'hrt_list_labs',
     {
       title: 'List lab results',
-      description: 'Blood test results the user has recorded, newest first.',
-      inputSchema: { limit: z.number().int().min(1).max(2000).optional() },
+      description:
+        'Blood test results the user has recorded, newest first. Page back through a long ' +
+        'history with `before` rather than raising `limit`.',
+      inputSchema: {
+        limit: z.number().int().min(1).max(1000).optional().describe('Records per page (default 100, maximum 1000)'),
+        before: z
+          .string()
+          .optional()
+          .describe('ISO 8601 instant. Only labs drawn before it — pass the oldest `at` from the previous page.'),
+      },
     },
-    async ({ limit }) => {
-      const r = await withContext((ctx) => LabService.list(ctx, { limit }));
+    async ({ limit, before }) => {
+      const cursor = pagingCursor(before);
+      if (!cursor.ok) return toolError(cursor.error);
+      const r = await withContext((ctx) => LabService.list(ctx, { limit, before: cursor.value }));
       if ('error' in r) return toolError(r.error);
       return toolResult(
         r.value.records.map((rec) => ({
@@ -182,6 +256,81 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
           at: new Date(rec.data.timeH * 3_600_000).toISOString(),
           value: rec.data.concValue,
           unit: rec.data.unit,
+          version: rec.updatedAt,
+        })),
+      );
+    },
+  );
+
+  server.registerTool(
+    'hrt_list_journal',
+    {
+      title: 'List journal entries',
+      description:
+        'The user\'s private journal: one piece of free text per entry, with when it was ' +
+        'written. Newest first. These are the user\'s own words, not clinical data — quote ' +
+        'them back rather than interpreting them. Page with `before`.',
+      inputSchema: {
+        limit: z.number().int().min(1).max(1000).optional().describe('Entries per page (default 100, maximum 1000)'),
+        before: z
+          .string()
+          .optional()
+          .describe('ISO 8601 instant. Only entries written before it — pass the oldest `at` from the previous page.'),
+      },
+    },
+    async ({ limit, before }) => {
+      const cursor = pagingCursor(before);
+      if (!cursor.ok) return toolError(cursor.error);
+      const r = await withContext((ctx) => JournalService.list(ctx, { limit, before: cursor.value }));
+      if ('error' in r) return toolError(r.error);
+      return toolResult(
+        r.value.records.map((rec) => ({
+          id: rec.data.id,
+          record_id: rec.id,
+          mode: rec.mode,
+          at: new Date(rec.data.timeH * 3_600_000).toISOString(),
+          note: rec.data.note,
+          version: rec.updatedAt,
+        })),
+      );
+    },
+  );
+
+  server.registerTool(
+    'hrt_list_dose_templates',
+    {
+      title: 'List saved dose templates',
+      description:
+        'Dose templates the user has saved — a route, ester, dose and extras with no time, ' +
+        'which the app offers as one-tap buttons. Read these before logging a dose the user ' +
+        'says they \"take their usual\": the template is what \"usual\" means. Most recently ' +
+        'edited first. These are the app\'s own records (the same `tpl:` rows it syncs), not a ' +
+        'read of the settings blob.',
+      inputSchema: {
+        limit: z.number().int().min(1).max(1000).optional().describe('Templates per page (default 100, maximum 1000)'),
+        before: z
+          .string()
+          .optional()
+          .describe('ISO 8601 instant. Only templates last edited before it — pass the oldest `updated_at` from the previous page.'),
+      },
+    },
+    async ({ limit, before }) => {
+      const cursor = pagingCursor(before);
+      if (!cursor.ok) return toolError(cursor.error);
+      const r = await withContext((ctx) => TemplateService.list(ctx, { limit, before: cursor.value }));
+      if ('error' in r) return toolError(r.error);
+      return toolResult(
+        r.value.records.map((rec) => ({
+          id: rec.data.id,
+          record_id: rec.id,
+          mode: rec.mode,
+          name: rec.data.name,
+          route: rec.data.route,
+          ester: rec.data.ester,
+          dose_mg: rec.data.doseMG,
+          extras: rec.data.extras,
+          created_at: new Date(rec.data.createdAt).toISOString(),
+          updated_at: rec.data.updatedAt ? new Date(rec.data.updatedAt).toISOString() : null,
           version: rec.updatedAt,
         })),
       );
@@ -240,7 +389,11 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
     'hrt_get_settings',
     {
       title: 'Get simulation settings',
-      description: 'Body weight, HRT mode, and the PK/calibration settings the model runs under.',
+      description:
+        'Body weight, HRT mode, calibration method and history window, timezone, PK parameter ' +
+        'overrides, and `appState` — the web app\'s own opaque settings bag. Read-only fields in ' +
+        'appState (language, theme, HRT start date, re-check reminders) cannot be written through ' +
+        'MCP; use hrt_update_settings for the rest.',
       inputSchema: {},
     },
     async () => {
@@ -268,23 +421,11 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
           .regex(/^[A-Za-z0-9_.:-]+$/)
           .optional()
           .describe('Opaque record id. Omit to have one generated; only set it to replay a known id.'),
-        route: z.enum(['injection', 'oral', 'sublingual', 'gel', 'patchApply', 'patchRemove']),
-        ester: z
-          .enum(['E2', 'EB', 'EV', 'EC', 'EN', 'EU', 'CPA', 'SPIRO', 'BICAL', 'T', 'TC', 'TE', 'TU'])
-          .describe(
-            'Estradiol esters: EB/EV/EC/EN/EU; E2 = unesterified; anti-androgens: CPA = cyproterone ' +
-              'acetate, SPIRO = spironolactone, BICAL = bicalutamide; T esters: TC/TE/TU',
-          ),
+        route: z.enum(ROUTE_VALUES),
+        ester: z.enum(ESTER_VALUES).describe(ESTER_DESCRIPTION),
         dose_mg: z.number().positive().max(10000).optional().describe('Dose in mg; omit only for patchRemove'),
         at: z.string().describe('When it was taken, ISO 8601 (e.g. 2026-09-16T08:00:00Z)'),
-        extras: z
-          .record(z.string(), z.number())
-          .optional()
-          .describe(
-            `Route-specific numbers. sublingualTier: 0–${SL_TIER_ORDER.length - 1} (${SL_TIER_ORDER.join('/')}); ` +
-              `gelSite: 0–${GEL_SITE_ORDER.length - 1} (${GEL_SITE_ORDER.join('/')}); ` +
-              'concentrationMGmL and areaCM2 for gel; releaseRateUGPerDay for patches; patchWearH for planned wear hours',
-          ),
+        extras: z.record(z.string(), z.number()).optional().describe(EXTRAS_DESCRIPTION),
       },
     },
     async (input) => {
@@ -335,12 +476,98 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
   );
 
   server.registerTool(
+    'hrt_add_journal_entry',
+    {
+      title: 'Add a journal entry',
+      description:
+        'Write one entry to the user\'s private journal. Only call this with words the user ' +
+        'actually wrote or dictated — never compose an entry for them, and never infer how ' +
+        'they felt. An entry is free text with a time; to edit an existing one, pass its id ' +
+        '(the store replaces the entry under that id).',
+      inputSchema: {
+        id: z
+          .string()
+          .min(1)
+          .max(200)
+          .regex(/^[A-Za-z0-9_.:-]+$/)
+          .optional()
+          .describe('Opaque record id. Omit to have one generated; pass an existing entry\'s id to replace it.'),
+        note: z.string().describe('The entry text, up to 2000 characters. Empty or whitespace-only is refused.'),
+        at: z.string().describe('When it was written, ISO 8601 (e.g. 2026-09-16T08:00:00Z)'),
+      },
+    },
+    async (input) => {
+      const r = await withContext((ctx) => JournalService.add(ctx, input));
+      if ('error' in r) return toolError(r.error);
+      if (!r.value.ok) return toolError(r.value.error);
+      const rec = r.value.value;
+      return toolResult({
+        id: rec.data.id,
+        record_id: rec.id,
+        mode: rec.mode,
+        at: new Date(rec.data.timeH * 3_600_000).toISOString(),
+        note: rec.data.note,
+        version: rec.updatedAt,
+      });
+    },
+  );
+
+  server.registerTool(
+    'hrt_add_dose_template',
+    {
+      title: 'Save a dose template',
+      description:
+        'Save a reusable dose the app offers as a one-tap button. This does NOT log a dose — ' +
+        'it saves the shape of one, so use it when the user asks to save a routine, and use ' +
+        '`hrt_add_medication` when they say they took something. The route, ester, dose and extras ' +
+        'must be ones `hrt_reference` lists, because a template that cannot be applied is a ' +
+        'button that fails. To change a template, pass its existing id; the store replaces it.',
+      inputSchema: {
+        id: z
+          .string()
+          .min(1)
+          .max(200)
+          .regex(/^[A-Za-z0-9_.:-]+$/)
+          .optional()
+          .describe('Opaque record id. Omit to have one generated; pass an existing template\'s id to replace it.'),
+        name: z.string().describe('A short label the user would recognise, e.g. a Monday injection.'),
+        route: z.enum(ROUTE_VALUES),
+        ester: z.enum(ESTER_VALUES).describe(ESTER_DESCRIPTION),
+        dose_mg: z.number().min(0).max(10000).describe('Dose in mg. 0 is valid when the dose is in extras.'),
+        extras: z.record(z.string(), z.number()).optional().describe(EXTRAS_DESCRIPTION),
+      },
+    },
+    async (input) => {
+      const r = await withContext((ctx) => TemplateService.add(ctx, input));
+      if ('error' in r) return toolError(r.error);
+      if (!r.value.ok) return toolError(r.value.error);
+      const rec = r.value.value;
+      return toolResult({
+        id: rec.data.id,
+        record_id: rec.id,
+        mode: rec.mode,
+        name: rec.data.name,
+        route: rec.data.route,
+        ester: rec.data.ester,
+        dose_mg: rec.data.doseMG,
+        extras: rec.data.extras,
+        created_at: new Date(rec.data.createdAt).toISOString(),
+        version: rec.updatedAt,
+      });
+    },
+  );
+
+  server.registerTool(
     'hrt_update_settings',
     {
       title: 'Update simulation settings',
       description:
-        'Change body weight, HRT mode, or calibration method. PK parameter overrides are advanced — ' +
-        'only set them if the user explicitly asks, and never guess a value.',
+        'Change the settings a simulation runs under: body weight, HRT mode, calibration ' +
+        'method and history window, timezone, and PK parameter overrides. Omitted fields are ' +
+        'left alone; pass an empty object to `pk_params` to clear every override. PK ' +
+        'overrides are advanced — only set them if the user explicitly asks, and never guess a ' +
+        'value. This does not reach the app\'s own display preferences (language, theme, HRT ' +
+        'start date, re-check reminders); those are not agent-writable.',
       inputSchema: {
         body_weight_kg: z.number().min(20).max(400).optional(),
         hrt_mode: z.enum(['transfem', 'transmasc']).optional(),
@@ -369,16 +596,22 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
     {
       title: 'Delete a record',
       description:
-        'Remove a dose or lab result the user asks you to delete. Confirm with the user first — ' +
-        'this is not reversible from the agent interface.',
+        'Remove one record the user asks you to delete: a dose, a lab result, a journal entry, ' +
+        'or a saved dose template. Confirm with the user first — this is not reversible from the ' +
+        'agent interface. Deleting a template does not delete any dose logged from it.',
       inputSchema: {
-        kind: z.enum(['dose', 'lab']),
+        kind: z
+          .enum(['dose', 'lab', 'journal', 'template'])
+          .describe('Which collection the id belongs to — the list tool that produced it says which'),
         id: z.string().describe('The `record_id` from a list tool, or the record id itself'),
       },
     },
     async ({ kind, id }) => {
       const r = await withContext((ctx) =>
-        kind === 'dose' ? MedicationService.remove(ctx, id) : LabService.remove(ctx, id),
+        kind === 'dose' ? MedicationService.remove(ctx, id)
+          : kind === 'lab' ? LabService.remove(ctx, id)
+          : kind === 'journal' ? JournalService.remove(ctx, id)
+          : TemplateService.remove(ctx, id),
       );
       if ('error' in r) return toolError(r.error);
       return toolResult({ deleted: r.value, kind, id });
@@ -393,8 +626,8 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         "The account's complete records in the web app's own export shape, including " +
         'deletions. This is the whole export: it can run to tens of kilobytes and be ' +
         'truncated by the result budget, so read history through the paginated tools ' +
-        '(hrt_get_timeline, hrt_list_medications, hrt_list_labs) and call this only ' +
-        'when you need everything at once.',
+        '(hrt_get_timeline, hrt_list_medications, hrt_list_labs, hrt_list_journal, ' +
+        'hrt_list_dose_templates) and call this only when you need everything at once.',
       inputSchema: {},
     },
     async () => {
@@ -435,7 +668,45 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         // returns everything is also the one the result budget truncates.
         large_reads:
           'hrt_sync_state returns the whole export and can be truncated by the result budget. ' +
-          'Read history with hrt_get_timeline, hrt_list_medications, hrt_list_labs or hrt_get_settings instead.',
+          'Read history with the paginated tools instead: hrt_get_timeline, ' +
+          'hrt_list_medications, hrt_list_labs, hrt_list_journal, hrt_list_dose_templates or ' +
+          'hrt_get_settings.',
+        // The whole tool surface. Present so an agent that reads only this tool still
+        // learns what exists, and grouped because the grouping is the safety-relevant
+        // part: the writes change the record, and the shares leave the account.
+        //
+        // `server/test/mcp.protocol.test.ts` flattens this and asserts it equals what
+        // the client's own `tools/list` returns, so it cannot drift from the real
+        // surface the way a prose list can.
+        tools: {
+          note:
+            'Every tool listed here is reachable by any holder of the hrt_ token, including the ' +
+            'writes; there is no per-tool scope. Identity operations — changing the password, ' +
+            'listing or revoking sessions, binding or unlinking a sign-in provider, deleting the ' +
+            'account, and minting or revoking agent tokens — are deliberately NOT exposed over ' +
+            'MCP. They are web-only; see server/MCP.md.',
+          read: [
+            'hrt_get_timeline',
+            'hrt_list_medications',
+            'hrt_list_labs',
+            'hrt_list_journal',
+            'hrt_list_dose_templates',
+            'hrt_predict_levels',
+            'hrt_check_advisories',
+            'hrt_get_settings',
+            'hrt_sync_state',
+            'hrt_reference',
+          ],
+          write: [
+            'hrt_add_medication',
+            'hrt_add_lab_result',
+            'hrt_add_journal_entry',
+            'hrt_add_dose_template',
+            'hrt_update_settings',
+            'hrt_delete_record',
+          ],
+          shares: ['hrt_create_share', 'hrt_list_shares', 'hrt_revoke_share'],
+        },
         safety: SAFETY_NOTE,
       }),
   );

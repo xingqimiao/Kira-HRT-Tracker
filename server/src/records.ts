@@ -58,6 +58,16 @@ export interface ListOptions {
     category?: string;
     /** Exclusive upper bound on `taken_at`, for paging backwards through time. */
     before?: number;
+    /**
+     * Restrict to ids beginning with this string.
+     *
+     * Needed because `category` is coarser than the id's own kind: dose templates are
+     * filed as `setting` alongside the weight/PK scalars and the tombstone maps, so a
+     * category-only page of "settings" would be mostly records that are not templates.
+     * Filtering in SQL rather than after the fetch is what keeps `limit` meaning
+     * "rows returned" instead of "rows considered".
+     */
+    idPrefix?: string;
 }
 
 /**
@@ -352,6 +362,12 @@ export const RecordService = {
         if (typeof opts.before === 'number' && Number.isFinite(opts.before)) {
             params.push(new Date(opts.before).toISOString());
             where += ` AND taken_at < $${params.length}::timestamptz`;
+        }
+        if (typeof opts.idPrefix === 'string' && opts.idPrefix !== '') {
+            // The prefixes are literal (\`tpl:\`, \`dose:\`), so there is no wildcard to
+            // escape; a caller that passed one would be filtering on it deliberately.
+            params.push(`${opts.idPrefix}%`);
+            where += ` AND id LIKE $${params.length}`;
         }
 
         const { rows } = await getPool().query<{
