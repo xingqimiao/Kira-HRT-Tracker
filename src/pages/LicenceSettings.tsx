@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Icon from '../components/Icon';
 import { ArrowLeft, CodeFile, ExternalLink } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
+import { CreditsRoll } from '../components/CreditsRoll';
 
 interface LicenceSettingsProps {
     onBack: () => void;
