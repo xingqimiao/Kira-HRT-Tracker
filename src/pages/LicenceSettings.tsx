@@ -44,10 +44,20 @@ const mono = 'font-mono text-xs text-[var(--color-m3-on-surface-variant)] ';
 
 const LicenceSettings: React.FC<LicenceSettingsProps> = ({ onBack, appVersion }) => {
     const { t } = useTranslation();
+    const [showCreditsRoll, setShowCreditsRoll] = useState(false);
+    const [isFadingOut, setIsFadingOut] = useState(false);
+
+    const handleTriggerEasterEgg = () => {
+        setIsFadingOut(true);
+        setTimeout(() => {
+            setShowCreditsRoll(true);
+        }, 900);
+    };
 
     return (
-        <div className="relative pb-32">
-            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)] px-6 md:px-8 pt-8 pb-3">
+        <>
+            <div className={`relative pb-32 transition-opacity duration-1000 ${isFadingOut ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+                <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)] px-6 md:px-8 pt-8 pb-3">
                 <button
                     onClick={onBack}
                     className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] "
@@ -143,9 +153,30 @@ const LicenceSettings: React.FC<LicenceSettingsProps> = ({ onBack, appVersion })
                 <p className={`mt-6 ${muted}`}>
                     {t('licence.generated').replace('{version}', appVersion).replace('{date}', GENERATED_AT)}
                 </p>
+
+                {/* 隐藏彩蛋入口：极低调、安静、不起眼 */}
+                <div className="mt-20 pt-8 pb-12 text-center border-t border-dashed border-[var(--color-m3-outline-variant)]/30">
+                    <button
+                        type="button"
+                        onClick={handleTriggerEasterEgg}
+                        className="text-xs text-[var(--color-m3-on-surface-variant)]/40 hover:text-[var(--color-m3-on-surface-variant)]/80 transition-colors duration-500 select-none tracking-wider"
+                    >
+                        这里好像还有点东西。
+                    </button>
+                </div>
             </div>
         </div>
-    );
+
+        {showCreditsRoll && (
+            <CreditsRoll
+                onClose={() => {
+                    setShowCreditsRoll(false);
+                    setIsFadingOut(false);
+                }}
+            />
+        )}
+    </>
+);
 };
 
 export default LicenceSettings;
