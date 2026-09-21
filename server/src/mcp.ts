@@ -37,9 +37,27 @@ import { SL_TIER_ORDER, GEL_SITE_ORDER, PK_PARAM_RANGES } from './engine.ts';
 /** How an adapter obtains the caller's identity and key. */
 export type ContextResolver = () => Promise<AuthContext | ContextDenial | null>;
 
+/**
+ * Two different failures, told apart because the fix differs.
+ *
+ * A request with no credential, or one that no longer resolves to an account, is a
+ * client problem: the token has to arrive as `Authorization: Bearer hrt_...`, and
+ * telling that caller to sign in at the web UI sends them somewhere that cannot help.
+ * `locked` is the other case -- the credential is good and names the account, but the
+ * deployment cannot reach that account's key, a state only a password sign-in clears.
+ * Reporting both as locked taught clients to retry the wrong thing, which is how it
+ * read on a probe that carried no token at all.
+ */
+const NO_CREDENTIAL =
+  'No usable credential. This request carried no hrt_ token, or one that no longer ' +
+  'resolves to an account. Send one as `Authorization: Bearer hrt_...`; signing in at ' +
+  'the web UI will not fix a missing or revoked token.';
+
 const NOT_UNLOCKED =
-  'This account is locked. Ask the user to sign in at the web UI; the credential ' +
-  'presented here does not reach the account\'s records.';
+  'This account is locked. The credential is valid and identifies the account, but the ' +
+  'deployment cannot reach that account\'s key -- SERVER_DEK_KEY is unset, or the ' +
+  'account predates the server-side wrapper. Ask the user to sign in once at the web UI ' +
+  'with their password, which adds the wrapper.';
 
 /** Wrap a tool body so failures arrive as readable results instead of protocol errors. */
 function toolResult(value: unknown) {
@@ -86,7 +104,7 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
     fn: (ctx: AuthContext) => Promise<T>,
   ): Promise<{ value: T } | { error: string }> {
     const ctx = await resolveContext();
-    if (!ctx) return { error: NOT_UNLOCKED };
+    if (!ctx) return { error: NO_CREDENTIAL };
     if ('denied' in ctx) return { error: NOT_UNLOCKED };
     return { value: await fn(ctx) };
   }
@@ -252,8 +270,11 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
           .describe('Opaque record id. Omit to have one generated; only set it to replay a known id.'),
         route: z.enum(['injection', 'oral', 'sublingual', 'gel', 'patchApply', 'patchRemove']),
         ester: z
-          .enum(['E2', 'EB', 'EV', 'EC', 'EN', 'EU', 'CPA', 'T', 'TC', 'TE', 'TU'])
-          .describe('Estradiol esters: EB/EV/EC/EN/EU; E2 = unesterified; CPA = cyproterone; T esters: TC/TE/TU'),
+          .enum(['E2', 'EB', 'EV', 'EC', 'EN', 'EU', 'CPA', 'SPIRO', 'BICAL', 'T', 'TC', 'TE', 'TU'])
+          .describe(
+            'Estradiol esters: EB/EV/EC/EN/EU; E2 = unesterified; anti-androgens: CPA = cyproterone ' +
+              'acetate, SPIRO = spironolactone, BICAL = bicalutamide; T esters: TC/TE/TU',
+          ),
         dose_mg: z.number().positive().max(10000).optional().describe('Dose in mg; omit only for patchRemove'),
         at: z.string().describe('When it was taken, ISO 8601 (e.g. 2026-09-16T08:00:00Z)'),
         extras: z
@@ -396,7 +417,11 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         routes: ['injection', 'oral', 'sublingual', 'gel', 'patchApply', 'patchRemove'],
         esters: {
           estradiol: { E2: 'unesterified', EB: 'benzoate', EV: 'valerate', EC: 'cypionate', EN: 'enanthate', EU: 'undecylate' },
-          antiandrogen: { CPA: 'cyproterone acetate' },
+          antiandrogen: {
+            CPA: 'cyproterone acetate',
+            SPIRO: 'spironolactone',
+            BICAL: 'bicalutamide',
+          },
           testosterone: { T: 'unesterified', TC: 'cypionate', TE: 'enanthate', TU: 'undecanoate' },
         },
         sublingual_tiers: SL_TIER_ORDER,

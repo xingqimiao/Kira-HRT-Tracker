@@ -121,15 +121,20 @@ test('an MCP client can list and call tools', async () => {
   await client.close();
 });
 
-test('a locked tool call returns a readable message, not a protocol error', async () => {
-  // No token at all: the tool must explain the account is locked.
+test('a tool call with no credential explains the missing token, not a lock', async () => {
+  // No token at all. This used to answer "the account is locked, sign in at the web UI",
+  // and that remedy is wrong: no password sign-in produces a token, so a caller who
+  // follows it loops. `locked` is the other failure -- a valid credential whose account
+  // key the deployment cannot reach -- and it is worth keeping them apart, because a
+  // client that retries the wrong fix reports a healthy service as broken.
   const { client, transport } = connect(undefined);
   await client.connect(transport);
 
   const result = await client.callTool({ name: 'hrt_list_medications', arguments: {} });
-  assert.equal(result.isError, true, 'a locked call reports an error result');
+  assert.equal(result.isError, true, 'an unauthenticated call reports an error result');
   const text = (result.content as any)[0].text as string;
-  assert.match(text, /locked/i, `expected a lock explanation, got: ${text}`);
+  assert.match(text, /credential|Bearer/i, `expected a credential explanation, got: ${text}`);
+  assert.doesNotMatch(text, /is locked/i, 'a missing token is not a lock');
 
   await client.close();
 });
