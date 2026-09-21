@@ -175,6 +175,24 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+/**
+ * Headers for the status page's probe, and the nonce it must echo.
+ *
+ * The probe reaches us through Cloudflare and has to prove it heard from the origin
+ * rather than from something holding a copy. Two headers do that: this response may not
+ * be stored, and the nonce the caller minted for this one request comes back. A cached
+ * copy cannot contain a value it never saw, which is why the echo is worth more than the
+ * directive: a directive asks for cooperation, the echo is evidence.
+ *
+ * Only the health routes call this. They are tokenless and say nothing about any account.
+ */
+function probeHeaders(req: IncomingMessage, res: ServerResponse): void {
+  const nonce = new URL(req.url || '/', 'http://localhost').searchParams.get('nonce');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  if (nonce) res.setHeader('X-Probe-Nonce', nonce);
+}
+
 function redirect(res: ServerResponse, location: string): void {
   res.writeHead(302, { Location: location, 'Cache-Control': 'no-store' });
   res.end();
@@ -326,6 +344,7 @@ export function createRequestHandler() {
 
       // --- Health ----------------------------------------------------------
       if (path === '/health') {
+        probeHeaders(req, res);
         send(res, 200, {
           ok: true,
           service: 'hrt',
@@ -349,6 +368,7 @@ export function createRequestHandler() {
           send(res, 405, { error: 'method not allowed; GET on the MCP health route' });
           return;
         }
+        probeHeaders(req, res);
         send(res, 200, {
           ok: true,
           service: 'hrt-mcp',
