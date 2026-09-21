@@ -120,50 +120,26 @@ function vialSvg({ scale, x, y, fill = 0.5 }) {
   return rects.join('');
 }
 
-/**
- * A faint dose curve behind the text.
- *
- * The same idea as the upstream card's curve, redrawn: it says what the app does
- * more cheaply than a sentence. Kept at low opacity so it reads as texture rather
- * than as data — a decorative curve that looked like a real reading would be a
- * small lie on a card that is otherwise an advertisement.
- */
-function curveSvg() {
-  // Confined to the lower band on purpose. The first version spanned the full card
-  // and its peak crossed the wordmark, which read as a stray rule through the text
-  // rather than as a chart behind it. Nothing decorative should touch the type.
-  const points = [
-    [0, 592], [150, 578], [300, 556], [450, 530], [600, 516],
-    [750, 520], [900, 544], [1050, 566], [1200, 580],
-  ];
-  const d = points.map(([px, py], i) => `${i === 0 ? 'M' : 'L'}${px} ${py}`).join(' ');
-  const dots = points
-    .filter((_, i) => i % 2 === 0)
-    .map(([px, py]) => `<circle cx="${px}" cy="${py}" r="5" fill="${C.vialLiquid}" opacity="0.5"/>`)
-    .join('');
-  return `
-    <path d="${d}" fill="none" stroke="${C.vialLiquid}" stroke-width="3" opacity="0.28"/>
-    ${dots}
-  `;
-}
-
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
   <rect width="${W}" height="${H}" fill="${C.surface}"/>
-  ${curveSvg()}
 
   <!-- The vial, standing to the right of the text. -->
   ${vialSvg({ scale: 9, x: 900, y: 74 })}
 
-  <!-- Wordmark. -->
+  <!-- Wordmark, and the one line under it.
+       Two lines, not three: the card is the first thing anyone sees of a shared
+       link, and a subtitle that lists features is a paragraph nobody reads at
+       200px wide. "Agent-Friendly HRT Records" is the product's own claim from
+       the page title, so the card and the search result say the same thing. -->
   <text x="88" y="272" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif"
         font-size="72" font-weight="600" letter-spacing="-2" fill="${C.onSurface}">Kira HRT Tracker</text>
 
-  <text x="90" y="360" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif"
-        font-size="27" fill="${C.onSurfaceVariant}">Dose logging · pharmacokinetic estimates · private by default</text>
+  <text x="90" y="352" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif"
+        font-size="30" fill="${C.onSurfaceVariant}">Agent-Friendly HRT Records</text>
 
   <!-- A hairline above the footer, matching the app's use of lines over shadows. -->
   <rect x="88" y="470" width="1024" height="1" fill="${C.outline}"/>
-  <text x="88" y="514" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif"
+  <text x="88" y="516" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif"
         font-size="24" fill="${C.onSurfaceVariant}" opacity="0.7">hrt.kiramyao.com</text>
 
   <!-- The sparkle from the app's mark, anchoring the corner. -->
