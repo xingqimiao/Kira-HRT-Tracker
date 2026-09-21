@@ -107,7 +107,21 @@ export const CoreSessionProvider: React.FC<{ children: React.ReactNode }> = ({ c
 function useCoreSessionState() {
   const [state, setState] = useState<CoreSessionState>(() => {
     const { token, user } = readStored();
-    return { token, user, restoring: !!token };
+    // Render the stored session immediately; verify it in the background.
+    //
+    // This used to report `restoring` whenever a token existed, which meant the
+    // account and record screens hid what they already had — the token and the user
+    // are read synchronously from storage — until a network round trip came back.
+    // The user saw a placeholder flash on every visit, and the flash lasted as long
+    // as that round trip, which on a slow path is seconds rather than a blink.
+    //
+    // The check still runs and still signs the account out if the server refuses the
+    // token; what changed is which state wins while we wait. The tokens only came
+    // from a previous successful sign-in, so showing them and correcting afterwards
+    // is both faster and more honest than showing nothing and revealing them later.
+    // `restoring` remains for the one case storage cannot answer: a token with no
+    // user, where there is no identity to draw.
+    return { token, user, restoring: !!token && !user };
   });
 
   const persist = useCallback((token: string | null, user: CoreUser | null) => {
