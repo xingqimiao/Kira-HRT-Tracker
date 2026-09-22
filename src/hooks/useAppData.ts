@@ -1527,6 +1527,11 @@ export const useAppData = (
         recheckIntervals, setRecheckIntervals,
         ocrModelTier, setOcrModelTier,
         pkEngine, setPkEngine,
+        // Which engine the app will use, as the preference resolved against the mode.
+        // Not the `activeEngine` object above: a caller asking this is deciding what to
+        // *show*, and during the vendor chunk's load the object still points at the
+        // built-in one — which would make the gel fields flicker in a moment later.
+        engineInUse: chooseEngine(pkEngine, isTransmasc),
         dismissedRechecks, dismissRecheck,
         pendingMilestone,
         showStreakNotice, dismissStreakNotice,

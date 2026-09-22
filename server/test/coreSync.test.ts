@@ -242,6 +242,79 @@ test('an app-only settings change reaches the account and a second device', asyn
   }
 });
 
+/**
+ * A bag the server has no use for still has to come back whole.
+ *
+ * `user_settings.app_state` is a plaintext projection on the way *in* — it keeps
+ * only the keys a server-side reader needs, so a database dump cannot show
+ * `hrtStartDate`. But the same column is the app's read path for its preferences,
+ * and a projection is lossy. If the write half filters and the read half emits the
+ * column, then every preference outside the whitelist is silently dropped from the
+ * payload — and the client's whole-bag merge rule turns that drop into a
+ * *deletion*, so the next device to sync erases the setting for good.
+ *
+ * The failure is invisible in a bag of one or two keys, which is what the existing
+ * test above happens to use. This one states the round trip for the keys the
+ * filter exists to hide.
+ */
+test('a filtered-out preference still survives the round trip', async () => {
+  const restore = installFetchOrigin(base);
+  try {
+    const { syncWithCore, readCoreState } = await import('../../src/services/coreSync.ts');
+    const { userId, token } = await registerAccount(base, { password: 'coresync-password' });
+    const stamp = 1_700_000_000_000;
+
+    await syncWithCore(token, {
+      ...appPayload(),
+      appState: {
+        modes: {
+          transfem: { doseTemplates: [], quickDoses: [] },
+          transmasc: { doseTemplates: [], quickDoses: [] },
+        },
+        settings: {
+          theme: 'dark',
+          lang: 'ja',
+          hrtStartDate: '2024-03-14',          recheckIntervals: 'aggressive',
+          aaChartMode: 'absolute',
+          ocrModelTier: 'accurate',
+          pkEngine: 'mihari',
+        },
+        settingsUpdatedAt: stamp,
+      },
+    });
+
+    // The account's own reader, which is what the app consumes on boot.
+    const asState = normalizeSyncState(await readCoreState(token));
+    assert.equal(asState.appSettings?.hrtStartDate, '2024-03-14',
+      'the HRT start date did not come back — the read half emitted the filtered column');
+    assert.equal(asState.appSettings?.recheckIntervals, 'aggressive');
+    assert.equal(asState.appSettings?.aaChartMode, 'absolute');
+    assert.equal(asState.appSettings?.ocrModelTier, 'accurate');
+    assert.equal(asState.appSettings?.pkEngine, 'mihari',
+      'the engine preference did not come back, so the app would redraw on the other model');
+    assert.equal(asState.appSettingsUpdatedAt, stamp, 'the bag stamp did not survive');
+
+    // The database must not hold the health fact in the clear, even though the app
+    // gets it back — this is the half the whitelist exists for. Read the column
+    // itself rather than a route: the settings route assembles the sealed bag back
+    // over the projection, so it deliberately *does* show these.
+    const { getPool } = await import('../src/db.ts');
+    const { rows } = await getPool().query<{ app_state: { settings?: Record<string, unknown> } | null }>(
+      'SELECT app_state FROM user_settings WHERE user_id = $1',
+      [userId],
+    );
+    const onDisk = rows[0]?.app_state?.settings ?? {};
+    assert.equal(onDisk.hrtStartDate, undefined,
+      'the HRT start date is sitting unencrypted in app_state');
+    assert.equal(onDisk.theme, undefined, 'the theme is sitting unencrypted in app_state');
+    assert.equal(onDisk.recheckIntervals, undefined, 'the re-check intervals are in the clear');
+    assert.equal(onDisk.pkEngine, 'mihari',
+      'the engine pref is read server-side, so it belongs in the plaintext projection');
+  } finally {
+    restore();
+  }
+});
+
 test('a locked account reports locked rather than a generic failure', async () => {
   const restore = installFetchOrigin(base);
   try {

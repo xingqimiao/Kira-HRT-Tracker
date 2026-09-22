@@ -31,7 +31,9 @@
  * without a server release.
  */
 import { getPool } from './db.ts';
+import { RecordService } from './records.ts';
 import { CALIBRATION_METHODS, isPlausibleBodyWeightKG } from './engine.ts';
+import type { AuthContext } from './types.ts';
 
 export interface UserSettings {
   bodyWeightKg: number | null;
@@ -100,6 +102,39 @@ export const APP_SETTING_BY_COLUMN = {
       ? value : null),
   },
 } as const satisfies Partial<Record<keyof UserSettings, ModelSetting>>;
+
+/**
+ * The settings keys that may sit in `user_settings.app_state` in the clear.
+ *
+ * `app_state` is a plaintext jsonb column, and the app's settings bag used to be stored
+ * in it whole — so a database dump showed the language, the theme, the re-check
+ * intervals and, most of all, `hrtStartDate`, the date HRT began. That one is a health
+ * fact about the person, it is readable with no key at all, and the server does not read
+ * it: it arrived in the clear only because the bag was stored verbatim.
+ *
+ * So the bag is filtered on the way in. What stays is what a server-side reader actually
+ * needs: the four `APP_SETTING_BY_COLUMN` keys, which the estimator projects out of the
+ * bag, and `pkEngine`, which `hrt_get_settings` reports so an agent can explain which
+ * model drew the curve.
+ *
+ * Nothing is lost by dropping the rest. The whole bag still travels — sealed — as the
+ * `scalar:appSettings` record, and that is the copy the app reads its own preferences
+ * from. This column is a server-side projection of it, not the source of truth, which is
+ * what makes a whitelist safe here rather than a truncation.
+ */
+const PLAINTEXT_SETTING_KEYS: readonly string[] = [
+  ...Object.values(APP_SETTING_BY_COLUMN).map((spec) => spec.appKey),
+  'pkEngine',
+];
+
+/** The subset of a settings bag that may be stored unencrypted, or undefined when empty. */
+function plaintextBag(bag: Record<string, unknown>): Record<string, unknown> | undefined {
+  const out: Record<string, unknown> = {};
+  for (const key of PLAINTEXT_SETTING_KEYS) {
+    if (bag[key] !== undefined) out[key] = bag[key];
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
 
 /** The model columns a settings bag states; absent for each it does not, or cannot. */
 function columnsFromBag(appState: Record<string, unknown>): Partial<Record<keyof UserSettings, string>> {
@@ -225,9 +260,27 @@ export const settings = {
    * the account was created with while the app showed another.
    */
   async absorbAppState(userId: string, appState: unknown): Promise<void> {
-    const bag = jsonObject(appState);
-    if (!bag) return;
-    const columns = columnsFromBag(bag);
+    const stored = jsonObject(appState);
+    if (!stored) return;
+    const columns = columnsFromBag(stored);
+    // Filter the bag before it is written, not after: the unlisted preferences are
+    // still in the sealed `scalar:appSettings` record, so this column keeps only what a
+    // server-side reader needs. `modes` (templates and quick doses) is carried as it
+    // arrives — those are read back by the export path.
+    const bag: Record<string, unknown> = { ...stored };
+    const incoming = jsonObject(stored.settings);
+    if (incoming) {
+      // The projection merges against what this column already holds, so a write that
+      // states no whitelisted key does not erase one. It is a no-op for the filtered-out
+      // keys by construction — they were never here — which is what keeps them out.
+      const current = await this.get(userId);
+      const here = jsonObject(jsonObject(current?.appState)?.settings);
+      const kept = plaintextBag({ ...here, ...incoming });
+      if (kept) bag.settings = kept;
+      else delete bag.settings;
+    } else {
+      delete bag.settings;
+    }
     await getPool().query(
       `INSERT INTO user_settings AS s (user_id, hrt_mode, calibration_method, calibration_history,
                                        timezone, app_state, updated_at)
@@ -271,7 +324,10 @@ export const settings = {
    * change on the server.
    */
   async mergeAppSettings(userId: string, patch: Record<string, unknown>, stampMs: number): Promise<void> {
-    if (Object.keys(patch).length === 0) return;
+    // Only the keys a server-side reader needs reach the plaintext column; the rest of
+    // the patch is already in the sealed record. A patch that is entirely unlisted keys
+    // still moves the stamp, so the app's whole-bag merge adopts the change.
+    const stored = plaintextBag(patch) ?? {};
     await getPool().query(
       `INSERT INTO user_settings AS s (user_id, app_state, updated_at)
        VALUES ($1, jsonb_build_object('settings', $2::jsonb, 'settingsUpdatedAt', $3::bigint), now())
@@ -282,7 +338,7 @@ export const settings = {
                 COALESCE(s.app_state -> 'settings', '{}'::jsonb) || $2::jsonb,
                 true),
               updated_at = now()`,
-      [userId, JSON.stringify(patch), stampMs],
+      [userId, JSON.stringify(stored), stampMs],
     );
   },
 
@@ -401,10 +457,11 @@ export const SETTINGS_SCALARS = [
     recordId: 'scalar:appSettings',
     carries: [],
     absorb: (userId: string, value: unknown) => settings.absorbAppState(userId, value),
-    emit: (s: UserSettings, out: Record<string, unknown>) => {
-      const appState = appStateFor(s);
-      if (appState) out.appState = appState;
-    },
+    // No `emit`: the bag the app reads is the sealed `scalar:appSettings` record, and
+    // reaching it means a record read, which this table cannot do synchronously. The
+    // entry stays so the write half and the compile-time coverage assertion below still
+    // see the field; `appStateForRead` is the read half.
+    emit: () => {},
   },
 ] as const satisfies readonly SettingsScalar[];
 
@@ -425,6 +482,35 @@ export function settingsScalars(userSettings: UserSettings | null): Record<strin
   if (!userSettings) return out;
   for (const scalar of SETTINGS_SCALARS) scalar.emit(userSettings, out);
   return out;
+}
+
+/**
+ * The app's settings bag as the app should receive it, or null when the account has none.
+ *
+ * This is the whole bag — it is the sealed `scalar:appSettings` record, the one copy the
+ * app writes and reads its own preferences from. It is deliberately *not*
+ * `UserSettings.appState`, which is only a plaintext projection of the bag onto the keys a
+ * server-side reader needs: the write half filters `hrtStartDate` and the other
+ * preferences out of that column, so emitting the column would drop them from the payload.
+ *
+ * That drop is not self-limiting. The client resolves the bag as a *whole* on its stamp
+ * (`resolveScalar` in `syncMerge.ts`), so an understated bag does not merely arrive
+ * incomplete — it wins the stamp comparison and overwrites the other device's complete
+ * copy, deleting settings a second device was holding correctly.
+ *
+ * `fallback` is the settings row's own `app_state`, used only for an account that has
+ * never written the record (a pre-`scalar:appSettings` row still holds the unfiltered bag).
+ */
+export async function appStateForRead(
+  ctx: AuthContext,
+  fallback: UserSettings | null,
+): Promise<Record<string, unknown> | null> {
+  const sealed = await RecordService.get(ctx, 'scalar:appSettings').catch(() => null);
+  const value = (sealed?.data as { value?: unknown } | null)?.value;
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return appStateFor(fallback);
 }
 
 // A settings field with no home above would travel one way only — the bug this

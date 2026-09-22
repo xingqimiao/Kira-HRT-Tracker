@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Icon from '../components/Icon';
 import { Plus, Check, Trash2, ListChecks } from '../icons';
 import { v4 as uuidv4 } from 'uuid';
-import { DoseEvent, Route, Ester, ExtraKey, getToE2Factor, isTestosteroneEster, isAntiandrogen } from '../../logic';
+import { DoseEvent, Route, Ester, ExtraKey, getToE2Factor, isTestosteroneEster, isAntiandrogen, type PkEngineId } from '../../logic';
 import { formatTime } from '../utils/helpers';
 import { useDialog } from '../contexts/DialogContext';
 import DoseForm from '../components/DoseForm';
@@ -36,6 +36,8 @@ interface HistoryProps {
     onSaveTemplate: (t: DoseTemplate) => void;
     onDeleteTemplate: (id: string) => void;
     groupedEvents: DoseDayGroup[];
+    /** The engine in use, so the dose form can hide the gel fields it does not read. */
+    activeEngine?: PkEngineId;
 }
 
 const History: React.FC<HistoryProps> = ({
@@ -50,6 +52,7 @@ const History: React.FC<HistoryProps> = ({
     onSaveTemplate,
     onDeleteTemplate,
     groupedEvents,
+    activeEngine = 'builtin',
 }) => {
     const { isTransmasc } = useHRTMode();
     const { showDialog } = useDialog();
@@ -230,6 +233,7 @@ const History: React.FC<HistoryProps> = ({
                             onDeleteTemplate={onDeleteTemplate}
                             isInline={true}
                             events={allEvents}
+                            activeEngine={activeEngine}
                         />
                     </div>
                 </div>
@@ -346,6 +350,7 @@ const History: React.FC<HistoryProps> = ({
                                                 isInline={true}
                                                 hideHeader={true}
                                                 events={allEvents}
+                                                activeEngine={activeEngine}
                                             />
                                         </div>
                                     </Collapsible>

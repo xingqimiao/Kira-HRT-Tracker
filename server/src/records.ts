@@ -36,8 +36,39 @@ import { randomUUID } from 'node:crypto';
 import { getPool, withTransaction } from './db.ts';
 import { getConfig } from './config.ts';
 import { openPayload, sealPayload } from './payloadCrypto.ts';
-import { settings, settingsScalarFor, settingsScalars, type SettingsScalar } from './settings.ts';
+import {
+    settings, settingsScalarFor, settingsScalars, appStateForRead, type SettingsScalar,
+} from './settings.ts';
 import type { AuthContext } from './types.ts';
+
+/**
+ * An incoming write with the app-settings blob merged into what is stored.
+ *
+ * Every other item passes through untouched, and so does an app-settings write whose
+ * new blob is not an object (a client sending garbage should get the validator's
+ * refusal, not a silent rewrite). Merged at the top level, and `settings` one level
+ * deeper, so a partial blob cannot erase a key it never mentioned.
+ */
+function mergeIncomingAppState(raw: unknown, prior: Record<string, unknown> | null): unknown {
+    const item = jsonObject(raw);
+    if (!item || item.id !== 'scalar:appSettings') return raw;
+    const data = jsonObject(item.data);
+    const incoming = jsonObject(data?.value);
+    if (!data || !incoming) return raw;
+    const value = {
+        ...prior,
+        ...incoming,
+        settings: { ...jsonObject(prior?.settings), ...jsonObject(incoming.settings) },
+    };
+    return { ...item, data: { ...data, value } };
+}
+
+/** A JSON object, or null for anything else — including an array. */
+function jsonObject(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : null;
+}
 
 /** The kinds of record the store carries. Kept narrow so a typo cannot create one. */
 export const RECORD_CATEGORIES = ['dose', 'lab', 'note', 'setting', 'journal'] as const;
@@ -301,11 +332,25 @@ export const RecordService = {
         // a repeated id is applied last-wins, matching the upsert above it, so the
         // map is keyed by id. Which ids are scalars is named in `SETTINGS_SCALARS`.
         const synced = new Map<string, SyncedScalar>();
+        // The app's settings blob is merged, not replaced, before it is sealed.
+        //
+        // `scalar:appSettings` is the copy the app reads its own preferences from
+        // (see `appStateForRead`), and a record write is last-wins — so a blob that
+        // mentions only `settings` would drop the `modes` collections, and one that
+        // mentions only `modes` would drop the settings. Both are shapes the app
+        // produces: `toAppState` omits a half it has nothing to say about. A partial
+        // blob must not erase what it never mentioned, which is the rule the settings
+        // row already followed. Read before the loop, because the loop seals each item.
+        const storedAppSettings = await RecordService.get(ctx, 'scalar:appSettings').catch(() => null);
+        const priorAppSettings = jsonObject(
+            (storedAppSettings?.data as { value?: unknown } | null)?.value,
+        );
         for (const raw of items) {
-            const prepared = prepareRecord(ctx, raw as { id?: unknown; takenAt?: unknown; category?: unknown; data?: unknown });
+            const item = mergeIncomingAppState(raw, priorAppSettings);
+            const prepared = prepareRecord(ctx, item as { id?: unknown; takenAt?: unknown; category?: unknown; data?: unknown });
             if (prepared.ok) {
                 pending.set(prepared.value.id, prepared.value);
-                const scalar = scalarOf(prepared.value.id, (raw as { data?: unknown })?.data);
+                const scalar = scalarOf(prepared.value.id, (item as { data?: unknown })?.data);
                 if (scalar) synced.set(prepared.value.id, scalar);
             } else {
                 rejected.push({ id: prepared.id, reason: prepared.error });
@@ -631,9 +676,9 @@ export async function buildExportPayload(ctx: AuthContext): Promise<{
                 }
                 continue;
             }
-            // The app's settings blob is the other half of this: it is carried by
-            // the record store for completeness, while `appState` below is the blob
-            // the app actually consumes, read from the settings row.
+            // The app's settings bag is not taken from here: it is the sealed
+            // `scalar:appSettings` record, and `appStateForRead` below is where it is
+            // read. The settings row's `app_state` is only a projection of it.
             if (parts[1] === 'appSettings') continue;
         }
 
@@ -654,7 +699,8 @@ export async function buildExportPayload(ctx: AuthContext): Promise<{
         pkParamsUpdatedAt = typeof fromRow.pkParamsUpdatedAt === 'number' ? fromRow.pkParamsUpdatedAt : undefined;
     }
 
-    const appState = (fromRow.appState ?? null) as
+    // The whole sealed bag — never the row's filtered projection. See `appStateForRead`.
+    const appState = (await appStateForRead(ctx, userSettings)) as
         | { modes?: Record<string, { doseTemplates?: unknown[]; quickDoses?: unknown[] }> }
         | null;
     if (appState?.modes) {
@@ -689,7 +735,14 @@ export async function buildExportPayload(ctx: AuthContext): Promise<{
  * would never hear — the same shape of gap the weight bridge closed for the model.
  */
 export async function buildSettingsScalars(ctx: AuthContext): Promise<Record<string, unknown>> {
-    return settingsScalars(await settings.get(ctx.userId));
+    const row = await settings.get(ctx.userId);
+    const out = settingsScalars(row);
+    // The bag is the whole sealed copy, not the row's plaintext projection — see
+    // `appStateForRead`. It rides here as well as with the records so a reader that
+    // only looks at this field still gets the account's preferences intact.
+    const appState = await appStateForRead(ctx, row);
+    if (appState) out.appState = appState;
+    return out;
 }
 
 /** Counts by kind for an account, for verifying a write landed. */
@@ -741,8 +794,8 @@ export async function publicStats(now = new Date()): Promise<{
            (SELECT count(*) FROM users WHERE created_at >= $2)             AS new_7d,
            (SELECT count(*) FROM records WHERE category = 'dose')          AS doses,
            (SELECT count(*) FROM records WHERE category = 'lab')           AS labs,
-           (SELECT count(*) FROM deletion_log WHERE reason = 'self')       AS self_deletions,
-           (SELECT count(*) FROM deletion_log WHERE reason = 'admin')      AS admin_deletions`,
+           (SELECT count(*) FROM deletion_log WHERE actor = 'self')        AS self_deletions,
+           (SELECT count(*) FROM deletion_log WHERE actor = 'admin')       AS admin_deletions`,
         [dayAgo, weekAgo],
     );
 

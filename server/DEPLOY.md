@@ -787,61 +787,64 @@ step. There is no migration needed for stored data; no row records a URL.
 
 ---
 
-## 8. Licence status of the algorithm code — read before deploying publicly
+## 8. Licence status of the algorithm code
 
-This is a factual finding, not legal advice. It needs a decision from you, and it is
-the one thing in this deployment that I cannot resolve from the code.
+**Resolved.** The algorithm was the one part of this repository with no licence grant.
+It now has one, and the grant carries a limit that changes what this deployment may do
+commercially. Read the limit before monetising anything.
 
-### What I checked
+### The three upstreams, and what each grants
 
-| Repository | Role | Declared licence |
+| Repository | Role | Licence |
 |---|---|---|
-| `LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test` | **the algorithm this app computes with** | **none** |
-| `LaoZhong-Mihari/HRT-Recorder-online` | the original web app (upstream of the fork below) | none |
-| `xunxunProjects/Oyama-s-HRT-Tracker` | the app code you are building on | MIT |
+| `xunxunProjects/Oyama-s-HRT-Tracker` | the app code this project forks | **MIT** — notice preserved in [`LICENSE`](../LICENSE) |
+| `LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test` | the pharmacokinetic model (`PKcore.swift` / `PKparameter.swift`) | **granted, non-commercial** — no licence file upstream |
+| `TransmtfTeam/Transmtf-HRT-Tracker` | the second PK engine | **MIT** — declared in that repository |
 
-Verified against the GitHub API (`/license` returns 404 and the repo metadata's
-`license` field is `null` for the first two). There is no `LICENSE` file and the README
-states no terms.
+The three must not be collapsed into one another. In particular, the model grant is
+**not** MIT and does not become MIT by sitting beside MIT code.
 
-### What this means
+### The model grant
+
+`LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test` declares no licence: GitHub's
+`/license` endpoint returns 404 and the repo metadata's `license` field is `null`.
 
 **A repository with no licence is not public-domain software.** Under the Berne
-Convention, copyright attaches automatically on creation. Absent a licence, the default
-position is *all rights reserved*: you have no granted right to copy, modify, or
-redistribute that code, however publicly visible it is on GitHub.
+Convention copyright attaches on creation, so the default position is *all rights
+reserved* — no right to copy, modify or redistribute, however public the repository is.
 
-This app uses that model in two forms:
+> **Granted 2026-09-18** by the copyright holder, in reply to a request from this
+> project. **Non-commercial.** Keep the correspondence: with no licence file upstream,
+> that exchange *is* the grant.
 
-- `logic.ts` in this repository, inherited from the MIT-licensed fork, is a port of its
-  `PKcore.swift` / `PKparameter.swift` logic and includes its parameter tables.
-- The parameters and model structure are the substance of the app, not incidental.
+The full record is in [`THIRD-PARTY-LICENSES.md`](../THIRD-PARTY-LICENSES.md), which
+carries the scope of what is derived (the compartment models, the two-part depot
+kinetics, the sublingual tiers) and the concrete list of affected files.
 
-So "respect the licence" in the upstream README is doing real work: the MIT licence
-covers the app code, but **the algorithm those parameters came from carries no licence
-grant at all**.
+### What the non-commercial limit rules out
 
-### Your options, in the order I would consider them
+The limit binds the *model*, not merely one module, and the model is the substance of
+the app — so it reaches the whole deployment:
 
-1. **Ask the author.** Open an issue or contact `@LaoZhong-Mihari` and request a licence
-   (MIT, or explicit written permission to reuse the model). This is the clean fix, and
-   for a personal, non-commercial HRT tool it is likely to be granted quickly. It also
-   resolves the ambiguity permanently rather than trading on it.
-2. **Deploy privately and non-commercially** while you wait. The practical risk of a
-   dispute over a personal, unmonetised health tool is low, and the attribution
-   requirement is already satisfied. This is a risk posture, not a legal position.
-3. **Accept the risk knowingly.** Reasonable for private use, indefensible for anything
-   commercial or promotional.
+- **No paid product.** The app may not be sold, and may not be monetised on the
+  strength of the model: no subscription, no ads, no paid tier, no upsell.
+- **No promotional deployment.** Reasonable for private use, indefensible for anything
+  commercial or promotional.
+- **Renegotiate before that changes.** If this ever needs to make money, go back to the
+  copyright holder first. The grant names non-commercial as a real limit, not
+  boilerplate.
 
-### If you want to deploy without depending on that grant
+A purely personal, unmonetised deployment is squarely inside the grant, and the
+attribution requirement is satisfied by the two files above.
 
-Reimplementing the model from published literature is a genuinely different route —
+### If you ever need to drop the non-commercial limit
+
+Reimplementing the model from primary sources is a genuinely different route —
 pharmacokinetic parameters for estradiol esters are documented in the literature and in
-FDA labels (the code's own comments cite several). A clean implementation from primary
-sources avoids the uncopyrightable-parameters question entirely, because it does not
-copy that code. It is also a substantial piece of work, and the existing parameters are
-calibrated against stated steady-state targets, so a reimplementation needs its own
-validation.
+FDA labels, and the code's own comments cite several. A clean implementation from
+primary sources avoids copying that code at all. It is also a substantial piece of work:
+the existing parameters are calibrated against stated steady-state targets, so a
+reimplementation needs its own validation.
 
-**Recommendation: option 1.** Ask, and deploy personally in the meantime. It costs one
-issue and removes the only unresolved legal question in this deployment.
+That is the escape hatch. Using it is not required for anything this project currently
+does.

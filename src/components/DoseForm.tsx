@@ -5,7 +5,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
 import CustomSelect from './CustomSelect';
 import DateTimePicker from './DateTimePicker';
-import { Route, Ester, ExtraKey, DoseEvent, SL_TIER_ORDER, SublingualTierParams, getBioavailabilityMultiplier, getToE2Factor, getDoseAdvisory, isAntiandrogen, isUnmodelledCompound, SPIRO_MG_MAX_PER_DAY, GEL_DEFAULT_PRODUCT_ID, GEL_COVERAGE_DEFAULT_INDEX, GEL_COAPPLICATION_DEFAULT_INDEX } from '../../logic';
+import { Route, Ester, ExtraKey, DoseEvent, SL_TIER_ORDER, SublingualTierParams, getBioavailabilityMultiplier, getToE2Factor, getDoseAdvisory, isAntiandrogen, isUnmodelledCompound, SPIRO_MG_MAX_PER_DAY, GEL_DEFAULT_PRODUCT_ID, GEL_COVERAGE_DEFAULT_INDEX, GEL_COAPPLICATION_DEFAULT_INDEX, type PkEngineId } from '../../logic';
 import { Save, Trash2, Info, Bookmark, BookmarkPlus, X, ChevronDown, Check, AlertTriangle, ExternalLink } from '../icons';
 import { DoseAdvisoryLine } from './DoseAdvisory';
 import { LOCALE_MAP } from '../utils/helpers';
@@ -190,9 +190,18 @@ interface DoseFormProps {
     onDeleteQuickDose?: (id: string) => void;
     /** Existing doses, used only to show whether recent use is already running high. */
     events?: DoseEvent[];
+    /**
+     * The engine drawing the curve, so a field only one engine reads can be hidden.
+     *
+     * Not the stored preference: a transmasc account is always on the built-in engine
+     * whatever the setting says (see `chooseEngine`), so this is the engine actually in
+     * use. It defaults to the built-in one, which is both the default engine and the one
+     * whose form is the smaller.
+     */
+    activeEngine?: PkEngineId;
 }
 
-const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDelete, templates = [], onSaveTemplate, onDeleteTemplate, isInline = false, hideHeader = false, quickDoses, onAddQuickDose, onDeleteQuickDose, events = [] }) => {
+const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDelete, templates = [], onSaveTemplate, onDeleteTemplate, isInline = false, hideHeader = false, quickDoses, onAddQuickDose, onDeleteQuickDose, events = [], activeEngine = 'builtin' }) => {
     const { t, lang } = useTranslation();
     const { showDialog } = useDialog();
     const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
@@ -1061,6 +1070,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
 
                             {route === Route.gel && (
                                 <GelFields
+                                    showEngineDetail={activeEngine === 'transmtf'}
                                     gelSite={gelSite}
                                     setGelSite={setGelSite}
                                     gelProductId={gelProductId}

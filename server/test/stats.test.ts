@@ -133,14 +133,25 @@ test('record counts match the rows, and a deletion drops one', async () => {
   );
 });
 
-test('the deletion log is reported by reason', async () => {
+test('a real account deletion moves the self-deletion count', async () => {
   const res = await call(base, '/stats');
   assert.equal(typeof res.body.deletions.self, 'number');
   assert.equal(typeof res.body.deletions.admin, 'number');
 
-  await getPool().query(
-    `INSERT INTO deletion_log (reason, user_created_at) VALUES ('self', now() - interval '3 days')`,
-  );
+  // Through the real endpoint rather than an INSERT, because the bug this guards
+  // was exactly that the two disagreed: the counter read `reason = 'self'` while
+  // the write path stores the caller's free-text reason there, so the tile the
+  // status page publishes could never move. An INSERT that spells the column the
+  // way the query reads it cannot fail, which is why the earlier test did not
+  // catch it — the reason is optional, so this exercises the default too.
+  const account = await registerAccount(base, { password: 'stats-password-1' });
+  const del = await call(base, '/auth/account/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` },
+    body: JSON.stringify({ password: account.password }),
+  });
+  assert.equal(del.status, 200, JSON.stringify(del.body));
+
   const after = await call(base, '/stats');
   assert.equal(after.body.deletions.self, res.body.deletions.self + 1, 'a self-deletion is counted');
   assert.equal(after.body.deletions.admin, res.body.deletions.admin, 'and nothing else moves');

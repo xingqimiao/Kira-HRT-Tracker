@@ -399,11 +399,23 @@ ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS pk_params_updated_at timestam
 CREATE TABLE IF NOT EXISTS deletion_log (
     id               bigserial PRIMARY KEY,
     reason           text NOT NULL,
+    -- Who asked for the deletion. `reason` is the free text a caller may state
+    -- ("no longer needed"); this is the actor, and it is the column the public
+    -- self/admin counts read. The two were conflated until the status page's
+    -- self-deletion tile was found to read `reason = 'self'`, which nothing wrote —
+    -- so the tile showed zero however many accounts were deleted. Every row today is
+    -- a self-deletion, because the account-deletion route is the only writer, which
+    -- is why the default backfills them all correctly.
+    actor            text NOT NULL DEFAULT 'self',
     user_created_at  timestamptz,
     deleted_at       timestamptz NOT NULL DEFAULT now()
 );
+-- Existing deployments: add the column and let the default backfill their rows, which
+-- are all self-deletions for the same reason as above.
+ALTER TABLE deletion_log ADD COLUMN IF NOT EXISTS actor text NOT NULL DEFAULT 'self';
 CREATE INDEX IF NOT EXISTS idx_deletion_log_deleted_at ON deletion_log(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_deletion_log_reason ON deletion_log(reason);
+CREATE INDEX IF NOT EXISTS idx_deletion_log_actor ON deletion_log(actor);
 -- Records that an unlock happened, not what was read. Deliberately no record
 -- contents, since the server cannot read them anyway.
 --

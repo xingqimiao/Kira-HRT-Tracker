@@ -3,7 +3,7 @@ import DoseForm, { DoseTemplate } from './DoseForm';
 import { QuickDose } from './dose_form/QuickDoseButtons';
 import { useEscape } from '../hooks/useEscape';
 import { usePresence } from '../hooks/usePresence';
-import { DoseEvent } from '../../logic';
+import { DoseEvent, type PkEngineId } from '../../logic';
 
 export type { DoseTemplate, QuickDose };
 
@@ -20,6 +20,8 @@ interface DoseFormModalProps {
     onAddQuickDose?: (dose: QuickDose) => void;
     onDeleteQuickDose?: (id: string) => void;
     events?: DoseEvent[];
+    /** The engine in use, so `DoseForm` can hide the fields it does not read. */
+    activeEngine?: PkEngineId;
 }
 
 const DoseFormModal: React.FC<DoseFormModalProps> = ({
@@ -34,7 +36,8 @@ const DoseFormModal: React.FC<DoseFormModalProps> = ({
     quickDoses = [],
     onAddQuickDose,
     onDeleteQuickDose,
-    events = []
+    events = [],
+    activeEngine
 }) => {
     // Held mounted through the close so the dialog has an exit to play — the
     // `if (!isOpen) return null` this replaced unmounted it on the same frame the
@@ -78,6 +81,7 @@ const DoseFormModal: React.FC<DoseFormModalProps> = ({
                     onDeleteQuickDose={onDeleteQuickDose}
                     isInline={false}
                     events={events}
+                    activeEngine={activeEngine}
                 />
             </div>
             </div>

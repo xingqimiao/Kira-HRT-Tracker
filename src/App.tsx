@@ -110,6 +110,7 @@ const AppContent = () => {
         recheckIntervals, setRecheckIntervals,
         ocrModelTier, setOcrModelTier,
         pkEngine, setPkEngine,
+        engineInUse,
         pendingMilestone,
         showStreakNotice, dismissStreakNotice,
         calibration,
@@ -586,6 +587,7 @@ const AppContent = () => {
                             onSaveTemplate={addTemplate}
                             onDeleteTemplate={deleteTemplate}
                             groupedEvents={groupedEvents}
+                            activeEngine={engineInUse}
                         />
                     )}
 
@@ -805,6 +807,7 @@ const AppContent = () => {
                 onAddQuickDose={addQuickDose}
                 onDeleteQuickDose={deleteQuickDose}
                 events={events}
+                activeEngine={engineInUse}
             />
 
             <DisclaimerModal

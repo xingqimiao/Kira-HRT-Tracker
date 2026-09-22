@@ -32,7 +32,8 @@ import { promisify } from 'node:util';
 
 import { getPool, withTransaction } from './db.ts';
 import { getConfig } from './config.ts';
-import { settings, APP_SETTING_BY_COLUMN } from './settings.ts';
+import { settings, APP_SETTING_BY_COLUMN, type UserSettings } from './settings.ts';
+import { RecordService } from './records.ts';
 import {
   createUserKeyMaterial,
   rewrapForNewPassword,
@@ -223,6 +224,41 @@ export interface UnlockedAccount {
   userId: string;
   username: string;
   token: string;
+}
+
+/**
+ * Fold the sealed settings bag back over the row's plaintext projection.
+ *
+ * The row carries only the keys a server-side reader needs; the whole bag — language,
+ * theme, `hrtStartDate`, re-check intervals, the engine choice — travels sealed as
+ * `scalar:appSettings` and is restored here so a reader sees the account's preferences
+ * rather than the projection. A missing or unreadable record is not an error: the row
+ * alone is a complete set of the settings that affect a calculation, and a caller asking
+ * for settings should still get them if the sealed copy cannot be opened.
+ *
+ * The sealed bag wins on a conflict. For the four `APP_SETTING_BY_COLUMN` keys the two
+ * copies are the same value under two names, so which wins only matters when they have
+ * drifted — and the bag is the one the app and the agent both write, while the column is
+ * written from it. The row's other fields (`pkParams`, weight, the stamps) are not part of
+ * the bag at all and are passed through untouched.
+ */
+async function mergeSealedPreferences(
+  ctx: AuthContext,
+  row: UserSettings,
+): Promise<UserSettings> {
+  const sealed = await RecordService.get(ctx, 'scalar:appSettings').catch(() => null);
+  const value = (sealed?.data as { value?: { settings?: unknown } } | undefined)?.value;
+  const preferences = value?.settings;
+  if (!preferences || typeof preferences !== 'object' || Array.isArray(preferences)) return row;
+  const current = (row.appState ?? {}) as Record<string, unknown>;
+  const currentSettings = (current.settings ?? {}) as Record<string, unknown>;
+  return {
+    ...row,
+    appState: {
+      ...current,
+      settings: { ...currentSettings, ...(preferences as Record<string, unknown>) },
+    },
+  };
 }
 
 export const AccountService = {
@@ -1277,9 +1313,19 @@ export const AccountService = {
       .catch(() => undefined); // never fail a login because audit logging hiccuped
   },
 
+  /**
+   * The account's settings, with the sealed preferences folded back over the row.
+   *
+   * `user_settings.app_state` holds only the keys a server-side reader needs — the
+   * plaintext column is filtered on write, so the language, theme and `hrtStartDate` a
+   * dump used to expose are no longer in it. The full bag is still carried, sealed, as
+   * `scalar:appSettings`, and this is where it is read back: a caller that reports
+   * settings (MCP's `hrt_get_settings`, `/api/settings`) sees the same bag it always
+   * did, without the server keeping a readable copy of it.
+   */
   async getSettings(ctx: AuthContext) {
     const found = await settings.get(ctx.userId);
-    if (found) return found;
+    if (found) return mergeSealedPreferences(ctx, found);
     return {
       bodyWeightKg: null,
       bodyWeightUpdatedAt: null,
