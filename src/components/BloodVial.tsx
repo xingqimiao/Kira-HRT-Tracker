@@ -167,8 +167,16 @@ const BloodVial: React.FC<BloodVialProps> = ({
      * The overflow case is unchanged — on a cross into the ceiling the level jumps,
      * because the tube is already full when it squirts and easing that reads as the
      * liquid arriving late to its own splash.
+     *
+     * The one exception is mounting *already* over the ceiling, which seeds the level
+     * instead of leaving it at zero. That path has no crossing to fire (the effect
+     * below only sets the level when a level rises past the ceiling), and the eased
+     * effect refuses to run while over — so zero was where it stayed, and a reading
+     * like 1200 pg/mL drew a completely empty tube. It was also the "navigate away and
+     * back" half of the report: remounting re-runs this, so the vial emptied itself on
+     * every return. Only when over, so the count-up on an ordinary open is untouched.
      */
-    const [shown, setShown] = useState(0);
+    const [shown, setShown] = useState(() => (overflowRows(level, mode) > 0 ? level : 0));
     const [burst, setBurst] = useState(0);
     const [phase, setPhase] = useState<Phase>(
         () => (overflowRows(level, mode) > 0 ? 'settled' : 'idle'),

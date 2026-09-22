@@ -79,7 +79,7 @@ const SCENES: EasterEggScene[] = [
     },
     {
         id: 'old-why-not',
-        lines: ['不是因为它们不好。'],
+        lines: ['它们都还好。'],
         fontSizeLevel: 'large',
         hold: 1500,
     },
@@ -179,14 +179,14 @@ const SCENES: EasterEggScene[] = [
     },
     {
         id: 'boundary-doctor',
-        lines: ['软件可以帮你保存数据，', '但它不应该假装自己是医生。'],
+        lines: ['软件负责保存数据。', '医生的话，留给医生。'],
         fontSizeLevel: 'large',
         tone: 'quiet',
         hold: 1800,
     },
     {
         id: 'boundary-security',
-        lines: ['安全不是一句口号。', '它是边界。'],
+        lines: ['安全是一条边界。'],
         fontSizeLevel: 'large',
         hold: 1700,
     },
@@ -232,7 +232,7 @@ const SCENES: EasterEggScene[] = [
     },
     {
         id: 'diff-one-thing',
-        lines: ['但有一样东西没有被重写。'],
+        lines: ['一样东西留了下来。'],
         fontSizeLevel: 'large',
         tone: 'quiet',
         hold: 1700,
@@ -266,7 +266,7 @@ const SCENES: EasterEggScene[] = [
     },
     {
         id: 'opensource-message',
-        lines: ['开源可能只是一个开发者，', '回复了另一个开发者的一封消息。'],
+        lines: ['开源有时候很小：', '一个开发者回复了另一个开发者。'],
         fontSizeLevel: 'large',
         hold: 2000,
     },
@@ -311,7 +311,7 @@ const SCENES: EasterEggScene[] = [
     },
     {
         id: 'tribute-together',
-        lines: ['我们只是把这些东西，', '接到了一起。'],
+        lines: ['我们能做的，', '是把这些东西接到一起。'],
         fontSizeLevel: 'large',
         tone: 'quiet',
         hold: 1800,
@@ -340,7 +340,7 @@ const SCENES: EasterEggScene[] = [
     },
     {
         id: 'person-not-code',
-        lines: ['但我们真正想记录的，', '从来不只是代码。'],
+        lines: ['这个项目想记下的，', '不只是代码。'],
         fontSizeLevel: 'large',
         tone: 'quiet',
         hold: 1800,
@@ -361,7 +361,7 @@ const SCENES: EasterEggScene[] = [
     },
     {
         id: 'person-survey-1',
-        lines: ['一份问卷后面，', '也从来不只是一个数字。'],
+        lines: ['一份问卷后面，', '有具体的答案。'],
         fontSizeLevel: 'large',
         tone: 'quiet',
         hold: 1800,
@@ -515,10 +515,22 @@ export const CreditsRoll: React.FC<CreditsRollProps> = ({ onClose }) => {
     };
 
     // 背景音乐初始化与播放（默认音量 10%）
+    //
+    // The fade is owned here and started by `stopMusic`, not left to the effect's
+    // cleanup. Cleanup only runs at *unmount*, and unmount happens a second after the
+    // exit animation begins — so closing by hand played the music through the whole
+    // close, and the fade was the last thing to happen rather than the first. The
+    // interval handle is kept so a second stop cannot leave one running, and the
+    // element is paused before the fade as a backstop: if anything goes wrong with the
+    // ramp, silence is still guaranteed.
+    const musicStopRef = useRef<(() => void) | null>(null);
+
     useEffect(() => {
         const audio = new Audio('/audio/easter-egg-music.mp3');
-        audio.loop = true;
-        audio.volume = 0.1; // 严格遵循 10% 默认音量
+        // Not looped. The roll has a scripted end, so the music should reach its own
+        // end with it rather than jumping back to the start and outliving the credits.
+        audio.loop = false;
+        audio.volume = 0.1;
         audioRef.current = audio;
 
         const playPromise = audio.play();
@@ -528,19 +540,50 @@ export const CreditsRoll: React.FC<CreditsRollProps> = ({ onClose }) => {
             });
         }
 
-        return () => {
-            // 平滑衰减音量退出
-            const fadeAudio = setInterval(() => {
+        let fadeTimer: ReturnType<typeof setInterval> | null = null;
+        let stopped = false;
+        const stopMusic = () => {
+            if (stopped) return;
+            stopped = true;
+            if (fadeTimer) {
+                clearInterval(fadeTimer);
+                fadeTimer = null;
+            }
+            // Down and out over ~250ms: 0.02 per 50ms step from 0.1.
+            fadeTimer = setInterval(() => {
                 if (audio.volume > 0.02) {
                     audio.volume = Math.max(0, audio.volume - 0.02);
-                } else {
-                    clearInterval(fadeAudio);
-                    audio.pause();
-                    audio.currentTime = 0;
+                    return;
                 }
+                if (fadeTimer) clearInterval(fadeTimer);
+                fadeTimer = null;
+                audio.pause();
+                audio.currentTime = 0;
             }, 50);
         };
+        musicStopRef.current = stopMusic;
+
+        return () => {
+            stopMusic();
+            musicStopRef.current = null;
+            audioRef.current = null;
+        };
     }, []);
+
+    // Stop as soon as the user leaves, so the music and the picture end together —
+    // `handleExit` is the one path out, whether the roll finished or was closed.
+    const handleExit = useCallback(() => {
+        if (isExitingRef.current) return;
+        isExitingRef.current = true;
+        setIsExiting(true);
+        clearCurrentTimer();
+        setPhase('fade-out');
+        musicStopRef.current?.();
+
+        setTimeout(() => {
+            onClose();
+        }, 1000);
+    }, [onClose]);
 
     // 锁定 body 滚动条
     useEffect(() => {
@@ -567,17 +610,7 @@ export const CreditsRoll: React.FC<CreditsRollProps> = ({ onClose }) => {
     };
 
     // 全局平滑退出
-    const handleExit = useCallback(() => {
-        if (isExitingRef.current) return;
-        isExitingRef.current = true;
-        setIsExiting(true);
-        clearCurrentTimer();
-        setPhase('fade-out');
-
-        setTimeout(() => {
-            onClose();
-        }, 1000);
-    }, [onClose]);
+    // (defined above the mute toggle — it stops the music as well as the timers)
 
     // 手动推进下一镜头
     const handleAdvance = useCallback(() => {
