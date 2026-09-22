@@ -8,8 +8,7 @@ import { useHRTMode } from '../contexts/HRTModeContext';
 import { Lang, TRANSLATIONS } from '../i18n/translations';
 import CopyRow from '../components/CopyRow';
 import IntroCard from '../components/IntroCard';
-import { QuickAddPreview } from '../components/HomeQuickAdd';
-import { LabScanDemo, JournalPreview, RecheckPreview, SignInPreview } from '../components/OnboardingFeatures';
+import { LabScanDemo, JournalPreview, RecheckPreview, SignInPreview, QuickAddDemo } from '../components/OnboardingFeatures';
 import Icon from '../components/Icon';
 import DateTimePicker from '../components/DateTimePicker';
 import { Check, Plus, ChevronDown } from '../icons';
@@ -285,7 +284,14 @@ const HowStep: React.FC<{ curve: CurveData | null }> = ({ curve }) => {
     const live = !!curve;
 
     useEffect(() => {
-        if (!live || finished) return;
+        if (!live) return;
+        if (finished) {
+            // Holds for 1 second after finishing, then loops automatically
+            const handle = window.setTimeout(() => {
+                play(0);
+            }, 1000);
+            return () => window.clearTimeout(handle);
+        }
         const handle = window.setTimeout(() => {
             if (beat < 2) setBeat((beat + 1) as Beat);
             else setFinished(true);
@@ -325,15 +331,6 @@ const HowStep: React.FC<{ curve: CurveData | null }> = ({ curve }) => {
                         playKey={playKey}
                         caption={t('onboarding.how_chart_caption')}
                         legend={{ model: t('onboarding.how_chart_legend_model'), labs: t('onboarding.how_chart_legend_labs') }}
-                        action={finished && (
-                            <button
-                                type="button"
-                                onClick={() => play(0)}
-                                className="ms-auto rounded-full px-3 py-1.5 text-m3-label-large hover:bg-[var(--color-m3-surface-container)]"
-                            >
-                                {t('onboarding.how_replay')}
-                            </button>
-                        )}
                     />
                 </div>
             </Stage>
@@ -667,38 +664,72 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                     <span className="text-m3-title-medium text-[var(--color-m3-on-surface)]">
                         {t('onboarding.start_label')}
                     </span>
-                    <button
-                        type="button"
-                        onClick={() => setIsStartPickerOpen(open => !open)}
-                        aria-expanded={isStartPickerOpen}
-                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container)] px-3 py-2.5 text-start"
-                    >
-                        <span className="text-m3-title-medium tabular-nums text-[var(--color-m3-on-surface)]">
-                            {hrtStartDate
-                                ? fromYmd(hrtStartDate).toLocaleDateString(LOCALE_MAP[lang] || 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-                                : t('date.select')}
-                        </span>
-                        <Icon
-                            icon={ChevronDown}
-                            size={16}
-                            className={`shrink-0 text-[var(--color-m3-on-surface-variant)] ${isStartPickerOpen ? 'rotate-180' : ''}`}
-                        />
-                    </button>
-                    <DateTimePicker
-                        isOpen={isStartPickerOpen}
-                        inline
-                        mode="date"
-                        onClose={() => setIsStartPickerOpen(false)}
-                        onConfirm={(date) => {
-                            // The picker has no max, but the old native input refused a
-                            // future start: it would make the account's day count negative.
-                            // Keep that guard by clamping the answer to today.
-                            const picked = toYmd(date);
-                            onHrtStartChange(picked > today ? today : picked);
-                        }}
-                        initialDate={hrtStartDate ? fromYmd(hrtStartDate) : new Date()}
-                        title={t('onboarding.start_label')}
-                    />
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setIsStartPickerOpen(open => !open)}
+                            aria-expanded={isStartPickerOpen}
+                            className="flex flex-1 items-center justify-between gap-2 rounded-lg border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container)] px-3 py-2.5 text-start"
+                        >
+                            <span className="text-m3-title-medium tabular-nums text-[var(--color-m3-on-surface)]">
+                                {hrtStartDate
+                                    ? fromYmd(hrtStartDate).toLocaleDateString(LOCALE_MAP[lang] || 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+                                    : t('date.select')}
+                            </span>
+                            <Icon
+                                icon={ChevronDown}
+                                size={16}
+                                className={`shrink-0 text-[var(--color-m3-on-surface-variant)] ${isStartPickerOpen ? 'rotate-180' : ''}`}
+                            />
+                        </button>
+                        {hrtStartDate && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    onHrtStartChange('');
+                                    setIsStartPickerOpen(false);
+                                }}
+                                aria-label={t('onboarding.start_clear')}
+                                title={t('onboarding.start_clear')}
+                                className="flex h-11 shrink-0 items-center justify-center rounded-lg border border-[var(--color-m3-outline-variant)] px-3 text-sm font-medium text-[var(--color-m3-on-surface-variant)] hover:bg-[var(--color-m3-surface-container)] hover:text-[var(--color-m3-on-surface)]"
+                            >
+                                {t('onboarding.start_clear')}
+                            </button>
+                        )}
+                    </div>
+                    {isStartPickerOpen && (
+                        <div className="rounded-lg border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-low)] p-2">
+                            <DateTimePicker
+                                isOpen={isStartPickerOpen}
+                                inline
+                                mode="date"
+                                onClose={() => setIsStartPickerOpen(false)}
+                                onConfirm={(date) => {
+                                    // The picker has no max, but the old native input refused a
+                                    // future start: it would make the account's day count negative.
+                                    // Keep that guard by clamping the answer to today.
+                                    const picked = toYmd(date);
+                                    onHrtStartChange(picked > today ? today : picked);
+                                }}
+                                initialDate={hrtStartDate ? fromYmd(hrtStartDate) : new Date()}
+                                title={t('onboarding.start_label')}
+                            />
+                            {hrtStartDate && (
+                                <div className="mt-1 flex justify-end">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            onHrtStartChange('');
+                                            setIsStartPickerOpen(false);
+                                        }}
+                                        className="text-xs font-medium text-[var(--color-m3-primary)] hover:underline"
+                                    >
+                                        {t('onboarding.start_clear')}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <span className="text-m3-body-medium text-[var(--color-m3-on-surface-variant)]">
                         {t('onboarding.start_hint')}
                     </span>
@@ -710,7 +741,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
             key="quick"
             title={t('onboarding.quick_title')}
             description={t('onboarding.quick_subtitle')}
-            visual={<QuickAddPreview />}
+            visual={<QuickAddDemo />}
         />,
 
         /* The lab scan: the other way a record gets in, straight from a photo.
@@ -907,7 +938,11 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                         onClick={() => (isLast ? onDone() : go(step + 1))}
                         className="btn-primary intro-cta"
                     >
-                        {t(isLast ? 'onboarding.start' : 'onboarding.next')}
+                        {isLast
+                            ? t('onboarding.start')
+                            : (STEP_KEYS[step] === 'started' && !hrtStartDate)
+                                ? t('onboarding.skip_step')
+                                : t('onboarding.next')}
                     </button>
                 </div>
             </div>

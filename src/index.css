@@ -138,9 +138,9 @@
 
     /* Elevation is tonal here, not shadowed. These exist only for the few surfaces
        that float over content they do not control — dialogs and menus. */
-    --shadow-m3-1: 0 1px 2px rgba(0, 0, 0, 0.30);
-    --shadow-m3-2: 0 8px 24px rgba(0, 0, 0, 0.44);
-    --shadow-m3-3: 0 16px 48px rgba(0, 0, 0, 0.56);
+    --shadow-m3-1: 0 1px 2px rgba(0, 0, 0, 0.20);
+    --shadow-m3-2: 0 6px 18px rgba(0, 0, 0, 0.28);
+    --shadow-m3-3: 0 10px 28px rgba(0, 0, 0, 0.32);
 
     /* ═══════════════════════════════════════════════════════════════════════
        MOTION — Material 3 tokens
@@ -815,6 +815,11 @@ html {
     --color-m3-scrim: #000000;
     --color-m3-shadow: #000000;
 
+    /* Light elevation shadows: soft ambient depth, avoiding dark smudge on light backgrounds. */
+    --shadow-m3-1: 0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+    --shadow-m3-2: 0 4px 12px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+    --shadow-m3-3: 0 8px 20px -4px rgba(0, 0, 0, 0.09), 0 3px 6px -2px rgba(0, 0, 0, 0.03);
+
     /* The hairlines invert with the surface: the same alpha of black. */
     --color-m3-line-soft: #0000000F;
     --color-m3-line: #00000014;
@@ -1426,7 +1431,7 @@ body {
     border-radius: var(--md-sys-shape-corner-large);
     background-color: var(--md-sys-color-surface-bright);
     border: 1px solid var(--md-sys-color-outline-variant);
-    box-shadow: var(--md-sys-elevation-level3);
+    box-shadow: var(--md-sys-elevation-level2);
 }
 @media (min-width: 840px) {
     .m3-navigation-bar { display: none; }

@@ -115,7 +115,7 @@ const Account: React.FC<AccountProps> = ({
     };
 
     return (
-        <div className="relative pb-32 px-6 md:px-10">
+        <div className="relative pb-36 px-6 md:px-10">
             <h1 className={`sticky top-0 z-20 -mx-6 md:-mx-10 px-6 md:px-10 pt-8 pb-3 mb-3 bg-[var(--color-m3-surface-dim)]  text-m3-title-xl ${on}`}>
                 {t('account.title')}
             </h1>
@@ -266,26 +266,15 @@ const Account: React.FC<AccountProps> = ({
                 </div>
             )}
 
-            {/* Fixed rather than a last row: the page scrolls, and the credit belongs
-                on the bottom edge whether or not anyone has scrolled to the end. It
-                clears the shell's own geometry explicitly — the floating bar's 92px
-                below 840px, and the rail's 80px gutter above it — because neither is
-                this page's to change. The strip is click-through so it cannot swallow
-                a tap on the content under it; only the link takes the pointer. */}
-            {/* Sticky inside the page rather than fixed to the window. A fixed strip
-                has to re-derive the shell's geometry by hand — the rail's 80px and the
-                floating bar's 92px — and any error there shows up as a credit that is
-                centred on the window while every other line is centred beside the rail.
-                Living in the page's own container means it shares the box the heading
-                and the form are centred in, so it cannot drift. The negative bottom
-                keeps it on the viewport edge until the page is short enough to scroll
-                past it; the wrapper is click-through so it cannot swallow a tap. */}
-            <footer className="pointer-events-none sticky bottom-2 z-10 mt-8 -mb-24 text-center">
+            {/* The credit link at the end of the page content. Sits in normal flow so
+                it never collides with form buttons on short mobile viewports (e.g. Via
+                browser), and clears the floating navigation bar via the container's bottom padding. */}
+            <footer className="mt-8 pb-4 text-center">
                 <a
                     href="https://kiramyao.com"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="pointer-events-auto inline-block py-3 text-m3-body-compact text-[var(--color-m3-on-surface-variant)] transition-colors hover:text-[var(--color-m3-primary)]"
+                    className="inline-block py-2 text-m3-body-compact text-[var(--color-m3-on-surface-variant)] transition-colors hover:text-[var(--color-m3-primary)]"
                 >
                     Powered by KiraEqual
                 </a>

@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from '../contexts/LanguageContext';
 import { GoogleBrand, XBrand } from '../icons/brand';
+import Icon from './Icon';
+import { Bookmark, ChevronDown, Check, RotateCcw } from '../icons';
 import { LOCALE_MAP } from '../utils/helpers';
 
 /**
@@ -153,6 +155,15 @@ export const LabScanDemo: React.FC = () => {
     // restarting it needs a new node rather than a class toggle.
     const [playKey, setPlayKey] = useState(0);
 
+    useEffect(() => {
+        // The sweep (500ms) + values (700ms) finish by ~800ms.
+        // Holds for 1 second (1000ms) after finishing, then loops automatically.
+        const timer = window.setTimeout(() => {
+            setPlayKey(k => k + 1);
+        }, 1800);
+        return () => window.clearTimeout(timer);
+    }, [playKey]);
+
     return (
         <div className="w-full">
             <div key={playKey} className="grid grid-cols-2 items-stretch gap-3">
@@ -227,18 +238,111 @@ export const LabScanDemo: React.FC = () => {
                 </div>
             </div>
 
-            <div className="mt-3 flex items-start gap-3">
+            <div className="mt-3">
                 <p className="text-m3-body-small text-[var(--color-m3-on-surface-variant)]">
                     {t('onboarding.scan_note')}
                 </p>
-                <button
-                    type="button"
-                    onClick={() => setPlayKey(key => key + 1)}
-                    className="ms-auto shrink-0 rounded-full px-3 py-1.5 text-m3-label-large hover:bg-[var(--color-m3-surface-container)]"
-                >
-                    {t('onboarding.how_replay')}
-                </button>
             </div>
+        </div>
+    );
+};
+
+/**
+ * Animated showcase for "Save a dose as a template, log it in one tap on home".
+ *
+ * Loops automatically 1 second after playing through the one-tap log action.
+ * Phases:
+ * 0: Resting QuickAdd button
+ * 1: Button pressed, template dropdown menu appears (900ms)
+ * 2: First template "Morning EV 2mg" tapped / highlighted (2000ms)
+ * 3: Dropdown closes, success "Logged [Morning EV 2mg] · Undo" toast appears (2600ms)
+ * 4: Holds for 1000ms, then smoothly resets and loops back to 0!
+ */
+export const QuickAddDemo: React.FC = () => {
+    const { t, lang } = useTranslation();
+    const [phase, setPhase] = useState<0 | 1 | 2 | 3>(0);
+
+    const isZh = lang === 'zh' || lang === 'zh-TW' || lang === 'yue';
+    const tplName1 = isZh ? '早晨 EV 2mg' : lang === 'ja' ? '朝 EV 2mg' : lang === 'ko' ? '아침 EV 2mg' : 'Morning EV 2mg';
+    const tplName2 = isZh ? '晚间 CPA 12.5mg' : lang === 'ja' ? '夜 CPA 12.5mg' : lang === 'ko' ? '저녁 CPA 12.5mg' : 'Evening CPA 12.5mg';
+
+    useEffect(() => {
+        let timer: number;
+        if (phase === 0) {
+            timer = window.setTimeout(() => setPhase(1), 900);
+        } else if (phase === 1) {
+            timer = window.setTimeout(() => setPhase(2), 1100);
+        } else if (phase === 2) {
+            timer = window.setTimeout(() => setPhase(3), 600);
+        } else if (phase === 3) {
+            // Held for 1 second after finishing, then loops back to 0
+            timer = window.setTimeout(() => setPhase(0), 1000);
+        }
+        return () => window.clearTimeout(timer);
+    }, [phase]);
+
+    return (
+        <div className="relative flex min-h-[175px] w-full flex-col items-center justify-start p-2 select-none">
+            {/* The trigger button */}
+            <div
+                className={`inline-flex h-11 items-center gap-2 rounded-lg border border-[var(--color-m3-outline-variant)] px-4 text-sm font-medium transition-colors ${
+                    phase >= 1 && phase < 3
+                        ? 'bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-surface)]'
+                        : 'bg-[var(--color-m3-surface-container)] text-[var(--color-m3-on-surface-variant)]'
+                }`}
+            >
+                <Icon icon={Bookmark} size={16} />
+                <span>{t('quickadd.button')}</span>
+                <Icon
+                    icon={ChevronDown}
+                    size={16}
+                    className={`transition-transform duration-200 ${phase >= 1 && phase < 3 ? 'rotate-180' : ''}`}
+                />
+            </div>
+
+            {/* The opened dropdown list */}
+            {phase >= 1 && phase < 3 && (
+                <div className="mt-2 w-full max-w-[260px] overflow-hidden rounded-xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-lowest)] py-1 shadow-md">
+                    <div
+                        className={`block w-full border-b border-[var(--color-m3-outline-variant)] px-3.5 py-2.5 text-left transition-colors ${
+                            phase === 2
+                                ? 'bg-[var(--color-m3-primary)] text-[var(--color-m3-on-primary)]'
+                                : 'hover:bg-[var(--color-m3-surface-container)] text-[var(--color-m3-on-surface)]'
+                        }`}
+                    >
+                        <span className="block text-sm font-semibold">{tplName1}</span>
+                        <span
+                            className={`mt-0.5 block text-xs ${
+                                phase === 2 ? 'text-[var(--color-m3-on-primary)] opacity-90' : 'text-[var(--color-m3-on-surface-variant)]'
+                            }`}
+                        >
+                            {t('route.sublingual')} · 2.00 mg
+                        </span>
+                    </div>
+                    <div className="block w-full px-3.5 py-2.5 text-left opacity-60">
+                        <span className="block text-sm font-medium text-[var(--color-m3-on-surface)]">{tplName2}</span>
+                        <span className="mt-0.5 block text-xs text-[var(--color-m3-on-surface-variant)]">
+                            {t('route.oral')} · 12.50 mg
+                        </span>
+                    </div>
+                </div>
+            )}
+
+            {/* The success UndoBanner toast */}
+            {phase === 3 && (
+                <div className="mt-3 inline-flex items-center gap-2.5 rounded-xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-highest)] px-4 py-2.5 shadow-md">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-m3-primary)] text-[var(--color-m3-on-primary)]">
+                        <Icon icon={Check} size={13} strokeWidth={2.5} />
+                    </span>
+                    <span className="text-sm font-medium text-[var(--color-m3-on-surface)]">
+                        {t('quickadd.done').replace('{name}', tplName1)}
+                    </span>
+                    <span className="flex items-center gap-1 text-xs font-semibold text-[var(--color-m3-primary)]">
+                        <Icon icon={RotateCcw} size={12} />
+                        <span>{t('quickadd.undo')}</span>
+                    </span>
+                </div>
+            )}
         </div>
     );
 };

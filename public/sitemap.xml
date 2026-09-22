@@ -1,13 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  One URL. The app is a client-rendered SPA behind Cloudflare: every route is
-  served the same index.html, so a per-route sitemap would list documents that
-  do not exist. The seven languages are the same document switched client-side,
-  so there are no alternate-URL entries and no hreflang alternates either.
--->
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
     <url>
         <loc>https://hrt.kiramyao.com/</loc>
+        <lastmod>2026-09-22</lastmod>
+        <changefreq>weekly</changefreq>
         <priority>1.0</priority>
+        <xhtml:link rel="alternate" hreflang="zh-CN" href="https://hrt.kiramyao.com/" />
+        <xhtml:link rel="alternate" hreflang="zh-TW" href="https://hrt.kiramyao.com/" />
+        <xhtml:link rel="alternate" hreflang="en" href="https://hrt.kiramyao.com/" />
+        <xhtml:link rel="alternate" hreflang="ja" href="https://hrt.kiramyao.com/" />
+        <xhtml:link rel="alternate" hreflang="ko" href="https://hrt.kiramyao.com/" />
+        <xhtml:link rel="alternate" hreflang="ru" href="https://hrt.kiramyao.com/" />
+        <xhtml:link rel="alternate" hreflang="uk" href="https://hrt.kiramyao.com/" />
+        <xhtml:link rel="alternate" hreflang="x-default" href="https://hrt.kiramyao.com/" />
+        <image:image>
+            <image:loc>https://hrt.kiramyao.com/og.png</image:loc>
+            <image:title>Kira HRT Tracker</image:title>
+            <image:caption>Kira HRT Tracker — 公开的跨性别 HRT 激素治疗记录与云同步工具，支持用药追踪、化验结果分析与药代动力学估算</image:caption>
+        </image:image>
     </url>
 </urlset>
