@@ -237,25 +237,28 @@ export const RecordService = {
         if (!prepared.ok) return { ok: false, error: prepared.error };
         const { id, takenAt, category, sealed } = prepared.value;
 
-        // Conflict target is the id alone. There is no second key: an id already
-        // *is* the client's identity for the record, so a separate client id could
-        // only disagree with it — and did, producing a primary-key violation on every
-        // re-sync once both constraints were in play.
+        // Conflict target is the full key `(user_id, id)`, not the id alone.
+        //
+        // The id is the client's identity for the record, but it is only unique
+        // *within an account*: the scalars (`scalar:weight`, `scalar:pkParams`,
+        // `scalar:appSettings`) are named the same on every account. A key on the id
+        // by itself let the first account to sync own those names globally and made
+        // every later account's write of them fail — see the schema's note. The
+        // `user_id` in the key also means the conflict can only ever be this
+        // account's own row, so no `WHERE` guard is needed to keep one account from
+        // overwriting another's.
         const { rows } = await getPool().query<{ id: string }>(
             `INSERT INTO records (user_id, taken_at, category, payload_encrypted, id)
              VALUES ($1, to_timestamp($2 / 1000.0), $3, $4, $5)
-             ON CONFLICT (id) DO UPDATE
+             ON CONFLICT (user_id, id) DO UPDATE
                 SET taken_at = EXCLUDED.taken_at,
                     category = EXCLUDED.category,
                     payload_encrypted = EXCLUDED.payload_encrypted,
                     updated_at = now()
-              WHERE records.user_id = EXCLUDED.user_id
              RETURNING id`,
             [ctx.userId, takenAt, category, sealed, id],
         );
 
-        // An id owned by another account must not be writeable, and must not be
-        // reported as a conflict either — that would confirm the id exists.
         if (rows.length === 0) return { ok: false, error: 'id_unavailable' };
         const scalar = scalarOf(id, body?.data);
         await reflectSettings(ctx, scalar ? [scalar] : []);
@@ -326,24 +329,19 @@ export const RecordService = {
                 const { rows } = await client.query<{ id: string }>(
                     `INSERT INTO records (user_id, taken_at, category, payload_encrypted, id)
                      VALUES ${tuples.join(', ')}
-                     ON CONFLICT (id) DO UPDATE
+                     ON CONFLICT (user_id, id) DO UPDATE
                         SET taken_at = EXCLUDED.taken_at,
                             category = EXCLUDED.category,
                             payload_encrypted = EXCLUDED.payload_encrypted,
                             updated_at = now()
-                      WHERE records.user_id = EXCLUDED.user_id
                      RETURNING id`,
                     values,
                 );
 
-                // A row the upsert did not return is one whose id another account
-                // owns. It is skipped silently by the conflict clause, so it has to
-                // be reported explicitly — the same refusal the single write gives.
-                const landed = new Set(rows.map((row) => row.id));
-                for (const record of chunk) {
-                    if (landed.has(record.id)) written.push(record.id);
-                    else rejected.push({ id: record.id, reason: 'id_unavailable' });
-                }
+                // Every row of the chunk lands: the key is `(user_id, id)`, so a
+                // conflict can only be this account's own earlier copy. Nothing is
+                // silently skipped any more, and the counts are the chunk's own.
+                for (const record of chunk) written.push(record.id);
             }
         });
 

@@ -236,32 +236,38 @@ test('a batch write reports the records it refused instead of dropping them', as
   assert.ok(!ids.includes('batch-bad-1'), 'the refused record was not stored');
 });
 
-test('a batch cannot write an id another account owns', async () => {
+test('the same id is a different record on each account', async () => {
   const owner = await freshAccount();
   const other = await freshAccount();
-  const shared = 'batch-cross-account-1';
+  // Not just any id: this is the shape that exposed the bug. The scalars carry fixed
+  // names rather than a uuid, so before the key was `(user_id, id)` the first account
+  // to sync claimed them globally and every account after it was refused.
+  const shared = 'scalar:weight';
 
   const first = await call(base, '/api/records', json({
-    id: shared, takenAt: Date.now(), category: 'dose', data: { med_name: 'OWNER' },
+    id: shared, takenAt: Date.now(), category: 'setting', data: { value: 56, stamp: 1 },
   }, owner.token));
   assert.equal(first.status, 201, 'seeding the owner record failed: ' + JSON.stringify(first.body));
 
+  // The second account writes the SAME id. It must land, and it must not be a refusal:
+  // that refusal is what the app reported as "同步失败" on every retry.
   const second = await call(base, '/api/records/batch', json({
-    records: [{ id: shared, takenAt: Date.now(), category: 'dose', data: { med_name: 'INTRUDER' } }],
+    records: [{ id: shared, takenAt: Date.now(), category: 'setting', data: { value: 70, stamp: 2 } }],
   }, other.token));
   assert.equal(second.status, 200, JSON.stringify(second.body));
-  assert.deepEqual(second.body.written, [], 'the foreign id was not written');
-  assert.deepEqual(
-    second.body.rejected,
-    [{ id: shared, reason: 'id_unavailable' }],
-    'the refusal is reported rather than silently skipped',
-  );
+  assert.deepEqual(second.body.written, [shared], 'each account may hold its own copy of the id');
+  assert.deepEqual(second.body.rejected, [], 'nothing is refused for sharing a name');
 
-  // And the owner copy is untouched by the refused write.
+  // Each account reads back its own value: one id, two records.
   const ownerList = await call(base, '/api/records', bearer(owner.token));
-  const row = (ownerList.body.records as { id: string; data: { med_name: string } }[])
+  const ownerRow = (ownerList.body.records as { id: string; data: { value: number } }[])
     .find((r) => r.id === shared);
-  assert.equal(row?.data.med_name, 'OWNER');
+  assert.equal(ownerRow?.data.value, 56, 'the first account keeps its own value');
+
+  const otherList = await call(base, '/api/records', bearer(other.token));
+  const otherRow = (otherList.body.records as { id: string; data: { value: number } }[])
+    .find((r) => r.id === shared);
+  assert.equal(otherRow?.data.value, 70, 'the second account reads back its own value');
 });
 /**
  * The weight a device syncs and the weight a prediction reads are two copies.

@@ -487,13 +487,23 @@ CREATE TABLE IF NOT EXISTS records (
     -- human-readable and structured (`dose:transfem:<id>`), which is what makes a
     -- retried write idempotent and a record traceable back to what it holds. A uuid
     -- column would reject every one of them at insert time.
-    id                 text PRIMARY KEY,
+    --
+    -- The key is `(user_id, id)`, NOT `id` alone. Most of the client's ids carry a
+    -- uuid and so are already unique, but the scalars do not: `scalar:weight`,
+    -- `scalar:pkParams` and `scalar:appSettings` are fixed names, one per account.
+    -- A key on `id` alone let the *first* account to sync claim them globally, and
+    -- every account after it got `id_unavailable` on those records — which the app
+    -- reads as a failed sync, so it retried forever and never reached a clean state.
+    -- That is the 2026-09-22 "同步失败" report: the second user on the deployment
+    -- could not sync at all, and the first showed no symptom at all.
+    id                 text NOT NULL,
     user_id            uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     taken_at           timestamptz NOT NULL,
     category           varchar(32) NOT NULL DEFAULT 'dose',
     payload_encrypted  text NOT NULL,
     created_at         timestamptz NOT NULL DEFAULT now(),
-    updated_at         timestamptz NOT NULL DEFAULT now()
+    updated_at         timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, id)
 );
 
 -- The timeline query: one user's records, newest first, paged. Descending to match
@@ -525,5 +535,29 @@ BEGIN
   ) THEN
     ALTER TABLE records ALTER COLUMN id TYPE text USING id::text;
     ALTER TABLE records ALTER COLUMN id DROP DEFAULT;
+  END IF;
+END $$;
+
+-- Move the primary key from `id` to `(user_id, id)`.
+--
+-- The scalars are named the same on every account (`scalar:weight` and friends), so a
+-- key on `id` alone made the first account to sync their permanent owner and refused
+-- every other account with `id_unavailable` — surfacing in the app as a sync that
+-- failed and retried forever. Widening the key is the fix; the rows themselves were
+-- always correct, only the constraint was wrong.
+--
+-- Guarded on the current key's shape so this is a no-op after the first run and safe on
+-- a fresh database, where CREATE TABLE above already made the composite key.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'records'::regclass
+       AND contype = 'p'
+       AND conname = 'records_pkey'
+       AND array_length(conkey, 1) = 1
+  ) THEN
+    ALTER TABLE records DROP CONSTRAINT records_pkey;
+    ALTER TABLE records ADD PRIMARY KEY (user_id, id);
   END IF;
 END $$;
