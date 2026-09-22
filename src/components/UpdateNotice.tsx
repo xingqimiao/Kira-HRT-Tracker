@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Icon from './Icon';
-import { RotateCcw, X } from '../icons';
+import { RefreshCw, X } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { onUpdateReady, applyUpdate } from '../utils/swUpdate';
 
@@ -36,10 +36,10 @@ const UpdateNotice: React.FC = () => {
         <div
             role="status"
             aria-live="polite"
-            className="update-notice fixed bottom-4 left-1/2 z-[95] flex w-[calc(100%-2rem)] max-w-sm items-center gap-2.5 rounded-full border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-highest)] py-2 pl-2 pr-1.5 shadow-[var(--shadow-m3-3)]"
+            className="update-notice fixed top-4 left-1/2 z-[95] flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-2.5 rounded-full border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-highest)] py-2 pl-2 pr-1.5 shadow-[var(--shadow-m3-3)]"
         >
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-m3-primary)] text-[var(--color-m3-on-primary)]">
-                <Icon icon={RotateCcw} size={13} strokeWidth={2.5} />
+                <Icon icon={RefreshCw} size={13} strokeWidth={2.5} />
             </span>
             <span className="min-w-0 flex-1 text-sm font-medium text-[var(--color-m3-on-surface)]">
                 {t('update.ready')}
