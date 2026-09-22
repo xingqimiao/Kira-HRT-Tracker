@@ -44,7 +44,7 @@ interface OAuthLandingProps {
   onSignedIn?: () => void;
 }
 
-type Phase = 'working' | 'linked' | 'failed';
+type Phase = 'working' | 'linked' | 'done' | 'failed';
 
 const OAuthLanding: React.FC<OAuthLandingProps> = ({
   provider,
@@ -84,6 +84,18 @@ const OAuthLanding: React.FC<OAuthLandingProps> = ({
       return;
     }
     if (!params.code) {
+      // No code and no error means this URL was reached *without* a provider round
+      // trip — almost always a Back or a reload after a sign-in that already finished,
+      // because the success path replaces the URL with `/` and the callback path is
+      // then the only thing the history still holds.
+      //
+      // A live session proves that reading: the sign-in worked, this is its spent URL.
+      // Saying "this link is missing what is needed" there is wrong twice — it is not a
+      // link anyone was sent, and nothing is missing. So it is treated as done.
+      if (session.isSignedIn) {
+        setPhase('done');
+        return;
+      }
       setPhase('failed');
       setMessage(t('core.oauth.missing'));
       return;
@@ -137,6 +149,24 @@ const OAuthLanding: React.FC<OAuthLandingProps> = ({
         />
         <button type="button" onClick={() => navigate('account')} className="btn-primary mt-6 w-full">
           {t('core.oauth.back_settings')}
+        </button>
+      </Page>
+    );
+  }
+
+  if (phase === 'done') {
+    // A spent callback URL on an account that is already signed in. Nothing failed, so
+    // it is not the error screen; it is also not `linked`, which means a provider was
+    // just attached. The copy says only what is true: the sign-in finished.
+    return (
+      <Page>
+        <PageHeader title={t('core.oauth.done_title')} />
+        <StatusLine
+          icon={<Icon icon={CheckCircle2} size={18} className="text-[var(--color-m3-primary)]" />}
+          body={t('core.oauth.done_body')}
+        />
+        <button type="button" onClick={() => navigate('home')} className="btn-primary mt-6 w-full">
+          {t('core.oauth.done_action')}
         </button>
       </Page>
     );
