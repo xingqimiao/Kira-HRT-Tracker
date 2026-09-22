@@ -463,6 +463,62 @@ test('a partial modes write leaves the settings bag alone', async () => {
   assert.equal(after.body.appState.modes.transfem.doseTemplates[0].id, 'tpl-new');
 });
 
+/**
+ * A deleted dose stops existing on the server, not merely in the app's view of it.
+ *
+ * The app records a delete as a tombstone and never sends a DELETE, which is right —
+ * the tombstone is what stops a second device pushing the record back. But the row it
+ * covers used to stay in `records` forever, so it was counted by the public aggregate
+ * and written into every export while being invisible in the UI. That is the difference
+ * between "removed from your history" and "removed", and the Privacy Policy promises
+ * the second.
+ */
+test('a tombstone removes the row it covers, and a restore is left alone', async () => {
+  const { token, userId } = await freshAccount();
+  const now = Date.now();
+
+  await call(base, '/api/records/batch', json({
+    records: [
+      { id: 'dose:transfem:keep', takenAt: now, category: 'dose', data: { id: 'keep', doseMG: 4, updatedAt: now } },
+      { id: 'dose:transfem:gone', takenAt: now, category: 'dose', data: { id: 'gone', doseMG: 4, updatedAt: now } },
+    ],
+  }, token));
+
+  // Delete `gone`. The tombstone is stamped later than the dose it covers.
+  await call(base, '/api/records/batch', json({
+    records: [{
+      id: 'del:transfem:events',
+      takenAt: now + 1000,
+      category: 'setting',
+      data: { gone: now + 1000 },
+    }],
+  }, token));
+
+  // Scoped to this account: every test in this file shares one database, so an
+  // unscoped count would see the rows the other tests wrote.
+  const { getPool } = await import('../src/db.ts');
+  const rows = async () => (await getPool().query<{ id: string }>(
+    `SELECT id FROM records WHERE user_id = $1 AND category = 'dose' ORDER BY id`,
+    [userId],
+  )).rows.map((r) => r.id);
+
+  assert.deepEqual(await rows(), ['dose:transfem:keep'], 'the deleted dose is still on disk');
+
+  // A restore: the record comes back stamped *after* the delete, and the tombstone is
+  // re-sent unchanged. The sweep must not mistake it for the deleted copy.
+  await call(base, '/api/records/batch', json({
+    records: [
+      { id: 'dose:transfem:gone', takenAt: now + 2000, category: 'dose', data: { id: 'gone', doseMG: 4, updatedAt: now + 2000 } },
+      { id: 'del:transfem:events', takenAt: now + 2000, category: 'setting', data: { gone: now + 1000 } },
+    ],
+  }, token));
+
+  assert.ok(
+    (await rows()).includes('dose:transfem:gone'),
+    'a record restamped past the tombstone was purged as if it were the deleted copy',
+  );
+});
+
 
 /**
  * The settings a device syncs and the settings an agent writes are one value in two

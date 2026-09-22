@@ -70,6 +70,120 @@ function jsonObject(value: unknown): Record<string, unknown> | null {
         : null;
 }
 
+/**
+ * The record-id prefix each tombstone kind covers.
+ *
+ * A tombstone map is keyed by the app's own id for a record (`cs-e1`), while the row
+ * that id addresses is the wire id (`dose:transfem:cs-e1`). This is the pairing
+ * between the two, and it is the same one the reassembly loop below relies on when it
+ * files a record by its prefix — written down once here so the purge cannot drift
+ * from it.
+ */
+const TOMBSTONE_PREFIX: Readonly<Record<string, string>> = {
+    events: 'dose',
+    labResults: 'lab',
+    doseTemplates: 'tpl',
+    journal: 'journal',
+    quickDoses: 'quick',
+};
+
+/** Whether two tombstone maps say the same thing, so a sweep can be skipped. */
+function sameTombstoneMap(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+    const keys = Object.keys(a);
+    if (keys.length !== Object.keys(b).length) return false;
+    return keys.every((key) => a[key] === b[key]);
+}
+
+/**
+ * The tombstone maps a batch is about to write, keyed by their record id, as they
+ * stand *before* the write.
+ *
+ * The sweep needs the previous value to know whether a map actually changed — the
+ * client re-sends every non-empty map on each push, so without this comparison every
+ * ordinary edit would re-run the whole purge. Read before the batch is applied,
+ * because afterwards the stored value is the one being written.
+ */
+async function readTombstoneMaps(
+    ctx: AuthContext,
+    items: unknown[],
+): Promise<Map<string, Record<string, unknown>>> {
+    const prior = new Map<string, Record<string, unknown>>();
+    for (const raw of items) {
+        const item = jsonObject(raw);
+        const parts = typeof item?.id === 'string' ? item.id.split(':') : [];
+        if (parts[0] !== 'del' || !TOMBSTONE_PREFIX[parts[2] ?? '']) continue;
+        const stored = await RecordService.get(ctx, String(item?.id)).catch(() => null);
+        const value = jsonObject(stored?.data);
+        if (value) prior.set(String(item?.id), value);
+    }
+    return prior;
+}
+
+/**
+ * Remove the rows a batch's tombstones cover, now that it has recorded the deletes.
+ *
+ * A delete is recorded as a tombstone (`del:<mode>:<kind>`, a map of app id to when it
+ * was removed) rather than as the removal of the row, and the tombstone is what stops a
+ * second device that still holds the record from pushing it back. That much is
+ * necessary. What was missing is the other half: nothing ever removed the row, so a
+ * dose the user deleted stayed in `records` for good — counted by the public aggregate
+ * and written into every export, invisible in the app only because the read path
+ * filters it.
+ *
+ * So the sweep runs here, on the same write that records the tombstone. Two rules keep
+ * it from undoing a restore:
+ *
+ *   - It only deletes a row it can see is older than the tombstone covering it. A
+ *     restored record is restamped to the import time (see `reconcileReplacement`), so
+ *     it postdates the delete and is left alone. A row with no usable stamp is deleted:
+ *     an unverifiable claim of newness is not enough to undo a deletion, which is the
+ *     same rule the client's `tombstoneSuppresses` applies.
+ *   - It runs only when a map actually changed. The client re-sends every non-empty map
+ *     on each push, so sweeping unconditionally would repeat the whole set on every
+ *     edit — and the maps are re-sent whole rather than as deltas, so there is no
+ *     cheaper "what is new" to read.
+ *
+ * A row whose tombstone predates this code is cleaned the next time that kind's map
+ * changes, which is the next delete of that kind on that account. Nothing else
+ * distinguishes it from a restored record, so a sweep at deploy time could not tell
+ * them apart either.
+ */
+async function purgeTombstoned(
+    ctx: AuthContext,
+    items: unknown[],
+    prior: Map<string, Record<string, unknown>>,
+): Promise<number> {
+    let removed = 0;
+    for (const raw of items) {
+        const item = jsonObject(raw);
+        const parts = typeof item?.id === 'string' ? item.id.split(':') : [];
+        if (parts[0] !== 'del') continue;
+        const mode = parts[1];
+        const prefix = TOMBSTONE_PREFIX[parts[2] ?? ''];
+        if (!prefix || !MODES.includes(mode as Mode)) continue;
+
+        // The map is the record's `data` itself, not a scalar's `{ value }` wrapper —
+        // see how the reassembly loop files `del:` records.
+        const incoming = jsonObject(item?.data);
+        if (!incoming) continue;
+
+        const before = prior.get(String(item?.id));
+        if (before && sameTombstoneMap(before, incoming)) continue;
+
+        for (const [appId, at] of Object.entries(incoming)) {
+            if (!appId || typeof at !== 'number' || !Number.isFinite(at)) continue;
+            const wireId = `${prefix}:${mode}:${appId}`;
+            const row = await RecordService.get(ctx, wireId).catch(() => null);
+            if (!row) continue;
+            const stamp = (row.data as { updatedAt?: unknown } | null)?.updatedAt;
+            // A record newer than the delete is a restore of it, not a copy to purge.
+            if (typeof stamp === 'number' && Number.isFinite(stamp) && stamp > at) continue;
+            if (await RecordService.remove(ctx, wireId).catch(() => false)) removed += 1;
+        }
+    }
+    return removed;
+}
+
 /** The kinds of record the store carries. Kept narrow so a typo cannot create one. */
 export const RECORD_CATEGORIES = ['dose', 'lab', 'note', 'setting', 'journal'] as const;
 export type RecordCategory = (typeof RECORD_CATEGORIES)[number];
@@ -345,6 +459,10 @@ export const RecordService = {
         const priorAppSettings = jsonObject(
             (storedAppSettings?.data as { value?: unknown } | null)?.value,
         );
+        // The tombstone maps as they stand *before* this batch writes its own. Read here
+        // because the sweep below runs after the write, when reading them back would
+        // return the copy this batch just stored and the change would look like none.
+        const priorTombstones = await readTombstoneMaps(ctx, items);
         for (const raw of items) {
             const item = mergeIncomingAppState(raw, priorAppSettings);
             const prepared = prepareRecord(ctx, item as { id?: unknown; takenAt?: unknown; category?: unknown; data?: unknown });
@@ -391,6 +509,10 @@ export const RecordService = {
         });
 
         await reflectSettings(ctx, [...synced.values()]);
+        // After the write has committed, so a failure here cannot lose the tombstone
+        // that makes the delete stick. The next push carries the same map again and
+        // the sweep is idempotent, so a purge that fails is retried by the next sync.
+        await purgeTombstoned(ctx, items, priorTombstones).catch(() => undefined);
         return { ok: true, written, rejected };
     },
 
@@ -786,8 +908,11 @@ export async function publicStats(now = new Date()): Promise<{
     }>(
         // `users` needs no soft-delete filter — unlinking and deletion both remove the
         // row outright, so every row in the table is a live account. Deletion from the
-        // record store is physical for the same reason, so no `deleted_at` filter here
-        // either: a record the user removed is not reported as data the service holds.
+        // record store is physical too, for the same reason, so no `deleted_at` filter
+        // here either: a record the user removed is not reported as data the service
+        // holds. That is true because `purgeTombstoned` removes the row when the delete
+        // is recorded; before it existed the row survived and this count included it,
+        // which made the number a claim about rows rather than about data held.
         `SELECT
            (SELECT count(*) FROM users)                                    AS total_users,
            (SELECT count(*) FROM users WHERE created_at >= $1)             AS new_24h,
