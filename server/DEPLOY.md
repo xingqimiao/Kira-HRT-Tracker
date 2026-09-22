@@ -490,9 +490,14 @@ sudo systemctl reload caddy
 
 ```bash
 cd /path/to/repo
-# The prefix is part of the API base URL the app calls.
+# The prefix is part of the API base URL the app calls. `npm run build` refuses to
+# finish without it (or an explicit HRT_SAME_ORIGIN=1), so a bare `vite build` cannot
+# ship a signed-out app by accident — see the note below.
 VITE_API_ORIGIN=https://api.kiramyao.com/hrt npm run build
-sudo rsync -a --delete dist/ /srv/hrt-web/
+# NOT `--delete`: the build does not contain public/ocr/ (that directory is generated
+# by the asset script, and this build skips it), so deleting would take the live OCR
+# models with it. Copy over the top instead.
+sudo rsync -a dist/ /srv/hrt-web/
 ```
 
 **Take a rollback copy of both halves before you replace them.** The web root is
@@ -523,6 +528,19 @@ because `CoreAuthForm` decides whether to offer X by fetching `/health` and read
 `x_login`; against the static host that request 404s, an unreadable answer is treated
 as "not configured", and the button is simply not rendered. Every other route keeps
 working, so it reads as a broken X app rather than a build mistake.
+
+**The web build now checks its own output too**, mirroring the server's
+`check-bundle.mjs`. `npm run build` ends in `scripts/check-web-bundle.mjs`, which fails
+if `dist/assets/index-*.js` has no absolute `VITE_API_ORIGIN`. This is not belt-and-
+braces: on 2026-09-22 three deploys went out built with a bare `npx vite build`, the
+variable was left off each time, and the live app asked the web host for its own API —
+so **the whole app behaved as signed out** while the site loaded perfectly. A missing
+flag and a broken deployment are indistinguishable from the outside, which is exactly
+why the build has to say so rather than the reader having to notice.
+
+A deployment whose API really is on the app's own origin passes `HRT_SAME_ORIGIN=1`
+instead, and the check then asserts the opposite (that no foreign host is pinned), so
+that choice is on the record rather than inferred from an omission.
 
 If you are unsure how a bundle was built:
 

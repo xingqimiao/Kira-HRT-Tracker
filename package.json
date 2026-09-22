@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "postbuild": "node scripts/check-web-bundle.mjs"
   },
   "dependencies": {
     "@types/uuid": "^10.0.0",
