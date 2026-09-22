@@ -28,7 +28,7 @@ export interface RuntimeLicence {
     licence: string;
 }
 
-export const GENERATED_AT = "2026-09-19";
+export const GENERATED_AT = "2026-09-22";
 
 export const UPSTREAM_WORKS: UpstreamWork[] = [
     {
@@ -54,6 +54,14 @@ export const UPSTREAM_WORKS: UpstreamWork[] = [
         "licence": "MIT",
         "noLicence": false,
         "copyright": "Copyright (c) 2025 Joseph Smirnova Oyama"
+    },
+    {
+        "name": "Transmtf-HRT-Tracker",
+        "url": "https://github.com/TransmtfTeam/Transmtf-HRT-Tracker",
+        "roleKey": "licence.upstream_pk_model",
+        "licence": "MIT",
+        "noLicence": false,
+        "copyright": "Copyright (c) 2025 Transmtf Team"
     }
 ];
 
@@ -68,6 +76,10 @@ export const RUNTIME_LICENCES: RuntimeLicence[] = [
     },
     {
         "name": "jspdf-autotable",
+        "licence": "MIT"
+    },
+    {
+        "name": "onnxruntime-web",
         "licence": "MIT"
     },
     {

@@ -93,6 +93,7 @@ const PACK: LangPack = {
     "core.del.password": "Password",
     "core.del.confirm_label": "Type DELETE to confirm",
     "core.del.keep": "Hesabımı koru",
+    "licence.upstream_pk_model": "Eklenen farmakokinetik motoru: çok bölmeli modeller, iki fazlı depo, dil altı kademeleri ve kişisel kalibrasyon.",
     "core.del.submit": "Delete permanently",
     "nav.history": "Geçmiş",
     "nav.lab": "Kontrol",

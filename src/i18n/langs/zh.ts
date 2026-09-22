@@ -94,6 +94,7 @@ const PACK: LangPack = {
     "core.del.password": "密码",
     "core.del.confirm_label": "输入 DELETE 以确认",
     "core.del.keep": "保留账号，不删除",
+    "licence.upstream_pk_model": "新增的药代动力学引擎：多室模型、两相 depot、舌下分层与个体校准。",
     "core.del.submit": "永久删除",
     "nav.lab": "体检",
     "nav.settings": "设置",

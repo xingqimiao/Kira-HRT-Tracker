@@ -139,6 +139,7 @@ const PACK: LangPack = {
     "core.del.password": "비밀번호",
     "core.del.confirm_label": "확인하려면 DELETE 입력",
     "core.del.keep": "계정 유지",
+    "licence.upstream_pk_model": "추가된 약동학 엔진: 다구획 모델, 2상 데포, 설하 티어, 개인 보정.",
     "core.del.submit": "영구 삭제",
     "settings.security": "계정 및 보안",
     "settings.security_desc": "비밀번호, 소셜 연결과 계정 삭제.",

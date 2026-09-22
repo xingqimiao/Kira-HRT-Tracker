@@ -139,6 +139,7 @@ const PACK: LangPack = {
     "core.del.password": "パスワード",
     "core.del.confirm_label": "確認のため DELETE と入力",
     "core.del.keep": "アカウントを残す",
+    "licence.upstream_pk_model": "追加した薬物動態エンジン：多コンパートメントモデル、二相デポ、舌下ティア、個人校正。",
     "core.del.submit": "完全に削除",
     "settings.security": "アカウントとセキュリティ",
     "settings.security_desc": "パスワード、ソーシャル連携、アカウントの削除。",

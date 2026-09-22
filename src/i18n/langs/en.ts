@@ -93,6 +93,7 @@ const PACK: LangPack = {
     "core.del.password": "Password",
     "core.del.confirm_label": "Type DELETE to confirm",
     "core.del.keep": "Keep my account",
+    "licence.upstream_pk_model": "The added pharmacokinetic engine: multi-compartment models, two-part depot kinetics, sublingual tiers and personal calibration.",
     "core.del.submit": "Delete permanently",
     "nav.history": "History",
     "nav.lab": "Checkup",

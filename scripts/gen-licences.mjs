@@ -68,6 +68,22 @@ const UPSTREAM_WORKS = [
         noLicence: false,
         copyright: 'Copyright (c) 2025 Joseph Smirnova Oyama',
     },
+    {
+        name: 'Transmtf-HRT-Tracker',
+        url: 'https://github.com/TransmtfTeam/Transmtf-HRT-Tracker',
+        roleKey: 'licence.upstream_pk_model',
+        // MIT, with the licence file in the upstream tree — unlike the model above,
+        // whose permission is a private grant. Verified against the GitHub API on
+        // 2026-09-22 (`/repos/.../license` reports "MIT License"; `/repos/.../contents/
+        // LICENSE` returns the text with "Copyright (c) 2025 Transmtf Team").
+        //
+        // Second upstream model rather than a replacement: it descends from the same
+        // `HRT-Recorder-PKcomponent-Test` logic and extends it, so this app now carries
+        // two engines the reader can choose between.
+        licence: 'MIT',
+        noLicence: false,
+        copyright: 'Copyright (c) 2025 Transmtf Team',
+    },
 ];
 
 function readLicenceField(name) {

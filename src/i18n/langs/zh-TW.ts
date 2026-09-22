@@ -292,6 +292,7 @@ const PACK: LangPack = {
     "licence.upstream_algorithm": "本應用全部藥代動力學計算的演算法與參數來源。",
     "licence.upstream_original": "上游的網頁版實作，本專案的分支源頭。",
     "licence.upstream_fork": "本應用直接分支自的專案。",
+    "licence.upstream_pk_model": "新增的藥代動力學引擎：多室模型、兩相 depot、舌下分層與個人校準。",
     "licence.no_licence_note": "嗰個 repo 冇聲明任何授權條款。repo 入面冇 LICENCE 檔，README 都冇講授權範圍。",
     "licence.granted_note": "嗰個 repo 本身冇聲明授權條款，但版權持有人已經單獨批咗非商業使用許可畀呢個專案。授權根據係雙方往來確認，唔係 repo 入面嘅檔案；所以唔可以用喺收費產品或者任何商業化用途。",
     "licence.deps_title": "執行階段相依",

@@ -51,6 +51,35 @@ repository root unchanged and is not replaced by a licence of our own.
 
 ---
 
+## Transmtf pharmacokinetic engine
+
+A second pharmacokinetic engine, offered alongside the model above and selected in
+Settings. It descends from the same upstream project (its README credits
+`HRT-Recorder-PKcomponent-Test` for the model) and extends it into a fuller engine:
+three-compartment gel cascades, two-part depot injection kinetics, sublingual
+absorption tiers, EU depot flip-flop kinetics, CPA and bicalutamide models, and a
+Bayesian / EKF personal calibration layer.
+
+Source:
+https://github.com/TransmtfTeam/Transmtf-HRT-Tracker
+
+Licensed under the MIT License:
+
+```
+MIT License
+
+Copyright (c) 2025 Transmtf Team
+```
+
+MIT permits reuse with attribution, which this section records. Unlike the model
+below it, this one declares its licence in the repository itself, so the permission
+rests on that file rather than on a private exchange.
+
+The engine is a **lazy-loaded** module, so it is not part of the first visit's
+download; it is fetched when a reader selects it.
+
+---
+
 ## Reicon
 
 The icon set the whole interface is drawn from. `src/icons/index.ts` is the only file
