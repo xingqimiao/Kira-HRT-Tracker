@@ -13,7 +13,14 @@ import type { Server } from 'node:http';
 import { bootPostgres, useDatabase, startApiServer, teardown, TEST_ENCRYPTION_KEY, type PostgresHandle } from './pg.ts';
 import { registerAccount } from './helpers.ts';
 import { setConfigForTesting } from '../src/config.ts';
-import { ExtraKey, PK_ENGINES, DEFAULT_PK_ENGINE } from '../src/engine.ts';
+import {
+  ExtraKey,
+  PK_ENGINES,
+  DEFAULT_PK_ENGINE,
+  DOSE_MG_MAX,
+  BODY_WEIGHT_KG_MIN,
+  BODY_WEIGHT_KG_MAX,
+} from '../src/engine.ts';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -263,6 +270,25 @@ test('the dose tools describe every field the engine reads', async () => {
     !Object.keys((update.inputSchema as any)?.properties ?? {}).some((k) => /engine/i.test(k)),
     'update_settings must not accept an engine parameter',
   );
+
+  await client.close();
+});
+
+test('the schemas state the same limits the validators enforce', async () => {
+  // A schema that disagrees with the validator is a bad error: the agent is told zod's
+  // rule, tries again inside it, and is refused by the other one. These were literals in
+  // two places; they are now imported, and this pins that they stay so.
+  const account = await registerAccount(base, { password: 'mcp-limits-1' });
+  const { client, transport } = connect(account.token);
+  await client.connect(transport);
+
+  const { tools } = await client.listTools();
+  const props = (name: string) => ((tools.find((t) => t.name === name)?.inputSchema as any)?.properties ?? {});
+
+  assert.equal(props('hrt_add_medication').dose_mg.maximum, DOSE_MG_MAX, 'add_medication dose ceiling');
+  assert.equal(props('hrt_add_dose_template').dose_mg.maximum, DOSE_MG_MAX, 'template dose ceiling');
+  assert.equal(props('hrt_update_settings').body_weight_kg.minimum, BODY_WEIGHT_KG_MIN, 'weight floor');
+  assert.equal(props('hrt_update_settings').body_weight_kg.maximum, BODY_WEIGHT_KG_MAX, 'weight ceiling');
 
   await client.close();
 });

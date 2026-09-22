@@ -43,6 +43,12 @@ import {
   PK_ENGINES,
   DEFAULT_PK_ENGINE,
   PK_PARAM_RANGES,
+  // The same limits the validators enforce, imported rather than retyped: a schema that
+  // says 10000 while the validator says 20000 refuses the agent with zod's wording, and
+  // the two would drift the first time either changed.
+  DOSE_MG_MAX,
+  BODY_WEIGHT_KG_MIN,
+  BODY_WEIGHT_KG_MAX,
 } from './engine.ts';
 
 /** How an adapter obtains the caller's identity and key. */
@@ -451,7 +457,7 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
           .describe('Opaque record id. Omit to have one generated; only set it to replay a known id.'),
         route: z.enum(ROUTE_VALUES),
         ester: z.enum(ESTER_VALUES).describe(ESTER_DESCRIPTION),
-        dose_mg: z.number().positive().max(10000).optional().describe('Dose in mg; omit only for patchRemove'),
+        dose_mg: z.number().positive().max(DOSE_MG_MAX).optional().describe('Dose in mg; omit only for patchRemove'),
         at: z.string().describe('When it was taken, ISO 8601 (e.g. 2026-09-16T08:00:00Z)'),
         extras: z.record(z.string(), z.number()).optional().describe(EXTRAS_DESCRIPTION),
       },
@@ -561,7 +567,7 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         name: z.string().describe('A short label the user would recognise, e.g. a Monday injection.'),
         route: z.enum(ROUTE_VALUES),
         ester: z.enum(ESTER_VALUES).describe(ESTER_DESCRIPTION),
-        dose_mg: z.number().min(0).max(10000).describe('Dose in mg. 0 is valid when the dose is in extras.'),
+        dose_mg: z.number().min(0).max(DOSE_MG_MAX).describe('Dose in mg. 0 is valid when the dose is in extras.'),
         extras: z.record(z.string(), z.number()).optional().describe(EXTRAS_DESCRIPTION),
       },
     },
@@ -603,7 +609,7 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         'This does not reach the app\'s own display preferences either (language, theme, HRT ' +
         'start date, re-check reminders); those are not agent-writable.',
       inputSchema: {
-        body_weight_kg: z.number().min(20).max(400).optional(),
+        body_weight_kg: z.number().min(BODY_WEIGHT_KG_MIN).max(BODY_WEIGHT_KG_MAX).optional(),
         hrt_mode: z.enum(['transfem', 'transmasc']).optional(),
         calibration_method: z.enum(['off', 'ekf', 'ou_kalman', 'mipd']).optional(),
         calibration_history: z.enum(['forward', 'retrospective']).optional(),
