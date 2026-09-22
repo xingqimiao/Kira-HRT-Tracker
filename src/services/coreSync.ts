@@ -309,13 +309,8 @@ export async function syncWithCore(
   if (!res.ok) {
     if (res.status === 401) throw describe(401, 'sync');
     const detail = await errorDetail(res);
-    // An incomplete account is refused on every record, so reporting it per-record
-    // would bury the one thing the user has to act on under a list of rejections.
     if (res.status === 403 && detail === 'account_incomplete') throw describe(403, 'sync', detail);
-    // The whole request was refused, so every record in it was. Naming each one is
-    // the honest answer: silence here is a user believing a record was saved.
-    for (const doc of docs) rejected.push({ reason: detail ?? `status ${res.status}`, id: doc.id });
-    return { state: remote, ...summary() };
+    throw describe(res.status, 'sync', detail);
   }
 
   const body = (await res.json()) as {

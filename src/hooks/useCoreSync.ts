@@ -63,6 +63,9 @@ interface Options {
 /** Absorb a burst of edits (a dose form can set several fields) into one push. */
 const PUSH_DEBOUNCE_MS = 3_000;
 
+/** Exponential backoff retry delays on transient sync failures. */
+const RETRY_DELAYS = [3_000, 8_000, 20_000, 60_000];
+
 export const useCoreSync = ({
   token,
   userId,
@@ -104,6 +107,9 @@ export const useCoreSync = ({
   const runningRef = useRef(false);
   const rerunRef = useRef(false);
   const pushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCountRef = useRef(0);
+
   /**
    * Fingerprint of the payload last pushed or pulled. A change whose fingerprint
    * matches is skipped — without it, applying a pull would schedule a push of
@@ -112,6 +118,13 @@ export const useCoreSync = ({
   const lastSeenRef = useRef<string | null>(null);
   /** Cleared on account switch: never push this device's data over a state it has not read. */
   const bootstrappedForRef = useRef<string | null>(null);
+
+  const clearRetry = useCallback(() => {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+  }, []);
 
   const run = useCallback(async (): Promise<void> => {
     const authToken = tokenRef.current;
@@ -146,55 +159,54 @@ export const useCoreSync = ({
       // every sign-in and every manual tap was paying for a state the server already
       // had. It is also what makes "sync now" safe to press repeatedly: the pull
       // still happens, the write does not.
-      //
-      // `localChanged` alone would not do. A device holding data the account has
-      // never seen has nothing to adopt either, so skipping on that flag would strand
-      // the very first upload. The fingerprint is the only thing that separates
-      // "nothing changed" from "nothing adopted yet" — which is what this ref is for.
       const seen = fingerprintState(merged.merged);
       if (seen === lastSeenRef.current) {
         bootstrappedForRef.current = account;
         setLastSyncedAt(Date.now());
         setAccountIncomplete(false);
         setStatus('synced');
+        retryCountRef.current = 0;
+        clearRetry();
         return;
       }
 
       // Push the merged result. `updateExisting` is on because the merge has
       // already decided what wins by `updatedAt`; a second, different rule
       // server-side would fight it.
-      //
-      // `toLocalPayload` is the whole projection now — the two scalars, their
-      // stamps, the mode blocks and the app-state blob — so a merge that adopted
-      // the account's settings publishes them back and a value edited here travels
-      // with the stamp that lets the server's absorb decide against it.
-      // The read above is handed in rather than made again inside `syncWithCore`:
-      // the merge already used it, and a second read of the same records is a whole
-      // round trip for an answer this call is holding.
       const pushed = await syncWithCore(authToken, toLocalPayload(merged.merged), {
         updateExisting: true,
         remote: remoteState,
       });
 
       // Surface records the server refused rather than reporting a clean sync.
-      // A rejected record is data the user believes is saved, so silence here
-      // would be the worst outcome.
       const rejected =
         (pushed.summary?.eventsRejected.length ?? 0) + (pushed.summary?.labsRejected.length ?? 0);
+
+      if (rejected > 0) {
+        // Do not update lastSeenRef or lastSyncedAt on rejection, so next attempt can retry
+        setStatus('error');
+        scheduleRetry();
+        return;
+      }
 
       lastSeenRef.current = seen;
       bootstrappedForRef.current = account;
       setLastSyncedAt(Date.now());
       setAccountIncomplete(false);
-      setStatus(rejected > 0 ? 'error' : 'synced');
+      setStatus('synced');
+      retryCountRef.current = 0;
+      clearRetry();
     } catch (error) {
-      // A locked account is not a failure to retry — the user has not entered a
-      // password on this device yet, so the fix is an unlock, not another attempt.
-      setStatus(error instanceof CoreSyncError && error.locked ? 'idle' : 'error');
-      // An incomplete account is neither: the session is valid and the key is in hand,
-      // and the only thing missing is the fallback credential. Signing out to "fix" it
-      // would destroy the session that binds it.
-      setAccountIncomplete(error instanceof CoreSyncError && error.accountIncomplete);
+      console.warn('[sync] sync failed:', error);
+      const isLocked = error instanceof CoreSyncError && error.locked;
+      const isIncomplete = error instanceof CoreSyncError && error.accountIncomplete;
+      setStatus(isLocked ? 'idle' : 'error');
+      setAccountIncomplete(isIncomplete);
+      if (!isLocked && !isIncomplete) {
+        scheduleRetry();
+      } else {
+        clearRetry();
+      }
     } finally {
       runningRef.current = false;
       if (rerunRef.current) {
@@ -202,9 +214,18 @@ export const useCoreSync = ({
         void run();
       }
     }
-    // `userId` participates so switching accounts re-creates the callback and
-    // stops a stale run from writing into the new account's namespace.
-  }, [userId]);
+  }, [clearRetry, userId]);
+
+  const scheduleRetry = useCallback(() => {
+    clearRetry();
+    if (!activeRef.current) return;
+    const delay = RETRY_DELAYS[Math.min(retryCountRef.current, RETRY_DELAYS.length - 1)];
+    retryCountRef.current += 1;
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      void run();
+    }, delay);
+  }, [clearRetry, run]);
 
   // Initial reconcile whenever the account, the toggle, or readiness changes.
   useEffect(() => {
@@ -215,6 +236,8 @@ export const useCoreSync = ({
       setAccountIncomplete(false);
       lastSeenRef.current = null;
       bootstrappedForRef.current = null;
+      clearRetry();
+      retryCountRef.current = 0;
       return;
     }
     if (bootstrappedForRef.current === userId) return;
@@ -239,6 +262,8 @@ export const useCoreSync = ({
     if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
     pushTimerRef.current = setTimeout(() => {
       pushTimerRef.current = null;
+      // Postpone push if the tab/browser is currently backgrounded or hidden
+      if (typeof document !== 'undefined' && document.hidden) return;
       void run();
     }, PUSH_DEBOUNCE_MS);
     return () => {
@@ -247,14 +272,39 @@ export const useCoreSync = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localFingerprint, userId]);
 
-  // A closed tab must not leave a push armed.
+  // Foreground & network recovery: immediately retry/resync when returning to app or network comes back online
+  useEffect(() => {
+    const handleForeground = () => {
+      if (!activeRef.current) return;
+      if (typeof document !== 'undefined' && !document.hidden && (typeof navigator === 'undefined' || navigator.onLine)) {
+        clearRetry();
+        void run();
+      }
+    };
+    window.addEventListener('online', handleForeground);
+    window.addEventListener('focus', handleForeground);
+    document.addEventListener('visibilitychange', handleForeground);
+    return () => {
+      window.removeEventListener('online', handleForeground);
+      window.removeEventListener('focus', handleForeground);
+      document.removeEventListener('visibilitychange', handleForeground);
+    };
+  }, [clearRetry, run]);
+
+  // A closed tab must not leave a push or retry armed.
   useEffect(() => () => {
     if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
   }, []);
 
   const syncNow = useCallback(async (): Promise<void> => {
+    clearRetry();
+    retryCountRef.current = 0;
+    // Clear lastSeenRef to force a real sync check with the server,
+    // eliminating false 'synced' statuses after a previous failure.
+    lastSeenRef.current = null;
     await run();
-  }, [run]);
+  }, [clearRetry, run]);
 
   return { status, lastSyncedAt, syncNow, accountIncomplete };
 };
