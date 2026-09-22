@@ -1486,6 +1486,14 @@ body {
     pointer-events: none;
 }
 
+/* Menus hang from the edge they are anchored to, not from a corner in the
+   middle of nowhere: the anchor is to the top-right in both call sites (the
+   Home quick-add's corner button and the dose form's load-template button), so
+   the list unfolds from the control that opened it. */
+.m3-menu--top-right {
+    transform-origin: top right;
+}
+
 .dark .m3-menu {
     background-color: var(--color-m3-dark-surface-container-high);
     border-color: var(--color-m3-line);
@@ -2296,6 +2304,12 @@ select,
    affordance, and it clears the 3:1 floor on its own. */
 .input-base:focus-visible { outline: none; }
 .m3-field:focus-visible { outline: none; }
+/* The same one-indicator rule for the small inline fields that are not
+   `.input-base` — the dose form's save-template name box. Its border already
+   moves to the primary role on focus, so the global ring was a second frame
+   around it. Unlayered like the two above: a Tailwind `focus-visible:outline-none`
+   utility cannot win against them, because unlayered rules beat every layer. */
+.m3-inline-field:focus-visible { outline: none; }
 
 /* ── Cards ───────────────────────────────────────────────────────────────────
    Three variants from the spec. .m3-card stays what it is — the app's plain
@@ -2405,6 +2419,20 @@ select,
     color: var(--md-sys-color-on-surface-variant);
 }
 .m3-list-item-leading, .m3-list-item-trailing { flex: none; color: var(--md-sys-color-on-surface-variant); }
+
+/* ── Fade-in for server-arrived content ──────────────────────────────────────
+   A page that renders its frame before its data lands — the account page's
+   avatar and its dose/lab counts — otherwise swaps a placeholder for a number on
+   one frame, and the eye reads the swap as a flicker rather than an arrival. One
+   keyframe, run once, so the content eases in wherever it settles. `both` keeps
+   the start pose before the run, so the first paint is already transparent. */
+@keyframes m3-content-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+.m3-content-in {
+    animation: m3-content-in var(--duration-base) var(--ease-out) both;
+}
 
 /* ── Snackbar ────────────────────────────────────────────────────────────────
    M3's snackbar is an *inverse* surface — dark on a light page, light on a dark
@@ -2543,8 +2571,34 @@ select,
     .m3-btn:active:not(:disabled) {
         transform: none;
     }
+    /* The global press scale, off like the rest of the component layer's motion. */
+    :where(button, [role="button"], [role="menuitem"], [role="tab"]):not(:disabled) {
+        transition: none;
+    }
+    :where(button, [role="button"], [role="menuitem"], [role="tab"]):not(:disabled):active {
+        transform: none;
+    }
 }
 
+
+/* ── Press feedback, everywhere ──────────────────────────────────────────────
+   Every tap in the app should answer with movement, not just the three button
+   primitives. M3's state layer covers colour, but a bare `<button>` with a
+   Tailwind class of its own got nothing: it went straight from idle to the next
+   screen, which is what "it jumps with no animation" describes.
+
+   `:where()` keeps this at zero specificity so any component with press motion
+   of its own (`.m3-btn`, `.btn-primary`) overrides it without a fight, and a
+   plain `scale()` composes with a `transition-colors` already on the element
+   rather than replacing it. It is a transform, so it is composited and touches no
+   layout; the reduced-motion block below turns it off like every other tween. */
+:where(button, [role="button"], [role="menuitem"], [role="tab"]):not(:disabled):active {
+    transform: scale(0.97);
+}
+
+:where(button, [role="button"], [role="menuitem"], [role="tab"]):not(:disabled) {
+    transition: transform var(--duration-quick) var(--ease-out);
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    KEPT FROM THE REWRITE: the two animating components

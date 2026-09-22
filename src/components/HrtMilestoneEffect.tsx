@@ -5,7 +5,7 @@ import Icon from './Icon';
 import { Cake } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { usePresence } from '../hooks/usePresence';
-import type { Milestone } from '../utils/hrtMilestone';
+import type { MilestoneNotice } from '../utils/hrtMilestone';
 
 /**
  * The milestone notice: a bar across the top of the window, plus confetti on the
@@ -78,6 +78,15 @@ const CONFETTI_PIECES = 60;
  */
 const CONFETTI_MS = 4200;
 const CAKE_MS = 8000;
+/** The third-day note holds for five seconds — one short line, no cake to read. */
+const STREAK_MS = 5000;
+
+/** How long each notice stays up, in ms. */
+const NOTICE_MS: Record<MilestoneNotice, number> = {
+    confetti: CONFETTI_MS,
+    cake: CAKE_MS,
+    streak3: STREAK_MS,
+};
 
 /** The exit, in ms. `usePresence` unmounts after this; the CSS animates it. */
 const EXIT_MS = 200;
@@ -125,12 +134,12 @@ function makeConfetti(count: number): ConfettiPiece[] {
 
 interface HrtMilestoneEffectProps {
     /**
-     * The milestone to show. Non-null means the caller has already decided this is
-     * a milestone *and* that it has not been shown yet — this component has no
+     * The notice to show. Non-null means the caller has already decided this is
+     * a notice *and* that it has not been shown yet — this component has no
      * opinion about either, which is what keeps the rule in one testable place.
      */
-    milestone: Milestone | null;
-    /** Days since the start date, for the copy. Only read when `milestone` is set. */
+    milestone: MilestoneNotice | null;
+    /** Days since the start date, for the copy. Only read by the milestone ones. */
     days: number;
     /**
      * Called once the notice has finished showing itself.
@@ -162,8 +171,7 @@ const HrtMilestoneEffect: React.FC<HrtMilestoneEffectProps> = ({ milestone, days
     useEffect(() => {
         if (milestone === null) return;
         setShowing(true);
-        const ms = milestone === 'cake' ? CAKE_MS : CONFETTI_MS;
-        const timer = setTimeout(() => setShowing(false), ms);
+        const timer = setTimeout(() => setShowing(false), NOTICE_MS[milestone]);
         return () => clearTimeout(timer);
     }, [milestone]);
 
@@ -289,20 +297,30 @@ const HrtMilestoneEffect: React.FC<HrtMilestoneEffectProps> = ({ milestone, days
                   Filled: a solid silhouette reads at 24px against the container
                   colour where an outline would thin out.
 
+                  Only the anniversary draws it. The hundred-day burst has the
+                  confetti behind it as its ornament, and the third-day note has
+                  none — the user asked for the same banner "without the cake".
+
                   `aria-hidden`: the glyph is the title's ornament, and a glyph
                   with no name of its own should not appear in the tree as
                   unlabelled content.
                 */}
-                <Icon
-                    icon={Cake}
-                    size={24}
-                    weight="Filled"
-                    className="m3-milestone-bar__cake"
-                    aria-hidden="true"
-                />
+                {milestone === 'cake' && (
+                    <Icon
+                        icon={Cake}
+                        size={24}
+                        weight="Filled"
+                        className="m3-milestone-bar__cake"
+                        aria-hidden="true"
+                    />
+                )}
                 <div className="m3-milestone-bar__text">
                     <p className="m3-milestone-bar__title">
-                        {t(milestone === 'cake' ? 'account.hrt_milestone.bar_title' : 'account.hrt_milestone.confetti')
+                        {t(milestone === 'cake'
+                            ? 'account.hrt_milestone.bar_title'
+                            : milestone === 'streak3'
+                                ? 'account.hrt_milestone.streak3'
+                                : 'account.hrt_milestone.confetti')
                             .replace('{days}', String(days))
                             .replace('{n}', String(days))}
                     </p>

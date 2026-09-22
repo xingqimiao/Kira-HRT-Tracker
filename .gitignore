@@ -57,6 +57,10 @@ serve_ui.mjs
 ui_server.mjs
 .playwright-mcp/
 
+# Where check-ocr-engine.mjs writes its synthetic report image — a test artefact,
+# regenerated on every run.
+.ocr-check/
+
 # Output of tools/run-restricted.ps1, the helper that works around postgres
 # refusing to start under an elevated Windows token. See tools/README.md.
 server/t.out

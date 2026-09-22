@@ -153,7 +153,8 @@ const Account: React.FC<AccountProps> = ({
                             <img
                                 src={summary.avatarUrl}
                                 alt=""
-                                className="w-9 h-9 rounded-full object-cover shrink-0"
+                                key={summary.avatarUrl}
+                                className="m3-content-in w-9 h-9 rounded-full object-cover shrink-0"
                                 // A broken fetch must not leave a torn glyph; degrading to
                                 // the placeholder is better than an empty hole. `hidden`
                                 // rather than an inline display style, because React keeps
@@ -197,11 +198,11 @@ const Account: React.FC<AccountProps> = ({
                         <span className={sectionLabel}>{t('core.acct.your_records')}</span>
                         <div className="flex gap-8">
                             <div>
-                                <p className={`${on} text-2xl font-semibold tabular-nums`}>{summary ? summary.doseCount : '—'}</p>
+                                <p className={`${on} text-2xl font-semibold tabular-nums ${summary ? 'm3-content-in' : ''}`}>{summary ? summary.doseCount : '—'}</p>
                                 <p className={`text-xs ${muted}`}>{t('core.acct.doses')}</p>
                             </div>
                             <div>
-                                <p className={`${on} text-2xl font-semibold tabular-nums`}>{summary ? summary.labCount : '—'}</p>
+                                <p className={`${on} text-2xl font-semibold tabular-nums ${summary ? 'm3-content-in' : ''}`}>{summary ? summary.labCount : '—'}</p>
                                 <p className={`text-xs ${muted}`}>{t('core.acct.labs')}</p>
                             </div>
                         </div>

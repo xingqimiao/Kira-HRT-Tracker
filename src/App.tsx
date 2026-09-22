@@ -45,7 +45,7 @@ import PublicShare from './pages/PublicShare';
 import ShareSettings from './pages/ShareSettings';
 import Onboarding, { markOnboardingSeen, shouldShowOnboarding } from './pages/Onboarding';
 import HrtMilestoneEffect from './components/HrtMilestoneEffect';
-import { armMilestone, clearArmedMilestone } from './utils/hrtMilestone';
+import { armMilestone, clearArmedMilestone, type MilestoneNotice } from './utils/hrtMilestone';
 
 const AppContent = () => {
     const { t, lang, setLang } = useTranslation();
@@ -96,6 +96,7 @@ const AppContent = () => {
         recheckIntervals, setRecheckIntervals,
         ocrModelTier, setOcrModelTier,
         pendingMilestone,
+        showStreakNotice, dismissStreakNotice,
         calibration,
         currentLevel,
         currentT,
@@ -211,11 +212,26 @@ const AppContent = () => {
     const celebration = armMilestone(pendingMilestone);
 
     /**
+     * The banner's notice: the milestone if this visit has one, otherwise the
+     * third-day streak note.
+     *
+     * The milestone wins when both are somehow set — a day can be both the third
+     * of a run and a round hundred, and the round hundred is the rarer thing.
+     * The streak note is a one-off from the data layer; once dismissed this
+     * visit it is gone for good, because the layer already stamped it in storage.
+     */
+    const notice: MilestoneNotice | null =
+        celebration?.milestone ?? (showStreakNotice ? 'streak3' : null);
+
+    /**
      * Cleared once the notice has shown itself, so a later mount in the same
      * session does not replay it. Not on unmount — see the note on
      * `armMilestone` in src/utils/hrtMilestone.ts for why.
      */
-    const onMilestoneDone = useCallback(() => clearArmedMilestone(), []);
+    const onMilestoneDone = useCallback(() => {
+        clearArmedMilestone();
+        dismissStreakNotice();
+    }, [dismissStreakNotice]);
 
     const coreSyncState = useCoreSync({
         token: coreSession.token,
@@ -450,7 +466,7 @@ const AppContent = () => {
                     animates in on, so the page is pushed rather than jumped. See
                     the block in index.css. */}
                 <HrtMilestoneEffect
-                    milestone={celebration?.milestone ?? null}
+                    milestone={notice}
                     days={celebration?.days ?? 0}
                     onDone={onMilestoneDone}
                 />

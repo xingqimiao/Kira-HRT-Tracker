@@ -16,6 +16,7 @@ import GelFields from './dose_form/GelFields';
 import PatchFields from './dose_form/PatchFields';
 import QuickDoseButtons, { QuickDose } from './dose_form/QuickDoseButtons';
 import { useHRTMode } from '../contexts/HRTModeContext';
+import { usePresence } from '../hooks/usePresence';
 
 export interface DoseTemplate {
     id: string;
@@ -197,34 +198,98 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
     const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
     const isInitializingRef = useRef(false);
     const [showTemplateMenu, setShowTemplateMenu] = useState(false);
+    // Held mounted through its close so the `m3-menu` exit can play — the menu
+    // otherwise vanished on the same frame the flag flipped.
+    const { mounted: templateMenuMounted, state: templateMenuState } = usePresence(showTemplateMenu, 150);
     const [showSaveTemplateInput, setShowSaveTemplateInput] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [templateToDelete, setTemplateToDelete] = useState<string | null>(null);
     const [templateName, setTemplateName] = useState('');
 
     // Form State
-    const [dateStr, setDateStr] = useState("");
     const { isTransmasc } = useHRTMode();
-    const [route, setRoute] = useState<Route>(Route.injection);
-    // Fresh add starts on estradiol. The equivalence hidden below needs
-    // `hasE2Equivalent(ester)`, which is declared at module scope, so this stays a
-    // literal and cannot drift from it.
-    const [ester, setEster] = useState<Ester>(isTransmasc ? Ester.TC : Ester.EV);
+    /**
+     * The moment the fresh add defaults to, as a local `YYYY-MM-DDTHH:mm`.
+     *
+     * Used by both the initialisers below and the mount effect, so a fresh form
+     * opens already on "now" rather than on an empty field that fills in a beat
+     * later — which is what the initialisers used to disagree with the effect
+     * about, along with the route and the patch mode.
+     */
+    const nowLocal = () => {
+        const now = new Date();
+        return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    };
+    const editLocal = (timeH: number) => {
+        const d = new Date(timeH * 3600000);
+        return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    };
+    const [dateStr, setDateStr] = useState(() =>
+        eventToEdit ? editLocal(eventToEdit.timeH) : nowLocal()
+    );
+    // Fresh add opens on the same (route, ester) the mount effect seeds, so the
+    // form does not repaint out of the injection guide and into another route's
+    // fields on its first frame — the sub-second flash of warnings that was
+    // really just the wrong route for one paint.
+    const [route, setRoute] = useState<Route>(() => eventToEdit?.route ?? (isTransmasc ? Route.injection : Route.sublingual));
+    const [ester, setEster] = useState<Ester>(() => eventToEdit?.ester ?? (isTransmasc ? Ester.TC : Ester.EV));
 
-    const [rawDose, setRawDose] = useState("");
-    const [e2Dose, setE2Dose] = useState("");
+    const [rawDose, setRawDose] = useState(() => eventToEdit ? eventToEdit.doseMG.toFixed(3) : "");
+    const [e2Dose, setE2Dose] = useState(() => {
+        if (eventToEdit && hasE2Equivalent(eventToEdit.ester)) {
+            const factor = getToE2Factor(eventToEdit.ester);
+            return (eventToEdit.doseMG * factor).toFixed(3);
+        }
+        return "";
+    });
 
-    const [patchMode, setPatchMode] = useState<"dose" | "rate">("rate");
-    const [patchRate, setPatchRate] = useState("");
-    const [patchWearDays, setPatchWearDays] = useState("");
+    const [patchMode, setPatchMode] = useState<"dose" | "rate">(() => {
+        // A fresh patch form has no dose to show until one is typed, so it opens
+        // on the rate box the effect also picks.
+        if (!eventToEdit) return "rate";
+        if (eventToEdit.route === Route.patchApply && eventToEdit.extras[ExtraKey.releaseRateUGPerDay]) {
+            return "rate";
+        }
+        return "dose";
+    });
+    const [patchRate, setPatchRate] = useState(() => {
+        if (eventToEdit?.route === Route.patchApply && eventToEdit.extras[ExtraKey.releaseRateUGPerDay]) {
+            return eventToEdit.extras[ExtraKey.releaseRateUGPerDay].toString();
+        }
+        return "";
+    });
+    const [patchWearDays, setPatchWearDays] = useState(() => {
+        const wearH = eventToEdit?.extras?.[ExtraKey.patchWearH];
+        if (eventToEdit?.route === Route.patchApply && typeof wearH === 'number' && Number.isFinite(wearH) && wearH > 0) {
+            return (wearH / 24).toString();
+        }
+        return "";
+    });
 
-    const [gelSite, setGelSite] = useState(0); // Index in GEL_SITE_ORDER
+    const [gelSite, setGelSite] = useState(() => eventToEdit?.extras?.[ExtraKey.gelSite] ?? 0);
 
-    const [slTier, setSlTier] = useState(2);
-    const [useCustomTheta, setUseCustomTheta] = useState(false);
-    const [customHoldInput, setCustomHoldInput] = useState<string>("10");
-    const [customHoldValue, setCustomHoldValue] = useState<number>(10);
-    const [lastEditedField, setLastEditedField] = useState<'raw' | 'bio'>('bio');
+    const [slTier, setSlTier] = useState(() => eventToEdit?.extras?.[ExtraKey.sublingualTier] ?? 2);
+    const [useCustomTheta, setUseCustomTheta] = useState(() => eventToEdit?.extras?.[ExtraKey.sublingualTheta] !== undefined);
+    const [customHoldInput, setCustomHoldInput] = useState<string>(() => {
+        const thetaVal = eventToEdit?.extras?.[ExtraKey.sublingualTheta];
+        if (typeof thetaVal === 'number' && Number.isFinite(thetaVal)) {
+            return Math.max(1, Math.min(60, holdFromTheta(thetaVal))).toString();
+        }
+        return "10";
+    });
+    const [customHoldValue, setCustomHoldValue] = useState<number>(() => {
+        const thetaVal = eventToEdit?.extras?.[ExtraKey.sublingualTheta];
+        if (typeof thetaVal === 'number' && Number.isFinite(thetaVal)) {
+            return Math.max(1, Math.min(60, holdFromTheta(thetaVal)));
+        }
+        return 10;
+    });
+    const [lastEditedField, setLastEditedField] = useState<'raw' | 'bio'>(() => {
+        if (eventToEdit) {
+            return hasE2Equivalent(eventToEdit.ester) && eventToEdit.ester === Ester.E2 ? 'bio' : 'raw';
+        }
+        return 'bio';
+    });
 
     const slExtras = useMemo(() => {
         if (route !== Route.sublingual) return null;
@@ -757,8 +822,13 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                     <Icon icon={Bookmark} size={14} />
                     <span>{t('template.load_title')}</span>
                 </button>
-                {showTemplateMenu && templates.length > 0 && (
-                    <div className="absolute right-0 top-full mt-1 bg-[var(--color-m3-surface-container-lowest)]  rounded-xl border border-[var(--color-m3-outline-variant)]  w-64 max-h-64 overflow-y-auto z-50">
+                {templates.length > 0 && (
+                    <div
+                        data-state={templateMenuState}
+                        className={`absolute right-0 top-full mt-1 bg-[var(--color-m3-surface-container-lowest)] rounded-xl border border-[var(--color-m3-outline-variant)] w-64 max-h-64 overflow-y-auto z-50 m3-menu m3-menu--top-right shadow-lg ${
+                            templateMenuMounted ? '' : 'hidden'
+                        }`}
+                    >
                         <div className="py-1">
                             {templates.map((template: DoseTemplate) => (
                                 <div key={template.id} className="group flex items-center justify-between px-3 py-2.5 hover:bg-[var(--color-m3-surface-container)]  border-b border-[var(--color-m3-outline-variant)]  last:border-b-0">
@@ -1133,33 +1203,33 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
 
                     {/* Template Save Section */}
                     <div className="flex items-center">
-                        <div className={`overflow-hidden flex items-center ${
-                            showSaveTemplateInput ? 'w-[14rem] sm:w-[13.5rem] opacity-100' : 'w-0 opacity-0'
+                        <div className={`overflow-hidden flex items-center transition-all duration-200 ease-out ${
+                            showSaveTemplateInput ? 'w-[14rem] sm:w-[13.5rem] opacity-100' : 'w-0 opacity-0 pointer-events-none'
                         }`}>
                             <input
                                 type="text"
                                 value={templateName}
                                 onChange={(e) => setTemplateName(e.target.value)}
                                 placeholder={t('template.name_placeholder')}
-                                className="flex-1 min-w-0 px-2.5 py-1.5 text-sm bg-[var(--color-m3-surface-container-lowest)]  border border-[var(--color-m3-outline-variant)]  rounded-md focus:ring-1 focus:ring-[var(--color-m3-primary)]/30 focus:border-[var(--color-m3-primary)] outline-none text-[var(--color-m3-on-surface)] "
+                                className="m3-inline-field flex-1 min-w-0 px-2.5 py-1.5 text-sm bg-[var(--color-m3-surface-container-lowest)] border border-[var(--color-m3-outline-variant)] rounded-md focus:border-[var(--color-m3-primary)] outline-none text-[var(--color-m3-on-surface)]"
                                 style={{ fontSize: '16px' }}
                             />
                             <button
                                 onClick={handleSaveAsTemplate}
-                                className="p-1.5 ml-1 text-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-container)]  rounded shrink-0"
+                                className="p-1.5 ml-1 text-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-container)] rounded shrink-0"
                             >
                                 <Icon icon={Check} size={18} />
                             </button>
                             <button
                                 onClick={() => { setShowSaveTemplateInput(false); setTemplateName(''); }}
-                                className="p-1.5 text-[var(--color-m3-on-surface-variant)]  hover:bg-[var(--color-m3-surface-container)]  rounded shrink-0"
+                                className="p-1.5 text-[var(--color-m3-on-surface-variant)] hover:bg-[var(--color-m3-surface-container)] rounded shrink-0"
                             >
                                 <Icon icon={X} size={18} />
                             </button>
                         </div>
                         
-                        <div className={`overflow-hidden ${
-                            showSaveTemplateInput ? 'w-0 opacity-0' : 'w-[2.35rem] opacity-100'
+                        <div className={`overflow-hidden transition-all duration-200 ease-out ${
+                            showSaveTemplateInput ? 'w-0 opacity-0 pointer-events-none' : 'w-[2.35rem] opacity-100'
                         }`}>
                             <button
                                 onClick={() => {
@@ -1167,7 +1237,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                                     setShowDeleteConfirm(false);
                                     setShowTemplateMenu(false);
                                 }}
-                                className="p-2 text-[var(--color-m3-on-surface-variant)]  hover:text-[var(--color-m3-primary)] rounded flex items-center justify-center"
+                                className="p-2 text-[var(--color-m3-on-surface-variant)] hover:text-[var(--color-m3-primary)] rounded flex items-center justify-center"
                                 title={t('template.save_title')}
                             >
                                 <Icon icon={BookmarkPlus} size={18} />

@@ -45,8 +45,26 @@ const FALLBACK: Record<Lang, readonly Lang[]> = {
     'tr': ['en', 'zh'],
 };
 
+function detectBrowserLang(): Lang {
+    if (typeof navigator === 'undefined') return 'zh';
+    const candidate = (navigator.languages && navigator.languages.length > 0 ? navigator.languages[0] : navigator.language) || '';
+    const raw = candidate.toLowerCase();
+    if (raw.startsWith('zh-hk') || raw.startsWith('yue') || raw === 'zh-hant-hk') return 'yue';
+    if (raw.startsWith('zh-tw') || raw.startsWith('zh-hant') || raw.startsWith('zh-mo')) return 'zh-TW';
+    if (raw.startsWith('zh')) return 'zh';
+    if (raw.startsWith('ja')) return 'ja';
+    if (raw.startsWith('ko')) return 'ko';
+    if (raw.startsWith('tr')) return 'tr';
+    if (raw.startsWith('en')) return 'en';
+    return 'zh';
+}
+
 export const LanguageProvider = ({ children }: { children: React.ReactNode }) => {
-    const [lang, setLang] = useState<Lang>(() => (localStorage.getItem('hrt-lang') as Lang) || 'zh');
+    const [lang, setLang] = useState<Lang>(() => {
+        const stored = localStorage.getItem('hrt-lang') as Lang | null;
+        if (stored && stored in TRANSLATIONS) return stored;
+        return detectBrowserLang();
+    });
 
     // Adopt a language the account says this device should be using. Guarded by
     // the key actually holding a language this build knows, so a payload from a

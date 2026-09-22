@@ -10,6 +10,7 @@ import { suggestSelection, type HormoneCandidate, type LabUnit } from '../utils/
 import BloodVial from '../components/BloodVial';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { HormoneLevelAdvisoryLine } from '../components/DoseAdvisory';
+import Collapsible from '../components/Collapsible';
 import MonitoringNoticeLine, { RecheckReminderGroup, RecheckReminderLine, SpironolactonePrecautions } from '../components/MonitoringNotice';
 import JournalCheckIn from '../components/JournalCheckIn';
 import { JournalEntry } from '../utils/bodyJournal';
@@ -178,29 +179,26 @@ const Lab: React.FC<LabProps> = ({
             {/* Scan panel. Collapsed by default — it is a 22 MB download the first
                 time it runs, so it must never be on the path of a user who just wants
                 to type a number in. */}
-            <div className={`grid ${isScanOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-                <div className="overflow-hidden">
-                    <div className="mx-auto w-full px-6 md:px-8 mb-6 max-w-2xl">
-                        {isScanOpen && (
-                            <LabScan
-                                tier={ocrModelTier}
-                                onCancel={() => setIsScanOpen(false)}
-                                onExtracted={(candidates) => {
-                                    setScanned(candidates);
-                                    setIsScanOpen(false);
-                                    // Open the form so the user lands on the prefilled
-                                    // values — the confirmation IS the form.
-                                    setIsQuickAddLabOpen(true);
-                                }}
-                            />
-                        )}
-                    </div>
+            <Collapsible open={isScanOpen}>
+                <div className="mx-auto w-full px-6 md:px-8 mb-6 max-w-2xl">
+                    <LabScan
+                        tier={ocrModelTier}
+                        onCancel={() => setIsScanOpen(false)}
+                        onExtracted={(candidates) => {
+                            setScanned(candidates);
+                            setIsScanOpen(false);
+                            // Open the form so the user lands on the prefilled
+                            // values — the confirmation IS the form.
+                            setIsQuickAddLabOpen(true);
+                        }}
+                    />
                 </div>
-            </div>
+            </Collapsible>
 
-            {/* Expandable add form */}
-            <div className={`grid ${isQuickAddLabOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-                <div className="overflow-hidden">
+            {/* Expandable add form. Always mounted, so this pair animates both ways
+                on its own — see Collapsible for the row editors below. */}
+            <div className={`grid transition-[grid-template-rows] duration-[250ms] ease-out ${isQuickAddLabOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+                <div className={`overflow-hidden transition-opacity duration-[250ms] ease-out ${isQuickAddLabOpen ? 'opacity-100' : 'opacity-0'}`}>
                     <div className="mx-auto w-full px-6 md:px-8 mb-6 max-w-2xl">
                         <LabResultForm
                             resultToEdit={null}
@@ -341,24 +339,22 @@ const Lab: React.FC<LabProps> = ({
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className={`grid ${isEditing ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-                                            <div className="overflow-hidden">
-                                                <div className="pb-4 pt-1">
-                                                    <LabResultForm
-                                                        resultToEdit={res}
-                                                        onSave={(updated) => {
-                                                            onSaveLabResult(updated);
-                                                            setEditingLabId(null);
-                                                        }}
-                                                        onCancel={() => setEditingLabId(null)}
-                                                        onDelete={(id) => {
-                                                            onDeleteLabResult(id);
-                                                            setEditingLabId(null);
-                                                        }}
-                                                    />
-                                                </div>
+                                        <Collapsible open={isEditing}>
+                                            <div className="pb-4 pt-1">
+                                                <LabResultForm
+                                                    resultToEdit={res}
+                                                    onSave={(updated) => {
+                                                        onSaveLabResult(updated);
+                                                        setEditingLabId(null);
+                                                    }}
+                                                    onCancel={() => setEditingLabId(null)}
+                                                    onDelete={(id) => {
+                                                        onDeleteLabResult(id);
+                                                        setEditingLabId(null);
+                                                    }}
+                                                />
                                             </div>
-                                        </div>
+                                        </Collapsible>
                                     </div>
                                 );
                             })}

@@ -16,6 +16,7 @@ import { applyAppSettings, appSettingsStamp, readAppSettings, touchAppSettings }
 import { JournalEntry, sanitizeJournalEntries } from '../utils/bodyJournal';
 import { hrtDaysSince, normalizeHrtStartDate } from '../utils/hrtStart';
 import { milestoneFor } from '../utils/hrtMilestone';
+import { isThirdDayStreak } from '../utils/hrtStreak';
 
 /** Namespace used while signed out. Its keys are the original, un-prefixed ones. */
 const LOCAL_OWNER = 'local';
@@ -339,6 +340,52 @@ export const useAppData = (
         try { localStorage.setItem(key, `${today}:${milestone}`); } catch { /* see above */ }
         return `${days}:${milestone}`;
     });
+
+    /**
+     * The one-off third-day note, shown at most once on this device, ever.
+     *
+     * ── Why this reacts to `events` rather than being read once at mount ────────
+     *
+     * The note is earned by *adding a record on the third consecutive day*, so it
+     * has to be able to appear the moment that record lands. Reading it in a
+     * `useState` initialiser — the way `pendingMilestone` beside it is read —
+     * would answer only for the records that existed at mount, and the ordinary
+     * case is someone mid-session: they log Monday, Tuesday, then Wednesday's
+     * dose while the app is open. So it watches `events` and fires when they say
+     * today is the third day.
+     *
+     * ── One trigger for every way a record arrives ──────────────────────────────
+     *
+     * Because it watches the day keys of `events`, it does not care *how* today's
+     * record appeared: the dose form, the home quick-add, or an MCP write that
+     * arrived as a sync and was applied to `events`. The user asked for all three,
+     * and one rule over the resulting records is what covers them without a
+     * trigger planted in each writer.
+     *
+     * ── Once, per device, and never again ───────────────────────────────────────
+     *
+     * The shown-flag lives in this device's `hrt-…-streak3` key, like the
+     * milestone's, and for the same reason: it records what *this* device has
+     * already told the user, and showing it once more on a second device is a
+     * smaller failure than silently suppressing it. The ref is a second guard for
+     * the same session — the effect reruns on every `events` change, and without
+     * it the note would re-arm at the next add even though the flag is written.
+     */
+    const [showStreakNotice, setShowStreakNotice] = useState(false);
+    const streakArmedRef = useRef(false);
+    useEffect(() => {
+        if (streakArmedRef.current) return;
+        const today = toDayKey(new Date());
+        const days = new Set(events.map(e => toDayKey(new Date(e.timeH * 3600000))));
+        if (!isThirdDayStreak(days, today)) return;
+        // Claim it in storage before showing: a reload mid-notice must not replay it.
+        const key = sharedKey('streak3');
+        try { if (localStorage.getItem(key) === 'shown') { streakArmedRef.current = true; return; } } catch { /* private mode */ }
+        try { localStorage.setItem(key, 'shown'); } catch { /* private mode */ }
+        streakArmedRef.current = true;
+        setShowStreakNotice(true);
+    }, [events]);
+    const dismissStreakNotice = () => setShowStreakNotice(false);
     const [doseTemplates, setDoseTemplates] = useState<DoseTemplate[]>(() => loadJSON(keyFor(mode, 'dose-templates'), [] as DoseTemplate[]));
     const [quickDoses, setQuickDoses] = useState<QuickDose[]>(() => loadJSON(keyFor(mode, 'quick-doses'), [] as QuickDose[]));
     // The private body-and-mood log. Unlike the monitoring bloods and quick
@@ -1308,6 +1355,7 @@ export const useAppData = (
         ocrModelTier, setOcrModelTier,
         dismissedRechecks, dismissRecheck,
         pendingMilestone,
+        showStreakNotice, dismissStreakNotice,
         calibration,
         currentLevel,
         currentT,

@@ -3,8 +3,12 @@ import { createPortal } from 'react-dom';
 import Icon from './Icon';
 import { Bookmark, ChevronDown, RotateCcw } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
+import { usePresence } from '../hooks/usePresence';
 import { DoseEvent } from '../../logic';
 import { templateToEvent } from '../utils/templateToEvent';
+
+/** The menu's exit, in ms — must match the `.m3-menu` exit in index.css. */
+const MENU_EXIT_MS = 150;
 
 /** The template fields this needs — see `DoseTemplate` in useAppData/DoseForm. */
 interface QuickTemplate {
@@ -38,8 +42,16 @@ const UNDO_MS = 6000;
  * edge, radius and gap stay the same at both sizes.
  */
 const triggerClass = (open: boolean, empty: boolean, large = false) =>
-    `inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-m3-outline-variant)] font-medium transition-colors ${
-        large ? 'h-12 pe-3 ps-4 text-sm' : 'h-9 px-2.5 text-xs sm:pl-3 sm:pr-2'
+    `inline-flex items-center border border-[var(--color-m3-outline-variant)] font-medium transition-colors ${
+        large
+            ? 'h-12 gap-1.5 rounded-lg pe-3 ps-4 text-sm'
+            // A phone-only square: below `sm` the label is hidden, so a padded
+            // row around one glyph was a 41x36 rectangle (measured) with the
+            // icon 11px from one edge and 10px from the other. `w-9 h-9 p-0
+            // justify-center` makes it a 36x36 square with the glyph at its
+            // centre, and `rounded-md` is the corner the Share control beside it
+            // already uses — from `sm` up it grows back into the labelled row.
+            : 'h-9 w-9 justify-center gap-0 rounded-md p-0 text-xs sm:w-auto sm:justify-normal sm:gap-1.5 sm:rounded-lg sm:pl-3 sm:pr-2'
     } ${
         open
             ? 'bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-surface)]'
@@ -111,8 +123,12 @@ const HomeQuickAdd: React.FC<HomeQuickAddProps> = ({ templates, onAddEvent, onRe
                     <Icon icon={ChevronDown} size={13} className={`hidden sm:block ${open ? 'rotate-180' : ''}`} />
                 </button>
 
-                {open && createPortal(
+                {/* Always rendered, so the menu can play its exit; it returns
+                    null itself once closed and spent. `anchor` is read from the
+                    button's rect inside. */}
+                {createPortal(
                     <Dropdown
+                        open={open}
                         anchor={buttonRef.current}
                         items={ordered}
                         onPick={add}
@@ -172,13 +188,16 @@ export const QuickAddPreview: React.FC = () => {
  * document root with a fixed position taken from the button's own rect.
  */
 const Dropdown: React.FC<{
+    /** The trigger's live state. The exit runs on the way to false. */
+    open: boolean;
     anchor: HTMLElement | null;
     items: QuickTemplate[];
     onPick: (template: QuickTemplate) => void;
     onDismiss: () => void;
-}> = ({ anchor, items, onPick, onDismiss }) => {
+}> = ({ open, anchor, items, onPick, onDismiss }) => {
     const { t } = useTranslation();
     const [rect, setRect] = React.useState<DOMRect | null>(() => anchor?.getBoundingClientRect() ?? null);
+    const { mounted, state } = usePresence(open, MENU_EXIT_MS);
 
     React.useEffect(() => {
         const measure = () => setRect(anchor?.getBoundingClientRect() ?? null);
@@ -194,7 +213,11 @@ const Dropdown: React.FC<{
         };
     }, [anchor, onDismiss]);
 
-    if (!rect) return null;
+    // The outside-click catcher leaves with the menu, on the same frame it starts
+    // to close: while `data-state="closed"` is animating, `.m3-menu` is
+    // `pointer-events: none`, so keeping the catcher up would swallow a click
+    // meant for the page underneath.
+    if (!rect || !mounted) return null;
 
     // The trigger lives in the card's far corner, so the list hangs from its right
     // edge. Left-anchored, a 288px menu on a 375px screen would run off the side.
@@ -204,10 +227,11 @@ const Dropdown: React.FC<{
         <>
             {/* Catches the outside click. Transparent: dimming the page for a menu with
                 one level would read as a modal, which this is not. */}
-            <div className="fixed inset-0 z-[80]" onClick={onDismiss} aria-hidden="true" />
+            {open && <div className="fixed inset-0 z-[80]" onClick={onDismiss} aria-hidden="true" />}
             <div
                 role="menu"
-                className="fixed z-[81] max-h-80 overflow-y-auto rounded-xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-lowest)] py-1 shadow-lg"
+                data-state={state}
+                className="fixed z-[81] max-h-80 overflow-y-auto rounded-xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-lowest)] py-1 shadow-lg m3-menu m3-menu--top-right"
                 style={{
                     top: rect.bottom + 6,
                     width,

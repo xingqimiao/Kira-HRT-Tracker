@@ -8,10 +8,10 @@ import { useHRTMode } from '../contexts/HRTModeContext';
 import { Lang, TRANSLATIONS } from '../i18n/translations';
 import CopyRow from '../components/CopyRow';
 import IntroCard from '../components/IntroCard';
-import { LabScanDemo, JournalPreview, RecheckPreview, SignInPreview, QuickAddDemo } from '../components/OnboardingFeatures';
+import { LabScanDemo, JournalPreview, RecheckPreview, SignInPreview, QuickAddDemo, BigLockAnimation } from '../components/OnboardingFeatures';
 import Icon from '../components/Icon';
 import DateTimePicker from '../components/DateTimePicker';
-import { Check, Plus, ChevronDown } from '../icons';
+import { Check, Plus, ChevronDown, Cloud, AlertTriangle } from '../icons';
 import { buildMcpInstallPrompt } from '../utils/mcpInstallPrompt';
 import { LOCALE_MAP } from '../utils/helpers';
 
@@ -127,10 +127,11 @@ const STEP_ROLES: Record<string, StepRoles> = {
     pwa: SECONDARY,
     mcp: TERTIARY,
     privacy: { surface: '--md-sys-color-surface-container-highest', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' },
+    disclaimer: CONTAINER,
 };
 
 /** Step order, for the colour lookup above; `steps` holds the panels themselves. */
-const STEP_KEYS = ['welcome', 'mode', 'how', 'started', 'quick', 'scan', 'journal', 'recheck', 'signin', 'account', 'pwa', 'mcp', 'privacy', 'sendoff'] as const;
+const STEP_KEYS = ['welcome', 'mode', 'how', 'started', 'quick', 'scan', 'journal', 'recheck', 'signin', 'account', 'pwa', 'mcp', 'privacy', 'disclaimer', 'sendoff'] as const;
 
 /**
  * The three slots of the "how it works" step, and the only step that splits in
@@ -828,14 +829,36 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
             <p className="mt-2 text-m3-body-large intro-muted">{t('onboarding.mcp_more')}</p>
         </div>,
 
-        <div key="privacy" className="pt-8">
-            <h1 className="intro-title text-m3-display-large break-words">{t('onboarding.privacy_title')}</h1>
-            <p className="mt-3 text-m3-body-large intro-muted">{t('onboarding.privacy_subtitle')}</p>
-            <div className="mt-4">
-                <Point mark="lock" title={t('onboarding.privacy_local')} desc={t('onboarding.privacy_local_desc')} />
-                <Point mark="cloud" title={t('onboarding.privacy_cloud')} desc={t('onboarding.privacy_cloud_desc')} />
-                <Point mark="caution" title={t('onboarding.privacy_medical')} desc={t('onboarding.privacy_medical_desc')} />
+        <div key="privacy" className="flex h-full flex-col justify-center pt-4 text-center">
+            <BigLockAnimation />
+            <div className="pt-2">
+                <h1 className="intro-title text-m3-headline-medium md:text-m3-display-small font-bold leading-tight break-words">
+                    {t('onboarding.privacy_title_1')}<br />
+                    <span className="text-[var(--color-m3-primary)]">{t('onboarding.privacy_title_highlight')}</span><br />
+                    {t('onboarding.privacy_title_2')}
+                </h1>
+                <p className="mt-3 text-m3-body-large intro-muted">
+                    {t('onboarding.privacy_subtitle')}
+                </p>
+                <div className="mt-6 flex items-center justify-center gap-3 rounded-2xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container)] p-4 text-start">
+                    <Icon icon={Cloud} size={24} className="shrink-0 text-[var(--color-m3-primary)]" />
+                    <p className="text-m3-body-medium text-[var(--color-m3-on-surface)] leading-relaxed">
+                        {t('onboarding.privacy_cloud_note')}
+                    </p>
+                </div>
             </div>
+        </div>,
+
+        <div key="disclaimer" className="flex h-full flex-col items-center justify-center pt-6 text-center">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-m3-primary-container)] text-[var(--color-m3-primary)] mb-6">
+                <Icon icon={AlertTriangle} size={44} strokeWidth={2} />
+            </div>
+            <h1 className="intro-title text-m3-headline-medium md:text-m3-display-small font-bold break-words">
+                {t('onboarding.disclaimer_title')}
+            </h1>
+            <p className="mt-4 max-w-sm text-m3-body-large leading-relaxed text-[var(--color-m3-on-surface-variant)]">
+                {t('onboarding.disclaimer_body')}
+            </p>
         </div>,
 
         /* The send-off. The flag is the farewell — the one screen that faces outward
@@ -845,7 +868,6 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
             key="sendoff"
             framed={false}
             title={t('onboarding.sendoff_line')}
-            description={t('onboarding.sendoff_subtitle')}
             visual={<TransFlag />}
         />,
     ];

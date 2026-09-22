@@ -435,3 +435,75 @@ export const SignInPreview: React.FC = () => {
         </div>
     );
 };
+
+/**
+ * A big open padlock that snaps shut, holds for 1.4s, then unlocks to loop.
+ */
+export const BigLockAnimation: React.FC = () => {
+    const [locked, setLocked] = useState(false);
+
+    useEffect(() => {
+        let timer: number;
+        if (!locked) {
+            timer = window.setTimeout(() => setLocked(true), 800);
+        } else {
+            timer = window.setTimeout(() => setLocked(false), 1400);
+        }
+        return () => window.clearTimeout(timer);
+    }, [locked]);
+
+    return (
+        <div className="flex w-full items-center justify-center py-4 select-none">
+            <svg
+                viewBox="0 0 96 116"
+                width={84}
+                height={102}
+                className="overflow-visible"
+                aria-hidden="true"
+            >
+                {/* Shackle */}
+                <g
+                    className="transition-transform duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
+                    style={{
+                        transformOrigin: '28px 46px',
+                        transform: locked ? 'none' : 'translateY(-16px) rotate(-16deg)',
+                    }}
+                >
+                    <path
+                        d="M28 50 V 28 A 20 20 0 0 1 68 28 V 50"
+                        fill="none"
+                        stroke="var(--color-m3-primary)"
+                        strokeWidth="9"
+                        strokeLinecap="round"
+                    />
+                </g>
+
+                {/* Lock Body */}
+                <rect
+                    x="16"
+                    y="46"
+                    width="64"
+                    height="56"
+                    rx="16"
+                    fill="var(--color-m3-surface-container-high)"
+                    stroke="var(--color-m3-outline-variant)"
+                    strokeWidth="2.5"
+                />
+
+                {/* Keyhole */}
+                <circle
+                    cx="48"
+                    cy="68"
+                    r="5"
+                    fill={locked ? 'var(--color-m3-primary)' : 'var(--color-m3-on-surface-variant)'}
+                    className="transition-colors duration-200"
+                />
+                <path
+                    d="M45.5 70 L 44 85 H 52 L 50.5 70 Z"
+                    fill={locked ? 'var(--color-m3-primary)' : 'var(--color-m3-on-surface-variant)'}
+                    className="transition-colors duration-200"
+                />
+            </svg>
+        </div>
+    );
+};

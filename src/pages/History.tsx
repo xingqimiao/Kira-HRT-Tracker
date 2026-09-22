@@ -6,6 +6,7 @@ import { DoseEvent, Route, Ester, ExtraKey, getToE2Factor, isTestosteroneEster, 
 import { formatTime } from '../utils/helpers';
 import { useDialog } from '../contexts/DialogContext';
 import DoseForm from '../components/DoseForm';
+import Collapsible from '../components/Collapsible';
 import BloodVial from '../components/BloodVial';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { DoseTemplate } from '../components/DoseFormModal';
@@ -175,8 +176,10 @@ const History: React.FC<HistoryProps> = ({
                 )}
             </div>
 
-            <div className={`mt-4 grid ${isQuickAddOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-                <div className="overflow-hidden">
+            {/* The dose form is always mounted here, so this pair animates both ways
+                on its own — see Collapsible for why the row editors below cannot. */}
+            <div className={`mt-4 grid transition-[grid-template-rows] duration-[250ms] ease-out ${isQuickAddOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+                <div className={`overflow-hidden transition-opacity duration-[250ms] ease-out ${isQuickAddOpen ? 'opacity-100' : 'opacity-0'}`}>
                     <div className="mx-auto w-full px-4 md:px-8 mb-6 max-w-2xl">
                         <div className="flex items-center justify-between py-3">
                             <div>
@@ -319,36 +322,33 @@ const History: React.FC<HistoryProps> = ({
                                         </div>
                                     </div>
 
-                                    <div className={`grid ${isEditing && !selectMode ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-                                        <div className="overflow-hidden">
-                                            {/* Mounted only for the row being edited — with hundreds of
-                                                records, keeping every row's form mounted (even collapsed
-                                                to zero height) made every dose add/edit re-render all of
-                                                them at once. */}
-                                            {isEditing && !selectMode && (
-                                                <div className="pb-4 pt-1">
-                                                    <DoseForm
-                                                        eventToEdit={ev}
-                                                        onSave={(e) => {
-                                                            onSaveEvent(e);
-                                                            setEditingId(null);
-                                                        }}
-                                                        onCancel={() => setEditingId(null)}
-                                                        onDelete={(id) => {
-                                                            onDeleteEvent(id);
-                                                            setEditingId(null);
-                                                        }}
-                                                        templates={doseTemplates}
-                                                        onSaveTemplate={onSaveTemplate}
-                                                        onDeleteTemplate={onDeleteTemplate}
-                                                        isInline={true}
-                                                        hideHeader={true}
-                                                        events={allEvents}
-                                                    />
-                                                </div>
-                                            )}
+                                    <Collapsible open={isEditing && !selectMode}>
+                                        {/* Mounted only for the row being edited — with hundreds of
+                                            records, keeping every row's form mounted (even collapsed
+                                            to zero height) made every dose add/edit re-render all of
+                                            them at once. `Collapsible` holds it just long enough to
+                                            collapse. */}
+                                        <div className="pb-4 pt-1">
+                                            <DoseForm
+                                                eventToEdit={ev}
+                                                onSave={(e) => {
+                                                    onSaveEvent(e);
+                                                    setEditingId(null);
+                                                }}
+                                                onCancel={() => setEditingId(null)}
+                                                onDelete={(id) => {
+                                                    onDeleteEvent(id);
+                                                    setEditingId(null);
+                                                }}
+                                                templates={doseTemplates}
+                                                onSaveTemplate={onSaveTemplate}
+                                                onDeleteTemplate={onDeleteTemplate}
+                                                isInline={true}
+                                                hideHeader={true}
+                                                events={allEvents}
+                                            />
                                         </div>
-                                    </div>
+                                    </Collapsible>
                                 </div>
                                 );
                             })}

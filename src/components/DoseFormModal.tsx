@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import DoseForm, { DoseTemplate } from './DoseForm';
 import { QuickDose } from './dose_form/QuickDoseButtons';
 import { useEscape } from '../hooks/useEscape';
+import { usePresence } from '../hooks/usePresence';
 import { DoseEvent } from '../../logic';
 
 export type { DoseTemplate, QuickDose };
@@ -35,14 +36,12 @@ const DoseFormModal: React.FC<DoseFormModalProps> = ({
     onDeleteQuickDose,
     events = []
 }) => {
-    const [isVisible, setIsVisible] = useState(false);
-
-    useEffect(() => {
-        if (isOpen) setIsVisible(true);
-    }, [isOpen]);
+    // Held mounted through the close so the dialog has an exit to play — the
+    // `if (!isOpen) return null` this replaced unmounted it on the same frame the
+    // state flipped, which is what made closing it disappear rather than leave.
+    const { mounted, state } = usePresence(isOpen, 200);
 
     const handleClose = () => {
-        setIsVisible(false);
         onClose();
     };
 
@@ -59,11 +58,11 @@ const DoseFormModal: React.FC<DoseFormModalProps> = ({
         handleClose();
     };
 
-    if (!isVisible && !isOpen) return null;
+    if (!mounted) return null;
 
     return (
-        <div className="modal-overlay">
-            <div className="modal-shell modal-shell-wide">
+        <div className="modal-overlay" data-state={state}>
+            <div className="modal-shell modal-shell-wide" data-state={state}>
             <div className="modal-card overflow-hidden p-0 w-full max-w-lg md:max-w-xl h-[92vh] md:max-h-[85vh] flex flex-col">
 
                 <DoseForm

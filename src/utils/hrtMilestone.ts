@@ -18,6 +18,19 @@
 /** What a milestone day celebrates. */
 export type Milestone = 'confetti' | 'cake';
 
+/**
+ * Anything the milestone banner can show.
+ *
+ * `streak3` is not a day count and is not produced by `milestoneFor` — it is the
+ * one-off third-day note (see `hrtStreak.ts`). It rides the same banner because
+ * the user asked for "the same kind of banner as the birthday one, without the
+ * cake", and the banner's shell, its measured height and its exit are exactly
+ * what a second notice would otherwise have to rebuild. Widening the type here
+ * is smaller than a second component and keeps one place that knows how a notice
+ * enters and leaves.
+ */
+export type MilestoneNotice = Milestone | 'streak3';
+
 /** The cadence each effect runs on, in days. */
 export const CONFETTI_EVERY_DAYS = 100;
 export const CAKE_EVERY_DAYS = 365;
