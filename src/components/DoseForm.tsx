@@ -266,6 +266,10 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
         return "";
     });
 
+    // The injection guide is reference material, collapsed until asked for — see the
+    // note where it renders. Deliberately not persisted: a reader who wants it open
+    // once does not want it open on every later dose.
+    const [showInjectionGuide, setShowInjectionGuide] = useState(false);
     const [gelSite, setGelSite] = useState(() => eventToEdit?.extras?.[ExtraKey.gelSite] ?? 0);
     // Gel detail beyond site and dose: written for both engines, read only by the
     // Transmtf one. See the note on ExtraKey — a record must not mean different
@@ -1088,72 +1092,93 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                             )}
                         </div>
 
-                        {/* Injection-specific guide from mtf.wiki */}
+                        {/* Injection guide, from mtf.wiki.
+                            Collapsed by default: expanded it is ~900px, most of a phone
+                            screen and more than the rest of the form, so every dose
+                            meant scrolling past a wall of prose to reach Save.
+                            The warning line stays outside the fold — it is the one
+                            sentence here that is about not hurting yourself, and it
+                            belongs in front of someone mid-form rather than one tap
+                            away. The rest is reference material you read once. */}
                         {route === Route.injection && !isTransmasc && (
-                            <div className="mt-3 border-t border-[var(--color-m3-outline-variant)]  pt-3 space-y-3">
-                                {/* Safety Warning */}
+                            <div className="mt-3 border-t border-[var(--color-m3-outline-variant)]  pt-3">
                                 <div className="flex gap-2">
                                     <Icon icon={AlertTriangle} className="w-4 h-4 text-cos-warning shrink-0 mt-0.5" />
-                                    <div>
-                                        <span className="text-m3-title-small text-[var(--color-m3-on-surface)] ">{t('inj.guide.title')}</span>
-                                        <p className="text-sm text-cos-warning  mt-0.5">{t('inj.guide.safety')}</p>
-                                    </div>
+                                    <p className="text-sm text-cos-warning ">{t('inj.guide.safety')}</p>
                                 </div>
 
-                                {/* Usage & Dosage */}
-                                <div className="space-y-1.5 pl-6">
-                                    <p className="text-sm text-[var(--color-m3-on-surface-variant)] ">{t('inj.guide.route_methods')}</p>
-                                    <p className="text-xs font-medium text-cos-error ">{t('inj.guide.route_warn')}</p>
-                                    <p className="text-m3-title-small text-[var(--color-m3-on-surface)]  mt-1">{t('inj.guide.dosage_title')}</p>
-                                    <ul className="text-sm text-[var(--color-m3-on-surface-variant)]  space-y-0.5 list-disc list-inside">
-                                        <li>{t('inj.guide.dosage_ev')}</li>
-                                        <li>{t('inj.guide.dosage_ec')}</li>
-                                    </ul>
-                                    <a
-                                        href="https://transfemscience.org/misc/injectable-e2-simulator/"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={(e) => {
-                                            e.preventDefault();
-                                            confirmAndOpenExternal('https://transfemscience.org/misc/injectable-e2-simulator/');
-                                        }}
-                                        className="inline-flex items-center gap-1 text-sm text-[var(--color-m3-primary)] hover:underline mt-0.5"
-                                    >
-                                        {t('inj.guide.sim_link')}
-                                        <Icon icon={ExternalLink} size={13} />
-                                    </a>
-                                </div>
-
-                                {/* Precautions */}
-                                <div className="pl-6 space-y-1">
-                                    <p className="text-m3-title-small text-[var(--color-m3-on-surface)] ">{t('inj.guide.notes_title')}</p>
-                                    <ul className="text-xs text-[var(--color-m3-on-surface-variant)]  space-y-1.5 list-disc list-inside leading-relaxed">
-                                        <li>{t('inj.guide.note_1')}</li>
-                                        <li>{t('inj.guide.note_2')}</li>
-                                        <li className="font-semibold text-cos-error ">{t('inj.guide.note_3')}</li>
-                                        <li><span className="font-semibold text-cos-warning ">{t('inj.guide.note_4')}</span></li>
-                                        <li>{t('inj.guide.note_5')}</li>
-                                        <li>{t('inj.guide.note_6')}</li>
-                                        <li>{t('inj.guide.note_7')}</li>
-                                        <li>{t('inj.guide.note_8')}</li>
-                                        <li>{t('inj.guide.note_9')}</li>
-                                    </ul>
-                                </div>
-
-                                {/* Source */}
-                                <a
-                                    href="https://mtf.wiki/zh-cn/docs/medicine/estrogen/injection"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    onClick={(e) => {
-                                        e.preventDefault();
-                                        confirmAndOpenExternal('https://mtf.wiki/zh-cn/docs/medicine/estrogen/injection');
-                                    }}
-                                    className="inline-flex items-center gap-1 text-xs text-[var(--color-m3-on-surface-variant)]  hover:text-[var(--color-m3-primary)]"
+                                <button
+                                    type="button"
+                                    onClick={() => setShowInjectionGuide(v => !v)}
+                                    aria-expanded={showInjectionGuide}
+                                    className="mt-2 w-full flex items-center justify-between gap-2 py-1.5 text-start text-m3-title-small text-[var(--color-m3-on-surface)] "
                                 >
-                                    {t('inj.guide.source')}
-                                    <Icon icon={ExternalLink} size={12} />
-                                </a>
+                                    {t('inj.guide.title')}
+                                    <Icon
+                                        icon={ChevronDown}
+                                        size={16}
+                                        className={`chev shrink-0 text-[var(--color-m3-on-surface-variant)]  ${showInjectionGuide ? 'rotate-180' : ''}`}
+                                    />
+                                </button>
+
+                                {showInjectionGuide && (
+                                    <div className="space-y-3 pt-1">
+                                        {/* Usage & Dosage */}
+                                        <div className="space-y-1.5">
+                                            <p className="text-sm text-[var(--color-m3-on-surface-variant)] ">{t('inj.guide.route_methods')}</p>
+                                            <p className="text-xs font-medium text-cos-error ">{t('inj.guide.route_warn')}</p>
+                                            <p className="text-m3-title-small text-[var(--color-m3-on-surface)]  mt-1">{t('inj.guide.dosage_title')}</p>
+                                            <ul className="text-sm text-[var(--color-m3-on-surface-variant)]  space-y-0.5 list-disc list-inside">
+                                                <li>{t('inj.guide.dosage_ev')}</li>
+                                                <li>{t('inj.guide.dosage_ec')}</li>
+                                            </ul>
+                                            <a
+                                                href="https://transfemscience.org/misc/injectable-e2-simulator/"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    confirmAndOpenExternal('https://transfemscience.org/misc/injectable-e2-simulator/');
+                                                }}
+                                                className="inline-flex items-center gap-1 text-sm text-[var(--color-m3-primary)] hover:underline mt-0.5"
+                                            >
+                                                {t('inj.guide.sim_link')}
+                                                <Icon icon={ExternalLink} size={13} />
+                                            </a>
+                                        </div>
+
+                                        {/* Precautions */}
+                                        <div className="space-y-1">
+                                            <p className="text-m3-title-small text-[var(--color-m3-on-surface)] ">{t('inj.guide.notes_title')}</p>
+                                            <ul className="text-xs text-[var(--color-m3-on-surface-variant)]  space-y-1.5 list-disc list-inside leading-relaxed">
+                                                <li>{t('inj.guide.note_1')}</li>
+                                                <li>{t('inj.guide.note_2')}</li>
+                                                <li className="font-semibold text-cos-error ">{t('inj.guide.note_3')}</li>
+                                                <li><span className="font-semibold text-cos-warning ">{t('inj.guide.note_4')}</span></li>
+                                                <li>{t('inj.guide.note_5')}</li>
+                                                <li>{t('inj.guide.note_6')}</li>
+                                                <li>{t('inj.guide.note_7')}</li>
+                                                <li>{t('inj.guide.note_8')}</li>
+                                                <li>{t('inj.guide.note_9')}</li>
+                                            </ul>
+                                        </div>
+
+                                        {/* Source */}
+                                        <a
+                                            href="https://mtf.wiki/zh-cn/docs/medicine/estrogen/injection"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                confirmAndOpenExternal('https://mtf.wiki/zh-cn/docs/medicine/estrogen/injection');
+                                            }}
+                                            className="inline-flex items-center gap-1 text-xs text-[var(--color-m3-on-surface-variant)]  hover:text-[var(--color-m3-primary)]"
+                                        >
+                                            {t('inj.guide.source')}
+                                            <Icon icon={ExternalLink} size={12} />
+                                        </a>
+                                    </div>
+                                )}
                             </div>
                         )}
 
