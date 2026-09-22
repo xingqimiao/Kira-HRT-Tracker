@@ -95,7 +95,14 @@ export interface AppSettings {
      * device rather than be silently suppressed by the first.
      */
     recheckIntervals?: string;
-    /** Which OCR model tier the lab scan uses: 'tiny' (default) or 'small'. */
+    /**
+     * Which OCR model tier the lab scan uses.
+     *
+     * A string rather than the union on purpose: this is a synced payload, so it can
+     * carry a tier this build has retired ('tiny'). `normalizeOcrModelTier` is what
+     * settles it — reading the type as the union here would be a claim about the data
+     * that a payload from an older client is free to break.
+     */
     ocrModelTier?: string;
     /**
      * IANA timezone the account's times are read in, e.g. `Asia/Tokyo`.

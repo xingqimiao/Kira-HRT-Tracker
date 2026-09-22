@@ -44,13 +44,11 @@ const DEFAULT_BASE = '/ocr/'
 /**
  * Asset file names per model tier.
  *
- * Both tiers are self-hosted under /ocr/, but which files the browser fetches is
- * decided by the caller's 'tier': the default 'tiny' scan only ever requests the
- * tiny pair. 'small' is fetched at the moment a scan or a retry asks for it, never
- * ahead of time — that is what keeps the first scan a few MB rather than ~30 MB.
+ * One entry, because there is one tier. Kept as a map rather than collapsed to a
+ * constant so the file names sit next to the tier name the caller passes, and so a
+ * second tier could be added here without touching the loader.
  */
 const TIER_FILES: Record<OcrModelTier, { det: string; rec: string; dict: string }> = {
-    tiny: { det: 'tiny_det.onnx', rec: 'tiny_rec.onnx', dict: 'tiny_dict.txt' },
     small: { det: 'small_det.onnx', rec: 'small_rec.onnx', dict: 'small_dict.txt' },
 }
 
@@ -86,8 +84,8 @@ export interface OcrOptions {
     /** Called with 0..1 as the pipeline advances. */
     onProgress?: (fraction: number) => void
     /**
-     * Which model pair to load. Defaults to 'tiny'; 'small' is the larger, more
-     * accurate pair and is only fetched when a caller actually asks for it.
+     * Which model pair to load. Defaults to the only tier there is; the option
+     * survives so a caller can be explicit and so a second tier needs no change here.
      */
     tier?: OcrModelTier
 }
@@ -535,7 +533,10 @@ export async function recognizePage(
     options: OcrOptions = {},
 ): Promise<OcrPage> {
     const base = options.base ?? DEFAULT_BASE
-    const tier = options.tier ?? 'tiny'
+    // There is one tier, so an omitted option and the default are the same value.
+    // Kept as a lookup rather than a literal so this still reads as "the caller's
+    // choice, defaulted" rather than as a hard-coded model.
+    const tier: OcrModelTier = options.tier ?? 'small'
     const progress = options.onProgress ?? (() => {})
 
     progress(0)

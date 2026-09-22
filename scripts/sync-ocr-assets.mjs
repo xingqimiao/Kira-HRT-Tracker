@@ -95,16 +95,8 @@ const SOURCE = 'https://www.modelscope.cn/models/'
  * more accurate here nor worth ~3.5× the bytes.
  */
 const TIERS = {
-  // The default pair. A first scan only ever requests these files, which is why
-  // the item names in public/ocr/ carry the tier.
-  tiny: {
-    det: { repo: 'PaddlePaddle/PP-OCRv6_tiny_det_onnx', revision: '750411b8371743f219e6fd76c33372292f55f92f', file: 'inference.onnx', out: 'tiny_det.onnx' },
-    rec: { repo: 'PaddlePaddle/PP-OCRv6_tiny_rec_onnx', revision: 'a0542d3d31b789512446abc4ddbdda0d48e764e8', file: 'inference.onnx', out: 'tiny_rec.onnx' },
-    dict: 'tiny_dict.txt',
-  },
-  // The retry pair: larger and more accurate, but only fetched when a scan asks
-  // for it (selected in Settings, or the retry button after a tiny scan came back
-  // empty). Shipped beside tiny so the retry needs no build or network step.
+  // The only pair. The item names in public/ocr/ still carry the tier prefix, which
+  // is what would let a second tier be added without touching the loader.
   small: {
     det: { repo: 'PaddlePaddle/PP-OCRv6_small_det_onnx', revision: '37b02eded8dbca659f8ee5d51f822ea1ebd9bcba', file: 'inference.onnx', out: 'small_det.onnx' },
     rec: { repo: 'PaddlePaddle/PP-OCRv6_small_rec_onnx', revision: 'ba215b1cc49d9ed4459d161b96778e8643fe0c1f', file: 'inference.onnx', out: 'small_rec.onnx' },

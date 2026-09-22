@@ -163,26 +163,12 @@ const Settings: React.FC<SettingsProps> = ({
                 <Switch checked={showVial} onChange={setShowVial} />
             </div>
 
-            {/* The lab-scan model. The labels state both sides of the trade-off —
-                the small download is the reason tiny is the default, so "faster"
-                alone would be a half-truth about the choice on offer. */}
-            <div className="w-full py-[18px] border-b border-[var(--color-m3-outline-variant)]">
-                <p className={rowLabel}>{t('settings.ocr_tier')}</p>
-                <p className={`text-xs ${muted} mt-0.5`}>{t('settings.ocr_tier_desc')}</p>
-                <div className="mt-3 flex flex-wrap gap-1" role="group" aria-label={t('settings.ocr_tier')}>
-                    {OCR_MODEL_TIERS.map(tier => (
-                        <button
-                            key={tier}
-                            type="button"
-                            aria-pressed={ocrModelTier === tier}
-                            onClick={() => setOcrModelTier(tier)}
-                            className={`m3-btn m3-btn-sm ${ocrModelTier === tier ? 'm3-btn-filled' : 'm3-btn-outlined'}`}
-                        >
-                            {t(`settings.ocr_tier.${tier}`)}
-                        </button>
-                    ))}
-                </div>
-            </div>
+            {/* The lab-scan model used to be picked here, as a trade-off between a
+                small download and accuracy. There is one model now, so there is no
+                choice to present — see the note on `OcrModelTier` in logic.ts. The
+                stored preference is still normalised on read, so a device that had
+                chosen the retired tier lands on the current one rather than on a
+                missing value. */}
 
             {/* Only meaningful in transfem mode: the anti-androgen column this
                 controls does not exist on the transmasc overview. */}

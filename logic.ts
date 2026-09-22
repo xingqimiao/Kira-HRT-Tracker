@@ -483,16 +483,28 @@ export function normalizeAntiandrogenChartMode(raw: string | null | undefined): 
  * a settings screen importing the tier type from it would pull the runtime into the
  * main bundle.
  *
- * 'tiny' is the default (a few MB); 'small' is the larger, more accurate pair and is
- * fetched only when chosen or when a tiny scan returns nothing.
+ * One tier, not two. This used to offer 'tiny' (a few MB, fast, easily beaten by a
+ * difficult form) beside 'small', with tiny as the default and small fetched only
+ * when chosen or when a tiny scan returned nothing. tiny was retired because the
+ * retry it existed for turned out to be the common case rather than the rare one:
+ * the smaller download bought a first scan that often read nothing at all. `small`
+ * is the only tier now; the type stays a union so a store entry or a synced payload
+ * naming a tier this build does not have is normalised rather than trusted.
  */
-export type OcrModelTier = 'tiny' | 'small';
+export type OcrModelTier = 'small';
 
-export const OCR_MODEL_TIERS: readonly OcrModelTier[] = ['tiny', 'small'];
+export const OCR_MODEL_TIERS: readonly OcrModelTier[] = ['small'];
 
-/** The owner chose tiny as the default; see the settings copy for the trade-off. */
-export const DEFAULT_OCR_MODEL_TIER: OcrModelTier = 'tiny';
+/** The only tier, so there is nothing to prefer. */
+export const DEFAULT_OCR_MODEL_TIER: OcrModelTier = 'small';
 
+/**
+ * Coerce anything a store or a synced payload hands us.
+ *
+ * Any other value becomes the default — including `'tiny'`, which an older build or
+ * a payload synced from one still carries. `'small'` is matched positively for that
+ * reason: the fallback is the only tier, so it must not depend on the input.
+ */
 export function normalizeOcrModelTier(raw: string | null | undefined): OcrModelTier {
     return raw === 'small' ? 'small' : DEFAULT_OCR_MODEL_TIER;
 }

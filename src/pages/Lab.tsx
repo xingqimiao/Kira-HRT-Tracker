@@ -182,7 +182,6 @@ const Lab: React.FC<LabProps> = ({
             <Collapsible open={isScanOpen}>
                 <div className="mx-auto w-full px-6 md:px-8 mb-6 max-w-2xl">
                     <LabScan
-                        tier={ocrModelTier}
                         onCancel={() => setIsScanOpen(false)}
                         onExtracted={(candidates) => {
                             setScanned(candidates);

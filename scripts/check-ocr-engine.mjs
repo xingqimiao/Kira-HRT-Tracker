@@ -212,7 +212,7 @@ function check(name, fn) {
     }
 }
 
-for (const asset of ['tiny_det.onnx', 'tiny_rec.onnx', 'tiny_dict.txt', 'small_det.onnx', 'small_rec.onnx', 'small_dict.txt']) {
+for (const asset of ['small_det.onnx', 'small_rec.onnx', 'small_dict.txt']) {
     if (!existsSync(join(OCR, asset))) {
         process.stderr.write(
             'public/ocr/' + asset + ' is missing — run:' + '\n'
@@ -226,15 +226,15 @@ const engine = await import(pathToFileURL(join(ROOT, 'src', 'utils', 'ppocr.ts')
 const { findHormoneValues } = await import(pathToFileURL(join(ROOT, 'src', 'utils', 'ocrParse.ts')).href)
 
 /**
- * Both tiers are measured, not just the shipped default.
+ * The one tier there is.
  *
- * The recorded fact this encodes: on the owner's report, tiny's recogniser reads the
- * out-of-range arrow as a trailing '1' ('雌二醇 396.53 1 <143 pmol/L'), that stray
- * number defeats the table-row fallback, and findHormoneValues returns no candidates
- * at all. small reads the row correctly. If only one tier were run, the next reader
- * would reasonably assume tiny was good enough.
+ * This used to measure both, because tiny's recogniser read the owner's real report
+ * badly enough that `findHormoneValues` returned nothing while small read the row
+ * correctly — the evidence that made tiny a wrong default. tiny is gone now, so the
+ * comparison has no second side; what remains is the assertion that the surviving
+ * tier reads the real report.
  */
-const TIERS = ['tiny', 'small']
+const TIERS = ['small']
 
 // 1. The geometry that turns detector boxes into lines, which needs no model.
 check('boxes on one visual line become one line of text', () => {
@@ -293,33 +293,8 @@ for (const [label, file] of sources) {
                 : '(nothing)') + '\n',
         )
 
-        if (label === 'the real report' && tier === 'tiny') {
-            check('tiny on the real report: empty through this harness', () => {
-                // Two different answers exist for this one image, and the difference is
-                // the path, not the tier.
-                //
-                // Through the app the tiny tier reads it: drawing to a canvas applies the
-                // screenshot's EXIF orientation and normalises the encoding, and with that
-                // input the browser returns the row. Verified by driving the real page on
-                // this file with the tier control confirmed at tiny.
-                //
-                // Through this harness it returns nothing. sharp decodes and re-encodes
-                // the same file, the pixels are handed over raw, and tiny reads the
-                // out-of-range arrow as a trailing '1' — '雌二醇 396.53 1 <143 pmol/L' —
-                // whose stray number defeats the table-row fallback.
-                //
-                // So this asserts what THIS file measures, and the message says so. The
-                // earlier version asserted "tiny fails on the real report" as a fact about
-                // the product, which is the thing that stopped being true. If this check
-                // ever starts failing, do not relax it: first find out which of the two
-                // paths changed, because they are both load-bearing.
-                assert.equal(found.length, 0, 'tiny returned: ' + JSON.stringify(found))
-            })
-            continue
-        }
-
         if (label === 'the real report') {
-            check('small on the real report: the estradiol row is read', () => {
+            check('the real report: the estradiol row is read', () => {
                 const e2 = found.find((c) => c.analyte === 'E2')
                 assert.ok(e2, 'no estradiol candidate in ' + JSON.stringify(text))
                 assert.equal(e2.value, 396.53, 'the result column, not the 143 reference bound')
