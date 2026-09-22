@@ -163,7 +163,23 @@ export default defineConfig(() => {
           // treats as a build failure, not a warning. It is the OCR engine's runtime
           // and belongs wherever the models are: fetched on first scan, then kept by
           // the runtime cache rule. Precaching it would put 14 MB on every install.
-          globIgnores: ['**/ocr/**', '**/ort-wasm*.wasm'],
+          // The language packs are the third case, and the one that is easy to get
+          // wrong: they are lazily imported, so the module graph defers them, but
+          // the precache glob sees only the emitted files and pulls all five (270 KB)
+          // onto every install anyway. The lazy import then saves nothing — the
+          // bytes are already in the cache before any of them is asked for. They are
+          // excluded here and served by the runtime rule below instead, which is
+          // what makes "load one language" mean anything.
+          //
+          // `{a,b}` braces, not `(a|b)`: the glob is minimatch, which does not read
+          // the regex alternation a POSIX-ERE habit reaches for. Written that way
+          // the pattern matches nothing and fails silently — the packs stay in the
+          // precache and the only symptom is a build that looks right.
+          globIgnores: [
+            '**/ocr/**',
+            '**/ort-wasm*.wasm',
+            'assets/{ja,ko,tr,yue,zh-TW}-*.js',
+          ],
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           runtimeCaching: [
             {
@@ -231,6 +247,42 @@ export default defineConfig(() => {
                   statuses: [0, 200]
                 }
               }
+            },
+            {
+              // Language packs, kept after the first time a reader uses them. Paired
+              // with the globIgnores entry above: without that, these five files are
+              // precached and this rule never runs.
+              //
+              // CacheFirst, not StaleWhileRevalidate: the filename carries a content
+              // hash, so a pack whose bytes changed has a different URL and a cached
+              // copy can never be stale — there is nothing to revalidate. It also
+              // keeps a language switch working offline, where a revalidate would
+              // leave the reader on the fallback for a pack already on disk.
+              //
+              // The HTML guard is the same one the OCR rule carries and for the same
+              // reason: Caddy's SPA fallback answers a missing asset path with a 200
+              // `text/html`, and a 200-only check would cache the app shell as a
+              // language pack. The reader would get the shell's markup as their
+              // interface copy and never recover, because a runtime cache outlives
+              // the worker that wrote it.
+              urlPattern: /\/assets\/(?:ja|ko|tr|yue|zh-TW)-[A-Za-z0-9_-]+\.js$/,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'i18n-packs-v1',
+                expiration: {
+                  maxEntries: 10,
+                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                },
+                cacheableResponse: { statuses: [0, 200] },
+                plugins: [
+                  {
+                    cacheWillUpdate: async ({ response }: { response: Response }) => {
+                      const type = response?.headers.get('content-type') ?? '';
+                      return /text\/html/i.test(type) ? null : response;
+                    },
+                  },
+                ],
+              },
             }
           ]
         }

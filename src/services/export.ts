@@ -30,7 +30,8 @@ const exportCompoundName = (ester: Ester): string => {
     }
 };
 import { formatDate } from '../utils/helpers';
-import { Lang, TRANSLATIONS } from '../i18n/translations';
+import type { Lang } from '../i18n/types';
+import enPack from '../i18n/langs/en';
 
 // Define the type for user-friendly export data
 interface ExportData {
@@ -110,7 +111,7 @@ export const buildPDFDocument = (data: ExportData, generatedAt = new Date()) => 
     const { events, labResults } = data;
     // Force English for PDF to avoid font issues with non-Latin characters
     const safeLang = 'en';
-    const tSafe = (key: string) => (TRANSLATIONS.en as any)[key] || key;
+    const tSafe = (key: string) => (enPack as Record<string, string>)[key] || key;
 
     const doc = new jsPDF();
 

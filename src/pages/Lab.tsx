@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import Icon from '../components/Icon';
 import { Plus, ChevronRight, Scan } from '../icons';
 import { LabResult, DoseEvent, MONITORING_UNIT, getMonitoringNotices, getRecheckReminders, visibleRecheckReminders, recheckDueKey, isMonitoringOnlyLab, monitoringValues, CalibrationMethod, CalibrationResult, CalibrationPoint, getHormoneLevelAdvisory, Ester, RecheckIntervals, OcrModelTier } from '../../logic';
-import { Lang } from '../i18n/translations';
+import type { Lang } from '../i18n/types';
 import { formatDate, formatTime, LOCALE_MAP } from '../utils/helpers';
 import LabResultForm from '../components/LabResultForm';
 import LabScan from '../components/LabScan';

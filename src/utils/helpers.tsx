@@ -1,7 +1,7 @@
 import { Syringe, Pill, Droplet, Sticker, X, FlaskConical, Atom, Shield, Hexagon, Orbit, Dna, Shell } from '../icons';
 import Icon from '../components/Icon';
 import { Route, DoseEvent, Ester, getBioavailabilityMultiplier, getToE2Factor, ExtraKey } from '../../logic';
-import { Lang } from '../i18n/translations';
+import type { Lang } from '../i18n/types';
 
 export const LOCALE_MAP: Record<Lang, string> = {
     'zh': 'zh-CN',

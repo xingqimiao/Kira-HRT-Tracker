@@ -1,4 +1,4 @@
-import { Lang } from './translations';
+import type { Lang } from './types';
 
 export interface ShareCopy {
     action: string;

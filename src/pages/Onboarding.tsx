@@ -5,7 +5,7 @@ import PixelMark, { MarkName, MarkState } from '../components/PixelMark';
 import OnboardingCurve, { useOnboardingCurve, BEATS, type Beat, type CurveData } from '../components/OnboardingCurve';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useHRTMode } from '../contexts/HRTModeContext';
-import { Lang, TRANSLATIONS } from '../i18n/translations';
+import type { Lang } from '../i18n/types';
 import CopyRow from '../components/CopyRow';
 import IntroCard from '../components/IntroCard';
 import { LabScanDemo, JournalPreview, RecheckPreview, SignInPreview, QuickAddDemo, BigLockAnimation } from '../components/OnboardingFeatures';
@@ -465,7 +465,7 @@ const PwaVisual: React.FC = () => {
 
 interface OnboardingProps {
     /** Same list Settings uses, rather than a second copy that can drift. */
-    languageOptions: { value: string; label: string }[];
+    languageOptions: { value: Lang; label: string }[];
     /** `YYYY-MM-DD`, or '' when the question was skipped. */
     hrtStartDate: string;
     /**
@@ -488,9 +488,20 @@ interface OnboardingProps {
  * that the flow exists to ask about.
  */
 const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, onHrtStartChange, onDone }) => {
-    const { t, lang, setLang } = useTranslation();
+    const { t, lang, setLang, tIn, ensureAll } = useTranslation();
     const { mode, setMode, isTransmasc } = useHRTMode();
     const curve = useOnboardingCurve(isTransmasc);
+
+    // The picker below stacks all seven subtitles in one grid cell to measure the
+    // tallest, so every pack has to be resident — not just the selected one, which
+    // is all `t()` would have loaded. Without this the options whose pack has not
+    // arrived render nothing and the row collapses to the two languages already in
+    // memory. The intro is the one screen that needs the whole set, and it is only
+    // shown before the reader has picked a language, so the cost lands here once.
+    useEffect(() => {
+        const cancel = ensureAll();
+        return cancel;
+    }, [ensureAll]);
 
     const [step, setStep] = useState(0);
     // The app's own date picker, opened from the field below and used inline.
@@ -583,9 +594,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                 <div className="mx-auto mt-3 grid max-w-sm">
                     {languageOptions.map(({ value }) => {
                         const current = value === lang;
-                        const text = current
-                            ? t(SUBTITLE_KEY)
-                            : (TRANSLATIONS as Record<string, Record<string, string>>)[value]?.[SUBTITLE_KEY];
+                        const text = tIn(value, SUBTITLE_KEY);
                         if (!text) return null;
                         return (
                             <p

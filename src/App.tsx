@@ -6,6 +6,7 @@ import { VialProvider } from './contexts/VialContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import { APP_VERSION, AppTheme, KeyColor } from './constants';
 import { DoseEvent, decompressData, encryptData, decryptData } from '../logic';
+import type { Lang } from './i18n/types';
 import { useAppData } from './hooks/useAppData';
 import { useAppNavigation, ViewKey } from './hooks/useAppNavigation';
 import { useLiveShareSync } from './hooks/useLiveShareSync';
@@ -273,7 +274,11 @@ const AppContent = () => {
         }
     }, [theme]);
 
-    const languageOptions = useMemo(() => ([
+    // Names in their own script, because a reader picking between 日本語 and 한국어
+    // recognises the one they read. Typed as `Lang` so a language added to the
+    // packs cannot be left out of the picker, and a label cannot name a language
+    // this build does not ship.
+    const languageOptions = useMemo((): { value: Lang; label: string }[] => ([
         { value: 'zh', label: '简体中文' },
         { value: 'zh-TW', label: '正體中文' },
         { value: 'yue', label: '廣東話' },

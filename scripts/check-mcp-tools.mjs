@@ -22,7 +22,7 @@
  * check the client bundle and the Markdown.
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -32,7 +32,15 @@ const read = (path) => readFileSync(join(root, path), 'utf8');
 const mcp = read('server/src/mcp.ts');
 const page = read('src/pages/McpSettings.tsx');
 const doc = read('server/MCP.md');
-const i18n = read('src/i18n/translations.ts');
+// The shipped per-language packs, not the pre-split `translations.ts`. That file
+// is a build artefact now — nothing imports it, so a check reading it would pass
+// while the packs a reader actually loads drifted out from under it.
+const packs = {};
+for (const file of readdirSync(join(root, 'src/i18n/langs'))) {
+    if (file.endsWith('.ts')) {
+        packs[file.slice(0, -3)] = (await import(`../src/i18n/langs/${file}`)).default;
+    }
+}
 
 const sorted = (names) => [...names].sort();
 
@@ -79,9 +87,10 @@ check('server/MCP.md tables list exactly those tools', () => {
 });
 
 check('the copy derives the count instead of typing it', () => {
-    const descs = [...i18n.matchAll(/"mcp\.tools_desc":\s*"([^"]*)"/g)].map((m) => m[1]);
+    const descs = Object.values(packs).map((pack) => pack['mcp.tools_desc']);
     assert.equal(descs.length, 7, `expected one tools_desc per language, found ${descs.length}`);
     for (const text of descs) {
+        assert.ok(text, 'every language needs an mcp.tools_desc');
         assert.ok(text.includes('{count}'), `mcp.tools_desc must carry {count}, got: ${text}`);
     }
     assert.match(page, /MCP_TOOLS\.length/, 'the page must render MCP_TOOLS.length as the count');

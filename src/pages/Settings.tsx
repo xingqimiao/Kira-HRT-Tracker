@@ -3,7 +3,7 @@ import Icon from '../components/Icon';
 import Switch from '../components/Switch';
 import { ChevronRight, Settings2, Database, Info, ArrowLeft, Globe, CalendarDays } from '../icons';
 import type { IconComponent } from '../icons';
-import { Lang } from '../i18n/translations';
+import type { Lang } from '../i18n/types';
 import { AppTheme } from '../constants';
 import { AntiandrogenChartMode, ANTIANDROGEN_CHART_MODES, DoseEvent, PKCustomParams, RecheckIntervals, OcrModelTier, OCR_MODEL_TIERS } from '../../logic';
 import { useHRTMode } from '../contexts/HRTModeContext';
@@ -15,7 +15,7 @@ interface SettingsProps {
     setLang: (lang: Lang) => void;
     theme: AppTheme;
     setTheme: (theme: AppTheme) => void;
-    languageOptions: { value: string; label: string }[];
+    languageOptions: { value: Lang; label: string }[];
     onImportJson: (text: string) => boolean | Promise<boolean>;
     labResults: any[];
     onExport: (encrypt: boolean, password?: string) => Promise<string | null>;

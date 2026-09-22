@@ -2,12 +2,12 @@ import React from 'react';
 import Icon from '../components/Icon';
 import { ArrowLeft, Check } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
-import { Lang } from '../i18n/translations';
+import type { Lang } from '../i18n/types';
 
 interface LanguageSettingsProps {
     lang: Lang;
     setLang: (lang: Lang) => void;
-    languageOptions: { value: string; label: string }[];
+    languageOptions: { value: Lang; label: string }[];
     onBack: () => void;
 }
 

@@ -1,7 +1,9 @@
 import React, { ReactNode } from 'react';
 import Icon from './Icon';
 import { AlertTriangle, RefreshCw } from '../icons';
-import { Lang, TRANSLATIONS } from '../i18n/translations';
+import { Lang } from '../i18n/types';
+import zhPack from '../i18n/langs/zh';
+import enPack from '../i18n/langs/en';
 
 /**
  * The crash screen reads the language straight out of storage rather than out
@@ -12,11 +14,17 @@ import { Lang, TRANSLATIONS } from '../i18n/translations';
  * that just failed would mean the error screen can fail too, and the one screen
  * that has to survive anything would be the most fragile in the app. localStorage
  * and the raw pack cannot throw here.
+ *
+ * `zh` and `en` are imported statically rather than lazily like every other pack.
+ * A crash is likeliest *before* any lazy pack has resolved — a cold start that
+ * throws during the first render — and a dynamic import here would leave the one
+ * screen that has to survive anything rendering a raw `error.title`. These two
+ * packs carry all three keys the screen uses, so the rest can stay lazy.
  */
 const tr = (key: string): string => {
     let lang: string | null = null;
     try { lang = localStorage.getItem('hrt-lang'); } catch { /* private mode */ }
-    const packs = TRANSLATIONS as unknown as Record<string, Record<string, string>>;
+    const packs = { zh: zhPack, en: enPack } as Record<Lang, Record<string, string>>;
     return packs[lang as Lang]?.[key] ?? packs.en[key] ?? packs.zh[key] ?? key;
 };
 
