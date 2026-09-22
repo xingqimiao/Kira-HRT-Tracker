@@ -13,9 +13,13 @@
  * API. The lesson is not "remember the flag" — it is that the build must check its own
  * output, exactly as `server/scripts/check-bundle.mjs` does for the server.
  *
- * A same-origin deployment (API and app on one host) legitimately omits the variable.
- * It says so explicitly with `HRT_SAME_ORIGIN=1`, which this script then asserts the
- * other way round — so the opt-out is a decision on the record, not a silence.
+ * There is no escape hatch, deliberately. An earlier version accepted
+ * `HRT_SAME_ORIGIN=1` on the theory that an app and its API could share an origin. They
+ * cannot here: every API path carries the `/hrt` mount prefix, and the prefix lives *in
+ * this value* — `VITE_API_ORIGIN=https://api.example.com/hrt`. Dropping the variable
+ * therefore drops the prefix too, so the app asks its own host for `/auth/account`, gets
+ * the SPA shell, and behaves as signed out. That is the same outage, reached through the
+ * flag meant to prevent it, which is worse than not offering one.
  *
  * Run by `npm run build` (as `postbuild`).
  */
@@ -89,6 +93,5 @@ if (!lazyChunk) {
 }
 
 console.log(
-  `check-web-bundle: ${entry} ${sameOrigin ? 'is same-origin (as declared)' : 'carries VITE_API_ORIGIN'}` +
-  `; PK engine is the lazy ${lazyChunk} — ok`,
+  `check-web-bundle: ${entry} carries VITE_API_ORIGIN; PK engine is the lazy ${lazyChunk} — ok`,
 );

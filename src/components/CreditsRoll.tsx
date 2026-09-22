@@ -507,6 +507,32 @@ export const CreditsRoll: React.FC<CreditsRollProps> = ({ onClose }) => {
     const fadeOutDuration = currentScene.fadeOut ?? 900;
     const pauseAfterDuration = currentScene.pauseAfter ?? 500;
 
+    /**
+     * How long the roll still has to run, from the scene on screen right now.
+     *
+     * The music is fitted to the picture rather than the other way round: the roll is
+     * scripted and a visitor can advance it by hand, so the picture is the one thing
+     * whose length is actually known. This is the remaining script time plus the tail
+     * `ended` holds before `handleExit` — the total the music has to cover.
+     *
+     * Recomputed per scene, so skipping ahead re-fits the track instead of leaving it
+     * playing to a finish that is no longer coming.
+     */
+    const remainingRollMs = useMemo(() => {
+        let total = 0;
+        for (let i = sceneIndex; i < SCENES.length; i++) {
+            const s = SCENES[i];
+            const isCurrent = i === sceneIndex;
+            // The current scene is already partway through, but the phase timers are
+            // re-armed from the phase's own start, so counting it whole is right.
+            total += (isCurrent ? 0 : (s.fadeIn ?? 800))
+                + (s.hold ?? 1600)
+                + (s.fadeOut ?? 900)
+                + (s.pauseAfter ?? 500);
+        }
+        return total + 1500; // the `ended` tail before handleExit
+    }, [sceneIndex]);
+
     const clearCurrentTimer = () => {
         if (timerRef.current) {
             clearTimeout(timerRef.current);
@@ -516,20 +542,30 @@ export const CreditsRoll: React.FC<CreditsRollProps> = ({ onClose }) => {
 
     // 背景音乐初始化与播放（默认音量 10%）
     //
-    // The fade is owned here and started by `stopMusic`, not left to the effect's
-    // cleanup. Cleanup only runs at *unmount*, and unmount happens a second after the
-    // exit animation begins — so closing by hand played the music through the whole
-    // close, and the fade was the last thing to happen rather than the first. The
-    // interval handle is kept so a second stop cannot leave one running, and the
-    // element is paused before the fade as a backstop: if anything goes wrong with the
-    // ramp, silence is still guaranteed.
+    // The music has to cover the whole roll and then end with it, which takes two
+    // things because the two lengths are not the same.
+    //
+    // **Cover it.** The track runs about 137 s; the roll runs about 259 s. Unlooped,
+    // the music simply ran out a little over halfway through and the rest of the
+    // credits played in silence. It loops so there is still music to fade.
+    //
+    // **End with it.** The roll is scripted and a visitor can advance it by hand, so
+    // the *picture* is the thing whose length is known. The loop has no end of its own
+    // to align with, so the fade is scheduled to finish when the roll does, from
+    // `remainingRollMs`; a manual exit starts the same ramp immediately. Both paths
+    // share one stop function, so "fade out and end" has one definition.
+    //
+    // The ramp is capped at 2s and floored at 400ms: a longer fall from a short
+    // remaining time is a cut rather than an ending, and a shorter one is audible as a
+    // click on the way to silence.
     const musicStopRef = useRef<(() => void) | null>(null);
+    const musicFadeRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         const audio = new Audio('/audio/easter-egg-music.mp3');
-        // Not looped. The roll has a scripted end, so the music should reach its own
-        // end with it rather than jumping back to the start and outliving the credits.
-        audio.loop = false;
+        // Looped so the track outlasts the roll rather than ending inside it — see the
+        // note above. The end is the fade, not the file.
+        audio.loop = true;
         audio.volume = 0.1;
         audioRef.current = audio;
 
@@ -542,33 +578,67 @@ export const CreditsRoll: React.FC<CreditsRollProps> = ({ onClose }) => {
 
         let fadeTimer: ReturnType<typeof setInterval> | null = null;
         let stopped = false;
-        const stopMusic = () => {
+        /** Ramp down to silence over `rampMs`, then stop the element outright. */
+        const fadeOut = (rampMs: number) => {
             if (stopped) return;
             stopped = true;
-            if (fadeTimer) {
-                clearInterval(fadeTimer);
-                fadeTimer = null;
-            }
-            // Down and out over ~250ms: 0.02 per 50ms step from 0.1.
+            if (fadeTimer) clearInterval(fadeTimer);
+            const stepMs = 50;
+            const step = audio.volume / Math.max(1, Math.round(rampMs / stepMs));
             fadeTimer = setInterval(() => {
-                if (audio.volume > 0.02) {
-                    audio.volume = Math.max(0, audio.volume - 0.02);
+                if (audio.volume > step) {
+                    audio.volume = Math.max(0, audio.volume - step);
                     return;
                 }
                 if (fadeTimer) clearInterval(fadeTimer);
                 fadeTimer = null;
                 audio.pause();
                 audio.currentTime = 0;
-            }, 50);
+            }, stepMs);
+        };
+        const stopMusic = () => {
+            if (musicFadeRef.current) {
+                clearTimeout(musicFadeRef.current);
+                musicFadeRef.current = null;
+            }
+            fadeOut(250);
         };
         musicStopRef.current = stopMusic;
 
         return () => {
-            stopMusic();
+            stopped = true;
+            if (fadeTimer) clearInterval(fadeTimer);
+            if (musicFadeRef.current) clearTimeout(musicFadeRef.current);
+            musicFadeRef.current = null;
+            audio.pause();
+            audio.currentTime = 0;
             musicStopRef.current = null;
             audioRef.current = null;
         };
     }, []);
+
+    // Keep the fade armed against the roll's remaining time: it must *end* with the
+    // picture, so it starts one ramp-length before then. Re-armed per scene, which is
+    // what makes skipping ahead re-fit rather than leave a stale schedule.
+    useEffect(() => {
+        if (musicFadeRef.current) {
+            clearTimeout(musicFadeRef.current);
+            musicFadeRef.current = null;
+        }
+        if (isExitingRef.current) return;
+        const rampMs = Math.min(2000, Math.max(400, Math.round(remainingRollMs / 4)));
+        const delay = Math.max(0, remainingRollMs - rampMs);
+        musicFadeRef.current = setTimeout(() => {
+            musicFadeRef.current = null;
+            musicStopRef.current?.();
+        }, delay);
+        return () => {
+            if (musicFadeRef.current) {
+                clearTimeout(musicFadeRef.current);
+                musicFadeRef.current = null;
+            }
+        };
+    }, [remainingRollMs]);
 
     // Stop as soon as the user leaves, so the music and the picture end together —
     // `handleExit` is the one path out, whether the roll finished or was closed.

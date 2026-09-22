@@ -490,9 +490,9 @@ sudo systemctl reload caddy
 
 ```bash
 cd /path/to/repo
-# The prefix is part of the API base URL the app calls. `npm run build` refuses to
-# finish without it (or an explicit HRT_SAME_ORIGIN=1), so a bare `vite build` cannot
-# ship a signed-out app by accident — see the note below.
+# The prefix is part of the API base URL the app calls, so it belongs in this value.
+# `npm run build` refuses to finish without it, so a bare `vite build` cannot ship a
+# signed-out app by accident — see the note below.
 VITE_API_ORIGIN=https://api.kiramyao.com/hrt npm run build
 # NOT `--delete`: the build does not contain public/ocr/ (that directory is generated
 # by the asset script, and this build skips it), so deleting would take the live OCR
@@ -538,9 +538,10 @@ so **the whole app behaved as signed out** while the site loaded perfectly. A mi
 flag and a broken deployment are indistinguishable from the outside, which is exactly
 why the build has to say so rather than the reader having to notice.
 
-A deployment whose API really is on the app's own origin passes `HRT_SAME_ORIGIN=1`
-instead, and the check then asserts the opposite (that no foreign host is pinned), so
-that choice is on the record rather than inferred from an omission.
+There is deliberately **no way to opt out**. An app and its API on one origin still call
+`/hrt/auth/account`, and that `/hrt` lives *inside this value* — so omitting the variable
+drops the prefix as well, and the app asks its own host for its API and receives the SPA
+shell. That is the same outage arriving through the flag that was supposed to prevent it.
 
 If you are unsure how a bundle was built:
 
