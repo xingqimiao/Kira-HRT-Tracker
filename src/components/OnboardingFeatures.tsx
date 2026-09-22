@@ -258,6 +258,11 @@ export const LabScanDemo: React.FC = () => {
  * 3: Dropdown closes, success "Logged [Morning EV 2mg] · Undo" toast appears (2600ms)
  * 4: Holds for 1000ms, then smoothly resets and loops back to 0!
  */
+/** The demo menu's natural height, in px — measured, see the stage below. */
+const MENU_H = 132
+/** The demo toast's natural height, in px — measured, see the stage below. */
+const TOAST_H = 58
+
 export const QuickAddDemo: React.FC = () => {
     const { t, lang } = useTranslation();
     const [phase, setPhase] = useState<0 | 1 | 2 | 3>(0);
@@ -282,10 +287,10 @@ export const QuickAddDemo: React.FC = () => {
     }, [phase]);
 
     return (
-        <div className="relative flex min-h-[175px] w-full flex-col items-center justify-start p-2 select-none">
+        <div className="relative flex w-full flex-col items-center p-2 select-none">
             {/* The trigger button */}
             <div
-                className={`inline-flex h-11 items-center gap-2 rounded-lg border border-[var(--color-m3-outline-variant)] px-4 text-sm font-medium transition-colors ${
+                className={`inline-flex h-11 items-center gap-2 rounded-lg border border-[var(--color-m3-outline-variant)] px-4 text-sm font-medium transition-colors duration-200 ${
                     phase >= 1 && phase < 3
                         ? 'bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-surface)]'
                         : 'bg-[var(--color-m3-surface-container)] text-[var(--color-m3-on-surface-variant)]'
@@ -300,14 +305,37 @@ export const QuickAddDemo: React.FC = () => {
                 />
             </div>
 
-            {/* The opened dropdown list */}
-            {phase >= 1 && phase < 3 && (
-                <div className="mt-2 w-full max-w-[260px] overflow-hidden rounded-xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-lowest)] py-1 shadow-md">
+            {/*
+              The stage animates its own HEIGHT rather than reserving a fixed one.
+              The old version mounted the menu and unmounted the toast, so the card's
+              height changed instantly with the phase and the whole step jumped under
+              the reader — twice per loop. A fixed reserved height would stop the jump
+              but leave a dead gap whenever the demo is at rest, so the height is
+              tweened instead: it opens as the menu arrives and closes as the toast
+              leaves, and the two cross-fade inside it. Menu and toast are absolutely
+              positioned so neither can drive the height itself.
+
+              The open height must clear the MENU, not the shorter toast. Both are
+              measured (127px and 54px); the values below are those plus a few pixels
+              so a subpixel rounding cannot clip the second template row.
+            */}
+            <div
+              className="relative mt-2 w-full max-w-[260px] transition-[height] duration-300 ease-out"
+              style={{ height: phase >= 1 && phase < 3 ? MENU_H : phase === 3 ? TOAST_H : 0 }}
+            >
+                <div
+                    aria-hidden={!(phase >= 1 && phase < 3)}
+                    className={`absolute inset-x-0 top-0 overflow-hidden rounded-xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-lowest)] py-1 shadow-md transition-all duration-200 ease-out ${
+                        phase >= 1 && phase < 3
+                            ? 'translate-y-0 scale-100 opacity-100'
+                            : 'pointer-events-none -translate-y-1.5 scale-[0.97] opacity-0'
+                    }`}
+                >
                     <div
-                        className={`block w-full border-b border-[var(--color-m3-outline-variant)] px-3.5 py-2.5 text-left transition-colors ${
+                        className={`block w-full border-b border-[var(--color-m3-outline-variant)] px-3.5 py-2.5 text-left transition-colors duration-200 ${
                             phase === 2
                                 ? 'bg-[var(--color-m3-primary)] text-[var(--color-m3-on-primary)]'
-                                : 'hover:bg-[var(--color-m3-surface-container)] text-[var(--color-m3-on-surface)]'
+                                : 'text-[var(--color-m3-on-surface)]'
                         }`}
                     >
                         <span className="block text-sm font-semibold">{tplName1}</span>
@@ -326,11 +354,16 @@ export const QuickAddDemo: React.FC = () => {
                         </span>
                     </div>
                 </div>
-            )}
 
-            {/* The success UndoBanner toast */}
-            {phase === 3 && (
-                <div className="mt-3 inline-flex items-center gap-2.5 rounded-xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-highest)] px-4 py-2.5 shadow-md">
+                {/* The success UndoBanner toast, in the same slot. */}
+                <div
+                    aria-hidden={phase !== 3}
+                    className={`absolute inset-x-0 top-0 inline-flex items-center gap-2.5 rounded-xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-highest)] px-4 py-2.5 shadow-md transition-all duration-200 ease-out ${
+                        phase === 3
+                            ? 'translate-y-0 scale-100 opacity-100'
+                            : 'pointer-events-none translate-y-2 scale-[0.97] opacity-0'
+                    }`}
+                >
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-m3-primary)] text-[var(--color-m3-on-primary)]">
                         <Icon icon={Check} size={13} strokeWidth={2.5} />
                     </span>
@@ -342,7 +375,7 @@ export const QuickAddDemo: React.FC = () => {
                         <span>{t('quickadd.undo')}</span>
                     </span>
                 </div>
-            )}
+            </div>
         </div>
     );
 };
@@ -437,72 +470,110 @@ export const SignInPreview: React.FC = () => {
 };
 
 /**
- * A big open padlock that snaps shut, holds for 1.4s, then unlocks to loop.
+ * A big padlock that swings shut and loops.
+ *
+ * The beat, in order, as asked: the shackle's **left arm lifts first** (it pivots about
+ * the left of the body, so the arc travels left-to-right), then the whole lock **scales
+ * up** as the arm comes down and the bolt strikes home, then it **settles back** to its
+ * resting size, holds, and loops.
+ *
+ * Three phases rather than the old open/closed toggle, because two states could not
+ * express "lifts → grows → locks → shrinks"; a bare flip jumped straight to the closed
+ * pose with no wind-up.
+ *
+ * ── Colour: paired container/content roles, in both themes ───────────────────
+ *
+ * Every part is named by a *pair* — `primary` / `on-primary`, `surface-container-highest`
+ * / `on-surface` — rather than mixing a fill from one family with an ink from another.
+ * A container/content pair is the only colour combination M3 guarantees contrast for, so
+ * the lock reads the same in light and dark without a second rule; the previous version
+ * hard-coded `surface-container-high` for the body against a `surface` step that the
+ * privacy page does not use, which is why it looked wrong in one of the two themes.
  */
 export const BigLockAnimation: React.FC = () => {
-    const [locked, setLocked] = useState(false);
+    // 0 open · 1 lifting / growing · 2 locked · 3 the hold before the loop.
+    const [phase, setPhase] = useState<0 | 1 | 2 | 3>(0);
 
     useEffect(() => {
-        let timer: number;
-        if (!locked) {
-            timer = window.setTimeout(() => setLocked(true), 800);
-        } else {
-            timer = window.setTimeout(() => setLocked(false), 1400);
-        }
+        const next: Record<0 | 1 | 2 | 3, { to: 0 | 1 | 2 | 3; ms: number }> = {
+            0: { to: 1, ms: 700 },   // rest, then the arm begins to lift
+            1: { to: 2, ms: 620 },   // arm down, lock grows and shuts
+            2: { to: 3, ms: 420 },   // settle back to size
+            3: { to: 0, ms: 1500 },  // hold the locked pose, then loop
+        };
+        const step = next[phase];
+        const timer = window.setTimeout(() => setPhase(step.to), step.ms);
         return () => window.clearTimeout(timer);
-    }, [locked]);
+    }, [phase]);
+
+    const lifted = phase === 0;          // arm up, bolt open
+    const growing = phase === 1;         // mid-swing: the whole lock swells
+    const locked = phase >= 2;           // home, and the keyhole lit
 
     return (
         <div className="flex w-full items-center justify-center py-4 select-none">
             <svg
                 viewBox="0 0 96 116"
-                width={84}
-                height={102}
+                /* Bigger than before, as asked: the lock is the page's one image. */
+                width={132}
+                height={160}
                 className="overflow-visible"
                 aria-hidden="true"
             >
-                {/* Shackle */}
+                {/* The whole body swells mid-swing, then settles. Origin is the bottom of
+                    the body, so it grows upward and does not drift off the baseline. */}
                 <g
-                    className="transition-transform duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
+                    className="transition-transform duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
                     style={{
-                        transformOrigin: '28px 46px',
-                        transform: locked ? 'none' : 'translateY(-16px) rotate(-16deg)',
+                        transformOrigin: '48px 102px',
+                        transform: growing ? 'scale(1.14)' : 'scale(1)',
                     }}
                 >
-                    <path
-                        d="M28 50 V 28 A 20 20 0 0 1 68 28 V 50"
-                        fill="none"
+                    {/* Shackle. Pivoting at the body's LEFT shoulder is what makes the arm
+                        rise on the left and travel right as it closes. */}
+                    <g
+                        className="transition-transform duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
+                        style={{
+                            transformOrigin: '28px 46px',
+                            transform: lifted
+                                ? 'translateY(-20px) rotate(-26deg)'
+                                : phase === 1
+                                    ? 'rotate(-8deg)'
+                                    : 'none',
+                        }}
+                    >
+                        <path
+                            d="M28 50 V 28 A 20 20 0 0 1 68 28 V 50"
+                            fill="none"
+                            stroke="var(--color-m3-primary)"
+                            strokeWidth="9"
+                            strokeLinecap="round"
+                        />
+                    </g>
+
+                    {/* Body. `primary-container` / `on-primary-container` is the pair the
+                        keyhole is drawn in, so body and bolt are guaranteed to contrast. */}
+                    <rect
+                        x="16"
+                        y="46"
+                        width="64"
+                        height="56"
+                        rx="16"
+                        fill="var(--color-m3-primary-container)"
                         stroke="var(--color-m3-primary)"
-                        strokeWidth="9"
-                        strokeLinecap="round"
+                        strokeWidth="2.5"
                     />
+
+                    {/* Keyhole — one colour for the circle and the slot, so it reads as one
+                        shape rather than a dot over a bar. */}
+                    <g
+                        fill={locked ? 'var(--color-m3-primary)' : 'var(--color-m3-on-primary-container)'}
+                        className="transition-[fill] duration-300"
+                    >
+                        <circle cx="48" cy="68" r="5.5" />
+                        <path d="M45 71 L 43.5 86 H 52.5 L 51 71 Z" />
+                    </g>
                 </g>
-
-                {/* Lock Body */}
-                <rect
-                    x="16"
-                    y="46"
-                    width="64"
-                    height="56"
-                    rx="16"
-                    fill="var(--color-m3-surface-container-high)"
-                    stroke="var(--color-m3-outline-variant)"
-                    strokeWidth="2.5"
-                />
-
-                {/* Keyhole */}
-                <circle
-                    cx="48"
-                    cy="68"
-                    r="5"
-                    fill={locked ? 'var(--color-m3-primary)' : 'var(--color-m3-on-surface-variant)'}
-                    className="transition-colors duration-200"
-                />
-                <path
-                    d="M45.5 70 L 44 85 H 52 L 50.5 70 Z"
-                    fill={locked ? 'var(--color-m3-primary)' : 'var(--color-m3-on-surface-variant)'}
-                    className="transition-colors duration-200"
-                />
             </svg>
         </div>
     );

@@ -14,6 +14,7 @@ import DateTimePicker from '../components/DateTimePicker';
 import { Check, Plus, ChevronDown, Cloud, AlertTriangle } from '../icons';
 import { buildMcpInstallPrompt } from '../utils/mcpInstallPrompt';
 import { LOCALE_MAP } from '../utils/helpers';
+import { usePresence } from '../hooks/usePresence';
 
 const ONBOARDING_KEY = 'app-onboarded';
 
@@ -494,6 +495,10 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
     const [step, setStep] = useState(0);
     // The app's own date picker, opened from the field below and used inline.
     const [isStartPickerOpen, setIsStartPickerOpen] = useState(false);
+    // Kept mounted through the close so the collapsing box has the picker in it —
+    // DateTimePicker returns null when `isOpen` is false, so without this the exit
+    // would animate an empty frame. Paired with the grid-rows disclosure below.
+    const { mounted: startPickerMounted } = usePresence(isStartPickerOpen, 250);
     // The native picker is capped at today: a start date in the future would
     // make the account line read as a negative — or be discarded — either way
     // the input would be the only place the mistake was visible.
@@ -698,10 +703,16 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                             </button>
                         )}
                     </div>
-                    {isStartPickerOpen && (
+                    {/* The picker used to appear by mounting, so the field grew by the
+                        picker's full height in one frame — the step jumped. Same
+                        grid-rows disclosure the app's other expandables use (see
+                        Collapsible), with the picker held mounted through the close so
+                        there is something to show on the way out. */}
+                    <div className={`grid transition-[grid-template-rows] duration-[250ms] ease-out ${isStartPickerOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+                      <div className={`overflow-hidden transition-opacity duration-[250ms] ease-out ${isStartPickerOpen ? 'opacity-100' : 'opacity-0'}`}>
                         <div className="rounded-lg border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-low)] p-2">
                             <DateTimePicker
-                                isOpen={isStartPickerOpen}
+                                isOpen={startPickerMounted}
                                 inline
                                 mode="date"
                                 onClose={() => setIsStartPickerOpen(false)}
@@ -730,7 +741,8 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                                 </div>
                             )}
                         </div>
-                    )}
+                      </div>
+                    </div>
                     <span className="text-m3-body-medium text-[var(--color-m3-on-surface-variant)]">
                         {t('onboarding.start_hint')}
                     </span>
@@ -829,18 +841,27 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
             <p className="mt-2 text-m3-body-large intro-muted">{t('onboarding.mcp_more')}</p>
         </div>,
 
-        <div key="privacy" className="flex h-full flex-col justify-center pt-4 text-center">
-            <BigLockAnimation />
-            <div className="pt-2">
-                <h1 className="intro-title text-m3-headline-medium md:text-m3-display-small font-bold leading-tight break-words">
+        <div key="privacy" className="flex min-h-[68vh] flex-col items-center pt-2 text-center">
+            {/* Lock and heading grouped, so the pair sits at the top of the step. */}
+            <div className="flex flex-col items-center">
+                <BigLockAnimation />
+                {/* The heading is the page, so it takes the largest type in the app
+                    (display-large, 57px) rather than a headline. `text-balance` keeps
+                    the three lines from ending on a lone word at this size. */}
+                <h1 className="intro-title mt-2 text-balance text-m3-display-large font-bold leading-[1.06] break-words">
                     {t('onboarding.privacy_title_1')}<br />
                     <span className="text-[var(--color-m3-primary)]">{t('onboarding.privacy_title_highlight')}</span><br />
                     {t('onboarding.privacy_title_2')}
                 </h1>
-                <p className="mt-3 text-m3-body-large intro-muted">
+            </div>
+            {/* The rest sits at the foot of the step — `mt-auto` against the step's own
+                min-height, so the lock and the sentence stand alone up top and the
+                explanation reads as a footnote rather than a subtitle. */}
+            <div className="mt-auto w-full pb-2 pt-8">
+                <p className="text-m3-body-large intro-muted">
                     {t('onboarding.privacy_subtitle')}
                 </p>
-                <div className="mt-6 flex items-center justify-center gap-3 rounded-2xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container)] p-4 text-start">
+                <div className="mx-auto mt-4 flex max-w-md items-center justify-center gap-3 rounded-2xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container)] p-4 text-start">
                     <Icon icon={Cloud} size={24} className="shrink-0 text-[var(--color-m3-primary)]" />
                     <p className="text-m3-body-medium text-[var(--color-m3-on-surface)] leading-relaxed">
                         {t('onboarding.privacy_cloud_note')}
