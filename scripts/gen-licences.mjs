@@ -68,6 +68,35 @@ const UPSTREAM_WORKS = [
         noLicence: false,
         copyright: 'Copyright (c) 2025 Joseph Smirnova Oyama',
     },
+    // --- Cited references ---------------------------------------------------
+    //
+    // Not forks and not dependencies: no code is taken from either. They are the
+    // sources the app's dose ranges, monitoring thresholds and a few model
+    // parameters are derived from, and each is credited where it is used (the
+    // monitoring notices and the injection guide each link the page they quote).
+    // They are listed here so this page is a complete account of what the app
+    // rests on rather than only the parts that happen to be software. Facts are
+    // not copyrightable; the attribution is still the honest thing, and this page
+    // exists to be honest about exactly this.
+    {
+        name: 'MtF.wiki',
+        url: 'https://mtf.wiki/',
+        roleKey: 'licence.reference_mtfwiki',
+        licence: 'reference, not a dependency',
+        // Neither `noLicence` nor `granted`: those two describe a *repository* and the
+        // permission to reuse its code. This is a citation — different category, so it
+        // gets its own flag rather than borrowing one whose sentence would be false.
+        referenceOnly: true,
+        copyright: 'MtF.wiki contributors',
+    },
+    {
+        name: 'Transfeminine Science',
+        url: 'https://transfemscience.org/',
+        roleKey: 'licence.reference_tfs',
+        licence: 'reference, not a dependency',
+        referenceOnly: true,
+        copyright: 'Aly W. and contributors',
+    },
     {
         name: 'Transmtf-HRT-Tracker',
         url: 'https://github.com/TransmtfTeam/Transmtf-HRT-Tracker',
@@ -148,13 +177,22 @@ const out = [
     '    roleKey: string;',
     '    /** `none declared` is a real answer — see the note in the generator. */',
     '    licence: string;',
-    '    noLicence: boolean;',
+    '    /**',
+    '     * No LICENCE file in the repository, and none claimed. Optional because a cited',
+    '     * reference is neither licensed nor unlicensed — see `referenceOnly`.',
+    '     */',
+    '    noLicence?: boolean;',
     '    /**',
     '     * Permission exists by correspondence rather than by a file in the upstream',
     '     * repository. Rendered as a note explaining the grant and its non-commercial',
     '     * limit, because neither is visible from that repository.',
     '     */',
     '    granted?: boolean;',
+    '    /**',
+    '     * A cited reference, not a repository whose code was reused. Its own flag so the',
+    '     * "no LICENCE file in the repository" sentence is not applied to a website.',
+    '     */',
+    '    referenceOnly?: boolean;',
     '    copyright?: string;',
     '}',
     '',

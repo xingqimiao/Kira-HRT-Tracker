@@ -13,13 +13,22 @@ export interface UpstreamWork {
     roleKey: string;
     /** `none declared` is a real answer — see the note in the generator. */
     licence: string;
-    noLicence: boolean;
+    /**
+     * No LICENCE file in the repository, and none claimed. Optional because a cited
+     * reference is neither licensed nor unlicensed — see `referenceOnly`.
+     */
+    noLicence?: boolean;
     /**
      * Permission exists by correspondence rather than by a file in the upstream
      * repository. Rendered as a note explaining the grant and its non-commercial
      * limit, because neither is visible from that repository.
      */
     granted?: boolean;
+    /**
+     * A cited reference, not a repository whose code was reused. Its own flag so the
+     * "no LICENCE file in the repository" sentence is not applied to a website.
+     */
+    referenceOnly?: boolean;
     copyright?: string;
 }
 
@@ -54,6 +63,22 @@ export const UPSTREAM_WORKS: UpstreamWork[] = [
         "licence": "MIT",
         "noLicence": false,
         "copyright": "Copyright (c) 2025 Joseph Smirnova Oyama"
+    },
+    {
+        "name": "MtF.wiki",
+        "url": "https://mtf.wiki/",
+        "roleKey": "licence.reference_mtfwiki",
+        "licence": "reference, not a dependency",
+        "referenceOnly": true,
+        "copyright": "MtF.wiki contributors"
+    },
+    {
+        "name": "Transfeminine Science",
+        "url": "https://transfemscience.org/",
+        "roleKey": "licence.reference_tfs",
+        "licence": "reference, not a dependency",
+        "referenceOnly": true,
+        "copyright": "Aly W. and contributors"
     },
     {
         "name": "Transmtf-HRT-Tracker",

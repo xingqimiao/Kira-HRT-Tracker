@@ -36,6 +36,9 @@
  * merge runs unchanged and its tested rules keep applying.
  */
 import type { SyncPayload } from './coreSync';
+// Value import, and the shape itself rather than a copy of it: a kind added to that
+// list is carried here without this file being touched.
+import { RECORD_KINDS } from '../utils/syncMerge';
 
 /** Records the server stores: `kind` is coarse, `data` is the payload. */
 export interface RecordDoc {
@@ -149,7 +152,15 @@ export function payloadToRecords(payload: SyncPayload): RecordDoc[] {
             push(`journal:${mode}:${id}`, 'journal', takenAt, entry);
         }
 
-        for (const kind of ['events', 'labResults', 'doseTemplates'] as const) {
+        // Every kind that can be deleted, driven by the tombstone shape rather than a
+        // hand-written list.
+        //
+        // The list used to name only events, labResults and doseTemplates, so a
+        // `journal` or `quickDoses` deletion was recorded locally and never uploaded —
+        // the cloud kept the record and the next sync brought it straight back. That is
+        // the "I deleted it and it came back" report, and it was true of journal
+        // entries as well as quick-dose buttons.
+        for (const kind of RECORD_KINDS) {
             const map = block.deletions?.[kind];
             if (!map || Object.keys(map).length === 0) continue;
             const newest = Math.max(...Object.values(map).filter((v) => Number.isFinite(v)), 0);

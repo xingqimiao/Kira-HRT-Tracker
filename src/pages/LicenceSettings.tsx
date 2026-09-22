@@ -95,6 +95,16 @@ const LicenceSettings: React.FC<LicenceSettingsProps> = ({ onBack, appVersion })
                                         {t('licence.no_licence_note')}
                                     </p>
                                 )}
+                                {/* A cited reference says something different from a
+                                    repository: there is no LICENCE file to be missing,
+                                    because no code was taken. Without its own branch
+                                    these two read as "unlicensed repository", which is
+                                    both false and alarming. */}
+                                {work.referenceOnly && (
+                                    <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)] ">
+                                        {t('licence.reference_note')}
+                                    </p>
+                                )}
                                 {/* A grant is not a public licence: it exists because the
                                     copyright holder said yes, and it is narrower than one
                                     (non-commercial). Neither fact is visible from their

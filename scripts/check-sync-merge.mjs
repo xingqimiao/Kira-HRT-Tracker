@@ -34,6 +34,7 @@ const {
   fingerprintState,
   APP_SETTING_KEYS,
   SYNC_SCALARS,
+  RECORD_KINDS,
 } = await import('../src/utils/syncMerge.ts');
 const { payloadToRecords, recordsToPayload } = await import('../src/services/recordDocs.ts');
 const { toLocalPayload } = await import('../src/services/coreSync.ts');
@@ -199,6 +200,23 @@ check('a record with no stamp cannot undo a deletion', () => {
   local.modes.transfem.deletions.events = { e1: 2000 };
   const merged = mergeSyncStates(local, emptySyncState()).merged.modes.transfem.events;
   assert.deepEqual(merged, [], 'no stamp means the tombstone still wins');
+});
+
+check('every kind of deletion reaches the wire', () => {
+  // A tombstone that stays on the device is not a deletion: the cloud keeps the record
+  // and the next sync brings it back. `journal` and `quickDoses` were missing from the
+  // list in recordDocs.ts, so deleting either was local-only — this is the assertion
+  // that would have caught it, and it is driven by RECORD_KINDS so a new kind is
+  // covered the moment it exists.
+  const s = modeWith('transfem', {});
+  s.modes.transfem.deletions = {
+    events: { e1: 1000 }, labResults: { l1: 1000 }, doseTemplates: { t1: 1000 },
+    journal: { j1: 1000 }, quickDoses: { q1: 1000 },
+  };
+  const ids = payloadToRecords(s).map(d => d.id);
+  for (const kind of RECORD_KINDS) {
+    assert.ok(ids.includes(`del:transfem:${kind}`), `no deletion record for ${kind}`);
+  }
 });
 
 check('deleting a quick dose is expressible and sticks', () => {

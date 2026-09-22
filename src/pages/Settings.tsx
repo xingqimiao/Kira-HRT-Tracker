@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import Icon from '../components/Icon';
 import Switch from '../components/Switch';
-import { ChevronRight, Settings2, Database, Info, ArrowLeft, Globe, CalendarDays } from '../icons';
+import { ChevronRight, Settings2, Database, Info, ArrowLeft, Globe, CalendarDays, Check } from '../icons';
 import type { IconComponent } from '../icons';
 import type { Lang } from '../i18n/types';
 import { AppTheme } from '../constants';
@@ -177,23 +177,43 @@ const Settings: React.FC<SettingsProps> = ({
             {/* Which engine computes the curve. Transfem only: the Transmtf engine
                 has no testosterone model, so on a transmasc account the choice would
                 do nothing — and a control that silently does nothing is worse than no
-                control. The description says so where the reader would look for it. */}
+                control.
+
+                Stacked cards rather than a row of pills, because the names alone say
+                nothing: "Built-in" and "Transmtf" are not descriptions, and a reader
+                choosing between two models needs to know what changes. Each option
+                carries its own sentence, and the selected one also says that it is. */}
             {mode === 'transfem' && (
                 <div className="w-full py-[18px] border-b border-[var(--color-m3-outline-variant)]">
                     <p className={rowLabel}>{t('settings.pk_engine')}</p>
                     <p className={`text-xs ${muted} mt-0.5`}>{t('settings.pk_engine_desc')}</p>
-                    <div className="mt-3 flex flex-wrap gap-1" role="group" aria-label={t('settings.pk_engine')}>
-                        {PK_ENGINES.map(id => (
-                            <button
-                                key={id}
-                                type="button"
-                                aria-pressed={pkEngine === id}
-                                onClick={() => setPkEngine(id)}
-                                className={`m3-btn m3-btn-sm ${pkEngine === id ? 'm3-btn-filled' : 'm3-btn-outlined'}`}
-                            >
-                                {t(`settings.pk_engine.${id}`)}
-                            </button>
-                        ))}
+                    <div className="mt-3 flex flex-col gap-2" role="group" aria-label={t('settings.pk_engine')}>
+                        {PK_ENGINES.map(id => {
+                            const active = pkEngine === id;
+                            return (
+                                <button
+                                    key={id}
+                                    type="button"
+                                    aria-pressed={active}
+                                    onClick={() => setPkEngine(id)}
+                                    className={`w-full text-start rounded-[var(--radius-lg)] border p-3 transition-colors ${
+                                        active
+                                            ? 'border-[var(--color-m3-primary)] bg-[var(--color-m3-surface-container)] '
+                                            : 'border-[var(--color-m3-outline-variant)]  hover:border-[var(--color-m3-outline)] '
+                                    }`}
+                                >
+                                    <span className="flex items-center justify-between gap-2">
+                                        <span className={`text-sm font-medium ${active ? 'text-[var(--color-m3-primary)]' : on}`}>
+                                            {t(`settings.pk_engine.${id}`)}
+                                        </span>
+                                        {active && <Icon icon={Check} size={15} className="shrink-0 text-[var(--color-m3-primary)]" strokeWidth={2.5} />}
+                                    </span>
+                                    <span className={`mt-1 block text-xs leading-relaxed ${muted}`}>
+                                        {t(`settings.pk_engine.${id}_note`)}
+                                    </span>
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
             )}
