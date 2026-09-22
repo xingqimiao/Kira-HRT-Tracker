@@ -194,8 +194,14 @@ const DateTimePicker: React.FC<DateTimePickerProps> = ({
 
     const currentYear = new Date().getFullYear();
     const years = useMemo(() => {
-        const first = Math.min(2015, selectedDate.getFullYear());
-        const last = Math.max(currentYear + 10, selectedDate.getFullYear());
+        // History only: years run from 2000 up to *this* year, recomputed on every
+        // render so the ceiling advances on its own each January. A date already
+        // stored outside that window (an import, or a share expiring into next year)
+        // still has to be representable, or the picker would list a year it cannot
+        // show — so the window stretches to include the current selection.
+        const selectedYear = selectedDate.getFullYear();
+        const first = Math.min(2000, selectedYear);
+        const last = Math.max(currentYear, selectedYear);
         return Array.from({ length: last - first + 1 }, (_, index) => first + index);
     }, [currentYear, selectedDate]);
 

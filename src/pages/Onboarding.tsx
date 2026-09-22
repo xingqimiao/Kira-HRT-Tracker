@@ -726,20 +726,6 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                                 initialDate={hrtStartDate ? fromYmd(hrtStartDate) : new Date()}
                                 title={t('onboarding.start_label')}
                             />
-                            {hrtStartDate && (
-                                <div className="mt-1 flex justify-end">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            onHrtStartChange('');
-                                            setIsStartPickerOpen(false);
-                                        }}
-                                        className="text-xs font-medium text-[var(--color-m3-primary)] hover:underline"
-                                    >
-                                        {t('onboarding.start_clear')}
-                                    </button>
-                                </div>
-                            )}
                         </div>
                       </div>
                     </div>
