@@ -480,80 +480,99 @@ export const SignInPreview: React.FC = () => {
 };
 
 /**
- * A big padlock that swings shut and loops.
+ * A big padlock whose shackle swings shut from the left, and loops.
  *
- * The beat, in order, as asked: the shackle's **left arm lifts first** (it pivots about
- * the left of the body, so the arc travels left-to-right), then the whole lock **scales
- * up** as the arm comes down and the bolt strikes home, then it **settles back** to its
- * resting size, holds, and loops.
+ * ── The pose, which is the thing being fixed ─────────────────────────────────
  *
- * Three phases rather than the old open/closed toggle, because two states could not
- * express "lifts → grows → locks → shrinks"; a bare flip jumped straight to the closed
- * pose with no wind-up.
+ * The body sits to the RIGHT of the frame; the shackle's hinge is at its top-left
+ * corner. Detached, the shackle hangs to the left of that hinge — hooked over, the way
+ * an open padlock actually sits in a hand — and the beat is the arm swinging from there
+ * **back to the right** until its free end drops into the body and the bar closes.
+ *
+ * That ordering is why the pivot is at the body's top-left and the open pose pushes the
+ * arm left and down: rotating the wrong way about the wrong corner gives a shackle that
+ * flies off the body instead of one that hinges on it.
+ *
+ * ── Three phases, not a two-state flip ───────────────────────────────────────
+ *
+ * `open → swinging → shut`, plus a hold. A bare open/closed toggle could not carry the
+ * swell on the swing, and it jumped between poses with no wind-up.
  *
  * ── Colour: paired container/content roles, in both themes ───────────────────
  *
- * Every part is named by a *pair* — `primary` / `on-primary`, `surface-container-highest`
- * / `on-surface` — rather than mixing a fill from one family with an ink from another.
- * A container/content pair is the only colour combination M3 guarantees contrast for, so
- * the lock reads the same in light and dark without a second rule; the previous version
- * hard-coded `surface-container-high` for the body against a `surface` step that the
- * privacy page does not use, which is why it looked wrong in one of the two themes.
+ * Every part is named by a *pair* — `primary` / `primary-container`,
+ * `primary-container` / `on-primary-container` — since a container/content pair is the
+ * only combination M3 guarantees contrast for. That is what lets one drawing serve both
+ * themes; the earlier version mixed a fill from one family with an ink from another and
+ * hard-coded a surface step, so it read wrong in one of the two.
  */
 export const BigLockAnimation: React.FC = () => {
-    // 0 open · 1 lifting / growing · 2 locked · 3 the hold before the loop.
+    // 0 open (arm parked left) · 1 swinging home · 2 shut · 3 the hold before the loop.
     const [phase, setPhase] = useState<0 | 1 | 2 | 3>(0);
 
     useEffect(() => {
         const next: Record<0 | 1 | 2 | 3, { to: 0 | 1 | 2 | 3; ms: number }> = {
-            0: { to: 1, ms: 700 },   // rest, then the arm begins to lift
-            1: { to: 2, ms: 620 },   // arm down, lock grows and shuts
-            2: { to: 3, ms: 420 },   // settle back to size
-            3: { to: 0, ms: 1500 },  // hold the locked pose, then loop
+            0: { to: 1, ms: 900 },   // rest in the open pose
+            1: { to: 2, ms: 520 },   // the swing, and the swell that goes with it
+            2: { to: 3, ms: 380 },   // settle back to size, bar home
+            3: { to: 0, ms: 1500 },  // hold it shut, then loop
         };
         const step = next[phase];
         const timer = window.setTimeout(() => setPhase(step.to), step.ms);
         return () => window.clearTimeout(timer);
     }, [phase]);
 
-    const lifted = phase === 0;          // arm up, bolt open
-    const growing = phase === 1;         // mid-swing: the whole lock swells
-    const locked = phase >= 2;           // home, and the keyhole lit
+    const open = phase === 0;            // arm parked out to the left
+    const swinging = phase === 1;        // mid-travel, and the lock swells
+    const shut = phase >= 2;             // bar home, keyhole lit
 
     return (
         <div className="flex w-full items-center justify-center py-4 select-none">
             <svg
-                viewBox="0 0 96 116"
+                viewBox="0 0 112 116"
                 /* Bigger than before, as asked: the lock is the page's one image. */
-                width={132}
-                height={160}
+                width={156}
+                height={162}
                 className="overflow-visible"
                 aria-hidden="true"
             >
-                {/* The whole body swells mid-swing, then settles. Origin is the bottom of
-                    the body, so it grows upward and does not drift off the baseline. */}
+                {/* The whole lock swells mid-swing, then settles. Origin is the bottom of
+                    the body, so it grows upward instead of drifting off the baseline. */}
                 <g
-                    className="transition-transform duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
+                    className="transition-transform duration-450 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
                     style={{
-                        transformOrigin: '48px 102px',
-                        transform: growing ? 'scale(1.14)' : 'scale(1)',
+                        transformOrigin: '70px 102px',
+                        transform: swinging ? 'scale(1.13)' : 'scale(1)',
                     }}
                 >
-                    {/* Shackle. Pivoting at the body's LEFT shoulder is what makes the arm
-                        rise on the left and travel right as it closes. */}
+                    {/* Shackle, hinged on its OWN left leg rather than on the body. Rotating
+                        about the body's corner translates the whole arc, so the shut pose
+                        could never be the upright leg-and-top-path — the arm ended up
+                        hanging beside the body instead of seated in it. Pivoting on the leg
+                        keeps the seated end fixed and swings only the free end, which is
+                        what an open padlock actually does.
+
+                        Open parks the arm out to the LEFT and a little down; the swing
+                        brings it back to the upright path whose free end meets the body's
+                        top edge. */}
                     <g
-                        className="transition-transform duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
+                        className="transition-transform duration-450 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
                         style={{
-                            transformOrigin: '28px 46px',
-                            transform: lifted
-                                ? 'translateY(-20px) rotate(-26deg)'
-                                : phase === 1
-                                    ? 'rotate(-8deg)'
+                            transformOrigin: '46px 50px',
+                            transform: open
+                                ? 'translate(-9px, 8px) rotate(-38deg)'
+                                : swinging
+                                    ? 'rotate(-14deg)'
                                     : 'none',
                         }}
                     >
+                        {/* 20 units wide, against a body 64 wide starting at 38 — so the
+                            legs sit at 46 and 66, both INSIDE the body's top edge rather
+                            than one straddling it. A wider arc put the left leg outside
+                            the body, which is the tell that the shackle does not belong
+                            to the lock. */}
                         <path
-                            d="M28 50 V 28 A 20 20 0 0 1 68 28 V 50"
+                            d="M46 50 V 32 A 10 10 0 0 1 66 32 V 50"
                             fill="none"
                             stroke="var(--color-m3-primary)"
                             strokeWidth="9"
@@ -561,27 +580,28 @@ export const BigLockAnimation: React.FC = () => {
                         />
                     </g>
 
-                    {/* Body. `primary-container` / `on-primary-container` is the pair the
-                        keyhole is drawn in, so body and bolt are guaranteed to contrast. */}
+                    {/* Body, sitting right of centre. `primary-container` with a
+                        `primary` stroke: the same pair the keyhole is cut in, so body,
+                        outline and bolt are all guaranteed to contrast. */}
                     <rect
-                        x="16"
+                        x="38"
                         y="46"
                         width="64"
                         height="56"
-                        rx="16"
+                        rx="14"
                         fill="var(--color-m3-primary-container)"
                         stroke="var(--color-m3-primary)"
                         strokeWidth="2.5"
                     />
 
                     {/* Keyhole — one colour for the circle and the slot, so it reads as one
-                        shape rather than a dot over a bar. */}
+                        shape rather than a dot over a bar. Lit when the lock is shut. */}
                     <g
-                        fill={locked ? 'var(--color-m3-primary)' : 'var(--color-m3-on-primary-container)'}
+                        fill={shut ? 'var(--color-m3-primary)' : 'var(--color-m3-on-primary-container)'}
                         className="transition-[fill] duration-300"
                     >
-                        <circle cx="48" cy="68" r="5.5" />
-                        <path d="M45 71 L 43.5 86 H 52.5 L 51 71 Z" />
+                        <circle cx="70" cy="68" r="5.5" />
+                        <path d="M67 71 L 65.5 87 H 74.5 L 73 71 Z" />
                     </g>
                 </g>
             </svg>
