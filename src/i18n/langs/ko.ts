@@ -138,6 +138,7 @@ const PACK: LangPack = {
     "core.del.warning_key": "계정을 삭제하면 되돌릴 수 없습니다.",
     "core.del.password": "비밀번호",
     "core.del.confirm_label": "확인하려면 DELETE 입력",
+    "core.del.keep": "계정 유지",
     "core.del.submit": "영구 삭제",
     "settings.security": "계정 및 보안",
     "settings.security_desc": "비밀번호, 소셜 연결과 계정 삭제.",

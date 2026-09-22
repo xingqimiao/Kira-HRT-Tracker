@@ -1177,6 +1177,37 @@ body {
     background-color: var(--color-m3-dark-surface-container-low);
     border-color: var(--color-m3-line);
 }
+/* The delete-account sign is a fixed light surface in BOTH themes: the yellow bar,
+   black text and white paper are the whole point, and a placard has no dark mode.
+   The fields inside it therefore have to stop following the theme too — `.dark
+   .input-base` above sets its colours directly (not through a variable this scope
+   could redefine), so the override has to name the same properties. Scoped to
+   `.del-sign` so nothing else is affected. */
+.del-sign .input-base,
+.dark .del-sign .input-base {
+    color: #1a1a1a;
+    background-color: #ffffff;
+    border-color: rgb(0 0 0 / 0.25);
+}
+.del-sign .input-base::placeholder,
+.dark .del-sign .input-base::placeholder {
+    color: rgb(0 0 0 / 0.4);
+}
+.del-sign .input-base:focus,
+.dark .del-sign .input-base:focus {
+    border-color: #1a1a1a;
+    background-color: #ffffff;
+}
+/* The error red has to be the readable light-theme one here; the dark-theme token
+   is a pale pink that would wash out on white. Same for the danger button, whose
+   `bg-cos-error` token is the dark variant in dark mode. */
+.del-sign .del-sign-error {
+    color: #b3261e;
+}
+.del-sign button.bg-cos-error {
+    background-color: #b3261e;
+    color: #ffffff;
+}
 .input-base::placeholder {
     color: var(--color-m3-on-surface-variant);
 }

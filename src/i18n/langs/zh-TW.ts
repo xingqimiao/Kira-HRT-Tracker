@@ -711,6 +711,7 @@ const PACK: LangPack = {
     "core.del.warning_key": "刪除帳號後無法復原。",
     "core.del.password": "密碼",
     "core.del.confirm_label": "輸入 DELETE 以確認",
+    "core.del.keep": "保留帳號，不刪除",
     "core.del.submit": "永久刪除",
     "settings.security": "帳號與安全",
     "settings.security_desc": "密碼、第三方登入綁定與刪除帳號。",

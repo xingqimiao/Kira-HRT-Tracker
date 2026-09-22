@@ -92,6 +92,7 @@ const PACK: LangPack = {
     "core.del.warning_key": "Deleting the account cannot be undone.",
     "core.del.password": "Password",
     "core.del.confirm_label": "Type DELETE to confirm",
+    "core.del.keep": "Keep my account",
     "core.del.submit": "Delete permanently",
     "nav.history": "History",
     "nav.lab": "Checkup",

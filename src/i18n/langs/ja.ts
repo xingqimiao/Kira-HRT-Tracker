@@ -138,6 +138,7 @@ const PACK: LangPack = {
     "core.del.warning_key": "アカウントを削除すると元に戻せません。",
     "core.del.password": "パスワード",
     "core.del.confirm_label": "確認のため DELETE と入力",
+    "core.del.keep": "アカウントを残す",
     "core.del.submit": "完全に削除",
     "settings.security": "アカウントとセキュリティ",
     "settings.security_desc": "パスワード、ソーシャル連携、アカウントの削除。",

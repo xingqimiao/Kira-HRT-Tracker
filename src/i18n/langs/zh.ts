@@ -93,6 +93,7 @@ const PACK: LangPack = {
     "core.del.warning_key": "删除账号后无法恢复。",
     "core.del.password": "密码",
     "core.del.confirm_label": "输入 DELETE 以确认",
+    "core.del.keep": "保留账号，不删除",
     "core.del.submit": "永久删除",
     "nav.lab": "体检",
     "nav.settings": "设置",

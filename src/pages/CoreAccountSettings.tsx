@@ -498,7 +498,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
       )}
 
       {dialog === 'delete' && (
-        <DeleteDialog
+        <DeleteAccountScreen
           busy={busy}
           summary={summary}
           onClose={() => { setDialog(null); setError(null); }}
@@ -736,7 +736,25 @@ const UnlinkDialog: React.FC<{
   );
 };
 
-const DeleteDialog: React.FC<{
+/**
+ * The delete confirmation, as a full-screen warning sign.
+ *
+ * Modelled on an airport biosecurity placard: a yellow bar of black capitals, a
+ * Chinese line under it, and one plain sentence on white below. The point is that it
+ * does not look like the rest of the app — it looks like a notice you walk past — so
+ * the moment before an irreversible delete reads as a different kind of screen rather
+ * than one more dialog with a red button.
+ *
+ * The sign copy is deliberately **bilingual, English and Chinese**, and is not routed
+ * through `t()`. That is the motif, not a translation gap: a placard is printed, not
+ * localised, and pairing the two languages is what makes it read as one. Every
+ * functional label around it — the fields, the counts, the buttons, the errors — stays
+ * translated as usual, because those are the app talking, not the sign.
+ *
+ * The form itself is unchanged from the dialog this replaced: password, type DELETE,
+ * submit. Only the frame is new.
+ */
+const DeleteAccountScreen: React.FC<{
   busy: boolean;
   summary: AccountSummary | null;
   onClose: () => void;
@@ -753,42 +771,80 @@ const DeleteDialog: React.FC<{
   const ready = confirmText.trim().toUpperCase() === 'DELETE' && !!password;
 
   return (
-    <Dialog title={t('core.del.title')} onClose={onClose} danger>
-      <div className="callout !text-m3-label-medium mb-3">
-        <strong>{t('core.del.warning')}</strong>
-        {summary && (
-          <> {t('core.del.warning_counts').replace('{doses}', String(summary.doseCount)).replace('{labs}', String(summary.labCount))}</>
-        )}
-        {' '}{t('core.del.warning_key')}
+    <div
+      className="del-sign fixed inset-0 z-[80] overflow-y-auto bg-white text-black"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('core.del.title')}
+    >
+      {/* The sign. Black on yellow at display size — the contrast is the design, so
+          the colours are fixed rather than theme tokens: a placard does not have a
+          dark mode, and it must stay legible over the dark surface behind it. */}
+      <div className="bg-[#FFC421] px-5 py-6 sm:px-8 sm:py-8">
+        <p className="text-[clamp(1.6rem,7vw,3.25rem)] font-black uppercase leading-[0.95] tracking-[-0.02em]">
+          Keep or delete — this is your last chance
+        </p>
+        <p className="mt-2 text-[clamp(1rem,3.6vw,1.6rem)] font-bold leading-snug">
+          保留或删除，这是您的最后机会。
+        </p>
       </div>
 
-      <form
-        className="space-y-3"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          if (!ready) return;
-          setError(null);
-          try {
-            await onSubmit(password);
-          } catch (err) {
-            setError(describeError(err));
-          }
-        }}
-      >
-        <Field label={t('core.del.password')} type="password" value={password} onChange={setPassword} autoFocus />
+      {/* The plain sentence below the bar, the way the placard carries one. */}
+      <div className="border-b border-black/10 px-5 py-4 sm:px-8">
+        <p className="text-sm leading-relaxed sm:text-base">
+          You are about to delete your cloud account.{' '}
+          <span className="text-black/60">您即将删除云端账号。</span>
+        </p>
+      </div>
 
-        <Field
-          label={t('core.del.confirm_label')}
-          value={confirmText}
-          onChange={setConfirmText}
-          placeholder="DELETE"
-        />
+      <div className="mx-auto w-full max-w-xl px-5 py-6 sm:px-8">
+        {/* What actually goes, in the app's own voice — so it is translated. */}
+        <div className="rounded-[var(--radius-sm)] border border-[#b3261e]/30 bg-[#b3261e]/5 p-3.5 text-xs leading-relaxed text-black">
+          <strong>{t('core.del.warning')}</strong>
+          {summary && (
+            <> {t('core.del.warning_counts').replace('{doses}', String(summary.doseCount)).replace('{labs}', String(summary.labCount))}</>
+          )}{' '}
+          {t('core.del.warning_key')}
+        </div>
 
-        {error && <p className="text-xs text-cos-error" role="alert">{error}</p>}
+        <form
+          className="mt-5 space-y-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!ready) return;
+            setError(null);
+            try {
+              await onSubmit(password);
+            } catch (err) {
+              setError(describeError(err));
+            }
+          }}
+        >
+          <Field label={t('core.del.password')} type="password" value={password} onChange={setPassword} autoFocus />
 
-        <Submit busy={busy} disabled={!ready} danger>{t('core.del.submit')}</Submit>
-      </form>
-    </Dialog>
+          <Field
+            label={t('core.del.confirm_label')}
+            value={confirmText}
+            onChange={setConfirmText}
+            placeholder="DELETE"
+          />
+
+          {error && <p className="del-sign-error text-xs" role="alert">{error}</p>}
+
+          <Submit busy={busy} disabled={!ready} danger>{t('core.del.submit')}</Submit>
+        </form>
+
+        {/* The way out. Named for what it does — keeping the account — because that
+            is the choice the sign puts beside deletion. */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-4 w-full py-2.5 text-sm font-medium text-black/70 underline underline-offset-4 hover:text-black"
+        >
+          {t('core.del.keep')}
+        </button>
+      </div>
+    </div>
   );
 };
 

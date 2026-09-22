@@ -92,6 +92,7 @@ const PACK: LangPack = {
     "core.del.warning_key": "Hesabı silmek geri alınamaz.",
     "core.del.password": "Password",
     "core.del.confirm_label": "Type DELETE to confirm",
+    "core.del.keep": "Hesabımı koru",
     "core.del.submit": "Delete permanently",
     "nav.history": "Geçmiş",
     "nav.lab": "Kontrol",

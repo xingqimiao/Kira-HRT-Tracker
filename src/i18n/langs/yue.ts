@@ -711,6 +711,7 @@ const PACK: LangPack = {
     "core.del.warning_key": "刪咗帳號就冇得返轉頭。",
     "core.del.password": "密碼",
     "core.del.confirm_label": "輸入 DELETE 嚟確認",
+    "core.del.keep": "保留帳戶，唔刪",
     "core.del.submit": "永久刪除",
     "settings.security": "帳戶同安全",
     "settings.security_desc": "密碼、第三方登入綁定同刪除帳戶。",
