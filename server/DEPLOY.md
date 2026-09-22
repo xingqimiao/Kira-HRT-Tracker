@@ -498,6 +498,25 @@ VITE_API_ORIGIN=https://api.kiramyao.com/hrt npm run build
 # by the asset script, and this build skips it), so deleting would take the live OCR
 # models with it. Copy over the top instead.
 sudo rsync -a dist/ /srv/hrt-web/
+
+# Copying over the top means nothing is ever *removed*, so the service-worker files
+# accumulate: every deploy leaves its `sw-<sha>.js` behind, and by 2026-09-23 the web
+# root held 47 of them. They are tiny (188 KB total) and stale ones are harmless —
+# a browser only fetches the one its `index.html` names — but the directory stops
+# being readable at a glance. Prune to the current one after deploying:
+cd /srv/hrt-web
+KEEP=$(grep -o 'sw-[a-f0-9]*\.js' index.html | head -1)
+for f in sw-*.js; do [ "$f" = "$KEEP" ] || rm -f "$f"; done
+
+# Keep the BARE `/sw.js` alive, and refresh its contents rather than deleting it.
+# Clients from before commit 01366ea registered that path; deleting the file does not
+# retire them, it strands them — Caddy's `@static_assets` regex is `sw-[\w]+\.js`,
+# which does not match `sw.js`, so the request falls through to the SPA and the client
+# receives `index.html` where it expected a worker. A worker that cannot parse is a
+# client stuck on its old build forever. Overwriting it with the current worker is what
+# lets those clients update: the bytes change, the browser installs it, and every later
+# deploy reaches them through the hashed name.
+cp "$KEEP" sw.js
 ```
 
 **Take a rollback copy of both halves before you replace them.** The web root is
