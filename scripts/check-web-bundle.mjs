@@ -59,6 +59,36 @@ if (!sameOrigin && !hasOrigin) {
   process.exit(1);
 }
 
+// The PK engine stays out of the first visit.
+//
+// `src/pk/` is reached only through the dynamic import in `src/engine/registry.ts`,
+// which is the whole reason the setting defaults to the built-in engine: a reader who
+// never switches should not download the second engine's ~30 KB. If an import of the
+// vendor engine is ever added at the top of a module in the entry graph, Vite folds it
+// into the entry chunk and the promise quietly breaks — nothing errors, the bundle is
+// just bigger. Both the engine's own constants and the lazy chunk itself are checked,
+// because either one alone can be relocated by a refactor.
+const engineParams = ['0.229164549', 'EU_DEPOT_PK', 'hybrid-mipd'];
+const leaked = engineParams.filter(marker => bundle.includes(marker));
+if (leaked.length > 0) {
+  console.error(
+    `check-web-bundle: ${entry} contains PK engine code (${leaked.join(', ')}).\n` +
+    `  The Transmtf engine must stay a lazy chunk — reach it through\n` +
+    `  src/engine/registry.ts's import(), never a top-level import.`,
+  );
+  process.exit(1);
+}
+const lazyChunk = readdirSync(assetsDir).find(f => /^pk-.*\.js$/.test(f));
+if (!lazyChunk) {
+  console.error(
+    `check-web-bundle: no dist/assets/pk-*.js chunk.\n` +
+    `  The Transmtf engine is either missing or no longer dynamically imported, so it\n` +
+    `  has been folded into the entry bundle.`,
+  );
+  process.exit(1);
+}
+
 console.log(
-  `check-web-bundle: ${entry} ${sameOrigin ? 'is same-origin (as declared)' : 'carries VITE_API_ORIGIN'} — ok`,
+  `check-web-bundle: ${entry} ${sameOrigin ? 'is same-origin (as declared)' : 'carries VITE_API_ORIGIN'}` +
+  `; PK engine is the lazy ${lazyChunk} — ok`,
 );

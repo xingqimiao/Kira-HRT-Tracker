@@ -5,7 +5,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
 import CustomSelect from './CustomSelect';
 import DateTimePicker from './DateTimePicker';
-import { Route, Ester, ExtraKey, DoseEvent, SL_TIER_ORDER, SublingualTierParams, getBioavailabilityMultiplier, getToE2Factor, getDoseAdvisory, isAntiandrogen, isUnmodelledCompound, SPIRO_MG_MAX_PER_DAY } from '../../logic';
+import { Route, Ester, ExtraKey, DoseEvent, SL_TIER_ORDER, SublingualTierParams, getBioavailabilityMultiplier, getToE2Factor, getDoseAdvisory, isAntiandrogen, isUnmodelledCompound, SPIRO_MG_MAX_PER_DAY, GEL_DEFAULT_PRODUCT_ID, GEL_COVERAGE_DEFAULT_INDEX, GEL_COAPPLICATION_DEFAULT_INDEX } from '../../logic';
 import { Save, Trash2, Info, Bookmark, BookmarkPlus, X, ChevronDown, Check, AlertTriangle, ExternalLink } from '../icons';
 import { DoseAdvisoryLine } from './DoseAdvisory';
 import { LOCALE_MAP } from '../utils/helpers';
@@ -267,6 +267,16 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
     });
 
     const [gelSite, setGelSite] = useState(() => eventToEdit?.extras?.[ExtraKey.gelSite] ?? 0);
+    // Gel detail beyond site and dose: written for both engines, read only by the
+    // Transmtf one. See the note on ExtraKey — a record must not mean different
+    // things depending on a setting that can change later.
+    const [gelProductId, setGelProductId] = useState(() => eventToEdit?.extras?.[ExtraKey.gelProductId] ?? GEL_DEFAULT_PRODUCT_ID);
+    const [gelCoverage, setGelCoverage] = useState(() => eventToEdit?.extras?.[ExtraKey.gelCoverage] ?? GEL_COVERAGE_DEFAULT_INDEX);
+    const [gelCoApplied, setGelCoApplied] = useState(() => eventToEdit?.extras?.[ExtraKey.gelCoApplied] ?? GEL_COAPPLICATION_DEFAULT_INDEX);
+    const [gelWashHours, setGelWashHours] = useState(() => {
+        const h = eventToEdit?.extras?.[ExtraKey.gelWashAfterH];
+        return typeof h === 'number' && h > 0 ? String(h) : '';
+    });
 
     const [slTier, setSlTier] = useState(() => eventToEdit?.extras?.[ExtraKey.sublingualTier] ?? 2);
     const [useCustomTheta, setUseCustomTheta] = useState(() => eventToEdit?.extras?.[ExtraKey.sublingualTheta] !== undefined);
@@ -364,8 +374,21 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
 
             if (eventToEdit.route === Route.gel) {
                 setGelSite(eventToEdit.extras[ExtraKey.gelSite] ?? 0);
+                setGelProductId(eventToEdit.extras[ExtraKey.gelProductId] ?? GEL_DEFAULT_PRODUCT_ID);
+                setGelCoverage(eventToEdit.extras[ExtraKey.gelCoverage] ?? GEL_COVERAGE_DEFAULT_INDEX);
+                setGelCoApplied(eventToEdit.extras[ExtraKey.gelCoApplied] ?? GEL_COAPPLICATION_DEFAULT_INDEX);
+                const wh = eventToEdit.extras[ExtraKey.gelWashAfterH];
+                setGelWashHours(typeof wh === 'number' && wh > 0 ? String(wh) : '');
             } else {
                 setGelSite(0);
+            setGelProductId(GEL_DEFAULT_PRODUCT_ID);
+            setGelCoverage(GEL_COVERAGE_DEFAULT_INDEX);
+            setGelCoApplied(GEL_COAPPLICATION_DEFAULT_INDEX);
+            setGelWashHours('');
+                setGelProductId(GEL_DEFAULT_PRODUCT_ID);
+                setGelCoverage(GEL_COVERAGE_DEFAULT_INDEX);
+                setGelCoApplied(GEL_COAPPLICATION_DEFAULT_INDEX);
+                setGelWashHours('');
             }
 
             const wearH = eventToEdit.extras[ExtraKey.patchWearH];
@@ -527,6 +550,9 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
         }
         if (route === Route.gel) {
             template.extras[ExtraKey.gelSite] = gelSite;
+            template.extras[ExtraKey.gelProductId] = gelProductId;
+            template.extras[ExtraKey.gelCoverage] = gelCoverage;
+            template.extras[ExtraKey.gelCoApplied] = gelCoApplied;
         }
         if (route === Route.patchApply && patchMode === 'rate') {
             template.extras[ExtraKey.releaseRateUGPerDay] = parseFloat(patchRate) || 0;
@@ -581,6 +607,9 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
 
         if (template.route === Route.gel && template.extras[ExtraKey.gelSite] !== undefined) {
             setGelSite(template.extras[ExtraKey.gelSite]);
+            setGelProductId(template.extras[ExtraKey.gelProductId] ?? GEL_DEFAULT_PRODUCT_ID);
+            setGelCoverage(template.extras[ExtraKey.gelCoverage] ?? GEL_COVERAGE_DEFAULT_INDEX);
+            setGelCoApplied(template.extras[ExtraKey.gelCoApplied] ?? GEL_COAPPLICATION_DEFAULT_INDEX);
         }
 
         setShowTemplateMenu(false);
@@ -670,6 +699,11 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
 
         if (route === Route.gel) {
             extras[ExtraKey.gelSite] = gelSite;
+            extras[ExtraKey.gelProductId] = gelProductId;
+            extras[ExtraKey.gelCoverage] = gelCoverage;
+            extras[ExtraKey.gelCoApplied] = gelCoApplied;
+            const washH = parseFloat(gelWashHours);
+            if (Number.isFinite(washH) && washH > 0) extras[ExtraKey.gelWashAfterH] = washH;
         }
 
         if (route === Route.patchApply) {
@@ -1025,6 +1059,14 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                                 <GelFields
                                     gelSite={gelSite}
                                     setGelSite={setGelSite}
+                                    gelProductId={gelProductId}
+                                    setGelProductId={setGelProductId}
+                                    gelCoverage={gelCoverage}
+                                    setGelCoverage={setGelCoverage}
+                                    gelCoApplied={gelCoApplied}
+                                    setGelCoApplied={setGelCoApplied}
+                                    gelWashHours={gelWashHours}
+                                    setGelWashHours={setGelWashHours}
                                     e2Dose={e2Dose}
                                     onE2Change={handleE2Change}
                                     bioMultiplier={bioMultiplier}

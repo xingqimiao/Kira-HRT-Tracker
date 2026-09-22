@@ -100,7 +100,24 @@ export enum ExtraKey {
     // is treated as removed `patchWearH` hours after it is applied, so a single
     // "apply" event self-completes without a separate "remove" event. An explicit
     // patchRemove event still takes precedence.
-    patchWearH = "patchWearH"
+    patchWearH = "patchWearH",
+    // --- Gel detail, read only by the Transmtf engine ------------------------
+    //
+    // The built-in engine models gel from dose and site alone. These four record
+    // what the Transmtf engine additionally needs, and they are written whichever
+    // engine is selected — a record must not mean different things depending on a
+    // setting that can change later. The built-in engine ignores them.
+    //
+    // All numbers, including the product: the catalogue's ids are numbers (presets
+    // 1..5, user products from 1000), which is what keeps `extras` a numeric bag.
+    /** Which gel product was applied — an id into the product catalogue below. */
+    gelProductId = "gelProductId",
+    /** Hours after application the site was washed, when it was. 0/absent = not washed. */
+    gelWashAfterH = "gelWashAfterH",
+    /** Index into `GEL_COVERAGE_OPTIONS`: how much skin the dose was spread over. */
+    gelCoverage = "gelCoverage",
+    /** Index into `GEL_COAPPLICATION_OPTIONS`: what else was on the skin. */
+    gelCoApplied = "gelCoApplied"
 }
 
 enum GelSite {
@@ -109,7 +126,55 @@ enum GelSite {
     scrotal = "scrotal"
 }
 
-export const GEL_SITE_ORDER = ["arm", "thigh", "scrotal"] as const;
+/**
+ * Application sites, in the order the form offers them.
+ *
+ * `abdomen` is appended LAST on purpose. A record stores the site as an *index*, so
+ * inserting it anywhere else would silently reinterpret every existing gel record —
+ * a dose on the thigh would come back as one on the abdomen. The Transmtf engine's
+ * site factors list is ordered the same way for the same reason.
+ */
+export const GEL_SITE_ORDER = ["arm", "thigh", "scrotal", "abdomen"] as const
+
+/**
+ * The gel products a record may name, for the form's picker.
+ *
+ * Presentation only — id and a name key. The kinetics for each id live with the
+ * engine that uses them (`GEL_PRODUCTS` in the Transmtf engine), and the built-in
+ * engine needs none of this. Keeping the catalogue here as bare ids is what lets the
+ * form offer the choice without pulling the engine's chunk into the first visit.
+ *
+ * Ids are the engine's: presets 1..5, and user-created products from 1000. This list
+ * is the presets; a custom product is named by `gel.product.custom`.
+ */
+export const GEL_PRODUCT_OPTIONS: readonly { id: number; nameKey: string }[] = [
+    { id: 1, nameKey: 'gel.product.oestrogel' },
+    { id: 2, nameKey: 'gel.product.estreva' },
+    { id: 3, nameKey: 'gel.product.estrogel' },
+    { id: 4, nameKey: 'gel.product.divigel' },
+    { id: 5, nameKey: 'gel.product.diy' },
+];
+
+export const GEL_DEFAULT_PRODUCT_ID = 1;
+
+/**
+ * How much skin the dose was spread over. Index-stored, like the site.
+ *
+ * The first seven of the engine's coverage templates, in its order. Its eighth,
+ * `manual` (a hand-entered area), is deliberately absent: this form has no area field
+ * to fill it in, and offering a choice that cannot be given a value would be a control
+ * that does nothing. The engine's resolver maps an unknown index to the product's
+ * labelled area, so a record carrying no coverage behaves as it should.
+ */
+export const GEL_COVERAGE_OPTIONS: readonly string[] = [
+    'product', 'palm1', 'palm2', 'palm3', 'thigh', 'arm', 'arms2',
+];
+/** Index 0 means "follow the product's labelled area" — see the engine. */
+export const GEL_COVERAGE_DEFAULT_INDEX = 0;
+
+/** What else was on the skin where the gel went. Index-stored. */
+export const GEL_COAPPLICATION_OPTIONS: readonly string[] = ['none', 'sunscreen', 'moisturizer'];
+export const GEL_COAPPLICATION_DEFAULT_INDEX = 0;;
 
 export interface DoseEvent {
     id: string;
@@ -1040,6 +1105,37 @@ export function normalizeCalibrationMethod(raw: string | null | undefined): Cali
     if (raw === 'average') return 'mipd';      // amplitude-only LS → MAP with prior
     if (raw === 'adaptive') return 'ekf';      // amplitude + clearance fit → EKF
     return 'mipd';
+}
+
+/**
+ * Which pharmacokinetic engine computes the curve.
+ *
+ *  - `builtin`  : the long-standing model in this file. The default.
+ *  - `transmtf` : the Transmtf engine (`src/pk/`), added as an alternative. It models
+ *                 estradiol esters and the anti-androgens only — no testosterone — so
+ *                 a transmasc account stays on `builtin` whichever value is stored.
+ *                 See `src/engine/registry.ts` for that rule and for the lazy load.
+ *
+ * A union with two real members, both meaningful: this is a choice, not a single
+ * valid value. Kept here rather than in the registry because a stored or synced
+ * preference has to be normalised before it can be trusted, and every other such
+ * normaliser lives in this file.
+ */
+export type PkEngineId = 'builtin' | 'transmtf';
+
+export const PK_ENGINES: readonly PkEngineId[] = ['builtin', 'transmtf'];
+
+export const DEFAULT_PK_ENGINE: PkEngineId = 'builtin';
+
+/**
+ * Coerce a stored or synced engine id.
+ *
+ * Positive match, like `normalizeOcrModelTier`: anything unrecognised — including a
+ * value a future build adds and this one does not know — becomes the default rather
+ * than being trusted into the engine selection.
+ */
+export function normalizePkEngine(raw: string | null | undefined): PkEngineId {
+    return raw === 'transmtf' ? 'transmtf' : DEFAULT_PK_ENGINE;
 }
 
 /** A single measured-vs-model comparison derived from one E2 lab result. */

@@ -5,7 +5,7 @@ import { ChevronRight, Settings2, Database, Info, ArrowLeft, Globe, CalendarDays
 import type { IconComponent } from '../icons';
 import type { Lang } from '../i18n/types';
 import { AppTheme } from '../constants';
-import { AntiandrogenChartMode, ANTIANDROGEN_CHART_MODES, DoseEvent, PKCustomParams, RecheckIntervals, OcrModelTier, OCR_MODEL_TIERS } from '../../logic';
+import { AntiandrogenChartMode, ANTIANDROGEN_CHART_MODES, DoseEvent, PKCustomParams, RecheckIntervals, OcrModelTier, OCR_MODEL_TIERS, PkEngineId, PK_ENGINES, DEFAULT_PK_ENGINE } from '../../logic';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { useVial } from '../contexts/VialContext';
 
@@ -50,6 +50,9 @@ interface SettingsProps {
     /** Which OCR model tier the lab scan uses. */
     ocrModelTier: OcrModelTier;
     setOcrModelTier: (tier: OcrModelTier) => void;
+    /** Which pharmacokinetic engine computes the curve. */
+    pkEngine: PkEngineId;
+    setPkEngine: (id: PkEngineId) => void;
 }
 
 type SettingsCat = 'general' | 'reminders' | 'data' | 'about';
@@ -74,6 +77,7 @@ const Settings: React.FC<SettingsProps> = ({
     aaChartMode, setAaChartMode,
     recheckIntervals, setRecheckIntervals,
     ocrModelTier, setOcrModelTier,
+    pkEngine, setPkEngine,
 }) => {
     const { mode } = useHRTMode();
     const { showVial, setShowVial } = useVial();
@@ -169,6 +173,30 @@ const Settings: React.FC<SettingsProps> = ({
                 stored preference is still normalised on read, so a device that had
                 chosen the retired tier lands on the current one rather than on a
                 missing value. */}
+
+            {/* Which engine computes the curve. Transfem only: the Transmtf engine
+                has no testosterone model, so on a transmasc account the choice would
+                do nothing — and a control that silently does nothing is worse than no
+                control. The description says so where the reader would look for it. */}
+            {mode === 'transfem' && (
+                <div className="w-full py-[18px] border-b border-[var(--color-m3-outline-variant)]">
+                    <p className={rowLabel}>{t('settings.pk_engine')}</p>
+                    <p className={`text-xs ${muted} mt-0.5`}>{t('settings.pk_engine_desc')}</p>
+                    <div className="mt-3 flex flex-wrap gap-1" role="group" aria-label={t('settings.pk_engine')}>
+                        {PK_ENGINES.map(id => (
+                            <button
+                                key={id}
+                                type="button"
+                                aria-pressed={pkEngine === id}
+                                onClick={() => setPkEngine(id)}
+                                className={`m3-btn m3-btn-sm ${pkEngine === id ? 'm3-btn-filled' : 'm3-btn-outlined'}`}
+                            >
+                                {t(`settings.pk_engine.${id}`)}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Only meaningful in transfem mode: the anti-androgen column this
                 controls does not exist on the transmasc overview. */}

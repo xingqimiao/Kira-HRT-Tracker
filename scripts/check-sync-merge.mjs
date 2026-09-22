@@ -198,6 +198,7 @@ check('every settings key survives the round trip, not just the sampled ones', (
     showVial: true, calMethod: 'adaptive', calHistoryMode: 'forward', aaChartMode: 'auto',
     hrtStartDate: '2024-01-01', recheckIntervals: '{"liverMonths":3,"estradiolMonths":3}',
     ocrModelTier: 'tiny', timezone: 'Asia/Tokyo',
+    pkEngine: 'transmtf',
   };
   const s = stateWith({ appSettings: everyKey, appSettingsUpdatedAt: 777 });
   const back = normalizeSyncState({ appState: toAppState(s) });

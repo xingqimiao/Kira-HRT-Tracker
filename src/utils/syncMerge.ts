@@ -105,6 +105,16 @@ export interface AppSettings {
      */
     ocrModelTier?: string;
     /**
+     * Which pharmacokinetic engine computes the curve: 'builtin' (default) or
+     * 'transmtf'.
+     *
+     * A string for the same reason as `ocrModelTier`: this is a synced payload, so
+     * it may name an engine this build does not have, and `normalizePkEngine` is what
+     * settles it. The preference travels with the account so two devices show the
+     * same curve.
+     */
+    pkEngine?: string;
+    /**
      * IANA timezone the account's times are read in, e.g. `Asia/Tokyo`.
      *
      * The app has no control for it yet, so it is usually only ever written by an
@@ -118,7 +128,7 @@ export interface AppSettings {
 /** Every key `sanitizeAppSettings` will carry. An unknown key is dropped. */
 export const APP_SETTING_KEYS: readonly (keyof AppSettings)[] = [
     'theme', 'keyColor', 'lang', 'hrtMode', 'showVial', 'calMethod', 'calHistoryMode', 'aaChartMode',
-    'hrtStartDate', 'recheckIntervals', 'ocrModelTier', 'timezone',
+    'hrtStartDate', 'recheckIntervals', 'ocrModelTier', 'pkEngine', 'timezone',
 ];
 
 export interface SyncState {

@@ -3,8 +3,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { DoseEvent, Route, Ester, SimulationResult, runSimulation, interpolateConcentration_E2, interpolateConcentration_T, LabResult, computeCalibration, CalibrationMethod, CalibrationHistoryMode, normalizeCalibrationMethod, AntiandrogenChartMode, normalizeAntiandrogenChartMode, isTestosteroneEster, isT_LabUnit, PKCustomParams, applyPKOverrides, sanitizePKParams, isPlausibleBodyWeightKG,
          RecheckIntervals, normalizeRecheckIntervals,
          OcrModelTier, normalizeOcrModelTier,
+         PkEngineId, normalizePkEngine, DEFAULT_PK_ENGINE,
          BODY_WEIGHT_KG_MIN, BODY_WEIGHT_KG_MAX, DOSE_MG_MAX, SPIRO_MG_MAX_PER_DAY,
          EVENT_TIME_H_MIN, EVENT_TIME_H_MAX } from '../../logic';
+import { builtinEngine, chooseEngine, loadVendorEngine, type PkEngine } from '../engine/registry';
 import { createDayLabelFormatter, toDayKey } from '../utils/helpers';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useHRTMode } from '../contexts/HRTModeContext';
@@ -39,7 +41,7 @@ const modeKeyFor = (owner: string, mode: 'transfem' | 'transmasc', suffix: strin
 const MODE_SUFFIXES = ['events', 'lab-results', 'dose-templates', 'quick-doses', 'journal', 'deletions'] as const;
 const SHARED_SUFFIXES = [
     'weight', 'pk-params', 'cal-method', 'cal-history-mode', 'aa-chart', 'hrt-start',
-    'recheck-intervals', 'ocr-model-tier',
+    'recheck-intervals', 'ocr-model-tier', 'pk-engine',
     'weight-at', 'pk-params-at',
     // Which milestone this device has already celebrated, as `YYYY-MM-DD:key`.
     // Device-local by design — see `pendingMilestone` below.
@@ -275,6 +277,45 @@ export const useAppData = (
         try { localStorage.setItem(sharedKey('ocr-model-tier'), normalized); } catch { /* private mode */ }
         touchAppSettings();
     };
+
+    /**
+     * Which pharmacokinetic engine computes the curve. A preference like the rest,
+     * so it rides the settings bag and follows the account across devices.
+     *
+     * Two pieces of state, not one: `pkEngine` is the *preference*, `activeEngine` is
+     * what is actually loaded. They differ while the Transmtf engine is being fetched,
+     * and they differ permanently for a transmasc account, which the Transmtf engine
+     * cannot serve at all (no testosterone model) — see `chooseEngine`.
+     */
+    const [pkEngine, setPkEngineState] = useState<PkEngineId>(() =>
+        normalizePkEngine(localStorage.getItem(sharedKey('pk-engine')))
+    );
+    const setPkEngine = (id: PkEngineId) => {
+        const normalized = normalizePkEngine(id);
+        setPkEngineState(normalized);
+        try { localStorage.setItem(sharedKey('pk-engine'), normalized); } catch { /* private mode */ }
+        touchAppSettings();
+    };
+
+    // The loaded engine. The built-in one from the first render, so the default path
+    // never waits on an import; the vendor engine replaces it only once fetched.
+    // `isTransmasc` is a dependency because the choice is overruled by mode, not just
+    // by the setting: switching to transfem mode is what makes the vendor engine usable.
+    const [activeEngine, setActiveEngine] = useState<PkEngine>(builtinEngine);
+    useEffect(() => {
+        if (chooseEngine(pkEngine, isTransmasc) === 'builtin') {
+            setActiveEngine(builtinEngine);
+            return;
+        }
+        let cancelled = false;
+        // Lazy: this is the only path that pulls the vendor chunk in. A failure —
+        // offline, a blocked request — falls back to the built-in engine rather than
+        // leaving the curve undefined, because an empty curve reads as "no doses".
+        void loadVendorEngine()
+            .then(engine => { if (!cancelled) setActiveEngine(engine); })
+            .catch(() => { if (!cancelled) setActiveEngine(builtinEngine); });
+        return () => { cancelled = true; };
+    }, [pkEngine, isTransmasc]);
     /**
      * Which due re-check each reminder kind was last closed at, as
      * `<startH>:<intervalMonths>` per kind.
@@ -446,6 +487,7 @@ export const useAppData = (
         setHrtStartDateState(normalizeHrtStartDate(localStorage.getItem(sharedKey('hrt-start'))) ?? '');
         setRecheckIntervalsState(normalizeRecheckIntervals(loadJSON<unknown>(sharedKey('recheck-intervals'), null)));
         setOcrModelTierState(normalizeOcrModelTier(localStorage.getItem(sharedKey('ocr-model-tier'))));
+        setPkEngineState(normalizePkEngine(localStorage.getItem(sharedKey('pk-engine'))));
         setDismissedRechecksState(loadJSON(sharedKey('recheck-dismissed'), {} as Record<string, string>));
         setPkParamsState(sanitizePKParams(loadJSON<unknown>(sharedKey('pk-params'), null)));
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -523,12 +565,15 @@ export const useAppData = (
 
     useEffect(() => {
         if (events.length > 0) {
-            const res = runSimulation(events, weight);
-            setSimulation(res);
+            // Through the registry, so the selected engine computes the curve. The
+            // built-in engine is what `activeEngine` holds until the Transmtf engine
+            // is asked for and fetched, so this line is unchanged for anyone who
+            // never switches.
+            setSimulation(activeEngine.runSimulation(events, weight));
         } else {
             setSimulation(null);
         }
-    }, [events, weight]);
+    }, [events, weight, activeEngine]);
 
     // --- Derived State ---
     // Self-learning calibration: fits a personal amplitude (+ clearance, for the
@@ -536,23 +581,23 @@ export const useAppData = (
     // mode. Returns the scale function plus the learned parameters and per-lab
     // comparison used by the Lab page UI.
     const calibration = useMemo(() => {
-        return computeCalibration(simulation, events, weight, labResults, calibrationMethod, calibrationHistoryMode);
-    }, [simulation, events, weight, labResults, calibrationMethod, calibrationHistoryMode]);
+        return activeEngine.computeCalibration(simulation, events, weight, labResults, calibrationMethod, calibrationHistoryMode);
+    }, [simulation, events, weight, labResults, calibrationMethod, calibrationHistoryMode, activeEngine]);
     const calibrationFn = calibration.factorFn;
 
     const currentLevel = useMemo(() => {
         if (!simulation) return 0;
         const h = currentTime.getTime() / 3600000;
-        const baseE2 = interpolateConcentration_E2(simulation, h) || 0;
+        const baseE2 = activeEngine.interpolateConcentration_E2(simulation, h) || 0;
         return baseE2 * calibrationFn(h);
-    }, [simulation, currentTime, calibrationFn]);
+    }, [simulation, currentTime, calibrationFn, activeEngine]);
 
     // Total testosterone (ng/dL) at the current time — only meaningful in transmasc mode.
     const currentT = useMemo(() => {
         if (!simulation) return 0;
         const h = currentTime.getTime() / 3600000;
-        return interpolateConcentration_T(simulation, h) || 0;
-    }, [simulation, currentTime]);
+        return activeEngine.interpolateConcentration_T(simulation, h) || 0;
+    }, [simulation, currentTime, activeEngine]);
 
     // One section per local calendar day, newest first.
     //
@@ -1217,6 +1262,7 @@ export const useAppData = (
                     // propagates instead of leaving the other device customized.
                     recheckIntervals: JSON.stringify(recheckIntervals),
                     ocrModelTier,
+                    pkEngine,
                     // Absent when never answered, which is exactly how "skipped"
                     // has to travel: an empty string is not a date.
                     ...(hrtStartDate ? { hrtStartDate } : {}),
@@ -1274,7 +1320,7 @@ export const useAppData = (
         // contexts that own them have to be told, or the theme on screen stays
         // the one this device booted with until the next reload.
         if (state.appSettings) {
-            const { calMethod, calHistoryMode, aaChartMode, hrtStartDate, recheckIntervals, ocrModelTier, ...global } = state.appSettings;
+            const { calMethod, calHistoryMode, aaChartMode, hrtStartDate, recheckIntervals, ocrModelTier, pkEngine: syncedPkEngine, ...global } = state.appSettings;
             // The merge's stamp is handed to `applyAppSettings` so this device
             // records the account's settings as *adopted*, not as an edit of its
             // own — otherwise it would immediately look newer and push the same
@@ -1306,6 +1352,13 @@ export const useAppData = (
                 const normalized = normalizeOcrModelTier(ocrModelTier);
                 setOcrModelTierState(normalized);
                 try { localStorage.setItem(sharedKey('ocr-model-tier'), normalized); } catch { /* private mode */ }
+            }
+            // Raw setter again: the engine choice follows the account, so adopting it
+            // must not look like this device's own edit and bounce back.
+            if (syncedPkEngine !== undefined) {
+                const normalized = normalizePkEngine(syncedPkEngine);
+                setPkEngineState(normalized);
+                try { localStorage.setItem(sharedKey('pk-engine'), normalized); } catch { /* private mode */ }
             }
             // Set on the raw setters, not `setHrtStartDate`: adopting the
             // account's value must not stamp it as this device's edit.
@@ -1353,6 +1406,7 @@ export const useAppData = (
         hrtStartDate, setHrtStartDate,
         recheckIntervals, setRecheckIntervals,
         ocrModelTier, setOcrModelTier,
+        pkEngine, setPkEngine,
         dismissedRechecks, dismissRecheck,
         pendingMilestone,
         showStreakNotice, dismissStreakNotice,

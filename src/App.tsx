@@ -108,6 +108,7 @@ const AppContent = () => {
         hrtStartDate, setHrtStartDate,
         recheckIntervals, setRecheckIntervals,
         ocrModelTier, setOcrModelTier,
+        pkEngine, setPkEngine,
         pendingMilestone,
         showStreakNotice, dismissStreakNotice,
         calibration,
@@ -277,6 +278,7 @@ const AppContent = () => {
         hrtStartDate,
         recheckIntervals,
         ocrModelTier,
+        pkEngine,
     });
 
     useEffect(() => {
@@ -662,6 +664,8 @@ const AppContent = () => {
                             setRecheckIntervals={setRecheckIntervals}
                             ocrModelTier={ocrModelTier}
                             setOcrModelTier={setOcrModelTier}
+                            pkEngine={pkEngine}
+                            setPkEngine={setPkEngine}
                         />
                     )}
 

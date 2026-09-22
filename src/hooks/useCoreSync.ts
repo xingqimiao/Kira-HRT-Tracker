@@ -58,6 +58,8 @@ interface Options {
   recheckIntervals: unknown;
   /** The lab-scan OCR model tier — see `OcrModelTier`. */
   ocrModelTier: unknown;
+  /** The chosen PK engine — included so a change schedules a sync. */
+  pkEngine: unknown;
 }
 
 /** Absorb a burst of edits (a dose form can set several fields) into one push. */
@@ -84,6 +86,7 @@ export const useCoreSync = ({
   hrtStartDate,
   recheckIntervals,
   ocrModelTier,
+  pkEngine,
 }: Options): CoreSyncState => {
   const [status, setStatus] = useState<CoreSyncStatus>('off');
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
@@ -275,7 +278,7 @@ export const useCoreSync = ({
   // actually changes, which is what makes it a usable dependency.
   const localFingerprint = JSON.stringify([
     events, labResults, doseTemplates, weight, pkParams,
-    readAppSettings(), calibrationMethod, calibrationHistoryMode, aaChartMode, hrtStartDate, recheckIntervals, ocrModelTier,
+    readAppSettings(), calibrationMethod, calibrationHistoryMode, aaChartMode, hrtStartDate, recheckIntervals, ocrModelTier, pkEngine,
   ]);
   useEffect(() => {
     if (!activeRef.current) return;
