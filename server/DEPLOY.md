@@ -565,6 +565,38 @@ curl -s https://hrt.kiramyao.com/ | grep -c "kiramyao.com/privacy"  # >= 1, the 
 # 8. One provider sign-in still ends in a session, not a dead URL: the callback hands
 #    the browser a one-time code, and the exchange turns it into a session.
 curl -s https://api.kiramyao.com/hrt/auth/google/start | head -c 120
+
+# 9. The avatar route is proxied on the WEB host, not answered by the SPA shell.
+#
+#    This is the check the 2026-09-22 migration went without, and the one that fails
+#    silently: `img-src 'self'` means the app can only load a picture from its own
+#    origin, so `/auth/avatar/*` on `hrt.kiramyao.com` must reverse-proxy to the API.
+#    Drop the block and every avatar disappears with nothing in any log — the request
+#    is answered by `try_files … /index.html`, a 200 `text/html`, which is a valid
+#    response to everything and therefore proves nothing on its own. The content type
+#    is what distinguishes them: a working proxy answers `image/*` (or 404 JSON for an
+#    unknown id), the broken one answers `text/html`.
+curl -sI https://hrt.kiramyao.com/auth/avatar/does-not-exist | grep -i content-type
+#  -> application/json (proxied)   NOT   text/html (the SPA shell: the block is missing)
+
+# 10. Turnstile is wired at BOTH ends, if the deployment asks for it.
+#
+#     Two independent settings have to agree, and each one failing looks like the
+#     other from the browser: the sitekey's Hostname Management list in the Cloudflare
+#     dashboard must contain this app's hostname, and `TURNSTILE_HOSTNAMES` in the
+#     server `.env` must contain it too. If the dashboard omits it the widget renders
+#     an empty box, issues no token, and the register button stays disabled forever
+#     with no error shown — which is exactly "the button greys out and nothing
+#     happens". The server half is invisible until a token is actually presented.
+#
+#     The sitekey is public and ships in the web build; only the secret lives here.
+#     `/hrt/health` does not report Turnstile either way, so this one is on the
+#     deployer: after moving hosts, open the dashboard and add the new hostname.
+#     A registration with no token must be refused when it is on:
+curl -s -o /dev/null -w '%{http_code}\n' https://api.kiramyao.com/hrt/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"smoketest2","password":"a-smoke-test-password"}'
+#  -> 403 (Turnstile on and a token is required)   201 (Turnstile off — both ends must agree)
 ```
 
 For step 8, the browser half needs a real Google account: sign in with Google, confirm

@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, useMemo } from 'react';
+import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { useTranslation, LanguageProvider } from './contexts/LanguageContext';
 import { useDialog, DialogProvider } from './contexts/DialogContext';
 import { HRTModeProvider, useHRTMode } from './contexts/HRTModeContext';
@@ -82,6 +82,18 @@ const AppContent = () => {
      */
     const [bindRequested, setBindRequested] = useState(false);
 
+    /**
+     * Bumped when the binding screen reports success.
+     *
+     * A bind that returns OK is itself the proof the server now has the credential, and
+     * that is a fact this screen knows and the sync engine does not: the sync may be
+     * skipped, coalesced, or still running when the promise resolves. Counting the
+     * confirmations lets the gate below stop depending on a sync it cannot observe —
+     * one bump is enough to leave the screen, and `accountIncomplete` is only consulted
+     * before that ever happens.
+     */
+    const [bindConfirmations, setBindConfirmations] = useState(0);
+
     // Use Custom Hooks
     const {
         events,
@@ -118,6 +130,19 @@ const AppContent = () => {
         scope,
         readyScope,
     } = useAppData(showDialog, coreSession.user?.userId ?? null);
+
+    // A confirmed bind belongs to the account that made it. Reset when the signed-in
+    // user changes (or is signed out), so the next account is not waved past a gate it
+    // has its own reason to answer.
+    const boundForRef = useRef<string | null>(null);
+    useEffect(() => {
+        const id = coreSession.user?.userId ?? null;
+        if (boundForRef.current !== id) {
+            boundForRef.current = id;
+            setBindConfirmations(0);
+            setBindRequested(false);
+        }
+    }, [coreSession.user?.userId]);
 
     useLiveShareSync({
         authToken: coreSession.token,
@@ -435,14 +460,29 @@ const AppContent = () => {
      * that reason: there is nothing to navigate to yet, and the session is deliberately
      * left intact, because it is what binds the credential.
      */
-    if (coreSession.isSignedIn && (coreSyncState.accountIncomplete || bindRequested)) {
+    // A confirmed bind leaves immediately, whatever the sync engine still believes.
+    // `bindConfirmations` is never reset: once the credential is bound it stays bound,
+    // and only the server refusing again (a new account, a failed sync) sets
+    // `accountIncomplete`, which is a fresh reason to be here.
+    const needsBinding =
+        bindConfirmations === 0 && (coreSyncState.accountIncomplete || bindRequested);
+    if (coreSession.isSignedIn && needsBinding) {
         return (
             <BindCredentials
                 session={coreSession}
                 onDone={async () => {
                     setBindRequested(false);
-                    // Only a sync that gets through clears the server's refusal, so this
-                    // is what decides whether the gate comes down.
+                    // The bind already succeeded — it is why this callback ran — so the
+                    // gate comes down on that fact alone. `syncNow` used to be the only
+                    // thing that could clear it, which made a successful bind depend on a
+                    // background sync it neither controls nor can observe: arrive while
+                    // one is in flight and this screen stayed up, blank password field and
+                    // disabled button, with nothing to say why.
+                    //
+                    // `bindConfirmations` is bumped here and `accountIncomplete` is
+                    // re-derived below, so the shell is reached either way; the sync still
+                    // runs because it is what actually pulls the records.
+                    setBindConfirmations(n => n + 1);
                     await coreSyncState.syncNow();
                 }}
             />

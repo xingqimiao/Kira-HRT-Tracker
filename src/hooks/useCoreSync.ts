@@ -106,6 +106,15 @@ export const useCoreSync = ({
   /** Prevents overlapping syncs; a rerun requested mid-sync is coalesced. */
   const runningRef = useRef(false);
   const rerunRef = useRef(false);
+  /**
+   * Who is waiting on the coalesced rerun, so `syncNow` can await a real sync.
+   *
+   * Without this a caller that arrives mid-sync is told "done" before the sync it
+   * asked for has even started — `BindCredentials` relied on that promise to decide
+   * whether to take its gate down, and a bind that landed during a background sync
+   * left the user staring at a blank form with a disabled button.
+   */
+  const rerunWaitersRef = useRef<Array<() => void>>([]);
   const pushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
@@ -132,7 +141,11 @@ export const useCoreSync = ({
     if (!activeRef.current || !authToken) return;
 
     if (runningRef.current) {
+      // A sync is already in flight. Ask for a rerun and hand the caller a promise
+      // that settles only when *a* sync finishes after this point, so "syncNow
+      // resolved" really means "a sync completed", not "someone else's was running".
       rerunRef.current = true;
+      await new Promise<void>((resolve) => rerunWaitersRef.current.push(resolve));
       return;
     }
     runningRef.current = true;
@@ -209,10 +222,18 @@ export const useCoreSync = ({
       }
     } finally {
       runningRef.current = false;
-      if (rerunRef.current) {
+      // Reruns are driven by a loop rather than by a recursive call, so a caller that
+      // arrives *during* a rerun joins the same release point instead of nesting a
+      // third level of finally blocks that each try to settle the waiter list.
+      while (rerunRef.current) {
         rerunRef.current = false;
-        void run();
+        await run();
       }
+      // Released once no rerun is outstanding: a caller that arrived mid-sync now sees
+      // the outcome of a sync that actually happened, rather than of the one it missed.
+      const waiters = rerunWaitersRef.current;
+      rerunWaitersRef.current = [];
+      for (const release of waiters) release();
     }
   }, [clearRetry, userId]);
 
