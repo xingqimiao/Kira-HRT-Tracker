@@ -258,11 +258,10 @@ export const LabScanDemo: React.FC = () => {
  * 3: Dropdown closes, success "Logged [Morning EV 2mg] · Undo" toast appears (2600ms)
  * 4: Holds for 1000ms, then smoothly resets and loops back to 0!
  */
-/** The demo menu's natural height, in px — measured, see the stage below. */
-const MENU_H = 132
-/** The demo toast's natural height, in px — measured, see the stage below. */
+/** The demo menu's natural height, in px — measured (the container has no padding). */
+const MENU_H = 122
+/** The demo toast's natural height, in px — measured. */
 const TOAST_H = 58
-
 export const QuickAddDemo: React.FC = () => {
     const { t, lang } = useTranslation();
     const [phase, setPhase] = useState<0 | 1 | 2 | 3>(0);
@@ -325,7 +324,13 @@ export const QuickAddDemo: React.FC = () => {
             >
                 <div
                     aria-hidden={!(phase >= 1 && phase < 3)}
-                    className={`absolute inset-x-0 top-0 overflow-hidden rounded-xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-lowest)] py-1 shadow-md transition-all duration-200 ease-out ${
+                    /* No vertical padding: `py-1` left a 4px strip of the container's own
+                       surface above the first row, and that row is FILLED with primary
+                       when selected — so the strip and the square row corners read as a
+                       white notch inside the rounded menu. With the padding gone the
+                       `overflow-hidden` corner clips the fill instead, which is how the
+                       real quick-add menu's rows sit. */
+                    className={`absolute inset-x-0 top-0 overflow-hidden rounded-xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-lowest)] shadow-md transition-all duration-200 ease-out ${
                         phase >= 1 && phase < 3
                             ? 'translate-y-0 scale-100 opacity-100'
                             : 'pointer-events-none -translate-y-1.5 scale-[0.97] opacity-0'
