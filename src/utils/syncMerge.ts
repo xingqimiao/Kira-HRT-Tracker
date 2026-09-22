@@ -703,16 +703,13 @@ export function fingerprintState(state: SyncState): string {
             parts.push(`${m}.${kind}:${rows.join(';')}`);
             parts.push(`${m}.${kind}.del:${Object.keys(block.deletions[kind]).sort().join(';')}`);
         }
-        // Sorted by id so two devices holding the same buttons in a different
-        // order do not read as a change and push to each other in a loop.
-        const quick = block.quickDoses
-            .map(r => {
-                const id = recordId(r);
-                return id ? `${id}=${stableString(r)}` : null;
-            })
-            .filter((r): r is string => r !== null)
-            .sort();
-        parts.push(`${m}.quickDoses:${quick.join(';')}`);
+        // quickDoses needs no line of its own here: it is in RECORD_KINDS, so the loop
+        // above already folded it in through `contentFingerprint`. The duplicate that
+        // used to sit here hashed the *whole record* with `stableString`, which
+        // includes `createdAt` — and `createdAt` legitimately differs between two
+        // devices holding the same button (an import restamps a missing one). So the
+        // fingerprints never converged and both devices pushed forever, which is the
+        // flip-flop the header warns about, reintroduced by the redundancy itself.
     }
     parts.push(`weight:${state.weight === undefined ? '' : stableString(state.weight)}`);
     parts.push(`pkParams:${state.pkParams === undefined ? '' : stableString(state.pkParams)}`);

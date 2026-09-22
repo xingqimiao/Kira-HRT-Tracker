@@ -37,7 +37,7 @@ const {
   RECORD_KINDS,
 } = await import('../src/utils/syncMerge.ts');
 const { payloadToRecords, recordsToPayload } = await import('../src/services/recordDocs.ts');
-const { toLocalPayload } = await import('../src/services/coreSync.ts');
+const { toLocalPayload, withRemoteTombstones } = await import('../src/services/coreSync.ts');
 
 // --- helpers ----------------------------------------------------------------
 
@@ -217,6 +217,39 @@ check('every kind of deletion reaches the wire', () => {
   for (const kind of RECORD_KINDS) {
     assert.ok(ids.includes(`del:transfem:${kind}`), `no deletion record for ${kind}`);
   }
+});
+
+check('a quick dose is fingerprinted once, so time stamps cannot diverge it', () => {
+  // Two devices holding the same button legitimately differ in `createdAt` (an import
+  // restamps a missing one). Fingerprinting it twice — once by content, once whole —
+  // made the two never converge, so each device pushed forever. Content only.
+  const a = modeWith('transfem', { quickDoses: [{ id: 'q1', route: 'gel', ester: 'E2', value: 1.5, createdAt: 1000 }] });
+  const b = modeWith('transfem', { quickDoses: [{ id: 'q1', route: 'gel', ester: 'E2', value: 1.5, createdAt: 2000 }] });
+  assert.equal(
+    fingerprintState(normalizeSyncState(a)),
+    fingerprintState(normalizeSyncState(b)),
+    'the same button with a different createdAt must fingerprint the same',
+  );
+  const ab = mergeSyncStates(normalizeSyncState(a), normalizeSyncState(b));
+  const ba = mergeSyncStates(normalizeSyncState(b), normalizeSyncState(a));
+  assert.equal(ab.remoteStale, false, 'A must not want to push');
+  assert.equal(ba.remoteStale, false, 'B must not want to push');
+});
+
+check('the outgoing payload keeps every kind of tombstone', () => {
+  // `withRemoteTombstones` *rebuilds* the deletions object before upload, so a kind it
+  // does not name is erased rather than skipped. That is how a quick-dose tombstone
+  // died after `recordDocs` had been taught to emit it.
+  const s = modeWith('transfem', {});
+  s.modes.transfem.deletions = {
+    events: { e1: 1000 }, labResults: {}, doseTemplates: {}, journal: {}, quickDoses: { q1: 1000 },
+  };
+  // Through the real function, not a copy of its logic: the rebuild is what erases,
+  // so asserting on `toLocalPayload` alone would pass while the wire loses it.
+  const outgoing = withRemoteTombstones(toLocalPayload(s), toLocalPayload(s));
+  const kinds = Object.keys(outgoing.modes.transfem.deletions ?? {});
+  assert.ok(kinds.includes('quickDoses'), 'quickDoses survives into the outgoing payload');
+  assert.ok(kinds.includes('events'), 'and so does a kind that was already covered');
 });
 
 check('deleting a quick dose is expressible and sticks', () => {

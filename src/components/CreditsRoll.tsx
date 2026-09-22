@@ -515,16 +515,19 @@ export const CreditsRoll: React.FC<CreditsRollProps> = ({ onClose }) => {
      * whose length is actually known. This is the remaining script time plus the tail
      * `ended` holds before `handleExit` — the total the music has to cover.
      *
-     * Recomputed per scene, so skipping ahead re-fits the track instead of leaving it
-     * playing to a finish that is no longer coming.
+     * Keyed on `sceneIndex` alone, deliberately. The current scene's `fadeIn` is the
+     * only piece not counted, because entering a scene always sets phase to `fade-in`
+     * and that fade has already elapsed by the time its `hold` begins — so the scenes
+     * ahead are whole and the current one is `hold + fadeOut + pauseAfter`. Its stamp
+     * would change on every phase tick if the elapsed time were tracked, which would
+     * re-arm the fade below four times a scene; it does not, and the schedule is
+     * therefore armed once per scene, which is what "re-fit on skip" needs.
      */
     const remainingRollMs = useMemo(() => {
         let total = 0;
         for (let i = sceneIndex; i < SCENES.length; i++) {
             const s = SCENES[i];
             const isCurrent = i === sceneIndex;
-            // The current scene is already partway through, but the phase timers are
-            // re-armed from the phase's own start, so counting it whole is right.
             total += (isCurrent ? 0 : (s.fadeIn ?? 800))
                 + (s.hold ?? 1600)
                 + (s.fadeOut ?? 900)

@@ -68,7 +68,7 @@ export const UPSTREAM_WORKS: UpstreamWork[] = [
         "name": "MtF.wiki",
         "url": "https://mtf.wiki/",
         "roleKey": "licence.reference_mtfwiki",
-        "licence": "reference, not a dependency",
+        "licence": "CC BY-SA 4.0",
         "referenceOnly": true,
         "copyright": "MtF.wiki contributors"
     },
@@ -76,9 +76,9 @@ export const UPSTREAM_WORKS: UpstreamWork[] = [
         "name": "Transfeminine Science",
         "url": "https://transfemscience.org/",
         "roleKey": "licence.reference_tfs",
-        "licence": "reference, not a dependency",
+        "licence": "all rights reserved",
         "referenceOnly": true,
-        "copyright": "Aly W. and contributors"
+        "copyright": "Aly and the other authors of Transfeminine Science"
     },
     {
         "name": "Transmtf-HRT-Tracker",

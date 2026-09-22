@@ -560,10 +560,16 @@ export async function buildExportPayload(ctx: AuthContext): Promise<{
         doseTemplates: [] as unknown[],
         quickDoses: [] as unknown[],
         journal: [] as unknown[],
+        // Every kind a client may tombstone, including quickDoses. The reader below
+        // checks `kind in block.deletions` rather than a list, so what matters is that
+        // the shape is complete: a kind missing here is not carried, and its deletion
+        // record is folded into `unknown` and dropped. Grouped with the arrays above
+        // in the same order so the two halves stay visibly parallel.
         deletions: {
             events: {} as Record<string, number>,
             labResults: {} as Record<string, number>,
             doseTemplates: {} as Record<string, number>,
+            quickDoses: {} as Record<string, number>,
             journal: {} as Record<string, number>,
         },
     });

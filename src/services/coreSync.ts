@@ -33,7 +33,7 @@
  */
 import { apiEndpoint, apiFetch } from './apiClient';
 import { payloadToRecords, recordsToPayload, type RecordDoc } from './recordDocs';
-import { toAppState, type SyncState } from '../utils/syncMerge';
+import { toAppState, RECORD_KINDS, type SyncState } from '../utils/syncMerge';
 
 /** The app's own payload shape, as `normalizeSyncState` reads it. */
 export interface SyncPayload {
@@ -221,7 +221,11 @@ function mergeTombstones(
  * Run before writing, and only for the deletion records: everything else is a record
  * whose whole content is the truth about itself, so last-write-wins is right for it.
  */
-function withRemoteTombstones(local: SyncPayload, remote: SyncPayload): SyncPayload {
+// Exported for its check, the same way the server's turnstile module exposes
+// `__setTurnstileFetchForTest`: this function *rebuilds* the deletions object, so a
+// kind it fails to name is erased rather than skipped, and that is not visible from
+// any caller. `check-sync-merge.mjs` asserts it against RECORD_KINDS.
+export function withRemoteTombstones(local: SyncPayload, remote: SyncPayload): SyncPayload {
   const localModes = (local.modes ?? {}) as Record<string, { deletions?: Record<string, Record<string, number>> }>;
   const remoteModes = (remote.modes ?? {}) as Record<string, { deletions?: Record<string, Record<string, number>> }>;
 
@@ -231,7 +235,13 @@ function withRemoteTombstones(local: SyncPayload, remote: SyncPayload): SyncPayl
     const theirs = remoteModes[mode]?.deletions;
     if (!mine && !theirs) continue;
     const deletions: Record<string, Record<string, number>> = {};
-    for (const kind of ['events', 'labResults', 'doseTemplates', 'journal']) {
+    // Driven by the kind list, not a copy of it. This loop *rebuilds* `deletions`,
+    // so a kind missing here is not merely skipped — it is erased from the outgoing
+    // payload. That is what happened to `quickDoses`: `recordDocs.ts` had been taught
+    // to emit its deletion record, and this ran first and deleted the tombstone before
+    // it could. The symptom was the original report, still live: delete a quick-dose
+    // button, and the cloud hands it back on the next sync.
+    for (const kind of RECORD_KINDS) {
       const combined = mergeTombstones(mine?.[kind], theirs?.[kind]);
       if (Object.keys(combined).length > 0) deletions[kind] = combined;
     }

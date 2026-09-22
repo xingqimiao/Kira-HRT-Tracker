@@ -82,10 +82,11 @@ const UPSTREAM_WORKS = [
         name: 'MtF.wiki',
         url: 'https://mtf.wiki/',
         roleKey: 'licence.reference_mtfwiki',
-        licence: 'reference, not a dependency',
-        // Neither `noLicence` nor `granted`: those two describe a *repository* and the
-        // permission to reuse its code. This is a citation — different category, so it
-        // gets its own flag rather than borrowing one whose sentence would be false.
+        // A real licence, not "none declared". The wiki is CC BY-SA 4.0, which permits
+        // reuse with attribution — and this project does not reproduce its text anyway,
+        // only cites the figures it publishes. Stated as the licence it is, because
+        // claiming an unlicensed source would be as wrong as claiming a permissive one.
+        licence: 'CC BY-SA 4.0',
         referenceOnly: true,
         copyright: 'MtF.wiki contributors',
     },
@@ -93,9 +94,14 @@ const UPSTREAM_WORKS = [
         name: 'Transfeminine Science',
         url: 'https://transfemscience.org/',
         roleKey: 'licence.reference_tfs',
-        licence: 'reference, not a dependency',
+        // All rights reserved, and the site asks that content not be reproduced without
+        // permission. What this project takes is dose *ranges* and a link, not their
+        // prose, and the estimate dialog names them and links the site — which is the
+        // attribution they ask for. Recorded here with the reservation intact, because
+        // "reference" is not a licence and this page should not imply one.
+        licence: 'all rights reserved',
         referenceOnly: true,
-        copyright: 'Aly W. and contributors',
+        copyright: 'Aly and the other authors of Transfeminine Science',
     },
     {
         name: 'Transmtf-HRT-Tracker',
