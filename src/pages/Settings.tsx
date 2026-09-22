@@ -254,8 +254,12 @@ const Settings: React.FC<SettingsProps> = ({
                 <Icon icon={ChevronRight} size={15} className={muted} />
             </button>
 
+            {/* This project's own repository — distinct from the algorithm row above,
+                which credits someone else's work because the model is theirs. This
+                one is where *this* app lives; it pointed at a different project's
+                repo, which reads as a misattribution in both directions. */}
             <button
-                onClick={() => showDialog('confirm', t('drawer.github_confirm'), () => window.open('https://github.com/SmirnovaOyama/Oyama-s-HRT-recorder', '_blank'))}
+                onClick={() => showDialog('confirm', t('drawer.github_confirm'), () => window.open('https://github.com/xingqimiao/Kira-HRT-Tracker', '_blank'))}
                 className={rowBase}
             >
                 <span className={rowLabel}>{t('drawer.github')}</span>

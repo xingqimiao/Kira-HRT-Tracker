@@ -28,14 +28,33 @@ interface PartSelectProps {
     value: number;
     options: PartOption[];
     onChange: (value: number) => void;
+    /**
+     * Let the value be typed as well as picked.
+     *
+     * For the time fields only. A minute has 60 options and the popup shows about
+     * ten, so reaching a specific one is a scroll hunt — the reported friction. A
+     * field you can type into turns that into two keystrokes, which is the same
+     * answer Material 3 reaches with an "input" mode beside its dial.
+     *
+     * The list stays, for the other direction: picking a nearby value from a list
+     * beats typing it. So the control is both, not either.
+     */
+    editable?: boolean;
 }
 
-const PartSelect: React.FC<PartSelectProps> = ({ label, value, options, onChange }) => {
+const PartSelect: React.FC<PartSelectProps> = ({ label, value, options, onChange, editable }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const triggerRef = useRef<HTMLButtonElement>(null);
+    // On the wrapper, not the control: the control is a button in one mode and an
+    // input in the other, and the dropdown positions itself against whichever.
+    const triggerRef = useRef<HTMLDivElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
     const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
     const [positionStyle, setPositionStyle] = useState<React.CSSProperties>({});
+
+    // Typing state, kept apart from `value` so a half-typed entry is not committed
+    // and a cleared field does not snap back to the old number mid-edit.
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState('');
 
     useEffect(() => {
         if (typeof document !== 'undefined') setPortalTarget(document.body);
@@ -88,27 +107,93 @@ const PartSelect: React.FC<PartSelectProps> = ({ label, value, options, onChange
     }, [isOpen]);
 
     const selected = options.find(option => option.value === value);
+    const min = options[0]?.value ?? 0;
+    const max = options[options.length - 1]?.value ?? 0;
+    const pad = (n: number) => String(n).padStart(2, '0');
+
+    /**
+     * Commit a typed entry, clamped to what the list would have offered.
+     *
+     * Deliberately does NOT end the edit. `editing` is what lets the box show the
+     * text being typed (rather than the committed number), so clearing it here
+     * would make the field retype itself under the reader the moment they pressed
+     * Enter — and a *second* edit in the same focus then fought the value back and
+     * was silently dropped. `onBlur` is what ends the edit.
+     */
+    const commitDraft = () => {
+        const parsed = Number.parseInt(draft, 10);
+        if (Number.isNaN(parsed)) return;
+        const clamped = Math.min(max, Math.max(min, parsed));
+        // Echo back what was actually accepted, so the box never shows a number the
+        // model rejected: typing 99 into minutes leaves 59 on screen, not 99 sitting
+        // over a value of 59.
+        setDraft(pad(clamped));
+        if (clamped !== value) onChange(clamped);
+    };
+
+    const endEdit = () => {
+        commitDraft();
+        setEditing(false);
+        setDraft('');
+    };
+
+    const sharedTrigger = `w-full min-h-11 flex items-center justify-between gap-1 rounded-lg border px-2.5 py-2 text-sm tabular-nums outline-none transition-colors motion-reduce:transition-none
+        bg-cos-surface-container  text-[var(--color-m3-on-surface)] 
+        ${isOpen
+            ? 'border-[var(--color-m3-primary)] ring-1 ring-[var(--color-m3-primary)]/20'
+            : 'border-[var(--color-m3-outline-variant)]  hover:border-[var(--color-m3-outline)] '}`;
+
+    const chevron = (
+        <Icon icon={ChevronDown}
+            size={14}
+            className={`chev shrink-0 text-[var(--color-m3-on-surface-variant)]  ${isOpen ? 'rotate-180' : ''}`} />
+    );
 
     return (
-        <div className="relative">
-            <button
-                type="button"
-                ref={triggerRef}
-                onClick={() => setIsOpen(open => !open)}
-                aria-label={label}
-                aria-haspopup="listbox"
-                aria-expanded={isOpen}
-                className={`w-full min-h-11 flex items-center justify-between gap-1 rounded-lg border px-2.5 py-2 text-sm tabular-nums outline-none transition-colors motion-reduce:transition-none
-                    bg-cos-surface-container  text-[var(--color-m3-on-surface)] 
-                    ${isOpen
-                        ? 'border-[var(--color-m3-primary)] ring-1 ring-[var(--color-m3-primary)]/20'
-                        : 'border-[var(--color-m3-outline-variant)]  hover:border-[var(--color-m3-outline)] '}`}
-            >
-                <span className="truncate">{selected?.label ?? value}</span>
-                <Icon icon={ChevronDown}
-                    size={14}
-                    className={`chev shrink-0 text-[var(--color-m3-on-surface-variant)]  ${isOpen ? 'rotate-180' : ''}`} />
-            </button>
+        <div className="relative" ref={triggerRef}>
+            {editable ? (
+                // Typing is the point, so the input takes the row and the chevron
+                // shares it — one control that can be typed into or opened.
+                <div className={sharedTrigger}>
+                    <input
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        autoComplete="off"
+                        aria-label={label}
+                        value={editing ? draft : pad(value)}
+                        onFocus={(e) => { setEditing(true); setDraft(pad(value)); e.currentTarget.select(); }}
+                        onChange={(e) => setDraft(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                        onBlur={endEdit}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); commitDraft(); }
+                            if (e.key === 'ArrowDown') { e.preventDefault(); setIsOpen(true); }
+                        }}
+                        className="min-w-0 flex-1 bg-transparent outline-none tabular-nums"
+                    />
+                    <button
+                        type="button"
+                        onClick={() => setIsOpen(open => !open)}
+                        aria-haspopup="listbox"
+                        aria-expanded={isOpen}
+                        aria-label={label}
+                        className="shrink-0 -mr-1.5 p-1"
+                    >
+                        {chevron}
+                    </button>
+                </div>
+            ) : (
+                <button
+                    type="button"
+                    onClick={() => setIsOpen(open => !open)}
+                    aria-label={label}
+                    aria-haspopup="listbox"
+                    aria-expanded={isOpen}
+                    className={sharedTrigger}
+                >
+                    <span className="truncate">{selected?.label ?? value}</span>
+                    {chevron}
+                </button>
+            )}
 
             {isOpen && portalTarget && createPortal(
                 <div
@@ -125,7 +210,7 @@ const PartSelect: React.FC<PartSelectProps> = ({ label, value, options, onChange
                             role="option"
                             aria-selected={option.value === value}
                             data-selected={option.value === value}
-                            onClick={() => { onChange(option.value); setIsOpen(false); }}
+                            onClick={() => { setEditing(false); setDraft(''); onChange(option.value); setIsOpen(false); }}
                             className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-start tabular-nums
                                 ${option.value === value
                                     ? 'bg-[var(--color-m3-primary-container)]  text-[var(--color-m3-on-primary-container)]  font-medium'
@@ -254,6 +339,7 @@ const DateTimePicker: React.FC<DateTimePickerProps> = ({
         part: DatePart,
         value: number,
         options: PartOption[],
+        editable?: boolean,
     ) => (
         <div className="min-w-0">
             <span className={labelClass}>{label}</span>
@@ -262,6 +348,7 @@ const DateTimePicker: React.FC<DateTimePickerProps> = ({
                 value={value}
                 options={options}
                 onChange={next => setPart(part, next)}
+                editable={editable}
             />
         </div>
     );
@@ -320,12 +407,14 @@ const DateTimePicker: React.FC<DateTimePickerProps> = ({
                             'hour',
                             selectedDate.getHours(),
                             hours.map(hour => ({ value: hour, label: String(hour).padStart(2, '0') })),
+                            true,
                         )}
                         {renderPart(
                             t('time.minute'),
                             'minute',
                             selectedDate.getMinutes(),
                             minutes.map(minute => ({ value: minute, label: String(minute).padStart(2, '0') })),
+                            true,
                         )}
                     </div>
                 </section>
