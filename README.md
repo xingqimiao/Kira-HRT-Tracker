@@ -1,11 +1,8 @@
 # Kira HRT Tracker
 
-记录 HRT 用药与化验，估算激素水平随时间的变化，让 AI 助手通过 MCP 读写你的记录。
+![Kira HRT Tracker — dose logging, pharmacokinetic estimates, private by default](public/og.png)
 
-<p align="center">
-  <img src="docs/screens/home.png" width="300" alt="概览页：当前估算血药浓度、浓度曲线与用药日历" />
-  <img src="docs/screens/settings.png" width="300" alt="设置页" />
-</p>
+记录 HRT 用药与化验，估算激素水平随时间的变化，让 AI 助手通过 MCP 读写你的记录。
 
 出品 **[KiraEqual](https://kiramyao.com)** · 服务状态 <https://status.kiramyao.com>
 
