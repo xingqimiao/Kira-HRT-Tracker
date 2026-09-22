@@ -153,7 +153,13 @@ async function purgeTombstoned(
     items: unknown[],
     prior: Map<string, Record<string, unknown>>,
 ): Promise<number> {
-    let removed = 0;
+    // Collect first, delete after: the stamps that decide whether a row is a delete or
+    // a restore live *inside* the encrypted payload, so SQL cannot make that comparison
+    // and the rows have to be read to be judged. Reading them one query per entry made
+    // clearing a history (which tombstones every id at once, up to the client's 5000
+    // per kind) thousands of sequential round trips on the request path; this is two
+    // statements whatever the size.
+    const cutoff = new Map<string, number>();
     for (const raw of items) {
         const item = jsonObject(raw);
         const parts = typeof item?.id === 'string' ? item.id.split(':') : [];
@@ -172,14 +178,39 @@ async function purgeTombstoned(
 
         for (const [appId, at] of Object.entries(incoming)) {
             if (!appId || typeof at !== 'number' || !Number.isFinite(at)) continue;
-            const wireId = `${prefix}:${mode}:${appId}`;
-            const row = await RecordService.get(ctx, wireId).catch(() => null);
-            if (!row) continue;
-            const stamp = (row.data as { updatedAt?: unknown } | null)?.updatedAt;
+            cutoff.set(`${prefix}:${mode}:${appId}`, at);
+        }
+    }
+    const doomed = [...cutoff.keys()];
+    if (doomed.length === 0) return 0;
+
+    const removable: string[] = [];
+    for (let start = 0; start < doomed.length; start += INSERT_CHUNK) {
+        const chunk = doomed.slice(start, start + INSERT_CHUNK);
+        const { rows } = await getPool().query<{ id: string; payload_encrypted: string }>(
+            `SELECT id, payload_encrypted FROM records WHERE user_id = $1 AND id = ANY($2::text[])`,
+            [ctx.userId, chunk],
+        );
+        for (const row of rows) {
+            let data: unknown;
+            try { data = open(row.payload_encrypted, ctx); } catch { continue; }
+            const stamp = (data as { updatedAt?: unknown } | null)?.updatedAt;
+            const at = cutoff.get(row.id) ?? 0;
             // A record newer than the delete is a restore of it, not a copy to purge.
             if (typeof stamp === 'number' && Number.isFinite(stamp) && stamp > at) continue;
-            if (await RecordService.remove(ctx, wireId).catch(() => false)) removed += 1;
+            removable.push(row.id);
         }
+    }
+    if (removable.length === 0) return 0;
+
+    let removed = 0;
+    for (let start = 0; start < removable.length; start += INSERT_CHUNK) {
+        const chunk = removable.slice(start, start + INSERT_CHUNK);
+        const { rowCount } = await getPool().query(
+            `DELETE FROM records WHERE user_id = $1 AND id = ANY($2::text[])`,
+            [ctx.userId, chunk],
+        );
+        removed += rowCount ?? 0;
     }
     return removed;
 }
