@@ -331,11 +331,16 @@ export const QuickAddDemo: React.FC = () => {
                             : 'pointer-events-none -translate-y-1.5 scale-[0.97] opacity-0'
                     }`}
                 >
+                    {/* The rule under the row is the light `outline-variant` divider the
+                        list uses — but it stayed that colour when the row was filled
+                        with primary, showing as a pale line across the pink (the "white
+                        dot"). Selected, the rule goes transparent: the fill itself is
+                        what separates the two rows there. */}
                     <div
-                        className={`block w-full border-b border-[var(--color-m3-outline-variant)] px-3.5 py-2.5 text-left transition-colors duration-200 ${
+                        className={`block w-full border-b px-3.5 py-2.5 text-left transition-colors duration-200 ${
                             phase === 2
-                                ? 'bg-[var(--color-m3-primary)] text-[var(--color-m3-on-primary)]'
-                                : 'text-[var(--color-m3-on-surface)]'
+                                ? 'border-transparent bg-[var(--color-m3-primary)] text-[var(--color-m3-on-primary)]'
+                                : 'border-[var(--color-m3-outline-variant)] text-[var(--color-m3-on-surface)]'
                         }`}
                     >
                         <span className="block text-sm font-semibold">{tplName1}</span>
