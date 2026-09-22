@@ -13,6 +13,7 @@ import type { Server } from 'node:http';
 import { bootPostgres, useDatabase, startApiServer, teardown, TEST_ENCRYPTION_KEY, type PostgresHandle } from './pg.ts';
 import { registerAccount } from './helpers.ts';
 import { setConfigForTesting } from '../src/config.ts';
+import { ExtraKey, PK_ENGINES, DEFAULT_PK_ENGINE } from '../src/engine.ts';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -211,6 +212,61 @@ test('an agent can journal, save a template, page them, and delete them', async 
 
   await client.close();
 });
+test('the dose tools describe every field the engine reads', async () => {
+  // The gap this guards: `gelProductId`, `gelCoverage`, `gelCoApplied` and
+  // `gelWashAfterH` were added to the engine and to the web form, and the MCP
+  // descriptions kept listing only the older gel fields. An agent can pass anything in
+  // `extras` — it is a free-form numeric record — but it cannot know a field *exists*
+  // unless the description names it, so the feature was reachable and undiscoverable
+  // at the same time. Driven off `ExtraKey` so a field added there has to be described
+  // here, rather than the other way round.
+  const account = await registerAccount(base, { password: 'mcp-fields-1' });
+  const { client, transport } = connect(account.token);
+  await client.connect(transport);
+
+  const { tools } = await client.listTools();
+  const doseTools = tools.filter((t) => t.name === 'hrt_add_medication' || t.name === 'hrt_add_dose_template');
+  assert.equal(doseTools.length, 2, 'both dose-writing tools are present');
+
+  // Every key the app can write into `extras` must appear in the description. Spelled
+  // as a list of exclusions rather than an inclusion check because the description is
+  // prose: what matters is that no field is missing.
+  const extrasKeys = Object.values(ExtraKey) as string[];
+  for (const tool of doseTools) {
+    for (const key of extrasKeys) {
+      assert.ok(
+        (tool.description ?? '').includes(key) || (tool.inputSchema as any)?.properties?.extras?.description?.includes(key),
+        `${tool.name} does not mention the '${key}' extras field`,
+      );
+    }
+  }
+
+  const settings = tools.find((t) => t.name === 'hrt_get_settings');
+  assert.ok(settings, 'get_settings present');
+  assert.ok(
+    settings.description?.includes('pkEngine'),
+    'get_settings must name pkEngine, so an agent can read and explain the model',
+  );
+  for (const engine of PK_ENGINES) {
+    assert.ok(settings.description?.includes(engine), `get_settings must name the '${engine}' engine`);
+  }
+
+  // And the write tool has to say it is NOT writable, or an agent keeps looking for a
+  // parameter that does not exist.
+  const update = tools.find((t) => t.name === 'hrt_update_settings');
+  assert.ok(update, 'update_settings present');
+  assert.ok(
+    /not\*{0,2}\s*writable|not writable|read-only over MCP/i.test(update.description ?? ''),
+    'update_settings must state that the model itself is not writable here',
+  );
+  assert.ok(
+    !Object.keys((update.inputSchema as any)?.properties ?? {}).some((k) => /engine/i.test(k)),
+    'update_settings must not accept an engine parameter',
+  );
+
+  await client.close();
+});
+
 test('a tool call with no credential explains the missing token, not a lock', async () => {
   // No token at all. This used to answer "the account is locked, sign in at the web UI",
   // and that remedy is wrong: no password sign-in produces a token, so a caller who

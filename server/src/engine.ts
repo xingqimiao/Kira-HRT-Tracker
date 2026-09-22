@@ -130,6 +130,13 @@ export {
   T_ESTERS,
   SL_TIER_ORDER,
   GEL_SITE_ORDER,
+  // The gel detail the Transmtf engine reads. Re-exported so the MCP descriptions
+  // can name them and their ranges without a second, hand-kept copy.
+  GEL_PRODUCT_OPTIONS,
+  GEL_COVERAGE_OPTIONS,
+  GEL_COAPPLICATION_OPTIONS,
+  PK_ENGINES,
+  DEFAULT_PK_ENGINE,
   CALIBRATION_METHODS,
   CALIBRATION_HISTORY_MODES,
   DEFAULT_PK_PARAMS,

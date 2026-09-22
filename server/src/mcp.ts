@@ -34,7 +34,16 @@ import type { AuthContext, ContextDenial } from './types.ts';
 
 import { buildExportPayload } from './records.ts';
 import { ShareService } from './shares.ts';
-import { SL_TIER_ORDER, GEL_SITE_ORDER, PK_PARAM_RANGES } from './engine.ts';
+import {
+  SL_TIER_ORDER,
+  GEL_SITE_ORDER,
+  GEL_PRODUCT_OPTIONS,
+  GEL_COVERAGE_OPTIONS,
+  GEL_COAPPLICATION_OPTIONS,
+  PK_ENGINES,
+  DEFAULT_PK_ENGINE,
+  PK_PARAM_RANGES,
+} from './engine.ts';
 
 /** How an adapter obtains the caller's identity and key. */
 export type ContextResolver = () => Promise<AuthContext | ContextDenial | null>;
@@ -112,9 +121,19 @@ const ESTER_DESCRIPTION =
  * engine's own lookup tables rather than being restated.
  */
 const EXTRAS_DESCRIPTION =
-  `Route-specific numbers. sublingualTier: 0–${SL_TIER_ORDER.length - 1} (${SL_TIER_ORDER.join('/')}); ` +
-  `gelSite: 0–${GEL_SITE_ORDER.length - 1} (${GEL_SITE_ORDER.join('/')}); ` +
-  'concentrationMGmL and areaCM2 for gel; releaseRateUGPerDay for patches; patchWearH for planned wear hours';
+  `Route-specific numbers, by route. ` +
+  `sublingual: sublingualTier 0–${SL_TIER_ORDER.length - 1} (${SL_TIER_ORDER.join('/')}), ` +
+  `or sublingualTheta directly (0–1, the absorbed fraction; overrides the tier). ` +
+  `gel: gelSite 0–${GEL_SITE_ORDER.length - 1} (${GEL_SITE_ORDER.join('/')}), ` +
+  `gelProductId from ${GEL_PRODUCT_OPTIONS.map(p => p.id).join('/')} ` +
+  `(${GEL_PRODUCT_OPTIONS.map(p => `${p.id} = ${p.nameKey.replace('gel.product.', '')}`).join(', ')}; ` +
+  `ids ≥ 1000 are the account's own products), ` +
+  `gelCoverage 0–${GEL_COVERAGE_OPTIONS.length - 1} (${GEL_COVERAGE_OPTIONS.join('/')}), ` +
+  `gelCoApplied 0–${GEL_COAPPLICATION_OPTIONS.length - 1} (${GEL_COAPPLICATION_OPTIONS.join('/')}), ` +
+  `gelWashAfterH for wash-off, plus concentrationMGmL and areaCM2 as direct values. ` +
+  `patch: releaseRateUGPerDay, and patchWearH for planned wear hours. ` +
+  `The gel detail beyond gelSite is read only by the Transmtf model — see the pkEngine ` +
+  `field in hrt_get_settings — and is stored either way, so it survives a model switch.`;
 
 const SAFETY_NOTE =
   'This is a pharmacokinetic estimate from a population model, not a laboratory measurement. ' +
@@ -391,9 +410,18 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
       title: 'Get simulation settings',
       description:
         'Body weight, HRT mode, calibration method and history window, timezone, PK parameter ' +
-        'overrides, and `appState` — the web app\'s own opaque settings bag. Read-only fields in ' +
-        'appState (language, theme, HRT start date, re-check reminders) cannot be written through ' +
-        'MCP; use hrt_update_settings for the rest.',
+        'overrides, and `appState` — the web app\'s own settings bag.\n' +
+        '\n' +
+        '`appState.settings.pkEngine` is which pharmacokinetic model computes the curve: ' +
+        `'${PK_ENGINES[0]}' (the original, and the default) or '${PK_ENGINES[1]}'. ` +
+        'Read it when a question turns on why a curve looks the way it does, or to explain the ' +
+        'difference to the user — the two models draw different curves from the same records. ' +
+        'It is **read-only over MCP**: switching models re-computes every past estimate, so the ' +
+        'choice is the account owner\'s to make in the app, not a side effect of a request. An ' +
+        `absent or unrecognised value means '${DEFAULT_PK_ENGINE}', which is also the default.\n` +
+        '\n' +
+        'Other read-only fields in appState (language, theme, HRT start date, re-check reminders) ' +
+        'cannot be written through MCP either; use hrt_update_settings for the rest.',
       inputSchema: {},
     },
     async () => {
@@ -566,7 +594,13 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         'method and history window, timezone, and PK parameter overrides. Omitted fields are ' +
         'left alone; pass an empty object to `pk_params` to clear every override. PK ' +
         'overrides are advanced — only set them if the user explicitly asks, and never guess a ' +
-        'value. This does not reach the app\'s own display preferences (language, theme, HRT ' +
+        'value.\n' +
+        '\n' +
+        'The pharmacokinetic model itself (`appState.settings.pkEngine`, reported by ' +
+        'hrt_get_settings) is **not** writable here. Switching it re-computes every past ' +
+        'estimate from the same records, so it is a decision the user makes in the app while ' +
+        'looking at the curve; ask them to change it rather than looking for a parameter for it. ' +
+        'This does not reach the app\'s own display preferences either (language, theme, HRT ' +
         'start date, re-check reminders); those are not agent-writable.',
       inputSchema: {
         body_weight_kg: z.number().min(20).max(400).optional(),
