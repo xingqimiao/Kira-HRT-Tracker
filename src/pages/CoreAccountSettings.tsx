@@ -780,7 +780,7 @@ const DeleteAccountScreen: React.FC<{
       {/* The sign. Black on yellow at display size — the contrast is the design, so
           the colours are fixed rather than theme tokens: a placard does not have a
           dark mode, and it must stay legible over the dark surface behind it. */}
-      <div className="bg-[#FFC421] px-5 py-6 sm:px-8 sm:py-8">
+      <div className="bg-[#FFB01C] px-5 py-6 sm:px-8 sm:py-8">
         <p className="text-[clamp(1.6rem,7vw,3.25rem)] font-black uppercase leading-[0.95] tracking-[-0.02em]">
           Keep or delete — this is your last chance
         </p>
