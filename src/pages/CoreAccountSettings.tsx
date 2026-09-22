@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Icon from '../components/Icon';
 import { useTranslation } from '../contexts/LanguageContext';
 import { AlertTriangle, LogOut, MonitorSmartphone, RefreshCw, Trash2, Unlink } from '../icons';
@@ -753,6 +754,12 @@ const UnlinkDialog: React.FC<{
  *
  * The form itself is unchanged from the dialog this replaced: password, type DELETE,
  * submit. Only the frame is new.
+ *
+ * It renders through `createPortal(…, document.body)`, like the app's other overlays.
+ * That is not decoration: the view container animates with a `transform`, and an
+ * identity transform still makes an element a containing block for `position: fixed`.
+ * Left in place, this "full-screen" surface was measured at x=80 (inset by the nav
+ * rail) and y=-73 (offset by the view's scroll) — the rail showed down its edge.
  */
 const DeleteAccountScreen: React.FC<{
   busy: boolean;
@@ -770,7 +777,7 @@ const DeleteAccountScreen: React.FC<{
   // an accidental Enter-through impossible.
   const ready = confirmText.trim().toUpperCase() === 'DELETE' && !!password;
 
-  return (
+  return createPortal(
     <div
       className="del-sign fixed inset-0 z-[80] overflow-y-auto bg-white text-black"
       role="dialog"
@@ -844,7 +851,8 @@ const DeleteAccountScreen: React.FC<{
           {t('core.del.keep')}
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
