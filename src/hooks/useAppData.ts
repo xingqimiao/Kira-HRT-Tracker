@@ -181,16 +181,36 @@ export const useAppData = (
      * those as deletions is what lets a restore survive the next sync instead of
      * being immediately undone by the cloud copy it was restoring from.
      */
+    /**
+     * How a set of records changed across an import, and the stamps that make the
+     * change travel.
+     *
+     * A restore is the case that needs care. Importing a backup brings back records
+     * that were deleted and synced away, and clearing the local tombstone is only half
+     * of it: the cloud still holds its own tombstone, and the merge drops any record
+     * whose stamp does not postdate the delete. So a restored record has to *look like
+     * a fresh edit* — which is what `restoredIds` is for. The caller stamps those
+     * records with the import time, and the merge then keeps them, because the record
+     * is genuinely newer than the deletion it is undoing.
+     *
+     * Returns the ids the caller must restamp; the id sets are otherwise unchanged.
+     */
     const reconcileReplacement = (
         m: 'transfem' | 'transmasc',
         kind: RecordKind,
         before: { id: string }[],
         after: { id: string }[],
-    ) => {
+    ): Set<string> => {
         const keep = new Set(after.map(r => r.id));
         const gone = before.map(r => r.id).filter(id => id && !keep.has(id));
+        const tombstones = readTombstones(m)[kind];
+        // Present after the import, and deleted before it: these are the restores.
+        const restored = new Set(
+            after.map(r => r.id).filter(id => id && tombstones[id] !== undefined),
+        );
         forgetDeletions(kind, [...keep], m);
         recordDeletions(kind, gone, m);
+        return restored;
     };
 
     // --- State ---
@@ -569,11 +589,20 @@ export const useAppData = (
             // built-in engine is what `activeEngine` holds until the Transmtf engine
             // is asked for and fetched, so this line is unchanged for anyone who
             // never switches.
+            //
+            // `pkParams` is a dependency even though it is not an argument: the
+            // overrides reach the engine through a module-level global
+            // (`applyPKOverrides`), applied by the effect above this one. Without it
+            // in the list, saving new parameters updated that global and nothing
+            // recomputed — the curve kept the old shape until some unrelated edit
+            // changed `events`, which is why it looked like the parameters did
+            // nothing. The effect above runs first in declaration order, so the
+            // global is already current when this one reads it.
             setSimulation(activeEngine.runSimulation(events, weight));
         } else {
             setSimulation(null);
         }
-    }, [events, weight, activeEngine]);
+    }, [events, weight, pkParams, activeEngine]);
 
     // --- Derived State ---
     // Self-learning calibration: fits a personal amplitude (+ clearance, for the
@@ -733,10 +762,20 @@ export const useAppData = (
         setDoseTemplates(prev => prev.filter(t => t.id !== id));
     };
 
-    // Quick doses are a per-device shortcut list, not part of the record — they
-    // are neither exported nor synced, so no tombstone is needed.
-    const addQuickDose = (dose: QuickDose) => setQuickDoses(prev => [...prev, dose]);
-    const deleteQuickDose = (id: string) => setQuickDoses(prev => prev.filter(d => d.id !== id));
+    // Quick doses do round-trip: they are exported, and they sync inside
+    // `appState.modes[mode].quickDoses` as well as their own `quick:` records. They
+    // therefore need tombstones like every other record — without one, a deletion was
+    // only local, and the next sync pulled the button straight back out of the cloud.
+    // (An older comment here said they were neither exported nor synced and needed no
+    // tombstone. That had stopped being true, and the comment is why it went unnoticed.)
+    const addQuickDose = (dose: QuickDose) => {
+        forgetDeletions('quickDoses', [dose.id]);
+        setQuickDoses(prev => [...prev, dose]);
+    };
+    const deleteQuickDose = (id: string) => {
+        recordDeletions('quickDoses', [id]);
+        setQuickDoses(prev => prev.filter(d => d.id !== id));
+    };
 
     const touchPkParams = () => localStorage.setItem(sharedKey('pk-params-at'), String(Date.now()));
     const setPkParams = (params: PKCustomParams) => { touchPkParams(); setPkParamsState(params); };
@@ -753,6 +792,32 @@ export const useAppData = (
     // runs, the wedged data is reloaded on every subsequent open. Reject the
     // file outright so nothing is written.
     const MAX_IMPORT_ENTRIES = 20000;
+
+    /**
+     * Quick-add buttons from an imported backup.
+     *
+     * These are records, not free text: each needs a well-formed id or the merge
+     * cannot tell two apart or record a deletion for one. Junk entries are dropped
+     * rather than repaired — a button with a made-up id would resurrect on every sync.
+     */
+    const sanitizeImportedQuickDoses = (raw: unknown): QuickDose[] => {
+        if (!Array.isArray(raw)) return [];
+        if (raw.length > 500) throw new Error('Too many entries');
+        return raw.flatMap((item: any) => {
+            if (!item || typeof item !== 'object') return [];
+            const id = typeof item.id === 'string' && item.id ? item.id : null;
+            if (!id) return [];
+            if (!Object.values(Route).includes(item.route)) return [];
+            return [{
+                id,
+                route: item.route as Route,
+                ester: item.ester as Ester,
+                value: Number(item.value) || 0,
+                createdAt: Number(item.createdAt) || Date.now(),
+                updatedAt: keepStamp(item),
+            } as QuickDose];
+        });
+    };
 
     /** Carry a record's edit stamp through sanitising; absent or junk becomes undefined. */
     const keepStamp = (raw: any): number | undefined => {
@@ -871,6 +936,12 @@ export const useAppData = (
             let newLabs: LabResult[] = [];
             let newTemplates: DoseTemplate[] = [];
             let newPkParams: PKCustomParams | undefined = undefined;
+            // A backup writes `pkParams: null` to mean "this account has no custom
+            // parameters" — the export states the field even when it is empty, so the
+            // null is information, not the absence of it. `undefined` therefore has to
+            // stay distinct from "the file says clear them": the first means the key
+            // was not there, the second must actually clear.
+            let pkParamsCleared = false;
             let importedOtherMode = false;
             // Which kinds the payload actually *speaks about*, tracked one by
             // one. A single "it had something for this mode" flag replaced all
@@ -884,8 +955,14 @@ export const useAppData = (
             // records what it drops as deletions: silence used to cost a wipe
             // this device might get back from another one, and would now cost
             // the same wipe on every device.
-            const replaced = { events: false, labResults: false, doseTemplates: false, journal: false };
+            const replaced = { events: false, labResults: false, doseTemplates: false, journal: false, quickDoses: false };
             let newJournal: JournalEntry[] = [];
+            // Quick-dose buttons and the settings bag. Neither was read here at all,
+            // so a backup that promised them restored nothing: the import reported
+            // success over a file it had only half-applied.
+            let newQuickDoses: QuickDose[] | undefined = undefined;
+            let importedSettings: Record<string, unknown> | undefined = undefined;
+            let importedSettingsAt = 0;
 
             // New multi-mode payload: { modes: { transfem: {...}, transmasc: {...} } }
             if (parsed && typeof parsed === 'object' && parsed.modes && typeof parsed.modes === 'object') {
@@ -903,25 +980,32 @@ export const useAppData = (
                         if (Array.isArray(block.journal)) { newJournal = sanitizeJournalEntries(block.journal); replaced.journal = true; }
                     } else {
                         // Write other mode's data straight to localStorage.
+                        // Restored records are restamped with the import time, so the
+                        // merge can tell them from a copy that merely predates its own
+                        // deletion — see `reconcileReplacement`.
                         if (Array.isArray(block.events)) {
-                            reconcileReplacement(m, 'events', loadJSON<DoseEvent[]>(keyFor(m, 'events'), []), evs);
-                            localStorage.setItem(keyFor(m, 'events'), JSON.stringify(evs));
+                            const revived = reconcileReplacement(m, 'events', loadJSON<DoseEvent[]>(keyFor(m, 'events'), []), evs);
+                            const out = evs.map(e => (revived.has(e.id) ? { ...e, updatedAt: Date.now() } : e));
+                            localStorage.setItem(keyFor(m, 'events'), JSON.stringify(out));
                             importedOtherMode = true;
                         }
                         if (Array.isArray(block.labResults)) {
-                            reconcileReplacement(m, 'labResults', loadJSON<LabResult[]>(keyFor(m, 'lab-results'), []), ls);
-                            localStorage.setItem(keyFor(m, 'lab-results'), JSON.stringify(ls));
+                            const revived = reconcileReplacement(m, 'labResults', loadJSON<LabResult[]>(keyFor(m, 'lab-results'), []), ls);
+                            const out = ls.map(r => (revived.has(r.id) ? { ...r, updatedAt: Date.now() } : r));
+                            localStorage.setItem(keyFor(m, 'lab-results'), JSON.stringify(out));
                             importedOtherMode = true;
                         }
                         if (Array.isArray(block.doseTemplates)) {
-                            reconcileReplacement(m, 'doseTemplates', loadJSON<DoseTemplate[]>(keyFor(m, 'dose-templates'), []), tmps);
-                            localStorage.setItem(keyFor(m, 'dose-templates'), JSON.stringify(tmps));
+                            const revived = reconcileReplacement(m, 'doseTemplates', loadJSON<DoseTemplate[]>(keyFor(m, 'dose-templates'), []), tmps);
+                            const out = tmps.map(r => (revived.has(r.id) ? { ...r, updatedAt: Date.now() } : r));
+                            localStorage.setItem(keyFor(m, 'dose-templates'), JSON.stringify(out));
                             importedOtherMode = true;
                         }
                         if (Array.isArray(block.journal)) {
                             const jour = sanitizeJournalEntries(block.journal);
-                            reconcileReplacement(m, 'journal', loadJSON<JournalEntry[]>(keyFor(m, 'journal'), []), jour);
-                            localStorage.setItem(keyFor(m, 'journal'), JSON.stringify(jour));
+                            const revived = reconcileReplacement(m, 'journal', loadJSON<JournalEntry[]>(keyFor(m, 'journal'), []), jour);
+                            const out = jour.map(r => (revived.has(r.id) ? { ...r, updatedAt: Date.now() } : r));
+                            localStorage.setItem(keyFor(m, 'journal'), JSON.stringify(out));
                             importedOtherMode = true;
                         }
                     }
@@ -931,6 +1015,17 @@ export const useAppData = (
                 }
                 if (parsed.pkParams && typeof parsed.pkParams === 'object') {
                     newPkParams = sanitizePKParams(parsed.pkParams) ?? undefined;
+                } else if (parsed.pkParams === null) {
+                    // The export's way of saying "no custom parameters". Distinct from
+                    // the key being absent, which means the file does not speak to it.
+                    pkParamsCleared = true;
+                }
+                // The previous mode block's quick doses; the active mode's are taken
+                // below so they go through the same replace path as the other kinds.
+                const activeBlock = modesBlock[mode];
+                if (activeBlock && Array.isArray(activeBlock.quickDoses)) {
+                    newQuickDoses = sanitizeImportedQuickDoses(activeBlock.quickDoses);
+                    replaced.quickDoses = true;
                 }
             } else if (Array.isArray(parsed)) {
                 newEvents = sanitizeImportedEvents(parsed);
@@ -957,6 +1052,16 @@ export const useAppData = (
                 }
                 if (parsed.pkParams && typeof parsed.pkParams === 'object') {
                     newPkParams = sanitizePKParams(parsed.pkParams) ?? undefined;
+                } else if (parsed.pkParams === null) {
+                    pkParamsCleared = true;
+                }
+                // The settings bag travels at the payload root, not per mode. It was
+                // never read here, so a restored backup kept the *importing* device's
+                // preferences — HRT start date, calibration method, theme — which is
+                // how two devices ended up disagreeing about the same account.
+                if (parsed.appState && typeof parsed.appState === 'object' && parsed.appState.settings) {
+                    importedSettings = parsed.appState.settings as Record<string, unknown>;
+                    importedSettingsAt = Number(parsed.appState.settingsUpdatedAt) || Date.now();
                 }
             }
 
@@ -1010,24 +1115,39 @@ export const useAppData = (
             // so anything it drops from one is a deletion. Recording it is what
             // stops the next sync from pulling the dropped records straight back
             // out of the cloud — which would make "restore this backup" a no-op.
+            // A restored record is restamped as an edit at the import time. Without
+            // that it keeps its original stamp from the backup, which is older than
+            // the deletion it is undoing — and the merge would drop it again, which is
+            // the "the import said it worked and then the records vanished" report.
             if (replaced.events) {
-                reconcileReplacement(mode, 'events', events, newEvents);
-                setEvents(newEvents);
+                const revived = reconcileReplacement(mode, 'events', events, newEvents);
+                setEvents(newEvents.map(e => (revived.has(e.id) ? { ...e, updatedAt: Date.now() } : e)));
             }
             if (replaced.labResults) {
-                reconcileReplacement(mode, 'labResults', labResults, newLabs);
-                setLabResults(newLabs);
+                const revived = reconcileReplacement(mode, 'labResults', labResults, newLabs);
+                setLabResults(newLabs.map(r => (revived.has(r.id) ? { ...r, updatedAt: Date.now() } : r)));
             }
             if (replaced.doseTemplates) {
-                reconcileReplacement(mode, 'doseTemplates', doseTemplates, newTemplates);
-                setDoseTemplates(newTemplates);
+                const revived = reconcileReplacement(mode, 'doseTemplates', doseTemplates, newTemplates);
+                setDoseTemplates(newTemplates.map(r => (revived.has(r.id) ? { ...r, updatedAt: Date.now() } : r)));
             }
             if (replaced.journal) {
-                reconcileReplacement(mode, 'journal', journal, newJournal);
-                setJournal(newJournal);
+                const revived = reconcileReplacement(mode, 'journal', journal, newJournal);
+                setJournal(newJournal.map(r => (revived.has(r.id) ? { ...r, updatedAt: Date.now() } : r)));
+            }
+            if (replaced.quickDoses && newQuickDoses) {
+                const revived = reconcileReplacement(mode, 'quickDoses', quickDoses, newQuickDoses);
+                setQuickDoses(newQuickDoses.map(r => (revived.has(r.id) ? { ...r, updatedAt: Date.now() } : r)));
             }
             if (newWeight !== undefined) setWeight(newWeight);
             if (newPkParams !== undefined) setPkParams(newPkParams);
+            // Only when the file actually said so: an absent `pkParams` key must not
+            // wipe parameters the user set on this device.
+            else if (pkParamsCleared) clearPkParams();
+            // Last, so the settings the file carries are the ones left in force. Applied
+            // through the same path a synced payload uses, so the contexts that own
+            // them are told — writing storage alone would leave the screen as it was.
+            if (importedSettings) applyAppSettings(importedSettings as any, importedSettingsAt);
 
             showDialog('alert', t('drawer.import_success'));
             return true;

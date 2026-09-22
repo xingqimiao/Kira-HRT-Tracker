@@ -46,6 +46,16 @@ interface Options {
   events: unknown;
   labResults: unknown;
   doseTemplates: unknown;
+  /**
+   * Journal entries and quick-dose buttons.
+   *
+   * Both are synced records, and both were missing from the change fingerprint — so
+   * adding a journal entry on a device did nothing until some *other* record changed,
+   * or the user pressed sync by hand. Listed here for the same reason as the rest:
+   * the fingerprint is the only thing that arms the push.
+   */
+  journal: unknown;
+  quickDoses: unknown;
   weight: unknown;
   pkParams: unknown;
   /** Account-scoped settings, same contract as the data above. */
@@ -78,6 +88,8 @@ export const useCoreSync = ({
   events,
   labResults,
   doseTemplates,
+  journal,
+  quickDoses,
   weight,
   pkParams,
   calibrationMethod,
@@ -131,12 +143,42 @@ export const useCoreSync = ({
   /** Cleared on account switch: never push this device's data over a state it has not read. */
   const bootstrappedForRef = useRef<string | null>(null);
 
+  /**
+   * Which account the in-flight run belongs to, bumped whenever the account changes.
+   *
+   * A sync takes several round trips, and someone can sign out and into another
+   * account while one is in flight. The token is captured when the run starts, but
+   * `buildPayloadRef`/`applyRemoteRef` are read *after* the network returns — by then
+   * they belong to the new account. That mixed one account's records into another's:
+   * the merge combined A's remote state with B's local payload, and the upload went
+   * out under A's token carrying B's records.
+   *
+   * Every await below is followed by a check against this counter, so a run whose
+   * account has moved on abandons its result instead of writing it. A counter rather
+   * than the user id, because signing out and back into the *same* account must also
+   * invalidate: that reloads the data underneath the run just as much.
+   */
+  const generationRef = useRef(0);
+
   const clearRetry = useCallback(() => {
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current);
       retryTimerRef.current = null;
     }
   }, []);
+
+  // Drop everything an in-flight run left armed as soon as the account changes.
+  useEffect(() => {
+    generationRef.current += 1;
+    lastSeenRef.current = null;
+    bootstrappedForRef.current = null;
+    retryCountRef.current = 0;
+    clearRetry();
+    if (pushTimerRef.current) {
+      clearTimeout(pushTimerRef.current);
+      pushTimerRef.current = null;
+    }
+  }, [token, userId, clearRetry]);
 
   const run = useCallback(async (): Promise<void> => {
     const authToken = tokenRef.current;
@@ -154,10 +196,19 @@ export const useCoreSync = ({
     runningRef.current = true;
     setStatus('syncing');
 
+    // The account this run is for. Every await below re-checks it, and a step whose
+    // account has moved on stops rather than writing one account's data into another's.
+    const myGeneration = generationRef.current;
+    const stillMine = () => generationRef.current === myGeneration && tokenRef.current === authToken;
+
     try {
       // Read first, always. Pushing without looking would overwrite whatever
       // another device wrote since this one last synced.
       const remoteState = await readCoreState(authToken);
+      // Checked before building the local half, because that is the other side of the
+      // crossover: `buildPayloadRef.current` now belongs to whoever is signed in, so
+      // merging it against the old account's remote state is the bug itself.
+      if (!stillMine()) return;
       const remote = normalizeSyncState(remoteState);
       const local = normalizeSyncState(buildPayloadRef.current());
 
@@ -166,6 +217,7 @@ export const useCoreSync = ({
       // Apply only when the merge actually changed this device's picture, so a
       // no-op sync does not rewrite every storage key.
       if (merged.localChanged) {
+        if (!stillMine()) return;
         applyRemoteRef.current(merged.merged);
       }
 
@@ -177,6 +229,7 @@ export const useCoreSync = ({
       // still happens, the write does not.
       const seen = fingerprintState(merged.merged);
       if (seen === lastSeenRef.current) {
+        if (!stillMine()) return;
         bootstrappedForRef.current = account;
         setLastSyncedAt(Date.now());
         setAccountIncomplete(false);
@@ -193,6 +246,12 @@ export const useCoreSync = ({
         updateExisting: true,
         remote: remoteState,
       });
+
+      // The upload went out under `authToken`, so it cannot have landed on another
+      // account — but the response's bookkeeping describes *this* run, and the state
+      // it would update (lastSeen, bootstrapped, the status pill) now belongs to
+      // someone else. Dropped rather than applied.
+      if (!stillMine()) return;
 
       // Surface records the server refused rather than reporting a clean sync.
       const rejected =
@@ -277,7 +336,7 @@ export const useCoreSync = ({
   // to `events`. `readAppSettings` returns the same values until one of them
   // actually changes, which is what makes it a usable dependency.
   const localFingerprint = JSON.stringify([
-    events, labResults, doseTemplates, weight, pkParams,
+    events, labResults, doseTemplates, journal, quickDoses, weight, pkParams,
     readAppSettings(), calibrationMethod, calibrationHistoryMode, aaChartMode, hrtStartDate, recheckIntervals, ocrModelTier, pkEngine,
   ]);
   useEffect(() => {

@@ -270,6 +270,8 @@ const AppContent = () => {
         events,
         labResults,
         doseTemplates,
+        journal,
+        quickDoses,
         weight,
         pkParams,
         calibrationMethod,

@@ -157,11 +157,58 @@ check('quick doses union by id across both sides', () => {
 check('a quick dose differing on both sides resolves the same way either way round', () => {
   // Determinism is the requirement, not which copy wins: if the two devices chose
   // differently they would rewrite the account at each other forever.
-  const a = modeWith('transfem', { quickDoses: [{ id: 'q', mg: 2 }] });
-  const b = modeWith('transfem', { quickDoses: [{ id: 'q', mg: 9 }] });
+  //
+  // Quick doses now go through `mergeKind` like every other record — which is what
+  // gave them a tombstone, and with it a working delete. Their same-id tiebreak is
+  // therefore the record fingerprint rather than the old content-string compare, so
+  // this picks the other copy than it used to. The property it checks is unchanged.
+  const a = modeWith('transfem', { quickDoses: [{ id: 'q', value: 2 }] });
+  const b = modeWith('transfem', { quickDoses: [{ id: 'q', value: 9 }] });
   const ab = mergeSyncStates(a, b).merged.modes.transfem.quickDoses[0];
   const ba = mergeSyncStates(b, a).merged.modes.transfem.quickDoses[0];
-  assert.equal(ab.mg, ba.mg, 'both directions pick the same copy');
+  assert.equal(ab.value, ba.value, 'both directions pick the same copy');
+});
+
+// --- deleting vs restoring ---------------------------------------------------
+//
+// A tombstone used to win outright, which made every deletion permanent: a record
+// restored from a backup was dropped again by the next sync, because the cloud still
+// held the tombstone. These pin the rule that replaced it — newer record wins.
+
+check('a tombstone removes a record that predates it', () => {
+  const local = modeWith('transfem', { events: [{ id: 'e1', updatedAt: 1000 }] });
+  local.modes.transfem.deletions.events = { e1: 2000 };
+  const merged = mergeSyncStates(local, emptySyncState()).merged.modes.transfem.events;
+  assert.deepEqual(merged, [], 'the older record is deleted');
+});
+
+check('a record newer than its tombstone survives (a restore)', () => {
+  // The import restamps a restored record with the import time, so it postdates the
+  // delete it is undoing. That comparison is the whole fix.
+  const local = modeWith('transfem', { events: [{ id: 'e1', updatedAt: 3000 }] });
+  local.modes.transfem.deletions.events = { e1: 2000 };
+  const merged = mergeSyncStates(local, emptySyncState()).merged.modes.transfem.events;
+  assert.equal(merged.length, 1, 'the restored record is kept');
+  assert.equal(merged[0].id, 'e1');
+});
+
+check('a record with no stamp cannot undo a deletion', () => {
+  // An unverifiable claim of newness is not enough: hand-written imports and older
+  // payloads carry no `updatedAt` at all.
+  const local = modeWith('transfem', { events: [{ id: 'e1' }] });
+  local.modes.transfem.deletions.events = { e1: 2000 };
+  const merged = mergeSyncStates(local, emptySyncState()).merged.modes.transfem.events;
+  assert.deepEqual(merged, [], 'no stamp means the tombstone still wins');
+});
+
+check('deleting a quick dose is expressible and sticks', () => {
+  // The bug this guards: a deleted button came back on the next sync, because quick
+  // doses were unioned with no way to record a deletion at all.
+  const local = modeWith('transfem', { quickDoses: [] });
+  local.modes.transfem.deletions.quickDoses = { q1: 5000 };
+  const remote = modeWith('transfem', { quickDoses: [{ id: 'q1', value: 2 }] });
+  const merged = mergeSyncStates(local, remote).merged.modes.transfem.quickDoses;
+  assert.deepEqual(merged, [], 'the cloud copy does not come back');
 });
 
 // --- appState round trip ----------------------------------------------------

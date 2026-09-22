@@ -136,4 +136,66 @@ function gate() {
   console.log('ok 3 — concurrent callers coalesce into a single rerun');
 }
 
+// ---------------------------------------------------------------------------
+// 4. A run whose account changes mid-flight must not write.
+//
+// The mirror of the fix in `run()`: a generation counter plus a check after each
+// await. Without it, A's in-flight sync read B's payload *after* the network
+// returned — merging A's remote state with B's records and uploading them under A's
+// token. A privacy bug, and invisible: nothing errors, the wrong data just moves.
+// ---------------------------------------------------------------------------
+{
+  const gen = { current: 0 };
+  const applied = [];
+  const uploaded = [];
+
+  async function runScoped(account, body) {
+    const myGeneration = gen.current;
+    const stillMine = () => gen.current === myGeneration;
+    const remote = await body.read();          // await #1
+    if (!stillMine()) return;                  // the check under test
+    const local = body.buildPayload();
+    if (!stillMine()) return;
+    applied.push({ account, remote, local });
+    if (!stillMine()) return;
+    uploaded.push({ account, payload: body.payload() });
+  }
+
+  const slow = gate();
+  const body = {
+    read: () => slow.promise,
+    buildPayload: () => ({ owner: 'B' }),
+    payload: () => 'B-records',
+  };
+
+  const inFlight = runScoped('A', body);
+  await Promise.resolve();
+  gen.current += 1;        // the account changed while the request was out
+  slow.open();
+  await inFlight;
+
+  assert.deepEqual(applied, [], 'nothing is applied for the account that left');
+  assert.deepEqual(uploaded, [], 'and nothing is uploaded under its token');
+  console.log('ok 4 — a run whose account changed mid-flight writes nothing');
+}
+
+// ---------------------------------------------------------------------------
+// 5. ...and a run whose account did NOT change still completes.
+//    The guard must not be a blanket refusal.
+// ---------------------------------------------------------------------------
+{
+  const gen = { current: 7 };
+  const applied = [];
+  const runScoped = async () => {
+    const myGeneration = gen.current;
+    const stillMine = () => gen.current === myGeneration;
+    await Promise.resolve();
+    if (!stillMine()) return;
+    applied.push('done');
+  };
+  await runScoped();
+  assert.deepEqual(applied, ['done'], 'an undisturbed run completes');
+  console.log('ok 5 — a run whose account did not change completes normally');
+}
+
 console.log('\nsync coalescing: all checks passed');

@@ -33,8 +33,8 @@ import { isTestosteroneEster, isT_LabUnit } from '../../logic';
 export type ModeKey = 'transfem' | 'transmasc';
 export const MODE_KEYS: readonly ModeKey[] = ['transfem', 'transmasc'];
 
-export type RecordKind = 'events' | 'labResults' | 'doseTemplates' | 'journal';
-export const RECORD_KINDS: readonly RecordKind[] = ['events', 'labResults', 'doseTemplates', 'journal'];
+export type RecordKind = 'events' | 'labResults' | 'doseTemplates' | 'journal' | 'quickDoses';
+export const RECORD_KINDS: readonly RecordKind[] = ['events', 'labResults', 'doseTemplates', 'journal', 'quickDoses'];
 
 /** id -> epoch ms the record was deleted. */
 export type TombstoneMap = Record<string, number>;
@@ -209,7 +209,7 @@ export const TOMBSTONE_MAX_PER_KIND = 5000;
 // --- Shapes -----------------------------------------------------------------
 
 export function emptyTombstones(): Tombstones {
-    return { events: {}, labResults: {}, doseTemplates: {}, journal: {} };
+    return { events: {}, labResults: {}, doseTemplates: {}, journal: {}, quickDoses: {} };
 }
 
 function emptyModeBlock(): ModeBlock {
@@ -252,6 +252,7 @@ export function sanitizeTombstones(raw: unknown): Tombstones {
         labResults: sanitizeTombstoneMap(src.labResults),
         doseTemplates: sanitizeTombstoneMap(src.doseTemplates),
         journal: sanitizeTombstoneMap(src.journal),
+        quickDoses: sanitizeTombstoneMap(src.quickDoses),
     };
 }
 
@@ -308,6 +309,7 @@ export function pruneTombstones(t: Tombstones, now: number): Tombstones {
         labResults: pruneTombstoneMap(t.labResults, now),
         doseTemplates: pruneTombstoneMap(t.doseTemplates, now),
         journal: pruneTombstoneMap(t.journal, now),
+        quickDoses: pruneTombstoneMap(t.quickDoses, now),
     };
 }
 
@@ -409,6 +411,8 @@ export function normalizeSyncState(payload: unknown): SyncState {
  * make two byte-identical records look like a conflict.
  */
 const CONTENT_FIELDS: Record<RecordKind, readonly string[]> = {
+    // Quick-add buttons. Matched by id like the rest, so a deletion is expressible.
+    quickDoses: ['route', 'ester', 'value'],
     events: ['route', 'ester', 'doseMG', 'timeH', 'extras'],
     // Monitoring bloods are part of the record, so a later edit to prolactin/ALT/K
     // has to show up as a content change; omitting them made the merge treat the two
@@ -446,34 +450,31 @@ function recordStamp(record: any): number {
     return asTimestamp(record?.updatedAt);
 }
 
-/**
- * Union quick-add buttons by id.
- *
- * These carry no `updatedAt`, so newest-wins is not available. The tiebreak is
- * the content fingerprint — the same device-independent choice `resolveScalar`
- * makes for its ties, and for the same reason: "prefer local" has two devices
- * each decide the other is wrong and rewrite the account forever.
- */
-function mergeQuickDoses(local: any[], remote: any[]): any[] {
-    const out = new Map<string, any>();
-    for (const record of local) {
-        const id = recordId(record);
-        if (id) out.set(id, record);
-    }
-    for (const record of remote) {
-        const id = recordId(record);
-        if (!id) continue;
-        const mine = out.get(id);
-        if (mine === undefined) {
-            out.set(id, record);
-            continue;
-        }
-        if (stableString(record) > stableString(mine)) out.set(id, record);
-    }
-    return [...out.values()];
-}
-
 // --- Merge ------------------------------------------------------------------
+
+/**
+ * Whether a tombstone should still suppress a record.
+ *
+ * The old rule was "any tombstone for this id wins", which made a delete permanent:
+ * restoring a record from a backup cleared the local tombstone but not the one the
+ * cloud had already stored, so the next sync brought it back and dropped the restored
+ * record again. The symptom was "the import worked, then the records vanished a few
+ * seconds later".
+ *
+ * A tombstone records *when* the delete happened, and a record carries `updatedAt`, so
+ * the two are comparable — and that comparison is what makes a restore able to say
+ * "this copy is newer than the delete". A deleted-then-restored record therefore
+ * survives, while a record that merely predates its own deletion does not.
+ *
+ * When a record has no usable stamp (`updatedAt` absent — a hand-written import, or a
+ * quick dose, which has only `createdAt`), the tombstone wins as before: an
+ * unverifiable claim of newness is not enough to undo a deletion.
+ */
+function tombstoneSuppresses(tombstoneAt: number, record: unknown): boolean {
+    const recordAt = recordStamp(record);
+    if (!Number.isFinite(recordAt) || recordAt <= 0) return true;
+    return recordAt <= tombstoneAt;
+}
 
 function mergeKind(
     kind: RecordKind,
@@ -488,9 +489,9 @@ function mergeKind(
     for (const record of local) {
         const id = recordId(record);
         if (!id) continue;
-        if (tombstones[id] !== undefined) {
-            // Deleted on another device (or on this one, before a restore put it
-            // back in the file we are merging).
+        const deletedAt = tombstones[id];
+        if (deletedAt !== undefined && tombstoneSuppresses(deletedAt, record)) {
+            // Deleted on another device, and this copy does not postdate the delete.
             if (!dropped.has(id)) {
                 dropped.add(id);
                 stats.removed++;
@@ -503,7 +504,8 @@ function mergeKind(
     for (const record of remote) {
         const id = recordId(record);
         if (!id) continue;
-        if (tombstones[id] !== undefined) continue;
+        const deletedAt = tombstones[id];
+        if (deletedAt !== undefined && tombstoneSuppresses(deletedAt, record)) continue;
 
         const mine = out.get(id);
         if (mine === undefined) {
@@ -622,12 +624,13 @@ export function mergeSyncStates(local: SyncState, remote: SyncState | null): Mer
             labResults: mergeTombstoneMaps(local.modes[m].deletions.labResults, remote.modes[m].deletions.labResults),
             doseTemplates: mergeTombstoneMaps(local.modes[m].deletions.doseTemplates, remote.modes[m].deletions.doseTemplates),
             journal: mergeTombstoneMaps(local.modes[m].deletions.journal, remote.modes[m].deletions.journal),
+            quickDoses: mergeTombstoneMaps(local.modes[m].deletions.quickDoses, remote.modes[m].deletions.quickDoses),
         };
         merged.modes[m] = {
             events: mergeKind('events', local.modes[m].events, remote.modes[m].events, deletions.events, stats),
             labResults: mergeKind('labResults', local.modes[m].labResults, remote.modes[m].labResults, deletions.labResults, stats),
             doseTemplates: mergeKind('doseTemplates', local.modes[m].doseTemplates, remote.modes[m].doseTemplates, deletions.doseTemplates, stats),
-            quickDoses: mergeQuickDoses(local.modes[m].quickDoses, remote.modes[m].quickDoses),
+            quickDoses: mergeKind('quickDoses', local.modes[m].quickDoses, remote.modes[m].quickDoses, deletions.quickDoses, stats),
             journal: mergeKind('journal', local.modes[m].journal, remote.modes[m].journal, deletions.journal, stats),
             deletions,
         };
