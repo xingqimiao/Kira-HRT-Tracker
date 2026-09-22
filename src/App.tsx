@@ -31,6 +31,7 @@ import CalibrationSettings from './pages/CalibrationSettings';
 import Settings from './pages/Settings';
 import Account from './pages/Account';
 import CoreAccountSettings from './pages/CoreAccountSettings';
+import UpdateNotice from './components/UpdateNotice';
 import BindCredentials from './pages/BindCredentials';
 import OAuthLanding from './pages/OAuthLanding';
 import PKParamsPage from './pages/PKParams';
@@ -929,6 +930,10 @@ const App = () => {
                             </VialProvider>
                         </DialogProvider>
                     )}
+                    {/* Inside `LanguageProvider` for its copy, and outside `AppContent`
+                        so a running form cannot unmount it. It renders nothing until a
+                        new build is actually waiting. */}
+                    <UpdateNotice />
                 </CoreSessionProvider>
             </HRTModeProvider>
         </LanguageProvider>

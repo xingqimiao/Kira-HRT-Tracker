@@ -1,7 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import Icon from './Icon';
-import { Bookmark, ChevronDown, RotateCcw } from '../icons';
+import { Bookmark, ChevronDown, RotateCcw, Check } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { usePresence } from '../hooks/usePresence';
 import { DoseEvent } from '../../logic';
@@ -276,20 +276,28 @@ const UndoBanner: React.FC<{
         return () => window.clearTimeout(timer);
     }, [onExpire]);
 
+    // Shaped like the intro's demo of this same moment, rather than like an M3
+    // snackbar: a filled circle with a tick, then the sentence, then the undo as the
+    // accent on the right. The intro teaches this shape, and a real one that looked
+    // different would make the lesson wrong — the picture and the thing it pictures
+    // should agree, or the first real dose is a small surprise.
     return (
         <div
             role="status"
-            className="m3-snackbar fixed bottom-4 left-1/2 z-[90] w-[calc(100%-2rem)] max-w-sm"
+            className="fixed bottom-4 left-1/2 z-[90] flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-2.5 rounded-full border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-highest)] py-2 pl-2 pr-1.5 shadow-[var(--shadow-m3-3)]"
         >
-            <span className="min-w-0 flex-1">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-m3-primary)] text-[var(--color-m3-on-primary)]">
+                <Icon icon={Check} size={13} strokeWidth={2.5} />
+            </span>
+            <span className="min-w-0 flex-1 text-sm font-medium text-[var(--color-m3-on-surface)]">
                 {t('quickadd.done').replace('{name}', name)}
             </span>
             <button
                 type="button"
                 onClick={onUndo}
-                className="m3-snackbar-action inline-flex shrink-0 items-center gap-1"
+                className="mr-1 inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-[var(--color-m3-primary)] transition-colors hover:bg-[var(--color-m3-primary)]/10"
             >
-                <Icon icon={RotateCcw} size={13} />
+                <Icon icon={RotateCcw} size={12} />
                 {t('quickadd.undo')}
             </button>
         </div>

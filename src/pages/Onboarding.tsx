@@ -270,6 +270,9 @@ const HOW_ROWS: { mark: MarkName; title: string; desc: string }[] = [
  */
 const HowStep: React.FC<{ curve: CurveData | null }> = ({ curve }) => {
     const { t } = useTranslation();
+    // Read from the context rather than threaded in as a prop: the step needs it for
+    // one conditional, and the mode is global state the provider already owns.
+    const { isTransmasc } = useHRTMode();
     const [beat, setBeat] = useState<Beat>(0);
     // Bumped on every replay: a beat restarted from its own start is the same
     // state twice, and the chart and marks need something to remount on.
@@ -344,6 +347,48 @@ const HowStep: React.FC<{ curve: CurveData | null }> = ({ curve }) => {
                     />
                 ))}
                 <p className="mt-5 text-m3-body-large intro-muted">{t('onboarding.how_note')}</p>
+
+                {/* The two engines, named and credited, with nothing to choose.
+                    The choice lives in Settings where it can be revisited; this step's
+                    job is to say that the curve above came from a model that is someone
+                    else's work, and that a second one exists. Showing the faces is the
+                    point — an engine is a person's contribution here, not a vendor
+                    feature, and the attribution is already the licence's requirement.
+                    Feminine mode only, because the Transmtf engine models estradiol and
+                    nothing else, so on the transmasc path one of the two is not a thing
+                    that could be used. */}
+                {!isTransmasc && (
+                    <div className="mt-4 rounded-[var(--radius-lg)] border border-[var(--color-m3-outline-variant)] p-3.5">
+                        <p className="text-xs font-medium text-[var(--color-m3-on-surface)]">
+                            {t('onboarding.how_models_title')}
+                        </p>
+                        <ul className="mt-2.5 space-y-2">
+                            {([
+                                { img: 'mihari.jpg', nameKey: 'onboarding.how_model_mihari', noteKey: 'onboarding.how_model_mihari_note' },
+                                { img: 'transmtf.png', nameKey: 'onboarding.how_model_transmtf', noteKey: 'onboarding.how_model_transmtf_note' },
+                            ] as const).map(({ img, nameKey, noteKey }) => (
+                                <li key={img} className="flex items-start gap-2.5">
+                                    <img
+                                        src={`/${img}`}
+                                        alt=""
+                                        className="mt-0.5 h-8 w-8 shrink-0 rounded-full object-cover"
+                                    />
+                                    <span className="min-w-0">
+                                        <span className="block text-xs font-medium text-[var(--color-m3-on-surface)]">
+                                            {t(nameKey)}
+                                        </span>
+                                        <span className="mt-0.5 block text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)]">
+                                            {t(noteKey)}
+                                        </span>
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                        <p className="mt-2.5 text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)]">
+                            {t('onboarding.how_models_footer')}
+                        </p>
+                    </div>
+                )}
             </Body>
         </>
     );

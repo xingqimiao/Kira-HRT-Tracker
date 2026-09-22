@@ -2465,44 +2465,6 @@ select,
     animation: m3-content-in var(--duration-base) var(--ease-out) both;
 }
 
-/* ── Snackbar ────────────────────────────────────────────────────────────────
-   M3's snackbar is an *inverse* surface — dark on a light page, light on a dark
-   one — so it never reads as part of the page it is covering. The entry is a
-   transition with a @starting-style, not a keyframe: the node is remounted per
-   message and a transition retargets from wherever it currently is, which is
-   what keeps two taps in a row from restarting the animation from zero. */
-.m3-snackbar {
-    display: flex;
-    align-items: center;
-    gap: var(--md-sys-space-3);
-    padding: var(--md-sys-space-3) var(--md-sys-space-4);
-    border-radius: var(--md-sys-shape-corner-extra-small);
-    background-color: var(--md-sys-color-inverse-surface);
-    color: var(--md-sys-color-inverse-on-surface);
-    box-shadow: var(--md-sys-elevation-level3);
-    font-size: var(--md-sys-typescale-body-medium-size);
-    line-height: var(--md-sys-typescale-body-medium-line-height);
-    letter-spacing: var(--md-sys-typescale-body-medium-tracking);
-    opacity: 1;
-    transform: translate(-50%, 0);
-    transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
-}
-@starting-style {
-    .m3-snackbar {
-        opacity: 0;
-        transform: translate(-50%, 8px);
-    }
-}
-.m3-snackbar-action {
-    color: var(--md-sys-color-inverse-primary);
-    font-weight: 500;
-    cursor: pointer;
-    background: none;
-    border: none;
-    font: inherit;
-    padding: 0;
-}
-
 @media (prefers-reduced-motion: reduce) {
     .modal-overlay,
     .modal-shell,
@@ -2592,7 +2554,6 @@ select,
     .m3-nav-item,
     .m3-nav-item::before,
     .m3-list-item,
-    .m3-snackbar,
     .m3-field,
     .btn-primary::after,
     .btn-secondary::after,
