@@ -392,10 +392,24 @@ hrt.kiramyao.com {
     # URL in `/auth/account`, and this is what makes the browser resolve that URL
     # against `hrt.kiramyao.com`. Leave the block out and avatars disappear, with a CSP
     # error in the console and nothing in the server log.
+    #
+    # Two details the 2026-09-22 deployment got wrong, both worth stating because each
+    # fails as "a 404 that looks like a working response":
+    #
+    #   1. This service is mounted at `/hrt` on 8788, so the upstream needs the prefix
+    #      the app's own URL does not have. Without the `rewrite` the proxy asks the API
+    #      for `/auth/avatar/<id>`, which is outside the mount and 404s.
+    #   2. Caddy 2.6 has **no** `http.reverse_proxy.upstream.uri.path.file` placeholder —
+    #      writing one emits it verbatim, and a literal `{…}` in `Content-Location`
+    #      resolves to nothing. The value is the request's own path, captured before the
+    #      rewrite adds the prefix. (`Content-Location` is not decoration: the API reports
+    #      the avatar as an absolute `api.kiramyao.com` URL, and this header is what makes
+    #      the browser resolve it against the app's origin, which `img-src 'self'` allows.)
     handle /auth/avatar/* {
+        header Content-Location {http.request.uri.path}
+        rewrite * /hrt{uri}
         reverse_proxy 127.0.0.1:8788 {
             header_up Host {upstream_hostport}
-            header_down Content-Location /auth/avatar/{http.reverse_proxy.upstream.uri.path.file}
         }
     }
 
@@ -576,8 +590,15 @@ curl -s https://api.kiramyao.com/hrt/auth/google/start | head -c 120
 #    response to everything and therefore proves nothing on its own. The content type
 #    is what distinguishes them: a working proxy answers `image/*` (or 404 JSON for an
 #    unknown id), the broken one answers `text/html`.
-curl -sI https://hrt.kiramyao.com/auth/avatar/does-not-exist | grep -i content-type
-#  -> application/json (proxied)   NOT   text/html (the SPA shell: the block is missing)
+#
+#    Use a real uuid of an account that has a picture — the route only matches the
+#    36-character form, so a made-up id 404s for a second reason.
+curl -sI https://hrt.kiramyao.com/auth/avatar/<a-uuid-with-an-avatar> \
+  | grep -iE 'HTTP/|content-type|content-location'
+#  -> 200, image/*, and content-location naming /auth/avatar/<id>
+#     `content-location` containing a literal `{…}` means the placeholder did not
+#     resolve (pre-2.7 Caddy); the picture would load from the API host instead and be
+#     blocked by `img-src 'self'`.
 
 # 10. Turnstile is wired at BOTH ends, if the deployment asks for it.
 #
