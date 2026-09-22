@@ -2,186 +2,260 @@
 
 ![Kira HRT Tracker — dose logging, pharmacokinetic estimates, private by default](public/og.png)
 
-**Kira HRT Tracker** — an agent-friendly HRT tracker: log medications and lab results, follow treatment history, and see pharmacokinetic estimates of hormone levels over time.
+HRT 记录工具：记录用药与化验，估算激素水平随时间的变化，并让 AI 助手通过 MCP 读写这些记录。
 
-**Kira HRT Tracker**（HRT 记录工具）——面向 AI 助手友好的 HRT 记录工具：记录用药与化验结果、跟踪治疗历程，并提供基于药代动力学模型的激素水平估算。
+An HRT tracker: log doses and lab results, estimate hormone levels over time, and let an
+AI assistant read and write those records over MCP.
 
-出品 / Made by **[KiraEqual](https://kiramyao.com)** · 服务状态 / Status: <https://status.kiramyao.com>
+出品 **[KiraEqual](https://kiramyao.com)** · 服务状态 <https://status.kiramyao.com>
 
----
-
-## Algorithm & Core Logic 算法逻辑
-
-The pharmacokinetic algorithms, mathematical models, and parameters used in this simulation are derived directly from the **[HRT-Recorder-PKcomponent-Test](https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test)** repository.
-
-本模拟中使用的药代动力学算法、数学模型与相关参数，直接来源于 **[HRT-Recorder-PKcomponent-Test](https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test)** 仓库。
-
-We strictly adhere to the `PKcore.swift` and `PKparameter.swift` logic provided by **@LaoZhong-Mihari**, ensuring that the web simulation matches the accuracy of the original native implementation (including 3-compartment models, two-part depot kinetics, and specific sublingual absorption tiers).
-
-我们严格遵循 **@LaoZhong-Mihari** 提供的 `PKcore.swift` 与 `PKparameter.swift` 中的逻辑，确保网页端模拟与原生实现在精度上保持一致（包括三室模型、双相肌注库房动力学以及特定的舌下吸收分层等）。
-
-Upstream attribution is a licence condition, not a courtesy: the model grant and the MIT notice it was built from are reproduced in `THIRD-PARTY-LICENSES.md`, and the algorithm credit is also shown in the app under Settings → About.
-
-上游署名是许可条件而非客套：模型授权与所依据的 MIT 声明都完整收录在 `THIRD-PARTY-LICENSES.md`，应用内「设置 → 关于」也可见算法致谢。
+```
+Node + Postgres  ·  per-account AES-256-GCM  ·  可自托管  ·  MIT
+```
 
 ---
 
-## Features 功能
+## 它是什么 / What it is
 
-- **Multi-Route Simulation**: Supports Injection (Valerate, Benzoate, Cypionate, Enanthate, Undecylate), Oral, Sublingual, Gel, and Patches.
+一个自己托管的激素记录工具。核心是**用药记录 → 药代动力学估算 → 化验结果校准**这条闭环：记下给药途径、酯类、剂量和时间，模型推算血药浓度随时间变化的曲线；抽血之后把结果填进去，模型再调整成更贴近你本人的参数。
 
-  **多给药途径模拟**：支持注射（戊酸酯 Valerate、苯甲酸酯 Benzoate、环戊丙酸酯 Cypionate、庚酸酯 Enanthate、十一酸酯 Undecylate）、口服、舌下、凝胶以及贴片等多种给药方式。
+数据存在**你自己的服务器**上，每条记录用**该账号自己的密钥**加密。没有第三方分析、没有广告、不把记录上传给任何模型厂商——AI 助手是通过**你签发的令牌**访问**你自己的实例**。
 
-- **Both HRT directions**: Oestrogen records (estradiol and its esters) and testosterone records (unesterified T, cypionate, enanthate, undecanoate), each with its own curve.
-
-  **两个方向都支持**：雌激素记录（雌二醇及其酯类）与睾酮记录（未酯化 T、环戊丙酸酯、庚酸酯、十一酸酯），各自有独立的曲线。
-
-- **Anti-androgens are recorded, not simulated**: cyproterone acetate, spironolactone and bicalutamide have no useful concentration curve — spironolactone's half-life is about 1.4 hours and what acts are its metabolites, CPA's steady state is a flat line at a half-life of 1.5–4 days, and bicalutamide blocks the receptor without lowering testosterone at all. They contribute no curve and no "E2 equivalent"; what they get instead is monitoring, and every threshold shown has a source.
-
-  **抗雄药只记录、不建模**：醋酸环丙孕酮、螺内酯与比卡鲁胺没有有意义的血药浓度曲线——螺内酯半衰期约 1.4 小时、起效的是代谢产物，CPA 半衰期 1.5–4 天故稳态近乎直线，比卡鲁胺则只阻断受体、完全不降睾酮。它们不贡献曲线，也不显示「E2 当量」；取而代之的是监测，而且界面上每一个阈值都有出处。
-
-- **Monitoring that cites itself**: prolactin, ALT, AST and potassium can be recorded with the reference limit printed on your own report, and the app raises a notice only at the multiples the sources give (prolactin above 3×, ALT above 2×, potassium at 5.0 mmol/L, cumulative CPA at 10 g). Where the sources disagree — CPA and meningioma screening — both recommendations are shown and neither is turned into an instruction. Bilirubin is not collected because no source named it, and no reminder is invented for an interval the sources do not state.
-
-  **会注明依据的监测**：可以连同**你化验单上印的参考上限**一起记录泌乳素、ALT、AST 与血钾；应用只在来源给出的倍数上提示（泌乳素 > 3×、ALT > 2×、血钾 ≥ 5.0 mmol/L、CPA 累积 ≥ 10 g）。当来源彼此冲突时——CPA 与脑膜瘤筛查——**两条建议都列出，且都不写成指令**。胆红素因为没有任何来源提到而不收集；来源没有给出间隔的复查，也不会凭空生成提醒。
-
-- **Re-check reminders with a stated basis**: monthly liver enzymes for the first six months of CPA or bicalutamide and quarterly after, quarterly potassium for the first year of spironolactone and annually after. The clock is anchored to the first recorded dose of that compound, which is an upper bound on the true start — stated on screen, and it errs toward a late reminder rather than a false one. No doses of a compound means no reminder at all.
-
-  **有依据的复查提醒**：CPA 或比卡鲁胺前六个月每月查肝酶、之后每季度；螺内酯首年每季度查血钾、之后每年。计时锚点是**该药的第一条记录**，那是真实起始时间的上界——界面会说明这一点，而且它偏向**提醒得晚**而不是误报。**没有该药记录时完全不提醒。**
-
-- **Body and mood journal**: a private, plain-text note — a time and what it felt like, with no scores and no advice, because the experience scales are not clinical signals.
-
-  **体感记录**：私密的纯文本记录——时间和当时的感受，不打分、不给建议，因为这些自评量表并不是临床信号。
-
-- **Lab report scanning**: photograph or pick a report and the app reads the oestrogen and progesterone values out of it, offline, using its own bundled OCR assets. The values only prefill the form; nothing is saved until you confirm it. A scan that cannot read a value says so rather than guessing.
-
-  **化验单扫描**：拍照或选择一张化验单，应用用**自带、离线**的 OCR 资源读出其中的雌二醇与孕酮数值。识别结果只用于预填表单，**未经你确认不会保存**；读不出数值时会直说，而不是猜。
-
-- **Privacy by Default**: The app works offline-first — what you enter is kept in your browser and shown immediately. Once signed in, records are also stored on the server, each **sealed with your account's own data key and stored as an AES-256-GCM payload**, with only the timestamp and category left readable for paging. Be clear about what that is and is not: it is **not** end-to-end encryption. The server holds a copy of your data key so that it can decrypt on read, so the honest claims are (a) a stolen database dump is useless without the key, and (b) a leaked key for one account is no longer the whole database — which is why records are sealed per account rather than under one deployment-wide key. It is not the claim that the operator cannot see your data.
-
-  **默认保护隐私**：应用可以离线优先使用——你录入的内容保存在浏览器中并立即显示。登录之后记录同时保存在服务器上，**每条记录都用你自己账号的数据密钥封装、以 AES-256-GCM 密文保存**，只有时间戳与类别保持明文以便分页。它**不是**端到端加密，这一点必须说清楚：服务器持有你数据密钥的副本，才能在读取时解密，所以诚实的说法是（a）数据库被拖走、没有这把密钥则读不出来；（b）**一个账号的密钥泄露不再等于整个数据库**——这正是记录改为按账号封装而不是全部署共用一把密钥的原因。**而不是**「运营方看不到你的数据」。
-
-  Share links upload a read-only copy of the dosage history, modelled curve, and timezone until they expire; optional live links refresh that copy while the signed-in app is open. Share links never include lab results, weight, profile details, or account data.
-
-  分享链接会保存一份只读的用药记录、模型曲线和时区副本，直到链接过期；可选的实时链接会在已登录的应用打开时刷新该副本。分享链接**不会**包含化验结果、体重、个人资料或账户数据。
-
-- **Agent Access Tokens**: Connecting an AI assistant (MCP) uses a long-lived token you paste into its config. The token is a full credential for your records: the server holds a copy of your data key, so the assistant reads and writes them with no browser session, no unlock, and no expiry. Signing out does not stop it — only revoking the token in Settings or changing your password does. Treat it exactly as you would treat your password. Anything the assistant reads leaves this system and is governed by that provider's privacy policy.
-
-  **AI 助手访问令牌**：连接 AI 助手（MCP）需要把一个长期令牌粘贴进它的配置。该令牌是你的记录的**完整凭据**：服务器持有你数据密钥的副本，所以助手无需浏览器会话、无需解锁、也不会过期。退出登录拦不住它——只有在设置中吊销该令牌或修改密码才行。请像对待密码一样对待它。助手读到的任何内容都会离开本系统，并受该服务商隐私政策约束。
-
-- **Internationalization**: Native support for **Simplified Chinese**, **Traditional Chinese**, **Cantonese**, **English**, **Japanese**, **Korean**, and **Turkish** — seven locales, with a coverage check that fails the build if any one of them is missing a string.
-
-  **多语言支持**：原生支持**简体中文、繁体中文、粤语、英语、日语、韩语、土耳其语**共 7 种语言，并有覆盖率检查——任何一种语言缺字符串都会导致构建失败。
+A self-hosted hormone tracker built around one loop: log a dose → the model estimates the
+concentration curve → your lab results tune the model toward you. Records live on **your
+server**, encrypted under **each account's own key**. No analytics, no ads, nothing sent
+to a model vendor — an assistant reaches **your** instance with a token **you** issue.
 
 ---
 
-## Connecting an AI assistant 连接 AI 助手
+## 与 Oyama's HRT Tracker 的区别 / How it differs from the fork
 
-The server speaks **MCP over Streamable HTTP**, so Claude Desktop, Cursor, VS Code or an agent you wrote can read and write a record. `server/MCP.md` is the reference: the endpoint, the two credential shapes, the tool list, and the config snippets.
+本项目**分叉自 [Oyama's HRT Tracker](https://github.com/xunxunProjects/Oyama-s-HRT-Tracker)**（MIT，原始声明完整保留在 [`LICENSE`](LICENSE)）。分叉之后几乎重写了持久层与界面：
 
-服务端支持 **MCP over Streamable HTTP**，因此 Claude Desktop、Cursor、VS Code 或你自己写的 agent 都能读写记录。`server/MCP.md` 是参考文档：端点、两种凭据形态、工具清单与配置片段。
+This project **forks [Oyama's HRT Tracker](https://github.com/xunxunProjects/Oyama-s-HRT-Tracker)**
+(MIT; the original notice is preserved intact in [`LICENSE`](LICENSE)). The persistence
+layer and the interface were largely rewritten after the fork:
 
-The app builds a self-contained prompt for this — copy it from **Account → Connect an AI assistant** and paste it into any assistant, which will find its own config file and wire itself up.
+| | Oyama's | 本项目 / This project |
+|---|---|---|
+| **数据存放** | 浏览器本地 / Cloudflare Worker + D1 + R2 | 自托管 **Node + Postgres**，记录按账号封装为 AES-256-GCM 密文 |
+| **登录** | 无账号 | 密码 + **Passkey** + X / Google，可互相绑定 |
+| **AI 接入** | 无 | **MCP**，19 个工具 |
+| **模型** | 单一 | **两套可选**，带个体化校准 |
+| **多语言** | 英文 | **7 种**，按需加载 |
+| **化验单** | 手动输入 | **本地 OCR**（模型在你自己的域名下） |
+| **部署** | Cloudflare 全家桶 | 任意 web 服务器 + Node，无容器、无 Worker |
 
-应用会为此生成一段自包含的提示词——在**账户 → 连接 AI 助手**里复制，粘给任何助手，它会自己找到配置文件并完成接入。
+一句话：**Oyama 的版本是纯前端小工具；本项目把它做成可以自己运营的多用户服务**，代价是一台服务器和一个 Postgres。
 
----
-
-## 🧪 Run Locally 本地运行
-
-This project is built with **React** and **TypeScript**, bundled with [Vite](https://vitejs.dev/).
-
-本项目基于 **React** 与 **TypeScript** 构建，使用 [Vite](https://vitejs.dev/) 打包。
-
-1. **Clone the repository 克隆仓库**
-
-   ```bash
-   git clone https://github.com/xingqimiao/Kira-s-HRT-Tracker.git
-   ```
-
-2. **Install dependencies 安装依赖**
-
-   ```bash
-   # using npm
-   npm install
-
-   # or using pnpm
-   pnpm install
-   ```
-
-3. **Start the dev server 运行项目**
-
-   ```bash
-   npm run dev
-   # or: pnpm dev
-   ```
-
-   Then open <http://localhost:3000> in your browser.
-
-   然后在浏览器中打开 <http://localhost:3000>。
-
-   The dev server also proxies `/api` to the Node service on `127.0.0.1:8787` (see
-   `vite.config.ts`), so the app can be developed against a local backend.
-
-   开发服务器同时把 `/api` 代理到 `127.0.0.1:8787` 上的 Node 服务（见
-   `vite.config.ts`），因此可以对着本地后端开发。
+In one line: **Oyama's is a pure-front-end tool; this is that idea grown into a
+multi-user service you can operate yourself** — at the cost of a box and a database.
 
 ---
 
-## Self-hosting 自行托管
+## 两套药代动力学模型 / The two PK models
 
-The app is a static React build served by any web server, talking to the Node service
-in `server/`. That service owns all persistent state: one Postgres database, records
-stored as per-account AES-256-GCM ciphertext, and OAuth credentials for whichever
-providers you configure.
+曲线由模型算出，而模型是**别人**的工作。两套可在「设置 → 常规设置」随时切换，选择随账号同步。
 
-本应用是一个静态 React 构建产物，用任何 web 服务器托管即可，后端是 `server/` 里的
-Node 服务。所有持久状态都在它这里：一个 Postgres 数据库（记录以**按账号封装**的
-AES-256-GCM 密文保存），以及你自己配置的 OAuth 凭据。
+The curve comes from a model, and the model is **someone else's work**. Two are offered,
+switchable any time in Settings → General, and the choice follows the account.
 
-`server/DEPLOY.md` is the runbook: database and role, the environment variables (at
-minimum `DATABASE_URL`, `ENCRYPTION_KEY`, `SERVER_DEK_KEY`, `PUBLIC_ORIGIN`,
-`API_ORIGIN`, `BASE_PATH`), the systemd unit, the Caddy site block, and the pre-deploy
-ownership check that a hand-run migration will otherwise trip. Read it before your
-first deploy — three of its warnings come from outages this project actually had.
+| 模型 | 来源 | 特点 |
+|---|---|---|
+| **原有模型** | [@LaoZhong-Mihari](https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test) 的 `PKcore.swift` / `PKparameter.swift` | 本应用一直使用的模型，直接移植：三室模型、双相肌注库房动力学、舌下吸收分层 |
+| **Transmtf 模型** | [Transmtf Team](https://github.com/TransmtfTeam/Transmtf-HRT-Tracker)（MIT） | 在同一套算法上扩展：三级室凝胶吸收、两相注射释放、EU 长效剂型、CPA / 比卡鲁胺，带个体化校准 |
 
-`server/DEPLOY.md` 是部署手册：数据库与角色、环境变量（至少 `DATABASE_URL`、
-`ENCRYPTION_KEY`、`SERVER_DEK_KEY`、`PUBLIC_ORIGIN`、`API_ORIGIN`、`BASE_PATH`）、
-systemd 单元、Caddy 站点配置，以及「手工迁移会踩到」的部署前属主检查。首次部署前请
-先读它——其中三条警告都来自这个项目真实发生过的事故。
+两套模型**算出的曲线不同**——这不是 bug，正是提供选择的原因。注射类两者往往一致（同源参数），凝胶与舌下差异明显。Transmtf 引擎**只建模雌二醇**，故在男性化模式下不可选。
 
-The two keys can also be supplied as **systemd encrypted credentials** rather than
-`.env` lines, which keeps them off the disk they protect; `config.ts` reads the
-credential first and falls back to the environment, and logs at boot which one it used.
+The two draw **different curves**, which is the point rather than a defect: injections
+tend to agree (same upstream parameters), gel and sublingual diverge. The Transmtf engine
+models **estradiol only**, so it is not offered in masculinising mode.
 
-这两把密钥也可以改用 **systemd 加密凭据**提供，而不是写在 `.env` 里，这样它们就不
-与所保护的数据同处一块磁盘；`config.ts` 优先读凭据、缺失时回退到环境变量，并在启动
-日志里说明最终用的是哪一种。
+**个体化校准**同样各有一套：MAP 拟合、扩展卡尔曼滤波（EKF）、Ornstein–Uhlenbeck 动态校准。原理是拿你的化验值反过来调整模型参数，让估算从「人群平均」走向「你本人」。
 
-Build the web app **with the API origin set**, or every request goes same-origin and
-the OAuth buttons silently disappear:
+**Personal calibration** is likewise per-engine: MAP fitting, an EKF, and an
+Ornstein–Uhlenbeck filter. Your own labs adjust the model's parameters, moving the
+estimate from *population average* toward *you*.
 
-构建前端时**必须指定 API 源**，否则所有请求都会打到同源地址，OAuth 按钮会无声消失：
+> ⚠️ 估算来自群体药代模型，**不是化验结果**，不能作为用药依据。要准确知道血药浓度只能去抽血，请以医院报告为准。
+>
+> The estimate is a population model, **not a measurement**. It must not drive a dosing
+> decision. The only way to know your level is a blood test.
+
+---
+
+## 架构 / Architecture
+
+```mermaid
+flowchart LR
+  subgraph client["浏览器 / PWA"]
+    UI["React 界面<br/>离线可用"]
+    OCR["OCR 引擎<br/>PP-OCRv6 · 本地推理"]
+    PK1["原有 PK 模型"]
+    PK2["Transmtf PK 模型<br/>（懒加载）"]
+    UI --- PK1
+    UI -.按需载入.-> PK2
+    UI --- OCR
+  end
+
+  subgraph server["你的服务器"]
+    API["Node 服务<br/>REST + MCP"]
+    DB[("Postgres<br/>记录为密文")]
+    API --- DB
+  end
+
+  AGENT["AI 助手<br/>（任意 MCP 客户端）"]
+
+  UI -->|"HTTPS"| API
+  AGENT -->|"MCP + 账号令牌"| API
+```
+
+- **加密在服务端发生**。记录以账号自己的数据密钥（DEK）加密后落库；密钥由密码包裹。服务端在会话存活期间持有密钥，所以刷新不掉登录；登出或空闲超时即释放。
+- **会话令牌就是密钥持有者**。客户端不自己保管密钥，每次读取都经过服务端。
+- **MCP 与 REST 共用同一套权限模型**。助手只能用你签发的令牌做令牌范围内的事。
+
+<!--
+- **Encryption happens server-side.** Records are sealed under the account's own data
+  key and stored as ciphertext; the key is wrapped by the password. The server holds it
+  for the session's lifetime, which is why a refresh does not sign you out and why
+  signing out (or idling out) releases it.
+- **The session token *is* the key holder.** The client keeps no key of its own.
+- **MCP and REST share one permission model.** A token bounds what an assistant can do.
+-->
+
+---
+
+## 功能 / Features
+
+**记录** 剂量（注射 / 口服 / 舌下 / 凝胶 / 贴片）、化验结果、体感日记、快捷记录、批量添加、导入导出。
+
+**估算** 浓度曲线、当前水平、剂量级别参考、监测提醒（按 MtF.wiki 的建议周期）、抗雄激素累计量与再检查提醒。
+
+**化验单识别** 拍下化验单本地识别；模型与字典都从**你自己的域名**加载，图片不出设备。
+
+**账号** 密码、Passkey、X / Google 绑定、设备会话列表、云端同步、数据导出与删除。
+
+**分享** 生成只读链接给医生或朋友，可设过期与密码，且**只含你选择分享的内容**。
+
+**多语言** 7 种，非默认语言按需下载。
+
+---
+
+## 连接 AI 助手 / Connect an assistant
+
+服务端实现了 [MCP](https://modelcontextprotocol.io)。签一个令牌，填进客户端配置：
+
+```json
+{
+  "mcpServers": {
+    "hrt": {
+      "type": "http",
+      "url": "https://your-api-host/hrt/mcp",
+      "headers": { "Authorization": "Bearer hrt_..." }
+    }
+  }
+}
+```
+
+19 个工具：`hrt_get_timeline`、`hrt_add_medication`、`hrt_add_lab_result`、`hrt_predict_levels`、`hrt_check_advisories`、`hrt_sync_state`、`hrt_create_share` 等。工具**清单**可匿名读取（只含 schema，不含任何账号数据），**调用**一律需要令牌。令牌可撤销、可设过期；**改密码会一次性终止全部令牌**。
+
+---
+
+## 本地运行 / Run locally
 
 ```bash
+npm install
+npm run dev              # http://localhost:3000
+```
+
+后端需要 Postgres，见下。
+
+---
+
+## 自行托管 / Self-hosting
+
+前端是静态构建产物，后端是 `server/` 里的 Node 服务，只需要一个 Postgres。
+
+```bash
+# 前端：必须带 API 源构建
 VITE_API_ORIGIN=https://your-api-host/hrt npm run build
 ```
 
-That failure is worth spelling out because nothing else reports it: against the static
-host the `/health` request returns the SPA shell with HTTP 200, the app treats an
-unreadable answer as "no provider configured", and the sign-in buttons are simply not
-rendered. Verify it in the built bundle:
+**这个变量不能省。** 不带的话所有请求变同源，静态主机用 SPA 外壳回一个 HTTP 200，应用把「读不出来」当成「没配置」，于是 OAuth 按钮**静默消失**——没有任何报错。构建会自检这一点（`scripts/check-web-bundle.mjs`），缺失即在构建阶段失败。
 
-这个失效值得说清楚，因为**没有任何别的东西会报告它**：对着静态主机会让 `/health`
-返回 HTTP 200 的 SPA 外壳，应用把「读不出来」当成「没有配置任何 provider」，于是登录
-按钮直接不渲染。用下面这条确认构建产物：
+<!-- The variable cannot be omitted: without it every request goes same-origin, the
+static host answers with the SPA shell and HTTP 200, the app reads an unreadable
+response as "no provider configured", and the OAuth buttons vanish silently. The build
+checks for this itself and fails rather than shipping it. -->
+
+后端最小配置：`DATABASE_URL`、`ENCRYPTION_KEY`、`SERVER_DEK_KEY`、`PUBLIC_ORIGIN`、`API_ORIGIN`、`BASE_PATH`。
+
+完整手册在 **[`server/DEPLOY.md`](server/DEPLOY.md)**：数据库与角色、systemd 单元、Caddy 站点配置、部署前检查。**首次部署前请先读它**——其中几条警告来自这个项目真实发生过的事故，包括「看起来部署成功、用户拿到的却还是旧构建」。
+
+两把密钥也可以放进 **systemd 加密凭据**而非 `.env`，这样它们不与所保护的数据同处一块磁盘。
+
+---
+
+## 开源项目与许可 / Open source and licences
+
+所使用的工作及各自许可完整收录在 **[`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md)**；应用内「设置 → 关于 → 开源许可」也逐条列明。
+
+### 药代动力学模型 / PK models
+
+| 项目 | 许可 |
+|---|---|
+| [HRT-Recorder-PKcomponent-Test](https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test)（@LaoZhong-Mihari） | 仓库未声明许可；**版权持有人已单独授予本项目非商业使用许可**（2026-09-18）。**据此本项目不得用于收费产品或任何形式的商业化** |
+| [Transmtf-HRT-Tracker](https://github.com/TransmtfTeam/Transmtf-HRT-Tracker) | MIT |
+| [Oyama's HRT Tracker](https://github.com/xunxunProjects/Oyama-s-HRT-Tracker) | MIT（分叉来源） |
+| [HRT-Recorder-online](https://github.com/LaoZhong-Mihari/HRT-Recorder-online) | 未声明 |
+
+> **非商业许可是真实限制，不是套话。** 若要用于收费产品，必须先与版权持有人重新协商。
+
+### 医学引用 / Medical sources
+
+剂量范围、监测建议与部分模型参数来自以下来源——**引用其结论与数字，未转载其内容**：
+
+| 来源 | 许可 |
+|---|---|
+| [MtF.wiki](https://mtf.wiki/) | CC BY-SA 4.0 |
+| [Transfeminine Science](https://transfemscience.org/) | **保留所有权利**。本项目仅引用其公布的剂量范围与结论，并在应用内链接回原页面；未转载文章内容 |
+
+<!-- The dose ranges, monitoring intervals and a few model parameters come from these
+two. What is used is their published figures and conclusions, never their prose; each
+is linked where it is used. The Transfeminine Science reservation is recorded as it
+stands — "reference" is not a licence and this file should not imply one. -->
+
+### 其他 / Other
+
+运行时依赖（React、ONNX Runtime Web、jsPDF 等）的许可由 `scripts/gen-licences.mjs` 从 `package.json` 与各包的 `license` 字段**自动生成**，不手工维护——手工列表在第一次添加依赖时就会失真。图标来自 Reicon，OCR 模型来自 PP-OCRv6。
+
+---
+
+## 测试 / Tests
+
+项目不用测试框架，用可运行的断言脚本。每个都对应一个**真实发生过的 bug**：
+
+No test framework — runnable assertion scripts, each guarding a bug that actually
+happened here:
 
 ```bash
-grep -c "your-api-host" dist/assets/index-*.js
+node scripts/check-i18n-coverage.mjs                                # 7 语言 0 缺口
+node --experimental-transform-types scripts/check-sync-merge.mjs    # 合并与墓碑规则
+node scripts/check-sync-coalesce.mjs                                # 同步并发与账号隔离
+node --experimental-transform-types scripts/check-pk-engine.mjs     # 两套引擎的适配层
+node --experimental-transform-types scripts/check-vial-level.mjs    # 试管的像素几何
+cd server && npm test                                               # 服务端（需 Postgres）
 ```
 
-There is no Docker image and no Cloudflare Worker any more. This repository used to
-ship a Worker + D1 + R2 stack with a published container image; both were removed when
-the service moved to the Node backend above.
+---
 
-本仓库不再提供 Docker 镜像与 Cloudflare Worker。此前曾随附 Worker + D1 + R2 与已发布
-的容器镜像；服务迁移到上面这套 Node 后端之后，两者都已移除。
+## 许可 / Licence
+
+本仓库以 **MIT** 发布；分叉来源的原始声明完整保留在 [`LICENSE`](LICENSE)。
+
+**但注意上游模型的非商业限制**：本仓库代码本身是 MIT，然而它依赖的药代动力学模型带有非商业条款，这限制了*整个应用*可以怎么用。详见 [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md)。
+
+This repository is **MIT**, with the fork's original notice preserved in
+[`LICENSE`](LICENSE). **Note the upstream model's non-commercial limit**: the code here
+is MIT, but the pharmacokinetic model it depends on carries non-commercial terms, and
+that constrains how the *whole application* may be used.
