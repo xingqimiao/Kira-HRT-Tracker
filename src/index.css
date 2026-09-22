@@ -2786,6 +2786,58 @@ select,
     }
 }
 
+/* ── Phones: the language picker is two compact columns ───────────────────
+   Measured at 412x732: the single-column list of seven 64dp rows plus the
+   greeting wants ~956px and has ~566px. The outer scroller does make every
+   language reachable, but a picker whose end is a screen and a half down does
+   not read as a picker, and the sentence explaining the choice is carried away
+   with it. Two columns halve the list's height, which is what brings it back on
+   screen. Applies to every phone, not only short ones: no phone has the ~956px
+   the single column needs, so the tall ones would otherwise scroll too.
+
+   Nothing is lost — no label, no control. Only the rows are tighter. */
+@media (max-width: 767px) {
+    .intro-langs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.375rem;
+    }
+    .intro-langs .intro-option {
+        min-height: 2.75rem;
+        padding: 0.375rem var(--md-sys-space-3);
+    }
+}
+
+/* ── Short screens: drop the decoration, tighten the greeting ─────────────
+   A short viewport is where the steps above are not quite enough, so the one
+   purely decorative element goes and the title steps down a size. The vial is
+   an illustration of what the app is for, worth less than the seven languages
+   under it. `max-height` rather than `min-height`, so a tall phone (393x852)
+   keeps it.
+
+   The subtitle above the list is the other saving: its translations are stacked
+   into one grid cell so the list starts at the same y in every language, but
+   that only matters while the reader can see the whole step. On a short screen
+   the inactive copies are dropped and the box is one line. */
+@media (max-height: 760px) and (max-width: 767px) {
+    .intro-welcome-vial {
+        display: none;
+    }
+    .intro-title {
+        font-size: var(--md-sys-typescale-headline-large-size);
+        line-height: var(--md-sys-typescale-headline-large-line-height);
+    }
+    .intro-welcome-subtitle {
+        margin-top: 0.25rem;
+    }
+    .intro-welcome-subtitle > p:not(.intro-welcome-subtitle-active) {
+        display: none;
+    }
+    .intro-langs {
+        margin-top: 0.75rem;
+    }
+}
+
 /* Language and mode options: 64dp blocks, the selected one filled with the
    block's accent role and the check trailing. The fill is the accent rather
    than the block's own container role because a container fill on a container

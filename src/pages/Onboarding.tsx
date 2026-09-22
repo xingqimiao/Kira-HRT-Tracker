@@ -203,14 +203,8 @@ const DoseRings: React.FC<{ count: number; at: number }> = ({ count, at }) => {
 };
 
 /**
- * Softens the last rows of the language list while any are still below the
- * fold. The list's scrollbar is hidden like every other scroller in the app, so
- * without this a row can end flush against the footer and read as the end of
- * the languages — on a short screen that quietly hides two of them.
+ * Read straight out of the packs to size the greeting — see the welcome step.
  */
-const FADE_OUT = 'linear-gradient(to bottom, #000 calc(100% - 2rem), transparent)';
-
-/** Read straight out of the packs to size the greeting — see the welcome step. */
 const SUBTITLE_KEY = 'onboarding.welcome_subtitle';
 
 interface PointProps {
@@ -518,32 +512,6 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
     // Only so the step change slides the way the app's view changes do.
     const [direction, setDirection] = useState<'forward' | 'backward'>('forward');
 
-    const langListRef = useRef<HTMLDivElement>(null);
-    const [langsBelow, setLangsBelow] = useState(false);
-    const syncLangsBelow = () => {
-        const el = langListRef.current;
-        setLangsBelow(!!el && el.scrollHeight - el.scrollTop - el.clientHeight > 4);
-    };
-    // Re-measured on step change, since the list only exists on step 0. The two
-    // watchers cover different things and neither subsumes the other: `resize`
-    // catches the rotation, while the observer catches the list's box moving
-    // without the window doing anything — the address bar sliding away, or a
-    // font landing late and retyping the rows.
-    useEffect(() => {
-        syncLangsBelow();
-        window.addEventListener('resize', syncLangsBelow);
-        const el = langListRef.current;
-        const observer = new ResizeObserver(syncLangsBelow);
-        if (el) {
-            observer.observe(el);
-            for (const row of Array.from(el.children)) observer.observe(row);
-        }
-        return () => {
-            window.removeEventListener('resize', syncLangsBelow);
-            observer.disconnect();
-        };
-    }, [step]);
-
     const modeOptions = [
         { value: 'transfem', labelKey: 'mode.transfem', descKey: 'onboarding.mode_transfem_desc' },
         { value: 'transmasc', labelKey: 'mode.transmasc', descKey: 'onboarding.mode_transmasc_desc' },
@@ -562,13 +530,19 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
         // pinned this step to the top with a slab of empty page under the last
         // language — while every other step sat centred, so stepping between
         // them jumped the page. Sized to its content it centres like the rest.
-        <div key="welcome" className="flex h-full flex-col pt-6 text-center lg:h-auto">
-            {/* The greeting holds its place; only the list below it travels.
-                Seven languages don't fit under the vial on a short screen, and
-                scrolling the whole step would carry away the one sentence
-                explaining what is being chosen. */}
+        // `h-full` used to pin this step to the scroller's height so the greeting
+        // could hold still while only the list moved. The list no longer scrolls
+        // on its own (see below), so the step takes its natural height and the
+        // outer scroller does the work — which is what every other step does.
+        <div key="welcome" className="flex flex-col pt-6 text-center">
+            {/* One sentence explaining what is being chosen, directly under the
+                greeting. It travels with the greeting now rather than being held
+                above the list. */}
             <div className="shrink-0">
-                <div className="flex justify-center">
+                {/* The one block on this step that is pure decoration. It is the
+                    first thing to go when height is scarce — see `.intro-welcome-vial`
+                    in index.css. */}
+                <div className="intro-welcome-vial flex justify-center">
                     {/* Deliberately not a reading — this runs before any record exists. It is
                         an illustration of what the app is for, so it sits at a fixed illustrative
                         *fill* rather than an empty tube, which would read as "your data is
@@ -591,7 +565,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                     sentence by a line and slides the list down under the finger
                     that just tapped it. A fixed height can't stand in for this:
                     the longest runs to four lines at 320px and three at 375px. */}
-                <div className="mx-auto mt-3 grid max-w-sm">
+                <div className="intro-welcome-subtitle mx-auto mt-3 grid max-w-sm">
                     {languageOptions.map(({ value }) => {
                         const current = value === lang;
                         const text = tIn(value, SUBTITLE_KEY);
@@ -599,7 +573,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                         return (
                             <p
                                 key={value}
-                                className={`col-start-1 row-start-1 text-m3-body-large intro-muted ${current ? '' : 'invisible'}`}
+                                className={`col-start-1 row-start-1 text-m3-body-large intro-muted ${current ? 'intro-welcome-subtitle-active' : 'invisible'}`}
                             >
                                 {text}
                             </p>
@@ -607,20 +581,25 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                     })}
                 </div>
             </div>
-            {/* Narrower than the step's max-w-md: the labels are one or two
-                words, and across the full column the check would drift far
-                enough from its language to stop reading as one row.
+            {/* The list is sized to its content and the step scrolls as a whole,
+                rather than the list scrolling inside a pinned greeting.
 
-                min-h keeps the list usable rather than letting flex-1 squeeze
-                it to nothing on a very short viewport — past that point the
-                step outgrows its box and the outer scroller takes over, which
-                is the graceful way to lose the pinned greeting. */}
-            <div
-                ref={langListRef}
-                onScroll={syncLangsBelow}
-                style={langsBelow ? { maskImage: FADE_OUT, WebkitMaskImage: FADE_OUT } : undefined}
-                className="mx-auto mt-7 flex min-h-[7.5rem] w-full max-w-xs flex-1 flex-col gap-2 overflow-y-auto scrollbar-hide text-start lg:grid lg:max-w-none lg:flex-none lg:grid-cols-2"
-            >
+                It used to be `flex-1` inside an `h-full` column, with a 7.5rem
+                floor and `overflow-y-auto`: the greeting stayed put and the
+                languages scrolled under it. On a short viewport the floor won —
+                the list was handed exactly 120px and silently hid five of the
+                seven languages behind an inner scroll with no visible bar (the
+                fade the old code drew was meant to hint at it and did not). A
+                phone with heavy browser chrome is exactly that viewport, which
+                is the bug this fixes: the picker showed two rows and looked
+                broken.
+
+                Flowing instead keeps every language in the page, one scroll for
+                the reader, and no nested scrollers to get trapped between. The
+                cost is the pinned greeting on tall screens, which was the lesser
+                half of the trade — and it is the fallback the old comment
+                already named ("the outer scroller takes over"). */}
+            <div className="intro-langs mx-auto mt-7 flex w-full max-w-xs flex-col gap-2 text-start lg:grid lg:max-w-none lg:grid-cols-2">
                 {languageOptions.map(({ value, label }) => (
                     <button
                         key={value}
@@ -939,13 +918,13 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                     card drifting; the reading column lives inside it. */}
                 <div
                     key={step}
-                    className={`w-full ${step === 0 ? 'h-full lg:h-auto' : ''}
+                    className={`w-full
                         ${direction === 'backward' ? 'view-enter-backward' : 'view-enter-forward'}`}
                 >
                     <div
                         className={`mx-auto w-full max-w-md px-6
                             ${step === CHART_STEP ? 'lg:grid lg:max-w-5xl lg:grid-cols-2 lg:items-center lg:gap-x-14 lg:gap-y-5' : ''}
-                            ${step === 0 ? 'h-full pb-6 lg:h-auto' : 'pb-8'}`}
+                            ${step === 0 ? 'pb-6' : 'pb-8'}`}
                     >
                         {steps[step]}
                     </div>
