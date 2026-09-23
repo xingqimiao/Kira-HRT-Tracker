@@ -1,6 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import Icon from './Icon';
+import FloatingToast from './ui/FloatingToast';
 import { Bookmark, ChevronDown, RotateCcw, Check } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { usePresence } from '../hooks/usePresence';
@@ -9,6 +10,9 @@ import { templateToEvent } from '../utils/templateToEvent';
 
 /** The menu's exit, in ms — must match the `.m3-menu` exit in index.css. */
 const MENU_EXIT_MS = 150;
+
+/** Long enough for the toast's swipe-away motion to finish before it unmounts. */
+const SWIPE_EXIT_MS = 220;
 
 /** The template fields this needs — see `DoseTemplate` in useAppData/DoseForm. */
 interface QuickTemplate {
@@ -264,6 +268,21 @@ const Dropdown: React.FC<{
  * undo it offers cannot drift apart: when the notice goes, the chance to undo goes
  * with it. `key={undo.id}` remounts this per record, which is what restarts the
  * countdown when someone taps two templates in a row.
+ *
+ * Drawn through `FloatingToast`, the same shell the update prompt uses. One shape for
+ * both is not a shortcut: they are the same object — a notice at a screen edge that
+ * can be flicked away — so they share the edge motion and the swipe, and a change to
+ * one is a change to both. The intro's demo of this moment renders the same markup, so
+ * the picture and the thing it pictures still agree.
+ *
+ * Swiped right to dismiss, and dismissing **keeps** the record rather than undoing it.
+ *
+ * That direction is deliberate. The undo itself is destructive — it removes a dose the
+ * user just logged — and a destructive act should need the explicit control that names
+ * it, not a gesture that reads as "go away, I saw you". Swiping away a notice means
+ * "I'm done with this", which in every other toast means the action stands; making the
+ * same motion delete data would turn a habit into a way to lose a record. So the swipe
+ * and the timeout do the same thing, and 撤销 remains the only way to undo.
  */
 const UndoBanner: React.FC<{
     name: string;
@@ -271,36 +290,39 @@ const UndoBanner: React.FC<{
     onExpire: () => void;
     t: (key: string) => string;
 }> = ({ name, onUndo, onExpire, t }) => {
+    const [open, setOpen] = React.useState(true);
+
     React.useEffect(() => {
         const timer = window.setTimeout(onExpire, UNDO_MS);
         return () => window.clearTimeout(timer);
     }, [onExpire]);
 
-    // Shaped like the intro's demo of this same moment, rather than like an M3
-    // snackbar: a filled circle with a tick, then the sentence, then the undo as the
-    // accent on the right. The intro teaches this shape, and a real one that looked
-    // different would make the lesson wrong — the picture and the thing it pictures
-    // should agree, or the first real dose is a small surprise.
+    // Keep the shell mounted through the exit, then let the parent drop the record.
+    // Unmounting on the same frame would make the swipe visibly snap rather than leave.
+    const close = (then: () => void) => {
+        setOpen(false);
+        window.setTimeout(then, SWIPE_EXIT_MS);
+    };
+
     return (
-        <div
-            role="status"
-            className="fixed bottom-4 left-1/2 z-[90] flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-2.5 rounded-full border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-highest)] py-2 pl-2 pr-1.5 shadow-[var(--shadow-m3-3)]"
+        <FloatingToast
+            open={open}
+            edge="bottom"
+            icon={<Icon icon={Check} size={13} strokeWidth={2.5} />}
+            onDismiss={() => close(onExpire)}
+            actions={
+                <button
+                    type="button"
+                    onClick={() => close(onUndo)}
+                    className="mr-1 inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-[var(--color-m3-primary)] transition-colors hover:bg-[var(--color-m3-primary)]/10"
+                >
+                    <Icon icon={RotateCcw} size={12} />
+                    {t('quickadd.undo')}
+                </button>
+            }
         >
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-m3-primary)] text-[var(--color-m3-on-primary)]">
-                <Icon icon={Check} size={13} strokeWidth={2.5} />
-            </span>
-            <span className="min-w-0 flex-1 text-sm font-medium text-[var(--color-m3-on-surface)]">
-                {t('quickadd.done').replace('{name}', name)}
-            </span>
-            <button
-                type="button"
-                onClick={onUndo}
-                className="mr-1 inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-[var(--color-m3-primary)] transition-colors hover:bg-[var(--color-m3-primary)]/10"
-            >
-                <Icon icon={RotateCcw} size={12} />
-                {t('quickadd.undo')}
-            </button>
-        </div>
+            {t('quickadd.done').replace('{name}', name)}
+        </FloatingToast>
     );
 };
 

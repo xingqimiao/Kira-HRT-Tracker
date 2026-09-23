@@ -415,6 +415,15 @@
     --md-sys-space-7: 40px;
     --md-sys-space-8: 48px;
 
+    /* — Where a bottom-edge floating toast sits.
+       Below `lg` the M3 navigation bar owns the bottom of the screen: it is fixed at
+       `space-3` with a 70px body, so anything anchored to `bottom: 1rem` lands on top
+       of it — the undo confirmation covered the tab bar's own buttons. This clears it
+       with a gap, and the safe-area term matches the bar's so the two move together on
+       a notched device. At `lg` the bar hides itself (see `.m3-navigation-bar`), so the
+       toast drops back to the plain 1rem it uses at the edge. — */
+    --floating-toast-bottom: calc(var(--md-sys-space-3) + 70px + var(--md-sys-space-3) + env(safe-area-inset-bottom, 0px));
+
     /* — Easing, strengthened —
        The M3 curves above are the spec's own and stay what the spec's
        transitions use. These two are the same idea tuned for UI: a steeper start
@@ -498,17 +507,26 @@
     to { opacity: 0; transform: translateY(-10px) scale(0.98); }
 }
 
-/* — Menu / dropdown: drops from the anchor point (`transform-origin` is set per
-     placement below). A uniform scale reads as the whole list inflating; a small
-     downward offset with a tiny scale reads as the list unfolding from the
-     control that opened it, which is what it does. — */
+/* — Menu / dropdown: unfolds from the anchor point (`transform-origin` is set per
+     placement below).
+
+     A 0.98 scale was so close to 1 that the only visible part of the entrance was a
+     6px slide, which read as the list appearing and then nudging rather than as the
+     list *unfolding from the control that opened it*. 0.92 out of the anchor corner
+     is the M3 menu's own grow, and it is what makes the origin mean something — at
+     0.98 there was almost no scale for the corner to be the centre of.
+
+     Snappier than the 300ms it was on: a menu opens on a tap and is read
+     immediately, so it belongs to the "tens a day" tier, not to a dialog's 400ms.
+     180ms in, 120ms out. The exit keeps the anchor and shrinks back into it, so the
+     list leaves the way it came. — */
 @keyframes m3-menu-enter {
-    from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+    from { opacity: 0; transform: translateY(-8px) scale(0.92); }
     to { opacity: 1; transform: none; }
 }
 @keyframes m3-menu-exit {
     from { opacity: 1; transform: none; }
-    to { opacity: 0; transform: translateY(-4px) scale(0.98); }
+    to { opacity: 0; transform: translateY(-6px) scale(0.94); }
 }
 
 /* — The secondary menu on a settings screen. The pane under the category list
@@ -1466,6 +1484,8 @@ body {
 }
 @media (min-width: 840px) {
     .m3-navigation-bar { display: none; }
+    /* The bar is gone, so the bottom toast no longer has anything to clear. */
+    :root { --floating-toast-bottom: calc(var(--md-sys-space-4) + env(safe-area-inset-bottom, 0px)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1510,10 +1530,10 @@ body {
     /* Grows from the trigger by default (top-left). A menu placed above its
        trigger should override this to `bottom left`. */
     transform-origin: top left;
-    animation: m3-menu-enter var(--md-sys-motion-transition-expressive) both;
+    animation: m3-menu-enter var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-emphasized-decelerate) both;
 }
 .m3-menu[data-state="closed"] {
-    animation: m3-menu-exit var(--md-sys-motion-transition-quick) both;
+    animation: m3-menu-exit var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-emphasized-accelerate) both;
     pointer-events: none;
 }
 
@@ -2475,6 +2495,13 @@ select,
     .view-enter-forward,
     .view-enter-backward {
         animation: none;
+    }
+    /* The floating toasts move by CSS transition, not keyframes, so disabling
+       `animation` does not touch them — this is the one place the preference has to
+       name them directly. The drag itself is left alone: a gesture the reader is
+       making with their own finger is not the app imposing motion on them. */
+    .floating-toast {
+        transition: none !important;
     }
     /* Turning the animation off is not enough for anything that animates *out*.
        The exit keyframes are what hides the surface, so with them disabled a
