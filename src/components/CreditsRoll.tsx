@@ -199,15 +199,17 @@ const SCENES: EasterEggScene[] = [
         hold: 1500,
     },
     {
+        // 相对上游仓库的全部改动。数字是 `git diff upstream/main...HEAD` 的量级，
+        // 每次都重算、写死在这里——这一帧是给人看的，不是仪表盘。
         id: 'diff-plus',
-        lines: ['+39,258'],
+        lines: ['+63,894'],
         fontSizeLevel: 'stat',
         tone: 'code',
         hold: 1300,
     },
     {
         id: 'diff-minus',
-        lines: ['-13,666'],
+        lines: ['-28,027'],
         fontSizeLevel: 'stat',
         tone: 'code',
         hold: 1300,
@@ -250,6 +252,57 @@ const SCENES: EasterEggScene[] = [
         fontSizeLevel: 'medium',
         tone: 'code',
         hold: 2000,
+    },
+    {
+        id: 'engine-second',
+        lines: ['后来，', '有人又写了另一个模型。'],
+        fontSizeLevel: 'large',
+        hold: 1700,
+    },
+    {
+        id: 'engine-second-name',
+        lines: ['Transmtf。'],
+        fontSizeLevel: 'hero',
+        tone: 'code',
+        hold: 1300,
+    },
+    {
+        id: 'engine-two-algorithms',
+        lines: ['我们把它接了进来。', '同一个问题，', '从此有两种算法。'],
+        fontSizeLevel: 'large',
+        hold: 2100,
+    },
+    {
+        id: 'launch-after',
+        lines: ['上线之后，', '事情才真正开始。'],
+        fontSizeLevel: 'large',
+        hold: 1800,
+    },
+    {
+        id: 'bugs-surface',
+        lines: ['一堆 bug 冒了出来。'],
+        fontSizeLevel: 'large',
+        tone: 'quiet',
+        hold: 1700,
+    },
+    {
+        id: 'bugs-two-kinds',
+        lines: ['有的藏了很久，', '有的才刚学会走路。'],
+        fontSizeLevel: 'large',
+        hold: 1900,
+    },
+    {
+        id: 'bugs-fix',
+        lines: ['修好一个，', '又看见一个。'],
+        fontSizeLevel: 'large',
+        hold: 1900,
+    },
+    {
+        id: 'bugs-lesson',
+        lines: ['大概这就是，', '软件长大的方式。'],
+        fontSizeLevel: 'large',
+        tone: 'quiet',
+        hold: 2100,
     },
     {
         id: 'math-contact',
@@ -318,7 +371,7 @@ const SCENES: EasterEggScene[] = [
     },
     {
         id: 'tribute-foundations',
-        lines: ['致敬所有留下基石的人。', 'HRT-Recorder-PKcomponent-Test · Oyama\'s HRT Tracker'],
+        lines: ['致敬所有留下基石的人。', 'HRT-Recorder-PKcomponent-Test · Transmtf · Oyama\'s HRT Tracker'],
         fontSizeLevel: 'medium',
         hold: 2200,
     },
@@ -426,7 +479,11 @@ const SCENES: EasterEggScene[] = [
     },
     {
         id: 'cat-silence',
-        lines: ['🐈'],
+        // Was a cat emoji. The roll carries no pictographs now — a font-rendered
+        // emoji looked different on every platform, and this is a black screen with
+        // set type, where that variance is the one thing that reads as not designed.
+        // The cat's line, in the same brackets it speaks in everywhere else.
+        lines: ['「喵。」'],
         fontSizeLevel: 'hero',
         tone: 'cat',
         hold: 1500,
@@ -456,7 +513,7 @@ const SCENES: EasterEggScene[] = [
         id: 'afterglow-brand',
         // The inscription used to sit on this line. It was asked for twice -- once
         // here and once under the curtain call -- and removed from both, so the roll
-        // ends on the name and the cat rather than on a saying.
+        // ends on the name and the cat's line rather than on a saying.
         lines: ['Kira HRT Tracker'],
         fontSizeLevel: 'medium',
         tone: 'echo',
@@ -464,7 +521,9 @@ const SCENES: EasterEggScene[] = [
     },
     {
         id: 'afterglow-cat',
-        lines: ['🐈'],
+        // The same two characters it opened its mouth with after the last question —
+        // a bookend rather than a new line. Emoji removed; see `cat-silence`.
+        lines: ['「喵。」'],
         fontSizeLevel: 'large',
         tone: 'echo',
         hold: 1600,
@@ -972,8 +1031,16 @@ export const CreditsRoll: React.FC<CreditsRollProps> = ({ onClose }) => {
 
                             if (currentScene.id === 'tribute-foundations' && idx === 1) {
                                 return (
-                                    <div key={idx} className="text-zinc-400 text-sm md:text-lg font-mono tracking-wider pt-2">
-                                        {line}
+                                    // One work per line. Three names on one line overflow
+                                    // a 390px screen, and `whitespace-nowrap` made it worse
+                                    // rather than better — measured 429px against 359px,
+                                    // because the browser then cannot break the longest
+                                    // project name either. Stacked, it is a list of credits,
+                                    // which is what a credits roll does anyway.
+                                    <div key={idx} className="text-zinc-400 text-sm md:text-lg font-mono tracking-wider pt-2 space-y-0.5">
+                                        {line.split(' · ').map((work) => (
+                                            <div key={work}>{work}</div>
+                                        ))}
                                     </div>
                                 );
                             }
