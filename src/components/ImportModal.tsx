@@ -88,7 +88,10 @@ const ImportModal = ({ isOpen, onClose, onImportJson }: { isOpen: boolean; onClo
                             <input
                                 ref={fileInputRef}
                                 type="file"
-                                accept="application/json"
+                                /* By extension as well as MIME — a Featherline backup
+                                   has no registered type, so a JSON-only filter would
+                                   hide it from the picker. See ImportSection. */
+                                accept=".json,.hrtbackup,application/json,application/octet-stream"
                                 className="hidden"
                                 onChange={handleJsonFileChange}
                             />

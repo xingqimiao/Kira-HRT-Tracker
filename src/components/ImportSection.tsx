@@ -49,6 +49,7 @@ const ImportSection: React.FC<ImportSectionProps> = ({ onImportJson }) => {
             <div className={rowBase}>
                 <div>
                     <p className={rowLabel}>{t('import.file')}</p>
+                    <p className={rowDesc}>{t('import.file_desc')}</p>
                 </div>
                 <button onClick={() => fileInputRef.current?.click()} className={actionBtn}>
                     {t('import.file_btn')}
@@ -56,7 +57,12 @@ const ImportSection: React.FC<ImportSectionProps> = ({ onImportJson }) => {
                 <input
                     ref={fileInputRef}
                     type="file"
-                    accept="application/json"
+                    // Both by extension, not just by MIME: a Featherline backup has no
+                    // registered type and arrives as application/octet-stream, so an
+                    // `application/json`-only filter hides it from the picker entirely
+                    // — the file could not be chosen, though the reader below could
+                    // already open it.
+                    accept=".json,.hrtbackup,application/json,application/octet-stream"
                     className="hidden"
                     onChange={handleFileChange}
                 />
