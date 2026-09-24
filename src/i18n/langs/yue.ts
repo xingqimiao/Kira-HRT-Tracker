@@ -380,6 +380,8 @@ const PACK: LangPack = {
     "modal.estimate.p2": "請務必理解：本軟體僅依據藥物動力學模型提供理論估算値，無法替代真實的血液檢測。",
     "modal.estimate.p3": "要準確了解您的血藥濃度，唯一的途徑是前往醫院進行血液檢查。請始終以醫院檢查報告作為調整用藥的依據。",
     "modal.estimate.source": "雌二醇估算基於 Transfeminine Science 發布的藥物動力學模型。",
+    "modal.absurd.title": "你係咪特登搵碴㗎？",
+    "modal.absurd.body": "呢個數值高到唔似真嘅。模型計到呢個數，多數係劑量打多咗一位、單位揀錯咗，或者校正數據將條曲線拉到飛起。返去睇下最近嘅紀錄先啦。",
     "cal.method": "校準方式",
     "cal.settings": "校準設定",
     "cal.current": "目前擬合",

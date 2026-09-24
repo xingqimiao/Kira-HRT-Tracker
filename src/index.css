@@ -1884,6 +1884,18 @@ select,
     line-height: 0;
 }
 
+/* When the reading is long enough to push the tube onto its own line, the unit
+ * label (`pg/ml`) lands in the row directly above the tube — which is exactly where
+ * the badge hangs, so the two overlap. Parked at the tube's upper left instead: the
+ * spill runs down the right wall, so that corner is the one piece of white space
+ * left beside a full tube. */
+.vial-badge-aside .vial-badge-slot {
+    left: -14px;
+    bottom: auto;
+    top: 2px;
+    transform: none;
+}
+
 /* Drops in from above, then hops on a slow cycle.
  *
  * The hop is a still-then-twice pattern rather than a constant bounce: a permanent

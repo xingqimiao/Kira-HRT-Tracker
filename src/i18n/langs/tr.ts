@@ -558,6 +558,8 @@ const PACK: LangPack = {
     "modal.estimate.p2": "Lütfen anlayın: Bu yazılım farmakokinetik modellere dayalı teorik tahminler sağlar ve gerçek kan testlerinin yerini alamaz.",
     "modal.estimate.p3": "Kan ilaç konsantrasyonunuzu doğru bilmenin tek yolu kan testi yaptırmaktır. İlaç tedavinizi ayarlarken her zaman laboratuvar raporlarına güvenin.",
     "modal.estimate.source": "Östradiol tahminleri Transfeminine Science tarafından yayımlanan farmakokinetik modellere dayanır.",
+    "modal.absurd.title": "Bunu bilerek mi yapıyorsunuz?",
+    "modal.absurd.body": "Bu değer gerçek olamayacak kadar yüksek. Bu kadar büyük bir sayı genellikle dozun bir basamak fazla girildiği, yanlış birimin seçildiği ya da bir kan sonucunun eğriyi savurduğu anlamına gelir. Önce son kayıtlarınıza bir bakın.",
     "export.col.type": "Tür",
     "export.col.date": "Tarih",
     "export.col.item": "Öğe",

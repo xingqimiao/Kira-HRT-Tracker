@@ -558,6 +558,8 @@ const PACK: LangPack = {
     "modal.estimate.p2": "请务必理解：本软件仅依据药代动力学模型提供理论估算值，无法替代真实的血液检测。同一个体在不同时期的吸收代谢情况也可能发生变化。",
     "modal.estimate.p3": "要准确了解您的血药浓度，唯一的途径是前往医院进行血检。请始终以医院检查报告作为调整用药的依据，切勿仅依赖本软件的估算值。",
     "modal.estimate.source": "雌二醇估算基于 Transfeminine Science 发布的药代动力学模型。",
+    "modal.absurd.title": "你是故意找茬是不是啊？",
+    "modal.absurd.body": "这个数值已经高到不像是真的了。模型算出这个数，多半是剂量多填了一位、单位选错了，或者校准数据把曲线拉飞了。先回去看看最近的记录吧。",
     "export.col.type": "类型",
     "export.col.date": "日期",
     "export.col.item": "项目",

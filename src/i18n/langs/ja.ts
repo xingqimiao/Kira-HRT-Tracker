@@ -825,6 +825,8 @@ const PACK: LangPack = {
     "gel.bioavailability": "生体利用率",
     "gel.absorbed": "吸収量",
     "modal.estimate.source": "エストラジオールの推定は、Transfeminine Science が公開している薬物動態モデルに基づいています。",
+    "modal.absurd.title": "わざとやってます？",
+    "modal.absurd.body": "この値は現実離れしすぎています。ここまで大きい数になるのは、用量を一桁多く入力したか、単位を間違えたか、採血結果でカーブが大きくずれたかのどちらかです。まず最近の記録を確認してみてください。",
     "onboarding.how_chart_legend_model": "集団の平均",
     "onboarding.how_chart_legend_labs": "血液検査のあと",
     "common.or": "または",

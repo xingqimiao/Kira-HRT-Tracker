@@ -1,11 +1,12 @@
 import React from 'react';
 import FitText from '../components/FitText';
 import Icon from '../components/Icon';
-import { Info, Share2 } from '../icons';
+import { Info, Share2, AlertTriangle } from '../icons';
 import { DoseEvent, SimulationResult, LabResult, AntiandrogenChartMode, getDoseAdvisory, getHormoneLevelAdvisory, isT_LabUnit, isMonitoringOnlyLab, modelledEvents, antiandrogenReading } from '../../logic';
 import ResultChart from '../components/ResultChart';
 import DoseHeatmap from '../components/DoseHeatmap';
 import EstimateInfoModal from '../components/EstimateInfoModal';
+import NoticeModal from '../components/NoticeModal';
 import DoseAdvisoryNotice from '../components/DoseAdvisory';
 import HomeQuickAdd from '../components/HomeQuickAdd';
 import { DoseTemplate } from '../components/DoseFormModal';
@@ -20,6 +21,47 @@ import { formatRelative } from '../utils/helpers';
 
 /** Drawn width of the vial, in px. Height follows the canvas' 18:42. */
 const VIAL_SIZE = 44;
+
+/**
+ * A blood-level reading: the number, its unit, and the size it has to be.
+ *
+ * The card's display role is sized for four digits and a point — "112.8", the width
+ * the card was built around. A calibrated estimate can read 23184.5, which at the
+ * full role drew straight past the card and off a phone. So the size is capped
+ * against the lane the reading actually has: it steps down as far as the digits
+ * need, and never grows past the display role.
+ *
+ * Per-character width is measured, not chosen. `tabular-nums` at this size runs
+ * 0.47em per digit at four digits and settles at 0.49 by six; 0.5 is the safe end
+ * of that range, so a long reading never overruns the lane it was fitted to.
+ *
+ * The lane arrives as a CSS custom property rather than a prop because the space a
+ * reading gets is a fact about its own row, not about the viewport — below `sm` the
+ * vial shares the column with it, so a caller sets `--reading-lane` on the row.
+ */
+const Reading: React.FC<{
+    value: number;
+    decimals: number;
+    unit: string;
+    className: string;
+    muted: string;
+    /** Set when this reading's digits are a droplet target for the vial. */
+    sprayable?: boolean;
+}> = ({ value, decimals, unit, className, muted, sprayable = false }) => {
+    const text = value.toFixed(decimals);
+    return (
+        <>
+            <span
+                data-vial-sprayable={sprayable ? true : undefined}
+                className={`leading-none tabular-nums ${className}`}
+                style={{
+                    fontSize: `min(var(--md-sys-typescale-display-large-size), calc(var(--reading-lane) / ${text.length} / 0.5))`,
+                }}
+            ><AnimatedNumber value={value} decimals={decimals} /></span>
+            <span className={`text-xs lowercase ${muted}`}>{unit}</span>
+        </>
+    );
+};
 
 interface HomeProps {
     t: (key: string) => string;
@@ -72,6 +114,7 @@ const Home: React.FC<HomeProps> = ({
 }) => {
     const isDarkMode = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     const [isEstimateInfoOpen, setIsEstimateInfoOpen] = React.useState(false);
+    const [isAbsurdOpen, setIsAbsurdOpen] = React.useState(false);
     const { isTransmasc } = useHRTMode();
     const { lang } = useTranslation();
     const shareCopy = getShareCopy(lang);
@@ -89,6 +132,24 @@ const Home: React.FC<HomeProps> = ({
     const hormoneLabs = React.useMemo(() => labResults.filter(l => !isMonitoringOnlyLab(l)), [labResults]);
     const hasLabForMode = hormoneLabs.some(l => (isTransmasc ? isT_LabUnit(l.unit) : !isT_LabUnit(l.unit)));
     const showCalibrate = events.length > 0 && !hasLabForMode;
+    // Five figures of pg/mL, or of ng/dL, is not a high reading — it is a typo. A
+    // dose entered with an extra digit, a mg figure read as µg, a stray lab result
+    // that dragged the curve: the model will happily report any of them, and the
+    // number then looks like a fact. Says so once per crossing rather than on every
+    // render, so the notice does not become the thing that gets ignored.
+    const absurdLevel = isTransmasc ? currentT : currentLevel;
+    const absurd = absurdLevel > 10000;
+    const absurdNoticed = React.useRef(false);
+    React.useEffect(() => {
+        if (absurd && !absurdNoticed.current) {
+            absurdNoticed.current = true;
+            setIsAbsurdOpen(true);
+        } else if (!absurd) {
+            // Re-arm below the threshold: a reading corrected by 100 gets to be
+            // reported again if it goes back up, which is the point of the notice.
+            absurdNoticed.current = false;
+        }
+    }, [absurd]);
     // Anti-androgens are recorded, not modelled, so their "current concentration"
     // is structurally zero. What the column shows is derived from the records
     // instead: the drug the user actually logs, and either today's mg or the time
@@ -124,9 +185,25 @@ const Home: React.FC<HomeProps> = ({
     // of the digits beside it: rows 0..2 are empty, 3..5 are dome headroom above the
     // rim. Measured at both type sizes (36px and 52.8px) — with `leading-none` on the
     // number the rim lands within a pixel of the box top at each.
+    //
+    // It only gives up its place beside the reading when the reading cannot fit
+    // next to it. Below `sm` the column is ~146px and the vial takes 52, which is
+    // enough for four digits and a point — the width this card was built around, and
+    // the case the layout must not disturb. A longer reading steps down in size
+    // *and* drops the vial to its own line, so a corrected record looks exactly as
+    // it always did and only the pathological ones move anything.
     const vialOffset = -(VIAL_SIZE * 6) / 42;
+    // Five characters is "1234.5" — the widest reading that still fits the 94px
+    // lane beside the vial at the display role, which is why it is the line between
+    // "sits as it always did" and "moves things". When it drops, the row gains
+    // `flex-wrap` so the tube can actually reach its own line, and centres itself
+    // under the digits.
+    const vialDrops = (isTransmasc ? currentT.toFixed(0) : currentLevel.toFixed(1)).length > 5;
     const vial = (events.length > 0 || hormoneLabs.length > 0) ? (
-        <span className="flex shrink-0 self-start" style={{ marginTop: vialOffset }}>
+        <span
+            className={`flex shrink-0 self-start ${vialDrops ? 'w-full justify-center [--vial-drop:14px]' : ''}`}
+            style={{ marginTop: `calc(${vialOffset}px + var(--vial-drop, 0px))` }}
+        >
             {/* Sized against the reading beside it. The canvas is 26 wide but the tube is
                 only 14 of those columns (the rest is spill room), so the drawn vial is
                 about half the nominal size — at 30 the spill stops being legible, which is
@@ -135,6 +212,9 @@ const Home: React.FC<HomeProps> = ({
                 level={isTransmasc ? currentT : currentLevel}
                 mode={isTransmasc ? 'transmasc' : 'transfem'}
                 size={VIAL_SIZE}
+                // Moves the warning badge off the tube's top, where the unit label
+                // now sits — see `.vial-badge-aside`.
+                className={vialDrops ? 'vial-badge-aside' : ''}
             />
         </span>
     ) : null;
@@ -146,6 +226,13 @@ const Home: React.FC<HomeProps> = ({
     return (
         <div className="mx-auto w-full max-w-[1040px] px-4 sm:px-6 md:px-8">
             <EstimateInfoModal isOpen={isEstimateInfoOpen} onClose={() => setIsEstimateInfoOpen(false)} />
+            <NoticeModal
+                isOpen={isAbsurdOpen}
+                onClose={() => setIsAbsurdOpen(false)}
+                titleKey="modal.absurd.title"
+                bodyKey="modal.absurd.body"
+                icon={<Icon icon={AlertTriangle} weight="Filled" size={28} className="text-[var(--color-m3-vial-warn)]" />}
+            />
 
             <header className="pt-8 pb-6">
                 <div className="m3-card mb-2">
@@ -213,13 +300,10 @@ const Home: React.FC<HomeProps> = ({
                                 <p className={`text-xs font-semibold ${muted} mb-2`}>
                                     {t('label.total_t')} <span className="opacity-60">(ng/dL)</span>
                                 </p>
-                                <div className="flex items-start justify-center gap-x-2">
+                                <div className={`flex items-start justify-center gap-x-2 ${vialDrops ? 'flex-wrap' : ''} [--reading-lane:146px] sm:[--reading-lane:272px]`}>
                                     <span className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
                                         {currentT > 0 ? (
-                                            <>
-                                                <span data-vial-sprayable className={`text-m3-display-large leading-none tabular-nums ${on}`}><AnimatedNumber value={currentT} decimals={0} /></span>
-                                                <span className={`text-xs lowercase ${muted}`}>ng/dl</span>
-                                            </>
+                                            <Reading value={currentT} decimals={0} unit="ng/dl" className={on} muted={muted} sprayable />
                                         ) : (
                                             <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
                                         )}
@@ -231,12 +315,9 @@ const Home: React.FC<HomeProps> = ({
                                 <p className={`text-xs font-semibold ${muted} mb-2`}>
                                     {t('label.total_t')} <span className="opacity-60">(nmol/L)</span>
                                 </p>
-                                <div className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
+                                <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1 [--reading-lane:146px] sm:[--reading-lane:272px]">
                                     {currentT > 0 ? (
-                                        <>
-                                            <span data-vial-sprayable className={`text-m3-display-large leading-none tabular-nums ${on}`}><AnimatedNumber value={currentT / 28.842} decimals={1} /></span>
-                                            <span className={`text-xs lowercase ${muted}`}>nmol/l</span>
-                                        </>
+                                        <Reading value={currentT / 28.842} decimals={1} unit="nmol/l" className={on} muted={muted} />
                                     ) : (
                                         <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
                                     )}
@@ -247,17 +328,14 @@ const Home: React.FC<HomeProps> = ({
                         <>
                             <div className="min-w-0">
                                 <p className={`text-xs font-semibold ${muted} mb-2`}>{t('label.e2')}</p>
-                                <div className="flex items-start justify-center gap-x-2">
+                                <div className={`flex items-start justify-center gap-x-2 ${vialDrops ? 'flex-wrap' : ''} [--reading-lane:146px] sm:[--reading-lane:272px]`}>
                                     {/* `leading-none` is what makes "the top of the number" a
                                         real edge: at the shared 1.4 line-height the box top sat
                                         a few px above the ink, and the vial had nothing precise
                                         to hang from. */}
                                     <span className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
                                         {currentLevel > 0 ? (
-                                            <>
-                                                <span data-vial-sprayable className={`text-m3-display-large leading-none tabular-nums ${on}`}><AnimatedNumber value={currentLevel} decimals={1} /></span>
-                                                <span className={`text-xs lowercase ${muted}`}>pg/ml</span>
-                                            </>
+                                            <Reading value={currentLevel} decimals={1} unit="pg/ml" className={on} muted={muted} sprayable />
                                         ) : (
                                             <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
                                         )}
@@ -267,24 +345,23 @@ const Home: React.FC<HomeProps> = ({
                             </div>
                             <div className="min-w-0">
                                 <p className={`text-xs font-semibold ${muted} mb-2`}>{aaHeading}</p>
-                                <div className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
+                                {/* The column has no vial in it, so the whole track is the
+                                    reading's lane at every width — unlike the E2 column, whose
+                                    smaller `sm` value is the vial's share taken out. */}
+                                <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1 [--reading-lane:146px] sm:[--reading-lane:272px]">
                                     {antiandrogen.kind === 'grams' && (
-                                        <>
-                                            {/* Cumulative grams, not a concentration: CPA has no
-                                                curve, and the monitoring notice quotes the same
-                                                figure against the ≥10 g threshold. Two decimals
-                                                because a 12.5 mg tablet is 0.0125 g. */}
-                                            <span data-vial-sprayable className={`text-m3-display-large leading-none tabular-nums ${on}`}><AnimatedNumber value={antiandrogen.grams} decimals={2} /></span>
-                                            <span className={`text-xs lowercase ${muted}`}>g</span>
-                                        </>
+                                        // Cumulative grams, not a concentration: CPA has no
+                                        // curve, and the monitoring notice quotes the same
+                                        // figure against the ≥10 g threshold. Two decimals
+                                        // because a 12.5 mg tablet is 0.0125 g — and the
+                                        // figure only ever grows, so a few years of records
+                                        // reaches five figures and would have run off the card.
+                                        <Reading value={antiandrogen.grams} decimals={2} unit="g" className={on} muted={muted} sprayable />
                                     )}
                                     {antiandrogen.kind === 'dose' && (
-                                        <>
-                                            {/* Today's total, the reading the daily-dosed
-                                                anti-androgens use and CPA uses on a dose day. */}
-                                            <span data-vial-sprayable className={`text-m3-display-large leading-none tabular-nums ${on}`}><AnimatedNumber value={antiandrogen.mgToday} decimals={mgDecimals(antiandrogen.mgToday)} /></span>
-                                            <span className={`text-xs lowercase ${muted}`}>mg</span>
-                                        </>
+                                        // Today's total, the reading the daily-dosed
+                                        // anti-androgens use and CPA uses on a dose day.
+                                        <Reading value={antiandrogen.mgToday} decimals={mgDecimals(antiandrogen.mgToday)} unit="mg" className={on} muted={muted} sprayable />
                                     )}
                                     {antiandrogen.kind === 'since' && (
                                         // How long ago the last dose was, in the reader's own

@@ -641,6 +641,8 @@ const PACK: LangPack = {
     "modal.estimate.p2": "이 소프트웨어는 약동학 모델을 기반으로 이론적 추정치를 제공하며 실제 혈액 검사를 대체할 수 없습니다.",
     "modal.estimate.p3": "혈중 농도를 정확하게 알 수 있는 유일한 방법은 병원에서 혈액 검사를 받는 것입니다. 약물 조절에는 항상 병원 검사 결과를 근거로 삼으세요.",
     "modal.estimate.source": "에스트라디올 추정치는 Transfeminine Science에서 공개한 약동학 모델을 기반으로 합니다.",
+    "modal.absurd.title": "일부러 그러시는 거죠?",
+    "modal.absurd.body": "이 수치는 현실적이라고 보기 어려울 만큼 높습니다. 이렇게 큰 값이 나온다면 용량을 한 자리 더 입력했거나, 단위를 잘못 골랐거나, 혈액 검사 결과가 곡선을 크게 틀어놓았을 가능성이 큽니다. 먼저 최근 기록을 확인해 보세요.",
     "export.col.type": "유형",
     "export.col.date": "날짜",
     "export.col.item": "항목",

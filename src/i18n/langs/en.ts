@@ -558,6 +558,8 @@ const PACK: LangPack = {
     "modal.estimate.p2": "Please understand: This software provides theoretical estimates based on pharmacokinetic models and cannot replace actual blood tests.",
     "modal.estimate.p3": "The only way to accurately know your blood drug concentration is to visit a hospital for a blood test. Always rely on hospital lab reports for adjusting your medication.",
     "modal.estimate.source": "Estradiol estimates are based on the pharmacokinetic models published by Transfeminine Science.",
+    "modal.absurd.title": "Are you doing this on purpose?",
+    "modal.absurd.body": "That reading is too high to be real. A number this large usually means a dose was typed with an extra digit, the wrong unit was picked, or a lab result dragged the curve somewhere wild. Worth a look at your recent records first.",
     "export.col.type": "Type",
     "export.col.date": "Date",
     "export.col.item": "Item",

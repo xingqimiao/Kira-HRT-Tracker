@@ -234,6 +234,12 @@ export function stepSpray(state: SprayState, dt: number, surfaces: readonly Spra
         }
 
         const prevY = d.y;
+        // Where the droplet lands has to be the whole droplet, not its centre. A droplet
+        // that crosses a surface's top edge sideways — and the skirt throws plenty of them,
+        // because a steep descent barely moves in x between frames while a shallow one moves
+        // several px — used to be missed entirely and then fall through the text to the
+        // bottom of the page.
+        const prevX = d.x;
 
         d.vy += state.gravity * step;
         d.vx *= drag;
@@ -244,7 +250,9 @@ export function stepSpray(state: SprayState, dt: number, surfaces: readonly Spra
         // ── Collision: only on the way down, and only across a surface's top edge ──
         if (d.vy > 0) {
             for (const s of surfaces) {
-                if (d.x < s.x || d.x > s.x + s.w) continue;
+                // `prevX` as well as `d.x`, or a droplet that flew clear over a short
+                // surface is snapped back over it and lands in mid-air beside the text.
+                if (Math.min(prevX, d.x) > s.x + s.w || Math.max(prevX, d.x) < s.x) continue;
                 if (prevY > s.y || d.y < s.y) continue;
                 d.y = s.y;
                 d.vx = 0;
