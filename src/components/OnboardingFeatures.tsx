@@ -491,14 +491,9 @@ export const SignInPreview: React.FC = () => {
  * express "lifts → grows → locks → shrinks"; a bare flip jumped straight to the closed
  * pose with no wind-up.
  *
- * ── Colour: paired container/content roles, in both themes ───────────────────
- *
- * Every part is named by a *pair* — `primary` / `on-primary`, `surface-container-highest`
- * / `on-surface` — rather than mixing a fill from one family with an ink from another.
- * A container/content pair is the only colour combination M3 guarantees contrast for, so
- * the lock reads the same in light and dark without a second rule; the previous version
- * hard-coded `surface-container-high` for the body against a `surface` step that the
- * privacy page does not use, which is why it looked wrong in one of the two themes.
+ * Sized to sit *with* the heading rather than over it: on the privacy step the mark
+ * and the three lines of type are one block, and a page-sized lock pushed the
+ * sentence it belongs to off the bottom of the screen.
  */
 export const BigLockAnimation: React.FC = () => {
     // 0 open · 1 lifting / growing · 2 locked · 3 the hold before the loop.
@@ -524,9 +519,8 @@ export const BigLockAnimation: React.FC = () => {
         <div className="flex w-full items-center justify-center py-4 select-none">
             <svg
                 viewBox="0 0 96 116"
-                /* Bigger than before, as asked: the lock is the page's one image. */
-                width={132}
-                height={160}
+                width={88}
+                height={106}
                 className="overflow-visible"
                 aria-hidden="true"
             >

@@ -8,10 +8,11 @@ import { useHRTMode } from '../contexts/HRTModeContext';
 import type { Lang } from '../i18n/types';
 import CopyRow from '../components/CopyRow';
 import IntroCard from '../components/IntroCard';
+import FitText from '../components/FitText';
 import { LabScanDemo, JournalPreview, RecheckPreview, SignInPreview, QuickAddDemo, BigLockAnimation, ImportSmashDemo } from '../components/OnboardingFeatures';
 import Icon from '../components/Icon';
 import DateTimePicker from '../components/DateTimePicker';
-import { Check, Plus, ChevronDown, Cloud, AlertTriangle } from '../icons';
+import { Check, Plus, ChevronDown, AlertTriangle } from '../icons';
 import { buildMcpInstallPrompt } from '../utils/mcpInstallPrompt';
 import { LOCALE_MAP } from '../utils/helpers';
 import { toYmd, fromYmd } from '../utils/hrtStart';
@@ -117,14 +118,18 @@ const STEP_ROLES: Record<string, StepRoles> = {
     journal: CONTAINER_LOWEST,
     recheck: CONTAINER_LOWEST,
     signin: CONTAINER_HIGH,
-    /* Between sign-in and the account preview, and on the same container as both:
-       the three are one beat about "your data and where it lives", and a role
-       change mid-group would repaint the surface under the slide. */
-    import: CONTAINER_HIGH,
+    /* Between sign-in and the account preview, and the one coloured block of the
+       three. Sign-in, import and the account preview are one beat about "your data
+       and where it lives", so they shared a container — but that made three grey
+       screens in a row, and arriving at "what about the records I already have?"
+       changed nothing on screen. It takes the accent, the flow's cool second
+       colour, rather than the greeting pair's pink, so it reads as its own beat
+       and not as a second welcome. */
+    import: SECONDARY,
     account: CONTAINER_HIGH,
     pwa: SECONDARY,
     mcp: TERTIARY,
-    privacy: { surface: '--md-sys-color-surface-container-highest', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' },
+    privacy: { surface: '--md-sys-color-surface-bright', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' },
     disclaimer: CONTAINER,
 };
 
@@ -901,33 +906,53 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
             <p className="mt-2 text-m3-body-large intro-muted">{t('onboarding.mcp_more')}</p>
         </div>,
 
-        <div key="privacy" className="flex min-h-[68vh] flex-col items-center pt-2 text-center">
-            {/* Lock and heading grouped, so the pair sits at the top of the step. */}
-            <div className="flex flex-col items-center">
+        /* The mark and the words are one block, centred in the step, with the
+           cloud note sunk to the foot just above the next button: a poster — a
+           mark, a sentence about it, a line of fine print — so nothing on this
+           step is framed, boxed or bordered.
+           `my-auto` and not a top padding: the header sits where the eye expects
+           a poster's type, and the free space falls below it rather than above. */
+        <div key="privacy" className="flex min-h-[68vh] flex-col items-center text-center">
+            <div className="my-auto flex w-full flex-col items-center">
                 <BigLockAnimation />
                 {/* The heading is the page, so it takes the largest type in the app
-                    (display-large, 57px) rather than a headline. `text-balance` keeps
-                    the three lines from ending on a lone word at this size. */}
-                <h1 className="intro-title mt-2 text-balance text-m3-display-large font-bold leading-[1.06] break-words">
-                    {t('onboarding.privacy_title_1')}<br />
-                    <span className="text-[var(--color-m3-primary)]">{t('onboarding.privacy_title_highlight')}</span><br />
-                    {t('onboarding.privacy_title_2')}
+                    (display-large, 57px).
+                    The middle line names two products and is naturally far wider than
+                    the Chinese around it — 520px at display-medium against the 364px a
+                    phone gives it — so at any size that still reads as a poster it
+                    wrapped, and the two names the line exists to say landed on separate
+                    lines. Scaled down alone it would have been a visibly smaller line
+                    between two full-size ones, so the whole heading goes through
+                    `FitText`: with the `<br>`s as the poster's line breaks, its
+                    `scrollWidth` is the *widest* of the three, and one ratio brings all
+                    three down together. The shape is then the same in every language,
+                    and the floor is lowered because a display heading would rather be
+                    small than clipped.
+                    The weight split follows the poster rather than the app's other
+                    headings: "隐私保护根植于" and "设计之中。" are set light and the
+                    product line alone is semibold, so the emphasis lands on the names
+                    and the two framing lines stay quiet. Bolding all three made the
+                    highlight a colour change with nothing carrying it.
+                    `w-full` on the heading *and* on the wrapper above it is
+                    load-bearing: `FitText`'s inner line is `white-space: nowrap`, so
+                    its min-content width is the whole line, and these are both flex
+                    items in a centred column — left to shrink-wrap they sized
+                    themselves to that line (482px in a 364px slot) and overflowed the
+                    step instead of being measured against it. */}
+                <h1 className="intro-title w-full text-m3-display-large leading-[1.06]">
+                    <FitText minRatio={0.42}>
+                        {t('onboarding.privacy_title_1')}<br />
+                        <span className="font-semibold text-[var(--color-m3-primary)]">{t('onboarding.privacy_title_highlight')}</span><br />
+                        {t('onboarding.privacy_title_2')}
+                    </FitText>
                 </h1>
-            </div>
-            {/* The rest sits at the foot of the step — `mt-auto` against the step's own
-                min-height, so the lock and the sentence stand alone up top and the
-                explanation reads as a footnote rather than a subtitle. */}
-            <div className="mt-auto w-full pb-2 pt-8">
-                <p className="text-m3-body-large intro-muted">
+                <p className="mt-4 text-m3-body-large intro-muted">
                     {t('onboarding.privacy_subtitle')}
                 </p>
-                <div className="mx-auto mt-4 flex max-w-md items-center justify-center gap-3 rounded-2xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container)] p-4 text-start">
-                    <Icon icon={Cloud} size={24} className="shrink-0 text-[var(--color-m3-primary)]" />
-                    <p className="text-m3-body-medium text-[var(--color-m3-on-surface)] leading-relaxed">
-                        {t('onboarding.privacy_cloud_note')}
-                    </p>
-                </div>
             </div>
+            <p className="w-full pb-1 pt-5 text-m3-label-medium intro-muted">
+                {t('onboarding.privacy_cloud_note')}
+            </p>
         </div>,
 
         <div key="disclaimer" className="flex h-full flex-col items-center justify-center pt-6 text-center">
