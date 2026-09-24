@@ -178,12 +178,17 @@ const sampleSnapshot = JSON.stringify({
     medicines: [
         { uuid: 'm1', preparationType: 'PILL', strengthMgPerTablet: 2, medicationKey: 'ESTRADIOL_VALERATE' },
         { uuid: 'm2', preparationType: 'IMPORTED_INJECTION', strengthMgPerVial: 5, medicationKey: 'ESTRADIOL_ENANTHATE' },
+        // A real export's value: the strength is reconstructed rather than stored, so
+        // a 12.5 mg tablet arrives carrying float noise. Taken verbatim from a backup
+        // so the rounding is tested against the thing it exists for.
+        { uuid: 'm3', preparationType: 'PILL', strengthMgPerTablet: 12.499934062706513, medicationKey: 'CYPROTERONE_ACETATE' },
     ],
     medicationLogs: [
         { uuid: 'd1', medicineUuid: 'm1', applicationType: 'SUBLINGUAL', count: 1, appliedAtEpochMillis: 1735689600000 },
         { uuid: 'd2', medicineUuid: 'm1', applicationType: 'SUBLINGUAL', tabletFractionNumerator: 1, tabletFractionDenominator: 2, count: 1, appliedAtEpochMillis: 1735776000000 },
         { uuid: 'd3', medicineUuid: 'm2', applicationType: 'INJECTION', count: 1, appliedAtEpochMillis: 1735862400000 },
         { uuid: 'd4', medicineUuid: 'm2', applicationType: 'SOMETHING_WE_DO_NOT_SUPPORT', count: 1, appliedAtEpochMillis: 1735948800000 },
+        { uuid: 'd5', medicineUuid: 'm3', applicationType: 'ORAL', count: 1, appliedAtEpochMillis: 1736035200000 },
     ],
     bloodTestPanels: [
         { uuid: 'p1', collectedAtInstantEpochMillis: 1735689600000, results: [
@@ -234,7 +239,9 @@ await checkAsync('the snapshot maps to doses, labs and weight', async () => {
     assert.equal(byId.d2.doseMG, 1, 'a half tablet is half the strength')
     assert.equal(byId.d3.doseMG, 5, 'an imported injection stores its administered mg')
     assert.equal(byId.d3.ester, 'EN')
-    assert.equal(Object.keys(byId).length, 3, 'the unsupported route is dropped')
+    assert.equal(byId.d5.doseMG, 12.5, 'float-reconstruction noise in the source is trimmed')
+    assert.notEqual(byId.d5.doseMG, 12.499934062706513, 'and the raw value is not what reaches the timeline')
+    assert.equal(Object.keys(byId).length, 4, 'the unsupported route is dropped')
 
     assert.equal(mapped.skipped.doses, 1)
     assert.ok(mapped.skipped.reasons.some((r) => r.includes('unsupported route')))

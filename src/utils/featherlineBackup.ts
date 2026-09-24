@@ -288,12 +288,32 @@ function esterFor(...candidates: unknown[]): string | null {
 }
 
 /**
+ * Trim the float-reconstruction noise a Featherline dose arrives with.
+ *
+ * Their dose is *reconstructed* rather than stored — a strength divided by a ratio,
+ * or a fraction times a strength — so a 12.5 mg tablet comes through as
+ * 12.499934062706513. Passing that on puts a meaningless run of digits in the user's
+ * timeline, and it is the kind of "wrong" that makes them doubt the whole import.
+ *
+ * Three significant figures is what recovers the number they typed. Checked against
+ * a real export: 12.499934 -> 12.5, 8.25063 -> 8.25, 6.249967 -> 6.25, 10.000253 ->
+ * 10, while a genuinely precise 0.935 survives untouched. (Featherline does the same
+ * thing on its side, at six significant figures, for the same reason.)
+ */
+function roundDose(mg: number): number {
+    return Number(mg.toPrecision(3));
+}
+
+/**
  * The dose in mg of the substance, from the log's instruction and the medicine's
  * per-shape strength.
  *
  * `equivalentE2Mg` is deliberately NOT used: it is the estradiol equivalent the PK
  * engine consumes, and our `doseMG` means the mass actually taken (a 2 mg valerate
  * tablet is `doseMG: 2`, not `1.53`). See docs/hrt-import-export-protocol.md §7.
+ * For a gel the two happen to be equal — the applied estradiol *is* the PK input —
+ * which is why a real gel export shows the same number in both fields, and why
+ * reading `strengthMgPerVial` here is not the coincidence it looks like.
  */
 function doseMgFor(log: Record<string, any>, medicine: Record<string, any> | undefined): number | null {
     const count = num(log.count) ?? 1;
@@ -305,24 +325,24 @@ function doseMgFor(log: Record<string, any>, medicine: Record<string, any> | und
         const prep = String(medicine.preparationType ?? '').toLowerCase();
         // A pill or capsule dose is its per-unit strength times the fraction taken.
         if ((prep.includes('pill') || prep.includes('capsule')) && num(medicine.strengthMgPerTablet) !== null) {
-            return (medicine.strengthMgPerTablet as number) * fraction * count;
+            return roundDose((medicine.strengthMgPerTablet as number) * fraction * count);
         }
         if (prep.includes('patch') && num(medicine.patchTotalMg) !== null) {
-            return (medicine.patchTotalMg as number) * count;
+            return roundDose((medicine.patchTotalMg as number) * count);
         }
         // An imported injection or gel stores the administered mg directly (the
         // format doc is explicit about this), so the vial/concentration fields are
         // the fallbacks rather than the primary reading.
         if (num(medicine.concentrationMgPerMl) !== null && num(log.doseVolumeMl) !== null) {
-            return (medicine.concentrationMgPerMl as number) * (log.doseVolumeMl as number) * count;
+            return roundDose((medicine.concentrationMgPerMl as number) * (log.doseVolumeMl as number) * count);
         }
         if (num(medicine.strengthMgPerVial) !== null) {
-            return (medicine.strengthMgPerVial as number) * count;
+            return roundDose((medicine.strengthMgPerVial as number) * count);
         }
     }
     // Last resort: an imported gel row may carry its own applied weight.
     const grams = num(log.doseWeightGrams);
-    if (grams !== null) return grams * count;
+    if (grams !== null) return roundDose(grams * count);
     return null;
 }
 
