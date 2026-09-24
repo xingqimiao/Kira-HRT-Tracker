@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>导入动画预览</title>
+
+<!--
+  A standalone preview of the onboarding import animation, so the motion can be
+  watched without stepping through the whole intro.
+
+  It pulls the same four images the real step uses (/transmtf.png, /oyama.png,
+  /featherline.png, /pwa-512x512.png) and copies the keyframes from index.css, so
+  what plays here is what ships. Not a re-drawing of it — if the two ever disagree,
+  this file is the one that is wrong.
+
+  Serve it from the repo root so the absolute image paths resolve:
+
+      npx vite --port 3000            (already running)
+      open http://localhost:3000/preview-import-animation.html
+-->
+<style>
+:root {
+    --bg: #0d0d12;
+    --fg: #f4f5f7;
+    --dim: #a2a4ad;
+    --line: #272930;
+    --surface-lowest: #131319;
+    --radius-lg: 16px;
+}
+@media (prefers-color-scheme: light) {
+    :root { --bg: #faf9f7; --fg: #1a1a1f; --dim: #5c5f6b; --line: #e4e5ea; --surface-lowest: #ffffff; }
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+}
+main { max-width: 560px; margin: 0 auto; padding: 32px 20px 64px; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+p.lead { color: var(--dim); font-size: 13px; margin: 0 0 28px; }
+section { margin: 0 0 32px; }
+h2 { font-size: 14px; margin: 0 0 12px; color: var(--dim); font-weight: 600; }
+
+/* ── Copied verbatim from src/index.css ─────────────────────────────────── */
+.onb-smash {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 176px;
+}
+.onb-smash__in,
+.onb-smash__target {
+    display: block;
+    border-radius: var(--radius-lg);
+    background-color: var(--surface-lowest);
+    border: 1px solid var(--line);
+    object-fit: cover;
+}
+.onb-smash__in {
+    position: absolute;
+    z-index: 1;
+    width: 44px;
+    height: 44px;
+    opacity: 0;
+    will-change: transform, opacity;
+}
+.onb-smash__target {
+    position: relative;
+    z-index: 2;
+    width: 76px;
+    height: 76px;
+    box-shadow: 0 3px 6px rgba(0,0,0,.16);
+    animation: onb-smash-target 3600ms linear infinite;
+    will-change: transform;
+}
+.onb-smash__in--a { animation: onb-smash-a 3600ms linear infinite; }
+.onb-smash__in--b { animation: onb-smash-b 3600ms linear infinite; }
+.onb-smash__in--c { animation: onb-smash-c 3600ms linear infinite; }
+
+@keyframes onb-smash-target {
+    0%, 8%    { transform: scale(1); }
+    12%       { transform: scale(1.26); }
+    15%       { transform: scale(0.94); animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+    18%, 41%  { transform: scale(1); }
+    45%       { transform: scale(1.26); }
+    48%       { transform: scale(0.94); animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+    51%, 74%  { transform: scale(1); }
+    78%       { transform: scale(1.26); }
+    81%       { transform: scale(0.94); animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+    85%, 100% { transform: scale(1); }
+}
+@keyframes onb-smash-a {
+    0%, 6% {
+        transform: translate(-124px, 24px) rotate(-10deg) scale(1);
+        opacity: 0;
+        animation-timing-function: cubic-bezier(0.42, 0, 0.9, 0.6);
+    }
+    7.5% { opacity: 1; }
+    12%  { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+    15%  { transform: translate(0, 0) rotate(0deg) scale(0.45); opacity: 0.8; }
+    18%  { transform: translate(0, 0) rotate(0deg) scale(0.15); opacity: 0; }
+    100% { transform: translate(-124px, 24px) rotate(-10deg) scale(1); opacity: 0; }
+}
+@keyframes onb-smash-b {
+    0%, 39% {
+        transform: translate(0, -108px) rotate(8deg) scale(1);
+        opacity: 0;
+        animation-timing-function: cubic-bezier(0.42, 0, 0.9, 0.6);
+    }
+    40.5% { opacity: 1; }
+    45%  { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+    48%  { transform: translate(0, 0) rotate(0deg) scale(0.45); opacity: 0.8; }
+    51%  { transform: translate(0, 0) rotate(0deg) scale(0.15); opacity: 0; }
+    100% { transform: translate(0, -108px) rotate(8deg) scale(1); opacity: 0; }
+}
+@keyframes onb-smash-c {
+    0%, 72% {
+        transform: translate(124px, 24px) rotate(10deg) scale(1);
+        opacity: 0;
+        animation-timing-function: cubic-bezier(0.42, 0, 0.9, 0.6);
+    }
+    73.5% { opacity: 1; }
+    78%  { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+    81%  { transform: translate(0, 0) rotate(0deg) scale(0.45); opacity: 0.8; }
+    84%  { transform: translate(0, 0) rotate(0deg) scale(0.15); opacity: 0; }
+    100% { transform: translate(124px, 24px) rotate(10deg) scale(1); opacity: 0; }
+}
+/* ── end copy ───────────────────────────────────────────────────────────── */
+
+.stage {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--fg) 3%, transparent);
+    overflow: hidden;
+}
+.controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+button {
+    font: inherit; font-size: 13px; padding: 7px 13px; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: transparent; color: var(--fg);
+}
+button:hover { background: color-mix(in srgb, var(--fg) 6%, transparent); }
+button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.readout {
+    margin-top: 10px; font-size: 12px; color: var(--dim);
+    font-variant-numeric: tabular-nums; min-height: 1.6em;
+}
+.slow .onb-smash__target,
+.slow .onb-smash__in { animation-duration: 14400ms; }   /* 4× slower */
+.step3x .onb-smash__target,
+.step3x .onb-smash__in { animation-duration: 10800ms; } /* 3× slower */
+</style>
+</head>
+<body>
+<main>
+    <h1>导入动画预览</h1>
+    <p class="lead">
+        这是新手教程「本来就有的记录？」那一步的动画。关键帧与 <code>index.css</code> 逐字一致，
+        图片就是那四张，所以这里播的就是线上会看到的。
+    </p>
+
+    <section>
+        <h2>正常速度（3.6s 一轮）</h2>
+        <div class="stage">
+            <div class="onb-smash" id="stage">
+                <img class="onb-smash__in onb-smash__in--a" src="/transmtf.png" alt="">
+                <img class="onb-smash__in onb-smash__in--b" src="/oyama.png" alt="">
+                <img class="onb-smash__in onb-smash__in--c" src="/featherline.png" alt="">
+                <img class="onb-smash__target" id="target" src="/pwa-512x512.png" alt="">
+            </div>
+        </div>
+        <div class="controls">
+            <button id="pause">暂停</button>
+            <button id="slow4">放慢 4×</button>
+            <button id="slow3">放慢 3×</button>
+            <button id="reset">恢复原速</button>
+            <button id="at0">回到 0%</button>
+            <button id="atPeak">停在「超出」峰值</button>
+            <button id="atSquash">停在「回缩」最低点</button>
+        </div>
+        <div class="readout" id="readout">我们的图标宽度：76.0px（静止值）</div>
+    </section>
+
+    <section>
+        <h2>单独看「超出回弹」</h2>
+        <p class="lead" style="margin-bottom:10px">
+            只有我们的图标，三个来袭图标已隐藏。这一条独立循环，方便看清 1 → 1.26 → 0.94 → 1。
+        </p>
+        <div class="stage" style="height:176px; display:flex; align-items:center; justify-content:center;">
+            <img class="onb-smash__target" src="/pwa-512x512.png" alt="" id="solo" style="position:static;">
+        </div>
+        <div class="readout" id="soloReadout">宽度：76.0px</div>
+    </section>
+</main>
+
+<script>
+const stage = document.getElementById('stage');
+const target = document.getElementById('target');
+const solo = document.getElementById('solo');
+const readout = document.getElementById('readout');
+const soloReadout = document.getElementById('soloReadout');
+
+const REST_WIDTH = 76;
+
+// The three marks' animations are keyed by their class, so the whole stage's
+// animations are what the controls below drive.
+const stageAnims = () =>
+    document.getAnimations().filter(a => a.effect?.target && stage.contains(a.effect.target));
+const soloAnims = () =>
+    document.getAnimations().filter(a => a.effect?.target === solo);
+
+let paused = false;
+
+function show(prefix, el) {
+    const w = el.getBoundingClientRect().width;
+    const scale = w / REST_WIDTH;
+    readout.textContent = `我们的图标宽度：${w.toFixed(1)}px  (×${scale.toFixed(3)}，静止为 76.0px)`;
+    return scale;
+}
+
+// Live width readout while playing.
+(function loop() {
+    if (!paused) readout.textContent =
+        `我们的图标宽度：${target.getBoundingClientRect().width.toFixed(1)}px` +
+        `  (×${(target.getBoundingClientRect().width / REST_WIDTH).toFixed(3)}，静止 76.0px)`;
+    soloReadout.textContent =
+        `宽度：${solo.getBoundingClientRect().width.toFixed(1)}px` +
+        `  (×${(solo.getBoundingClientRect().width / REST_WIDTH).toFixed(3)})`;
+    requestAnimationFrame(loop);
+})();
+
+document.getElementById('pause').onclick = (e) => {
+    paused = !paused;
+    for (const a of [...stageAnims(), ...soloAnims()]) paused ? a.pause() : a.play();
+    e.target.textContent = paused ? '继续' : '暂停';
+    e.target.classList.toggle('on', paused);
+};
+
+// Speed controls scale the duration rather than adding a delay, so the phase of
+// each mark relative to the others is preserved — the timing is the thing being
+// judged, and a delay would distort it.
+function setSpeed(ms, btn) {
+    stage.style.setProperty('--dur', ms + 'ms');
+    for (const el of document.querySelectorAll('.onb-smash__target, .onb-smash__in')) {
+        el.getAnimations().forEach(a => { a.effect.updateTiming({ duration: ms, iterations: Infinity }); });
+    }
+    paused = false;
+    for (const a of [...stageAnims(), ...soloAnims()]) a.play();
+    document.getElementById('pause').textContent = '暂停';
+    for (const b of document.querySelectorAll('.controls button')) b.classList.remove('on');
+    btn?.classList.add('on');
+}
+document.getElementById('reset').onclick = (e) => setSpeed(3600, e.target);
+document.getElementById('slow4').onclick = (e) => setSpeed(14400, e.target);
+document.getElementById('slow3').onclick = (e) => setSpeed(10800, e.target);
+
+function stopAt(ms) {
+    paused = true;
+    for (const a of stageAnims()) { a.pause(); a.currentTime = ms; }
+    for (const a of soloAnims()) { a.pause(); a.currentTime = ms; }
+    document.getElementById('pause').textContent = '继续';
+    requestAnimationFrame(() => show('', target));
+}
+// 8% of 3600 = 288ms is the last frame at rest; 12% = 432ms is the peak; 15% = 540ms
+// is the under-shoot. Values taken from the keyframes above, not guessed.
+document.getElementById('at0').onclick = () => stopAt(100);
+document.getElementById('atPeak').onclick = () => stopAt(432);
+document.getElementById('atSquash').onclick = () => stopAt(540);
+</script>
+</body>
+</html>
