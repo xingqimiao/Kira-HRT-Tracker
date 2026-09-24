@@ -1,5 +1,4 @@
 import path from 'path';
-import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -20,40 +19,40 @@ import { VitePWA } from 'vite-plugin-pwa';
 const pkg = JSON.parse(readFileSync(path.resolve(import.meta.dirname, 'package.json'), 'utf8'));
 
 /**
- * A short stamp that changes whenever the code does, used to version the service
- * worker's filename.
+ * The service worker's filename — deliberately FIXED, not commit-stamped.
  *
- * A fixed `/sw.js` is un-propagatable in a way that produced a real bug. Cloudflare's
- * default Browser Cache TTL (4 hours) pinned that file at the edge, so its bytes never
- * changed, so the browser's update check concluded "no new version" — and the
- * *previous* worker kept serving its old precache manifest. The new `index.html`
- * pointed at a new bundle and it made no difference, because the request never reached
- * the network. A fixed bug stayed broken for the person who reported it.
+ * History, because both designs were tried and the second one had a bug the first did
+ * not:
  *
- * A different URL whenever the commit changes sidesteps the whole class: there is
- * nothing cached to serve, so the new worker installs, claims the scope and replaces
- * the old one. The Caddy `no-cache` header on the worker paths covers the case where a
- * URL is somehow revisited — added 2026-09-24, after the rule this comment used to
- * claim was found not to exist on the box. Without it Cloudflare's default Browser
- * Cache TTL (4h) pinned every worker URL, so a client registered against an older
- * `sw-<sha>.js` never saw the new bytes and stayed on its old build. Both the rule and
- * the stamped name are needed: the stamped name only helps for the *new* name, and an
- * existing client re-reads the old one.
+ *   1. A fixed `/sw.js` was un-propagatable on its own. Cloudflare's default Browser
+ *      Cache TTL (4h) pinned it at the edge, so its bytes never changed, so the
+ *      browser's update check concluded "no new version" and the previous worker kept
+ *      serving its old precache. Fixed 2026-09-24 by giving the worker paths a Caddy
+ *      `no-cache` header — see `server/DEPLOY.md`, which now also purges the edge.
  *
- * Falls back to the app version when git is unavailable (a tarball build), which is
- * coarser but still changes when the project does.
+ *   2. A commit-stamped `sw-<sha>.js` worked around that by changing the URL. But the
+ *      URL changing is itself a problem: `index.html` registers the new name, the
+ *      browser sees a registration whose scriptURL differs from the running worker, and
+ *      installs it as a *new* version even when the bytes are identical (the deploy step
+ *      overwrites the old names with the new bytes on purpose, so an existing client
+ *      updates). The result was the update banner reappearing straight after the user
+ *      pressed 更新 — the first press applied the update and reloaded, the reload
+ *      registered the new URL, and a second banner appeared. Two clicks to update.
+ *
+ *   3. Fixed name again, now that (1) is solved at the cache header rather than at the
+ *      URL. Registering the same path the running worker already has means the browser
+ *      compares bytes: identical bytes are not an update, so the banner does not come
+ *      back. Verified by serving a stamped "old" build, overwriting its worker with a
+ *      new build's bytes the way a deploy does, and counting banner appearances — one,
+ *      against two for the stamped name.
+ *
+ * The one-off cost: a client still registered against a `sw-<sha>.js` from before this
+ * change needs two clicks on its *first* update, because that first reload is the one
+ * that moves it to `/sw.js`. Every update after that is single-click. The deploy step
+ * that overwrites every `sw-*.js` with the new bytes must stay, or those clients never
+ * see the change at all.
  */
-function swStamp(): string {
-  try {
-    return execSync('git rev-parse --short HEAD', { cwd: import.meta.dirname, stdio: ['ignore', 'pipe', 'ignore'] })
-      .toString()
-      .trim();
-  } catch {
-    return pkg.version;
-  }
-}
-
-const SW_FILENAME = `sw-${swStamp()}.js`;
+const SW_FILENAME = 'sw.js';
 
 /**
  * Dev-only: serve the self-hosted ONNX Runtime glue when the engine imports it.
