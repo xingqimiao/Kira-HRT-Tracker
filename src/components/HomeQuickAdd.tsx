@@ -48,14 +48,12 @@ const UNDO_MS = 6000;
 const triggerClass = (open: boolean, empty: boolean, large = false) =>
     `inline-flex items-center border border-[var(--color-m3-outline-variant)] font-medium transition-colors ${
         large
-            ? 'h-12 gap-1.5 rounded-lg pe-3 ps-4 text-sm'
-            // A phone-only square: below `sm` the label is hidden, so a padded
-            // row around one glyph was a 41x36 rectangle (measured) with the
-            // icon 11px from one edge and 10px from the other. `w-9 h-9 p-0
-            // justify-center` makes it a 36x36 square with the glyph at its
-            // centre, and `rounded-md` is the corner the Share control beside it
-            // already uses — from `sm` up it grows back into the labelled row.
-            : 'h-9 w-9 justify-center gap-0 rounded-md p-0 text-xs sm:w-auto sm:justify-normal sm:gap-1.5 sm:rounded-lg sm:pl-3 sm:pr-2'
+            ? 'h-12 gap-1.5 rounded-full pe-3 ps-4 text-sm'
+            // A phone-only pill: below `sm` the label is hidden, so a padded row
+            // around one glyph was a 41x36 rectangle (measured) with the icon 11px
+            // from one edge and 10px from the other. A fixed 36x36 pill centres the
+            // glyph, and it grows back into the labelled pill from `sm` up.
+            : 'h-9 w-9 justify-center gap-0 rounded-full p-0 text-xs sm:w-auto sm:justify-normal sm:gap-1.5 sm:pl-3 sm:pr-2'
     } ${
         open
             ? 'bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-surface)]'
@@ -124,7 +122,11 @@ const HomeQuickAdd: React.FC<HomeQuickAddProps> = ({ templates, onAddEvent, onRe
                         three items, and the words were what overflowed. The icon keeps its
                         aria-label, so nothing is lost to a screen reader. */}
                     <span className="hidden sm:inline">{t('quickadd.button')}</span>
-                    <Icon icon={ChevronDown} size={13} className={`hidden sm:block ${open ? 'rotate-180' : ''}`} />
+                    <Icon
+                        icon={ChevronDown}
+                        size={13}
+                        className={`hidden transition-transform duration-200 ease-[cubic-bezier(0.2,0,0,1)] sm:block ${open ? 'rotate-180' : ''}`}
+                    />
                 </button>
 
                 {/* Always rendered, so the menu can play its exit; it returns
@@ -235,7 +237,7 @@ const Dropdown: React.FC<{
             <div
                 role="menu"
                 data-state={state}
-                className="fixed z-[81] max-h-80 overflow-y-auto rounded-xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-lowest)] py-1 shadow-lg m3-menu m3-menu--top-right"
+                className="fixed z-[81] max-h-80 overflow-y-auto rounded-xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-lowest)] shadow-lg m3-menu m3-menu--top-right m3-menu--flush"
                 style={{
                     top: rect.bottom + 6,
                     width,
@@ -243,12 +245,14 @@ const Dropdown: React.FC<{
                 }}
             >
                 {items.map((template) => (
+                    // A plain button, full-bleed: the highlight has to reach the menu's
+                    // edge, which is what tells you the whole row is one tap target.
                     <button
                         key={template.id}
                         type="button"
                         role="menuitem"
                         onClick={() => onPick(template)}
-                        className="block w-full border-b border-[var(--color-m3-outline-variant)] px-3 py-2.5 text-left last:border-b-0 hover:bg-[var(--color-m3-surface-container)]"
+                        className="block w-full border-b border-[var(--color-m3-outline-variant)] px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-[var(--color-m3-surface-container)] active:bg-[var(--color-m3-primary-container)]"
                     >
                         <span className="block text-sm font-medium text-[var(--color-m3-on-surface)]">{template.name}</span>
                         <span className="mt-0.5 block text-xs text-[var(--color-m3-on-surface-variant)]">
@@ -314,7 +318,7 @@ const UndoBanner: React.FC<{
                 <button
                     type="button"
                     onClick={() => close(onUndo)}
-                    className="mr-1 inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-[var(--color-m3-primary)] transition-colors hover:bg-[var(--color-m3-primary)]/10"
+                    className="mr-1 inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold text-[var(--color-m3-primary)] transition-colors hover:bg-[var(--color-m3-primary)]/10"
                 >
                     <Icon icon={RotateCcw} size={12} />
                     {t('quickadd.undo')}

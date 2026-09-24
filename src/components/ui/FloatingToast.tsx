@@ -19,9 +19,14 @@ import { usePresence } from '../../hooks/usePresence';
  * the finger. A transition composes with inline styles instead of fighting them, and
  * `transition: none` during the drag is all it takes to stop it lagging.
  *
- * Centring lives on the outer element (`left: 50%; translateX(-50%)`), so the inner
- * element's transform is free for the motion and the drag. Putting both on one node
- * would mean every keyframe had to remember the `-50%`.
+ * Centring lives on the outer element, so the inner element's transform is free for the
+ * motion and the drag. Putting both on one node would mean every keyframe had to
+ * remember the offset. The outer element spans the full width and centres the pill with
+ * flexbox rather than `left: 50%; translateX(-50%)`: a fixed box with `left: 50%` has
+ * only the right half as its available width, so shrink-to-fit sized the pill to 50% of
+ * the viewport — on a 390px phone that collapsed it to 195px and wrapped the label
+ * ("已记下…" over three lines, 撤销 stacked vertically). A full-width flex row has the
+ * whole viewport to size against, and the padding is what keeps the pill off the edges.
  */
 
 /** Must match the transition in `poseStyle` below. */
@@ -130,9 +135,10 @@ const FloatingToast: React.FC<FloatingToastProps> = ({
 
     return createPortal(
         <div
-            // The centring and the edge offset live here, so the inner element's
-            // transform is free for the motion and the drag.
-            className="fixed left-1/2 z-[95] w-auto max-w-[min(24rem,calc(100%-2rem))] -translate-x-1/2"
+            // Full-width, centred by flexbox: see the header note for why this is not
+            // `left: 50%` + translate. The centring and the edge offset live here, so
+            // the inner element's transform is free for the motion and the drag.
+            className="fixed inset-x-0 z-[95] flex justify-center px-4"
             style={{
                 ...(edge === 'top'
                     ? { top: 'calc(env(safe-area-inset-top, 0px) + 1rem)' }
@@ -145,7 +151,7 @@ const FloatingToast: React.FC<FloatingToastProps> = ({
                 role="status"
                 aria-live="polite"
                 data-state={open ? 'open' : 'closed'}
-                className={`floating-toast flex items-center gap-2.5 rounded-full border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-highest)] py-2 pl-2 pr-1.5 shadow-[var(--shadow-m3-3)] ${onDismiss ? 'cursor-grab active:cursor-grabbing' : ''} ${className}`}
+                className={`floating-toast flex max-w-[24rem] items-center gap-2.5 rounded-full border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-highest)] py-2 pl-2 pr-1.5 shadow-[var(--shadow-m3-3)] ${onDismiss ? 'cursor-grab active:cursor-grabbing' : ''} ${className}`}
                 style={{
                     ...pose,
                     transition: drag.active

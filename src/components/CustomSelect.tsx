@@ -115,7 +115,7 @@ const CustomSelect: React.FC<CustomSelectProps> = ({ value, onChange, options, l
                     onClick={() => setIsOpen(!isOpen)}
                     className={`group w-full min-h-[44px] px-3 py-2 bg-cos-surface-container  border outline-none flex items-center justify-between overflow-hidden
                         ${isOpen
-                            ? 'border-[var(--color-m3-primary)] ring-1 ring-[var(--color-m3-primary)]/20 rounded-t-md'
+                            ? 'border-[var(--color-m3-primary)] shadow-[inset_0_0_0_1px_var(--color-m3-primary)] rounded-t-md'
                             : 'border-cos-outline  hover:border-cos-outline  rounded-md'}`}
                 >
                     {icon ? (

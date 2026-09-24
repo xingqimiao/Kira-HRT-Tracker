@@ -84,7 +84,7 @@ const SublingualFields: React.FC<SublingualFieldsProps> = ({
                                 min="1" max="60"
                                 value={customHoldInput}
                                 onChange={e => handleCustomHoldChange(e.target.value)}
-                                className="w-16 h-9 px-2 bg-cos-surface-container  border border-cos-outline  rounded-md text-center text-sm font-medium focus:ring-1 focus:ring-[var(--color-m3-primary)]/30 focus:border-[var(--color-m3-primary)] outline-none text-cos-on-surface  [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="input-num w-16 h-9 font-medium text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 style={{ fontSize: '16px' }}
                             />
                             <span className="text-xs text-cos-on-surface-variant ">{t('unit.min_short')}</span>
@@ -114,7 +114,7 @@ const SublingualFields: React.FC<SublingualFieldsProps> = ({
                             min="0"
                             step="0.001"
                             value={rawDose} onChange={e => onRawChange(e.target.value)}
-                            className="w-full p-3 bg-cos-surface-container  border border-cos-outline  rounded-md focus:ring-1 focus:ring-[var(--color-m3-primary)]/30 focus:border-[var(--color-m3-primary)] outline-none text-cos-on-surface  font-medium text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            className="input-base font-medium text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             placeholder="0.0"
                             style={{ fontSize: '16px' }}
                         />
@@ -131,7 +131,7 @@ const SublingualFields: React.FC<SublingualFieldsProps> = ({
                             min="0"
                             step="0.001"
                             value={e2Dose} onChange={e => onE2Change(e.target.value)}
-                            className="w-full p-3 bg-cos-surface-container  border border-cos-outline  rounded-md focus:ring-1 focus:ring-[var(--color-m3-primary)]/30 focus:border-[var(--color-m3-primary)] outline-none text-cos-on-surface  font-medium text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            className="input-base font-medium text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             placeholder="0.0"
                             style={{ fontSize: '16px' }}
                         />

@@ -1168,29 +1168,56 @@ body {
     background-color: var(--color-m3-fill-soft);
 }
 
-/* Filled text fields: the box is a wash of white on the surface, not a white card with
-   a border. Focus is the only state that draws an outline, so the eye has exactly one
-   "you are here". */
+/* Filled text fields: a rounded-rectangle box, one focus indicator. Every text
+   field in the app — dose amount, weight, account credentials, share links — is
+   built from these two classes. Focus draws a single ring: the border changes
+   colour *and* gains a 1px inset shadow, which together read as one 2px rounded
+   rectangle rather than the outline-plus-ring double line the bespoke classes
+   used to stack.
+   `.input-base` is the full-width field; `.input-num` is the compact numeric
+   one that keeps a utility width, so it must not carry `width: 100%` (unlayered,
+   it would beat `w-16`/`w-28`). Both share the box, the radius and the ring. */
+.input-base,
+.input-num {
+    color: var(--color-m3-on-surface);
+    background-color: var(--color-m3-surface-container-lowest);
+    border: 1px solid var(--color-m3-outline-variant);
+    /* The rounded rectangle the whole app uses; 4dp made the field read as a
+       different control from every card and menu around it. */
+    border-radius: var(--radius-md);
+    /* Unlayered, so it beats the global `:where(…):focus-visible` outline below.
+       The ring is drawn by the focus rule instead — one indicator, not two. */
+    outline: none;
+    transition: border-color var(--duration-quick) var(--ease-standard),
+                box-shadow var(--duration-quick) var(--ease-standard),
+                background-color var(--duration-quick) var(--ease-standard);
+}
 .input-base {
     width: 100%;
     padding: 0.625rem 0.875rem;
     font-size: 0.875rem;
-    color: var(--color-m3-on-surface);
-    background-color: var(--color-m3-surface-container-lowest);
-    border: 1px solid var(--color-m3-outline-variant);
-    /* 4dp: the spec's corner for text fields. It was 12dp, which made the
-       filled field read as a different control from the outlined one beside
-       it. */
-    border-radius: var(--md-sys-shape-corner-extra-small);
-    /* Kept, but only because the focus ring is now drawn by the global
-       :focus-visible rule and by `.input-base:focus-visible` in the component
-       layer. Without those, this line was removing the only keyboard
-       affordance the field had. */
-    outline: none;
-    transition: border-color var(--duration-quick) var(--ease-standard),
-                background-color var(--duration-quick) var(--ease-standard);
 }
-.dark .input-base {
+.input-num {
+    padding: 0.5rem 0.625rem;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    /* The spinner is a desktop-chrome affordance the app's own steppers replace
+       (quick-dose chips, sliders). Every numeric field hides it, so the shape is
+       a clean rounded rectangle rather than a box with browser arrows bolted on.
+       Both the standard and the `-webkit-` prefix: the latter is what actually
+       removes the ::-webkit-inner-spin-button in Chromium. */
+    appearance: textfield;
+    -webkit-appearance: textfield;
+    -moz-appearance: textfield;
+}
+.input-num::-webkit-outer-spin-button,
+.input-num::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
+}
+.dark .input-base,
+.dark .input-num {
     color: var(--color-m3-dark-on-surface);
     background-color: var(--color-m3-dark-surface-container-low);
     border-color: var(--color-m3-line);
@@ -1212,9 +1239,11 @@ body {
     color: rgb(0 0 0 / 0.4);
 }
 .del-sign .input-base:focus,
+.del-sign .input-base:focus-visible,
 .dark .del-sign .input-base:focus {
     border-color: #1a1a1a;
     background-color: #ffffff;
+    box-shadow: inset 0 0 0 1px #1a1a1a;
 }
 /* The error red has to be the readable light-theme one here; the dark-theme token
    is a pale pink that would wash out on white. Same for the danger button, whose
@@ -1226,18 +1255,32 @@ body {
     background-color: #b3261e;
     color: #ffffff;
 }
-.input-base::placeholder {
+.input-base::placeholder,
+.input-num::placeholder {
     color: var(--color-m3-on-surface-variant);
 }
-.dark .input-base::placeholder {
+.dark .input-base::placeholder,
+.dark .input-num::placeholder {
     color: var(--color-m3-dark-on-surface-variant);
 }
-.input-base:focus {
+.input-base:focus,
+.input-base:focus-visible,
+.input-num:focus,
+.input-num:focus-visible {
+    /* A single ring: the 1px border plus a 1px inset shadow read as one 2px
+       rounded rectangle. An outer ring or an offset outline was the "double
+       box" people saw on every field. */
+    outline: none;
     border-color: var(--color-m3-primary);
+    box-shadow: inset 0 0 0 1px var(--color-m3-primary);
     background-color: var(--color-m3-surface-container);
 }
-.dark .input-base:focus {
+.dark .input-base:focus,
+.dark .input-base:focus-visible,
+.dark .input-num:focus,
+.dark .input-num:focus-visible {
     border-color: var(--color-m3-dark-primary);
+    box-shadow: inset 0 0 0 1px var(--color-m3-dark-primary);
     background-color: var(--color-m3-dark-surface-container);
 }
 
@@ -1477,7 +1520,10 @@ body {
     align-items: stretch;
     gap: var(--md-sys-space-1);
     padding: 6px;
-    border-radius: var(--md-sys-shape-corner-large);
+    /* Extra-large, not large: the island reads as one soft rounded slab rather
+       than a box with softened corners. The item inside subtracts the 1px
+       border plus the 6px padding (7) to stay concentric — see `.m3-nav-item`. */
+    border-radius: var(--md-sys-shape-corner-extra-large);
     background-color: var(--md-sys-color-surface-bright);
     border: 1px solid var(--md-sys-color-outline-variant);
     box-shadow: var(--md-sys-elevation-level2);
@@ -1543,6 +1589,16 @@ body {
    the list unfolds from the control that opened it. */
 .m3-menu--top-right {
     transform-origin: top right;
+}
+
+/* A menu whose rows are the visible surface: no vertical padding, so a row's
+   highlight reaches the menu's own edge instead of stopping 8px short and
+   leaving a blank strip above and below it (the base rule's `padding: 8px 0`
+   beats the `py-*` utilities, which live in a layer). The larger corner is what
+   gives the flush rows something to be clipped by. */
+.m3-menu--flush {
+    padding: 0;
+    border-radius: var(--radius-lg);
 }
 
 .dark .m3-menu {
@@ -2373,13 +2429,22 @@ select,
 .m3-card-elevated { background-color: var(--md-sys-color-surface-container-low); border: 1px solid transparent; border-radius: var(--md-sys-shape-corner-medium); box-shadow: var(--md-sys-elevation-level1); }
 
 /* ── Navigation bar item ─────────────────────────────────────────────────────
-   The difference between a web tab bar and M3's NavigationBar is the
-   *indicator*: a 32x64 pill behind the active icon, filled with
-   secondary-container, with the label stepping up to on-surface. This app's bar
-   is a floating island rather than a flush edge, so the container stays as it
-   is and the item becomes the spec's.
+   The M3 NavigationBar indicator is a pill behind the active *destination* —
+   the icon and the label together, not just the icon. It is stroked from the
+   item's own padding box by an absolutely-placed `::before`, so the pill is one
+   shape around both the glyph and the word, and the label steps from
+   on-surface-variant to on-secondary-container as the pill arrives.
 
-   No motion: a navigation item is tapped dozens of times a day. */
+   (It used to be a fixed 32x64 box pinned to the icon's top: the label sat
+   *below* it on on-surface, so the "you are here" colour covered the icon only.)
+
+   The pill is drawn on the item rather than sized to the content because the
+   item is already a flex column with the padding the pill should hug; `inset`
+   on `::before` gives exactly the item's padding box at any label width, and
+   the label's own colour transition is what carries the change.
+
+   No motion beyond the colour/opacity pair: a navigation item is tapped dozens
+   of times a day. */
 .m3-nav-item {
     position: relative;
     display: flex;
@@ -2389,11 +2454,14 @@ select,
     justify-content: center;
     gap: 2px;
     min-height: 56px;
-    padding: 6px 0 4px;
+    padding: 6px 8px 4px;
     color: var(--md-sys-color-on-surface-variant);
     background-color: transparent;
     border: none;
-    border-radius: var(--md-sys-shape-corner-medium);
+    /* Concentric with the bar: bar corner (28) minus the bar's 1px border plus
+       6px padding = 21. The radii have to share a centre, or the inner shape
+       reads as pasted on. */
+    border-radius: 21px;
     font-family: var(--font-sans);
     font-size: var(--md-sys-typescale-label-medium-size);
     line-height: var(--md-sys-typescale-label-medium-line-height);
@@ -2408,12 +2476,11 @@ select,
 .m3-nav-item::before {
     content: "";
     position: absolute;
-    top: 0;
-    left: 50%;
-    width: 64px;
-    height: 32px;
-    transform: translateX(-50%);
-    border-radius: var(--md-sys-shape-corner-full);
+    /* The item's own padding box: the pill wraps the icon and the label in one
+       shape, at whatever width the label needs. */
+    inset: 0;
+    /* Same concentric corner as the item — see the note there. */
+    border-radius: 21px;
     background-color: var(--md-sys-color-secondary-container);
     opacity: 0;
     pointer-events: none;
@@ -2421,11 +2488,11 @@ select,
 }
 .m3-nav-item[aria-current="page"]::before,
 .m3-nav-item.is-active::before { opacity: 1; }
+/* The label, not the item: the icon and the word are both inside the pill, so
+   both take the indicator's on-colour. Setting it on the item would also
+   recolour anything that escapes the pill. */
 .m3-nav-item[aria-current="page"],
-.m3-nav-item.is-active { color: var(--md-sys-color-on-surface); }
-/* Descendant, not child: the Icon component wraps its <svg> in a span, so a
-   direct-child selector silently painted the icon with the item's own label
-   colour instead of the indicator's. */
+.m3-nav-item.is-active { color: var(--md-sys-color-on-secondary-container); }
 .m3-nav-item[aria-current="page"] svg,
 .m3-nav-item.is-active svg { color: var(--md-sys-color-on-secondary-container); }
 .m3-nav-item:disabled { opacity: var(--md-sys-state-disabled-opacity); cursor: not-allowed; }

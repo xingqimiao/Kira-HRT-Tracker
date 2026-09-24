@@ -41,7 +41,7 @@ const UpdateNotice: React.FC = () => {
                     <button
                         type="button"
                         onClick={applyUpdate}
-                        className="shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold text-[var(--color-m3-primary)] transition-colors hover:bg-[var(--color-m3-primary)]/10"
+                        className="shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold text-[var(--color-m3-primary)] transition-colors hover:bg-[var(--color-m3-primary)]/10"
                     >
                         {t('update.reload')}
                     </button>

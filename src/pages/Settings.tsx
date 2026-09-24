@@ -361,7 +361,7 @@ const Settings: React.FC<SettingsProps> = ({
                 inputMode="numeric"
                 value={value}
                 onChange={(e) => onChange(Number(e.target.value))}
-                className="w-20 py-1 text-center tabular-nums bg-transparent border-b-2 border-[var(--color-m3-outline-variant)] focus:border-[var(--color-m3-primary)] outline-none text-[var(--color-m3-on-surface)]"
+                className="input-num w-20"
             />
         </div>
     );

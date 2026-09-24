@@ -137,10 +137,10 @@ const PartSelect: React.FC<PartSelectProps> = ({ label, value, options, onChange
         setDraft('');
     };
 
-    const sharedTrigger = `w-full min-h-11 flex items-center justify-between gap-1 rounded-lg border px-2.5 py-2 text-sm tabular-nums outline-none transition-colors motion-reduce:transition-none
+    const sharedTrigger = `w-full min-h-11 flex items-center justify-between gap-1 rounded-md border px-2.5 py-2 text-sm tabular-nums outline-none transition-colors motion-reduce:transition-none
         bg-cos-surface-container  text-[var(--color-m3-on-surface)] 
         ${isOpen
-            ? 'border-[var(--color-m3-primary)] ring-1 ring-[var(--color-m3-primary)]/20'
+            ? 'border-[var(--color-m3-primary)] shadow-[inset_0_0_0_1px_var(--color-m3-primary)]'
             : 'border-[var(--color-m3-outline-variant)]  hover:border-[var(--color-m3-outline)] '}`;
 
     const chevron = (
@@ -168,7 +168,11 @@ const PartSelect: React.FC<PartSelectProps> = ({ label, value, options, onChange
                             if (e.key === 'Enter') { e.preventDefault(); commitDraft(); }
                             if (e.key === 'ArrowDown') { e.preventDefault(); setIsOpen(true); }
                         }}
-                        className="min-w-0 flex-1 bg-transparent outline-none tabular-nums"
+                        // `m3-inline-field` (index.css, unlayered) suppresses the
+                        // global focus-visible outline: the trigger this input sits
+                        // in already draws the open ring, so the input's own
+                        // rectangle was a second, offset box inside it.
+                        className="m3-inline-field min-w-0 flex-1 bg-transparent outline-none tabular-nums"
                     />
                     <button
                         type="button"
@@ -353,7 +357,10 @@ const DateTimePicker: React.FC<DateTimePickerProps> = ({
         </div>
     );
 
-    if (!isOpen) return inline ? null : <div ref={anchorRef} className="hidden" />;
+    // Inline never early-returns: the disclosure below needs the node mounted to
+    // animate its exit, so a closed inline picker is a zero-height wrapper with
+    // its content still in the DOM (clipped), not an unmounted component.
+    if (!isOpen && !inline) return <div ref={anchorRef} className="hidden" />;
     if (!inline && !portalTarget) return <div ref={anchorRef} className="hidden" />;
 
     const showDate = mode !== 'time';
@@ -422,7 +429,19 @@ const DateTimePicker: React.FC<DateTimePickerProps> = ({
         </div>
     );
 
-    if (inline) return <div className="mb-3">{body}</div>;
+    // Inline mode is a disclosure, not a popup: it unfolds in place. The motion
+    // is the app's standard 250ms grid-rows pair (the same one the overview's
+    // "new dose" row uses), and it lives here rather than at each call site so
+    // every inline picker — dose form, journal, lab, share expiry, onboarding —
+    // opens and closes the same way. `body` stays mounted so the exit has
+    // something to animate; a closed picker is simply zero rows tall.
+    if (inline) return (
+        <div className={`grid transition-[grid-template-rows] duration-[250ms] ease-out ${isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+            <div className={`overflow-hidden transition-opacity duration-[250ms] ease-out ${isOpen ? 'opacity-100' : 'opacity-0'}`}>
+                {body}
+            </div>
+        </div>
+    );
 
     const inner = (
         <div className="rounded-xl border border-[var(--color-m3-outline-variant)]  bg-[var(--color-m3-surface-container-lowest)] ">

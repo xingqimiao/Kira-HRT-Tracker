@@ -200,7 +200,7 @@ const PKParamsPage: React.FC<PKParamsPageProps> = ({ pkParams, onSave, onReset, 
                                                 step={field.step}
                                                 value={curVal}
                                                 onChange={e => updateField(field.key, e.target.value, field.min, field.max)}
-                                                className="w-28 px-2.5 py-1.5 bg-[var(--color-m3-surface-container-lowest)]  border border-[var(--color-m3-outline-variant)]  rounded-md text-[var(--color-m3-on-surface)]  outline-none focus:border-[var(--color-m3-primary)] tabular-nums"
+                                                className="input-num w-28 text-[var(--color-m3-on-surface)]"
                                                 style={{ fontSize: '16px' }}
                                             />
                                         </div>

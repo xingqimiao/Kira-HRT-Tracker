@@ -80,7 +80,7 @@ const QuickDoseButtons: React.FC<QuickDoseButtonsProps> = ({
     return (
         <div className="flex flex-wrap items-center gap-1.5 mt-2">
             {filteredDoses.map(dose => (
-                <div key={dose.id} className="group relative">
+                <div key={dose.id} className="relative">
                     <button
                         type="button"
                         onClick={() => onSelectDose(dose.value)}
@@ -94,12 +94,20 @@ const QuickDoseButtons: React.FC<QuickDoseButtonsProps> = ({
                     <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); handleDelete(dose.id); }}
-                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-md flex items-center justify-center
+                        aria-label={t('btn.delete')}
+                        title={t('btn.delete')}
+                        // Always visible: `opacity-0 group-hover:opacity-100` meant this
+                        // chip's only delete affordance did not exist on a touch device,
+                        // where there is no hover to reveal it. Kept at the chip's own
+                        // corner rather than grown to an M3 48px target — it sits on a
+                        // 24px-tall chip, and a target larger than the thing it deletes
+                        // would swallow taps meant for the value beside it.
+                        className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center
                             bg-[var(--color-m3-surface-container)] 
                             text-muted border border-[var(--color-m3-outline-variant)] 
-                            opacity-0 group-hover:opacity-100"
+                            hover:text-cos-error"
                     >
-                        <Icon icon={X} size={10} strokeWidth={3} />
+                        <Icon icon={X} size={11} strokeWidth={3} />
                     </button>
                 </div>
             ))}

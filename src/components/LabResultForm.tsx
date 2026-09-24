@@ -79,7 +79,7 @@ const HormoneValueField: React.FC<{
             placeholder="0.0"
             value={value}
             onChange={e => onValueChange(e.target.value)}
-            className="w-full bg-[var(--color-m3-surface-container-lowest)]  border border-[var(--color-m3-outline-variant)]  rounded-md px-3 py-2 outline-none focus:border-[var(--color-m3-primary)] text-[var(--color-m3-on-surface)]  placeholder:text-[var(--color-m3-on-surface-variant)] tabular-nums"
+            className="input-base tabular-nums"
             style={{ fontSize: '16px' }}
         />
     </div>
@@ -103,7 +103,7 @@ const MonitorField: React.FC<{
             placeholder="0.0"
             value={value}
             onChange={e => onChange(e.target.value)}
-            className="w-full bg-[var(--color-m3-surface-container-lowest)]  border border-[var(--color-m3-outline-variant)]  rounded-md px-3 py-2 outline-none focus:border-[var(--color-m3-primary)] text-[var(--color-m3-on-surface)]  placeholder:text-[var(--color-m3-on-surface-variant)] tabular-nums"
+            className="input-base tabular-nums"
             style={{ fontSize: '16px' }}
         />
     </div>

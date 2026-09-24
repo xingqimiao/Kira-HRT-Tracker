@@ -125,7 +125,7 @@ const ExportSection: React.FC<ExportSectionProps> = ({ events, labResults, weigh
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     placeholder={t('export.password_placeholder')}
-                                    className="w-full py-2.5 px-3 pl-9 text-sm bg-[var(--color-m3-surface-container-lowest)]  border border-[var(--color-m3-outline-variant)]  rounded-lg outline-none focus:border-[var(--color-m3-primary)] text-[var(--color-m3-on-surface)]  placeholder:text-[var(--color-m3-on-surface-variant)]"
+                                    className="input-base pl-9"
                                     autoComplete="new-password"
                                     autoCorrect="off"
                                     autoCapitalize="off"

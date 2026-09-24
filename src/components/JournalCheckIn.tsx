@@ -132,6 +132,8 @@ const JournalCheckIn: React.FC<JournalCheckInProps> = ({ entries, onSave, onDele
                             <Icon icon={ChevronDown} size={14} className={isDatePickerOpen ? 'rotate-180' : ''} />
                         </div>
                     </button>
+                    {/* DateTimePicker owns the disclosure motion — nothing to
+                        wrap here. */}
                     <DateTimePicker
                         isOpen={isDatePickerOpen}
                         inline
@@ -141,7 +143,6 @@ const JournalCheckIn: React.FC<JournalCheckInProps> = ({ entries, onSave, onDele
                         mode="datetime"
                         title={t('journal.time')}
                     />
-
                     <div className="px-4 py-3">
                         <label className={`block text-m3-body-medium ${on}`} htmlFor="journal-note">
                             {t('journal.note')}
@@ -153,7 +154,7 @@ const JournalCheckIn: React.FC<JournalCheckInProps> = ({ entries, onSave, onDele
                             placeholder={t('journal.note_placeholder')}
                             rows={5}
                             maxLength={2000}
-                            className={`mt-2 w-full px-3 py-2 rounded-md text-sm resize-y bg-[var(--color-m3-surface-container)] ${on}border border-[var(--color-m3-outline)] outline-none focus:border-[var(--color-m3-primary)]`}
+                            className={`input-base mt-2 resize-y text-sm ${on}`}
                         />
                     </div>
 

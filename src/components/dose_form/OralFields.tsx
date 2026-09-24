@@ -35,7 +35,7 @@ const OralFields: React.FC<OralFieldsProps> = ({
                         min="0"
                         step="0.001"
                         value={rawDose} onChange={e => onRawChange(e.target.value)}
-                        className="w-full p-3 bg-cos-surface-container  border border-cos-outline  rounded-md focus:ring-1 focus:ring-[var(--color-m3-primary)]/30 focus:border-[var(--color-m3-primary)] outline-none text-cos-on-surface  font-medium [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        className="input-base font-medium [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         placeholder="0.0"
                         style={{ fontSize: '16px' }}
                     />
@@ -52,7 +52,7 @@ const OralFields: React.FC<OralFieldsProps> = ({
                         min="0"
                         step="0.001"
                         value={e2Dose} onChange={e => onE2Change(e.target.value)}
-                        className="w-full p-3 bg-cos-surface-container  border border-cos-outline  rounded-md focus:ring-1 focus:ring-[var(--color-m3-primary)]/30 focus:border-[var(--color-m3-primary)] outline-none font-medium text-cos-on-surface  [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        className="input-base font-medium  [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         placeholder="0.0"
                         style={{ fontSize: '16px' }}
                     />

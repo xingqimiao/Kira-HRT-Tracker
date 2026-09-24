@@ -184,6 +184,11 @@ const AppContent = () => {
 
     // --- First run ---
     const [showOnboarding, setShowOnboarding] = useState(shouldShowOnboarding);
+    // True when the intro was opened from Settings rather than shown on a first
+    // run. A replay is a re-read, not a setup: it must not write back to the
+    // account — chiefly the start-date step, where tapping the picker would
+    // otherwise overwrite a real date the user set long ago.
+    const [replayOnboarding, setReplayOnboarding] = useState(false);
 
     const [theme, setTheme] = useState<AppTheme>(() => {
         const saved = localStorage.getItem('app-theme');
@@ -452,7 +457,9 @@ const AppContent = () => {
                    writes through the data layer that knows the account. */
                 hrtStartDate={hrtStartDate}
                 onHrtStartChange={setHrtStartDate}
-                onDone={() => { markOnboardingSeen(); setShowOnboarding(false); }}
+                /* On a replay the step above goes read-only — see `replayOnboarding`. */
+                replay={replayOnboarding}
+                onDone={() => { markOnboardingSeen(); setShowOnboarding(false); setReplayOnboarding(false); }}
             />
         );
     }
@@ -648,7 +655,7 @@ const AppContent = () => {
                             events={events}
                             showDialog={showDialog}
                             setIsDisclaimerOpen={setIsDisclaimerOpen}
-                            onShowIntro={() => setShowOnboarding(true)}
+                            onShowIntro={() => { setReplayOnboarding(true); setShowOnboarding(true); }}
                             onOpenLicences={() => handleViewChange('settings-licences')}
                             weight={weight}
                             setIsWeightModalOpen={setIsWeightModalOpen}

@@ -22,7 +22,7 @@ const MAX_BATCH_COUNT = 365;
 const muted = 'text-[var(--color-m3-on-surface-variant)] ';
 const on = 'text-[var(--color-m3-on-surface)] ';
 const headerBtn = 'flex items-center gap-1.5 text-sm font-medium px-2 py-1 rounded-md hover:bg-[var(--color-m3-surface-container)] ';
-const numInput = 'w-16 h-8 px-2 bg-cos-surface-container  border border-cos-outline  rounded-md text-center text-sm font-medium focus:ring-1 focus:ring-[var(--color-m3-primary)]/30 focus:border-[var(--color-m3-primary)] outline-none text-cos-on-surface  [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
+const numInput = 'input-num w-16 h-8 text-sm font-medium [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
 
 interface HistoryProps {
     t: (key: string) => string;

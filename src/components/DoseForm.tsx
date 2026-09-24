@@ -872,46 +872,50 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                 {templates.length > 0 && (
                     <div
                         data-state={templateMenuState}
-                        className={`absolute right-0 top-full mt-1 bg-[var(--color-m3-surface-container-lowest)] rounded-xl border border-[var(--color-m3-outline-variant)] w-64 max-h-64 overflow-y-auto z-50 m3-menu m3-menu--top-right shadow-lg ${
+                        className={`absolute right-0 top-full mt-1 bg-[var(--color-m3-surface-container-lowest)] rounded-xl border border-[var(--color-m3-outline-variant)] w-64 max-h-64 overflow-y-auto z-50 m3-menu m3-menu--top-right m3-menu--flush shadow-lg ${
                             templateMenuMounted ? '' : 'hidden'
                         }`}
                     >
-                        <div className="py-1">
-                            {templates.map((template: DoseTemplate) => (
-                                <div key={template.id} className="group flex items-center justify-between px-3 py-2.5 hover:bg-[var(--color-m3-surface-container)]  border-b border-[var(--color-m3-outline-variant)]  last:border-b-0">
-                                    <button
-                                        onClick={() => { handleLoadTemplate(template); setShowTemplateMenu(false); }}
-                                        className="flex-1 text-left"
-                                    >
-                                        <div className="text-sm font-medium text-[var(--color-m3-on-surface)] ">{template.name}</div>
-                                        <div className="text-xs text-[var(--color-m3-on-surface-variant)]  mt-0.5">
-                                            {t(`route.${template.route}`)} · {template.doseMG.toFixed(2)} mg
-                                        </div>
-                                    </button>
-                                    {templateToDelete === template.id ? (
-                                        <div className="flex items-center gap-0.5 pl-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                            <button onClick={() => { setTemplateToDelete(null); setShowTemplateMenu(false); onDeleteTemplate(template.id); }} className="p-1 text-cos-error hover:bg-cos-error-container  rounded" title={t('btn.confirm')}>
-                                                <Icon icon={Check} size={13} />
-                                            </button>
-                                            <button onClick={() => setTemplateToDelete(null)} className="p-1 text-[var(--color-m3-on-surface-variant)]  hover:bg-[var(--color-m3-surface-container)]  rounded" title={t('btn.cancel')}>
-                                                <Icon icon={X} size={13} />
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setTemplateToDelete(template.id);
-                                            }}
-                                            className="opacity-0 group-hover:opacity-100 p-1.5 text-[var(--color-m3-on-surface-variant)]  hover:text-cos-error rounded shrink-0"
-                                            title={t('btn.delete')}
-                                        >
-                                            <Icon icon={Trash2} size={13} />
+                        {templates.map((template: DoseTemplate) => (
+                            <div key={template.id} className="flex items-center justify-between px-3 py-2.5 transition-colors hover:bg-[var(--color-m3-surface-container)] active:bg-[var(--color-m3-primary-container)] border-b border-[var(--color-m3-outline-variant)] last:border-b-0">
+                                <button
+                                    onClick={() => { handleLoadTemplate(template); setShowTemplateMenu(false); }}
+                                    className="flex-1 text-left"
+                                >
+                                    <div className="text-sm font-medium text-[var(--color-m3-on-surface)] ">{template.name}</div>
+                                    <div className="text-xs text-[var(--color-m3-on-surface-variant)]  mt-0.5">
+                                        {t(`route.${template.route}`)} · {template.doseMG.toFixed(2)} mg
+                                    </div>
+                                </button>
+                                {templateToDelete === template.id ? (
+                                    <div className="flex items-center gap-0.5 pl-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                        <button onClick={() => { setTemplateToDelete(null); setShowTemplateMenu(false); onDeleteTemplate(template.id); }} className="p-1 text-cos-error hover:bg-cos-error-container  rounded" title={t('btn.confirm')}>
+                                            <Icon icon={Check} size={13} />
                                         </button>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
+                                        <button onClick={() => setTemplateToDelete(null)} className="p-1 text-[var(--color-m3-on-surface-variant)]  hover:bg-[var(--color-m3-surface-container)]  rounded" title={t('btn.cancel')}>
+                                            <Icon icon={X} size={13} />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setTemplateToDelete(template.id);
+                                        }}
+                                        // Always visible. It used to be `opacity-0
+                                        // group-hover:opacity-100`, which on a phone
+                                        // meant the control never appeared at all —
+                                        // there is no hover to reveal it, so a saved
+                                        // template could not be deleted from the one
+                                        // screen that lists them.
+                                        className="p-1.5 text-[var(--color-m3-on-surface-variant)] hover:text-cos-error rounded shrink-0"
+                                        title={t('btn.delete')}
+                                    >
+                                        <Icon icon={Trash2} size={13} />
+                                    </button>
+                                )}
+                            </div>
+                        ))}
                     </div>
                 )}
             </div>
@@ -965,6 +969,8 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                             <Icon icon={ChevronDown} size={14} className={`chev ${isDatePickerOpen ? 'rotate-180' : ''}`} />
                         </div>
                     </button>
+                    {/* The picker unfolds in place — DateTimePicker owns the
+                        disclosure motion, so the call site just passes the flag. */}
                     <DateTimePicker
                         isOpen={isDatePickerOpen}
                         inline
@@ -1288,7 +1294,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                                 value={templateName}
                                 onChange={(e) => setTemplateName(e.target.value)}
                                 placeholder={t('template.name_placeholder')}
-                                className="m3-inline-field flex-1 min-w-0 px-2.5 py-1.5 text-sm bg-[var(--color-m3-surface-container-lowest)] border border-[var(--color-m3-outline-variant)] rounded-md focus:border-[var(--color-m3-primary)] outline-none text-[var(--color-m3-on-surface)]"
+                                className="input-base m3-inline-field flex-1 min-w-0 py-1.5 text-sm"
                                 style={{ fontSize: '16px' }}
                             />
                             <button

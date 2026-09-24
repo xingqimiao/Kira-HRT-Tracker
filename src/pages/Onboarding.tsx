@@ -513,6 +513,14 @@ interface OnboardingProps {
      * account's namespace to write (and to adopt the signed-out value into).
      */
     onHrtStartChange: (value: string) => void;
+    /**
+     * True when reached from Settings' "replay the intro" row rather than on a
+     * first run. The flow is a re-read then, so it must not write back — the
+     * start-date step in particular, where a stray tap would replace a date the
+     * user set months ago. Every other step is either purely informational or
+     * idempotent (language/mode), so only the start date is frozen.
+     */
+    replay?: boolean;
     onDone: () => void;
 }
 
@@ -526,7 +534,7 @@ interface OnboardingProps {
  * invite tabbing away halfway through, leaving language and mode on defaults
  * that the flow exists to ask about.
  */
-const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, onHrtStartChange, onDone }) => {
+const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, onHrtStartChange, replay = false, onDone }) => {
     const { t, lang, setLang, tIn, ensureAll } = useTranslation();
     const { mode, setMode, isTransmasc } = useHRTMode();
     const curve = useOnboardingCurve(isTransmasc);
@@ -544,11 +552,8 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
 
     const [step, setStep] = useState(0);
     // The app's own date picker, opened from the field below and used inline.
+    // Its unfolding motion lives in DateTimePicker itself.
     const [isStartPickerOpen, setIsStartPickerOpen] = useState(false);
-    // Kept mounted through the close so the collapsing box has the picker in it —
-    // DateTimePicker returns null when `isOpen` is false, so without this the exit
-    // would animate an empty frame. Paired with the grid-rows disclosure below.
-    const { mounted: startPickerMounted } = usePresence(isStartPickerOpen, 250);
     // The native picker is capped at today: a start date in the future would
     // make the account line read as a negative — or be discarded — either way
     // the input would be the only place the mistake was visible.
@@ -699,6 +704,28 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
             title={t('onboarding.start_title')}
             description={t('onboarding.start_subtitle')}
             visual={
+                replay ? (
+                    /* A replay is a re-read. The date is shown as a plain field —
+                       no picker, no clear — because this step's only write is the
+                       start date, and re-running the intro must not overwrite a
+                       value the user set long ago. The words that follow still
+                       explain what the date does. */
+                    <div className="flex w-full flex-col gap-2 text-start">
+                        <span className="text-m3-title-medium text-[var(--color-m3-on-surface)]">
+                            {t('onboarding.start_label')}
+                        </span>
+                        <div className="flex items-center rounded-lg border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container)] px-3 py-2.5">
+                            <span className="text-m3-title-medium tabular-nums text-[var(--color-m3-on-surface)]">
+                                {hrtStartDate
+                                    ? fromYmd(hrtStartDate).toLocaleDateString(LOCALE_MAP[lang] || 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+                                    : '—'}
+                            </span>
+                        </div>
+                        <span className="text-m3-body-medium text-[var(--color-m3-on-surface-variant)]">
+                            {t('onboarding.start_hint')}
+                        </span>
+                    </div>
+                ) : (
                 <div className="flex w-full flex-col gap-2 text-start">
                     <span className="text-m3-title-medium text-[var(--color-m3-on-surface)]">
                         {t('onboarding.start_label')}
@@ -741,31 +768,30 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                         grid-rows disclosure the app's other expandables use (see
                         Collapsible), with the picker held mounted through the close so
                         there is something to show on the way out. */}
-                    <div className={`grid transition-[grid-template-rows] duration-[250ms] ease-out ${isStartPickerOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-                      <div className={`overflow-hidden transition-opacity duration-[250ms] ease-out ${isStartPickerOpen ? 'opacity-100' : 'opacity-0'}`}>
-                        <div className="rounded-lg border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-low)] p-2">
-                            <DateTimePicker
-                                isOpen={startPickerMounted}
-                                inline
-                                mode="date"
-                                onClose={() => setIsStartPickerOpen(false)}
-                                onConfirm={(date) => {
-                                    // The picker has no max, but the old native input refused a
-                                    // future start: it would make the account's day count negative.
-                                    // Keep that guard by clamping the answer to today.
-                                    const picked = toYmd(date);
-                                    onHrtStartChange(picked > today ? today : picked);
-                                }}
-                                initialDate={hrtStartDate ? fromYmd(hrtStartDate) : new Date()}
-                                title={t('onboarding.start_label')}
-                            />
-                        </div>
-                      </div>
+                    {/* DateTimePicker's inline mode owns the unfolding motion, so
+                        the card just holds it. */}
+                    <div className="rounded-lg border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-low)] p-2">
+                        <DateTimePicker
+                            isOpen={isStartPickerOpen}
+                            inline
+                            mode="date"
+                            onClose={() => setIsStartPickerOpen(false)}
+                            onConfirm={(date) => {
+                                // The picker has no max, but the old native input refused a
+                                // future start: it would make the account's day count negative.
+                                // Keep that guard by clamping the answer to today.
+                                const picked = toYmd(date);
+                                onHrtStartChange(picked > today ? today : picked);
+                            }}
+                            initialDate={hrtStartDate ? fromYmd(hrtStartDate) : new Date()}
+                            title={t('onboarding.start_label')}
+                        />
                     </div>
                     <span className="text-m3-body-medium text-[var(--color-m3-on-surface-variant)]">
                         {t('onboarding.start_hint')}
                     </span>
                 </div>
+                )
             }
         />,
 
