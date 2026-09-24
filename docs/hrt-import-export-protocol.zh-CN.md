@@ -1,12 +1,15 @@
 # Kira HRT 数据对接指南（中文）
 
+[English spec](hrt-import-export-protocol.md) · **中文指南**
+
 > 面向**其他 HRT 记录应用的作者**。目标只有两个：
 >
 > 1. 让你的用户能把记录**搬进 Kira HRT**；
 > 2. 让你的应用能读**从 Kira HRT 导出的文件**。
 >
-> 英文规范见 [`hrt-import-export-protocol.md`](hrt-import-export-protocol.md)（字段的权威定义）。
-> 本文是**怎么做**，那份是**字段是什么**。两份不一致时以英文规范为准。
+> 字段的权威定义见英文规范 [`hrt-import-export-protocol.md`](hrt-import-export-protocol.md)。
+> 本文是**怎么做**（字段对照、示例代码、自测步骤、AI 提示词），那份是**字段是什么**。
+> 两份不一致时以英文规范为准。
 
 ---
 

@@ -1,5 +1,7 @@
 # Kira HRT — data interchange protocol
 
+**English spec** · [中文指南](hrt-import-export-protocol.zh-CN.md)
+
 This document is for the authors of **other HRT trackers** who want their users to be
 able to move their history into *Kira HRT Tracker* (and, where they choose, back out).
 
@@ -13,10 +15,10 @@ It has two halves:
 Both directions are the same shape, deliberately. There is no separate "import format"
 and "export format" to keep in step.
 
-> **中文读者**：有一份中文操作指南
-> **[`hrt-import-export-protocol.zh-CN.md`](hrt-import-export-protocol.zh-CN.md)**——字段对照表、
-> 可直接使用的示例代码、逐步自测清单，以及一段可以粘给 AI 助手替你改代码的提示词。
-> 本文是字段的权威定义；那份是「怎么动手」。两份不一致时以本文为准。
+> **Read this in Chinese**: [`hrt-import-export-protocol.zh-CN.md`](hrt-import-export-protocol.zh-CN.md)
+> is a step-by-step guide — field tables, working example code, a self-test checklist, and a
+> prompt you can hand an AI assistant. **This** document stays the authority on field
+> definitions; where the two disagree, this one wins.
 
 ---
 

@@ -1,5 +1,7 @@
 # Kira HRT Tracker
 
+[English](README.en.md) · **中文**
+
 ![Kira HRT Tracker — dose logging, pharmacokinetic estimates, private by default](public/og.png)
 
 记录 HRT 用药与化验，估算激素水平随时间的变化，让 AI 助手通过 MCP 读写你的记录。
