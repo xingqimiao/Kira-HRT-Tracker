@@ -5,7 +5,7 @@ import { X, Upload } from '../icons';
 import { useEscape } from '../hooks/useEscape';
 import { usePresence } from '../hooks/usePresence';
 
-const ImportModal = ({ isOpen, onClose, onImportJson }: { isOpen: boolean; onClose: () => void; onImportJson: (text: string) => boolean | Promise<boolean> }) => {
+const ImportModal = ({ isOpen, onClose, onImportJson }: { isOpen: boolean; onClose: () => void; onImportJson: (data: string | ArrayBuffer) => boolean | Promise<boolean> }) => {
     const { t } = useTranslation();
     const [text, setText] = useState("");
     const fileInputRef = useRef<HTMLInputElement>(null);

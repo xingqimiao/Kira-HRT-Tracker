@@ -5,7 +5,8 @@ import { useTranslation } from '../contexts/LanguageContext';
 import ImportSection from '../components/ImportSection';
 
 interface ImportSettingsProps {
-    onImportJson: (text: string) => boolean | Promise<boolean>;
+    /** Accepts bytes too — see `ImportSection` for why (Featherline is binary). */
+    onImportJson: (data: string | ArrayBuffer) => boolean | Promise<boolean>;
     onBack: () => void;
 }
 

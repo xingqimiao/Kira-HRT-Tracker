@@ -588,3 +588,35 @@ export const BigLockAnimation: React.FC = () => {
         </div>
     );
 };
+
+/**
+ * The import step's picture: three other trackers landing in this one.
+ *
+ * Three rounded-rect marks fly in from the left, above and the right, each into
+ * this app's own icon, which stays in the front layer — so a mark is covered by
+ * the target as it arrives and is gone once inside. Every landing punches the
+ * target out and back, which is what makes the collision read as weight rather
+ * than as a cross-fade.
+ *
+ * The whole sequence is one 3.6s CSS cycle shared by all four elements, each mark
+ * owning its own window within it (see the `.onb-smash` block in index.css for why
+ * a shared cycle beats three `animation-delay`s — a delay flashes the mark at its
+ * start position before it elapses). 0% and 100% are the same frame, so the loop
+ * has no seam: the point is that the reader never catches it restarting.
+ *
+ * Not a `<img>` of a screenshot: this is markup so the two raster marks we ship
+ * (Oyama's, Featherline's) and the vector one are all just images at the same
+ * size, in the reader's own theme.
+ */
+export const ImportSmashDemo: React.FC = () => {
+    const { t } = useTranslation();
+    return (
+        <div className="onb-smash" role="img" aria-label={t('onboarding.import_demo_alt')}>
+            <img className="onb-smash__in onb-smash__in--a" src="/transmtf.png" alt="" aria-hidden="true" />
+            <img className="onb-smash__in onb-smash__in--b" src="/oyama.png" alt="" aria-hidden="true" />
+            <img className="onb-smash__in onb-smash__in--c" src="/featherline.png" alt="" aria-hidden="true" />
+            {/* This app's own icon, the front layer the others land on. */}
+            <img className="onb-smash__target" src="/pwa-512x512.png" alt="" aria-hidden="true" />
+        </div>
+    );
+};

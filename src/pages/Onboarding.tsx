@@ -8,7 +8,7 @@ import { useHRTMode } from '../contexts/HRTModeContext';
 import type { Lang } from '../i18n/types';
 import CopyRow from '../components/CopyRow';
 import IntroCard from '../components/IntroCard';
-import { LabScanDemo, JournalPreview, RecheckPreview, SignInPreview, QuickAddDemo, BigLockAnimation } from '../components/OnboardingFeatures';
+import { LabScanDemo, JournalPreview, RecheckPreview, SignInPreview, QuickAddDemo, BigLockAnimation, ImportSmashDemo } from '../components/OnboardingFeatures';
 import Icon from '../components/Icon';
 import DateTimePicker from '../components/DateTimePicker';
 import { Check, Plus, ChevronDown, Cloud, AlertTriangle } from '../icons';
@@ -117,6 +117,10 @@ const STEP_ROLES: Record<string, StepRoles> = {
     journal: CONTAINER_LOWEST,
     recheck: CONTAINER_LOWEST,
     signin: CONTAINER_HIGH,
+    /* Between sign-in and the account preview, and on the same container as both:
+       the three are one beat about "your data and where it lives", and a role
+       change mid-group would repaint the surface under the slide. */
+    import: CONTAINER_HIGH,
     account: CONTAINER_HIGH,
     pwa: SECONDARY,
     mcp: TERTIARY,
@@ -125,7 +129,7 @@ const STEP_ROLES: Record<string, StepRoles> = {
 };
 
 /** Step order, for the colour lookup above; `steps` holds the panels themselves. */
-const STEP_KEYS = ['welcome', 'mode', 'how', 'started', 'quick', 'scan', 'journal', 'recheck', 'signin', 'account', 'pwa', 'mcp', 'privacy', 'disclaimer', 'sendoff'] as const;
+const STEP_KEYS = ['welcome', 'mode', 'how', 'started', 'quick', 'scan', 'journal', 'recheck', 'signin', 'import', 'account', 'pwa', 'mcp', 'privacy', 'disclaimer', 'sendoff'] as const;
 
 /**
  * The three slots of the "how it works" step, and the only step that splits in
@@ -834,8 +838,26 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
             visual={<SignInPreview />}
         />,
 
+        /* Where your history can come from. Placed after "我们从何处来?" because
+           that step is about who you are to the server and this one is the natural
+           follow-up question — what about the records I already have somewhere
+           else. The picture is the answer: three other trackers landing in this
+           one, which is what the import actually does. */
+        <IntroCard
+            key="import"
+            framed={false}
+            title={t('onboarding.import_title')}
+            description={t('onboarding.import_subtitle')}
+            visual={<ImportSmashDemo />}
+        />,
+
         <IntroCard
             key="account"
+            /* Unframed: `AccountPreview` is already a card with its own border and
+               ground, so the intro frame wrapped a card in a card. With the outer
+               frame gone the preview breaks out of the reading gutter and gets the
+               width instead. Same treatment the assistant step uses. */
+            framed={false}
             title={t('onboarding.account_title')}
             description={t('onboarding.account_subtitle')}
             visual={<AccountPreview />}

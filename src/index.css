@@ -3018,6 +3018,191 @@ select,
     }
 }
 
+/* ── The import demo: three trackers dropping into this one ───────────────────
+
+   Three rounded-rect marks fly in from three directions and land on this app's
+   own icon, which is always the front layer — so a mark goes *behind* it on the
+   way in and is gone once it is inside. Each landing punches the target out
+   (a scale past 1, then under, then back) so the collision reads as weight
+   rather than as a fade.
+
+   ── Why one cycle, not three staggered animations ───────────────────────────
+   `animation-delay` would stagger three copies of one keyframe, but a delay does
+   not exist before it elapses: the still-pending element sits in its *unfilled*
+   state, which for a hidden mark is a flash of it at its start position. Instead
+   every mark shares one 3.6s cycle and each carries its own keyframe, active only
+   in its own window and hidden elsewhere. 0% and 100% are then identical by
+   construction, so the loop has no seam to spot — which is the requirement: the
+   reader should never see it restart.
+
+   Timings: landings at 15%, 48%, 81% (evenly spaced), target punches on those
+   same frames. Marks travel for ~15% and are absorbed by ~3% later. */
+.onb-smash {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    /* Tall enough for the diagonal approach; the marks use it as their stage. */
+    height: 176px;
+}
+
+/* The incoming marks and the target share this tile treatment, so a transparent
+   PNG still reads as a rounded-rect app icon rather than a floating glyph. */
+.onb-smash__in,
+.onb-smash__target {
+    display: block;
+    border-radius: var(--radius-lg);
+    background-color: var(--color-m3-surface-container-lowest);
+    border: 1px solid var(--color-m3-outline-variant);
+    object-fit: cover;
+}
+
+.onb-smash__in {
+    position: absolute;
+    /* Under the target: a mark is hidden by it as it converges, which is what
+       "went inside" has to look like without any clipping. */
+    z-index: 1;
+    width: 44px;
+    height: 44px;
+    opacity: 0;
+    will-change: transform, opacity;
+}
+
+.onb-smash__target {
+    /* The front layer, always. */
+    position: relative;
+    z-index: 2;
+    width: 76px;
+    height: 76px;
+    box-shadow: var(--md-sys-elevation-level2);
+    animation: onb-smash-target 3600ms linear infinite;
+    will-change: transform;
+}
+
+.onb-smash__in--a { animation: onb-smash-a 3600ms linear infinite; }
+.onb-smash__in--b { animation: onb-smash-b 3600ms linear infinite; }
+.onb-smash__in--c { animation: onb-smash-c 3600ms linear infinite; }
+
+/**
+ * The target's three punches, aligned to the three landings at 12% / 45% / 78%.
+ *
+ * `linear` at the animation level with the overshoot baked into the keyframes rather
+ * than an ease with a past-1 control point: an easing curve is per-segment, so a
+ * single `cubic-bezier` would have to overshoot *every* frame, not just the three on
+ * contact. 1.26 / 0.94 / 1 placed by hand is what makes each hit read as a recoil and
+ * the recovery as a settle.
+ */
+@keyframes onb-smash-target {
+    0%, 8%    { transform: scale(1); }
+    12%       { transform: scale(1.26); }
+    15%       { transform: scale(0.94); animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+    18%, 41%  { transform: scale(1); }
+    45%       { transform: scale(1.26); }
+    48%       { transform: scale(0.94); animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+    51%, 74%  { transform: scale(1); }
+    78%       { transform: scale(1.26); }
+    81%       { transform: scale(0.94); animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+    85%, 100% { transform: scale(1); }
+}
+
+/**
+ * The three approaches, one window each in a shared 3.6s cycle.
+ *
+ * ── Two independent mechanisms, deliberately not conflated ───────────────────
+ *
+ * The flight's SPEED SHAPE and the target's OVERSHOOT REBOUND are separate effects
+ * and neither is derived from the other:
+ *
+ *   - the approach eases IN — slow off the mark, fast at the moment of contact —
+ *     which is a timing function on the moving mark;
+ *   - the target punches past its size and settles back, which is scale values
+ *     placed by hand in its own keyframes.
+ *
+ * So a change to how fast a mark travels is a change to one curve here; it never
+ * touches `.onb-smash-target`, and vice versa. Tuning the cycle length, though, does
+ * move both — which is why the pace was fixed once and the shapes tuned after.
+ *
+ * ── The curve ────────────────────────────────────────────────────────────────
+ *
+ * `cubic-bezier(0.42, 0, 0.9, 0.6)`: a standard ease-in, chosen after an earlier
+ * `(0.7, 0, 0.9, 0.3)` turned out far too aggressive — measured, it held the mark
+ * almost still for the first 60% of the flight and then threw it the last 42px in a
+ * single frame, which reads as a jump, not as acceleration. The curve has to make the
+ * acceleration *visible*, so the slow start is a phase you can see, not a stall.
+ *
+ * The easing sits on the frame that declares `transform`, never on a later frame that
+ * sets only `opacity`: an `animation-timing-function` inside a keyframe governs the
+ * property segments that *begin* there, and `transform` begins at rest. Written a frame
+ * late, the whole approach slid in at the animation level's `linear` — the
+ * constant-velocity look this exists to avoid.
+ *
+ * The return to the rest pose happens at `opacity: 0`, which is how the loop closes
+ * with nothing to see.
+ */
+@keyframes onb-smash-a {
+    0%, 6% {
+        transform: translate(-124px, 24px) rotate(-10deg) scale(1);
+        opacity: 0;
+        animation-timing-function: cubic-bezier(0.42, 0, 0.9, 0.6);
+    }
+    7.5% { opacity: 1; }
+    12%  { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+    15%  { transform: translate(0, 0) rotate(0deg) scale(0.45); opacity: 0.8; }
+    18%  { transform: translate(0, 0) rotate(0deg) scale(0.15); opacity: 0; }
+    100% { transform: translate(-124px, 24px) rotate(-10deg) scale(1); opacity: 0; }
+}
+
+@keyframes onb-smash-b {
+    0%, 39% {
+        transform: translate(0, -108px) rotate(8deg) scale(1);
+        opacity: 0;
+        animation-timing-function: cubic-bezier(0.42, 0, 0.9, 0.6);
+    }
+    40.5% { opacity: 1; }
+    45%  { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+    48%  { transform: translate(0, 0) rotate(0deg) scale(0.45); opacity: 0.8; }
+    51%  { transform: translate(0, 0) rotate(0deg) scale(0.15); opacity: 0; }
+    100% { transform: translate(0, -108px) rotate(8deg) scale(1); opacity: 0; }
+}
+
+@keyframes onb-smash-c {
+    0%, 72% {
+        transform: translate(124px, 24px) rotate(10deg) scale(1);
+        opacity: 0;
+        animation-timing-function: cubic-bezier(0.42, 0, 0.9, 0.6);
+    }
+    73.5% { opacity: 1; }
+    78%  { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+    81%  { transform: translate(0, 0) rotate(0deg) scale(0.45); opacity: 0.8; }
+    84%  { transform: translate(0, 0) rotate(0deg) scale(0.15); opacity: 0; }
+    100% { transform: translate(124px, 24px) rotate(10deg) scale(1); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    /* Nothing animates, so the marks would otherwise all sit at their 0% — which
+       is invisible, because 0% is where a mark waits to be flown in from. The
+       resting pose here is therefore the *meaning*, drawn deliberately: the three
+       marks standing behind the target they feed, which is the whole point of the
+       step. The convention elsewhere (resting state = the animation's last frame)
+       cannot apply to a loop whose last frame is "everything absorbed". */
+    .onb-smash__in,
+    .onb-smash__target {
+        animation: none;
+    }
+    .onb-smash {
+        gap: 10px;
+    }
+    .onb-smash__in {
+        position: static;
+        opacity: 1;
+        transform: none;
+    }
+    .onb-smash__target {
+        transform: none;
+    }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    HRT MILESTONE — the top bar, and the 100-day burst that falls past it
 

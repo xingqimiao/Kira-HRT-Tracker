@@ -1336,6 +1336,19 @@ export const useAppData = (
         };
 
         return {
+            /**
+             * The protocol identifier, so a reader knows what it is holding without
+             * guessing from the shape.
+             *
+             * `meta.version` already versions the payload, but a version number is
+             * only meaningful to something that already knows it is looking at this
+             * format — and the import path has to decide that *before* it can trust
+             * the version. It also has to tell our file apart from Oyama's, which this
+             * app was forked from and which writes a v2 with the same `meta`/`modes`
+             * keys; shape-sniffing cannot separate them, and a misread is silent. See
+             * docs/hrt-import-export-protocol.md.
+             */
+            format: 'kira-hrt',
             // 3 adds the journal collection to each mode block.
             meta: { version: 3, exportedAt: new Date().toISOString() },
             mode,

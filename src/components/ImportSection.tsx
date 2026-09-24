@@ -4,7 +4,13 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { ChevronDown, ChevronUp } from '../icons';
 
 interface ImportSectionProps {
-    onImportJson: (text: string) => boolean | Promise<boolean>;
+    /**
+     * Imports a file's contents. Accepts bytes as well as text because one supported
+     * source (Featherline) exports a binary container rather than JSON, so the file
+     * has to be read without assuming it is UTF-8 — decoding a gzip/AES envelope as
+     * text would corrupt it before detection could see the magic bytes.
+     */
+    onImportJson: (data: string | ArrayBuffer) => boolean | Promise<boolean>;
 }
 
 const rowBase = "flex items-start justify-between py-[18px] border-b border-[var(--color-m3-outline-variant)] ";
@@ -23,9 +29,11 @@ const ImportSection: React.FC<ImportSectionProps> = ({ onImportJson }) => {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = async () => {
-            await onImportJson(reader.result as string);
+            // The reader hands back whatever it was asked for; both branches reach
+            // the same importer, which decides text-vs-binary from the bytes.
+            await onImportJson(reader.result as string | ArrayBuffer);
         };
-        reader.readAsText(file);
+        reader.readAsArrayBuffer(file);
         e.target.value = '';
     };
 

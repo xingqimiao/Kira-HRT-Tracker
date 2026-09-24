@@ -6,6 +6,8 @@ import { VialProvider } from './contexts/VialContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import { APP_VERSION, AppTheme, KeyColor } from './constants';
 import { DoseEvent, decompressData, encryptData, decryptData } from '../logic';
+import { detectForeignFormat, convertForeignPayload, type ForeignSource } from './utils/foreignImport';
+import { decryptFeatherline, mapFeatherlineSnapshot, FeatherlineError } from './utils/featherlineBackup';
 import type { Lang } from './i18n/types';
 import { useAppData } from './hooks/useAppData';
 import { useAppNavigation, ViewKey } from './hooks/useAppNavigation';
@@ -173,7 +175,18 @@ const AppContent = () => {
     const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
     const [isQuickAddLabOpen, setIsQuickAddLabOpen] = useState(false);
     const [isDisclaimerOpen, setIsDisclaimerOpen] = useState(false);
-    const [pendingImportText, setPendingImportText] = useState<string | null>(null);
+    /**
+     * A file waiting on a password.
+     *
+     * Two kinds, because they need different decrypt paths: a JSON envelope (ours,
+     * Oyama's, Transmtf's) is text handed to `decryptData`, while a Featherline
+     * backup is a binary container whose Argon2/AES work lives in its own module.
+     * The bytes are held rather than re-read because a File cannot be re-read from a
+     * state setter.
+     */
+    const [pendingImport, setPendingImport] = useState<
+        { kind: 'json'; text: string } | { kind: 'featherline'; bytes: Uint8Array } | null
+    >(null);
 
     // --- Auto-sync preference ---
     // Storage key kept from when this only ever uploaded, so an existing
@@ -334,24 +347,66 @@ const AppContent = () => {
     }, [isPasswordInputOpen, isWeightModalOpen, isFormOpen, isImportModalOpen, isDisclaimerOpen]);
 
 
-    const importEventsFromJson = async (text: string): Promise<boolean> => {
-        try {
-            let parsed = JSON.parse(text);
+    /**
+     * Convert a payload that has been decrypted or was never encrypted, and hand it
+     * to the merge. Shared by the plain path and the post-password path so a
+     * converted foreign file and a native one cannot take different routes.
+     *
+     * `source` is only used for what the user is told: an Oyama or Kira file needs no
+     * transformation (the fork means the shapes already agree), a Transmtf file needs
+     * its unsupported `gelProducts` dropped and reported.
+     */
+    const applyImportedPayload = (parsed: unknown, source: ForeignSource | null): boolean => {
+        const { payload, skipped } = convertForeignPayload(parsed, source ?? 'kira');
+        const ok = processImportedData(payload);
+        // Reported after the merge so it lands beside the success dialog rather than
+        // instead of it — the import did succeed, minus one collection.
+        if (ok && skipped.gelProducts) {
+            showDialog('alert', t('import.skipped_gel_products').replace('{n}', String(skipped.gelProducts)));
+        }
+        return ok;
+    };
 
-            // Handle Encryption
-            if (parsed.encrypted && parsed.iv && parsed.salt && parsed.data) {
-                setPendingImportText(text);
+    const importEventsFromJson = async (input: string | ArrayBuffer): Promise<boolean> => {
+        try {
+            const detection = detectForeignFormat(input);
+
+            // A Featherline backup is a binary envelope, so it has no JSON to inspect:
+            // it goes straight to the password prompt, and its Argon2/decrypt path
+            // runs in `handlePasswordSubmit`.
+            if (detection.source === 'featherline' && detection.bytes) {
+                setPendingImport({ kind: 'featherline', bytes: detection.bytes });
                 setIsPasswordInputOpen(true);
                 return true;
             }
 
-            // Handle Compression
-            if (parsed.c && typeof parsed.c === 'string') {
-                const decompressed = await decompressData(parsed.c);
-                parsed = JSON.parse(decompressed);
+            if (detection.problem === 'unreadable') {
+                showDialog('alert', t('drawer.import_error'));
+                return false;
             }
 
-            return processImportedData(parsed);
+            let parsed: any = detection.parsed;
+
+            // Handle Compression
+            if (parsed && typeof parsed === 'object' && typeof parsed.c === 'string') {
+                parsed = JSON.parse(await decompressData(parsed.c));
+            }
+
+            // Handle Encryption. This now also catches Oyama's and Transmtf's
+            // password envelopes: both use the `encrypted`/`iv`/`salt`/`data` keys
+            // this guard looks for, and `decryptData` reads Transmtf's 100000
+            // iterations through its own default. The branch is unchanged in
+            // behaviour; the *output* is what the conversion below adds.
+            if (parsed && parsed.encrypted && parsed.iv && parsed.salt && parsed.data) {
+                setPendingImport({ kind: 'json', text: JSON.stringify(parsed) });
+                setIsPasswordInputOpen(true);
+                return true;
+            }
+
+            // Re-detect on the decompressed object: a compressed envelope hid the
+            // real shape from the first pass.
+            const source = detection.source ?? detectForeignFormat(JSON.stringify(parsed)).source;
+            return applyImportedPayload(parsed, source);
         } catch (err) {
             console.error(err);
             showDialog('alert', t('drawer.import_error'));
@@ -360,24 +415,50 @@ const AppContent = () => {
     };
 
     const handlePasswordSubmit = async (password: string) => {
-        if (!pendingImportText) return;
-        const decrypted = await decryptData(pendingImportText, password);
-        if (decrypted) {
-            try {
-                let parsed = JSON.parse(decrypted);
-                // Handle Compression after decryption
-                if (parsed.c && typeof parsed.c === 'string') {
-                    const decompressed = await decompressData(parsed.c);
-                    parsed = JSON.parse(decompressed);
+        if (!pendingImport) return;
+        try {
+            // Featherline: Argon2id + AES-GCM over gzip(JSON), decrypted and mapped
+            // in its own module — the only source whose file is not JSON.
+            if (pendingImport.kind === 'featherline') {
+                if (!pendingImport.bytes) return;
+                const json = await decryptFeatherline(pendingImport.bytes, password);
+                const mapped = mapFeatherlineSnapshot(json);
+                const ok = processImportedData(mapped);
+                if (ok) {
+                    setIsPasswordInputOpen(false);
+                    setPendingImport(null);
+                    const reasons = mapped.skipped.reasons;
+                    if (reasons.length > 0) {
+                        showDialog('alert', t('import.skipped_rows')
+                            .replace('{n}', String(mapped.skipped.doses + mapped.skipped.labs))
+                            .replace('{why}', reasons.join('; ')));
+                    }
+                } else {
+                    showDialog('alert', t('import.decrypt_error'));
                 }
-                processImportedData(parsed);
-                setIsPasswordInputOpen(false);
-                setPendingImportText(null);
-            } catch (e) {
-                console.error(e);
-                showDialog('alert', t('import.decrypt_error'));
+                return;
             }
-        } else {
+
+            if (!pendingImport.text) return;
+            const decrypted = await decryptData(pendingImport.text, password);
+            if (!decrypted) {
+                showDialog('alert', t('import.decrypt_error'));
+                return;
+            }
+            let parsed = JSON.parse(decrypted);
+            // Handle Compression after decryption
+            if (parsed && typeof parsed === 'object' && typeof parsed.c === 'string') {
+                parsed = JSON.parse(await decompressData(parsed.c));
+            }
+            // The plaintext inside the envelope is where the source finally becomes
+            // knowable, so it is detected here rather than from the envelope.
+            const source = detectForeignFormat(JSON.stringify(parsed)).source;
+            if (applyImportedPayload(parsed, source)) {
+                setIsPasswordInputOpen(false);
+                setPendingImport(null);
+            }
+        } catch (e) {
+            console.error(e);
             showDialog('alert', t('import.decrypt_error'));
         }
     };
