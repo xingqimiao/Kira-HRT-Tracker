@@ -32,8 +32,13 @@ const pkg = JSON.parse(readFileSync(path.resolve(import.meta.dirname, 'package.j
  *
  * A different URL whenever the commit changes sidesteps the whole class: there is
  * nothing cached to serve, so the new worker installs, claims the scope and replaces
- * the old one. The Caddy `no-cache` header on `/sw*.js` covers the case where a URL is
- * somehow revisited. Both, because either alone leaves a window.
+ * the old one. The Caddy `no-cache` header on the worker paths covers the case where a
+ * URL is somehow revisited — added 2026-09-24, after the rule this comment used to
+ * claim was found not to exist on the box. Without it Cloudflare's default Browser
+ * Cache TTL (4h) pinned every worker URL, so a client registered against an older
+ * `sw-<sha>.js` never saw the new bytes and stayed on its old build. Both the rule and
+ * the stamped name are needed: the stamped name only helps for the *new* name, and an
+ * existing client re-reads the old one.
  *
  * Falls back to the app version when git is unavailable (a tarball build), which is
  * coarser but still changes when the project does.

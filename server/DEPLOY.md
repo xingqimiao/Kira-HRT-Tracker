@@ -367,8 +367,33 @@ hrt.kiramyao.com {
     # stale service worker's script URL must 404 (which makes the browser drop the
     # registration) rather than be answered with an HTML document that cannot parse
     # as a worker, which would pin the client to the old build.
+    #
+    # NOTE: the live Caddyfile on the box has moved past this shape — it uses a
+    # single `@static_assets path_regexp` (see the KEEP/sw cleanup note further
+    # down) so that a missing asset 404s by `not file` rather than by an enumerated
+    # path list. Read the live file before editing, not this snippet.
     @asset path /assets/* /ocr/* /sw-*.js
     handle @asset {
+        # The worker script must not be edge-cached, or a deploy never reaches an
+        # installed client: with no header Cloudflare applies its default Browser
+        # Cache TTL (4h), the bytes at the worker's URL never change, and the
+        # browser concludes "no new version" — the exact failure the commit-stamped
+        # `sw-<sha>.js` filename exists to avoid, still live for every *old* name
+        # an existing client is registered against.
+        #
+        # Scoped to the worker only. `assets/*` and `ocr/*` carry content hashes
+        # and must stay long-lived; caching those is the point.
+        #
+        # The regex must cover the BARE `/sw.js` too, not only `sw-<sha>.js`.
+        # `sw-[\w]+\.js` does not match `sw.js` (no hyphen), so the bare path fell
+        # through to the SPA branch and went out with no Cache-Control at all —
+        # found live on 2026-09-24 by curling the header per path. Use
+        # `sw(-[\w]+)?\.js`.
+        @worker path_regexp worker ^/(sw(-[\w]+)?\.js|workbox-[\w]+\.js|registerSW\.js)$
+        header @worker Cache-Control "no-cache, no-store, must-revalidate"
+        header @worker Pragma "no-cache"
+        header @worker Expires "0"
+
         file_server
     }
 
@@ -502,22 +527,68 @@ sudo rsync -a dist/ /srv/hrt-web/
 # Copying over the top means nothing is ever *removed*, so the service-worker files
 # accumulate: every deploy leaves its `sw-<sha>.js` behind, and by 2026-09-23 the web
 # root held 47 of them. They are tiny (188 KB total) and stale ones are harmless —
-# a browser only fetches the one its `index.html` names — but the directory stops
-# being readable at a glance. Prune to the current one after deploying:
+# a browser only fetches the worker its own registration names, which may be any
+# older name.
+#
+# ORDER MATTERS. Overwrite the old names with the NEW worker's bytes FIRST, prune
+# second — never the reverse. A client registered against `sw-6cf90c3.js` only ever
+# re-reads that URL; if you delete it, the browser drops the registration and the
+# client is stranded on its old build (the same trap the bare `/sw.js` note below
+# describes). Overwriting makes the bytes differ, which is the one thing that makes
+# a browser install the new worker. Pruning after the overwrite is then safe only
+# for names no client can still hold — in practice, keep the overwrite and skip the
+# prune entirely unless the directory size becomes a real problem.
 cd /srv/hrt-web
-KEEP=$(grep -o 'sw-[a-f0-9]*\.js' index.html | head -1)
-for f in sw-*.js; do [ "$f" = "$KEEP" ] || rm -f "$f"; done
+NEW=$(grep -o 'sw-[a-f0-9]*\.js' index.html | head -1)   # the worker this deploy ships
+for f in sw-*.js; do
+  [ "$f" = "$NEW" ] && continue    # guard: the first iteration would otherwise be a self-copy
+  cp -f "$NEW" "$f"
+done
 
 # Keep the BARE `/sw.js` alive, and refresh its contents rather than deleting it.
 # Clients from before commit 01366ea registered that path; deleting the file does not
-# retire them, it strands them — Caddy's `@static_assets` regex is `sw-[\w]+\.js`,
-# which does not match `sw.js`, so the request falls through to the SPA and the client
-# receives `index.html` where it expected a worker. A worker that cannot parse is a
-# client stuck on its old build forever. Overwriting it with the current worker is what
-# lets those clients update: the bytes change, the browser installs it, and every later
+# retire them, it strands them. Overwriting it with the current worker is what lets
+# those clients update: the bytes change, the browser installs it, and every later
 # deploy reaches them through the hashed name.
-cp "$KEEP" sw.js
+cp -f "$NEW" sw.js
+
+# Every worker path must now serve identical bytes, or a client holding an un-refreshed
+# name stays behind:
+#   md5sum sw-*.js sw.js | awk '{print $1}' | sort -u | wc -l    # must print 1
 ```
+
+**Purge the worker URLs at Cloudflare after every deploy that changes them.** The
+`no-cache` header above only governs *future* responses; a copy already sitting at the
+edge keeps being served for its remaining TTL (4h here) no matter what the origin now
+says. Since the header was only added on 2026-09-24, every worker URL cached before
+that still needs one purge — after which the `no-cache` header keeps them out of the
+edge, and later deploys need this only for the *new* `sw-<sha>.js` name if it was
+somehow fetched before the header took effect.
+
+```bash
+ZONE=6e55a37a88282e92bbe6fe8b9d3fc5f8   # kiramyao.com
+TOKEN=$(grep -oE 'cfat_[A-Za-z0-9_-]+' ~/Downloads/cloudflarewrite.txt)
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "https://api.cloudflare.com/client/v4/zones/$ZONE/purge_cache" \
+  --data '{"files":["https://hrt.kiramyao.com/sw.js"]}'
+```
+
+Verify per path through Cloudflare — `cf-cache-status` must read `BYPASS` (or `MISS`,
+never `HIT`) and `Cache-Control` must carry `no-cache`, on **every** worker name the
+web root holds, plus the bare `/sw.js`. Checking only the name `index.html` currently
+references misses exactly the old names a stranded client is registered against:
+
+```bash
+for u in sw.js sw-*.js workbox-*.js; do
+  printf '%-22s ' "$u"
+  curl -sI "https://hrt.kiramyao.com/$u" | grep -iE 'cache-control|cf-cache-status' | tr -d '\r' | paste -sd' | '
+done
+```
+
+Confirm the non-worker paths are *still* cacheable — the fix is scoped to the worker,
+and a regex that accidentally swallows `assets/*` would trade one bug for a bandwidth
+one: `curl -sI https://hrt.kiramyao.com/assets/<hash>.js | grep -i cache-control`
+should still show `max-age=14400`.
 
 **Take a rollback copy of both halves before you replace them.** The web root is
 cheap (`tar -czf /srv/backup/hrt-web-$(date -u +%Y%m%d-%H%M%S).tar.gz -C /srv/hrt-web .`)
