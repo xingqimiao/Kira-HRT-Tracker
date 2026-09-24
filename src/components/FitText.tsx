@@ -17,10 +17,15 @@ import React, { useEffect, useRef, useState } from 'react';
  *
  * `scale` is a font-size multiplier applied to the container's own size, so this composes
  * with whatever type role the caller sets on the wrapper.
+ *
+ * `minRatio` is the floor, and defaults to `MIN_RATIO`: the fit-to-width case it was
+ * written for is a reading, which stops being legible before it stops fitting. A caller
+ * whose content is a display heading with line breaks of its own wants the other trade —
+ * a smaller line rather than a clipped one — and lowers the floor for itself.
  */
 const MIN_RATIO = 0.55;
 
-const FitText: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className }) => {
+const FitText: React.FC<{ children: React.ReactNode; className?: string; minRatio?: number }> = ({ children, className, minRatio = MIN_RATIO }) => {
     const boxRef = useRef<HTMLSpanElement | null>(null);
     const textRef = useRef<HTMLSpanElement | null>(null);
     const [ratio, setRatio] = useState(1);
@@ -31,13 +36,29 @@ const FitText: React.FC<{ children: React.ReactNode; className?: string }> = ({ 
         if (!box || !text) return;
 
         const fit = () => {
-            // Measure at ratio 1 first: the previous frame's transform would otherwise
-            // feed back into the next measurement and the size would drift.
-            text.style.fontSize = '';
+            // Measure in *px per em* rather than by resetting the font size and reading
+            // the width back. Resetting it works only while the box's own height does
+            // not depend on the text — and here it does: the box is sized by its
+            // content, so shrinking the type shrinks the box, the ResizeObserver below
+            // fires, the size is cleared again for the next measurement, and the
+            // settled `setRatio` bails out of re-rendering. The last DOM write was the
+            // *clearing*, so the ratio the state held was never applied and the text
+            // rendered at full size and overflowed. (On Home this self-corrected
+            // visually because the readings re-render constantly; a static heading
+            // exposed it.)
+            //
+            // Dividing the current width by the current font size is scale-invariant:
+            // feeding the result back gives the same number, so it converges in one
+            // step and never writes to the DOM to measure.
             const available = box.clientWidth;
-            const wanted = text.scrollWidth;
-            if (!available || !wanted) return;
-            const next = wanted > available ? Math.max(MIN_RATIO, available / wanted) : 1;
+            const base = parseFloat(getComputedStyle(box).fontSize);
+            const current = parseFloat(getComputedStyle(text).fontSize);
+            if (!available || !base || !current) return;
+            const perEm = text.scrollWidth / current;
+            if (!isFinite(perEm) || perEm <= 0) return;
+            // What the widest line would measure at the caller's own size.
+            const wanted = perEm * base;
+            const next = wanted > available ? Math.max(minRatio, available / wanted) : 1;
             setRatio((prev) => (Math.abs(prev - next) < 0.01 ? prev : next));
         };
 
@@ -45,7 +66,7 @@ const FitText: React.FC<{ children: React.ReactNode; className?: string }> = ({ 
         const observer = new ResizeObserver(fit);
         observer.observe(box);
         return () => observer.disconnect();
-    }, [children]);
+    }, [children, minRatio]);
 
     return (
         <span ref={boxRef} className={`block w-full overflow-hidden ${className ?? ''}`}>
