@@ -539,6 +539,8 @@ const PACK: LangPack = {
     "nav.account": "Hesap",
     "account.title": "Hesap",
     "account.hrt_started": "HRT başlayalı {days} gün",
+    "account.hrt_start_label": "HRT başlangıç tarihi",
+    "account.hrt_start_set": "Tarih seç",
     "account.hrt_milestone.confetti": "HRT'de {days}. gün — {n} gün oldu!",
     "account.hrt_milestone.cake_title": "HRT'de {days}. gün",
     "account.hrt_milestone.cake_body": "KiraEqual'ın tüm üyeleri yıl dönümünüzü kutlar!\n\nHRT yolculuğunuzu özenle kaydettiğiniz için teşekkür ederiz. Bundan sonraki her gününüz, burada HRT kaydetmek kadar kolay ve keyifli geçsin.",

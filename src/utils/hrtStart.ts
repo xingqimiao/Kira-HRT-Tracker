@@ -39,3 +39,22 @@ export function hrtDaysSince(raw: unknown, now: number = Date.now()): number | n
     const days = Math.round((today.getTime() - start) / 86_400_000);
     return days >= 0 ? days : null;
 }
+
+/**
+ * `Date` → local-time `YYYY-MM-DD`, the shape `hrtStartDate` is stored in.
+ *
+ * Local, not UTC: the date picker hands back a local midnight, and
+ * `toISOString()` would shift it a day backwards for anyone east of Greenwich —
+ * which is the whole readership. The intro and the account page both write
+ * through this, so the two cannot disagree about what "the 15th" means.
+ */
+export function toYmd(date: Date): string {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/** The inverse. Falls back to today rather than an Invalid Date, so a picker
+ *  opened on a malformed value still has something to show. */
+export function fromYmd(value: string): Date {
+    const parsed = new Date(`${value}T00:00:00`);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}

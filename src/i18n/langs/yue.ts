@@ -361,6 +361,8 @@ const PACK: LangPack = {
     "nav.account": "帳戶",
     "account.title": "帳戶",
     "account.hrt_started": "HRT 開始咗 {days} 天",
+    "account.hrt_start_label": "HRT 開始日期",
+    "account.hrt_start_set": "設定日期",
     "account.hrt_milestone.confetti": "HRT 第 {days} 天，達成 {n} 天里程碑！",
     "account.hrt_milestone.cake_title": "HRT 第 {days} 天",
     "account.hrt_milestone.cake_body": "KiraEqual 全體成員祝你周年快樂！\n\n多謝你認真記錄自己嘅 HRT 旅程。願未來每一日，都好似喺度記 HRT 咁輕鬆咁開心。",

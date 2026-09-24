@@ -539,6 +539,8 @@ const PACK: LangPack = {
     "nav.account": "Account",
     "account.title": "Account",
     "account.hrt_started": "HRT started {days} days ago",
+    "account.hrt_start_label": "HRT start date",
+    "account.hrt_start_set": "Set a date",
     "account.hrt_milestone.confetti": "Day {days} of HRT — that's {n} days!",
     "account.hrt_milestone.cake_title": "Day {days} of HRT",
     "account.hrt_milestone.cake_body": "Everyone at KiraEqual wishes you a happy anniversary!\n\nThank you for keeping such a careful record of your HRT journey. May every day ahead feel as easy and as joyful as logging your HRT here.",

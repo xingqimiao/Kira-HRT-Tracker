@@ -622,6 +622,8 @@ const PACK: LangPack = {
     "lab.tip_scale": "현재 보정 계수",
     "account.title": "계정",
     "account.hrt_started": "HRT 시작 {days}일",
+    "account.hrt_start_label": "HRT 시작일",
+    "account.hrt_start_set": "날짜 설정",
     "account.hrt_milestone.confetti": "HRT {days}일째, {n}일 달성!",
     "account.hrt_milestone.cake_title": "HRT {days}일째",
     "account.hrt_milestone.cake_body": "KiraEqual 모든 멤버가 1주년을 축하드립니다!\n\n자신의 HRT 여정을 꼼꼼히 기록해 주셔서 감사합니다. 앞으로의 하루하루도 여기에서 HRT를 기록하듯 가볍고 즐겁기를 바랍니다.",

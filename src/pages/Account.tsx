@@ -1,15 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import Icon from '../components/Icon';
-import { Link2, LogOut, ShieldCheck, UserCircle } from '../icons';
+import { Link2, LogOut, ShieldCheck, UserCircle, ChevronDown, X } from '../icons';
 import { Progress } from '../components/ui';
 import CoreAuthForm from '../components/CoreAuthForm';
+import DateTimePicker from '../components/DateTimePicker';
 import { SettingsListItem, settingsMuted } from '../components/SettingsListItem';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
 import { coreAuth, type AccountSummary, type LoginMethods } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
 import type { CoreSyncStatus } from '../hooks/useCoreSync';
-import { hrtDaysSince } from '../utils/hrtStart';
+import { hrtDaysSince, toYmd, fromYmd } from '../utils/hrtStart';
+import { LOCALE_MAP } from '../utils/helpers';
 
 interface AccountProps {
     session: CoreSession;
@@ -47,6 +49,12 @@ interface AccountProps {
      * calibration preferences.
      */
     hrtStartDate?: string;
+    /**
+     * Writes the start date back. It lives on the account page because the intro
+     * that used to be the only place to set it is a replay now, and a replay must
+     * not write — so the editable copy belongs where an account change belongs.
+     */
+    onHrtStartChange: (value: string) => void;
 }
 
 const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
@@ -84,14 +92,21 @@ const Account: React.FC<AccountProps> = ({
     initialUsername,
     onBindCredentials,
     hrtStartDate,
+    onHrtStartChange,
 }) => {
-    const { t } = useTranslation();
+    const { t, lang } = useTranslation();
     // Null when the date is absent, unusable, or still in the future — the line
     // then simply does not render.
     const daysSinceStart = hrtDaysSince(hrtStartDate);
     const { showDialog } = useDialog();
     const [summary, setSummary] = useState<AccountSummary | null>(null);
     const [methods, setMethods] = useState<LoginMethods | null>(null);
+    const [isStartPickerOpen, setIsStartPickerOpen] = useState(false);
+
+    // Today, for the picker's ceiling: a start date in the future would make the
+    // day count negative, which `hrtDaysSince` then refuses to show at all.
+    const now = new Date();
+    const today = toYmd(now);
 
     const token = session.token;
 
@@ -181,16 +196,72 @@ const Account: React.FC<AccountProps> = ({
                         </div>
                     </div>
 
-                    {/* The one thing the intro's date question is for. Its own row
-                        rather than a caption on the identity block: it is a fact
-                        about the person, not about the sign-in. */}
-                    {daysSinceStart !== null && (
-                        <div className={`py-4 ${divider}`}>
-                            <p className={`text-m3-body-medium ${on}`}>
-                                {t('account.hrt_started').replace('{days}', String(daysSinceStart))}
-                            </p>
+                    {/* The start date and the day count it produces, in one row:
+                        the count is the answer, the date is the input, and
+                        splitting them would put a fact about the person away from
+                        the control that produces it.
+
+                        Editable here rather than in the intro, which is a replay
+                        now and must not write back — a stray tap in a re-read
+                        would replace a date set months ago. This is the account
+                        page's own copy, so the setting still has a home. */}
+                    <div className={`py-4 ${divider}`}>
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                                <p className={`text-m3-body-medium ${on}`}>{t('account.hrt_start_label')}</p>
+                                {daysSinceStart !== null && (
+                                    <p className={`text-xs ${muted} mt-0.5`}>
+                                        {t('account.hrt_started').replace('{days}', String(daysSinceStart))}
+                                    </p>
+                                )}
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsStartPickerOpen(v => !v)}
+                                    aria-expanded={isStartPickerOpen}
+                                    className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium tabular-nums text-[var(--color-m3-primary)] transition-colors hover:bg-[var(--color-m3-surface-container)]"
+                                >
+                                    {hrtStartDate
+                                        ? fromYmd(hrtStartDate).toLocaleDateString(LOCALE_MAP[lang] || 'en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+                                        : t('account.hrt_start_set')}
+                                    <Icon
+                                        icon={ChevronDown}
+                                        size={14}
+                                        className={`shrink-0 transition-transform duration-200 ease-[cubic-bezier(0.2,0,0,1)] ${isStartPickerOpen ? 'rotate-180' : ''}`}
+                                    />
+                                </button>
+                                {/* Only when there is something to clear, the same
+                                    rule the intro's copy of this control uses. */}
+                                {hrtStartDate && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { onHrtStartChange(''); setIsStartPickerOpen(false); }}
+                                        aria-label={t('onboarding.start_clear')}
+                                        title={t('onboarding.start_clear')}
+                                        className="rounded-md p-1.5 text-[var(--color-m3-on-surface-variant)] transition-colors hover:bg-[var(--color-m3-surface-container)] hover:text-cos-error"
+                                    >
+                                        <Icon icon={X} size={14} />
+                                    </button>
+                                )}
+                            </div>
                         </div>
-                    )}
+                        {/* DateTimePicker's inline mode owns the unfolding motion. */}
+                        <DateTimePicker
+                            isOpen={isStartPickerOpen}
+                            inline
+                            mode="date"
+                            onClose={() => setIsStartPickerOpen(false)}
+                            onConfirm={(date) => {
+                                // Clamped to today: the picker has no max, and a future
+                                // start would make the account's day count negative.
+                                const picked = toYmd(date);
+                                onHrtStartChange(picked > today ? today : picked);
+                            }}
+                            initialDate={hrtStartDate ? fromYmd(hrtStartDate) : now}
+                            title={t('account.hrt_start_label')}
+                        />
+                    </div>
 
                     {/* What the account holds. Counts only — the record contents are
                         ciphertext server-side, so this is all that can be shown. */}

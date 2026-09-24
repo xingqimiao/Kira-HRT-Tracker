@@ -755,6 +755,7 @@ const AppContent = () => {
                                account has one way in and it is a provider. */
                             onBindCredentials={() => setBindRequested(true)}
                             hrtStartDate={hrtStartDate}
+                            onHrtStartChange={setHrtStartDate}
                         />
                     )}
 

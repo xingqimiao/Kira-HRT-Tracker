@@ -14,20 +14,13 @@ import DateTimePicker from '../components/DateTimePicker';
 import { Check, Plus, ChevronDown, Cloud, AlertTriangle } from '../icons';
 import { buildMcpInstallPrompt } from '../utils/mcpInstallPrompt';
 import { LOCALE_MAP } from '../utils/helpers';
+import { toYmd, fromYmd } from '../utils/hrtStart';
 import { usePresence } from '../hooks/usePresence';
 
 const ONBOARDING_KEY = 'app-onboarded';
 
 /** One definition, shared with the AI-assistant settings page. */
 const INSTALL_PROMPT = buildMcpInstallPrompt();
-
-/** Local-time `YYYY-MM-DD` and back — the shape `hrtStartDate` is stored in. */
-const toYmd = (date: Date): string =>
-    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-const fromYmd = (value: string): Date => {
-    const parsed = new Date(`${value}T00:00:00`);
-    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-};
 
 /**
  * Anyone with records on this device has been using the app since before there
