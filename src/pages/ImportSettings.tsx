@@ -38,7 +38,11 @@ const ImportSettings: React.FC<ImportSettingsProps> = ({ onImportJson, onBack })
                     {t('import.format_doc')}{' '}
                     <button
                         type="button"
-                        onClick={() => window.open('https://github.com/xingqimiao/Kira-HRT-Tracker/blob/rewrite/docs/hrt-import-export-protocol.md', '_blank', 'noopener,noreferrer')}
+                        /* `blob/HEAD`, not a branch name: HEAD follows the repository's
+                           default branch, so the link survives the branch being renamed
+                           or the work being merged. A hard-coded `rewrite` would rot the
+                           day it moved. */
+                        onClick={() => window.open('https://github.com/xingqimiao/Kira-HRT-Tracker/blob/HEAD/docs/hrt-import-export-protocol.md', '_blank', 'noopener,noreferrer')}
                         className="text-[var(--color-m3-primary)] underline underline-offset-2"
                     >
                         docs/hrt-import-export-protocol.md
