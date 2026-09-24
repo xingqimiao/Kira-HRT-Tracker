@@ -377,14 +377,29 @@ const DateTimePicker: React.FC<DateTimePickerProps> = ({
     });
 
     const body = (
-        <div className={inline ? 'pt-3 pb-1 space-y-5' : 'px-5 py-5 space-y-5'}>
+        // Inline needs its own horizontal padding: the popup mode supplies `px-5` from
+        // the dialog shell, but an inline picker is placed straight into whatever
+        // container the caller has, and most of those have none. Without it the
+        // year/month/day row ran edge-to-edge against the surrounding card — worst in
+        // the journal editor, where the three columns plus their gaps fill the width and
+        // read as cramped rather than as a grid.
+        <div className={inline ? 'px-4 pt-3 pb-1 space-y-5' : 'px-5 py-5 space-y-5'}>
             {showDate && (
                 <section>
                     <div className="flex items-center gap-2 mb-3 text-[var(--color-m3-on-surface)] ">
                         <Icon icon={CalendarDays} size={16} />
                         <span className="text-sm font-medium">{t('date.select')}</span>
                     </div>
-                    <div className="grid grid-cols-[1.05fr_1.35fr_0.8fr] gap-2.5">
+                    {/*
+                      Weighted so the *content* fits, not so the boxes look even: a 4-digit
+                      year needs the most room, a month label ("九月", "September") more
+                      than a 2-digit day, and the day the least — but 0.8fr gave the day
+                      only 72px at a 310px grid, which is a two-digit number plus the
+                      chevron and nothing to spare. The old 1.05/1.35/0.8 was chosen
+                      against a wider dialog; inline (a card on a 390px phone) it is ~100px
+                      narrower, and the day column was the one that ran out.
+                    */}
+                    <div className="grid grid-cols-[1.1fr_1.3fr_0.95fr] gap-2">
                         {renderPart(
                             t('time.year'),
                             'year',
@@ -408,7 +423,7 @@ const DateTimePicker: React.FC<DateTimePickerProps> = ({
                         <Icon icon={Clock3} size={16} />
                         <span className="text-sm font-medium">{t('time.select')}</span>
                     </div>
-                    <div className="grid grid-cols-2 gap-2.5">
+                    <div className="grid grid-cols-2 gap-2">
                         {renderPart(
                             t('time.hour'),
                             'hour',

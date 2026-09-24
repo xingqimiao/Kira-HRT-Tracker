@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
 import DateTimePicker from './DateTimePicker';
+import Collapsible from './Collapsible';
 import { LOCALE_MAP } from '../utils/helpers';
 import { JournalEntry } from '../utils/bodyJournal';
 
@@ -117,8 +118,12 @@ const JournalCheckIn: React.FC<JournalCheckInProps> = ({ entries, onSave, onDele
 
             <p className={`text-xs ${muted} pb-3`}>{t('journal.register')}</p>
 
-            {isOpen && (
-                <div className="mb-6 rounded-lg border border-[var(--color-m3-outline-variant)] overflow-hidden">
+            {/* Collapsible, not `isOpen &&`: the editor used to appear at full height
+                in one frame, so the whole page jumped down the moment 记录 was tapped.
+                It carries the app's 250ms grid-rows pair and holds the panel through
+                the close, so cancelling eases it away instead of blanking it. */}
+            <Collapsible open={isOpen} className="mb-6">
+                <div className="rounded-lg border border-[var(--color-m3-outline-variant)] overflow-hidden">
                     <button
                         type="button"
                         onClick={() => setIsDatePickerOpen(v => !v)}
@@ -177,7 +182,7 @@ const JournalCheckIn: React.FC<JournalCheckInProps> = ({ entries, onSave, onDele
                         </button>
                     </div>
                 </div>
-            )}
+            </Collapsible>
 
             {sorted.length === 0 ? (
                 <p className={`text-sm ${muted} py-6 text-center`}>{t('journal.empty')}</p>
