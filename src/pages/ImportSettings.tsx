@@ -33,7 +33,12 @@ const ImportSettings: React.FC<ImportSettingsProps> = ({ onImportJson, onBack })
                 {/* The protocol is published so another tracker can write a file this
                     app reads. Linked here rather than only in the README because this
                     is the screen someone implementing that would be looking at, and a
-                    spec nobody can find is not a published spec. */}
+                    spec nobody can find is not a published spec.
+
+                    The Chinese guide, not the English spec: it carries the same field
+                    tables plus worked example code, a self-test list and a prompt to
+                    hand an AI assistant — and it links on to the English spec, which
+                    stays the authority on field definitions. */}
                 <p className="mt-6 text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)]">
                     {t('import.format_doc')}{' '}
                     <button
@@ -42,10 +47,10 @@ const ImportSettings: React.FC<ImportSettingsProps> = ({ onImportJson, onBack })
                            default branch, so the link survives the branch being renamed
                            or the work being merged. A hard-coded `rewrite` would rot the
                            day it moved. */
-                        onClick={() => window.open('https://github.com/xingqimiao/Kira-HRT-Tracker/blob/HEAD/docs/hrt-import-export-protocol.md', '_blank', 'noopener,noreferrer')}
+                        onClick={() => window.open('https://github.com/xingqimiao/Kira-HRT-Tracker/blob/HEAD/docs/hrt-import-export-protocol.zh-CN.md', '_blank', 'noopener,noreferrer')}
                         className="text-[var(--color-m3-primary)] underline underline-offset-2"
                     >
-                        docs/hrt-import-export-protocol.md
+                        docs/hrt-import-export-protocol.zh-CN.md
                     </button>
                 </p>
             </div>

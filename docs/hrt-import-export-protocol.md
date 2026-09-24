@@ -13,6 +13,11 @@ It has two halves:
 Both directions are the same shape, deliberately. There is no separate "import format"
 and "export format" to keep in step.
 
+> **中文读者**：有一份中文操作指南
+> **[`hrt-import-export-protocol.zh-CN.md`](hrt-import-export-protocol.zh-CN.md)**——字段对照表、
+> 可直接使用的示例代码、逐步自测清单，以及一段可以粘给 AI 助手替你改代码的提示词。
+> 本文是字段的权威定义；那份是「怎么动手」。两份不一致时以本文为准。
+
 ---
 
 ## 1. The shapes are already close

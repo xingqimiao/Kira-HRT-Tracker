@@ -54,7 +54,10 @@
 
 **搬出去**：导出为 JSON，格式公开且稳定，见下。
 
-**给其他记录应用的作者**：本应用的导入导出格式写在
+**给其他记录应用的作者**：请先看
+**[`docs/hrt-import-export-protocol.zh-CN.md`](docs/hrt-import-export-protocol.zh-CN.md)**
+（**中文操作指南**：字段对照表、示例代码、自测步骤、可直接粘给 AI 助手的提示词）。
+字段的权威定义在英文规范
 **[`docs/hrt-import-export-protocol.md`](docs/hrt-import-export-protocol.md)**。
 里面是最小必需字段、完整字段表、`route`/`Ester` 枚举取值、单位约定（`timeH` 是
 1970 年起的小时、`doseMG` 是药物本身的毫克数而非 E₂ 当量）、可选加密信封的规格，
