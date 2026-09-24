@@ -238,6 +238,7 @@ const PACK: LangPack = {
     "import.decrypt_error": "Decryption failed. Wrong password or corrupted data.",
 "import.skipped_gel_products": "Skipped {n} custom gel product(s) — this app does not keep a custom product catalogue.",
 "import.skipped_rows": "Skipped {n} record(s): {why}",
+"import.format_doc": "The data format is published, so other trackers can adapt to it:",
     "qr.encrypt_label": "Encrypt",
     "export.encrypt_label": "Encrypted",
     "export.summary": "Ready to export {doses} doses and {labs} lab results.",

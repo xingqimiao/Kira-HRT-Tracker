@@ -238,6 +238,7 @@ const PACK: LangPack = {
     "import.decrypt_error": "解密失败，密码错误或数据损坏。",
 "import.skipped_gel_products": "已跳过 {n} 个自定义凝胶产品（本应用暂不支持自定义产品目录）。",
 "import.skipped_rows": "已跳过 {n} 条记录：{why}",
+"import.format_doc": "数据格式是公开的，其他记录应用可据此适配：",
     "qr.encrypt_label": "加密",
     "export.encrypt_label": "加密",
     "export.summary": "准备导出 {doses} 条剂量记录和 {labs} 条检查记录。",

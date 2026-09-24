@@ -42,6 +42,26 @@
 
 ---
 
+## 换到本应用 / 换出去
+
+**从别的记录应用搬过来**：设置 → 数据管理 → 导入数据，选文件即可。支持
+
+- **[Oyama's HRT Tracker](https://github.com/xunxunProjects/Oyama-s-HRT-Tracker)** 的 JSON，含密码加密导出的（本项目分叉自它，信封格式完全相同）；
+- **[Transmtf HRT Tracker](https://github.com/TransmtfTeam/Transmtf-HRT-Tracker)** 的 JSON，含密码加密导出的；
+- **[Featherline](https://github.com/mkx173/Featherline)** 的 `.hrtbackup` 备份文件（输入备份密码）。
+
+用药与化验一并带过来。Featherline 的自定义凝胶产品目录本应用无法表示，会跳过并告知跳过了几条——记录本身的剂量、途径、部位都保留。
+
+**搬出去**：导出为 JSON，格式公开且稳定，见下。
+
+**给其他记录应用的作者**：本应用的导入导出格式写在
+**[`docs/hrt-import-export-protocol.md`](docs/hrt-import-export-protocol.md)**。
+里面是最小必需字段、完整字段表、`route`/`Ester` 枚举取值、单位约定（`timeH` 是
+1970 年起的小时、`doseMG` 是药物本身的毫克数而非 E₂ 当量）、可选加密信封的规格，
+以及一份最小可用的示例 JSON。照着它写，你的用户就能一步迁进来。
+
+---
+
 ## 两套药代动力学模型
 
 曲线来自模型，而模型是**别人**的贡献。本应用提供两套，在「设置 → 常规设置」里可以随时切换：

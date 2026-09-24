@@ -372,6 +372,7 @@ const PACK: LangPack = {
     "import.decrypt_error": "복호화 실패. 비밀번호가 잘못되었거나 데이터가 손상되었습니다.",
 "import.skipped_gel_products": "사용자 정의 젤 제품 {n}개를 건너뛰었습니다(이 앱은 사용자 정의 제품 목록을 지원하지 않습니다).",
 "import.skipped_rows": "기록 {n}개를 건너뛰었습니다: {why}",
+"import.format_doc": "데이터 형식은 공개되어 있으며, 다른 기록 앱이 이에 맞춰 연동할 수 있습니다:",
     "qr.encrypt_label": "암호화",
     "export.encrypt_label": "암호화됨",
     "export.summary": "{doses}개의 용량과 {labs}개의 검사 결과를 내보낼 준비가 되었습니다.",

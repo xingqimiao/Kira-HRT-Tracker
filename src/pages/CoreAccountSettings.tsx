@@ -214,6 +214,13 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
   // as a flicker on every visit.
   if (!loaded) return <AccountSkeleton />;
 
+  // Named once and used twice below. It was called twice inline, which also hid a bug:
+  // the hint names the provider *twice* in one sentence, and `.replace()` rewrites only
+  // the first match — so the line rendered "copied from X … makes no request to
+  // {provider}". Every other `{provider}` substitution in the app already uses
+  // `replaceAll` (see OAuthLanding); this one call site did not.
+  const avatarProvider = summary?.avatarUrl ? linkedProviderName() : null;
+
   return (
     <div className="pt-4 pb-32 min-h-full flex justify-start md:justify-center">
       <div className="mx-auto w-full max-w-[36rem] px-4">
@@ -249,9 +256,9 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
                 request to X or Google on page load — said where a user can see it. The
                 provider name is already stored in `links`, so nothing new is fetched
                 to render this. */}
-            {summary?.avatarUrl && linkedProviderName() && (
+            {avatarProvider && (
               <p className={`text-[11px] mt-0.5 ${muted}`}>
-                {t('core.acct.avatar_hint').replace('{provider}', linkedProviderName()!)}
+                {t('core.acct.avatar_hint').replaceAll('{provider}', avatarProvider)}
               </p>
             )}
           </div>
@@ -305,7 +312,11 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
                 <Row
                   icon={<span className="text-m3-title-medium font-semibold">𝕏</span>}
                   title={t('core.acct.connect').replace('{provider}', 'X')}
-                  subtitle={t('core.acct.connect_sub').replace('{provider}', 'X')}
+                  /* No substitution on the subtitle: it names no provider, and a
+                     `.replace()` for a placeholder the string does not contain is a
+                     no-op today but becomes a half-substitution the moment someone
+                     adds `{provider}` to it. */
+                  subtitle={t('core.acct.connect_sub')}
                   onClick={() => handleLink('x')}
                   disabled={busy}
                 />
@@ -373,7 +384,8 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
                 <Row
                   icon={<span className="text-m3-title-medium font-semibold">G</span>}
                   title={t('core.acct.connect').replace('{provider}', 'Google')}
-                  subtitle={t('core.acct.connect_sub').replace('{provider}', 'Google')}
+                  /* See the X row above. */
+                  subtitle={t('core.acct.connect_sub')}
                   onClick={() => handleLink('google')}
                   disabled={busy}
                 />

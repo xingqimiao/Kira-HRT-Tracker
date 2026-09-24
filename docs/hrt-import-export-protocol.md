@@ -295,6 +295,31 @@ as additional authenticated data. We parse and decrypt it directly rather than a
 Featherline to change. **If you are writing a new exporter, use the JSON in §2–§9**; the
 binary path exists only because that file format already shipped.
 
+### Two notes for anyone implementing a reader
+
+Both came out of testing against a real backup rather than a fixture, and both cost a
+round to find:
+
+**1. A Featherline dose carries float-reconstruction noise, and it must be rounded.**
+Their dose is *derived* (a strength divided by a ratio, or a fraction of a strength)
+rather than stored, so a 12.5 mg tablet arrives as `12.499934062706513`. Written
+straight through, that puts a meaningless run of digits in the user's timeline on every
+such record, and it is the kind of wrong that makes them distrust the whole import.
+We round to **three significant figures**, which recovers what was typed
+(`12.499934 → 12.5`, `8.25063 → 8.25`, `10.000253 → 10`) while a genuinely precise
+`0.935` survives. Featherline does the same on its own side, at six figures.
+
+**2. An imported gel stores its dose in `strengthMgPerVial`, and that is correct.**
+It looks suspicious that a gel's `strengthMgPerVial` equals its `equivalentE2Mg` — but
+for a gel the applied estradiol *is* the PK input, so the two are the same number by
+construction, not by mistake. For a pill they differ, which is why a reader must take
+the substance's own mass (`strengthMgPerTablet` × fraction) and never
+`equivalentE2Mg`. See §7.
+
+Our own reader is verified against a real 18 KB backup: 284 doses and 2 labs mapped
+with nothing skipped. That is one file from one person, so treat it as evidence that
+the format is read correctly rather than as coverage of every variation.
+
 ---
 
 ## 12. Checking your output

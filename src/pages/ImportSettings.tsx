@@ -29,6 +29,21 @@ const ImportSettings: React.FC<ImportSettingsProps> = ({ onImportJson, onBack })
 
             <div className="mx-auto w-full px-6 md:px-8 max-w-2xl">
                 <ImportSection onImportJson={onImportJson} />
+
+                {/* The protocol is published so another tracker can write a file this
+                    app reads. Linked here rather than only in the README because this
+                    is the screen someone implementing that would be looking at, and a
+                    spec nobody can find is not a published spec. */}
+                <p className="mt-6 text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)]">
+                    {t('import.format_doc')}{' '}
+                    <button
+                        type="button"
+                        onClick={() => window.open('https://github.com/xingqimiao/Kira-HRT-Tracker/blob/rewrite/docs/hrt-import-export-protocol.md', '_blank', 'noopener,noreferrer')}
+                        className="text-[var(--color-m3-primary)] underline underline-offset-2"
+                    >
+                        docs/hrt-import-export-protocol.md
+                    </button>
+                </p>
             </div>
         </div>
     );

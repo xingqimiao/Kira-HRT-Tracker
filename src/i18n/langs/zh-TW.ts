@@ -125,6 +125,7 @@ const PACK: LangPack = {
     "import.decrypt_error": "解密失敗，密碼錯誤或資料已損毀。",
 "import.skipped_gel_products": "已略過 {n} 個自訂凝膠產品（本應用暫不支援自訂產品目錄）。",
 "import.skipped_rows": "已略過 {n} 筆記錄：{why}",
+"import.format_doc": "資料格式是公開的，其他記錄應用可據此適配：",
     "qr.encrypt_label": "加密",
     "export.encrypt_label": "加密",
     "export.summary": "準備匯出 {doses} 條用藥紀錄和 {labs} 條檢驗紀錄。",

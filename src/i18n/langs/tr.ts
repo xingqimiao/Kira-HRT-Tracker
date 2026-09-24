@@ -238,6 +238,7 @@ const PACK: LangPack = {
     "import.decrypt_error": "Şifre çözme başarısız. Yanlış parola veya bozuk veri.",
 "import.skipped_gel_products": "{n} özel jel ürünü atlandı (bu uygulama özel ürün kataloğunu desteklemiyor).",
 "import.skipped_rows": "{n} kayıt atlandı: {why}",
+"import.format_doc": "Veri biçimi açıktır; diğer kayıt uygulamaları buna göre uyarlayabilir:",
     "qr.encrypt_label": "Şifrele",
     "export.encrypt_label": "Şifrelenmiş",
     "export.summary": "{doses} doz ve {labs} laboratuvar sonucu dışa aktarmaya hazır.",
