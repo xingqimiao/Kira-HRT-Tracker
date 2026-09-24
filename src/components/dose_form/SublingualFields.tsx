@@ -2,6 +2,7 @@ import React from 'react';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { Route, Ester, SL_TIER_ORDER, SublingualTierParams, isAntiandrogen } from '../../../logic';
 import CustomSelect from '../CustomSelect';
+import Collapsible from '../Collapsible';
 
 interface SublingualFieldsProps {
     ester: Ester;
@@ -69,13 +70,20 @@ const SublingualFields: React.FC<SublingualFieldsProps> = ({
                     </button>
                 </div>
 
-                {!useCustomTheta ? (
+                {/* Two panels that swap, not a panel that appears below another: the
+                    preset select and the custom hold-time controls are alternative
+                    answers to one question, so each is collapsed as the other opens.
+                    Both stay mounted through their own 250ms transition, so the
+                    swap is a fill-in rather than a jump in the form's height — the
+                    toggle above used to replace one with the other in a single frame. */}
+                <Collapsible open={!useCustomTheta}>
                     <CustomSelect
                         value={String(slTier)}
                         onChange={(val) => setSlTier(parseInt(val, 10))}
                         options={tierOptions}
                     />
-                ) : (
+                </Collapsible>
+                <Collapsible open={useCustomTheta}>
                     <div className="pt-2 pb-1 space-y-2">
                         <label className="text-xs font-medium text-[var(--color-m3-on-surface-variant)] ">{t('sl.hold_time_min')}</label>
                         <div className="flex items-center gap-2">
@@ -102,7 +110,7 @@ const SublingualFields: React.FC<SublingualFieldsProps> = ({
                         </div>
                         <p className="m3-text-2xs text-[var(--color-m3-on-surface-variant)] ">{t('sl.theta_approx')}: {thetaFromHold(customHoldValue).toFixed(3)} (Keep E2)</p>
                     </div>
-                )}
+                </Collapsible>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

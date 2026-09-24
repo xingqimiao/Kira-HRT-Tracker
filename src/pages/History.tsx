@@ -191,7 +191,11 @@ const History: React.FC<HistoryProps> = ({
                             </div>
                             <Switch checked={batchOn} onChange={setBatchOn} />
                         </div>
-                        {batchOn && (
+                        {/* The switch reveals the interval and count below it, so the
+                            disclosure has to be the same grid-rows pair the form above
+                            uses — this was a bare `batchOn &&` mount, which snapped the
+                            section in and out and shifted the page under the switch. */}
+                        <Collapsible open={batchOn}>
                             <div className="pb-3">
                                 <div className="flex items-center gap-5 flex-wrap">
                                     <label className={`flex items-center gap-2 text-xs font-semibold text-cos-on-surface-variant `}>
@@ -220,7 +224,7 @@ const History: React.FC<HistoryProps> = ({
                                 </div>
                                 <p className={`text-xs ${muted} mt-2`}>{batchHint}</p>
                             </div>
-                        )}
+                        </Collapsible>
                         <DoseForm
                             // Force remount on open so the default date resets to "now" (this row never unmounts, only collapses via CSS).
                             key={isQuickAddOpen ? 'open' : 'closed'}
