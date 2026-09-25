@@ -130,7 +130,22 @@ const Account: React.FC<AccountProps> = ({
     };
 
     return (
-        <div className="relative pb-36 px-6 md:px-10">
+        // The credit below is pushed to the floor of the page rather than trailing the
+        // content, which needs the column to be at least as tall as the viewport.
+        // `min-h` is measured against `svh` minus the bottom bar's reserve, not `h-full`,
+        // because the wrapper this sits in is a plain block with no height to inherit —
+        // `h-full` resolves against nothing and collapses to the content height again.
+        //
+        // The 92px is the floating bar (the same figure `scroll-pb-nav` reserves) and
+        // the `2.5rem` is the shared wrapper's own `pb-10`: without it the page ran
+        // 40px past the viewport and the credit sat one scroll-length above the bar.
+        // Past 840px the rail replaces the bar and reserves nothing, so only the
+        // wrapper's padding is left to subtract — 840 being the breakpoint the shell
+        // itself switches over at, not one of Tailwind's.
+        //
+        // `pb-36` is gone: the scroll container already reserves the bar, and carrying
+        // both left ~220px of dead space above the credit.
+        <div className="relative flex min-h-[calc(100svh-92px-env(safe-area-inset-bottom,0px)-2.5rem)] flex-col px-6 min-[840px]:min-h-[calc(100svh-2.5rem)] md:px-10">
             <h1 className={`sticky top-0 z-20 -mx-6 md:-mx-10 px-6 md:px-10 pt-8 pb-3 mb-3 bg-[var(--color-m3-surface-dim)]  text-m3-title-xl ${on}`}>
                 {t('account.title')}
             </h1>
@@ -338,10 +353,12 @@ const Account: React.FC<AccountProps> = ({
                 </div>
             )}
 
-            {/* The credit link at the end of the page content. Sits in normal flow so
-                it never collides with form buttons on short mobile viewports (e.g. Via
-                browser), and clears the floating navigation bar via the container's bottom padding. */}
-            <footer className="mt-8 pb-4 text-center">
+            {/* The credit link, pinned to the floor of the page. `mt-auto` takes the
+                slack in the column above, so it sits at the bottom of the scroll area
+                whether the account holds a few rows or many; the `pt-8` is what keeps
+                it clear of the content when there is no slack to take. Normal flow, not
+                fixed, so it never collides with the floating navigation bar. */}
+            <footer className="mt-auto pt-8 pb-4 text-center">
                 <a
                     href="https://kiramyao.com"
                     target="_blank"
