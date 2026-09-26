@@ -66,12 +66,41 @@ function corsHeaders(requestOrigin: string | undefined): Record<string, string> 
   const { publicOrigin } = getConfig();
   // No Origin at all: a same-origin fetch, curl, or an MCP client. No CORS headers
   // are needed and none are added.
-  if (!requestOrigin || requestOrigin !== publicOrigin) return null;
+  // Tauri v2 serves the bundled Android frontend from its reserved local origin.
+  // It is not the public website origin, but it is the trusted app that needs to
+  // call the same API. Keep this an exact allowlist; never reflect arbitrary origins.
+  const allowedOrigins = new Set([
+    publicOrigin,
+    'http://tauri.localhost',
+    'https://tauri.localhost',
+  ]);
+  if (!requestOrigin || !allowedOrigins.has(requestOrigin)) return null;
   return {
-    'Access-Control-Allow-Origin': publicOrigin,
+    'Access-Control-Allow-Origin': requestOrigin,
     'Access-Control-Allow-Credentials': 'true',
     Vary: 'Origin',
   };
+}
+
+function oauthReturnUri(raw: string | null): string | undefined {
+  return raw === 'kira-hrt://oauth/callback' ? raw : undefined;
+}
+
+async function oauthReturnUriForState(state: string | null): Promise<string | undefined> {
+  if (!state) return undefined;
+  const { rows } = await getPool().query<{ return_uri: string | null }>(
+    'SELECT return_uri FROM oauth_states WHERE state = $1 AND expires_at > now()',
+    [state],
+  );
+  return oauthReturnUri(rows[0]?.return_uri ?? null);
+}
+
+function oauthAppRedirect(provider: 'x' | 'google', returnUri: string | undefined, params: Record<string, string>): string {
+  if (!returnUri) return appUrl(`/auth/${provider}/callback`, params);
+  const target = new URL(returnUri);
+  target.searchParams.set('provider', provider);
+  for (const [key, value] of Object.entries(params)) target.searchParams.set(key, value);
+  return target.toString();
 }
 
 /**
@@ -521,26 +550,28 @@ export function createRequestHandler() {
         const result = await AccountService.startGoogleAuthorization({
           purpose: wantsLink ? 'link' : 'login',
           userId,
+          returnUri: oauthReturnUri(url.searchParams.get('return_uri')),
         });
         if (!result.ok) return send(res, 400, { error: result.error });
         return send(res, 200, { authorize_url: result.value.authorizeUrl });
       }
 
       if (path === '/auth/google/callback' && req.method === 'GET') {
+        const returnUri = await oauthReturnUriForState(url.searchParams.get('state'));
         const result = await AccountService.completeGoogleCallback({
           code: url.searchParams.get('code') ?? undefined,
           state: url.searchParams.get('state') ?? undefined,
           error: url.searchParams.get('error') ?? undefined,
         });
         if (!result.ok) {
-          return redirect(res, appUrl('/auth/google/callback', { error: result.error }));
+          return redirect(res, oauthAppRedirect('google', returnUri, { error: result.error }));
         }
         if (result.value.outcome === 'link') {
-          return redirect(res, appUrl('/auth/google/callback', { linked: '1' }));
+          return redirect(res, oauthAppRedirect('google', returnUri, { linked: '1' }));
         }
         // No setup leg, unlike X: a Google account is usable immediately. The anti-ban
         // prompt is driven by `/auth/login-methods` reporting `recovery_risk`.
-        return redirect(res, appUrl('/auth/google/callback', { code: result.value.oneTimeCode ?? '' }));
+        return redirect(res, oauthAppRedirect('google', returnUri, { code: result.value.oneTimeCode ?? '' }));
       }
 
       if (path === '/auth/google/exchange' && req.method === 'POST') {
@@ -577,6 +608,7 @@ export function createRequestHandler() {
         const result = await AccountService.startXAuthorization({
           purpose: wantsLink ? 'link' : 'login',
           userId,
+          returnUri: oauthReturnUri(url.searchParams.get('return_uri')),
         });
         if (!result.ok) return send(res, 400, { error: result.error });
         // JSON rather than a 302: the app decides how to present it, and a redirect
@@ -585,21 +617,22 @@ export function createRequestHandler() {
       }
 
       if (path === '/auth/x/callback' && req.method === 'GET') {
+        const returnUri = await oauthReturnUriForState(url.searchParams.get('state'));
         const result = await AccountService.completeXCallback({
           code: url.searchParams.get('code') ?? undefined,
           state: url.searchParams.get('state') ?? undefined,
           error: url.searchParams.get('error') ?? undefined,
         });
         if (!result.ok) {
-          return redirect(res, appUrl('/auth/x/callback', { error: result.error }));
+          return redirect(res, oauthAppRedirect('x', returnUri, { error: result.error }));
         }
         const outcome = result.value;
         if (outcome.outcome === 'link') {
-          return redirect(res, appUrl('/auth/x/callback', { linked: '1', handle: outcome.handle ?? '' }));
+          return redirect(res, oauthAppRedirect('x', returnUri, { linked: '1', handle: outcome.handle ?? '' }));
         }
         // An X account is usable the moment it exists; the prompt to bind a fallback
         // gates records, not the account.
-        return redirect(res, appUrl('/auth/x/callback', { code: outcome.oneTimeCode }));
+        return redirect(res, oauthAppRedirect('x', returnUri, { code: outcome.oneTimeCode }));
       }
 
       if (path === '/auth/x/exchange' && req.method === 'POST') {

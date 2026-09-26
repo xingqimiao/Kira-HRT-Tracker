@@ -317,6 +317,7 @@ CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states(expires_at);
 ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS provider varchar(32) NOT NULL DEFAULT 'x';
 -- Google has no PKCE, so its rows carry no verifier. X's path still sets one.
 ALTER TABLE oauth_states ALTER COLUMN code_verifier DROP NOT NULL;
+ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS return_uri text;
 
 -- ---------------------------------------------------------------------------
 -- Health records — encrypted at rest

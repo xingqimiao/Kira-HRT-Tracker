@@ -620,6 +620,7 @@ export const AccountService = {
   async startXAuthorization(opts: {
     purpose: 'login' | 'link';
     userId?: string;
+    returnUri?: string;
   }): Promise<Result<{ authorizeUrl: string; state: string }>> {
     const config = getConfig().x;
     if (!isXConfigured(config)) {
@@ -632,9 +633,9 @@ export const AccountService = {
     const state = generateState();
     const codeVerifier = generateCodeVerifier();
     await getPool().query(
-      `INSERT INTO oauth_states (state, code_verifier, purpose, user_id, expires_at)
-       VALUES ($1, $2, $3, $4, now() + ($5 || ' milliseconds')::interval)`,
-      [state, codeVerifier, opts.purpose, opts.userId ?? null, String(OAUTH_STATE_TTL_MS)],
+      `INSERT INTO oauth_states (state, code_verifier, purpose, user_id, expires_at, return_uri)
+       VALUES ($1, $2, $3, $4, now() + ($5 || ' milliseconds')::interval, $6)`,
+      [state, codeVerifier, opts.purpose, opts.userId ?? null, String(OAUTH_STATE_TTL_MS), opts.returnUri ?? null],
     );
 
     return {
@@ -660,7 +661,7 @@ export const AccountService = {
     error?: unknown;
     errorDescription?: unknown;
   }): Promise<Result<
-    | { outcome: 'login'; oneTimeCode: string }
+    | { outcome: 'login'; oneTimeCode: string; returnUri?: string }
     | { outcome: 'link'; handle: string | null }
   >> {
     const config = getConfig().x;
@@ -680,10 +681,11 @@ export const AccountService = {
       code_verifier: string;
       purpose: 'login' | 'link';
       user_id: string | null;
+      return_uri: string | null;
     }>(
       `UPDATE oauth_states SET consumed_at = now()
         WHERE state = $1 AND consumed_at IS NULL AND expires_at > now()
-        RETURNING code_verifier, purpose, user_id`,
+        RETURNING code_verifier, purpose, user_id, return_uri`,
       [query.state],
     );
     if (rows.length === 0) {
@@ -760,7 +762,7 @@ export const AccountService = {
       const user = await loadUser({ id: userId });
       if (!user) return { ok: false, error: 'linked account no longer exists' };
 
-      return { ok: true, value: { outcome: 'login', oneTimeCode: issueOneTimeCode(userId) } };
+      return { ok: true, value: { outcome: 'login', oneTimeCode: issueOneTimeCode(userId), returnUri: pending.return_uri ?? undefined } };
     }
 
     // --- First time seeing this X account: create the account ---
@@ -770,7 +772,7 @@ export const AccountService = {
     // the account — see `requireBoundCtx`.
     const created = await this.createAccountFromX(profile);
     if (!created.ok) return created;
-    return { ok: true, value: { outcome: 'login', oneTimeCode: issueOneTimeCode(created.value.id) } };
+    return { ok: true, value: { outcome: 'login', oneTimeCode: issueOneTimeCode(created.value.id), returnUri: pending.return_uri ?? undefined } };
   },
 
   // --- Google OAuth -------------------------------------------------------
@@ -785,6 +787,7 @@ export const AccountService = {
   async startGoogleAuthorization(opts: {
     purpose: 'login' | 'link';
     userId?: string;
+    returnUri?: string;
   }): Promise<Result<{ authorizeUrl: string; state: string }>> {
     const config = getConfig().google;
     if (!isGoogleConfigured(config)) {
@@ -799,9 +802,9 @@ export const AccountService = {
     // two cannot drift apart.
     const nonce = generateState();
     await getPool().query(
-      `INSERT INTO oauth_states (state, code_verifier, purpose, provider, user_id, expires_at)
-       VALUES ($1, $2, $3, 'google', $4, now() + ($5 || ' milliseconds')::interval)`,
-      [state, nonce, opts.purpose, opts.userId ?? null, String(OAUTH_STATE_TTL_MS)],
+      `INSERT INTO oauth_states (state, code_verifier, purpose, provider, user_id, expires_at, return_uri)
+       VALUES ($1, $2, $3, 'google', $4, now() + ($5 || ' milliseconds')::interval, $6)`,
+      [state, nonce, opts.purpose, opts.userId ?? null, String(OAUTH_STATE_TTL_MS), opts.returnUri ?? null],
     );
 
     return {
@@ -822,7 +825,7 @@ export const AccountService = {
     code?: string;
     state?: string;
     error?: string;
-  }): Promise<Result<{ outcome: 'login' | 'link'; oneTimeCode?: string; handle?: string | null }>> {
+  }): Promise<Result<{ outcome: 'login' | 'link'; oneTimeCode?: string; handle?: string | null; returnUri?: string }>> {
     if (query.error) return { ok: false, error: `Google returned: ${query.error}` };
     if (!query.code) return { ok: false, error: 'Google callback had no code' };
     if (!query.state) return { ok: false, error: 'Google callback had no state' };
@@ -835,12 +838,12 @@ export const AccountService = {
     // Spend the state first, so a replayed callback cannot be redeemed twice even if
     // the exchange below fails.
     const { rows } = await getPool().query<{
-      purpose: 'login' | 'link'; user_id: string | null; code_verifier: string | null; provider: string;
+      purpose: 'login' | 'link'; user_id: string | null; code_verifier: string | null; provider: string; return_uri: string | null;
     }>(
       `UPDATE oauth_states
           SET consumed_at = now()
         WHERE state = $1 AND consumed_at IS NULL AND expires_at > now()
-        RETURNING purpose, user_id, code_verifier, provider`,
+        RETURNING purpose, user_id, code_verifier, provider, return_uri`,
       [query.state],
     );
     const pending = rows[0];
@@ -914,12 +917,12 @@ export const AccountService = {
       );
       const user = await loadUser({ id: userId });
       if (!user) return { ok: false, error: 'linked account no longer exists' };
-      return { ok: true, value: { outcome: 'login', oneTimeCode: issueOneTimeCode(userId) } };
+      return { ok: true, value: { outcome: 'login', oneTimeCode: issueOneTimeCode(userId), returnUri: pending.return_uri ?? undefined } };
     }
 
     const created = await this.createAccountFromOAuth('google', profile);
     if (!created.ok) return created;
-    return { ok: true, value: { outcome: 'login', oneTimeCode: issueOneTimeCode(created.value.id) } };
+    return { ok: true, value: { outcome: 'login', oneTimeCode: issueOneTimeCode(created.value.id), returnUri: pending.return_uri ?? undefined } };
   },
 
   /** Create an account owned by an X identity, with no password yet. */

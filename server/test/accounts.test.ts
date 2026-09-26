@@ -609,6 +609,16 @@ test('CORS allows exactly the configured web origin and nothing else', async () 
   assert.equal(allowed.headers.get('access-control-allow-origin'), PUBLIC_ORIGIN);
   assert.equal(allowed.headers.get('access-control-allow-credentials'), 'true');
 
+  for (const origin of ['http://tauri.localhost', 'https://tauri.localhost']) {
+    const native = await fetch(`${base}/health`, { headers: { Origin: origin } });
+    assert.equal(native.headers.get('access-control-allow-origin'), origin);
+    const preflight = await fetch(`${base}/auth/login`, {
+      method: 'OPTIONS',
+      headers: { Origin: origin, 'Access-Control-Request-Method': 'POST' },
+    });
+    assert.equal(preflight.status, 204);
+  }
+
   for (const hostile of ['https://evil.test', 'https://hrt.test.evil.test', 'http://hrt.test', 'null']) {
     const denied = await fetch(`${base}/health`, { headers: { Origin: hostile } });
     assert.equal(
