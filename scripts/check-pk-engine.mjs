@@ -23,6 +23,7 @@ register(
 );
 
 const A = await import(pathToFileURL('./src/pk/index.ts').href);
+const R = await import(pathToFileURL('./src/engine/registry.ts').href);
 const L = await import(pathToFileURL('./logic.ts').href);
 
 const NOW_H = Date.now() / 3600000;
@@ -66,6 +67,50 @@ check('testosterone esters are refused, not silently simulated', () => {
 check('one unsupported ester refuses the whole list', () => {
   const mixed = [ev(L.Route.injection, L.Ester.EV, 4, 24), ev(L.Route.injection, L.Ester.TU, 100, 48)];
   assert.equal(A.canRunVendor(mixed), false);
+});
+
+// ---------------------------------------------------------------------------
+// Engine selection — the veto the app and the server must agree on
+// ---------------------------------------------------------------------------
+// `chooseEngine` is what the app runs to pick a curve engine; the server's
+// `engineForCurve` applies the same rules. These pin the vetos, above all the
+// compound one: without it the app drew a *blank* curve for an account whose history
+// held an unsupported ester, while the server drew the built-in curve — the two
+// disagreeing on exactly the account that could least tell why.
+const evList = (ester) => [ev(L.Route.injection, ester, 4, 24)];
+
+check('an explicit transmtf preference is honoured when it can serve', () => {
+  assert.equal(R.chooseEngine('transmtf', false, evList(L.Ester.EV)), 'transmtf');
+});
+
+check('the built-in default stays the default', () => {
+  assert.equal(R.chooseEngine('builtin', false, evList(L.Ester.EV)), 'builtin');
+});
+
+check('a transmasc account is kept on the built-in engine', () => {
+  assert.equal(R.chooseEngine('transmtf', true, evList(L.Ester.EV)), 'builtin');
+});
+
+check('an unsupported compound vetoes the vendor engine', () => {
+  // A T ester in the history: the vendor would refuse the whole list, so the app
+  // must fall back rather than ask it for a curve it will not draw.
+  assert.equal(R.chooseEngine('transmtf', false, evList(L.Ester.TE)), 'builtin');
+  assert.equal(R.chooseEngine('transmtf', false, evList(L.Ester.SPIRO)), 'builtin');
+  // One bad record vetoes the lot, matching `canRunVendor`.
+  const mixed = [...evList(L.Ester.EV), ev(L.Route.injection, L.Ester.TU, 100, 48)];
+  assert.equal(R.chooseEngine('transmtf', false, mixed), 'builtin');
+});
+
+check('an empty history does not veto — there is nothing unsupported in it', () => {
+  // No events yet is not the same as an unsupported compound; the preference should
+  // stand so the first dose is recorded straight onto the chosen engine.
+  assert.equal(R.chooseEngine('transmtf', false, []), 'transmtf');
+});
+
+check('engineOverruled reports the veto for the UI', () => {
+  assert.equal(R.engineOverruled('transmtf', false, evList(L.Ester.EV)), false);
+  assert.equal(R.engineOverruled('transmtf', false, evList(L.Ester.TE)), true);
+  assert.equal(R.engineOverruled('transmtf', true, evList(L.Ester.EV)), true);
 });
 
 // ---------------------------------------------------------------------------

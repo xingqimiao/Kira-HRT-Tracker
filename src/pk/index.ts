@@ -50,6 +50,10 @@ import { buildOUKalmanCalibration, OU_DEFAULT_PARAMS } from './vendor/calibratio
 import type { CalibrationModel, CalibrationMode } from './vendor/calibration';
 import { replayPersonalModel, computeSimulationWithCI } from './vendor/personalModel';
 
+// The vendor's supported compounds, and the check the registry reads without loading
+// this chunk. Re-exported below so `canRunVendor` keeps the public shape it had here.
+import { VENDOR_ESTERS, canRunVendor } from '../engine/vendorEsters';
+
 import type {
     DoseEvent,
     Ester,
@@ -67,33 +71,29 @@ import type {
 // Ester mapping
 // ---------------------------------------------------------------------------
 
-/** This app's esters the engine can model. Anything else is refused, not guessed. */
-const ESTER_TO_VENDOR: Partial<Record<Ester, VEster>> = {
-    E2: VEster.E2,
-    EB: VEster.EB,
-    EV: VEster.EV,
-    EC: VEster.EC,
-    EN: VEster.EN,
-    EU: VEster.EU,
-    CPA: VEster.CPA,
-    BICAL: VEster.BICA,
-};
+/** The vendor's name for a compound, where it differs from this app's. */
+const VENDOR_ESTER_RENAME: Partial<Record<string, string>> = { BICAL: 'BICA' };
+
+/**
+ * This app's esters the engine can model. Anything else is refused, not guessed.
+ *
+ * Built from `VENDOR_ESTERS` rather than written out again, so the list the registry
+ * vetoes on and the list this map covers cannot drift. `VEster` is a string enum whose
+ * members are the same names as the app's (except the rename above), so the value is
+ * looked up by name rather than spelled out.
+ */
+const ESTER_TO_VENDOR: Partial<Record<Ester, VEster>> = {};
+for (const ester of VENDOR_ESTERS) {
+    const vendorName = VENDOR_ESTER_RENAME[ester] ?? ester;
+    const vendor = (VEster as unknown as Record<string, VEster | undefined>)[vendorName];
+    if (vendor !== undefined) ESTER_TO_VENDOR[ester as Ester] = vendor;
+}
 
 export function isModelledByVendor(ester: Ester): boolean {
     return ESTER_TO_VENDOR[ester] !== undefined;
 }
 
-/**
- * Whether this app can hand the whole event list to the engine.
- *
- * True only when every event names a compound the engine models. The registry uses
- * it to keep testosterone on the built-in engine rather than mixing two models on
- * one curve — which is why a single unsupported ester refuses the lot instead of
- * dropping that record.
- */
-export function canRunVendor(events: readonly DoseEvent[]): boolean {
-    return events.every(e => isModelledByVendor(e.ester));
-}
+export { canRunVendor };
 
 // ---------------------------------------------------------------------------
 // Event adaptation

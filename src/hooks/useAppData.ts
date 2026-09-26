@@ -323,7 +323,7 @@ export const useAppData = (
     // by the setting: switching to transfem mode is what makes the vendor engine usable.
     const [activeEngine, setActiveEngine] = useState<PkEngine>(builtinEngine);
     useEffect(() => {
-        if (chooseEngine(pkEngine, isTransmasc) === 'builtin') {
+        if (chooseEngine(pkEngine, isTransmasc, events) === 'builtin') {
             setActiveEngine(builtinEngine);
             return;
         }
@@ -335,7 +335,10 @@ export const useAppData = (
             .then(engine => { if (!cancelled) setActiveEngine(engine); })
             .catch(() => { if (!cancelled) setActiveEngine(builtinEngine); });
         return () => { cancelled = true; };
-    }, [pkEngine, isTransmasc]);
+        // `events` is a dependency because the compound veto reads it: logging a
+        // compound the vendor cannot model has to move the app back to the built-in
+        // engine, not leave it on an engine that will refuse the list and draw nothing.
+    }, [pkEngine, isTransmasc, events]);
     /**
      * Which due re-check each reminder kind was last closed at, as
      * `<startH>:<intervalMonths>` per kind.
@@ -1540,11 +1543,12 @@ export const useAppData = (
         recheckIntervals, setRecheckIntervals,
         ocrModelTier, setOcrModelTier,
         pkEngine, setPkEngine,
-        // Which engine the app will use, as the preference resolved against the mode.
-        // Not the `activeEngine` object above: a caller asking this is deciding what to
-        // *show*, and during the vendor chunk's load the object still points at the
-        // built-in one — which would make the gel fields flicker in a moment later.
-        engineInUse: chooseEngine(pkEngine, isTransmasc),
+        // Which engine the app will use, as the preference resolved against the mode
+        // and the logged compounds. Not the `activeEngine` object above: a caller
+        // asking this is deciding what to *show*, and during the vendor chunk's load
+        // the object still points at the built-in one — which would make the gel fields
+        // flicker in a moment later.
+        engineInUse: chooseEngine(pkEngine, isTransmasc, events),
         dismissedRechecks, dismissRecheck,
         pendingMilestone,
         showStreakNotice, dismissStreakNotice,

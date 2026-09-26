@@ -33,6 +33,7 @@ import type {
     CalibrationResult,
     PkEngineId,
 } from '../../logic';
+import { canRunVendor } from './vendorEsters';
 
 /**
  * What every engine provides.
@@ -98,18 +99,38 @@ export function isVendorLoaded(): boolean {
 /**
  * Which engine an account should actually use.
  *
- * Two questions, one answer: an explicit choice, vetoed by something the chosen
- * engine cannot do. The veto is the whole reason this is a function and not a read
- * of the setting — a transmasc account on the vendor engine would get an empty
- * testosterone curve, and an empty curve reads as "no dose recorded", which is worse
- * than ignoring the preference.
+ * Two questions, one answer: an explicit choice, vetoed by anything the chosen engine
+ * cannot do. The veto is the whole reason this is a function and not a read of the
+ * setting, and there are two of them:
+ *
+ *   - **Mode.** A transmasc account on the vendor engine would get an empty
+ *     testosterone curve, and an empty curve reads as "no dose recorded" — worse than
+ *     ignoring the preference.
+ *   - **Compounds.** The engine models estradiol esters and two anti-androgens, and
+ *     refuses a whole event list when any recording names something it cannot model
+ *     (a T ester, spironolactone). Returning `builtin` for such an account is not a
+ *     preference being ignored: the alternative is a *blank* curve, because the vendor
+ *     refuses the list rather than dropping the record. Without this veto the app drew
+ *     nothing while the server — which applies the same rule, see `engineForCurve` —
+ *     drew the built-in curve, so the two disagreed on exactly the account that could
+ *     least tell why.
  */
-export function chooseEngine(preference: PkEngineId, isTransmasc: boolean): PkEngineId {
+export function chooseEngine(
+    preference: PkEngineId,
+    isTransmasc: boolean,
+    events: readonly DoseEvent[],
+): PkEngineId {
     if (isTransmasc) return 'builtin';
-    return preference === 'transmtf' ? 'transmtf' : 'builtin';
+    if (preference !== 'transmtf') return 'builtin';
+    if (!canRunVendor(events)) return 'builtin';
+    return 'transmtf';
 }
 
 /** Whether the preference is being overruled, so the UI can say so. */
-export function engineOverruled(preference: PkEngineId, isTransmasc: boolean): boolean {
-    return preference !== chooseEngine(preference, isTransmasc);
+export function engineOverruled(
+    preference: PkEngineId,
+    isTransmasc: boolean,
+    events: readonly DoseEvent[],
+): boolean {
+    return preference !== chooseEngine(preference, isTransmasc, events);
 }
