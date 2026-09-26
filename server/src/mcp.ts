@@ -608,6 +608,12 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         'overrides are advanced — only set them if the user explicitly asks, and never guess a ' +
         'value.\n' +
         '\n' +
+        '`pk_params` applies to the **built-in** engine only. When `hrt_predict_levels` reports ' +
+        `engine: '${PK_ENGINES[1]}' the overrides are stored but not used, because that engine's ` +
+        'coefficients are internal model constants rather than the quantities this setting ' +
+        'edits. To have them take effect, the account must be on the built-in engine — say so ' +
+        'rather than reporting that the change took effect.\n' +
+        '\n' +
         'The pharmacokinetic model itself (`appState.settings.pkEngine`, reported by ' +
         'hrt_get_settings) is **not** writable here. Switching it re-computes every past ' +
         'estimate from the same records, so it is a decision the user makes in the app while ' +

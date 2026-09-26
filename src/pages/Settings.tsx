@@ -53,6 +53,8 @@ interface SettingsProps {
     /** Which pharmacokinetic engine computes the curve. */
     pkEngine: PkEngineId;
     setPkEngine: (id: PkEngineId) => void;
+    /** The engine actually in force — the Transmtf one cannot take PK overrides. */
+    engineInUse: PkEngineId;
 }
 
 type SettingsCat = 'general' | 'reminders' | 'data' | 'about';
@@ -77,7 +79,7 @@ const Settings: React.FC<SettingsProps> = ({
     aaChartMode, setAaChartMode,
     recheckIntervals, setRecheckIntervals,
     ocrModelTier, setOcrModelTier,
-    pkEngine, setPkEngine,
+    pkEngine, setPkEngine, engineInUse,
 }) => {
     const { mode } = useHRTMode();
     const { showVial, setShowVial } = useVial();
@@ -248,7 +250,11 @@ const Settings: React.FC<SettingsProps> = ({
             >
                 <span className={rowLabel}>{t('settings.pk_params')}</span>
                 <span className={rowValue}>
-                    {pkParams && (
+                    {engineInUse === 'transmtf' ? (
+                        <span className="text-xs text-[var(--color-m3-on-surface-variant)]  mr-1">
+                            {t('pk.unsupported.short')}
+                        </span>
+                    ) : pkParams && (
                         <span className="text-xs text-cos-warning  font-medium mr-1">
                             {t('pk.customized')}
                         </span>

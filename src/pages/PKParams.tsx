@@ -4,13 +4,24 @@ import { ArrowLeft, RotateCcw, ChevronDown, AlertTriangle, Info } from '../icons
 import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
 import { Tooltip } from '../components/ui';
-import { PKCustomParams, DEFAULT_PK_PARAMS } from '../../logic';
+import { PKCustomParams, DEFAULT_PK_PARAMS, type PkEngineId } from '../../logic';
 
 interface PKParamsPageProps {
     pkParams: PKCustomParams | null;
     onSave: (params: PKCustomParams) => void;
     onReset: () => void;
     onBack: () => void;
+    /**
+     * The engine actually in force (`engineInUse`), not the raw preference.
+     *
+     * The Transmtf engine has no parameter-override surface at all — its constants
+     * are internal to the vendored model and are not the same physical quantities this
+     * page edits. So the controls are disabled and the warning is replaced with the
+     * truth, rather than accepting edits that would be stored, synced and silently
+     * ignored. The stored values are kept: switching back to the built-in engine
+     * restores them.
+     */
+    engine: PkEngineId;
 }
 
 type SectionKey = 'e2_inj' | 'e2_oral_sl' | 'e2_gel' | 'e2_core' | 't_inj' | 't_other';
@@ -88,9 +99,13 @@ const SECTIONS: { key: SectionKey; titleKey: string; fields: FieldDef[] }[] = [
 
 const divider = "border-b border-[var(--color-m3-outline-variant)] ";
 
-const PKParamsPage: React.FC<PKParamsPageProps> = ({ pkParams, onSave, onReset, onBack }) => {
+const PKParamsPage: React.FC<PKParamsPageProps> = ({ pkParams, onSave, onReset, onBack, engine }) => {
     const { t } = useTranslation();
     const { showDialog } = useDialog();
+
+    // The Transmtf engine cannot take these overrides, so the whole page is read-only
+    // while it is in force — see the `engine` prop note.
+    const disabled = engine === 'transmtf';
 
     const [draft, setDraft] = useState<PKCustomParams>(() =>
         pkParams ? { ...DEFAULT_PK_PARAMS, ...pkParams } : { ...DEFAULT_PK_PARAMS }
@@ -114,12 +129,14 @@ const PKParamsPage: React.FC<PKParamsPageProps> = ({ pkParams, onSave, onReset, 
     }, []);
 
     const handleSave = () => {
+        if (disabled) return;
         onSave(draft);
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
     };
 
     const handleReset = () => {
+        if (disabled) return;
         showDialog('confirm', t('pk.reset_confirm'), () => {
             setDraft({ ...DEFAULT_PK_PARAMS });
             onReset();
@@ -148,10 +165,10 @@ const PKParamsPage: React.FC<PKParamsPageProps> = ({ pkParams, onSave, onReset, 
             </div>
 
             <div className="mx-auto w-full px-6 md:px-8 mt-4 max-w-2xl">
-                {/* Warning */}
+                {/* Warning — or, on the Transmtf engine, why this page is inert */}
                 <div className="flex items-start gap-2 mb-6 pb-4 border-b border-[var(--color-m3-outline-variant)] ">
-                    <Icon icon={AlertTriangle} size={13} className="text-cos-warning  mt-0.5 shrink-0" />
-                    <p className="text-sm text-[var(--color-m3-on-surface-variant)] ">{t('pk.warn')}</p>
+                    <Icon icon={disabled ? Info : AlertTriangle} size={13} className={`${disabled ? 'text-[var(--color-m3-on-surface-variant)] ' : 'text-cos-warning  '}mt-0.5 shrink-0`} />
+                    <p className="text-sm text-[var(--color-m3-on-surface-variant)] ">{disabled ? t('pk.unsupported') : t('pk.warn')}</p>
                 </div>
 
                 {/* Sections — flat, no cards */}
@@ -199,8 +216,9 @@ const PKParamsPage: React.FC<PKParamsPageProps> = ({ pkParams, onSave, onReset, 
                                                 max={field.max}
                                                 step={field.step}
                                                 value={curVal}
+                                                disabled={disabled}
                                                 onChange={e => updateField(field.key, e.target.value, field.min, field.max)}
-                                                className="input-num w-28 text-[var(--color-m3-on-surface)]"
+                                                className="input-num w-28 text-[var(--color-m3-on-surface)] disabled:opacity-40 disabled:cursor-not-allowed"
                                                 style={{ fontSize: '16px' }}
                                             />
                                         </div>
@@ -214,13 +232,14 @@ const PKParamsPage: React.FC<PKParamsPageProps> = ({ pkParams, onSave, onReset, 
                 {/* Info note */}
                 <div className="flex items-start gap-2 pt-4 pb-2">
                     <Icon icon={Info} size={13} className="text-[var(--color-m3-on-surface-variant)]  mt-0.5 flex-shrink-0" />
-                    <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">{t('pk.note')}</p>
+                    <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">{disabled ? t('pk.unsupported.note') : t('pk.note')}</p>
                 </div>
 
                 {/* Save */}
                 <button
                     onClick={handleSave}
-                    className={`w-full flex items-center justify-between py-[18px] ${divider} text-start`}
+                    disabled={disabled}
+                    className={`w-full flex items-center justify-between py-[18px] ${divider} text-start ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
                 >
                     <span className="text-m3-body-medium font-medium text-[var(--color-m3-on-surface)] ">{t('btn.save')}</span>
                     {saved && (
@@ -231,7 +250,8 @@ const PKParamsPage: React.FC<PKParamsPageProps> = ({ pkParams, onSave, onReset, 
                 {/* Reset all */}
                 <button
                     onClick={handleReset}
-                    className="w-full flex items-center gap-2 py-[18px] text-start"
+                    disabled={disabled}
+                    className={`w-full flex items-center gap-2 py-[18px] text-start ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
                 >
                     <Icon icon={RotateCcw} size={14} className="text-cos-error " />
                     <span className="text-m3-body-medium text-cos-error ">{t('pk.reset')}</span>

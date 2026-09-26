@@ -759,6 +759,7 @@ const AppContent = () => {
                             setOcrModelTier={setOcrModelTier}
                             pkEngine={pkEngine}
                             setPkEngine={setPkEngine}
+                            engineInUse={engineInUse}
                         />
                     )}
 
@@ -861,6 +862,7 @@ const AppContent = () => {
                             onSave={setPkParams}
                             onReset={clearPkParams}
                             onBack={() => handleViewChange('settings')}
+                            engine={engineInUse}
                         />
                     )}
                     </div>
