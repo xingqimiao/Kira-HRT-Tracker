@@ -44,7 +44,21 @@ import {
   getDoseAdvisory,
   getHormoneLevelAdvisory,
   computeCalibrationPoints,
+  normalizePkEngine,
 } from '../../logic.ts';
+
+// The second engine, reused rather than copied. `src/pk/index.ts` is the app's own
+// adapter onto the vendored Transmtf model: it imports nothing at runtime from
+// `logic.ts` (types only), so pulling it into the server resolves `../pk`'s chunking
+// concern away and leaves one implementation of the vendor hand-off instead of a
+// server-side fork to keep in step. The client reaches it through a dynamic
+// `import()` only to keep it out of the first-visit bundle; a server has no such
+// budget, so a static import is the honest shape here.
+import {
+  runSimulation as vendorRunSimulation,
+  computeCalibration as vendorComputeCalibration,
+  canRunVendor,
+} from '../../src/pk/index.ts';
 
 import type {
   DoseEvent,
@@ -52,6 +66,7 @@ import type {
   SimulationResult,
   CalibrationResult,
   PKCustomParams,
+  PkEngineId,
   CalibrationMethod,
   CalibrationHistoryMode,
   DoseAdvisory,
@@ -78,6 +93,73 @@ export function simulateWithParams(
 /** Simulate with the model defaults. */
 export function simulate(events: DoseEvent[], bodyWeightKG: number): SimulationResult | null {
   return runSimulation(events, bodyWeightKG);
+}
+
+/** What a curve is being drawn for, which is what decides whether Transmtf can serve it. */
+export interface CurveContext {
+  analyte: 'e2' | 't';
+  events: readonly DoseEvent[];
+}
+
+/**
+ * Which engine actually computes a given curve.
+ *
+ * The mirror of the app's `chooseEngine` (registry.ts), and deliberately the same
+ * rules, because the whole point of this dispatch is that the server and the browser
+ * must agree on what the user sees. The preference is an explicit choice, vetoed by
+ * anything the chosen engine cannot do:
+ *
+ *   - a transfem account on Transmtf that no longer fits an E2 curve is still fine;
+ *   - a **transmasc** account is kept on the built-in engine, because the vendored
+ *     model has no testosterone at all and an empty curve reads as "no doses";
+ *   - a **testosterone** curve is built-in-only for the same reason;
+ *   - an event list naming any compound the engine does not model (a T ester, a
+ *     spirolactone) refuses the lot rather than simulating a curve quietly missing a
+ *     dose, via the adapter's own `canRunVendor`.
+ */
+export function engineForCurve(
+  preference: string | null | undefined,
+  isTransmasc: boolean,
+  ctx: CurveContext,
+): PkEngineId {
+  if (isTransmasc || ctx.analyte === 't') return 'builtin';
+  if (normalizePkEngine(preference) !== 'transmtf') return 'builtin';
+  if (!canRunVendor(ctx.events)) return 'builtin';
+  return 'transmtf';
+}
+
+/**
+ * Simulate under the chosen engine.
+ *
+ * The built-in engine runs `simulateWithParams`, so PK parameter overrides apply to
+ * it. The vendored engine has no override surface — it simulates on its own
+ * defaults — which is the honest answer: `hrt_update_settings`' PK overrides are
+ * documented as tuning the built-in model, not as reaching into Transmtf.
+ */
+export function simulateForEngine(
+  engine: PkEngineId,
+  events: DoseEvent[],
+  bodyWeightKG: number,
+  params: PKCustomParams,
+): SimulationResult | null {
+  if (engine === 'transmtf') return vendorRunSimulation(events, bodyWeightKG);
+  return simulateWithParams(events, bodyWeightKG, params);
+}
+
+/** Calibrate under the chosen engine, each with its own estimators. */
+export function calibrateForEngine(
+  engine: PkEngineId,
+  baselineSim: SimulationResult | null,
+  events: DoseEvent[],
+  bodyWeightKG: number,
+  labs: LabResult[],
+  method: CalibrationMethod = 'mipd',
+  historyMode: CalibrationHistoryMode = 'retrospective',
+): CalibrationResult {
+  if (engine === 'transmtf') {
+    return vendorComputeCalibration(baselineSim, events, bodyWeightKG, labs, method, historyMode);
+  }
+  return calibrate(baselineSim, events, bodyWeightKG, labs, method, historyMode);
 }
 
 /** Fit a personal calibration to lab results. */
@@ -113,6 +195,7 @@ export type {
   SimulationResult,
   CalibrationResult,
   PKCustomParams,
+  PkEngineId,
   CalibrationMethod,
   CalibrationHistoryMode,
   DoseAdvisory,

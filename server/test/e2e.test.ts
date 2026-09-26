@@ -376,3 +376,61 @@ test('a predicted curve never reports a negative concentration', async () => {
   // And the serialised numbers must not carry a negative sign anywhere.
   assert.ok(!JSON.stringify(stats).includes('-'), `stats serialised with a negative: ${JSON.stringify(stats)}`);
 });
+
+test('the stored pkEngine changes the curve the server predicts', async () => {
+  // The bug this pins, reported by a user: switching the engine in the web app
+  // changed the curve there but not over MCP, because nothing on the server read
+  // `pkEngine` — `predict` always ran the built-in engine. With a 191-point curve
+  // compared and a 0-point difference.
+  //
+  // The write here is the app's own path: a `scalar:appSettings` record carrying
+  // `{ value: { settings: { pkEngine } }, stamp }`, the same shape the browser syncs.
+  const account = await registerAccountWithKey(base);
+  const token: string = account.token;
+  await api('/api/settings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ body_weight_kg: 70 }),
+  });
+
+  const now = Date.now();
+  for (let i = 0; i < 6; i++) {
+    await api('/api/records', json(doseRecord(`pk-engine-dose-${i}`, now - (5 - i) * 7 * 24 * HOUR), token));
+  }
+
+  const { PKSimulationService } = await import('../src/core.ts');
+  const { AccountService } = await import('../src/accounts.ts');
+  const ctx = await AccountService.resolveApiContext(token);
+  assert.ok(ctx && 'dek' in ctx, 'the unlock token resolves to a session');
+
+  // Built-in first: no preference stored, so the default stands.
+  const builtin = await PKSimulationService.predict(ctx, { fromDays: 60, toDays: 14 });
+  assert.ok(builtin.ok, `builtin prediction failed: ${builtin.ok ? '' : builtin.error}`);
+  assert.equal(builtin.value.engine, 'builtin', 'an unset preference runs the built-in engine');
+
+  // Now store the Transmtf preference the way the app syncs it.
+  const stored = await api('/api/records', json({
+    id: 'scalar:appSettings',
+    takenAt: now,
+    category: 'setting',
+    data: { value: { settings: { pkEngine: 'transmtf' } }, stamp: now },
+  }, token));
+  assert.ok(stored.status === 201 || stored.status === 200, JSON.stringify(stored.body));
+
+  const transmtf = await PKSimulationService.predict(ctx, { fromDays: 60, toDays: 14 });
+  assert.ok(transmtf.ok, `transmtf prediction failed: ${transmtf.ok ? '' : transmtf.error}`);
+  assert.equal(transmtf.value.engine, 'transmtf', 'the stored preference reaches the dispatch');
+
+  // The load-bearing part: the curve actually differs. This is what the user's
+  // 191-point comparison showed was *not* happening (0 points differed).
+  assert.notDeepEqual(
+    transmtf.value.points.map((p) => p.value),
+    builtin.value.points.map((p) => p.value),
+    'the two engines returned an identical curve — the setting is still not reaching the maths',
+  );
+
+  // ...and the engine switch is reflected by the settings read, so an agent sees it.
+  const readBack = await AccountService.getSettings(ctx);
+  const bag = readBack.appState as { settings?: { pkEngine?: string } };
+  assert.equal(bag.settings?.pkEngine, 'transmtf', 'the preference is readable back');
+});

@@ -369,6 +369,9 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
       description:
         'Model the user\'s hormone levels from their logged doses, optionally calibrated against ' +
         'their own lab results. Returns a downsampled curve plus peak/trough/current values. ' +
+        'The `engine` field names the pharmacokinetic model that actually computed the curve — ' +
+        'it is the account\'s choice where that engine can serve, and the built-in model where ' +
+        'it cannot (a transmasc account, a testosterone curve). Report which one was used. ' +
         SAFETY_NOTE,
       inputSchema: {
         analyte: z.enum(['e2', 't']).optional().describe('Estradiol (default) or testosterone'),
@@ -418,10 +421,13 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         'Body weight, HRT mode, calibration method and history window, timezone, PK parameter ' +
         'overrides, and `appState` — the web app\'s own settings bag.\n' +
         '\n' +
-        '`appState.settings.pkEngine` is which pharmacokinetic model computes the curve: ' +
+        '`appState.settings.pkEngine` is which pharmacokinetic model the account has chosen: ' +
         `'${PK_ENGINES[0]}' (the original, and the default) or '${PK_ENGINES[1]}'. ` +
-        'Read it when a question turns on why a curve looks the way it does, or to explain the ' +
-        'difference to the user — the two models draw different curves from the same records. ' +
+        'hrt_predict_levels runs that engine and reports which one it used in its `engine` ' +
+        'field — read that field, not the setting, when explaining a curve, because the choice ' +
+        'is overruled where the chosen engine cannot serve: a transmasc account or a ' +
+        'testosterone curve stays on the built-in engine. Read the setting when a question ' +
+        'turns on what the user picked, or to explain the difference between the two models. ' +
         'It is **read-only over MCP**: switching models re-computes every past estimate, so the ' +
         'choice is the account owner\'s to make in the app, not a side effect of a request. An ' +
         `absent or unrecognised value means '${DEFAULT_PK_ENGINE}', which is also the default.\n` +

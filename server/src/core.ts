@@ -24,14 +24,15 @@
 import { randomUUID } from 'node:crypto';
 
 import {
-  simulateWithParams,
-  calibrate,
+  calibrateForEngine,
+  engineForCurve,
+  simulateForEngine,
   doseAdvisory,
   hormoneLevelAdvisory,
   DEFAULT_PK_PARAMS,
   isT_LabUnit,
 } from './engine.ts';
-import type { DoseEvent, LabResult, SimulationResult, PKCustomParams } from './engine.ts';
+import type { DoseEvent, LabResult, SimulationResult, PKCustomParams, PkEngineId } from './engine.ts';
 import { RecordService } from './records.ts';
 import type { RecordCategory, StoredRecord } from './records.ts';
 import {
@@ -546,6 +547,15 @@ export interface CurveStats {
 
 export interface Prediction {
   unit: 'pg/mL' | 'ng/dL';
+  /**
+   * Which engine actually computed this curve.
+   *
+   * Reported rather than assumed, because it can differ from the stored preference:
+   * a transmasc account or a testosterone curve is kept on the built-in engine
+   * whichever value is stored. An agent explaining a curve should name this, not the
+   * setting. See `engineForCurve`.
+   */
+  engine: PkEngineId;
   /** Downsampled points, oldest first. */
   points: { at: string; value: number }[];
   stats: CurveStats;
@@ -627,12 +637,19 @@ export const PKSimulationService = {
         }
 
         const params = await this.resolveParams(ctx);
-        const sim = simulateWithParams(events, weight, params);
-        if (!sim) return { ok: false, error: 'simulation failed — check dose values and body weight' };
 
-        // Default to whichever analyte matches the account's mode; a transfem account
-        // tracking estradiol should not have to say so on every call.
-        const analyte = opts.analyte ?? (userSettings.hrtMode === 'transmasc' ? 't' : 'e2');
+        // Which analyte this call is about decides whether the Transmtf engine can
+        // serve it at all, so it is resolved before the simulation rather than after.
+        const isTransmasc = userSettings.hrtMode === 'transmasc';
+        const analyte = opts.analyte ?? (isTransmasc ? 't' : 'e2');
+
+        // The engine the *user chose* lives in the settings bag, which is the sealed
+        // `scalar:appSettings` record overlaid on the row (see `mergeSealedPreferences`).
+        const bag = userSettings.appState as { settings?: { pkEngine?: string } } | null;
+        const engine = engineForCurve(bag?.settings?.pkEngine, isTransmasc, { analyte, events });
+
+        const sim = simulateForEngine(engine, events, weight, params);
+        if (!sim) return { ok: false, error: 'simulation failed — check dose values and body weight' };
 
         // Build one full-length series, applying calibration to E2 only — lab results
         // measure estradiol, so calibrating a testosterone curve against them would be
@@ -649,7 +666,8 @@ export const PKSimulationService = {
             const labValues = labRecords.map((r) => toLabResult(r.data));
             const e2Labs = labValues.filter((l) => !isT_LabUnit(l.unit));
             if (e2Labs.length > 0) {
-                const cal = calibrate(
+                const cal = calibrateForEngine(
+                    engine,
                     sim,
                     events,
                     weight,
@@ -702,6 +720,7 @@ export const PKSimulationService = {
             ok: true,
             value: {
                 unit: analyte === 't' ? 'ng/dL' : 'pg/mL',
+                engine,
                 points,
                 stats: {
                     peak: Math.max(...windowedValues),
