@@ -47,6 +47,7 @@
 import { copyFileSync, mkdirSync, existsSync, statSync, readdirSync, rmSync } from 'node:fs'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { execFileSync } from 'node:child_process'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const OUT = join(ROOT, 'public', 'ocr')
@@ -143,12 +144,22 @@ function assertWasm(buf, label) {
 }
 
 async function download(url, dest, check) {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error('fetch failed ' + res.status + ' for ' + url)
-  const buf = Buffer.from(await res.arrayBuffer())
+  const buf = await fetchBytes(url)
   check(buf, url)
   writeFileSync(dest, buf)
   return buf.length
+}
+
+async function fetchBytes(url) {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) throw new Error('fetch failed ' + res.status + ' for ' + url)
+    return Buffer.from(await res.arrayBuffer())
+  } catch (error) {
+    // Windows can have a system proxy that Node's fetch does not inherit.
+    if (process.platform !== 'win32') throw error
+    return execFileSync('curl.exe', ['-L', '--fail', '--silent', '--show-error', url], { maxBuffer: 128 * 1024 * 1024 })
+  }
 }
 
 /**
@@ -227,9 +238,8 @@ async function main() {
 
     // 2. The alphabet, from this tier's recogniser config — never a separate copy.
     const configUrl = SOURCE + files.rec.repo + '/resolve/' + files.rec.revision + '/inference.yml'
-    const config = await fetch(configUrl)
-    if (!config.ok) throw new Error('fetch failed ' + config.status + ' for ' + configUrl)
-    const dict = extractDict(await config.text())
+    const configText = (await fetchBytes(configUrl)).toString('utf8')
+    const dict = extractDict(configText)
     const dictPath = join(OUT, files.dict)
     writeFileSync(dictPath, dict)
     total += statSync(dictPath).size

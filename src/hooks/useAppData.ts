@@ -19,6 +19,7 @@ import { JournalEntry, sanitizeJournalEntries } from '../utils/bodyJournal';
 import { hrtDaysSince, normalizeHrtStartDate } from '../utils/hrtStart';
 import { milestoneFor } from '../utils/hrtMilestone';
 import { isThirdDayStreak } from '../utils/hrtStreak';
+import { get as secureGet, set as secureSet, remove as secureRemove } from '../utils/secureStore';
 
 /** Namespace used while signed out. Its keys are the original, un-prefixed ones. */
 const LOCAL_OWNER = 'local';
@@ -70,12 +71,12 @@ function adoptSignedOutData(owner: string): void {
     }
     for (const s of SHARED_SUFFIXES) moves.push([nsFor(LOCAL_OWNER, s), nsFor(owner, s)]);
 
-    if (moves.some(([, to]) => localStorage.getItem(to) !== null)) return;
+    if (moves.some(([, to]) => secureGet(to) !== null)) return;
     for (const [from, to] of moves) {
-        const value = localStorage.getItem(from);
+        const value = secureGet(from);
         if (value === null) continue;
-        localStorage.setItem(to, value);
-        localStorage.removeItem(from);
+        secureSet(to, value);
+        secureRemove(from);
     }
 }
 
@@ -132,7 +133,7 @@ export const useAppData = (
 
     const loadJSON = <T,>(key: string, fallback: T): T => {
         try {
-            const s = localStorage.getItem(key);
+            const s = secureGet(key);
             return s ? (JSON.parse(s) as T) : fallback;
         } catch { return fallback; }
     };
@@ -149,7 +150,7 @@ export const useAppData = (
         sanitizeTombstones(loadJSON<unknown>(keyFor(m, 'deletions'), null));
 
     const writeTombstones = (m: 'transfem' | 'transmasc', next: Tombstones) => {
-        localStorage.setItem(keyFor(m, 'deletions'), JSON.stringify(pruneTombstones(next, Date.now())));
+        secureSet(keyFor(m, 'deletions'), JSON.stringify(pruneTombstones(next, Date.now())));
     };
 
     const recordDeletions = (kind: RecordKind, ids: string[], m: 'transfem' | 'transmasc' = mode) => {
@@ -545,7 +546,7 @@ export const useAppData = (
 
     useEffect(() => {
         if (loadedScopeRef.current !== scope) return;
-        localStorage.setItem(keyFor(mode, 'events'), JSON.stringify(events));
+        secureSet(keyFor(mode, 'events'), JSON.stringify(events));
     }, [events, scope]);
     useEffect(() => {
         if (loadedScopeRef.current !== scope) return;
@@ -566,19 +567,19 @@ export const useAppData = (
     }, [pkParams, scope]);
     useEffect(() => {
         if (loadedScopeRef.current !== scope) return;
-        localStorage.setItem(keyFor(mode, 'lab-results'), JSON.stringify(labResults));
+        secureSet(keyFor(mode, 'lab-results'), JSON.stringify(labResults));
     }, [labResults, scope]);
     useEffect(() => {
         if (loadedScopeRef.current !== scope) return;
-        localStorage.setItem(keyFor(mode, 'dose-templates'), JSON.stringify(doseTemplates));
+        secureSet(keyFor(mode, 'dose-templates'), JSON.stringify(doseTemplates));
     }, [doseTemplates, scope]);
     useEffect(() => {
         if (loadedScopeRef.current !== scope) return;
-        localStorage.setItem(keyFor(mode, 'quick-doses'), JSON.stringify(quickDoses));
+        secureSet(keyFor(mode, 'quick-doses'), JSON.stringify(quickDoses));
     }, [quickDoses, scope]);
     useEffect(() => {
         if (loadedScopeRef.current !== scope) return;
-        localStorage.setItem(keyFor(mode, 'journal'), JSON.stringify(journal));
+        secureSet(keyFor(mode, 'journal'), JSON.stringify(journal));
     }, [journal, scope]);
 
     useEffect(() => {
@@ -989,26 +990,26 @@ export const useAppData = (
                         if (Array.isArray(block.events)) {
                             const revived = reconcileReplacement(m, 'events', loadJSON<DoseEvent[]>(keyFor(m, 'events'), []), evs);
                             const out = evs.map(e => (revived.has(e.id) ? { ...e, updatedAt: Date.now() } : e));
-                            localStorage.setItem(keyFor(m, 'events'), JSON.stringify(out));
+                            secureSet(keyFor(m, 'events'), JSON.stringify(out));
                             importedOtherMode = true;
                         }
                         if (Array.isArray(block.labResults)) {
                             const revived = reconcileReplacement(m, 'labResults', loadJSON<LabResult[]>(keyFor(m, 'lab-results'), []), ls);
                             const out = ls.map(r => (revived.has(r.id) ? { ...r, updatedAt: Date.now() } : r));
-                            localStorage.setItem(keyFor(m, 'lab-results'), JSON.stringify(out));
+                            secureSet(keyFor(m, 'lab-results'), JSON.stringify(out));
                             importedOtherMode = true;
                         }
                         if (Array.isArray(block.doseTemplates)) {
                             const revived = reconcileReplacement(m, 'doseTemplates', loadJSON<DoseTemplate[]>(keyFor(m, 'dose-templates'), []), tmps);
                             const out = tmps.map(r => (revived.has(r.id) ? { ...r, updatedAt: Date.now() } : r));
-                            localStorage.setItem(keyFor(m, 'dose-templates'), JSON.stringify(out));
+                            secureSet(keyFor(m, 'dose-templates'), JSON.stringify(out));
                             importedOtherMode = true;
                         }
                         if (Array.isArray(block.journal)) {
                             const jour = sanitizeJournalEntries(block.journal);
                             const revived = reconcileReplacement(m, 'journal', loadJSON<JournalEntry[]>(keyFor(m, 'journal'), []), jour);
                             const out = jour.map(r => (revived.has(r.id) ? { ...r, updatedAt: Date.now() } : r));
-                            localStorage.setItem(keyFor(m, 'journal'), JSON.stringify(out));
+                            secureSet(keyFor(m, 'journal'), JSON.stringify(out));
                             importedOtherMode = true;
                         }
                     }
@@ -1204,10 +1205,10 @@ export const useAppData = (
                         forgetDeletions('labResults', ls.map(l => l.id), m);
                         forgetDeletions('doseTemplates', tmps.map(tm => tm.id), m);
                         forgetDeletions('journal', jour.map(j => j.id), m);
-                        if (newEvs.length) localStorage.setItem(keyFor(m, 'events'), JSON.stringify([...existingEvs, ...newEvs]));
-                        if (newLs.length) localStorage.setItem(keyFor(m, 'lab-results'), JSON.stringify([...existingLs, ...newLs]));
-                        if (newTmps.length) localStorage.setItem(keyFor(m, 'dose-templates'), JSON.stringify([...existingTmps, ...newTmps]));
-                        if (newJour.length) localStorage.setItem(keyFor(m, 'journal'), JSON.stringify([...existingJour, ...newJour]));
+                        if (newEvs.length) secureSet(keyFor(m, 'events'), JSON.stringify([...existingEvs, ...newEvs]));
+                        if (newLs.length) secureSet(keyFor(m, 'lab-results'), JSON.stringify([...existingLs, ...newLs]));
+                        if (newTmps.length) secureSet(keyFor(m, 'dose-templates'), JSON.stringify([...existingTmps, ...newTmps]));
+                        if (newJour.length) secureSet(keyFor(m, 'journal'), JSON.stringify([...existingJour, ...newJour]));
                         mergedOther += newEvs.length + newLs.length + newJour.length;
                     }
                 }
@@ -1243,7 +1244,7 @@ export const useAppData = (
                     const newOnes = otherEvs.filter(e => !existingIds.has(e.id));
                     forgetDeletions('events', otherEvs.map(e => e.id), otherMode);
                     if (newOnes.length) {
-                        localStorage.setItem(keyFor(otherMode, 'events'), JSON.stringify([...existing, ...newOnes]));
+                        secureSet(keyFor(otherMode, 'events'), JSON.stringify([...existing, ...newOnes]));
                         mergedOther += newOnes.length;
                     }
                     incomingEvents = keepEvs;
@@ -1259,7 +1260,7 @@ export const useAppData = (
                     const newOnes = otherLs.filter(l => !existingIds.has(l.id));
                     forgetDeletions('labResults', otherLs.map(l => l.id), otherMode);
                     if (newOnes.length) {
-                        localStorage.setItem(keyFor(otherMode, 'lab-results'), JSON.stringify([...existing, ...newOnes]));
+                        secureSet(keyFor(otherMode, 'lab-results'), JSON.stringify([...existing, ...newOnes]));
                         mergedOther += newOnes.length;
                     }
                     incomingLabs = keepLs;
@@ -1437,11 +1438,11 @@ export const useAppData = (
 
         for (const block of clean) {
             writeTombstones(block.m, block.deletions);
-            localStorage.setItem(keyFor(block.m, 'events'), JSON.stringify(block.events));
-            localStorage.setItem(keyFor(block.m, 'lab-results'), JSON.stringify(block.labResults));
-            localStorage.setItem(keyFor(block.m, 'dose-templates'), JSON.stringify(block.doseTemplates));
-            localStorage.setItem(keyFor(block.m, 'quick-doses'), JSON.stringify(block.quickDoses));
-            localStorage.setItem(keyFor(block.m, 'journal'), JSON.stringify(block.journal));
+            secureSet(keyFor(block.m, 'events'), JSON.stringify(block.events));
+            secureSet(keyFor(block.m, 'lab-results'), JSON.stringify(block.labResults));
+            secureSet(keyFor(block.m, 'dose-templates'), JSON.stringify(block.doseTemplates));
+            secureSet(keyFor(block.m, 'quick-doses'), JSON.stringify(block.quickDoses));
+            secureSet(keyFor(block.m, 'journal'), JSON.stringify(block.journal));
             if (block.m === mode) {
                 setEvents(block.events);
                 setLabResults(block.labResults);

@@ -95,7 +95,14 @@ const PACK: LangPack = {
     "core.del.keep": "Hesabımı koru",
     "update.ready": "Yeni bir sürüm hazır",
     "update.reload": "Güncelle",
+    "update.download": "Güncellemeyi indir",
+    "update.native_ready": "Android {version} güncellemesi hazır",
     "update.later": "Sonra",
+    "settings.check_updates.title": "Android güncellemelerini kontrol et",
+    "settings.check_updates.version": "Geçerli sürüm {version}",
+    "settings.check_updates.latest": "En son sürümü kullanıyorsunuz",
+    "settings.check_updates.error": "Güncellemeler kontrol edilemedi. Daha sonra tekrar deneyin.",
+    "settings.check_updates.available": "Android {version} hazır. İndirmek için tarayıcı açılsın mı?",
     "settings.pk_engine": "Farmakokinetik model",
     "settings.pk_engine_desc": "İki model farklı algoritma ve parametreler kullanır, dolayısıyla farklı eğriler çizer. Varsayılan özgün modeldir; geçiş hemen etkili olur ve seçim hesabınızla birlikte diğer cihazlara gider.",
     "settings.pk_engine.builtin": "Özgün (Mihari)",
@@ -839,6 +846,15 @@ const PACK: LangPack = {
     "journal.note_placeholder": "Ne yazmak isterseniz…",
     "journal.empty": "Henüz bir şey yazılmadı.",
     "journal.delete_confirm": "Bu notu silmek istiyor musunuz? Geri alınamaz.",
+    "med.title": "İlaç hatırlatıcıları",
+    "med.desc": "Günlük hatırlatıcılar yalnızca bu cihazda saklanır, eşitlenmez.",
+    "med.permission": "Bildirimler kapalı. Android ayarlarından açın.",
+    "med.error": "Bildirimler planlanamadı.",
+    "med.remove": "Kaldır",
+    "med.name": "İlaç adı",
+    "med.time": "Günlük saat",
+    "med.add": "Ekle",
+
 };
 
 export default PACK;

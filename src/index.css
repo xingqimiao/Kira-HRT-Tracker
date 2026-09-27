@@ -900,6 +900,17 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
+body.native-app {
+    --app-safe-top: var(--android-safe-top, 0px);
+    --app-safe-bottom: var(--android-safe-bottom, 0px);
+}
+
+/* Keep the full-bleed shell behind system chrome; inset its interactive content. */
+body.native-app .m3-shell-body,
+body.native-app .m3-rail {
+    padding-top: var(--app-safe-top);
+}
+
 #root {
     height: 100%;
     width: 100%;
@@ -911,14 +922,14 @@ body {
 }
 
 .safe-area-pb {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--app-safe-bottom, 0px));
 }
 
 .scroll-pb-nav {
     /* The floating bottom bar, plus the screen gesture area, plus breathing room:
        92px is the bar and its gap. Only applies where that bar exists — which is
        now below 840, the breakpoint the rail takes over at. */
-    padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(92px + max(env(safe-area-inset-bottom, 0px), var(--app-safe-bottom, 0px)));
 }
 @media (min-width: 840px) {
     .scroll-pb-nav {
@@ -1514,7 +1525,7 @@ body {
     position: fixed;
     left: var(--md-sys-space-4);
     right: var(--md-sys-space-4);
-    bottom: calc(var(--md-sys-space-3) + env(safe-area-inset-bottom, 0px));
+    bottom: calc(var(--md-sys-space-3) + max(env(safe-area-inset-bottom, 0px), var(--app-safe-bottom, 0px)));
     z-index: 40;
     display: flex;
     align-items: stretch;

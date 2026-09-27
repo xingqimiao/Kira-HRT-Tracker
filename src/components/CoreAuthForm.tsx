@@ -15,6 +15,8 @@ import {
 } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
 import { useTranslation } from '../contexts/LanguageContext';
+import { openExternalUrl } from '../utils/externalLinks';
+import { isNativeApp } from '../utils/platform';
 
 /**
  * Sign in or sign up against the Application Core.
@@ -82,7 +84,7 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
     // Initialised from the app-level probe rather than `null`: if the answer is already
     // in hand this stone is part of the first paint, not a second one.
     const [providers, setProviders] = useState<{ x: boolean; google: boolean } | null>(
-        () => loginProvidersIfKnown(),
+        () => isNativeApp() ? { x: true, google: true } : loginProvidersIfKnown(),
     );
 
     // Registration: the human-verification token, and the reset that forces a fresh
@@ -115,7 +117,7 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
         if (!active || providers) return;
         let cancelled = false;
         void primeLoginProviders().then(v => {
-            if (!cancelled) setProviders(v);
+            if (!cancelled) setProviders(isNativeApp() ? { x: true, google: true } : v);
         });
         return () => {
             cancelled = true;
@@ -192,10 +194,11 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                 // Carried through the round trip by the service, because this screen is
                 // unloaded the moment the browser leaves for the provider.
                 persistent: keepSignedIn,
+                returnUri: isNativeApp() ? 'kira-hrt://oauth/callback' : undefined,
             });
             // Full navigation, not a popup: the callback is on the API host and returns
             // the browser to a landing route, which a popup would break out of.
-            window.location.href = authorizeUrl;
+            await openExternalUrl(authorizeUrl);
         } catch (err) {
             setError(describe(err, provider));
             setBusy(false);

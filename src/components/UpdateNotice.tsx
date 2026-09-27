@@ -4,6 +4,8 @@ import FloatingToast from './ui/FloatingToast';
 import { RefreshCw, X } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { onUpdateReady, applyUpdate } from '../utils/swUpdate';
+import { checkNativeUpdate, downloadNativeUpdate, type NativeUpdate } from '../utils/nativeUpdate';
+import { isNativeApp } from '../utils/platform';
 
 /**
  * "A new version is ready — reload."
@@ -27,8 +29,40 @@ const UpdateNotice: React.FC = () => {
     const { t } = useTranslation();
     const [ready, setReady] = useState(false);
     const [dismissed, setDismissed] = useState(false);
+    const [nativeUpdate, setNativeUpdate] = useState<NativeUpdate | null>(null);
 
-    useEffect(() => onUpdateReady(() => setReady(true)), []);
+    useEffect(() => {
+        if (isNativeApp()) {
+            void checkNativeUpdate().then(setNativeUpdate).catch(() => {});
+            return;
+        }
+        return onUpdateReady(() => setReady(true));
+    }, []);
+
+    if (isNativeApp() && nativeUpdate) {
+        return (
+            <FloatingToast
+                open={!dismissed}
+                edge="top"
+                icon={<Icon icon={RefreshCw} size={13} strokeWidth={2.5} />}
+                onDismiss={() => setDismissed(true)}
+                actions={
+                    <button
+                        type="button"
+                        onClick={() => void downloadNativeUpdate(nativeUpdate)}
+                        className="shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold text-[var(--color-m3-primary)] transition-colors hover:bg-[var(--color-m3-primary)]/10"
+                    >
+                        {t('update.download')}
+                    </button>
+                }
+            >
+                <span>
+                    {t('update.native_ready').replace('{version}', nativeUpdate.version)}
+                    {nativeUpdate.notes.length > 0 && ` · ${nativeUpdate.notes.join(' · ')}`}
+                </span>
+            </FloatingToast>
+        );
+    }
 
     return (
         <FloatingToast

@@ -147,7 +147,14 @@ const PACK: LangPack = {
     "core.del.keep": "アカウントを残す",
     "update.ready": "新しいバージョンがあります",
     "update.reload": "更新",
+    "update.download": "更新をダウンロード",
+    "update.native_ready": "Android {version} の更新があります",
     "update.later": "後で",
+    "settings.check_updates.title": "Android の更新を確認",
+    "settings.check_updates.version": "現在のバージョン {version}",
+    "settings.check_updates.latest": "最新バージョンです",
+    "settings.check_updates.error": "更新を確認できません。後でもう一度お試しください。",
+    "settings.check_updates.available": "Android {version} が利用できます。ブラウザーでダウンロードしますか？",
     "settings.pk_engine": "薬物動態モデル",
     "settings.pk_engine_desc": "2つのモデルはアルゴリズムとパラメータが異なるため、算出される曲線も異なります。既定は従来のモデルで、切り替えは即時反映され、選択はアカウントに同期されます。",
     "settings.pk_engine.builtin": "従来のモデル（Mihari）",
@@ -839,6 +846,15 @@ const PACK: LangPack = {
     "error.reload": "再読み込み",
     "patch.rate_placeholder": "例：50、100",
     "unit.min_short": "分",
+    "med.title": "服薬リマインダー",
+    "med.desc": "毎日のリマインダーはこの端末だけに保存され、同期されません。",
+    "med.permission": "通知が無効です。Android の設定で有効にしてください。",
+    "med.error": "通知を設定できません。",
+    "med.remove": "削除",
+    "med.name": "薬の名前",
+    "med.time": "毎日の時刻",
+    "med.add": "追加",
+
 };
 
 export default PACK;

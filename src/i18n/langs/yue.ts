@@ -760,7 +760,14 @@ const PACK: LangPack = {
     "core.del.keep": "保留帳戶，唔刪",
     "update.ready": "有新版本喇",
     "update.reload": "更新",
+    "update.download": "下載更新",
+    "update.native_ready": "Android {version} 有新版本",
     "update.later": "遲啲",
+    "settings.check_updates.title": "檢查 Android 更新",
+    "settings.check_updates.version": "目前版本 {version}",
+    "settings.check_updates.latest": "已經係最新版本",
+    "settings.check_updates.error": "暫時檢查唔到更新，遲啲再試。",
+    "settings.check_updates.available": "Android {version} 有新版本。要開瀏覽器下載嗎？",
     "settings.pk_engine": "藥代動力學模型",
     "settings.pk_engine_desc": "兩套模型嘅算法同參數唔同，算出嚟嘅曲線亦都唔同。預設用返原本嗰個，切換即刻生效，選擇會跟帳號同步去其他裝置。",
     "settings.pk_engine.builtin": "原有模型（Mihari）",
@@ -839,6 +846,15 @@ const PACK: LangPack = {
     "journal.note_placeholder": "想寫咩都得……",
     "journal.empty": "仲未有記錄。",
     "journal.delete_confirm": "刪除呢條文字記錄？刪咗就冇得返轉頭。",
+    "med.title": "食藥提醒",
+    "med.desc": "每日提醒只會儲存在呢部裝置，唔會同步。",
+    "med.permission": "通知權限未開，請喺 Android 設定開啟。",
+    "med.error": "無法設定通知。",
+    "med.remove": "刪除",
+    "med.name": "藥物名稱",
+    "med.time": "每日時間",
+    "med.add": "新增",
+
 };
 
 export default PACK;

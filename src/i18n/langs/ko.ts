@@ -147,7 +147,14 @@ const PACK: LangPack = {
     "core.del.keep": "계정 유지",
     "update.ready": "새 버전이 있습니다",
     "update.reload": "업데이트",
+    "update.download": "업데이트 다운로드",
+    "update.native_ready": "Android {version} 업데이트가 있습니다",
     "update.later": "나중에",
+    "settings.check_updates.title": "Android 업데이트 확인",
+    "settings.check_updates.version": "현재 버전 {version}",
+    "settings.check_updates.latest": "최신 버전입니다",
+    "settings.check_updates.error": "업데이트를 확인할 수 없습니다. 나중에 다시 시도하세요.",
+    "settings.check_updates.available": "Android {version}을 사용할 수 있습니다. 브라우저에서 다운로드할까요?",
     "settings.pk_engine": "약동학 모델",
     "settings.pk_engine_desc": "두 모델은 알고리즘과 파라미터가 달라 곡선도 다릅니다. 기본은 기존 모델이며, 전환은 즉시 적용되고 선택은 계정을 따라 동기화됩니다.",
     "settings.pk_engine.builtin": "기존 모델 (Mihari)",
@@ -839,6 +846,15 @@ const PACK: LangPack = {
     "error.reload": "새로고침",
     "patch.rate_placeholder": "예: 50, 100",
     "unit.min_short": "분",
+    "med.title": "복약 알림",
+    "med.desc": "매일 알림은 이 기기에만 저장되며 동기화되지 않습니다.",
+    "med.permission": "알림 권한이 없습니다. Android 설정에서 허용하세요.",
+    "med.error": "알림을 예약할 수 없습니다.",
+    "med.remove": "삭제",
+    "med.name": "약 이름",
+    "med.time": "매일 시간",
+    "med.add": "추가",
+
 };
 
 export default PACK;

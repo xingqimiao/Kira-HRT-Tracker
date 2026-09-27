@@ -50,6 +50,9 @@ import ShareSettings from './pages/ShareSettings';
 import Onboarding, { markOnboardingSeen, shouldShowOnboarding } from './pages/Onboarding';
 import HrtMilestoneEffect from './components/HrtMilestoneEffect';
 import { armMilestone, clearArmedMilestone, type MilestoneNotice } from './utils/hrtMilestone';
+import SplashScreen from './components/SplashScreen';
+import { isNativeApp } from './utils/platform';
+import { rescheduleAllNativeNotifications } from './utils/medReminders';
 
 const AppContent = () => {
     const { t, lang, setLang } = useTranslation();
@@ -135,6 +138,9 @@ const AppContent = () => {
         scope,
         readyScope,
     } = useAppData(showDialog, coreSession.user?.userId ?? null);
+
+    const [splashDone, setSplashDone] = useState(() => !isNativeApp());
+    useEffect(() => { void rescheduleAllNativeNotifications(); }, []);
 
     // A confirmed bind belongs to the account that made it. Reset when the signed-in
     // user changes (or is signed out), so the next account is not waved past a gate it
@@ -526,6 +532,10 @@ const AppContent = () => {
         return view;
     };
     const activeSection = sectionFor(currentView);
+
+    if (!splashDone) {
+        return <SplashScreen mode={mode} onDone={() => setSplashDone(true)} />;
+    }
 
     // Takes over the whole screen rather than sitting in the view stack: the
     // intro is where language and HRT mode get chosen, and leaving the nav up
@@ -962,11 +972,28 @@ const App = () => {
             setShareRoute(getShareRoute());
             setAuthCallbackProvider(getAuthCallbackProvider());
         };
+        const onNativeOAuthCallback = (event: Event) => {
+            const raw = (event as CustomEvent<string>).detail;
+            if (typeof raw !== 'string') return;
+            try {
+                const callback = new URL(raw);
+                if (callback.protocol !== 'kira-hrt:' || callback.hostname !== 'oauth') return;
+                const provider = callback.searchParams.get('provider');
+                if (provider !== 'x' && provider !== 'google') return;
+                const query = callback.search;
+                window.history.replaceState(null, '', `/auth/${provider}/callback${query}`);
+                updateRoute();
+            } catch {
+                // Ignore malformed deep links from other apps.
+            }
+        };
         window.addEventListener('hashchange', updateRoute);
         window.addEventListener('popstate', updateRoute);
+        window.addEventListener('hrt-oauth-callback', onNativeOAuthCallback);
         return () => {
             window.removeEventListener('hashchange', updateRoute);
             window.removeEventListener('popstate', updateRoute);
+            window.removeEventListener('hrt-oauth-callback', onNativeOAuthCallback);
         };
     }, []);
 

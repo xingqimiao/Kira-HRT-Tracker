@@ -1,0 +1,11 @@
+{
+  "version": "1.0.1",
+  "versionCode": 1000001,
+  "apk": "https://hrt.kiramyao.com/android/KiraHRT-1.0.1-release.apk",
+  "sha256": "42A206B2FB93C5C788C6ED9B84D7E0516E957A745C2682999E7D9EB0979BF2A2",
+  "notes": [
+    "新增 Android 版本检查、更新日志和官网 APK 下载入口",
+    "改进第三方登录回跳和外部浏览器打开方式"
+  ]
+}
+

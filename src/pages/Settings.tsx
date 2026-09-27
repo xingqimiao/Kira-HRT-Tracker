@@ -8,6 +8,10 @@ import { AppTheme } from '../constants';
 import { AntiandrogenChartMode, ANTIANDROGEN_CHART_MODES, DoseEvent, PKCustomParams, RecheckIntervals, OcrModelTier, OCR_MODEL_TIERS, PkEngineId, PK_ENGINES, DEFAULT_PK_ENGINE } from '../../logic';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { useVial } from '../contexts/VialContext';
+import { isNativeApp } from '../utils/platform';
+import { readMedReminders, writeMedReminders, rescheduleAllNativeNotifications, type MedReminder } from '../utils/medReminders';
+import { APP_VERSION } from '../constants';
+import { checkNativeUpdate, downloadNativeUpdate } from '../utils/nativeUpdate';
 
 interface SettingsProps {
     t: (key: string) => string;
@@ -85,6 +89,11 @@ const Settings: React.FC<SettingsProps> = ({
     const { showVial, setShowVial } = useVial();
     const [cat, setCat] = useState<SettingsCat>(_savedCat);
     const [mobileView, setMobileView] = useState<MobileView>(_savedMobileView);
+    const [medReminders, setMedReminders] = useState<MedReminder[]>(() => isNativeApp() ? readMedReminders() : []);
+    const [medName, setMedName] = useState('');
+    const [medTime, setMedTime] = useState('08:00');
+    const [medPermission, setMedPermission] = useState<boolean | null>(null);
+    const [medError, setMedError] = useState(false);
 
     const selectCat = (c: SettingsCat) => {
         _savedCat = c;
@@ -291,6 +300,32 @@ const Settings: React.FC<SettingsProps> = ({
 
     const AboutContent = () => (
         <div>
+            {isNativeApp() && (
+                <button
+                    onClick={() => {
+                        void checkNativeUpdate().then(update => {
+                            if (!update) {
+                                showDialog('alert', `${t('settings.check_updates.latest')} (${APP_VERSION.replace(/^v/, '')})`);
+                                return;
+                            }
+                            const notes = update.notes.length > 0 ? `\n\n${update.notes.map(note => `• ${note}`).join('\n')}` : '';
+                            showDialog(
+                                'confirm',
+                                `${t('settings.check_updates.available').replace('{version}', update.version)}${notes}`,
+                                () => { void downloadNativeUpdate(update); },
+                            );
+                        }).catch(() => showDialog('alert', t('settings.check_updates.error')));
+                    }}
+                    className={rowBase}
+                >
+                    <div>
+                        <p className={rowLabel}>{t('settings.check_updates.title')}</p>
+                        <p className={`text-xs ${muted} mt-0.5`}>{t('settings.check_updates.version').replace('{version}', APP_VERSION.replace(/^v/, ''))}</p>
+                    </div>
+                    <Icon icon={ChevronRight} size={15} className={muted} />
+                </button>
+            )}
+
             {/* Algorithm attribution. Required by the upstream project's README, and
                 it is the honest thing regardless: the pharmacokinetic model is the
                 substance of this app and it is not our work. Kept as its own row with
@@ -387,8 +422,48 @@ const Settings: React.FC<SettingsProps> = ({
      * The description names them as the app's own defaults and points at a doctor,
      * because an interval is a number the reader can change, not advice.
      */
+    const addMedReminder = () => {
+        const [hour, minute] = medTime.split(':').map(Number);
+        if (!medName.trim() || !Number.isInteger(hour) || !Number.isInteger(minute)) return;
+        const next = [...medReminders, { id: crypto.randomUUID(), name: medName.trim(), hour, minute, enabled: true }];
+        setMedReminders(next); writeMedReminders(next);
+        void rescheduleAllNativeNotifications(true).then(setMedPermission).catch(() => setMedError(true));
+        setMedName('');
+    };
+    const removeMedReminder = (id: string) => {
+        const next = medReminders.filter(r => r.id !== id);
+        setMedReminders(next); writeMedReminders(next); void rescheduleAllNativeNotifications().catch(() => setMedError(true));
+    };
+    const toggleMedReminder = (id: string) => {
+        const next = medReminders.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r);
+        setMedReminders(next); writeMedReminders(next); void rescheduleAllNativeNotifications().catch(() => setMedError(true));
+    };
+
+    const MedReminderContent = () => isNativeApp() ? (
+        <div className="mb-5 rounded-xl border border-[var(--color-m3-outline-variant)] p-4">
+            <p className={`${rowLabel} mb-1`}>{t('med.title')}</p>
+            <p className={`text-xs ${muted} mb-3`}>{t('med.desc')}</p>
+            {medPermission === false && <p className="text-xs text-[var(--color-m3-warning)]">{t('med.permission')}</p>}
+            {medError && <p className="text-xs text-[var(--color-m3-error)]">{t('med.error')}</p>}
+            {medReminders.map(r => (
+                <div key={r.id} className="flex items-center gap-3 py-2 border-b border-[var(--color-m3-outline-variant)]">
+                    <button type="button" aria-pressed={r.enabled} onClick={() => toggleMedReminder(r.id)} className={`flex-1 text-start ${r.enabled ? on : muted}`}>
+                        {r.name} · {String(r.hour).padStart(2, '0')}:{String(r.minute).padStart(2, '0')}
+                    </button>
+                    <button type="button" onClick={() => removeMedReminder(r.id)} className={`text-xs ${muted}`}>{t('med.remove')}</button>
+                </div>
+            ))}
+            <div className="mt-3 flex gap-2">
+                <input aria-label={t('med.name')} value={medName} onChange={e => setMedName(e.target.value)} placeholder={t('med.name')} className="input-text min-w-0 flex-1" />
+                <input aria-label={t('med.time')} type="time" value={medTime} onChange={e => setMedTime(e.target.value)} className="input-text w-28" />
+                <button type="button" onClick={addMedReminder} className="m3-button-filled shrink-0">{t('med.add')}</button>
+            </div>
+        </div>
+    ) : null;
+
     const RemindersContent = () => (
         <div>
+            <MedReminderContent />
             <p className={`text-xs ${muted} py-3 leading-relaxed`}>{t('settings.reminders.desc')}</p>
             {intervalSection(t('settings.reminders.liver'), (
                 <>

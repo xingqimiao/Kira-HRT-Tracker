@@ -347,6 +347,16 @@ hrt.kiramyao.com {
     encode zstd gzip
     root * /srv/hrt-web
 
+    # Android's updater fetches this JSON from the website origin. It must be
+    # served as a real file, never through the SPA fallback (which returns HTML
+    # with status 200 and makes the updater silently ignore the response).
+    @android_updates path /android/*
+    handle @android_updates {
+        header Cache-Control "no-cache, no-store, must-revalidate"
+        header Access-Control-Allow-Origin "http://tauri.localhost"
+        file_server
+    }
+
     # The SPA shell belongs to a *navigation*, never to a missing asset.
     #
     # A site-level `try_files {path} /index.html` answers every unmatched path with
@@ -518,7 +528,11 @@ cd /path/to/repo
 # The prefix is part of the API base URL the app calls, so it belongs in this value.
 # `npm run build` refuses to finish without it, so a bare `vite build` cannot ship a
 # signed-out app by accident — see the note below.
-VITE_API_ORIGIN=https://api.kiramyao.com/hrt npm run build
+VITE_API_ORIGIN=https://api.kiramyao.com/hrt npm run build:release
+# postbuild copies the signed APK from releases/ into dist/android/ and verifies
+# its SHA-256 against public/android/latest.json. Do not put the APK under
+# public/android/: an Android build would bundle the APK inside another APK.
+ls -lh dist/android/latest.json dist/android/*.apk
 # NOT `--delete`: the build does not contain public/ocr/ (that directory is generated
 # by the asset script, and this build skips it), so deleting would take the live OCR
 # models with it. Copy over the top instead.

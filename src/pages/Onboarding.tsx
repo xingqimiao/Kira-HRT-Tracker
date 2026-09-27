@@ -17,6 +17,7 @@ import { buildMcpInstallPrompt } from '../utils/mcpInstallPrompt';
 import { LOCALE_MAP } from '../utils/helpers';
 import { toYmd, fromYmd } from '../utils/hrtStart';
 import { usePresence } from '../hooks/usePresence';
+import { isNativeApp } from '../utils/platform';
 
 const ONBOARDING_KEY = 'app-onboarded';
 
@@ -868,12 +869,14 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
             visual={<AccountPreview />}
         />,
 
-        <IntroCard
-            key="pwa"
-            title={t('onboarding.pwa_title')}
-            description={t('onboarding.pwa_subtitle')}
-            visual={<PwaVisual />}
-        />,
+        ...(!isNativeApp() ? [
+            <IntroCard
+                key="pwa"
+                title={t('onboarding.pwa_title')}
+                description={t('onboarding.pwa_subtitle')}
+                visual={<PwaVisual />}
+            />,
+        ] : []),
 
         /* The assistant step: the picture, what the token actually is, and the prompt
            to hand over. The endpoint is not printed on its own here — it is inside
@@ -978,8 +981,9 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
         />,
     ];
 
+    const activeStepKeys = isNativeApp() ? STEP_KEYS.filter(key => key !== 'pwa') : STEP_KEYS;
     const isLast = step === steps.length - 1;
-    const roles = STEP_ROLES[STEP_KEYS[step]];
+    const roles = STEP_ROLES[activeStepKeys[step]];
 
     const go = (next: number) => {
         setDirection(next > step ? 'forward' : 'backward');
@@ -996,7 +1000,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                 '--intro-accent-on': `var(${roles.accentOn})`,
             } as React.CSSProperties}
         >
-            <div className="flex shrink-0 justify-end px-4 pt-[calc(0.75rem+env(safe-area-inset-top,0px))]">
+            <div className="flex shrink-0 justify-end px-4 pt-[calc(0.75rem+max(env(safe-area-inset-top,0px),var(--app-safe-top,0px)))]">
                 <button
                     onClick={onDone}
                     className={`rounded-full px-3 py-2 text-m3-label-large intro-muted hover:bg-[var(--color-m3-surface-container)] ${isLast ? 'invisible' : ''}`}
@@ -1042,7 +1046,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                 </div>
             </div>
 
-            <div className="shrink-0 px-6 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+            <div className="shrink-0 px-6 pt-4 pb-[calc(1rem+max(env(safe-area-inset-bottom,0px),var(--app-safe-bottom,0px)))]">
                 <div className="mx-auto flex w-full max-w-md flex-col gap-3">
                     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
                         <div className="justify-self-start">
@@ -1068,7 +1072,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                     >
                         {isLast
                             ? t('onboarding.start')
-                            : (STEP_KEYS[step] === 'started' && !hrtStartDate)
+                            : (activeStepKeys[step] === 'started' && !hrtStartDate)
                                 ? t('onboarding.skip_step')
                                 : t('onboarding.next')}
                     </button>

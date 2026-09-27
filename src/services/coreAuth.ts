@@ -382,13 +382,14 @@ export const coreAuth = {
   async startOAuth(
     provider: LoginProvider,
     purpose: 'login' | 'link',
-    opts: { token?: string; turnstileToken?: string; intent?: 'register'; persistent?: boolean } = {},
+    opts: { token?: string; turnstileToken?: string; intent?: 'register'; persistent?: boolean; returnUri?: string } = {},
   ): Promise<{ authorizeUrl: string; state: string }> {
     if (opts.persistent) rememberKeepSignedIn();
     const query = new URLSearchParams();
     if (purpose === 'link') query.set('purpose', 'link');
     if (opts.intent) query.set('intent', opts.intent);
     if (opts.turnstileToken) query.set('turnstile_token', opts.turnstileToken);
+    if (opts.returnUri) query.set('return_uri', opts.returnUri);
     const suffix = query.toString() ? `?${query.toString()}` : '';
     const raw = await request<any>(
       `/auth/${provider}/start${suffix}`,

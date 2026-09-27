@@ -8,6 +8,13 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+src-tauri/
+src-tauri/target/
+src-tauri/gen/
+releases/
+public/android/*.apk
+tmp-*.png
+hrt-start.mp4
 dist
 dist-ssr
 *.local

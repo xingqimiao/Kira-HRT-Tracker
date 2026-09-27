@@ -91,8 +91,10 @@ function ocrOrtGlue(): Plugin {
   };
 }
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
+  const isAndroid = mode === 'android';
   return {
+    base: isAndroid ? './' : '/',
     define: {
       __APP_VERSION__: JSON.stringify(`v${pkg.version}`),
     },
@@ -110,7 +112,7 @@ export default defineConfig(() => {
     plugins: [
       ocrOrtGlue(),
       react(),
-      VitePWA({
+      ...(!isAndroid ? [VitePWA({
         registerType: 'autoUpdate',
         // The worker gets a commit-stamped name so a deploy is never shadowed by a
         // cached copy at a fixed path — see `swStamp`.
@@ -290,7 +292,7 @@ export default defineConfig(() => {
             }
           ]
         }
-      })
+      })] : [])
     ],
     resolve: {
       alias: {

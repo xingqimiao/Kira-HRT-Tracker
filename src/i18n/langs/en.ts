@@ -95,7 +95,14 @@ const PACK: LangPack = {
     "core.del.keep": "Keep my account",
     "update.ready": "A new version is ready",
     "update.reload": "Update",
+    "update.download": "Download update",
+    "update.native_ready": "Android update {version} is ready",
     "update.later": "Later",
+    "settings.check_updates.title": "Check for Android updates",
+    "settings.check_updates.version": "Current version {version}",
+    "settings.check_updates.latest": "You are up to date",
+    "settings.check_updates.error": "Could not check for updates. Please try again later.",
+    "settings.check_updates.available": "Android {version} is available. Open the browser to download it?",
     "settings.pk_engine": "Pharmacokinetic model",
     "settings.pk_engine_desc": "The two models use different algorithms and parameters, so they draw different curves. The original is the default; switching takes effect immediately and follows the account to other devices.",
     "settings.pk_engine.builtin": "Original (Mihari)",
@@ -839,6 +846,15 @@ const PACK: LangPack = {
     "journal.note_placeholder": "Whatever you want to write…",
     "journal.empty": "Nothing written yet.",
     "journal.delete_confirm": "Delete this note? This cannot be undone.",
+    "med.title": "Medication reminders",
+    "med.desc": "Daily reminders stay on this device and are not synced.",
+    "med.permission": "Notifications are disabled. Enable them in Android settings.",
+    "med.error": "Could not schedule notifications.",
+    "med.remove": "Remove",
+    "med.name": "Medication name",
+    "med.time": "Daily time",
+    "med.add": "Add",
+
 };
 
 export default PACK;

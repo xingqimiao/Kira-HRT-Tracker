@@ -7,6 +7,8 @@ import { Progress } from '../components/ui';
 
 import { coreAuth, CoreAuthError, PROVIDER_NAMES, type AccountSummary, type LoginMethods, type OAuthLink, type SessionInfo } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
+import { openExternalUrl } from '../utils/externalLinks';
+import { isNativeApp } from '../utils/platform';
 
 /**
  * Account security for an Application Core session.
@@ -175,8 +177,11 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
     setBusy(true);
     setError(null);
     try {
-      const { authorizeUrl } = await coreAuth.startOAuth(provider, 'link', { token: token ?? undefined });
-      window.location.href = authorizeUrl;
+      const { authorizeUrl } = await coreAuth.startOAuth(provider, 'link', {
+        token: token ?? undefined,
+        returnUri: isNativeApp() ? 'kira-hrt://oauth/callback' : undefined,
+      });
+      await openExternalUrl(authorizeUrl);
     } catch (err) {
       setError(describe(err));
       setBusy(false);
