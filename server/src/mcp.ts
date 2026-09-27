@@ -95,13 +95,21 @@ function toolError(message: string) {
  */
 function pagingCursor(
   before: string | undefined,
-): { ok: true; value: number | undefined } | { ok: false; error: string } {
-  if (before === undefined) return { ok: true, value: undefined };
+  beforeId: string | undefined,
+): { ok: true; value: number | undefined; id: string | undefined } | { ok: false; error: string } {
+  // An id with no timestamp cannot be a cursor: the store pages by the pair, and
+  // `before_id` alone would be silently ignored. Rejected rather than dropped.
+  if (before === undefined) {
+    if (beforeId !== undefined) {
+      return { ok: false, error: 'before_id: requires `before` (the pair is the cursor)' };
+    }
+    return { ok: true, value: undefined, id: undefined };
+  }
   const ms = Date.parse(before);
   if (!Number.isFinite(ms)) {
     return { ok: false, error: `before: not a valid ISO 8601 timestamp (got ${JSON.stringify(before)})` };
   }
-  return { ok: true, value: ms };
+  return { ok: true, value: ms, id: beforeId };
 }
 
 /**
@@ -197,12 +205,20 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
           .string()
           .optional()
           .describe('ISO 8601 instant. Only entries older than it, for paging back through history.'),
+        before_id: z
+          .string()
+          .optional()
+          .describe(
+            'Tiebreaker for `before`: the `id` of the last entry on the previous page. ' +
+            'Pass it together with `before` when several records share one instant, or ' +
+            'the ones at that instant after the page boundary are skipped.',
+          ),
       },
     },
-    async ({ limit, before }) => {
-      const cursor = pagingCursor(before);
+    async ({ limit, before, before_id }) => {
+      const cursor = pagingCursor(before, before_id);
       if (!cursor.ok) return toolError(cursor.error);
-      const r = await withContext((ctx) => TimelineService.get(ctx, { limit, before: cursor.value }));
+      const r = await withContext((ctx) => TimelineService.get(ctx, { limit, before: cursor.value, beforeId: cursor.id }));
       if ('error' in r) return toolError(r.error);
       return toolResult(
         r.value.map((e) =>
@@ -227,12 +243,20 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
           .string()
           .optional()
           .describe('ISO 8601 instant. Only doses logged before it — pass the oldest `at` from the previous page.'),
+        before_id: z
+          .string()
+          .optional()
+          .describe(
+            'Tiebreaker for `before`: the `id` of the last entry on the previous page. ' +
+            'Pass it together with `before` when several records share one instant, or ' +
+            'the ones at that instant after the page boundary are skipped.',
+          ),
       },
     },
-    async ({ limit, before }) => {
-      const cursor = pagingCursor(before);
+    async ({ limit, before, before_id }) => {
+      const cursor = pagingCursor(before, before_id);
       if (!cursor.ok) return toolError(cursor.error);
-      const r = await withContext((ctx) => MedicationService.list(ctx, { limit, before: cursor.value }));
+      const r = await withContext((ctx) => MedicationService.list(ctx, { limit, before: cursor.value, beforeId: cursor.id }));
       if ('error' in r) return toolError(r.error);
       return toolResult(
         r.value.records.map((rec) => ({
@@ -266,12 +290,20 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
           .string()
           .optional()
           .describe('ISO 8601 instant. Only labs drawn before it — pass the oldest `at` from the previous page.'),
+        before_id: z
+          .string()
+          .optional()
+          .describe(
+            'Tiebreaker for `before`: the `id` of the last entry on the previous page. ' +
+            'Pass it together with `before` when several records share one instant, or ' +
+            'the ones at that instant after the page boundary are skipped.',
+          ),
       },
     },
-    async ({ limit, before }) => {
-      const cursor = pagingCursor(before);
+    async ({ limit, before, before_id }) => {
+      const cursor = pagingCursor(before, before_id);
       if (!cursor.ok) return toolError(cursor.error);
-      const r = await withContext((ctx) => LabService.list(ctx, { limit, before: cursor.value }));
+      const r = await withContext((ctx) => LabService.list(ctx, { limit, before: cursor.value, beforeId: cursor.id }));
       if ('error' in r) return toolError(r.error);
       return toolResult(
         r.value.records.map((rec) => ({
@@ -301,12 +333,20 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
           .string()
           .optional()
           .describe('ISO 8601 instant. Only entries written before it — pass the oldest `at` from the previous page.'),
+        before_id: z
+          .string()
+          .optional()
+          .describe(
+            'Tiebreaker for `before`: the `id` of the last entry on the previous page. ' +
+            'Pass it together with `before` when several records share one instant, or ' +
+            'the ones at that instant after the page boundary are skipped.',
+          ),
       },
     },
-    async ({ limit, before }) => {
-      const cursor = pagingCursor(before);
+    async ({ limit, before, before_id }) => {
+      const cursor = pagingCursor(before, before_id);
       if (!cursor.ok) return toolError(cursor.error);
-      const r = await withContext((ctx) => JournalService.list(ctx, { limit, before: cursor.value }));
+      const r = await withContext((ctx) => JournalService.list(ctx, { limit, before: cursor.value, beforeId: cursor.id }));
       if ('error' in r) return toolError(r.error);
       return toolResult(
         r.value.records.map((rec) => ({
@@ -337,12 +377,20 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
           .string()
           .optional()
           .describe('ISO 8601 instant. Only templates last edited before it — pass the oldest `updated_at` from the previous page.'),
+        before_id: z
+          .string()
+          .optional()
+          .describe(
+            'Tiebreaker for `before`: the `id` of the last entry on the previous page. ' +
+            'Pass it together with `before` when several records share one instant, or ' +
+            'the ones at that instant after the page boundary are skipped.',
+          ),
       },
     },
-    async ({ limit, before }) => {
-      const cursor = pagingCursor(before);
+    async ({ limit, before, before_id }) => {
+      const cursor = pagingCursor(before, before_id);
       if (!cursor.ok) return toolError(cursor.error);
-      const r = await withContext((ctx) => TemplateService.list(ctx, { limit, before: cursor.value }));
+      const r = await withContext((ctx) => TemplateService.list(ctx, { limit, before: cursor.value, beforeId: cursor.id }));
       if ('error' in r) return toolError(r.error);
       return toolResult(
         r.value.records.map((rec) => ({
@@ -374,10 +422,10 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         'it cannot (a transmasc account, a testosterone curve). Report which one was used. ' +
         SAFETY_NOTE,
       inputSchema: {
-        analyte: z.enum(['e2', 't']).optional().describe('Estradiol (default) or testosterone'),
+        analyte: z.enum(['e2', 't']).optional().describe('"e2" = estradiol (default), "t" = testosterone. These exact strings; no other value is accepted.'),
         from_days: z.number().int().min(1).max(3650).optional().describe('How far back to show (default 90)'),
         to_days: z.number().int().min(0).max(365).optional().describe('How far ahead to show (default 14)'),
-        points: z.number().int().min(10).max(1000).optional().describe('Max curve points (default 200)'),
+        points: z.number().int().min(10).max(1000).optional().describe('Max curve points (default 200). The final sample is always appended, so a page may carry one more than this.'),
         with_calibration: z.boolean().optional().describe('Use lab results to personalise the curve (default true)'),
       },
     },

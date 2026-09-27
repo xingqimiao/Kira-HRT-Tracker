@@ -232,8 +232,24 @@ export interface StoredRecord {
 export interface ListOptions {
     limit?: number;
     category?: string;
-    /** Exclusive upper bound on `taken_at`, for paging backwards through time. */
+    /**
+     * Exclusive upper bound for paging backwards through time.
+     *
+     * A **tiebreaker**, because `taken_at` alone is not unique: an account that records
+     * a CPA tablet and a sublingual EV dose at the same instant has several rows sharing
+     * one `taken_at`, and paging on the timestamp alone skipped the rest of that group —
+     * `taken_at < cursor` excludes every row at the cursor's own instant, so a page
+     * boundary landing inside the group dropped them: neither page returned them.
+     * Measured: five same-instant doses, page size 1, walking the cursor reached 1.
+     *
+     * The cursor is therefore the pair `(before, beforeId)`, compared as a tuple against
+     * `(taken_at, id)`, with `id` as the stable second sort key. A plain `before` with no
+     * `beforeId` still means "strictly older than this instant", which is what a caller
+     * that has only a timestamp can ask for.
+     */
     before?: number;
+    /** The id of the last row on the previous page; the tiebreaker for `before`. */
+    beforeId?: string;
     /**
      * Restrict to ids beginning with this string.
      *
@@ -568,8 +584,21 @@ export const RecordService = {
             where += ` AND category = $${params.length}`;
         }
         if (typeof opts.before === 'number' && Number.isFinite(opts.before)) {
-            params.push(new Date(opts.before).toISOString());
-            where += ` AND taken_at < $${params.length}::timestamptz`;
+            const at = new Date(opts.before).toISOString();
+            if (typeof opts.beforeId === 'string' && opts.beforeId !== '') {
+                // Composite cursor: strictly before (taken_at, id) as a tuple, so a page
+                // boundary inside a group of same-instant rows resumes *within* the group
+                // instead of past all of it. `id` is the same key the ORDER BY uses, so
+                // the tuple comparison and the sort cannot disagree.
+                params.push(at);
+                const atIdx = params.length;
+                params.push(opts.beforeId);
+                where += ` AND (taken_at, id) < ($${atIdx}::timestamptz, $${params.length})`;
+            } else {
+                // Timestamp-only cursor: everything strictly older than that instant.
+                params.push(at);
+                where += ` AND taken_at < $${params.length}::timestamptz`;
+            }
         }
         if (typeof opts.idPrefix === 'string' && opts.idPrefix !== '') {
             // The prefixes are literal (\`tpl:\`, \`dose:\`), so there is no wildcard to
@@ -585,7 +614,7 @@ export const RecordService = {
             `SELECT id, taken_at, category, payload_encrypted, updated_at
                FROM records
               WHERE ${where}
-              ORDER BY taken_at DESC
+              ORDER BY taken_at DESC, id DESC
               LIMIT $2`,
             params,
         );

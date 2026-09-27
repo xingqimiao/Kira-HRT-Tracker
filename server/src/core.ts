@@ -163,12 +163,15 @@ function asRecord(record: StoredRecord): RecordItem {
 async function listKind<T>(
     ctx: AuthContext,
     kind: RecordKind,
-    opts: { limit?: number; before?: number } = {},
+    opts: { limit?: number; before?: number; beforeId?: string } = {},
 ): Promise<{ records: RecordItem<T>[]; unreadable: number }> {
     const { records, unreadable } = await RecordService.list(ctx, {
         limit: opts.limit,
         category: KIND_SPEC[kind].category,
         before: opts.before,
+        // The tiebreaker, so a page boundary inside a group of same-instant records
+        // resumes within the group instead of past it — see `ListOptions.before`.
+        beforeId: opts.beforeId,
         // A template shares its category with the weight/PK scalars and the tombstone
         // maps, so the category alone would page past it. The id prefix is what makes
         // `limit` mean "templates returned" rather than "setting rows considered".
@@ -319,10 +322,11 @@ export const MedicationService = {
         };
     },
 
-    async list(ctx: AuthContext, opts: { limit?: number; before?: unknown } = {}) {
+    async list(ctx: AuthContext, opts: { limit?: number; before?: unknown; beforeId?: unknown } = {}) {
         return await listKind<DoseRecord>(ctx, 'dose', {
             limit: opts.limit,
             before: typeof opts.before === 'number' ? opts.before : undefined,
+            beforeId: typeof opts.beforeId === 'string' ? opts.beforeId : undefined,
         });
     },
 
@@ -364,10 +368,11 @@ export const LabService = {
         };
     },
 
-    async list(ctx: AuthContext, opts: { limit?: number; before?: unknown } = {}) {
+    async list(ctx: AuthContext, opts: { limit?: number; before?: unknown; beforeId?: unknown } = {}) {
         return await listKind<LabRecord>(ctx, 'lab', {
             limit: opts.limit,
             before: typeof opts.before === 'number' ? opts.before : undefined,
+            beforeId: typeof opts.beforeId === 'string' ? opts.beforeId : undefined,
         });
     },
 
@@ -420,10 +425,11 @@ export const JournalService = {
         };
     },
 
-    async list(ctx: AuthContext, opts: { limit?: number; before?: unknown } = {}) {
+    async list(ctx: AuthContext, opts: { limit?: number; before?: unknown; beforeId?: unknown } = {}) {
         return await listKind<JournalRecord>(ctx, 'journal', {
             limit: opts.limit,
             before: typeof opts.before === 'number' ? opts.before : undefined,
+            beforeId: typeof opts.beforeId === 'string' ? opts.beforeId : undefined,
         });
     },
 
@@ -470,10 +476,11 @@ export const TemplateService = {
         };
     },
 
-    async list(ctx: AuthContext, opts: { limit?: number; before?: unknown } = {}) {
+    async list(ctx: AuthContext, opts: { limit?: number; before?: unknown; beforeId?: unknown } = {}) {
         return await listKind<TemplateRecord>(ctx, 'template', {
             limit: opts.limit,
             before: typeof opts.before === 'number' ? opts.before : undefined,
+            beforeId: typeof opts.beforeId === 'string' ? opts.beforeId : undefined,
         });
     },
 
@@ -502,16 +509,17 @@ export const TimelineService = {
      * first" is the single most common question an agent asks, and both the web
      * timeline and the MCP tool should answer it identically.
      */
-    async get(ctx: AuthContext, opts: { limit?: number; before?: unknown } = {}): Promise<TimelineEntry[]> {
+    async get(ctx: AuthContext, opts: { limit?: number; before?: unknown; beforeId?: unknown } = {}): Promise<TimelineEntry[]> {
         const limit = Math.min(Math.max(opts.limit ?? 100, 1), 1000);
         // `before` is applied inside each query, not to the merged result: any entry in
         // the top `limit` overall must be in the top `limit` of its own kind, and the
         // same holds above a cursor. Filtering after the merge would page from the
         // beginning of one side's history every time.
         const before = typeof opts.before === 'number' ? opts.before : undefined;
+        const beforeId = typeof opts.beforeId === 'string' ? opts.beforeId : undefined;
         const [doses, labs] = await Promise.all([
-            listKind<DoseRecord>(ctx, 'dose', { limit, before }),
-            listKind<LabRecord>(ctx, 'lab', { limit, before }),
+            listKind<DoseRecord>(ctx, 'dose', { limit, before, beforeId }),
+            listKind<LabRecord>(ctx, 'lab', { limit, before, beforeId }),
         ]);
 
         const merged: TimelineEntry[] = [

@@ -895,11 +895,21 @@ export function createRequestHandler() {
         const ctx = await requireBoundCtx();
         if (!ctx) return;
         const beforeRaw = url.searchParams.get('before');
-        const before = beforeRaw ? Number(beforeRaw) : undefined;
+        // `before` arrives either as epoch milliseconds or as an ISO instant — the app
+        // pages with the `taken_at` **string** this route itself returns, while a
+        // hand-written client tends to send a number. `Number('2026-09-27T…')` is NaN,
+        // which used to make the cursor silently vanish (an unparsed `before` left the
+        // page unfiltered, so paging returned the same first page forever). Parse as a
+        // date when it is not numeric, and drop it only when it is neither.
+        const before = beforeRaw === null ? undefined
+          : (Number.isFinite(Number(beforeRaw)) ? Number(beforeRaw) : Date.parse(beforeRaw));
         const { records, unreadable } = await RecordService.list(ctx, {
           limit: Number(url.searchParams.get('limit') ?? 200),
           category: url.searchParams.get('category') ?? undefined,
-          before: Number.isFinite(before) ? before : undefined,
+          before: Number.isFinite(before as number) ? (before as number) : undefined,
+          // The tiebreaker, so the app's own paging resumes inside a group of records
+          // that share one instant instead of skipping past them — see `ListOptions`.
+          beforeId: url.searchParams.get('before_id') || undefined,
         });
         // The settings row is where a settings route or an agent writes, and it is
         // not a record — so it rides with the read the app already makes rather
