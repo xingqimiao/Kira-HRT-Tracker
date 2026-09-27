@@ -419,7 +419,15 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         'their own lab results. Returns a downsampled curve plus peak/trough/current values. ' +
         'The `engine` field names the pharmacokinetic model that actually computed the curve — ' +
         'it is the account\'s choice where that engine can serve, and the built-in model where ' +
-        'it cannot (a transmasc account, a testosterone curve). Report which one was used. ' +
+        'it cannot (a transmasc account, a testosterone curve). Report which one was used.\n' +
+        '\n' +
+        '`window` reports the span actually covered, which is **not always** the span asked ' +
+        'for: the simulation grid ends at `max(lastDose + 14d, now + 24h)` and begins at the ' +
+        'first logged dose. So `to_days: 14` returns a full 14 days on an account dosing this ' +
+        'week, but only about a day on one whose last dose was a month ago — the same ' +
+        'arguments, a different horizon. **Check `window.endTruncated` before comparing the ' +
+        'far end of two calls**, and read `window.endDaysFromNow` for the real horizon. ' +
+        '`startTruncated` just means the history does not go back that far. ' +
         SAFETY_NOTE,
       inputSchema: {
         analyte: z.enum(['e2', 't']).optional().describe('"e2" = estradiol (default), "t" = testosterone. These exact strings; no other value is accepted.'),
@@ -917,7 +925,10 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
     async ({ id }) => {
       const r = await withContext((ctx) => ShareService.revoke(ctx.userId, id));
       if ('error' in r) return toolError(r.error);
-      if (!r.value) return toolError('no share with that id on this account');
+      // A miss is reported as data, not as a tool error — the same shape
+      // `hrt_delete_record` returns, so a caller does not have to handle "it returned
+      // false" and "it threw" as two different kinds of failure for two sibling verbs.
+      if (!r.value) return toolResult({ revoked: false, id });
       return toolResult({ revoked: true, id });
     },
   );

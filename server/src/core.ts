@@ -570,6 +570,26 @@ export interface Prediction {
   /** True when the curve was subsampled; `points` is then not every computed step. */
   downsampled: boolean;
   totalPoints: number;
+  /**
+   * The span actually covered, which is not always the span requested.
+   *
+   * The simulation grid ends at `max(lastDose + 14d, now + 24h)` and begins at the first
+   * logged dose, so either end can fall short of what was asked for. `endTruncated` is
+   * the one to check before comparing two calls' far ends: the same `to_days` yields 14
+   * days on an account dosing this week and ~1 day on one whose last dose was a month
+   * back. `startTruncated` just means the history does not go back that far.
+   */
+  window: {
+    start: string;
+    end: string;
+    /** Signed days from now: negative is past, positive is future. */
+    startDaysFromNow: number;
+    endDaysFromNow: number;
+    /** The grid began after the requested start — i.e. history is shorter than asked. */
+    startTruncated: boolean;
+    /** The grid ended before the requested end — the forecast stops short of `to_days`. */
+    endTruncated: boolean;
+  };
   calibration: { method: string; scale: number; labs: number; fitErrorPct: number | null };
 }
 
@@ -703,8 +723,35 @@ export const PKSimulationService = {
         // injected ten weeks ago is still releasing, and dropping it would bend the
         // whole curve near the window's start.
         const nowH = Date.now() / HOUR_MS;
-        const fromH = nowH - (opts.fromDays ?? 90) * 24;
-        const toH = nowH + (opts.toDays ?? 14) * 24;
+        const requestedFromH = nowH - (opts.fromDays ?? 90) * 24;
+        const requestedToH = nowH + (opts.toDays ?? 14) * 24;
+
+        // The simulation grid does NOT span the requested window. `logic.ts` sizes it to
+        // `max(lastDose + 14d, now + 24h)` — it was built to draw a curve ending shortly
+        // after "now", not to extrapolate arbitrarily far. So a request that reaches past
+        // the grid is silently clamped, and `to_days` stops meaning what it says: with a
+        // recent dose the grid runs ~14 days past the last dose and `to_days=14` is exact,
+        // but on an account whose last dose was weeks ago the same `to_days=14` is cut to
+        // ~24h. Two calls with identical arguments then return different horizons, and a
+        // comparison between them is wrong without ever saying so.
+        //
+        // The grid is `logic.ts`'s to size and that file must not change (it is a strict
+        // port of PKcore.swift), so the clamp is not removed here — it is *disclosed*.
+        // `window` reports what was actually covered, which is the honest answer a caller
+        // can act on, and `endTruncated` is the flag to check before trusting the far end.
+        //
+        // "Truncated" is judged against the grid's own resolution, not an epsilon: the
+        // lattice is `(end - start) / steps`, so `max(lastDose + 14d, now + 24h)` is
+        // reached within one step even when the boundary does not land on a sample, and
+        // `now` is read twice (once here, once inside `logic.ts`) so a few milliseconds
+        // of drift is normal. A sub-step shortfall is the grid doing its job; only a
+        // real shortfall — missing by more than one step — is reported.
+        const simStartH = sim.timeH[0] ?? requestedFromH;
+        const simEndH = sim.timeH[sim.timeH.length - 1] ?? requestedToH;
+        const stepH = sim.timeH.length > 1 ? Math.abs(sim.timeH[1] - sim.timeH[0]) : 0;
+        const toleranceH = Math.max(stepH, 1e-6);
+        const fromH = Math.max(requestedFromH, simStartH);
+        const toH = Math.min(requestedToH, simEndH);
 
         let from = sim.timeH.findIndex((t) => t >= fromH);
         // Written as an explicit reverse scan rather than `findLastIndex`: the app's
@@ -720,6 +767,25 @@ export const PKSimulationService = {
         const windowed: SimulationResult = { ...sim, timeH: sim.timeH.slice(from, to + 1) };
         const windowedValues = series.slice(from, to + 1);
         const { points, downsampled } = subsample(windowed, windowedValues, opts.points ?? DEFAULT_POINT_BUDGET);
+
+        // What the response actually covers, and whether either end was cut short. Both
+        // are derived from the samples returned, not from the request, so a caller can
+        // tell "the model ends here" from "you asked for more than the model has".
+        const windowStartH = sim.timeH[from] ?? fromH;
+        const windowEndH = sim.timeH[to] ?? toH;
+        // `startTruncated` is the ordinary case: the grid begins at the first logged
+        // dose, so asking for more history than exists is not a defect. `endTruncated`
+        // is the one that matters — it means the forecast stops short of `to_days`
+        // because the grid does not reach there, which a caller comparing two curves
+        // has to know. Kept separate so the harmless one cannot mask the real one.
+        const windowInfo = {
+          start: timeHToIso(windowStartH),
+          end: timeHToIso(windowEndH),
+          startDaysFromNow: (windowStartH - nowH) / 24,
+          endDaysFromNow: (windowEndH - nowH) / 24,
+          startTruncated: windowStartH > requestedFromH + toleranceH,
+          endTruncated: windowEndH < requestedToH - toleranceH,
+        };
 
         // The headline number: the series at the sample nearest to now.
         const nowIdx = nearestIndex(sim.timeH, nowH);
@@ -737,6 +803,7 @@ export const PKSimulationService = {
                 },
                 downsampled,
                 totalPoints: windowedValues.length,
+                window: windowInfo,
                 calibration: calibrationInfo,
             },
         };
