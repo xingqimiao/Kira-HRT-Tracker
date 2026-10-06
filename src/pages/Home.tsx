@@ -1,5 +1,4 @@
 import React from 'react';
-import FitText from '../components/FitText';
 import Icon from '../components/Icon';
 import { Info, Share2, AlertTriangle } from '../icons';
 import { DoseEvent, SimulationResult, LabResult, AntiandrogenChartMode, getDoseAdvisory, getHormoneLevelAdvisory, isT_LabUnit, isMonitoringOnlyLab, modelledEvents, antiandrogenReading, type PkEngineId } from '../../logic';
@@ -219,7 +218,7 @@ const Home: React.FC<HomeProps> = ({
     //
     // Only the paired *numeric* readings take part — estradiol (or the transmasc
     // testosterone pair) and the anti-androgen's grams/mg. A relative-time
-    // anti-androgen ("2 天前") is words, not digits, and sizes itself with FitText;
+    // anti-androgen ("2 天前") is words, not digits, and renders as a small line;
     // a lone numeric column (an em dash, or the AA headline) is its own length.
     const primaryChars = (isTransmasc ? currentT.toFixed(0) : currentLevel.toFixed(1)).length;
     const aaChars = antiandrogen.kind === 'grams'
@@ -282,13 +281,8 @@ const Home: React.FC<HomeProps> = ({
     // under the digits.
     const vialDrops = (isTransmasc ? currentT.toFixed(0) : currentLevel.toFixed(1)).length > 5;
     const vial = (events.length > 0 || hormoneLabs.length > 0) ? (
-        // Hidden on a phone (`hidden sm:flex`): the card is narrow there, and the
-        // vial beside a reading crowds the number that matters more. It is a
-        // second reading of the value already printed next to it, so nothing is
-        // lost — the desktop card keeps it. `vialDrops` still governs the wrap on
-        // the wider card.
         <span
-            className={`hidden shrink-0 self-start sm:flex ${vialDrops ? 'w-full justify-center [--vial-drop:14px]' : ''}`}
+            className={`flex shrink-0 self-start ${vialDrops ? 'w-full justify-center [--vial-drop:14px]' : ''}`}
             style={{ marginTop: `calc(${vialOffset}px + var(--vial-drop, 0px))` }}
         >
             {/* Sized against the reading beside it. The canvas is 26 wide but the tube is
@@ -524,18 +518,13 @@ const Home: React.FC<HomeProps> = ({
                                         // How long ago the last dose was, in the reader's own
                                         // relative-time wording — the honest reading for a drug
                                         // taken every few days, where a mg count says nothing.
-                                        // Relative time is words, not a number: "2 天前" is
-                                        // four glyphs, "2 个月前" is five, "12 个月前" is six.
-                                        // One fixed role is wrong for most of its own values —
-                                        // big enough for the shortest overflows on the next,
-                                        // small enough for the longest makes the common case
-                                        // look half-empty — so the size is measured against
-                                        // the slot instead. It keeps the display role the
-                                        // numeric readings use, and only steps down as far as
-                                        // the text needs.
-                                        <FitText className={`text-m3-display-large leading-none ${on}`}>
+                                        // Shown small: it is words, not a number, so the
+                                        // display role the numeric readings use made it the
+                                        // loudest thing on the card. A small line reads as the
+                                        // quiet fact it is.
+                                        <span className={`text-sm ${on}`}>
                                             {formatRelative(nowSec - antiandrogen.sinceH * 3600, nowSec, t)}
-                                        </FitText>
+                                        </span>
                                     )}
                                     {antiandrogen.kind === 'none' && (
                                         // E2's placeholder is `text-m3-display-large
