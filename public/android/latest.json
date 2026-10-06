@@ -2,7 +2,7 @@
   "version": "1.0.2",
   "versionCode": 1000002,
   "apk": "https://hrt.kiramyao.com/android/KiraHRT-1.0.2-release.apk",
-  "sha256": "93754B05B8FCF0CB4AA7A8035A3660DDACFE38E4AECF9306D42825E30832C733",
+  "sha256": "A963D341BDB22F9FBC465AB5C9959C9C72DEBF52114A9188109622A4F9643313",
   "notes": [
     "K线模式：交易终端式三栏布局（图表 / 近期剂量 / 记录）",
     "K线自动切换粒度：7天为4小时K，30天为日K，超过120天自动变周K",
