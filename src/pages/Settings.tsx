@@ -335,7 +335,6 @@ const Settings: React.FC<SettingsProps> = ({
                 >
                     <div>
                         <p className={rowLabel}>{t('settings.download_android')}</p>
-                        <p className={`text-xs ${muted} mt-0.5`}>{t('settings.download_android_desc')}</p>
                     </div>
                     <Icon icon={ChevronRight} size={15} className={muted} />
                 </button>
@@ -353,7 +352,6 @@ const Settings: React.FC<SettingsProps> = ({
             >
                 <div>
                     <p className={rowLabel}>{t('drawer.algorithm_credits')}</p>
-                    <p className={`text-xs ${muted} mt-0.5`}>{t('drawer.algorithm_credits_desc')}</p>
                 </div>
                 <Icon icon={ChevronRight} size={15} className={muted} />
             </button>
@@ -385,7 +383,6 @@ const Settings: React.FC<SettingsProps> = ({
             >
                 <div>
                     <p className={rowLabel}>{t('settings.privacy')}</p>
-                    <p className={`text-xs ${muted} mt-0.5`}>{t('settings.privacy_desc')}</p>
                 </div>
                 <Icon icon={ChevronRight} size={15} className={muted} />
             </button>
@@ -400,7 +397,6 @@ const Settings: React.FC<SettingsProps> = ({
                 <button onClick={onOpenLicences} className={rowBase}>
                     <div>
                         <p className={rowLabel}>{t('licence.title')}</p>
-                        <p className={`text-xs ${muted} mt-0.5`}>{t('licence.row_desc')}</p>
                     </div>
                     <Icon icon={ChevronRight} size={15} className={muted} />
                 </button>
