@@ -21,3 +21,17 @@ export type AppTheme = 'light' | 'dark' | 'system';
 
 /** M3 key colour. The palette is the same in both; only the primary/accent roles swap. */
 export type KeyColor = 'pink' | 'blue';
+
+/**
+ * How the overview chart draws the primary series.
+ *
+ * 'line' is the continuous curve; '1h' and '1d' are candle (K线) views whose
+ * number is the *requested* granularity in hours — the interval actually drawn
+ * coarsens on wide windows, and the chart discloses what ran. See
+ * `resolveCandleIntervalH` in utils/candles.ts.
+ */
+export type ChartStyle = 'line' | '1h' | '1d';
+
+/** Guard for a stored/synced value this build may not know. */
+export const normalizeChartStyle = (v: unknown): ChartStyle =>
+    v === '1h' || v === '1d' ? v : 'line';

@@ -10,6 +10,8 @@ import {
 import { Activity } from '../icons';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { useElementSize } from '../hooks/useElementSize';
+import { buildCandles, resolveCandleIntervalH, type CandleBaseH } from '../utils/candles';
+import type { ChartStyle } from '../constants';
 
 const HOUR = 3600000;
 const DAY = 24 * HOUR;
@@ -94,7 +96,15 @@ const useEasedPair = (target: [number, number], instant: boolean): [number, numb
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [target[0], target[1], instant]);
 
-    useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
+    // The cancelled frame's id is zeroed, not just cancelled: a stale non-zero
+    // id is indistinguishable from a loop still in flight, and the guard above
+    // would then never let a new loop start. React StrictMode's double mount
+    // hits exactly this — unmount cancels the pending frame, remount sees the
+    // dead id, and the ease freezes on its first target for the component's
+    // whole life.
+    useEffect(() => () => {
+        if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = 0; }
+    }, []);
 
     return shown;
 };
@@ -141,6 +151,7 @@ const ResultChart = ({
     mode,
     title,
     timeZone,
+    chartStyle = 'line',
 }: {
     sim: SimulationResult | null;
     events: DoseEvent[];
@@ -151,6 +162,8 @@ const ResultChart = ({
     mode?: HRTMode;
     title?: string;
     timeZone?: string;
+    /** Line or candle view for the primary series — the personalization setting. */
+    chartStyle?: ChartStyle;
 }) => {
     const { t, lang } = useTranslation();
     const { isTransmasc: contextIsTransmasc } = useHRTMode();
@@ -316,6 +329,23 @@ const ResultChart = ({
         }).filter((m): m is { t: number; v: number; axis: 'p' | 's'; event: DoseEvent } => !!m && m.t >= t0 && m.t <= t1);
     }, [sim, events, isTransmasc, hasSecondary, calibrationFn, t0, t1]);
 
+    // ── Candle (K线) view ──────────────────────────────────────────────────
+    // The primary series read as OHLC buckets — see utils/candles.ts. The
+    // requested granularity is a floor: on a window too wide to draw one candle
+    // per hour (or per day) the interval coarsens to the nearest step that
+    // fits, and the header chip discloses what actually ran rather than
+    // silently drawing something else.
+    const isCandle = chartStyle !== 'line';
+    const candleBase: CandleBaseH = chartStyle === '1h' ? 1 : 24;
+    const candleIntervalH = useMemo(
+        () => (isCandle && t1 > t0 ? resolveCandleIntervalH(candleBase, t1 - t0) : candleBase),
+        [isCandle, candleBase, t0, t1],
+    );
+    const candles = useMemo(
+        () => (isCandle ? buildCandles(slice.map(d => ({ t: d.t, v: d.p })), candleIntervalH) : []),
+        [isCandle, slice, candleIntervalH],
+    );
+
     // Y domains scale to what's visible in the current window.
     const yPrimary = useMemo(() => {
         let mx = -Infinity;
@@ -354,6 +384,11 @@ const ResultChart = ({
     const mB = 26 * ui;
     const plotW = Math.max(0, width - mL - mR);
     const plotH = Math.max(0, height - mT - mB);
+
+    // Candle body width, from how many candles the *target* window holds — not
+    // from the drawn array, which spans the eased union and would pulse the
+    // widths mid-glide. Capped so a two-candle window does not paint planks.
+    const candleW = Math.max(1, Math.min(14, ((plotW * candleIntervalH * HOUR) / Math.max(1, t1 - t0)) * 0.66));
 
     // Entrance timing. A marker at x is delayed by however long the sweep takes
     // to reach it, so it lands with the line rather than ahead of it.
@@ -553,6 +588,17 @@ const ResultChart = ({
         { key: 'all', label: t('chart.range_all') },
     ];
 
+    // The header chip's name for the interval actually drawn. Everything the
+    // resolver can return has a trading-chart name: hourly steps, 日K, 三日K,
+    // and whole weeks once the ladder is exhausted.
+    const kIntervalLabel = !isCandle ? '' : candleIntervalH < 24
+        ? t('chart.k.hour').replace('{n}', String(candleIntervalH))
+        : candleIntervalH === 24
+            ? t('chart.k.day')
+            : candleIntervalH % 168 === 0
+                ? (candleIntervalH === 168 ? t('chart.k.week') : t('chart.k.weeks').replace('{n}', String(candleIntervalH / 168)))
+                : t('chart.k.days').replace('{n}', String(candleIntervalH / 24));
+
     if (!sim || sim.timeH.length === 0) {
         return (
             <div className="h-72 md:h-96 flex flex-col items-center justify-center text-[var(--color-m3-on-surface-variant)] ">
@@ -574,6 +620,12 @@ const ResultChart = ({
                     {title ?? t('chart.title')}
                 </h2>
                 <div className="flex items-center gap-2 shrink-0">
+                    {/* Candle view: what actually ran. The chosen granularity is a
+                        floor, and a window too wide to honour it draws a coarser
+                        interval — saying so here, not guessing silently. */}
+                    {isCandle && (
+                        <span className="m3-text-note opacity-70 tabular-nums">{kIntervalLabel}</span>
+                    )}
                     {Math.abs(calFactor - 1) > 0.001 && (
                         <span className="m3-text-note opacity-70 tabular-nums">
                             ×{calFactor.toFixed(2)}
@@ -717,15 +769,50 @@ const ResultChart = ({
                         )}
 
                         <g clipPath={`url(#clip-${clipId})`}>
-                            <g clipPath={`url(#sweep-${clipId})`}>
-                                {/* Primary curve */}
+                        <g clipPath={`url(#sweep-${clipId})`}>
+                            {/* Primary series — the line, or OHLC candles when the
+                                personalization setting asks for K线. Candles replace
+                                the path entirely: drawing both would put the same
+                                series on screen twice. */}
+                            {isCandle ? (
+                                <g stroke={c.primary} strokeWidth={1}>
+                                    {candles.map(cd => {
+                                        const cx = X((cd.t0 + cd.t1) / 2);
+                                        const yHigh = YP(cd.high);
+                                        const yLow = YP(cd.low);
+                                        const yTop = Math.min(YP(cd.open), YP(cd.close));
+                                        const yBottom = Math.max(YP(cd.open), YP(cd.close));
+                                        const up = cd.close >= cd.open;
+                                        return (
+                                            // Solid body for a day that ended higher than it
+                                            // started, hollow for one that ended lower — the
+                                            // direction without a second colour, which the
+                                            // heatmap's lightness-only rule would otherwise
+                                            // make unreadable.
+                                            <g key={cd.t0} fill={up ? c.primary : 'none'}>
+                                                {/* Wick in two segments, so a hollow body has
+                                                    nothing showing through it. */}
+                                                {yTop > yHigh && <line x1={cx} y1={yHigh} x2={cx} y2={yTop} />}
+                                                {yLow > yBottom && <line x1={cx} y1={yBottom} x2={cx} y2={yLow} />}
+                                                <rect
+                                                    x={cx - candleW / 2}
+                                                    y={yTop}
+                                                    width={candleW}
+                                                    height={Math.max(1, yBottom - yTop)}
+                                                />
+                                            </g>
+                                        );
+                                    })}
+                                </g>
+                            ) : (
                                 <path d={linePath('p')} fill="none" stroke={c.primary} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />
+                            )}
 
-                                {/* Secondary curve (CPA) — kept quiet so E2 stays the focus */}
-                                {hasSecondary && (
-                                    <path d={linePath('s')} fill="none" stroke={c.second} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
-                                )}
-                            </g>
+                            {/* Secondary curve (CPA) — kept quiet so E2 stays the focus */}
+                            {hasSecondary && (
+                                <path d={linePath('s')} fill="none" stroke={c.second} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+                            )}
+                        </g>
 
                             {/* "Now" line + dot */}
                             {now >= t0 && now <= t1 && (
