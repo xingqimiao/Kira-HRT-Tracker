@@ -146,9 +146,16 @@ export default defineConfig(({ mode }) => {
           ]
         },
         workbox: {
-          // Shared pages require the network API and should always load the
-          // current application shell instead of an older precached shell.
-          navigateFallbackDenylist: [/^\/share(?:\/|$)/],
+          // Navigations that must reach the network instead of the precached app
+          // shell. Workbox's NavigationRoute answers *every* in-scope navigation
+          // with `index.html`, so a person who has the app installed and then opens
+          // `/sitemap.xml` or `/robots.txt` in the address bar is handed the app —
+          // the file they asked for is invisible behind the worker. `/share` was the
+          // first of these (it needs the live shell, not a stale one) and the two SEO
+          // files are the same shape. Googlebot does not run service workers, so this
+          // is not a crawl fix; it is the fix for a human checking the sitemap, which
+          // is exactly how this was found.
+          navigateFallbackDenylist: [/^\/share(?:\/|$)/, /^\/sitemap\.xml$/, /^\/robots\.txt$/],
           // The OCR assets are ~23 MB and are only fetched when someone opens the
           // scan panel. Precaching them would put that download on every install —
           // including for the overwhelming majority who never scan a report — and
