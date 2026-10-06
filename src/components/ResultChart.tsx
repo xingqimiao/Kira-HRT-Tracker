@@ -858,8 +858,10 @@ const ResultChart = ({
                                 );
                             })}
 
-                            {/* Lab results (measured) — hollow diamonds */}
-                            {labPoints.map((l, i) => {
+                            {/* Lab results (measured) — hollow diamonds. Candle mode
+                                leaves them out with the dose dots: the reader asked
+                                for candles alone on this view. */}
+                            {!isCandle && labPoints.map((l, i) => {
                                 const cx = X(l.t);
                                 const cy = YP(l.v);
                                 return (
