@@ -74,6 +74,21 @@ function linkSubtitle(
 type DeviceKind = 'app-phone' | 'app-tablet' | 'app-desktop' | 'browser' | 'browser-mobile' | 'agent' | 'unknown';
 
 /**
+ * The Android model in a user agent, or '' when it names none.
+ *
+ * Chrome on Android puts the model after `Android <version>;` (`… Android 13; SM-S918B …`).
+ * Every other browser on Android — Firefox, and the shells — writes `Mobile` or
+ * `Tablet` there instead of a model, which is a form factor, not a device, so those
+ * are rejected. iOS exposes no model at all: Safari and every in-app webview omit it.
+ */
+function androidModel(userAgent: string): string {
+  const m = /Android[^;]*;\s*([^;)]+?)(?:\s+Build[/)]|\s*\))/.exec(userAgent)
+    || /Android[^;]*;\s*([^;)]+?)\)/.exec(userAgent);
+  const token = (m?.[1] ?? '').trim();
+  return /^(mobile|tablet|build|wv)\b/i.test(token) ? '' : token;
+}
+
+/**
  * A device row's label and kind, from a stored user agent.
  *
  * The Android app records the canonical `KiraHRT/<version> (<device>)` string the
@@ -84,6 +99,10 @@ type DeviceKind = 'app-phone' | 'app-tablet' | 'app-desktop' | 'browser' | 'brow
  * is the same bug pointing the other way. `appLabel` is passed in so the wording
  * stays in the reader's language; the rest is a proper noun (a model code, a browser
  * name), which is why it is not translated.
+ *
+ * For a browser session the model is shown too *when the UA carries one* — Android
+ * Chrome does, so a phone browser reads "Android SM-S918B · Chrome". Desktop browsers
+ * and iOS expose no model, so those stay OS · browser; there is nothing to show.
  *
  * A UA that names neither a browser nor an OS is an API/MCP client — those send their
  * own agent string and get the agent glyph rather than "Unknown device".
@@ -103,8 +122,10 @@ function parseDevice(userAgent: string | null, fallback: string, appLabel: strin
     return { label, kind };
   }
 
+  const isAndroid = /Android/.test(userAgent);
+  const model = isAndroid ? androidModel(userAgent) : '';
   const os = /Windows NT/.test(userAgent) ? 'Windows'
-    : /Android/.test(userAgent) ? 'Android'
+    : isAndroid ? (model ? `Android ${model}` : 'Android')
     : /iPhone|iPad|iPod/.test(userAgent) ? 'iOS'
     : /Mac OS X/.test(userAgent) ? 'macOS'
     : /Linux/.test(userAgent) ? 'Linux' : '';
