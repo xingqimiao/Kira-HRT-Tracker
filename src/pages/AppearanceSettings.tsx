@@ -1,19 +1,40 @@
 import React from 'react';
 import Icon from '../components/Icon';
+import Switch from '../components/Switch';
 import { ArrowLeft, Check } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
-import { AppTheme, KeyColor } from '../constants';
+import { useVial } from '../contexts/VialContext';
+import { AppTheme, ChartStyle, KeyColor } from '../constants';
 
 interface AppearanceSettingsProps {
     theme: AppTheme;
     setTheme: (theme: AppTheme) => void;
     keyColor: KeyColor;
     setKeyColor: (color: KeyColor) => void;
+    /** Whether the overview draws the dose-day grid. */
+    showHeatmap: boolean;
+    setShowHeatmap: (v: boolean) => void;
+    /** How the overview chart draws the primary series. */
+    chartStyle: ChartStyle;
+    setChartStyle: (s: ChartStyle) => void;
     onBack: () => void;
 }
 
-const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ theme, setTheme, keyColor, setKeyColor, onBack }) => {
+/** The chart's draw styles, in display order — see `ChartStyle`. */
+const CHART_STYLES: readonly ChartStyle[] = ['line', '1d'];
+
+const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
+const rowLabel = 'text-m3-body-medium text-[var(--color-m3-on-surface)] ';
+const muted = 'text-[var(--color-m3-on-surface-variant)] ';
+
+const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({
+    theme, setTheme, keyColor, setKeyColor,
+    showHeatmap, setShowHeatmap, chartStyle, setChartStyle, onBack,
+}) => {
     const { t } = useTranslation();
+    // The vial owns its own preference; the page reads it from the provider
+    // rather than taking a prop, the same way every other owner of it does.
+    const { showVial, setShowVial } = useVial();
 
     const options = [
         { value: 'system' as const, labelKey: 'theme.system' },
@@ -48,7 +69,7 @@ const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ theme, setTheme
                     <button
                         key={value}
                         onClick={() => setTheme(value)}
-                        className="w-full flex items-center justify-between py-4 border-b border-[var(--color-m3-outline-variant)]  last:border-b-0 text-start"
+                        className={`w-full flex items-center justify-between py-4 ${divider}last:border-b-0 text-start`}
                     >
                         <span className={`text-m3-body-medium ${theme === value
                             ? 'font-semibold text-[var(--color-m3-on-surface)] '
@@ -66,9 +87,7 @@ const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ theme, setTheme
                     {t('settings.key_color')}
                 </p>
                 <div className="w-full flex items-center justify-between py-4">
-                    <span className="text-m3-body-medium text-[var(--color-m3-on-surface)] ">
-                        {t(`settings.key_color.${keyColor}`)}
-                    </span>
+                    <span className={rowLabel}>{t(`settings.key_color.${keyColor}`)}</span>
                     <div className="flex items-center gap-2.5">
                         {keyColors.map(({ id, background }) => (
                             <button
@@ -83,6 +102,52 @@ const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ theme, setTheme
                                 }`}
                                 style={{ background }}
                             />
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* Overview display options. These are looks, not data: how the
+                overview is drawn, so they belong with the theme rather than with
+                the record settings they used to sit among. */}
+            <div className="mx-auto w-full px-6 md:px-8 max-w-2xl">
+                <p className="pt-2 pb-1 text-xs font-semibold uppercase tracking-wider text-[var(--color-m3-on-surface-variant)] ">
+                    {t('settings.group.display')}
+                </p>
+
+                <div className={`${divider} w-full flex items-center justify-between py-4`}>
+                    <div>
+                        <p className={rowLabel}>{t('settings.blood_vial')}</p>
+                        <p className={`text-xs ${muted} mt-0.5`}>{t('settings.blood_vial_desc')}</p>
+                    </div>
+                    <Switch checked={showVial} onChange={setShowVial} />
+                </div>
+
+                <div className={`${divider} w-full flex items-center justify-between py-4`}>
+                    <div>
+                        <p className={rowLabel}>{t('settings.dose_heatmap')}</p>
+                        <p className={`text-xs ${muted} mt-0.5`}>{t('settings.dose_heatmap_desc')}</p>
+                    </div>
+                    <Switch checked={showHeatmap} onChange={setShowHeatmap} />
+                </div>
+
+                {/* How the overview chart draws the primary series. The candle
+                    option is a *request* — a window too wide to honour it draws
+                    a coarser interval, and the chart's header chip says which. */}
+                <div className={`${divider} w-full py-4`}>
+                    <p className={rowLabel}>{t('settings.chart_style')}</p>
+                    <p className={`text-xs ${muted} mt-0.5`}>{t('settings.chart_style_desc')}</p>
+                    <div className="mt-3 flex flex-wrap gap-1" role="group" aria-label={t('settings.chart_style')}>
+                        {CHART_STYLES.map(s => (
+                            <button
+                                key={s}
+                                type="button"
+                                aria-pressed={chartStyle === s}
+                                onClick={() => setChartStyle(s)}
+                                className={`m3-btn m3-btn-sm ${chartStyle === s ? 'm3-btn-filled' : 'm3-btn-outlined'}`}
+                            >
+                                {t(`settings.chart_style.${s}`)}
+                            </button>
                         ))}
                     </div>
                 </div>

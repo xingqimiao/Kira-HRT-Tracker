@@ -25,13 +25,14 @@ export type KeyColor = 'pink' | 'blue';
 /**
  * How the overview chart draws the primary series.
  *
- * 'line' is the continuous curve; '1h' and '1d' are candle (K线) views whose
- * number is the *requested* granularity in hours — the interval actually drawn
- * coarsens on wide windows, and the chart discloses what ran. See
- * `resolveCandleIntervalH` in utils/candles.ts.
+ * 'line' is the continuous curve; '1d' is the candle (K线) view. '1h' was an
+ * hourly option this build retired — `normalizeChartStyle` settles a stored or
+ * synced '1h' onto the daily view rather than honouring it. The interval
+ * actually drawn still coarsens on wide windows; the chart discloses what ran.
+ * See `resolveCandleIntervalH` in utils/candles.ts.
  */
-export type ChartStyle = 'line' | '1h' | '1d';
+export type ChartStyle = 'line' | '1d';
 
 /** Guard for a stored/synced value this build may not know. */
 export const normalizeChartStyle = (v: unknown): ChartStyle =>
-    v === '1h' || v === '1d' ? v : 'line';
+    v === '1d' || v === '1h' ? '1d' : 'line';

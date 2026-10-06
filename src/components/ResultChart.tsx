@@ -10,7 +10,7 @@ import {
 import { Activity } from '../icons';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { useElementSize } from '../hooks/useElementSize';
-import { buildCandles, resolveCandleIntervalH, type CandleBaseH } from '../utils/candles';
+import { buildCandles, resolveCandleIntervalH } from '../utils/candles';
 import type { ChartStyle } from '../constants';
 
 const HOUR = 3600000;
@@ -335,16 +335,14 @@ const ResultChart = ({
     }, [sim, events, isTransmasc, hasSecondary, calibrationFn, t0, t1]);
 
     // ── Candle (K线) view ──────────────────────────────────────────────────
-    // The primary series read as OHLC buckets — see utils/candles.ts. The
-    // requested granularity is a floor: on a window too wide to draw one candle
-    // per hour (or per day) the interval coarsens to the nearest step that
-    // fits, and the header chip discloses what actually ran rather than
-    // silently drawing something else.
+    // The primary series read as OHLC buckets — see utils/candles.ts. The view
+    // is daily; on a window too wide to draw one candle per day the interval
+    // coarsens to the nearest named step that fits, and the header chip
+    // discloses what actually ran rather than silently drawing something else.
     const isCandle = chartStyle !== 'line';
-    const candleBase: CandleBaseH = chartStyle === '1h' ? 1 : 24;
     const candleIntervalH = useMemo(
-        () => (isCandle && t1 > t0 ? resolveCandleIntervalH(candleBase, t1 - t0) : candleBase),
-        [isCandle, candleBase, t0, t1],
+        () => (isCandle && t1 > t0 ? resolveCandleIntervalH(24, t1 - t0) : 24),
+        [isCandle, t0, t1],
     );
     const candles = useMemo(
         () => (isCandle ? buildCandles(slice.map(d => ({ t: d.t, v: d.p })), candleIntervalH) : []),
@@ -593,16 +591,14 @@ const ResultChart = ({
         { key: 'all', label: t('chart.range_all') },
     ];
 
-    // The header chip's name for the interval actually drawn. Everything the
-    // resolver can return has a trading-chart name: hourly steps, 日K, 三日K,
-    // and whole weeks once the ladder is exhausted.
-    const kIntervalLabel = !isCandle ? '' : candleIntervalH < 24
-        ? t('chart.k.hour').replace('{n}', String(candleIntervalH))
-        : candleIntervalH === 24
-            ? t('chart.k.day')
-            : candleIntervalH % 168 === 0
-                ? (candleIntervalH === 168 ? t('chart.k.week') : t('chart.k.weeks').replace('{n}', String(candleIntervalH / 168)))
-                : t('chart.k.days').replace('{n}', String(candleIntervalH / 24));
+    // The header chip's name for the interval actually drawn. Daily is the base;
+    // a window wider than the ladder fits draws whole weeks, or whole multiples
+    // of weeks once even those run out.
+    const kIntervalLabel = !isCandle ? '' : candleIntervalH === 24
+        ? t('chart.k.day')
+        : candleIntervalH % 168 === 0
+            ? (candleIntervalH === 168 ? t('chart.k.week') : t('chart.k.weeks').replace('{n}', String(candleIntervalH / 168)))
+            : t('chart.k.days').replace('{n}', String(candleIntervalH / 24));
 
     if (!sim || sim.timeH.length === 0) {
         return (

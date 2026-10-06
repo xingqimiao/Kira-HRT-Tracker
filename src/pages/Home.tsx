@@ -38,6 +38,12 @@ const VIAL_SIZE = 44;
  * The lane arrives as a CSS custom property rather than a prop because the space a
  * reading gets is a fact about its own row, not about the viewport — below `sm` the
  * vial shares the column with it, so a caller sets `--reading-lane` on the row.
+ *
+ * `chars` lets the two columns agree on a size. Sized independently, a long
+ * estradiol (nine glyphs, stepped down hard) beside a short anti-androgen (five
+ * glyphs, still at the display role) read as two different weights side by side.
+ * A caller that knows both readings passes the longer count to each, so the pair
+ * steps down together and shares a height. Absent, the count is the reading's own.
  */
 const Reading: React.FC<{
     value: number;
@@ -47,15 +53,18 @@ const Reading: React.FC<{
     muted: string;
     /** Set when this reading's digits are a droplet target for the vial. */
     sprayable?: boolean;
-}> = ({ value, decimals, unit, className, muted, sprayable = false }) => {
+    /** Glyph count to size against, so paired readings share a size. */
+    chars?: number;
+}> = ({ value, decimals, unit, className, muted, sprayable = false, chars }) => {
     const text = value.toFixed(decimals);
+    const sized = chars ?? text.length;
     return (
         <>
             <span
                 data-vial-sprayable={sprayable ? true : undefined}
                 className={`leading-none tabular-nums ${className}`}
                 style={{
-                    fontSize: `min(var(--md-sys-typescale-display-large-size), calc(var(--reading-lane) / ${text.length} / 0.5))`,
+                    fontSize: `min(var(--md-sys-typescale-display-large-size), calc(var(--reading-lane) / ${sized} / 0.5))`,
                 }}
             ><AnimatedNumber value={value} decimals={decimals} /></span>
             <span className={`text-xs lowercase ${muted}`}>{unit}</span>
@@ -178,19 +187,40 @@ const Home: React.FC<HomeProps> = ({
     const mgDecimals = (v: number) => (Number.isInteger(v) ? 0 : Number.isInteger(v * 10) ? 1 : 2);
     const nowSec = nowMs / 1000;
 
+    // The two columns share one size. Sized independently, a nine-glyph estradiol
+    // (stepped down hard) beside a five-glyph anti-androgen (still at the display
+    // role) read as two different weights side by side; sizing both against the
+    // longer of the pair makes them the same height whenever either is long.
+    //
+    // Only the paired *numeric* readings take part — estradiol (or the transmasc
+    // testosterone pair) and the anti-androgen's grams/mg. A relative-time
+    // anti-androgen ("2 天前") is words, not digits, and sizes itself with FitText;
+    // a lone numeric column (an em dash, or the AA headline) is its own length.
+    const primaryChars = (isTransmasc ? currentT.toFixed(0) : currentLevel.toFixed(1)).length;
+    const aaChars = antiandrogen.kind === 'grams'
+        ? antiandrogen.grams.toFixed(2).length
+        : antiandrogen.kind === 'dose'
+            ? antiandrogen.mgToday.toFixed(mgDecimals(antiandrogen.mgToday)).length
+            : null;
+    const pairedChars = aaChars != null ? Math.max(primaryChars, aaChars) : null;
+    // Transmasc shows the same reading twice (ng/dL and nmol/L); both are numeric,
+    // so they too share the longer count rather than drifting apart.
+    const tPairChars = Math.max(currentT.toFixed(0).length, (currentT / 28.842).toFixed(1).length);
+
     // The vial stands in the gap between the two readings, so it has to be
     // rendered inside whichever mode branch is active. It shows the current
     // estimate, which is the number printed directly beside it — the drawing is a
     // second reading of one value, not a summary of two.
     //
-    // Sits on the number's own line and hangs from its top edge: the row above is a
-    // label, and centring the tube against a 40-53px number floated it too low, so
-    // its rim read as belonging to the gap underneath rather than to the reading.
-    //
-    // Six of the canvas' 42 rows, which is what puts the glass rim level with the top
-    // of the digits beside it: rows 0..2 are empty, 3..5 are dome headroom above the
-    // rim. Measured at both type sizes (36px and 52.8px) — with `leading-none` on the
-    // number the rim lands within a pixel of the box top at each.
+    // It hangs from the *label* line, not the digits': the tube is tall (44px
+    // against a 16px label), so anchoring it to the number's top edge left its
+    // glass mouth sitting a full line below the "雌二醇" it belongs to. The label
+    // sits a fixed 24px above the number row — its own 16px line plus its `mb-2` —
+    // and the glass mouth is 6 of the canvas' 42 rows down from the canvas top, so
+    // raising the canvas by that mouth offset plus the label block puts the mouth
+    // level with the label's centre. The offset is constant across number sizes
+    // (36px and 57px) because the label-to-row gap is: the label does not grow
+    // with the reading.
     //
     // It only gives up its place beside the reading when the reading cannot fit
     // next to it. Below `sm` the column is ~146px and the vial takes 52, which is
@@ -198,7 +228,9 @@ const Home: React.FC<HomeProps> = ({
     // the case the layout must not disturb. A longer reading steps down in size
     // *and* drops the vial to its own line, so a corrected record looks exactly as
     // it always did and only the pathological ones move anything.
-    const vialOffset = -(VIAL_SIZE * 6) / 42;
+    // RIM_FROM_TOP: the canvas is 18 units wide, the glass mouth 6 of them down —
+    // scaled by the drawn width so it tracks VIAL_SIZE.
+    const vialOffset = -(VIAL_SIZE * (6 / 18) + 16);
     // Five characters is "1234.5" — the widest reading that still fits the 94px
     // lane beside the vial at the display role, which is why it is the line between
     // "sits as it always did" and "moves things". When it drops, the row gains
@@ -306,10 +338,10 @@ const Home: React.FC<HomeProps> = ({
                                 <p className={`text-xs font-semibold ${muted} mb-2`}>
                                     {t('label.total_t')} <span className="opacity-60">(ng/dL)</span>
                                 </p>
-                                <div className={`flex items-start justify-center gap-x-2 ${vialDrops ? 'flex-wrap' : ''} [--reading-lane:146px] sm:[--reading-lane:272px]`}>
+                                <div className={`flex flex-wrap items-start justify-center gap-x-2 [--reading-lane:146px] sm:[--reading-lane:272px]`}>
                                     <span className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
                                         {currentT > 0 ? (
-                                            <Reading value={currentT} decimals={0} unit="ng/dl" className={on} muted={muted} sprayable />
+                                            <Reading value={currentT} decimals={0} unit="ng/dl" className={on} muted={muted} sprayable chars={tPairChars} />
                                         ) : (
                                             <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
                                         )}
@@ -323,7 +355,7 @@ const Home: React.FC<HomeProps> = ({
                                 </p>
                                 <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1 [--reading-lane:146px] sm:[--reading-lane:272px]">
                                     {currentT > 0 ? (
-                                        <Reading value={currentT / 28.842} decimals={1} unit="nmol/l" className={on} muted={muted} />
+                                        <Reading value={currentT / 28.842} decimals={1} unit="nmol/l" className={on} muted={muted} chars={tPairChars} />
                                     ) : (
                                         <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
                                     )}
@@ -334,14 +366,14 @@ const Home: React.FC<HomeProps> = ({
                         <>
                             <div className="min-w-0">
                                 <p className={`text-xs font-semibold ${muted} mb-2`}>{t('label.e2')}</p>
-                                <div className={`flex items-start justify-center gap-x-2 ${vialDrops ? 'flex-wrap' : ''} [--reading-lane:146px] sm:[--reading-lane:272px]`}>
+                                <div className={`flex flex-wrap items-start justify-center gap-x-2 [--reading-lane:146px] sm:[--reading-lane:272px]`}>
                                     {/* `leading-none` is what makes "the top of the number" a
                                         real edge: at the shared 1.4 line-height the box top sat
                                         a few px above the ink, and the vial had nothing precise
                                         to hang from. */}
                                     <span className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
                                         {currentLevel > 0 ? (
-                                            <Reading value={currentLevel} decimals={1} unit="pg/ml" className={on} muted={muted} sprayable />
+                                            <Reading value={currentLevel} decimals={1} unit="pg/ml" className={on} muted={muted} sprayable chars={pairedChars ?? undefined} />
                                         ) : (
                                             <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
                                         )}
@@ -362,12 +394,12 @@ const Home: React.FC<HomeProps> = ({
                                         // because a 12.5 mg tablet is 0.0125 g — and the
                                         // figure only ever grows, so a few years of records
                                         // reaches five figures and would have run off the card.
-                                        <Reading value={antiandrogen.grams} decimals={2} unit="g" className={on} muted={muted} sprayable />
+                                        <Reading value={antiandrogen.grams} decimals={2} unit="g" className={on} muted={muted} sprayable chars={pairedChars ?? undefined} />
                                     )}
                                     {antiandrogen.kind === 'dose' && (
                                         // Today's total, the reading the daily-dosed
                                         // anti-androgens use and CPA uses on a dose day.
-                                        <Reading value={antiandrogen.mgToday} decimals={mgDecimals(antiandrogen.mgToday)} unit="mg" className={on} muted={muted} sprayable />
+                                        <Reading value={antiandrogen.mgToday} decimals={mgDecimals(antiandrogen.mgToday)} unit="mg" className={on} muted={muted} sprayable chars={pairedChars ?? undefined} />
                                     )}
                                     {antiandrogen.kind === 'since' && (
                                         // How long ago the last dose was, in the reader's own

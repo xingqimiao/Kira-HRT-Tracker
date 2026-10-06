@@ -792,10 +792,6 @@ const AppContent = () => {
                             pkEngine={pkEngine}
                             setPkEngine={setPkEngine}
                             engineInUse={engineInUse}
-                            showHeatmap={showHeatmap}
-                            setShowHeatmap={setShowHeatmap}
-                            chartStyle={chartStyle}
-                            setChartStyle={setChartStyle}
                         />
                     )}
 
@@ -828,6 +824,10 @@ const AppContent = () => {
                             setTheme={setTheme}
                             keyColor={keyColor}
                             setKeyColor={setKeyColor}
+                            showHeatmap={showHeatmap}
+                            setShowHeatmap={setShowHeatmap}
+                            chartStyle={chartStyle}
+                            setChartStyle={setChartStyle}
                             onBack={() => handleViewChange('settings')}
                         />
                     )}

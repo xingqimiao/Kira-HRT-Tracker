@@ -81,11 +81,11 @@ export interface AppSettings {
     /** Whether the overview draws the dose-day grid (DoseHeatmap). Default on. */
     showHeatmap?: boolean;
     /**
-     * How the overview chart draws the primary series: 'line', or the *requested*
-     * candle granularity '1h' / '1d'.
+     * How the overview chart draws the primary series: 'line' or '1d' (candles).
      *
      * A string rather than the union on purpose, like `ocrModelTier`: a synced
-     * payload may name a style, and `normalizeChartStyle` settles it.
+     * payload may name a style this build retired (the hourly '1h' option), and
+     * `normalizeChartStyle` settles it.
      */
     chartStyle?: string;
     calMethod?: string;
