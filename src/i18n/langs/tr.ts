@@ -798,6 +798,7 @@ const PACK: LangPack = {
     "core.sessions.current": "Bu cihaz",
     "core.sessions.last_seen": "Son etkinlik {when}",
     "core.sessions.unknown_device": "Bilinmeyen cihaz",
+    "core.sessions.app": "Uygulama",
     "core.sessions.count": "{n} oturum",
     "core.sessions.revoke_one": "Bu cihazın oturumunu kapat",
     "core.sessions.revoke_others": "Diğer tüm cihazların oturumunu kapat",

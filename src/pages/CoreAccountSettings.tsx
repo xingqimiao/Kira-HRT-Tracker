@@ -70,9 +70,22 @@ function linkSubtitle(
   return t('core.acct.linked_used').replace('{date}', linked).replace('{last}', last);
 }
 
-/** "Windows · Edge" from a user agent, or the caller's fallback when it says nothing. */
-function describeDevice(userAgent: string | null, fallback: string): string {
+/**
+ * "Windows · Edge" from a user agent, or the caller's fallback when it says nothing.
+ *
+ * The Android app records the canonical `KiraHRT/<version>` string the server got
+ * from its `X-Kira-Client` header, so it names itself here as the app rather than as
+ * a browser. Inferring the app from a webview's UA is deliberately NOT done — WeChat
+ * and other in-app browsers share the same tokens and would be mislabelled as this
+ * app, which is just the same bug pointing the other way. `appLabel` is passed in so
+ * the wording stays in the reader's language; the rest is a proper noun.
+ */
+function describeDevice(userAgent: string | null, fallback: string, appLabel: string): string {
   if (!userAgent) return fallback;
+  if (/^KiraHRT\//i.test(userAgent)) {
+    const version = userAgent.split('/')[1];
+    return version ? `${appLabel} ${version}` : appLabel;
+  }
   const os = /Windows NT/.test(userAgent) ? 'Windows'
     : /Android/.test(userAgent) ? 'Android'
     : /iPhone|iPad|iPod/.test(userAgent) ? 'iOS'
@@ -415,7 +428,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
                 <Row
                   key={s.id}
                   icon={<Icon icon={MonitorSmartphone} size={17} />}
-                  title={`${describeDevice(s.userAgent, t('core.sessions.unknown_device'))}${
+                  title={`${describeDevice(s.userAgent, t('core.sessions.unknown_device'), t('core.sessions.app'))}${
                     s.sessions > 1 ? ` · ${t('core.sessions.count').replace('{n}', String(s.sessions))}` : ''
                   }`}
                   subtitle={t('core.sessions.last_seen').replace('{when}', formatDate(s.lastSeenAt) ?? '—')}

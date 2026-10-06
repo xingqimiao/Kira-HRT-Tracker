@@ -57,6 +57,7 @@ const PACK: LangPack = {
     "core.sessions.current": "この端末",
     "core.sessions.last_seen": "最終利用：{when}",
     "core.sessions.unknown_device": "不明な端末",
+    "core.sessions.app": "アプリ",
     "core.sessions.count": "{n} 件のセッション",
     "core.sessions.revoke_one": "この端末をログアウト",
     "core.sessions.revoke_others": "他のすべての端末をログアウト",

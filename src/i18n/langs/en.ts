@@ -798,6 +798,7 @@ const PACK: LangPack = {
     "core.sessions.current": "This device",
     "core.sessions.last_seen": "Last active {when}",
     "core.sessions.unknown_device": "Unknown device",
+    "core.sessions.app": "App",
     "core.sessions.count": "{n} sessions",
     "core.sessions.revoke_one": "Sign out this device",
     "core.sessions.revoke_others": "Sign out all other devices",

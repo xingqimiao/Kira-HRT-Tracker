@@ -798,6 +798,7 @@ const PACK: LangPack = {
     "core.sessions.current": "当前设备",
     "core.sessions.last_seen": "最后活动：{when}",
     "core.sessions.unknown_device": "未知设备",
+    "core.sessions.app": "应用",
     "core.sessions.count": "{n} 个会话",
     "core.sessions.revoke_one": "退出该设备",
     "core.sessions.revoke_others": "退出其他所有设备",

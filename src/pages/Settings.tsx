@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Icon from '../components/Icon';
 import Switch from '../components/Switch';
+import DateTimePicker from '../components/DateTimePicker';
 import { ChevronRight, Settings2, Database, Info, ArrowLeft, Globe, CalendarDays, Check } from '../icons';
 import type { IconComponent } from '../icons';
 import type { Lang } from '../i18n/types';
@@ -89,7 +90,14 @@ const Settings: React.FC<SettingsProps> = ({
     const [mobileView, setMobileView] = useState<MobileView>(_savedMobileView);
     const [medReminders, setMedReminders] = useState<MedReminder[]>(() => isNativeApp() ? readMedReminders() : []);
     const [medName, setMedName] = useState('');
-    const [medTime, setMedTime] = useState('08:00');
+    // The picked time, as a Date the shared picker round-trips. Was a native
+    // `<input type="time">`, which rendered a different control on every OS and
+    // matched nothing else in the app; the M3 picker is the one every other time
+    // field here uses.
+    const [medTime, setMedTime] = useState<Date>(() => {
+        const d = new Date(); d.setHours(8, 0, 0, 0); return d;
+    });
+    const [medTimeOpen, setMedTimeOpen] = useState(false);
     const [medPermission, setMedPermission] = useState<boolean | null>(null);
     const [medError, setMedError] = useState(false);
 
@@ -430,9 +438,9 @@ const Settings: React.FC<SettingsProps> = ({
      * because an interval is a number the reader can change, not advice.
      */
     const addMedReminder = () => {
-        const [hour, minute] = medTime.split(':').map(Number);
-        if (!medName.trim() || !Number.isInteger(hour) || !Number.isInteger(minute)) return;
-        const next = [...medReminders, { id: crypto.randomUUID(), name: medName.trim(), hour, minute, enabled: true }];
+        const hour = medTime.getHours(), minute = medTime.getMinutes();
+        if (!medName.trim()) return;
+        const next = [...medReminders, { id: crypto.randomUUID(), name: medName.trim(), hour, minute, enabled: true }].sort((a, b) => a.hour - b.hour || a.minute - b.minute);
         setMedReminders(next); writeMedReminders(next);
         void rescheduleAllNativeNotifications(true).then(setMedPermission).catch(() => setMedError(true));
         setMedName('');
@@ -462,9 +470,29 @@ const Settings: React.FC<SettingsProps> = ({
             ))}
             <div className="mt-3 flex gap-2">
                 <input aria-label={t('med.name')} value={medName} onChange={e => setMedName(e.target.value)} placeholder={t('med.name')} className="input-text min-w-0 flex-1" />
-                <input aria-label={t('med.time')} type="time" value={medTime} onChange={e => setMedTime(e.target.value)} className="input-text w-28" />
+                <button
+                    type="button"
+                    onClick={() => setMedTimeOpen(v => !v)}
+                    aria-expanded={medTimeOpen}
+                    aria-label={t('med.time')}
+                    className="input-text flex w-28 shrink-0 items-center justify-between tabular-nums"
+                >
+                    <span>{String(medTime.getHours()).padStart(2, '0')}:{String(medTime.getMinutes()).padStart(2, '0')}</span>
+                    <Icon icon={ChevronRight} size={14} className={`shrink-0 transition-transform duration-200 ${medTimeOpen ? 'rotate-90' : ''}`} />
+                </button>
                 <button type="button" onClick={addMedReminder} className="m3-button-filled shrink-0">{t('med.add')}</button>
             </div>
+            {/* The app's own M3 picker, time mode — the same control every other time
+                field here uses. It unfolds in place, like the date fields do. */}
+            <DateTimePicker
+                isOpen={medTimeOpen}
+                inline
+                mode="time"
+                onClose={() => setMedTimeOpen(false)}
+                onConfirm={(d) => { setMedTime(d); setMedTimeOpen(false); }}
+                initialDate={medTime}
+                title={t('med.time')}
+            />
         </div>
     ) : null;
 

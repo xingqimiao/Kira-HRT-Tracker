@@ -693,6 +693,7 @@ const PACK: LangPack = {
     "core.sessions.current": "而家呢部機",
     "core.sessions.last_seen": "最後活動：{when}",
     "core.sessions.unknown_device": "唔知係咩裝置",
+    "core.sessions.app": "應用",
     "core.sessions.count": "{n} 個工作階段",
     "core.sessions.revoke_one": "登出呢部機",
     "core.sessions.revoke_others": "登出其他所有裝置",

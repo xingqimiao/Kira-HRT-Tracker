@@ -1,3 +1,6 @@
+import { isNativeApp } from '../utils/platform';
+import { APP_VERSION } from '../constants';
+
 const configuredApiOrigin = (() => {
     // `import.meta.env` is Vite-only. Casting through a local shape rather than
     // reading `import.meta.env` directly keeps this module valid for both
@@ -30,12 +33,31 @@ export function apiEndpoint(path: string): string {
 }
 
 /**
+ * The client's self-identification, sent so the server can label this device
+ * honestly in the session list.
+ *
+ * The app is a webview, so its raw user agent carries Chrome's token and the
+ * server had no way to tell the app from a Chrome browser — it showed up as
+ * "Android · Chrome" in the user's own device list. Inferring it from the UA is
+ * unsound in both directions (WeChat and other webviews also send the `wv` token
+ * that Android System WebView does), so the app says who it is instead. Only the
+ * app sends this, so the server can trust it as the device name.
+ */
+export const APP_CLIENT_HEADER = 'X-Kira-Client';
+export const appClientId = (): string => `KiraHRT/${APP_VERSION.replace(/^v/, '')}`;
+
+/**
  * Thin wrapper around `fetch` for talking to our API.
  *
  * Kept as a single choke point so every service resolves its path the same way —
  * `apiEndpoint` is the only place that knows about `VITE_API_ORIGIN`, and a call
- * that built its own URL would silently go same-origin in a desktop build.
+ * that built its own URL would silently go same-origin in a desktop build. It is
+ * also the one place the native client stamps `X-Kira-Client`, so every request
+ * the server records a device from carries it.
  */
 export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-    return await fetch(input, init);
+    if (!isNativeApp()) return await fetch(input, init);
+    const headers = new Headers(init?.headers);
+    if (!headers.has(APP_CLIENT_HEADER)) headers.set(APP_CLIENT_HEADER, appClientId());
+    return await fetch(input, { ...init, headers });
 }

@@ -229,11 +229,21 @@ function redirect(res: ServerResponse, location: string): void {
 
 /** The device a request came from, as the session list describes it. */
 function requestDevice(req: IncomingMessage): { userAgent: string | null; ip: string | null } {
-  const ua = req.headers['user-agent'];
+  // The app identifies itself with `X-Kira-Client` (e.g. `KiraHRT/1.0.2`) because
+  // its raw UA is a webview's and cannot be told from a Chrome browser — it used to
+  // be recorded as "Android · Chrome" in the user's own device list. Only our app
+  // sends the header, so it is used verbatim as the stored device string; inferring
+  // from the UA is unsound (WeChat and other webviews share the `wv` token).
+  const client = req.headers['x-kira-client'];
+  const ua = Array.isArray(client) ? client[0] : client;
+  if (typeof ua === 'string' && ua.trim()) {
+    return { userAgent: ua.trim().slice(0, 200), ip: clientIp(req) };
+  }
+  const raw = req.headers['user-agent'];
   return {
     // Truncated, because this text is attacker-controlled and ends up rendered in a
     // settings list: there is no reason to keep more than enough to name a browser.
-    userAgent: typeof ua === 'string' ? ua.slice(0, 200) : null,
+    userAgent: typeof raw === 'string' ? raw.slice(0, 200) : null,
     ip: clientIp(req),
   };
 }
@@ -346,7 +356,7 @@ export function createRequestHandler() {
         res.writeHead(204, {
           ...cors,
           'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Kira-Client',
           'Access-Control-Max-Age': '600',
         });
         res.end();

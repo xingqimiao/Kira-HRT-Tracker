@@ -57,6 +57,7 @@ const PACK: LangPack = {
     "core.sessions.current": "현재 기기",
     "core.sessions.last_seen": "마지막 활동 {when}",
     "core.sessions.unknown_device": "알 수 없는 기기",
+    "core.sessions.app": "앱",
     "core.sessions.count": "세션 {n}개",
     "core.sessions.revoke_one": "이 기기 로그아웃",
     "core.sessions.revoke_others": "다른 모든 기기 로그아웃",
