@@ -204,6 +204,11 @@ const ResultChart = ({
             faint: role('--color-m3-chart-faint', '#B4B7C0'),
             dot: role('--color-m3-chart-marker', '#FFFFFF'),
             lab: role('--color-m3-chart-lab', '#A16207'),
+            // Candle direction colours, the convention the reader asked for:
+            // rising = green, falling = red (红跌绿涨). The theme's own success
+            // and error roles, so dark mode carries them with everything else.
+            up: role('--color-m3-success', '#2E7D32'),
+            down: role('--color-m3-error', '#C62828'),
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isDarkMode]);
@@ -648,7 +653,14 @@ const ResultChart = ({
             {/* Legend — always visible so each line is labelled, on mobile too */}
             <div className="flex items-center gap-4 mb-1 m3-text-2xs text-[var(--color-m3-on-surface-variant)] ">
                 <span className="flex items-center gap-1.5">
-                    <span className="w-3.5 h-[2px] rounded-full" style={{ background: c.primary }} />
+                    {isCandle ? (
+                        <>
+                            <span className="w-[3px] h-3 rounded-sm" style={{ background: c.up }} />
+                            <span className="w-[3px] h-3 rounded-sm" style={{ background: c.down }} />
+                        </>
+                    ) : (
+                        <span className="w-3.5 h-[2px] rounded-full" style={{ background: c.primary }} />
+                    )}
                     {primaryMeta.label}
                 </span>
                 {hasSecondary && (
@@ -775,7 +787,7 @@ const ResultChart = ({
                                 the path entirely: drawing both would put the same
                                 series on screen twice. */}
                             {isCandle ? (
-                                <g stroke={c.primary} strokeWidth={1}>
+                                <g strokeWidth={1}>
                                     {candles.map(cd => {
                                         const cx = X((cd.t0 + cd.t1) / 2);
                                         const yHigh = YP(cd.high);
@@ -783,13 +795,13 @@ const ResultChart = ({
                                         const yTop = Math.min(YP(cd.open), YP(cd.close));
                                         const yBottom = Math.max(YP(cd.open), YP(cd.close));
                                         const up = cd.close >= cd.open;
+                                        const col = up ? c.up : c.down;
                                         return (
-                                            // Solid body for a day that ended higher than it
-                                            // started, hollow for one that ended lower — the
-                                            // direction without a second colour, which the
-                                            // heatmap's lightness-only rule would otherwise
-                                            // make unreadable.
-                                            <g key={cd.t0} fill={up ? c.primary : 'none'}>
+                                            // 红跌绿涨: a day that ended higher than it
+                                            // started draws green (solid body), lower
+                                            // draws red (hollow) — the same convention
+                                            // the reader set for this view.
+                                            <g key={cd.t0} stroke={col} fill={up ? col : 'none'}>
                                                 {/* Wick in two segments, so a hollow body has
                                                     nothing showing through it. */}
                                                 {yTop > yHigh && <line x1={cx} y1={yHigh} x2={cx} y2={yTop} />}
@@ -825,8 +837,11 @@ const ResultChart = ({
                                 <circle className="chart-mark" style={{ animationDelay: sweepDelay(X(now)) }} cx={X(now)} cy={YP(nowVal)} r={4} fill={c.primary} stroke={c.dot} strokeWidth={2} />
                             )}
 
-                            {/* Dose markers (clickable) */}
-                            {markers.map((m, i) => {
+                            {/* Dose markers (clickable). Candle mode leaves them out:
+                                a dot per dose against daily candles reads as noise, and
+                                the candle itself already tells that day's story — the
+                                timeline keeps the tap-to-edit affordance. */}
+                            {!isCandle && markers.map((m, i) => {
                                 const cx = X(m.t);
                                 const cy = m.axis === 'p' ? YP(m.v) : YS(m.v);
                                 const col = m.axis === 's' ? c.second : c.primary;
