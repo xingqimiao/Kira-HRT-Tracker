@@ -2709,6 +2709,14 @@ select,
     transition: transform var(--duration-quick) var(--ease-out);
 }
 
+/* A row inside a menu answers a press with colour only. The flush variant
+   exists so a row's highlight reaches the menu's own edge — that edge-to-edge
+   block is the tap target — and scaling the row pulls the highlight a few
+   pixels inward, opening exactly the gap the flush rule was written to close. */
+.m3-menu :where(button, [role="menuitem"]):not(:disabled):active {
+    transform: none;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    KEPT FROM THE REWRITE: the two animating components
    The rest of the component layer went back. These two stayed because they are
