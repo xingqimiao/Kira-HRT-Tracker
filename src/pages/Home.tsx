@@ -452,7 +452,7 @@ const Home: React.FC<HomeProps> = ({
                                 <p className={`text-xs font-semibold ${muted} mb-2`}>
                                     {t('label.total_t')} <span className="opacity-60">(ng/dL)</span>
                                 </p>
-                                <div className={`flex flex-wrap items-start justify-center gap-x-2 [--reading-lane:146px] sm:[--reading-lane:272px]`}>
+                                <div className={`flex items-start justify-center gap-x-2 ${vialDrops ? 'flex-wrap' : ''} [--reading-lane:146px] sm:[--reading-lane:272px]`}>
                                     <span className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
                                         {currentT > 0 ? (
                                             <Reading value={currentT} decimals={0} unit="ng/dl" className={on} muted={muted} sprayable chars={tPairChars} />
@@ -480,7 +480,7 @@ const Home: React.FC<HomeProps> = ({
                         <>
                             <div className="min-w-0">
                                 <p className={`text-xs font-semibold ${muted} mb-2`}>{t('label.e2')}</p>
-                                <div className={`flex flex-wrap items-start justify-center gap-x-2 [--reading-lane:146px] sm:[--reading-lane:272px]`}>
+                                <div className={`flex items-start justify-center gap-x-2 ${vialDrops ? 'flex-wrap' : ''} [--reading-lane:146px] sm:[--reading-lane:272px]`}>
                                     {/* `leading-none` is what makes "the top of the number" a
                                         real edge: at the shared 1.4 line-height the box top sat
                                         a few px above the ink, and the vial had nothing precise
