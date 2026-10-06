@@ -112,3 +112,6 @@ server/test-out.txt
 
 # Local preview server (a dev tool, not part of the app).
 .preview-server.mjs
+
+# Agent/tooling state (not project source)
+.mimosa/
