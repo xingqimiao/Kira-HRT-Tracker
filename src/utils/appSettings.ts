@@ -28,7 +28,7 @@ export const APP_SETTINGS_EVENT = 'app-settings-applied';
  * they are account-scoped (`hrt-u<id>-cal-method`), so the data layer, which
  * knows the owner, moves those itself.
  */
-export type GlobalSettingKey = 'theme' | 'keyColor' | 'lang' | 'hrtMode' | 'showVial' | 'timezone';
+export type GlobalSettingKey = 'theme' | 'keyColor' | 'lang' | 'hrtMode' | 'showVial' | 'showHeatmap' | 'chartStyle' | 'timezone';
 
 /**
  * Storage key per setting. These are the keys the owning contexts already use —
@@ -41,11 +41,16 @@ const KEYS: Record<GlobalSettingKey, string> = {
     lang: 'hrt-lang',
     hrtMode: 'hrt-mode',
     showVial: 'app-blood-vial',
+    showHeatmap: 'app-dose-heatmap',
+    chartStyle: 'app-chart-style',
     // Written only when the account says so (an agent set it); the app has no
     // control for it, but carrying it keeps the bag and the server's column one
     // value rather than two that disagree. See `AppSettings.timezone`.
     timezone: 'app-timezone',
 };
+
+/** The settings persisted as 'true'/'false' strings rather than bare strings. */
+const BOOLEAN_KEYS: ReadonlySet<GlobalSettingKey> = new Set(['showVial', 'showHeatmap']);
 
 /**
  * When this device's bag last *changed*, for the sync merge's newest-wins rule.
@@ -100,10 +105,10 @@ export function readAppSettings(): AppSettings {
     const out: Record<string, unknown> = {};
     for (const [key, storageKey] of Object.entries(KEYS) as [GlobalSettingKey, string][]) {
         const value = localStorage.getItem(storageKey);
-        // Every one of these is persisted as a string; `showVial` stores
-        // 'true'/'false' so a boolean is normalised back on the way out.
+        // Every one of these is persisted as a string; the boolean settings
+        // store 'true'/'false' so a boolean is normalised back on the way out.
         if (value === null || value === '') continue;
-        out[key] = key === 'showVial' ? value !== 'false' : value;
+        out[key] = BOOLEAN_KEYS.has(key) ? value !== 'false' : value;
     }
     const bag = out as AppSettings;
     if (lastKnown === null) lastKnown = bag;

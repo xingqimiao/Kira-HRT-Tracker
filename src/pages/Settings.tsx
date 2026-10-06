@@ -4,7 +4,7 @@ import Switch from '../components/Switch';
 import { ChevronRight, Settings2, Database, Info, ArrowLeft, Globe, CalendarDays, Check } from '../icons';
 import type { IconComponent } from '../icons';
 import type { Lang } from '../i18n/types';
-import { AppTheme } from '../constants';
+import { AppTheme, ChartStyle } from '../constants';
 import { AntiandrogenChartMode, ANTIANDROGEN_CHART_MODES, DoseEvent, PKCustomParams, RecheckIntervals, OcrModelTier, OCR_MODEL_TIERS, PkEngineId, PK_ENGINES, DEFAULT_PK_ENGINE } from '../../logic';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { useVial } from '../contexts/VialContext';
@@ -59,6 +59,12 @@ interface SettingsProps {
     setPkEngine: (id: PkEngineId) => void;
     /** The engine actually in force — the Transmtf one cannot take PK overrides. */
     engineInUse: PkEngineId;
+    /** Whether the overview draws the dose-day grid. */
+    showHeatmap: boolean;
+    setShowHeatmap: (v: boolean) => void;
+    /** How the overview chart draws the primary series — line or candles. */
+    chartStyle: ChartStyle;
+    setChartStyle: (s: ChartStyle) => void;
 }
 
 type SettingsCat = 'general' | 'reminders' | 'data' | 'about';
@@ -69,6 +75,9 @@ const rowLabel = "text-m3-body-medium text-[var(--color-m3-on-surface)] ";
 const rowValue = "flex items-center gap-1 text-m3-body-medium text-[var(--color-m3-on-surface-variant)] ";
 const muted = "text-[var(--color-m3-on-surface-variant)] ";
 const on = "text-[var(--color-m3-on-surface)] ";
+
+/** The chart's draw styles, in display order — see `ChartStyle`. */
+const CHART_STYLES: readonly ChartStyle[] = ['line', '1d', '1h'];
 
 let _savedCat: SettingsCat = 'general';
 let _savedMobileView: MobileView = 'list';
@@ -84,6 +93,8 @@ const Settings: React.FC<SettingsProps> = ({
     recheckIntervals, setRecheckIntervals,
     ocrModelTier, setOcrModelTier,
     pkEngine, setPkEngine, engineInUse,
+    showHeatmap, setShowHeatmap,
+    chartStyle, setChartStyle,
 }) => {
     const { mode } = useHRTMode();
     const { showVial, setShowVial } = useVial();
@@ -176,6 +187,35 @@ const Settings: React.FC<SettingsProps> = ({
                     <p className={`text-xs ${muted} mt-0.5`}>{t('settings.blood_vial_desc')}</p>
                 </div>
                 <Switch checked={showVial} onChange={setShowVial} />
+            </div>
+
+            <div className={`${rowBase} cursor-default`}>
+                <div>
+                    <p className={rowLabel}>{t('settings.dose_heatmap')}</p>
+                    <p className={`text-xs ${muted} mt-0.5`}>{t('settings.dose_heatmap_desc')}</p>
+                </div>
+                <Switch checked={showHeatmap} onChange={setShowHeatmap} />
+            </div>
+
+            {/* How the overview chart draws the primary series. The candle options
+                are a *request* — a window too wide to honour it coarsens the
+                interval, and the chart's header chip says what actually ran. */}
+            <div className="w-full py-[18px] border-b border-[var(--color-m3-outline-variant)]">
+                <p className={rowLabel}>{t('settings.chart_style')}</p>
+                <p className={`text-xs ${muted} mt-0.5`}>{t('settings.chart_style_desc')}</p>
+                <div className="mt-3 flex flex-wrap gap-1" role="group" aria-label={t('settings.chart_style')}>
+                    {CHART_STYLES.map(s => (
+                        <button
+                            key={s}
+                            type="button"
+                            aria-pressed={chartStyle === s}
+                            onClick={() => setChartStyle(s)}
+                            className={`m3-btn m3-btn-sm ${chartStyle === s ? 'm3-btn-filled' : 'm3-btn-outlined'}`}
+                        >
+                            {t(`settings.chart_style.${s}`)}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             {/* The lab-scan model used to be picked here, as a trade-off between a

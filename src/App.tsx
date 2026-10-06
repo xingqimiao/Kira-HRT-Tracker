@@ -4,7 +4,7 @@ import { useDialog, DialogProvider } from './contexts/DialogContext';
 import { HRTModeProvider, useHRTMode } from './contexts/HRTModeContext';
 import { VialProvider } from './contexts/VialContext';
 import ErrorBoundary from './components/ErrorBoundary';
-import { APP_VERSION, AppTheme, KeyColor } from './constants';
+import { APP_VERSION, AppTheme, ChartStyle, KeyColor, normalizeChartStyle } from './constants';
 import { DoseEvent, decompressData, encryptData, decryptData } from '../logic';
 import { detectForeignFormat, convertForeignPayload, type ForeignSource } from './utils/foreignImport';
 import { decryptFeatherline, mapFeatherlineSnapshot, FeatherlineError } from './utils/featherlineBackup';
@@ -222,12 +222,30 @@ const AppContent = () => {
         localStorage.getItem('app-key-color') === 'blue' ? 'blue' : 'pink',
     );
 
+    // Personalization: whether the overview draws the dose-day grid, and how the
+    // chart draws the primary series. Same shape as theme above — a storage key,
+    // an adoption on sync, and a normaliser for a value this build may not know.
+    const [showHeatmap, setShowHeatmap] = useState<boolean>(() =>
+        localStorage.getItem('app-dose-heatmap') !== 'false'
+    );
+    const [chartStyle, setChartStyle] = useState<ChartStyle>(() =>
+        normalizeChartStyle(localStorage.getItem('app-chart-style'))
+    );
+
     useEffect(() => {
         localStorage.setItem('app-key-color', keyColor);
         // A class rather than inline variables: the light/dark readings live in
         // stylesheet blocks, and this only has to select which pair is in force.
         window.document.documentElement.classList.toggle('key-blue', keyColor === 'blue');
     }, [keyColor]);
+
+    useEffect(() => {
+        localStorage.setItem('app-dose-heatmap', String(showHeatmap));
+    }, [showHeatmap]);
+
+    useEffect(() => {
+        localStorage.setItem('app-chart-style', chartStyle);
+    }, [chartStyle]);
 
     // Adopt theme and key colour when a sync brings the account's choices in.
     // Each value is validated against what this build understands before being
@@ -237,6 +255,8 @@ const AppContent = () => {
         const savedTheme = localStorage.getItem('app-theme');
         if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') setTheme(savedTheme);
         setKeyColor(localStorage.getItem('app-key-color') === 'blue' ? 'blue' : 'pink');
+        setShowHeatmap(localStorage.getItem('app-dose-heatmap') !== 'false');
+        setChartStyle(normalizeChartStyle(localStorage.getItem('app-chart-style')));
     }), []);
 
     useEffect(() => {
@@ -654,6 +674,8 @@ const AppContent = () => {
                             onRemoveEvent={deleteEvent}
                             aaChartMode={aaChartMode}
                             nowMs={currentTime.getTime()}
+                            showHeatmap={showHeatmap}
+                            chartStyle={chartStyle}
                         />
                     )}
 
@@ -770,6 +792,10 @@ const AppContent = () => {
                             pkEngine={pkEngine}
                             setPkEngine={setPkEngine}
                             engineInUse={engineInUse}
+                            showHeatmap={showHeatmap}
+                            setShowHeatmap={setShowHeatmap}
+                            chartStyle={chartStyle}
+                            setChartStyle={setChartStyle}
                         />
                     )}
 

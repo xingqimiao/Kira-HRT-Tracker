@@ -78,6 +78,16 @@ export interface AppSettings {
     lang?: string;
     hrtMode?: string;
     showVial?: boolean;
+    /** Whether the overview draws the dose-day grid (DoseHeatmap). Default on. */
+    showHeatmap?: boolean;
+    /**
+     * How the overview chart draws the primary series: 'line', or the *requested*
+     * candle granularity '1h' / '1d'.
+     *
+     * A string rather than the union on purpose, like `ocrModelTier`: a synced
+     * payload may name a style, and `normalizeChartStyle` settles it.
+     */
+    chartStyle?: string;
     calMethod?: string;
     calHistoryMode?: string;
     /** How the Home card's anti-androgen column reads — see antiandrogenReading. */
@@ -129,6 +139,7 @@ export interface AppSettings {
 export const APP_SETTING_KEYS: readonly (keyof AppSettings)[] = [
     'theme', 'keyColor', 'lang', 'hrtMode', 'showVial', 'calMethod', 'calHistoryMode', 'aaChartMode',
     'hrtStartDate', 'recheckIntervals', 'ocrModelTier', 'pkEngine', 'timezone',
+    'showHeatmap', 'chartStyle',
 ];
 
 export interface SyncState {
@@ -272,7 +283,7 @@ export function sanitizeTombstones(raw: unknown): Tombstones {
  * payload put `showVial: 'false'` into state, where its own reader — which
  * compares against the string 'false' — would read it as *true*.
  */
-const BOOLEAN_SETTING_KEYS: ReadonlySet<keyof AppSettings> = new Set(['showVial']);
+const BOOLEAN_SETTING_KEYS: ReadonlySet<keyof AppSettings> = new Set(['showVial', 'showHeatmap']);
 
 export function sanitizeAppSettings(raw: unknown): AppSettings {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};

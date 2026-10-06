@@ -13,7 +13,7 @@ import { DoseTemplate } from '../components/DoseFormModal';
 import AnimatedNumber from '../components/AnimatedNumber';
 import BloodVial from '../components/BloodVial';
 import { useHRTMode } from '../contexts/HRTModeContext';
-import { AppTheme } from '../constants';
+import { AppTheme, ChartStyle } from '../constants';
 import { useTranslation } from '../contexts/LanguageContext';
 import { getShareCopy } from '../i18n/share';
 import { Tooltip } from '../components/ui';
@@ -88,6 +88,10 @@ interface HomeProps {
     aaChartMode: AntiandrogenChartMode;
     /** "Now" for that reading, so "today" rolls over when the day does. */
     nowMs: number;
+    /** Whether the dose-day grid draws at all — a personalization setting. */
+    showHeatmap: boolean;
+    /** Line or candles for the chart — the same personalization setting. */
+    chartStyle: ChartStyle;
 }
 
 const Home: React.FC<HomeProps> = ({
@@ -111,6 +115,8 @@ const Home: React.FC<HomeProps> = ({
     onRemoveEvent,
     aaChartMode,
     nowMs,
+    showHeatmap,
+    chartStyle,
 }) => {
     const isDarkMode = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     const [isEstimateInfoOpen, setIsEstimateInfoOpen] = React.useState(false);
@@ -417,7 +423,7 @@ const Home: React.FC<HomeProps> = ({
                             {t('home.empty_cta')}
                         </button>
                     </div>
-                ) : (
+                ) : showHeatmap ? (
                     <div className="flex flex-col gap-8 2xl:flex-row 2xl:items-start 2xl:gap-6">
                         <div className="min-w-0 2xl:flex-[3]">
                             <ResultChart
@@ -427,11 +433,24 @@ const Home: React.FC<HomeProps> = ({
                                 labResults={hormoneLabs}
                                 calibrationFn={calibrationFn}
                                 isDarkMode={isDarkMode}
+                                chartStyle={chartStyle}
                             />
                         </div>
                         <DoseHeatmap
                             events={events}
                             className="min-w-0 2xl:flex-[2] 2xl:min-w-[16rem]"
+                        />
+                    </div>
+                ) : (
+                    <div className="min-w-0">
+                        <ResultChart
+                            sim={simulation}
+                            events={chartEvents}
+                            onPointClick={onEditEvent}
+                            labResults={hormoneLabs}
+                            calibrationFn={calibrationFn}
+                            isDarkMode={isDarkMode}
+                            chartStyle={chartStyle}
                         />
                     </div>
                 )}
