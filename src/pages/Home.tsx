@@ -476,7 +476,10 @@ const Home: React.FC<HomeProps> = ({
                                 calibrationFn={calibrationFn}
                                 isDarkMode={isDarkMode}
                                 chartStyle={chartStyle}
-                                tall={!sidePanel}
+                                // Tall unless the grid sits beside it. In candle view
+                                // the dose list beside it is tall, so the chart grows
+                                // to meet it rather than stopping short.
+                                tall={!sidePanel || chartStyle !== 'line'}
                             />
                         );
                         return sidePanel ? (

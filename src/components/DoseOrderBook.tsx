@@ -1,5 +1,5 @@
 import React from 'react';
-import { DoseEvent, Route, Ester } from '../../logic';
+import { DoseEvent, Route, Ester, ANTIANDROGENS } from '../../logic';
 import { useTranslation } from '../contexts/LanguageContext';
 import { formatDate, formatTime } from '../utils/helpers';
 
@@ -42,9 +42,11 @@ const DoseOrderBook = ({ events, className = '' }: { events: DoseEvent[]; classN
         [events],
     );
 
-    // The bar is relative to the largest dose on screen; a list that is all one
-    // size draws full bars rather than none.
-    const maxMG = recent.reduce((m, e) => Math.max(m, e.doseMG), 0);
+    // The bar measures the doses that draw the curve — the modelled hormones.
+    // An anti-androgen has no curve of its own, so its row carries no bar, and a
+    // 12.5 mg CPA tablet does not become the yardstick every estradiol dose is
+    // measured against. Max is over the bar-bearing rows only.
+    const maxMG = recent.reduce((m, e) => (ANTIANDROGENS.has(e.ester) ? m : Math.max(m, e.doseMG)), 0);
 
     return (
         <div className={`w-full ${className}`}>
@@ -56,22 +58,27 @@ const DoseOrderBook = ({ events, className = '' }: { events: DoseEvent[]; classN
                     {t('orderbook.empty')}
                 </p>
             ) : (
-                <ul className="flex flex-col gap-0.5">
+                <ul className="flex flex-col gap-0.5 2xl:max-h-[36rem] 2xl:overflow-y-auto">
                     {recent.map(e => {
                         const at = new Date(e.timeH * 3600000);
-                        const pct = maxMG > 0 ? Math.max(6, (e.doseMG / maxMG) * 100) : 0;
+                        // No bar for an anti-androgen — it is not on the curve the
+                        // candles beside this list draw (see the max note above).
+                        const bar = ANTIANDROGENS.has(e.ester) ? 0 : (maxMG > 0 ? Math.max(6, (e.doseMG / maxMG) * 100) : 0);
                         return (
                             <li key={e.id} className="relative overflow-hidden rounded-[var(--radius-sm)]">
-                                {/* The depth bar. Red, as order-book asks are; the
-                                    fill is quiet enough that the numbers stay
-                                    legible over the widest bars. Decorative, so it
-                                    is hidden from the accessibility tree — the
-                                    amount beside it carries the same fact. */}
-                                <span
-                                    aria-hidden
-                                    className="absolute inset-y-0 start-0 bg-[var(--color-m3-error)] opacity-25"
-                                    style={{ width: `${pct}%` }}
-                                />
+                                {/* The depth bar. Red, as order-book asks are, and
+                                    anchored to the right edge growing leftward — the
+                                    order-book direction. The fill is quiet enough that
+                                    the numbers stay legible over the widest bars.
+                                    Decorative, so it is hidden from the accessibility
+                                    tree — the amount beside it carries the same fact. */}
+                                {bar > 0 && (
+                                    <span
+                                        aria-hidden
+                                        className="absolute inset-y-0 end-0 bg-[var(--color-m3-error)] opacity-25"
+                                        style={{ width: `${bar}%` }}
+                                    />
+                                )}
                                 <span className="relative flex items-baseline justify-between gap-3 px-2 py-1.5 text-xs">
                                     <span className="min-w-0">
                                         <span className="block truncate font-medium text-[var(--color-m3-on-surface)]">
