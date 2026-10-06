@@ -76,16 +76,21 @@ type DeviceKind = 'app-phone' | 'app-tablet' | 'app-desktop' | 'browser' | 'brow
 /**
  * The Android model in a user agent, or '' when it names none.
  *
- * Chrome on Android puts the model after `Android <version>;` (`… Android 13; SM-S918B …`).
- * Every other browser on Android — Firefox, and the shells — writes `Mobile` or
- * `Tablet` there instead of a model, which is a form factor, not a device, so those
- * are rejected. iOS exposes no model at all: Safari and every in-app webview omit it.
+ * Chrome on Android once put the model after `Android <version>;` (`… Android 13;
+ * SM-S918B …`). Modern Chrome *reduces* that away under User-Agent Reduction and
+ * sends a fixed placeholder instead — the model becomes the single letter `K` — so
+ * "Android K" is what a browser reports now, which names nothing. Every other
+ * browser on Android writes `Mobile` or `Tablet` there, a form factor rather than a
+ * device. All of those are rejected and the row falls back to plain "Android". iOS
+ * exposes no model at all: Safari and every in-app webview omit it.
  */
 function androidModel(userAgent: string): string {
   const m = /Android[^;]*;\s*([^;)]+?)(?:\s+Build[/)]|\s*\))/.exec(userAgent)
     || /Android[^;]*;\s*([^;)]+?)\)/.exec(userAgent);
   const token = (m?.[1] ?? '').trim();
-  return /^(mobile|tablet|build|wv)\b/i.test(token) ? '' : token;
+  // `K` is Chrome's reduced-UA placeholder — the model, deliberately erased.
+  if (!token || /^(mobile|tablet|build|wv|k)$/i.test(token)) return '';
+  return token;
 }
 
 /**
