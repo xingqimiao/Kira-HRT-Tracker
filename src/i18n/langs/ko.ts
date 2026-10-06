@@ -276,6 +276,7 @@ const PACK: LangPack = {
     "heatmap.title": "복약 히트맵",
     "orderbook.title": "최근 투약",
     "orderbook.empty": "기록이 없습니다",
+    "orderbook.repeat": "이 기록을 다시 기록",
     "heatmap.summary": "최근 {d}일 · {n}회 복약",
     "heatmap.summary_one": "최근 {d}일 · 1회 복약",
     "heatmap.doses": "{n}회 복약",

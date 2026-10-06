@@ -167,6 +167,7 @@ const PACK: LangPack = {
     "heatmap.title": "Dose activity",
     "orderbook.title": "Recent doses",
     "orderbook.empty": "No doses logged yet",
+    "orderbook.repeat": "Record this again",
     "heatmap.summary": "{n} doses in the last {d} days",
     "heatmap.summary_one": "1 dose in the last {d} days",
     "heatmap.doses": "{n} doses",

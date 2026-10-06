@@ -676,6 +676,12 @@ const AppContent = () => {
                             nowMs={currentTime.getTime()}
                             showHeatmap={showHeatmap}
                             chartStyle={chartStyle}
+                            onSaveTemplate={addTemplate}
+                            onDeleteTemplate={deleteTemplate}
+                            quickDoses={quickDoses}
+                            onAddQuickDose={addQuickDose}
+                            onDeleteQuickDose={deleteQuickDose}
+                            activeEngine={engineInUse}
                         />
                     )}
 

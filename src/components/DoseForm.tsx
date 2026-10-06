@@ -185,6 +185,14 @@ interface DoseFormProps {
     onDeleteTemplate: (id: string) => void;
     isInline?: boolean;
     hideHeader?: boolean;
+    /**
+     * Treat `eventToEdit` as a *source to copy*, not a record to edit: the form is
+     * pre-filled from it, but saving adds a new dose (fresh id, time defaults to
+     * now) and no delete control appears. The overview's "record this again" sets
+     * this — the record it copies is a real one, so `events` cannot tell the two
+     * intentions apart on its own.
+     */
+    addMode?: boolean;
     quickDoses?: QuickDose[];
     onAddQuickDose?: (dose: QuickDose) => void;
     onDeleteQuickDose?: (id: string) => void;
@@ -201,7 +209,13 @@ interface DoseFormProps {
     activeEngine?: PkEngineId;
 }
 
-const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDelete, templates = [], onSaveTemplate, onDeleteTemplate, isInline = false, hideHeader = false, quickDoses, onAddQuickDose, onDeleteQuickDose, events = [], activeEngine = 'builtin' }) => {
+const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDelete, templates = [], onSaveTemplate, onDeleteTemplate, isInline = false, hideHeader = false, addMode = false, quickDoses, onAddQuickDose, onDeleteQuickDose, events = [], activeEngine = 'builtin' }) => {
+    // A record that exists *and* is being edited — not one being copied into a new
+    // dose. `addMode` is the explicit signal for the copy case: an `eventToEdit`
+    // that is a real record looks identical to an edit otherwise (its id is in
+    // `events`), and keying off `events` alone showed the delete control and the
+    // edit title for what was meant to be a fresh entry.
+    const isEditingExisting = !!eventToEdit && !addMode;
     const { t, lang } = useTranslation();
     const { showDialog } = useDialog();
     const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
@@ -234,7 +248,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
         return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     };
     const [dateStr, setDateStr] = useState(() =>
-        eventToEdit ? editLocal(eventToEdit.timeH) : nowLocal()
+        eventToEdit && !addMode ? editLocal(eventToEdit.timeH) : nowLocal()
     );
     // Fresh add opens on the same (route, ester) the mount effect seeds, so the
     // form does not repaint out of the injection guide and into another route's
@@ -336,7 +350,10 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
         if (eventToEdit) {
             const d = new Date(eventToEdit.timeH * 3600000);
             const iso = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
-            setDateStr(iso);
+            // In add mode the drug/route/amount are copied but the time is "now" —
+            // recording this dose again means taking it now, not re-logging it at
+            // the old moment.
+            setDateStr(addMode ? nowLocal() : iso);
             setRoute(eventToEdit.route);
             setEster(eventToEdit.ester);
 
@@ -727,7 +744,10 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
         }
 
         const newEvent: DoseEvent = {
-            id: eventToEdit?.id || uuidv4(),
+            // Reuse the id only when updating a record that exists. A pre-filled
+            // *new* dose (`eventToEdit` set but not in `events`) gets a fresh id,
+            // so saving adds it rather than overwriting the dose it copied.
+            id: isEditingExisting ? eventToEdit!.id : uuidv4(),
             route,
             ester: (route === Route.patchRemove || route === Route.patchApply || route === Route.gel)
                 ? (isTransmasc ? Ester.T : Ester.E2)
@@ -932,7 +952,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
             {!isInline && !hideHeader && (
                 <div className="px-6 py-4 border-b border-[var(--color-m3-outline-variant)]  flex justify-between items-center shrink-0">
                     <h3 className="text-m3-title-medium text-[var(--color-m3-on-surface)] ">
-                        {eventToEdit ? t('modal.dose.edit_title') : t('modal.dose.add_title')}
+                        {isEditingExisting ? t('modal.dose.edit_title') : t('modal.dose.add_title')}
                     </h3>
                     <div className="flex gap-2 items-center">
                         {renderLoadTemplateControl()}
@@ -1328,8 +1348,8 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                         </div>
                     </div>
 
-                    {/* Delete Event Section (Only when editing) */}
-                    {eventToEdit && (
+                    {/* Delete Event Section (only for a record that exists) */}
+                    {isEditingExisting && (
                         <div className="flex items-center">
                             <div className={`overflow-hidden flex items-center ${
                                 showDeleteConfirm ? 'w-[8.75rem] sm:w-40 bg-cos-error-container  border border-red-100  rounded opacity-100 pl-3 pr-1 py-1' : 'w-0 opacity-0 border border-transparent'

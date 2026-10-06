@@ -48,6 +48,7 @@ const PACK: LangPack = {
     "heatmap.title": "用藥熱力圖",
     "orderbook.title": "近期劑量",
     "orderbook.empty": "暫無劑量紀錄",
+    "orderbook.repeat": "再次記錄這條",
     "heatmap.summary": "近 {d} 天 · {n} 次用藥",
     "heatmap.summary_one": "近 {d} 天 · 1 次用藥",
     "heatmap.doses": "{n} 次用藥",

@@ -292,6 +292,7 @@ const PACK: LangPack = {
     "heatmap.title": "投薬ヒートマップ",
     "orderbook.title": "最近の投与",
     "orderbook.empty": "まだ記録がありません",
+    "orderbook.repeat": "この記録をもう一度",
     "heatmap.summary": "直近 {d} 日 · {n} 回",
     "heatmap.summary_one": "直近 {d} 日 · 1 回",
     "heatmap.doses": "{n} 回の投薬",

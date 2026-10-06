@@ -167,6 +167,7 @@ const PACK: LangPack = {
     "heatmap.title": "Doz ısı haritası",
     "orderbook.title": "Son dozlar",
     "orderbook.empty": "Henüz doz kaydı yok",
+    "orderbook.repeat": "Bu kaydı yeniden gir",
     "heatmap.summary": "Son {d} günde {n} doz",
     "heatmap.summary_one": "Son {d} günde 1 doz",
     "heatmap.doses": "{n} doz",

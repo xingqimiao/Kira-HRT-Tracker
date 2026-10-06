@@ -2,7 +2,7 @@ import React from 'react';
 import FitText from '../components/FitText';
 import Icon from '../components/Icon';
 import { Info, Share2, AlertTriangle } from '../icons';
-import { DoseEvent, SimulationResult, LabResult, AntiandrogenChartMode, getDoseAdvisory, getHormoneLevelAdvisory, isT_LabUnit, isMonitoringOnlyLab, modelledEvents, antiandrogenReading } from '../../logic';
+import { DoseEvent, SimulationResult, LabResult, AntiandrogenChartMode, getDoseAdvisory, getHormoneLevelAdvisory, isT_LabUnit, isMonitoringOnlyLab, modelledEvents, antiandrogenReading, type PkEngineId } from '../../logic';
 import ResultChart from '../components/ResultChart';
 import DoseHeatmap from '../components/DoseHeatmap';
 import DoseOrderBook from '../components/DoseOrderBook';
@@ -10,7 +10,9 @@ import EstimateInfoModal from '../components/EstimateInfoModal';
 import NoticeModal from '../components/NoticeModal';
 import DoseAdvisoryNotice from '../components/DoseAdvisory';
 import HomeQuickAdd from '../components/HomeQuickAdd';
+import DoseForm from '../components/DoseForm';
 import { DoseTemplate } from '../components/DoseFormModal';
+import { QuickDose } from '../components/dose_form/QuickDoseButtons';
 import AnimatedNumber from '../components/AnimatedNumber';
 import BloodVial from '../components/BloodVial';
 import { useHRTMode } from '../contexts/HRTModeContext';
@@ -102,6 +104,13 @@ interface HomeProps {
     showHeatmap: boolean;
     /** Line or candles for the chart — the same personalization setting. */
     chartStyle: ChartStyle;
+    /** Passthroughs for the inline dose form the candle view embeds. */
+    onSaveTemplate: (t: DoseTemplate) => void;
+    onDeleteTemplate: (id: string) => void;
+    quickDoses: QuickDose[];
+    onAddQuickDose: (d: QuickDose) => void;
+    onDeleteQuickDose: (id: string) => void;
+    activeEngine: PkEngineId;
 }
 
 const Home: React.FC<HomeProps> = ({
@@ -127,10 +136,22 @@ const Home: React.FC<HomeProps> = ({
     nowMs,
     showHeatmap,
     chartStyle,
+    onSaveTemplate,
+    onDeleteTemplate,
+    quickDoses,
+    onAddQuickDose,
+    onDeleteQuickDose,
+    activeEngine,
 }) => {
     const isDarkMode = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     const [isEstimateInfoOpen, setIsEstimateInfoOpen] = React.useState(false);
     const [isAbsurdOpen, setIsAbsurdOpen] = React.useState(false);
+    // The record the inline form is pre-filled from, when a dose row was clicked
+    // in candle view ("record this again"). Null leaves the form at its defaults
+    // for a plain new dose. Bumped key remounts the form so its fields take the
+    // prefill (its state initialises once, at mount).
+    const [repeatFrom, setRepeatFrom] = React.useState<DoseEvent | null>(null);
+    const [formSeq, setFormSeq] = React.useState(0);
     const { isTransmasc } = useHRTMode();
     const { lang } = useTranslation();
     const shareCopy = getShareCopy(lang);
@@ -458,12 +479,39 @@ const Home: React.FC<HomeProps> = ({
                     </div>
                 ) : (
                     (() => {
-                        // The panel beside the chart. Candle view pairs with the dose
-                        // list (its "order book"); the line view pairs with the dose
-                        // grid when that is on. Neither → the chart takes the whole
-                        // width, taller, so the pane is filled rather than emptied.
-                        const sidePanel = chartStyle !== 'line' ? (
-                            <DoseOrderBook events={events} className="min-w-0 2xl:flex-[2] 2xl:min-w-[16rem]" />
+                        const isCandle = chartStyle !== 'line';
+                        // Candle view is the terminal layout: chart | order book |
+                        // record. Line view keeps its simpler chart | grid pair.
+                        // The inline record form is prefilled from `repeatFrom` when
+                        // a dose row was clicked ("record this again") — its `formSeq`
+                        // key remounts it so the fields pick up that prefill.
+                        const inlineForm = (
+                            <div className="m3-card min-w-0 2xl:flex-[2] 2xl:min-w-[20rem] p-4">
+                                <DoseForm
+                                    key={`${repeatFrom?.id ?? 'new'}-${formSeq}`}
+                                    eventToEdit={repeatFrom}
+                                    addMode={!!repeatFrom}
+                                    onSave={(e) => onAddEvent(e as DoseEvent)}
+                                    onCancel={() => { setRepeatFrom(null); setFormSeq(s => s + 1); }}
+                                    onDelete={() => {}}
+                                    templates={doseTemplates}
+                                    onSaveTemplate={onSaveTemplate}
+                                    onDeleteTemplate={onDeleteTemplate}
+                                    quickDoses={quickDoses}
+                                    onAddQuickDose={onAddQuickDose}
+                                    onDeleteQuickDose={onDeleteQuickDose}
+                                    isInline
+                                    events={events}
+                                    activeEngine={activeEngine}
+                                />
+                            </div>
+                        );
+                        const sidePanel = isCandle ? (
+                            <DoseOrderBook
+                                events={events}
+                                onRepeat={(e) => { setRepeatFrom(e); setFormSeq(s => s + 1); }}
+                                className="min-w-0 2xl:flex-[2] 2xl:min-w-[16rem]"
+                            />
                         ) : showHeatmap ? (
                             <DoseHeatmap events={events} className="min-w-0 2xl:flex-[2] 2xl:min-w-[16rem]" />
                         ) : null;
@@ -477,11 +525,20 @@ const Home: React.FC<HomeProps> = ({
                                 isDarkMode={isDarkMode}
                                 chartStyle={chartStyle}
                                 // Tall unless the grid sits beside it. In candle view
-                                // the dose list beside it is tall, so the chart grows
-                                // to meet it rather than stopping short.
-                                tall={!sidePanel || chartStyle !== 'line'}
+                                // the pane beside it is tall, so the chart grows to
+                                // meet it rather than stopping short.
+                                tall={!sidePanel || isCandle}
                             />
                         );
+                        if (isCandle) {
+                            return (
+                                <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+                                    <div className="min-w-0 lg:flex-[3]">{chart}</div>
+                                    {sidePanel}
+                                    {inlineForm}
+                                </div>
+                            );
+                        }
                         return sidePanel ? (
                             <div className="flex flex-col gap-8 2xl:flex-row 2xl:items-start 2xl:gap-6">
                                 <div className="min-w-0 2xl:flex-[3]">{chart}</div>

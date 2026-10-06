@@ -28,7 +28,7 @@ const ROWS = 14;
  *  whichever order the store happened to return. */
 const esterRank = (e: Ester) => e;
 
-const DoseOrderBook = ({ events, className = '' }: { events: DoseEvent[]; className?: string }) => {
+const DoseOrderBook = ({ events, onRepeat, className = '' }: { events: DoseEvent[]; onRepeat?: (e: DoseEvent) => void; className?: string }) => {
     const { t, lang } = useTranslation();
 
     // Newest first. `patchRemove` is the end of a dose, not an order, so it is
@@ -79,7 +79,13 @@ const DoseOrderBook = ({ events, className = '' }: { events: DoseEvent[]; classN
                                         style={{ width: `${bar}%` }}
                                     />
                                 )}
-                                <span className="relative flex items-baseline justify-between gap-3 px-2 py-1.5 text-xs">
+                                <button
+                                    type="button"
+                                    disabled={!onRepeat}
+                                    onClick={() => onRepeat?.(e)}
+                                    title={onRepeat ? t('orderbook.repeat') : undefined}
+                                    className="relative flex w-full items-baseline justify-between gap-3 px-2 py-1.5 text-xs text-start transition-colors enabled:hover:bg-[var(--color-m3-surface-container)] enabled:active:bg-[var(--color-m3-primary-container)] disabled:cursor-default"
+                                >
                                     <span className="min-w-0">
                                         <span className="block truncate font-medium text-[var(--color-m3-on-surface)]">
                                             {t(`ester.${e.ester}`)}
@@ -96,7 +102,7 @@ const DoseOrderBook = ({ events, className = '' }: { events: DoseEvent[]; classN
                                             {formatDate(at, lang)} {formatTime(at)}
                                         </span>
                                     </span>
-                                </span>
+                                </button>
                             </li>
                         );
                     })}
