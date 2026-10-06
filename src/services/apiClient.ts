@@ -40,11 +40,36 @@ export function apiEndpoint(path: string): string {
  * server had no way to tell the app from a Chrome browser — it showed up as
  * "Android · Chrome" in the user's own device list. Inferring it from the UA is
  * unsound in both directions (WeChat and other webviews also send the `wv` token
- * that Android System WebView does), so the app says who it is instead. Only the
- * app sends this, so the server can trust it as the device name.
+ * that Android System WebView does), so the app says who it is instead.
+ *
+ * The model comes from the webview's own UA, which the platform fills in
+ * (`... (Linux; Android 13; SM-S918B) ...`), so a device is distinguishable from
+ * another running the same app. It is best-effort: an unrecognised UA yields a
+ * bare `KiraHRT/<version>` rather than a guess. Only the app sends this header,
+ * so the server trusts it as the device name.
  */
 export const APP_CLIENT_HEADER = 'X-Kira-Client';
-export const appClientId = (): string => `KiraHRT/${APP_VERSION.replace(/^v/, '')}`;
+
+function deviceDescriptor(): string {
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+    // Android: the token after "Android <ver>;" is the model.
+    const android = /Android[^;]*;\s*([^;)]+?)(?:\s+Build[/)]|\s*\))/.exec(ua) || /Android[^;]*;\s*([^;)]+)\)/.exec(ua);
+    if (/Android/i.test(ua)) {
+        const model = (android?.[1] ?? '').trim();
+        return model ? `Android ${model}` : 'Android';
+    }
+    if (/iPhone|iPad|iPod/i.test(ua)) return /iPad/i.test(ua) ? 'iPad' : 'iPhone';
+    if (/Windows NT/i.test(ua)) return 'Windows';
+    if (/Mac OS X/i.test(ua)) return 'macOS';
+    if (/Linux/i.test(ua)) return 'Linux';
+    return '';
+}
+
+export const appClientId = (): string => {
+    const version = APP_VERSION.replace(/^v/, '');
+    const device = deviceDescriptor();
+    return device ? `KiraHRT/${version} (${device})` : `KiraHRT/${version}`;
+};
 
 /**
  * Thin wrapper around `fetch` for talking to our API.

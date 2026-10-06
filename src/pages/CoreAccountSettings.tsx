@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Icon from '../components/Icon';
 import { useTranslation } from '../contexts/LanguageContext';
-import { AlertTriangle, LogOut, MonitorSmartphone, RefreshCw, Trash2, Unlink } from '../icons';
+import { AlertTriangle, Check, LogOut, RefreshCw, Trash2, Unlink, DevicePhone, DeviceTablet, DeviceDesktop, DeviceBrowser, DeviceAgent } from '../icons';
 import { Progress } from '../components/ui';
 
 import { coreAuth, CoreAuthError, PROVIDER_NAMES, type AccountSummary, type LoginMethods, type OAuthLink, type SessionInfo } from '../services/coreAuth';
@@ -70,22 +70,39 @@ function linkSubtitle(
   return t('core.acct.linked_used').replace('{date}', linked).replace('{last}', last);
 }
 
+/** The kind of client a session came from — drives which glyph the row shows. */
+type DeviceKind = 'app-phone' | 'app-tablet' | 'app-desktop' | 'browser' | 'browser-mobile' | 'agent' | 'unknown';
+
 /**
- * "Windows · Edge" from a user agent, or the caller's fallback when it says nothing.
+ * A device row's label and kind, from a stored user agent.
  *
- * The Android app records the canonical `KiraHRT/<version>` string the server got
- * from its `X-Kira-Client` header, so it names itself here as the app rather than as
- * a browser. Inferring the app from a webview's UA is deliberately NOT done — WeChat
- * and other in-app browsers share the same tokens and would be mislabelled as this
- * app, which is just the same bug pointing the other way. `appLabel` is passed in so
- * the wording stays in the reader's language; the rest is a proper noun.
+ * The Android app records the canonical `KiraHRT/<version> (<device>)` string the
+ * server got from its `X-Kira-Client` header — e.g. `KiraHRT/1.0.2 (Android SM-S918B)`
+ * — so it names itself here as the app, with its model, rather than as a browser.
+ * Inferring the app from a webview's UA is deliberately NOT done: WeChat and other
+ * in-app browsers share the same tokens and would be mislabelled as this app, which
+ * is the same bug pointing the other way. `appLabel` is passed in so the wording
+ * stays in the reader's language; the rest is a proper noun (a model code, a browser
+ * name), which is why it is not translated.
+ *
+ * A UA that names neither a browser nor an OS is an API/MCP client — those send their
+ * own agent string and get the agent glyph rather than "Unknown device".
  */
-function describeDevice(userAgent: string | null, fallback: string, appLabel: string): string {
-  if (!userAgent) return fallback;
-  if (/^KiraHRT\//i.test(userAgent)) {
-    const version = userAgent.split('/')[1];
-    return version ? `${appLabel} ${version}` : appLabel;
+function parseDevice(userAgent: string | null, fallback: string, appLabel: string): { label: string; kind: DeviceKind } {
+  if (!userAgent) return { label: fallback, kind: 'unknown' };
+
+  const app = /^KiraHRT\/([^\s(]+)\s*(?:\(([^)]*)\))?/i.exec(userAgent);
+  if (app) {
+    const version = app[1];
+    const device = (app[2] ?? '').trim();
+    const label = [`${appLabel} ${version}`, device].filter(Boolean).join(' · ');
+    const kind: DeviceKind = /tab|pad/i.test(device) ? 'app-tablet'
+      : /android|iphone|ipod/i.test(device) ? 'app-phone'
+      : device ? 'app-desktop'
+      : 'app-phone';
+    return { label, kind };
   }
+
   const os = /Windows NT/.test(userAgent) ? 'Windows'
     : /Android/.test(userAgent) ? 'Android'
     : /iPhone|iPad|iPod/.test(userAgent) ? 'iOS'
@@ -97,7 +114,23 @@ function describeDevice(userAgent: string | null, fallback: string, appLabel: st
     : /Chrome\//.test(userAgent) ? 'Chrome'
     : /Safari\//.test(userAgent) ? 'Safari' : '';
   const parts = [os, browser].filter(Boolean);
-  return parts.length > 0 ? parts.join(' · ') : fallback;
+  if (parts.length === 0) return { label: fallback, kind: 'agent' };
+  return {
+    label: parts.join(' · '),
+    kind: /Android|iPhone|iPod/i.test(userAgent) ? 'browser-mobile' : 'browser',
+  };
+}
+
+/** The reicon glyph for a device kind. */
+function deviceIcon(kind: DeviceKind) {
+  switch (kind) {
+    case 'app-tablet': return DeviceTablet;
+    case 'app-desktop': return DeviceDesktop;
+    case 'browser':
+    case 'browser-mobile': return DeviceBrowser;
+    case 'agent': return DeviceAgent;
+    default: return DevicePhone;
+  }
 }
 
 const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBack, onDeleted }) => {
@@ -424,16 +457,31 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
             <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{t('core.sessions.section')}</span>
 
             <div className="mt-2 flex flex-col">
-              {sessions.map((s) => (
+              {sessions.map((s) => {
+                const dev = parseDevice(s.userAgent, t('core.sessions.unknown_device'), t('core.sessions.app'));
+                return (
                 <Row
                   key={s.id}
-                  icon={<Icon icon={MonitorSmartphone} size={17} />}
-                  title={`${describeDevice(s.userAgent, t('core.sessions.unknown_device'), t('core.sessions.app'))}${
+                  icon={
+                    // The current device wears a green ring and a check over its
+                    // type glyph — "this is you", readable without comparing text.
+                    s.current ? (
+                      <span className="relative inline-flex">
+                        <Icon icon={deviceIcon(dev.kind)} size={17} />
+                        <span className="absolute -bottom-1 -end-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[var(--color-m3-success)] text-[var(--color-m3-on-success)] ring-2 ring-[var(--color-m3-surface)]">
+                          <Icon icon={Check} size={9} strokeWidth={3} />
+                        </span>
+                      </span>
+                    ) : (
+                      <Icon icon={deviceIcon(dev.kind)} size={17} />
+                    )
+                  }
+                  title={`${dev.label}${
                     s.sessions > 1 ? ` · ${t('core.sessions.count').replace('{n}', String(s.sessions))}` : ''
                   }`}
                   subtitle={t('core.sessions.last_seen').replace('{when}', formatDate(s.lastSeenAt) ?? '—')}
                   right={s.current
-                    ? <span className={`text-xs ${muted}`}>{t('core.sessions.current')}</span>
+                    ? <span className="text-xs text-[var(--color-m3-success)]">{t('core.sessions.current')}</span>
                     : <Icon icon={Trash2} size={15} className={muted} />}
                   danger={!s.current}
                   onClick={s.current ? undefined : () => {
@@ -444,7 +492,8 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
                   }}
                   disabled={busy}
                 />
-              ))}
+                );
+              })}
 
               {sessions.some((s) => !s.current) && (
                 <Row

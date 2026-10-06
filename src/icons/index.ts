@@ -106,5 +106,15 @@ export {
 /** The Lab tab. The app's hand-drawn curve is now reicon's chart line. */
 export { ChartLine as CalibrationCurve } from 'reicon';
 
+/* Device-type glyphs for the signed-in device list — one per kind of client a
+   session can come from (see `describeDevice`/`deviceIcon` in CoreAccountSettings). */
+export {
+    Iphone as DevicePhone,
+    Tablet as DeviceTablet,
+    Monitor as DeviceDesktop,
+    BrowserTerminal as DeviceBrowser,
+    Cpu as DeviceAgent,
+} from 'reicon';
+
 // reicon has no `LucideIcon`; call sites use this as the icon-function type.
 export type { IconFunction as IconComponent, IconWeight } from 'reicon';
