@@ -279,7 +279,10 @@ const Home: React.FC<HomeProps> = ({
     // *and* drops the vial to its own line, so a corrected record looks exactly as
     // it always did and only the pathological ones move anything.
     // RIM_FROM_TOP: the canvas is 18 units wide, the glass mouth 6 of them down —
-    // scaled by the drawn width so it tracks VIAL_SIZE.
+    // scaled by the drawn width so it tracks VIAL_SIZE. The vial box is `self-start`
+    // against the number row (top 129 measured at both type sizes), the label's
+    // centre is 16px above that row, so the offset is the mouth height plus that
+    // 16px. Measured: the mouth then lands within a pixel of the label's centre.
     const vialOffset = -(VIAL_SIZE * (6 / 18) + 16);
     // Five characters is "1234.5" — the widest reading that still fits the 94px
     // lane beside the vial at the display role, which is why it is the line between
@@ -287,7 +290,12 @@ const Home: React.FC<HomeProps> = ({
     // `flex-wrap` so the tube can actually reach its own line, and centres itself
     // under the digits.
     const vialDrops = (isTransmasc ? currentT.toFixed(0) : currentLevel.toFixed(primaryDecimals)).length > 5;
-    const vial = (events.length > 0 || hormoneLabs.length > 0) ? (
+    // Drawn only when there is a reading to draw. A record whose estimate has since
+    // fallen to zero shows "--" in the column; the vial measures that same value, so
+    // it must not sit there implying something to read. (An empty `events`/labs
+    // already hides it; this also covers records that are all long past.)
+    const vialReading = isTransmasc ? currentT : currentLevel;
+    const vial = (vialReading > 0 && (events.length > 0 || hormoneLabs.length > 0)) ? (
         // On a phone the tube always takes its own row (the column is ~146px and the
         // reading plus the tube do not fit across), centred under the number, so the
         // unit ("pg/ml") stays up beside the number rather than being pushed down by
@@ -295,8 +303,8 @@ const Home: React.FC<HomeProps> = ({
         // own row for an over-long reading (`vialDrops`). `--vial-drop` nudges it
         // down off the unit's line whenever it is on its own row.
         <span
-            className={`flex w-full shrink-0 justify-center self-start [--vial-drop:14px] ${
-                vialDrops ? 'sm:w-full sm:justify-center' : 'sm:w-auto sm:justify-normal sm:[--vial-drop:0px]'
+            className={`flex w-full shrink-0 justify-center self-start [--vial-drop:14px] sm:[--vial-drop:0px] ${
+                vialDrops ? 'sm:w-full sm:justify-center sm:[--vial-drop:14px]' : 'sm:w-auto sm:justify-normal'
             }`}
             style={{ marginTop: `calc(${vialOffset}px + var(--vial-drop, 0px))` }}
         >
