@@ -10,7 +10,6 @@ import type { LangPack } from '../types';
  */
 const PACK: LangPack = {
     "app.title": "Kira HRT Tracker",
-
     "app.doc_title": "HRT 記錄 · Kira HRT Tracker",
     "nav.home": "總覽",
     "nav.history": "記錄",
@@ -35,9 +34,14 @@ const PACK: LangPack = {
     "chart.reset": "重設檢視",
     "chart.range_7d": "7日",
     "chart.k.day": "日K",
+    "chart.k.hour4": "4小時K",
     "chart.k.days": "{n}日K",
     "chart.k.week": "週K",
     "chart.k.weeks": "{n}週K",
+    "chart.k.open": "開",
+    "chart.k.high": "高",
+    "chart.k.low": "低",
+    "chart.k.close": "收",
     "chart.range_30d": "30日",
     "chart.range_all": "全部",
     "chart.target": "目標範圍",
@@ -302,7 +306,6 @@ const PACK: LangPack = {
     "theme.dark": "深色",
     "theme.system": "跟隨系統",
     "settings.group.display": "顯示",
-
     "settings.key_color": "關鍵色",
     "settings.key_color.pink": "粉色",
     "settings.key_color.blue": "藍色",
@@ -624,7 +627,7 @@ const PACK: LangPack = {
     "settings.chart_style": "曲線樣式",
     "settings.chart_style_desc": "概覽圖表畫主曲線嘅方式",
     "settings.chart_style.line": "曲線",
-    "settings.chart_style.1d": "日K",
+    "settings.chart_style.1d": "K線",
     "settings.aa_display": "抗雄激素顯示",
     "settings.aa_display_desc": "總覽顯示抗雄激素嘅用藥情況",
     "settings.aa_display.auto": "自動",

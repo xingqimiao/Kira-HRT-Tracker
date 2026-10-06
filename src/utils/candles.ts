@@ -41,23 +41,40 @@ export interface CurvePoint {
  */
 export const CANDLE_LADDER_H: readonly number[] = [1, 2, 3, 4, 6, 8, 12, 24, 72, 168];
 
-/** The granularity the user picked, in hours: 1 (小时K) or 24 (日K). */
-export type CandleBaseH = 1 | 24;
+/** The granularity the chart draws, in hours: 4 (the 7-day default) or 24. */
+export type CandleBaseH = 4 | 24;
 
 /** How many candles one plot may hold before the interval has to coarsen. */
 export const MAX_CANDLES = 200;
 
 /**
+ * Past this much history the view is weekly regardless of the base: a daily
+ * candle plot a third of a year wide is a picket fence, so the rule the reader
+ * set is that anything longer than 120 days is drawn as 周K.
+ */
+const WEEKLY_AFTER_H = 120 * 24;
+
+/** One week, in hours — the interval 周K draws at. */
+const WEEK_H = 168;
+
+/**
  * The interval actually drawn: the smallest ladder step of at least `baseH`
- * that fits the span within `maxCandles` candles.
+ * that fits the span within `maxCandles` candles — except that any span past
+ * 120 days is drawn weekly (or a whole multiple of a week once even weekly runs
+ * out) so a long history reads as candles rather than a fence.
  *
  * The requested base is a floor, never a ceiling — a finer resolution than the
- * user asked for would invent structure the data does not show. Past the ladder
- * the week keeps doubling (2, 4, 8 … weeks), staying whole days so the buckets
- * keep aligning to local midnights.
+ * reader asked for would invent structure the data does not show. Past the
+ * ladder the week keeps doubling, staying whole days so the buckets keep
+ * aligning to local midnights.
  */
 export function resolveCandleIntervalH(baseH: CandleBaseH, spanMs: number, maxCandles = MAX_CANDLES): number {
     const hours = spanMs / 3600000;
+    if (hours > WEEKLY_AFTER_H) {
+        let step = WEEK_H;
+        while (hours / step > maxCandles) step *= 2;
+        return step;
+    }
     for (const step of CANDLE_LADDER_H) {
         if (step >= baseH && hours / step <= maxCandles) return step;
     }

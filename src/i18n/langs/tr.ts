@@ -10,7 +10,6 @@ import type { LangPack } from '../types';
  */
 const PACK: LangPack = {
     "app.title": "Kira HRT Tracker",
-
     "app.doc_title": "HRT Kaydı · Kira HRT Tracker",
     "nav.home": "Genel Bakış",
     "core.sign_in": "Sign in",
@@ -154,9 +153,14 @@ const PACK: LangPack = {
     "chart.reset": "Görünümü sıfırla",
     "chart.range_7d": "7g",
     "chart.k.day": "Günlük K",
+    "chart.k.hour4": "4s",
     "chart.k.days": "{n} günlük K",
     "chart.k.week": "Haftalık K",
     "chart.k.weeks": "{n} haftalık K",
+    "chart.k.open": "Aç",
+    "chart.k.high": "Yük",
+    "chart.k.low": "Düş",
+    "chart.k.close": "Kapa",
     "chart.range_30d": "30g",
     "chart.range_all": "Tümü",
     "chart.target": "Hedef",
@@ -448,7 +452,6 @@ const PACK: LangPack = {
     "theme.dark": "Koyu",
     "theme.system": "Sistem",
     "settings.group.display": "Görünüm",
-
     "settings.key_color": "Ana renk",
     "settings.key_color.pink": "Pembe",
     "settings.key_color.blue": "Mavi",
@@ -767,7 +770,7 @@ const PACK: LangPack = {
     "settings.chart_style": "Grafik stili",
     "settings.chart_style_desc": "Genel bakış grafiğinin ana seriyi çizme biçimi",
     "settings.chart_style.line": "Eğri",
-    "settings.chart_style.1d": "Günlük K",
+    "settings.chart_style.1d": "Mum",
     "settings.aa_display": "Anti-androjen gösterimi",
     "settings.aa_display_desc": "Genel bakışta anti-androjen kullanımının nasıl gösterileceği",
     "settings.aa_display.auto": "Otomatik",

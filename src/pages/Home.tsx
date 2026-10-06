@@ -483,6 +483,7 @@ const Home: React.FC<HomeProps> = ({
                             calibrationFn={calibrationFn}
                             isDarkMode={isDarkMode}
                             chartStyle={chartStyle}
+                            tall
                         />
                     </div>
                 )}

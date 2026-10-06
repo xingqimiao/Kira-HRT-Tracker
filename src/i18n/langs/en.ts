@@ -10,7 +10,6 @@ import type { LangPack } from '../types';
  */
 const PACK: LangPack = {
     "app.title": "Kira HRT Tracker",
-
     "app.doc_title": "HRT Records & Hormone Tracking · Kira HRT",
     "nav.home": "Overview",
     "core.sign_in": "Sign in",
@@ -154,9 +153,14 @@ const PACK: LangPack = {
     "chart.reset": "Reset view",
     "chart.range_7d": "7d",
     "chart.k.day": "Daily",
+    "chart.k.hour4": "4h",
     "chart.k.days": "{n}-day candles",
     "chart.k.week": "Weekly",
     "chart.k.weeks": "{n}-week candles",
+    "chart.k.open": "Open",
+    "chart.k.high": "High",
+    "chart.k.low": "Low",
+    "chart.k.close": "Close",
     "chart.range_30d": "30d",
     "chart.range_all": "All",
     "chart.target": "Target",
@@ -448,7 +452,6 @@ const PACK: LangPack = {
     "theme.dark": "Dark",
     "theme.system": "System",
     "settings.group.display": "Display",
-
     "settings.key_color": "Key colour",
     "settings.key_color.pink": "Pink",
     "settings.key_color.blue": "Blue",
@@ -767,7 +770,7 @@ const PACK: LangPack = {
     "settings.chart_style": "Chart style",
     "settings.chart_style_desc": "How the overview chart draws the main series",
     "settings.chart_style.line": "Curve",
-    "settings.chart_style.1d": "Daily candles",
+    "settings.chart_style.1d": "Candles",
     "settings.aa_display": "Anti-androgen readout",
     "settings.aa_display_desc": "What the overview shows for your anti-androgen",
     "settings.aa_display.auto": "Auto",

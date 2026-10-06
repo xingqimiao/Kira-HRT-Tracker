@@ -10,7 +10,7 @@ import {
 import { Activity } from '../icons';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { useElementSize } from '../hooks/useElementSize';
-import { buildCandles, resolveCandleIntervalH } from '../utils/candles';
+import { buildCandles, resolveCandleIntervalH, type CandleBaseH } from '../utils/candles';
 import type { ChartStyle } from '../constants';
 
 const HOUR = 3600000;
@@ -152,6 +152,7 @@ const ResultChart = ({
     title,
     timeZone,
     chartStyle = 'line',
+    tall = false,
 }: {
     sim: SimulationResult | null;
     events: DoseEvent[];
@@ -164,6 +165,12 @@ const ResultChart = ({
     timeZone?: string;
     /** Line or candle view for the primary series — the personalization setting. */
     chartStyle?: ChartStyle;
+    /**
+     * Draw the plot taller. The overview passes this when the dose grid is off,
+     * so the chart takes the height the grid would have left it — the pane is
+     * not simply emptier, it is filled.
+     */
+    tall?: boolean;
 }) => {
     const { t, lang } = useTranslation();
     const { isTransmasc: contextIsTransmasc } = useHRTMode();
@@ -262,17 +269,41 @@ const ResultChart = ({
     const fullMin = data.length ? data[0].t : now;
     const fullMax = data.length ? data[data.length - 1].t : now;
 
+    // ── Candle (K线) view ──────────────────────────────────────────────────
+    // The primary series read as OHLC buckets — see utils/candles.ts. The
+    // interval follows the range: 7d draws 4-hour candles, and a longer window
+    // draws daily (or weekly past 120 days). The header chip discloses what
+    // actually ran rather than silently drawing something else.
+    const isCandle = chartStyle !== 'line';
+    const candleBaseH: CandleBaseH = range === '7d' ? 4 : 24;
+    // The span the range will show, before any future cap — enough to pick the
+    // interval without depending on the window we are about to compute from it.
+    const candleSpanMs = range === 'all'
+        ? Math.max(DAY, fullMax - fullMin)
+        : range === '7d' ? 7 * DAY : 30 * DAY;
+    const candleIntervalH = isCandle ? resolveCandleIntervalH(candleBaseH, candleSpanMs) : 24;
+    // Candle view never shows more than two candles of empty future. The
+    // simulation runs on past "now" (to the last dose plus its lifetime), so
+    // without this the plot is mostly candles that have not happened yet.
+    const futureCap = now + 2 * candleIntervalH * HOUR;
+
     // Base window (before drag) — centered on "now" for 7d/30d, full span for "all".
     const baseWindow = useMemo<[number, number]>(() => {
-        if (range === 'all' || data.length === 0) return [fullMin, fullMax];
-        const span = range === '7d' ? 7 * DAY : 30 * DAY;
+        if (data.length === 0) return [fullMin, fullMax];
+        const span = range === 'all' ? (fullMax - fullMin) : range === '7d' ? 7 * DAY : 30 * DAY;
+        if (range === 'all') {
+            const hi = isCandle ? Math.min(fullMax, futureCap) : fullMax;
+            return [fullMin, Math.max(fullMin, hi)];
+        }
+        // Anchor the right edge then walk back one span. In candle view the right
+        // edge stops two candles past now; otherwise it is centred on now.
         const center = Math.min(Math.max(now, fullMin), fullMax);
-        let lo = center - span / 2;
-        let hi = center + span / 2;
+        let hi = isCandle ? Math.min(futureCap, fullMax) : center + span / 2;
+        let lo = hi - span;
         if (lo < fullMin) { lo = fullMin; hi = Math.min(fullMax, lo + span); }
         if (hi > fullMax) { hi = fullMax; lo = Math.max(fullMin, hi - span); }
         return [lo, hi];
-    }, [range, data.length, fullMin, fullMax, now]);
+    }, [range, data.length, fullMin, fullMax, now, isCandle, futureCap]);
 
     // How far the window can be dragged in each direction without leaving the data.
     const [minOffset, maxOffset] = useMemo<[number, number]>(() => {
@@ -334,16 +365,8 @@ const ResultChart = ({
         }).filter((m): m is { t: number; v: number; axis: 'p' | 's'; event: DoseEvent } => !!m && m.t >= t0 && m.t <= t1);
     }, [sim, events, isTransmasc, hasSecondary, calibrationFn, t0, t1]);
 
-    // ── Candle (K线) view ──────────────────────────────────────────────────
-    // The primary series read as OHLC buckets — see utils/candles.ts. The view
-    // is daily; on a window too wide to draw one candle per day the interval
-    // coarsens to the nearest named step that fits, and the header chip
-    // discloses what actually ran rather than silently drawing something else.
-    const isCandle = chartStyle !== 'line';
-    const candleIntervalH = useMemo(
-        () => (isCandle && t1 > t0 ? resolveCandleIntervalH(24, t1 - t0) : 24),
-        [isCandle, t0, t1],
-    );
+    // Candles are built from the drawn slice by resolveCandleIntervalH's choice
+    // of interval (computed above, with the window).
     const candles = useMemo(
         () => (isCandle ? buildCandles(slice.map(d => ({ t: d.t, v: d.p })), candleIntervalH) : []),
         [isCandle, slice, candleIntervalH],
@@ -582,7 +605,15 @@ const ResultChart = ({
     const onPointerLeave = (e: React.PointerEvent) => { endDrag(e); setHover(null); };
 
     const hoverPt = hover != null ? data[hover] : null;
+    // In candle view the unit of reading is the candle, not the sample: the
+    // crosshair and the tooltip both report the bucket the pointer is over — its
+    // open, high, low and close — rather than an interpolated point, which is
+    // the "show the whole candle, not the middle value" the reader asked for.
+    const hoverCandle = isCandle && hoverPt != null
+        ? candles.find(cd => hoverPt.t >= cd.t0 && hoverPt.t < cd.t1) ?? null
+        : null;
     const showHover = !dragging && hoverPt != null && hoverPt.t >= t0 && hoverPt.t <= t1 && plotW > 0;
+    const showCandleHover = isCandle && hoverCandle != null && hoverCandle.t0 + candleIntervalH * HOUR >= t0 && hoverCandle.t0 <= t1;
     const calFactor = calibrationFn(now / HOUR);
 
     const rangeOpts: { key: RangeKey; label: string }[] = [
@@ -591,14 +622,15 @@ const ResultChart = ({
         { key: 'all', label: t('chart.range_all') },
     ];
 
-    // The header chip's name for the interval actually drawn. Daily is the base;
-    // a window wider than the ladder fits draws whole weeks, or whole multiples
-    // of weeks once even those run out.
-    const kIntervalLabel = !isCandle ? '' : candleIntervalH === 24
-        ? t('chart.k.day')
-        : candleIntervalH % 168 === 0
-            ? (candleIntervalH === 168 ? t('chart.k.week') : t('chart.k.weeks').replace('{n}', String(candleIntervalH / 168)))
-            : t('chart.k.days').replace('{n}', String(candleIntervalH / 24));
+    // The header chip's name for the interval actually drawn: 4小时K (the 7-day
+    // default), 日K, or 周K (and whole multiples of a week once weekly runs out).
+    const kIntervalLabel = !isCandle ? '' : candleIntervalH < 24
+        ? t('chart.k.hour4')
+        : candleIntervalH === 24
+            ? t('chart.k.day')
+            : candleIntervalH % 168 === 0
+                ? (candleIntervalH === 168 ? t('chart.k.week') : t('chart.k.weeks').replace('{n}', String(candleIntervalH / 168)))
+                : t('chart.k.days').replace('{n}', String(candleIntervalH / 24));
 
     if (!sim || sim.timeH.length === 0) {
         return (
@@ -671,7 +703,7 @@ const ResultChart = ({
             </div>
 
             {/* Plot */}
-            <div ref={setPlotEl} className="relative h-72 md:h-96 -mx-4 md:-mx-6 select-none touch-pan-y">
+            <div ref={setPlotEl} className={`relative -mx-4 md:-mx-6 select-none touch-pan-y ${tall ? 'h-[26rem] md:h-[34rem]' : 'h-72 md:h-96'}`}>
 
 
                 {width > 0 && (
@@ -871,49 +903,93 @@ const ResultChart = ({
                                 );
                             })}
 
-                            {/* Hover crosshair + dot */}
-                            {showHover && (
-                                <>
-                                    <line x1={X(hoverPt!.t)} y1={mT} x2={X(hoverPt!.t)} y2={mT + plotH} stroke={c.faint} strokeWidth={1} />
-                                    <circle cx={X(hoverPt!.t)} cy={YP(hoverPt!.p)} r={4} fill={c.primary} stroke={c.dot} strokeWidth={2} />
-                                    {hasSecondary && hoverPt!.s != null && (
-                                        <circle cx={X(hoverPt!.t)} cy={YS(hoverPt!.s)} r={3} fill={c.second} stroke={c.dot} strokeWidth={1.5} />
-                                    )}
-                                </>
+                            {/* Hover crosshair + dot. In candle view it snaps to the
+                                bucket: the line sits at the candle's centre and the dot
+                                on its close, so the highlight and the tooltip agree on
+                                which candle is being read. */}
+                            {isCandle ? (
+                                showCandleHover && (() => {
+                                    const cx = X((hoverCandle!.t0 + hoverCandle!.t1) / 2);
+                                    return (
+                                        <>
+                                            <line x1={cx} y1={mT} x2={cx} y2={mT + plotH} stroke={c.faint} strokeWidth={1} />
+                                            <circle cx={cx} cy={YP(hoverCandle!.close)} r={4} fill={c.primary} stroke={c.dot} strokeWidth={2} />
+                                        </>
+                                    );
+                                })()
+                            ) : (
+                                showHover && (
+                                    <>
+                                        <line x1={X(hoverPt!.t)} y1={mT} x2={X(hoverPt!.t)} y2={mT + plotH} stroke={c.faint} strokeWidth={1} />
+                                        <circle cx={X(hoverPt!.t)} cy={YP(hoverPt!.p)} r={4} fill={c.primary} stroke={c.dot} strokeWidth={2} />
+                                        {hasSecondary && hoverPt!.s != null && (
+                                            <circle cx={X(hoverPt!.t)} cy={YS(hoverPt!.s)} r={3} fill={c.second} stroke={c.dot} strokeWidth={1.5} />
+                                        )}
+                                    </>
+                                )
                             )}
                         </g>
                     </svg>
                 )}
 
-                {/* Hover tooltip */}
-                {showHover && (
-                    <div
-                        className="absolute z-20 pointer-events-none px-2.5 py-1.5 rounded-md bg-[var(--color-m3-surface-bright)]  border border-[var(--color-m3-outline-variant)] "
-                        style={{
-                            left: Math.min(Math.max(X(hoverPt!.t), mL + 4), mL + plotW - 4),
-                            top: Math.max(YP(hoverPt!.p) - 12, 8),
-                            transform: `translate(${X(hoverPt!.t) > mL + plotW * 0.6 ? '-100%' : '0'}, -100%)`,
-                        }}
-                    >
-                        <div className="m3-text-note mb-0.5 whitespace-nowrap">
-                            {formatDate(new Date(hoverPt!.t), lang, timeZone)} · {formatTime(new Date(hoverPt!.t), timeZone)}
-                        </div>
-                        <div className="flex items-baseline gap-1 whitespace-nowrap">
-                            <span className="text-sm font-medium tabular-nums" style={{ color: c.primary }}>
-                                {hoverPt!.p.toFixed(primaryMeta.decimals)}
-                            </span>
-                            <span className="m3-text-note">{primaryMeta.unit}</span>
-                        </div>
-                        {hasSecondary && hoverPt!.s != null && (
-                            <div className="flex items-baseline gap-1 whitespace-nowrap">
-                                <span className="text-xs font-medium tabular-nums" style={{ color: c.second }}>
-                                    {hoverPt!.s.toFixed(2)}
-                                </span>
-                                <span className="m3-text-note">ng/ml</span>
+                {/* Hover tooltip. Line view reports the sample under the pointer;
+                    candle view reports the whole bucket (开/高/低/收) and which way
+                    it moved. */}
+                {(isCandle ? showCandleHover : showHover) && (() => {
+                    const cx = isCandle ? X((hoverCandle!.t0 + hoverCandle!.t1) / 2) : X(hoverPt!.t);
+                    const top = isCandle ? YP(hoverCandle!.high) : YP(hoverPt!.p);
+                    const dec = primaryMeta.decimals;
+                    return (
+                        <div
+                            className="absolute z-20 pointer-events-none px-2.5 py-1.5 rounded-md bg-[var(--color-m3-surface-bright)]  border border-[var(--color-m3-outline-variant)] "
+                            style={{
+                                left: Math.min(Math.max(cx, mL + 4), mL + plotW - 4),
+                                top: Math.max(top - 12, 8),
+                                transform: `translate(${cx > mL + plotW * 0.6 ? '-100%' : '0'}, -100%)`,
+                            }}
+                        >
+                            <div className="m3-text-note mb-0.5 whitespace-nowrap">
+                                {isCandle
+                                    // A 4-hour bucket is a time, not a day: give its span.
+                                    ? (candleIntervalH < 24
+                                        ? `${formatDate(new Date(hoverCandle!.t0), lang, timeZone)} ${formatTime(new Date(hoverCandle!.t0), timeZone)}–${formatTime(new Date(hoverCandle!.t1), timeZone)}`
+                                        : formatDate(new Date(hoverCandle!.t0), lang, timeZone))
+                                    : `${formatDate(new Date(hoverPt!.t), lang, timeZone)} · ${formatTime(new Date(hoverPt!.t), timeZone)}`}
                             </div>
-                        )}
-                    </div>
-                )}
+                            {isCandle ? (
+                                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 m3-text-note tabular-nums">
+                                    <span className="opacity-70">{t('chart.k.open')}</span>
+                                    <span className="text-end">{hoverCandle!.open.toFixed(dec)}</span>
+                                    <span className="opacity-70">{t('chart.k.high')}</span>
+                                    <span className="text-end">{hoverCandle!.high.toFixed(dec)}</span>
+                                    <span className="opacity-70">{t('chart.k.low')}</span>
+                                    <span className="text-end">{hoverCandle!.low.toFixed(dec)}</span>
+                                    <span className="opacity-70">{t('chart.k.close')}</span>
+                                    <span className="text-end font-medium" style={{ color: hoverCandle!.close >= hoverCandle!.open ? c.up : c.down }}>
+                                        {hoverCandle!.close.toFixed(dec)}
+                                    </span>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="flex items-baseline gap-1 whitespace-nowrap">
+                                        <span className="text-sm font-medium tabular-nums" style={{ color: c.primary }}>
+                                            {hoverPt!.p.toFixed(dec)}
+                                        </span>
+                                        <span className="m3-text-note">{primaryMeta.unit}</span>
+                                    </div>
+                                    {hasSecondary && hoverPt!.s != null && (
+                                        <div className="flex items-baseline gap-1 whitespace-nowrap">
+                                            <span className="text-xs font-medium tabular-nums" style={{ color: c.second }}>
+                                                {hoverPt!.s.toFixed(2)}
+                                            </span>
+                                            <span className="m3-text-note">ng/ml</span>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    );
+                })()}
             </div>
         </div>
     );

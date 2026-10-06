@@ -40,13 +40,13 @@ check('ladder is ascending and starts at 1h', () => {
     assert.equal(CANDLE_LADDER_H[0], 1)
 })
 
-check('1h base on 7d stays 1h (168 candles fits)', () => {
-    assert.equal(resolveCandleIntervalH(1, 7 * 24 * HOUR), 1)
+check('4h base on 7d stays 4h (42 candles)', () => {
+    assert.equal(resolveCandleIntervalH(4, 7 * 24 * HOUR), 4)
 })
 
-check('1h base on 30d steps up, not a 720-candle mass', () => {
-    const h = resolveCandleIntervalH(1, 30 * 24 * HOUR)
-    assert.equal(h, 4) // 720/4 = 180 ≤ 200
+check('4h base on 90d steps up, not a 540-candle mass', () => {
+    const h = resolveCandleIntervalH(4, 90 * 24 * HOUR)
+    assert.equal(h, 12) // 2160/12 = 180 ≤ 200
 })
 
 check('1d base on 30d stays daily', () => {
@@ -72,6 +72,19 @@ check('resolved interval always divides the span into ≤ max candles', () => {
 check('resolved interval never coarser than the base', () => {
     assert.equal(resolveCandleIntervalH(24, 3 * 24 * HOUR), 24)
     assert.equal(resolveCandleIntervalH(1, 12 * HOUR), 1)
+})
+
+check('4h base on 7d stays 4h (the 7-day default)', () => {
+    assert.equal(resolveCandleIntervalH(4, 7 * 24 * HOUR), 4)
+})
+
+check('exactly 120 days stays daily', () => {
+    assert.equal(resolveCandleIntervalH(24, 120 * 24 * HOUR), 24)
+})
+
+check('past 120 days goes weekly', () => {
+    assert.equal(resolveCandleIntervalH(24, 121 * 24 * HOUR), 168)
+    assert.equal(resolveCandleIntervalH(24, 200 * 24 * HOUR), 168)
 })
 
 // ── buildCandles ────────────────────────────────────────────────────────────
