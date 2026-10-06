@@ -889,10 +889,10 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                                 </button>
                                 {templateToDelete === template.id ? (
                                     <div className="flex items-center gap-0.5 pl-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                        <button onClick={() => { setTemplateToDelete(null); setShowTemplateMenu(false); onDeleteTemplate(template.id); }} className="p-1 text-cos-error hover:bg-cos-error-container  rounded" title={t('btn.confirm')}>
+                                        <button onClick={() => { setTemplateToDelete(null); setShowTemplateMenu(false); onDeleteTemplate(template.id); }} className="p-1 text-cos-error hover:bg-cos-error-container  rounded flex items-center justify-center" title={t('btn.confirm')}>
                                             <Icon icon={Check} size={13} />
                                         </button>
-                                        <button onClick={() => setTemplateToDelete(null)} className="p-1 text-[var(--color-m3-on-surface-variant)]  hover:bg-[var(--color-m3-surface-container)]  rounded" title={t('btn.cancel')}>
+                                        <button onClick={() => setTemplateToDelete(null)} className="p-1 text-[var(--color-m3-on-surface-variant)]  hover:bg-[var(--color-m3-surface-container)]  rounded flex items-center justify-center" title={t('btn.cancel')}>
                                             <Icon icon={X} size={13} />
                                         </button>
                                     </div>
@@ -1299,13 +1299,13 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                             />
                             <button
                                 onClick={handleSaveAsTemplate}
-                                className="p-1.5 ml-1 text-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-container)] rounded shrink-0"
+                                className="p-1.5 ml-1 text-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-container)] rounded shrink-0 flex items-center justify-center"
                             >
                                 <Icon icon={Check} size={18} />
                             </button>
                             <button
                                 onClick={() => { setShowSaveTemplateInput(false); setTemplateName(''); }}
-                                className="p-1.5 text-[var(--color-m3-on-surface-variant)] hover:bg-[var(--color-m3-surface-container)] rounded shrink-0"
+                                className="p-1.5 text-[var(--color-m3-on-surface-variant)] hover:bg-[var(--color-m3-surface-container)] rounded shrink-0 flex items-center justify-center"
                             >
                                 <Icon icon={X} size={18} />
                             </button>
@@ -1341,14 +1341,14 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                                             onDelete(eventToEdit.id);
                                             onCancel();
                                         }}
-                                        className="p-1 text-cos-error  hover:bg-cos-error-container  rounded"
+                                        className="p-1 text-cos-error  hover:bg-cos-error-container  rounded flex items-center justify-center"
                                         title={t('btn.ok')}
                                     >
                                         <Icon icon={Check} size={16} />
                                     </button>
                                     <button
                                         onClick={() => setShowDeleteConfirm(false)}
-                                        className="p-1 text-cos-on-surface-variant hover:bg-cos-error-container  rounded"
+                                        className="p-1 text-cos-on-surface-variant hover:bg-cos-error-container  rounded flex items-center justify-center"
                                         title={t('btn.cancel')}
                                     >
                                         <Icon icon={X} size={16} />
