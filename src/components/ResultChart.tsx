@@ -903,17 +903,18 @@ const ResultChart = ({
                                 );
                             })}
 
-                            {/* Hover crosshair + dot. In candle view it snaps to the
-                                bucket: the line sits at the candle's centre and the dot
-                                on its close, so the highlight and the tooltip agree on
-                                which candle is being read. */}
+                            {/* Hover crosshair. In candle view it snaps to the bucket:
+                                a dashed cross — vertical at the candle's centre, horizontal
+                                at its close — with no dot, the marker the reader set for
+                                this view. Line view keeps its solid line and dot. */}
                             {isCandle ? (
                                 showCandleHover && (() => {
                                     const cx = X((hoverCandle!.t0 + hoverCandle!.t1) / 2);
+                                    const cy = YP(hoverCandle!.close);
                                     return (
                                         <>
-                                            <line x1={cx} y1={mT} x2={cx} y2={mT + plotH} stroke={c.faint} strokeWidth={1} />
-                                            <circle cx={cx} cy={YP(hoverCandle!.close)} r={4} fill={c.primary} stroke={c.dot} strokeWidth={2} />
+                                            <line x1={cx} y1={mT} x2={cx} y2={mT + plotH} stroke={c.faint} strokeWidth={1} strokeDasharray="3 4" />
+                                            <line x1={mL} y1={cy} x2={mL + plotW} y2={cy} stroke={c.faint} strokeWidth={1} strokeDasharray="3 4" />
                                         </>
                                     );
                                 })()

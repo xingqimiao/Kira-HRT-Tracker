@@ -5,6 +5,7 @@ import { Info, Share2, AlertTriangle } from '../icons';
 import { DoseEvent, SimulationResult, LabResult, AntiandrogenChartMode, getDoseAdvisory, getHormoneLevelAdvisory, isT_LabUnit, isMonitoringOnlyLab, modelledEvents, antiandrogenReading } from '../../logic';
 import ResultChart from '../components/ResultChart';
 import DoseHeatmap from '../components/DoseHeatmap';
+import DoseOrderBook from '../components/DoseOrderBook';
 import EstimateInfoModal from '../components/EstimateInfoModal';
 import NoticeModal from '../components/NoticeModal';
 import DoseAdvisoryNotice from '../components/DoseAdvisory';
@@ -455,9 +456,18 @@ const Home: React.FC<HomeProps> = ({
                             {t('home.empty_cta')}
                         </button>
                     </div>
-                ) : showHeatmap ? (
-                    <div className="flex flex-col gap-8 2xl:flex-row 2xl:items-start 2xl:gap-6">
-                        <div className="min-w-0 2xl:flex-[3]">
+                ) : (
+                    (() => {
+                        // The panel beside the chart. Candle view pairs with the dose
+                        // list (its "order book"); the line view pairs with the dose
+                        // grid when that is on. Neither → the chart takes the whole
+                        // width, taller, so the pane is filled rather than emptied.
+                        const sidePanel = chartStyle !== 'line' ? (
+                            <DoseOrderBook events={events} className="min-w-0 2xl:flex-[2] 2xl:min-w-[16rem]" />
+                        ) : showHeatmap ? (
+                            <DoseHeatmap events={events} className="min-w-0 2xl:flex-[2] 2xl:min-w-[16rem]" />
+                        ) : null;
+                        const chart = (
                             <ResultChart
                                 sim={simulation}
                                 events={chartEvents}
@@ -466,26 +476,18 @@ const Home: React.FC<HomeProps> = ({
                                 calibrationFn={calibrationFn}
                                 isDarkMode={isDarkMode}
                                 chartStyle={chartStyle}
+                                tall={!sidePanel}
                             />
-                        </div>
-                        <DoseHeatmap
-                            events={events}
-                            className="min-w-0 2xl:flex-[2] 2xl:min-w-[16rem]"
-                        />
-                    </div>
-                ) : (
-                    <div className="min-w-0">
-                        <ResultChart
-                            sim={simulation}
-                            events={chartEvents}
-                            onPointClick={onEditEvent}
-                            labResults={hormoneLabs}
-                            calibrationFn={calibrationFn}
-                            isDarkMode={isDarkMode}
-                            chartStyle={chartStyle}
-                            tall
-                        />
-                    </div>
+                        );
+                        return sidePanel ? (
+                            <div className="flex flex-col gap-8 2xl:flex-row 2xl:items-start 2xl:gap-6">
+                                <div className="min-w-0 2xl:flex-[3]">{chart}</div>
+                                {sidePanel}
+                            </div>
+                        ) : (
+                            <div className="min-w-0">{chart}</div>
+                        );
+                    })()
                 )}
             </main>
         </div>

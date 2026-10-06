@@ -123,14 +123,6 @@ const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({
                     <Switch checked={showVial} onChange={setShowVial} />
                 </div>
 
-                <div className={`${divider} w-full flex items-center justify-between py-4`}>
-                    <div>
-                        <p className={rowLabel}>{t('settings.dose_heatmap')}</p>
-                        <p className={`text-xs ${muted} mt-0.5`}>{t('settings.dose_heatmap_desc')}</p>
-                    </div>
-                    <Switch checked={showHeatmap} onChange={setShowHeatmap} />
-                </div>
-
                 {/* How the overview chart draws the primary series. The candle
                     option is a *request* — a window too wide to honour it draws
                     a coarser interval, and the chart's header chip says which. */}
@@ -150,6 +142,20 @@ const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({
                             </button>
                         ))}
                     </div>
+                </div>
+
+                {/* The dose grid. Off and unavailable while the candle view is on:
+                    that view pairs the chart with the dose list (its "order book"),
+                    so the grid's switch is disabled and the hint says why rather
+                    than leaving a control that silently does nothing. */}
+                <div className={`${divider} w-full flex items-center justify-between py-4`}>
+                    <div>
+                        <p className={rowLabel}>{t('settings.dose_heatmap')}</p>
+                        <p className={`text-xs ${muted} mt-0.5`}>
+                            {chartStyle !== 'line' ? t('settings.dose_heatmap_candle') : t('settings.dose_heatmap_desc')}
+                        </p>
+                    </div>
+                    <Switch checked={showHeatmap} onChange={setShowHeatmap} disabled={chartStyle !== 'line'} />
                 </div>
             </div>
         </div>
