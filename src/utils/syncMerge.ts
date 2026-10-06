@@ -80,6 +80,8 @@ export interface AppSettings {
     showVial?: boolean;
     /** Whether the overview draws the dose-day grid (DoseHeatmap). Default on. */
     showHeatmap?: boolean;
+    /** Whether E2/T readings show a decimal place. Default off (whole numbers). */
+    readingDecimals?: boolean;
     /**
      * How the overview chart draws the primary series: 'line' or '1d' (candles).
      *
@@ -139,7 +141,7 @@ export interface AppSettings {
 export const APP_SETTING_KEYS: readonly (keyof AppSettings)[] = [
     'theme', 'keyColor', 'lang', 'hrtMode', 'showVial', 'calMethod', 'calHistoryMode', 'aaChartMode',
     'hrtStartDate', 'recheckIntervals', 'ocrModelTier', 'pkEngine', 'timezone',
-    'showHeatmap', 'chartStyle',
+    'showHeatmap', 'chartStyle', 'readingDecimals',
 ];
 
 export interface SyncState {
@@ -283,7 +285,7 @@ export function sanitizeTombstones(raw: unknown): Tombstones {
  * payload put `showVial: 'false'` into state, where its own reader — which
  * compares against the string 'false' — would read it as *true*.
  */
-const BOOLEAN_SETTING_KEYS: ReadonlySet<keyof AppSettings> = new Set(['showVial', 'showHeatmap']);
+const BOOLEAN_SETTING_KEYS: ReadonlySet<keyof AppSettings> = new Set(['showVial', 'showHeatmap', 'readingDecimals']);
 
 export function sanitizeAppSettings(raw: unknown): AppSettings {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};

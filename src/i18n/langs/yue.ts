@@ -628,6 +628,10 @@ const PACK: LangPack = {
     "settings.blood_vial": "像素試管",
     "settings.blood_vial_desc": "喺概覽顯示一支跟住當前估算濃度變化嘅試管",
     "settings.dose_heatmap": "用藥方格圖",
+
+    "settings.reading_decimals": "顯示小數位",
+
+    "settings.reading_decimals_desc": "雌二醇 / 睪固酮讀數保留一位小數（預設整數）",
     "settings.dose_heatmap_desc": "喺概覽顯示一張按日統計用藥次數嘅方格圖",
     "settings.dose_heatmap_candle": "K線模式下由「近期劑量」取代，唔開得",
     "settings.chart_style": "曲線樣式",

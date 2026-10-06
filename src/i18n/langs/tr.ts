@@ -774,6 +774,10 @@ const PACK: LangPack = {
     "settings.blood_vial": "Piksel tüp",
     "settings.blood_vial_desc": "Genel bakışta güncel tahmine göre değişen bir tüp göster",
     "settings.dose_heatmap": "Doz ızgarası",
+
+    "settings.reading_decimals": "Ondalık göster",
+
+    "settings.reading_decimals_desc": "E2 / T değerleri bir ondalık basamak gösterir (varsayılan tam sayı)",
     "settings.dose_heatmap_desc": "Genel bakışta gün gün kaydedilen dozları gösteren bir ızgara",
     "settings.dose_heatmap_candle": "Mum görünümünde doz listesiyle değiştirilir",
     "settings.chart_style": "Grafik stili",

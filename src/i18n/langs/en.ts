@@ -774,6 +774,10 @@ const PACK: LangPack = {
     "settings.blood_vial": "Blood vial",
     "settings.blood_vial_desc": "Show a vial on the overview that follows the current estimate",
     "settings.dose_heatmap": "Dose grid",
+
+    "settings.reading_decimals": "Show decimal place",
+
+    "settings.reading_decimals_desc": "E2 / T readings keep one decimal (whole numbers by default)",
     "settings.dose_heatmap_desc": "Show a day-by-day grid of logged doses on the overview",
     "settings.dose_heatmap_candle": "Replaced by the dose list in candle view",
     "settings.chart_style": "Chart style",

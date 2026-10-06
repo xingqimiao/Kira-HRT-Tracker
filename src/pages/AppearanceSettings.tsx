@@ -17,6 +17,9 @@ interface AppearanceSettingsProps {
     /** How the overview chart draws the primary series. */
     chartStyle: ChartStyle;
     setChartStyle: (s: ChartStyle) => void;
+    /** Whether E2/T readings show a decimal place. */
+    readingDecimals: boolean;
+    setReadingDecimals: (v: boolean) => void;
     onBack: () => void;
 }
 
@@ -29,7 +32,8 @@ const muted = 'text-[var(--color-m3-on-surface-variant)] ';
 
 const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({
     theme, setTheme, keyColor, setKeyColor,
-    showHeatmap, setShowHeatmap, chartStyle, setChartStyle, onBack,
+    showHeatmap, setShowHeatmap, chartStyle, setChartStyle,
+    readingDecimals, setReadingDecimals, onBack,
 }) => {
     const { t } = useTranslation();
     // The vial owns its own preference; the page reads it from the provider
@@ -121,6 +125,14 @@ const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({
                         <p className={`text-xs ${muted} mt-0.5`}>{t('settings.blood_vial_desc')}</p>
                     </div>
                     <Switch checked={showVial} onChange={setShowVial} />
+                </div>
+
+                <div className={`${divider} w-full flex items-center justify-between py-4`}>
+                    <div>
+                        <p className={rowLabel}>{t('settings.reading_decimals')}</p>
+                        <p className={`text-xs ${muted} mt-0.5`}>{t('settings.reading_decimals_desc')}</p>
+                    </div>
+                    <Switch checked={readingDecimals} onChange={setReadingDecimals} />
                 </div>
 
                 {/* How the overview chart draws the primary series. The candle

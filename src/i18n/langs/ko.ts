@@ -820,6 +820,10 @@ const PACK: LangPack = {
     "settings.blood_vial": "픽셀 시험관",
     "settings.blood_vial_desc": "개요에 현재 추정 농도에 따라 변하는 시험관을 표시합니다",
     "settings.dose_heatmap": "복약 그리드",
+
+    "settings.reading_decimals": "소수점 표시",
+
+    "settings.reading_decimals_desc": "E2 / T 수치를 소수 첫째 자리까지 표시 (기본은 정수)",
     "settings.dose_heatmap_desc": "개요에 날짜별 복용 횟수 그리드를 표시합니다",
     "settings.dose_heatmap_candle": "캔들 보기에서는 투약 목록으로 대체됩니다",
     "settings.chart_style": "차트 스타일",

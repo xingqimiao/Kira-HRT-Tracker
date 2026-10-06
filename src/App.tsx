@@ -231,6 +231,10 @@ const AppContent = () => {
     const [chartStyle, setChartStyle] = useState<ChartStyle>(() =>
         normalizeChartStyle(localStorage.getItem('app-chart-style'))
     );
+    // Whole numbers by default — "8" not "8.8". Opt in to the decimal place.
+    const [readingDecimals, setReadingDecimals] = useState<boolean>(() =>
+        localStorage.getItem('app-reading-decimals') === 'true'
+    );
 
     useEffect(() => {
         localStorage.setItem('app-key-color', keyColor);
@@ -247,6 +251,10 @@ const AppContent = () => {
         localStorage.setItem('app-chart-style', chartStyle);
     }, [chartStyle]);
 
+    useEffect(() => {
+        localStorage.setItem('app-reading-decimals', String(readingDecimals));
+    }, [readingDecimals]);
+
     // Adopt theme and key colour when a sync brings the account's choices in.
     // Each value is validated against what this build understands before being
     // taken, so a payload from a newer version cannot set a theme it has no
@@ -257,6 +265,7 @@ const AppContent = () => {
         setKeyColor(localStorage.getItem('app-key-color') === 'blue' ? 'blue' : 'pink');
         setShowHeatmap(localStorage.getItem('app-dose-heatmap') !== 'false');
         setChartStyle(normalizeChartStyle(localStorage.getItem('app-chart-style')));
+        setReadingDecimals(localStorage.getItem('app-reading-decimals') === 'true');
     }), []);
 
     useEffect(() => {
@@ -676,6 +685,7 @@ const AppContent = () => {
                             nowMs={currentTime.getTime()}
                             showHeatmap={showHeatmap}
                             chartStyle={chartStyle}
+                            readingDecimals={readingDecimals}
                             onSaveTemplate={addTemplate}
                             onDeleteTemplate={deleteTemplate}
                             quickDoses={quickDoses}
@@ -834,6 +844,8 @@ const AppContent = () => {
                             setShowHeatmap={setShowHeatmap}
                             chartStyle={chartStyle}
                             setChartStyle={setChartStyle}
+                            readingDecimals={readingDecimals}
+                            setReadingDecimals={setReadingDecimals}
                             onBack={() => handleViewChange('settings')}
                         />
                     )}

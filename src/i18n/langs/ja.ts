@@ -840,6 +840,10 @@ const PACK: LangPack = {
     "settings.blood_vial": "ピクセル試験管",
     "settings.blood_vial_desc": "概要に現在の推定濃度に応じて変化する試験管を表示します",
     "settings.dose_heatmap": "投薬グリッド",
+
+    "settings.reading_decimals": "小数を表示",
+
+    "settings.reading_decimals_desc": "E2 / T の数値を小数第1位まで表示（既定は整数）",
     "settings.dose_heatmap_desc": "概要に日ごとの投与回数を示すグリッドを表示します",
     "settings.dose_heatmap_candle": "ローソク足表示では投与リストに置き換わります",
     "settings.chart_style": "チャートのスタイル",

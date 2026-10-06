@@ -103,6 +103,8 @@ interface HomeProps {
     showHeatmap: boolean;
     /** Line or candles for the chart — the same personalization setting. */
     chartStyle: ChartStyle;
+    /** Whether E2/T readings show a decimal place. Default off (whole numbers). */
+    readingDecimals: boolean;
     /** Passthroughs for the inline dose form the candle view embeds. */
     onSaveTemplate: (t: DoseTemplate) => void;
     onDeleteTemplate: (id: string) => void;
@@ -135,6 +137,7 @@ const Home: React.FC<HomeProps> = ({
     nowMs,
     showHeatmap,
     chartStyle,
+    readingDecimals,
     onSaveTemplate,
     onDeleteTemplate,
     quickDoses,
@@ -220,7 +223,11 @@ const Home: React.FC<HomeProps> = ({
     // testosterone pair) and the anti-androgen's grams/mg. A relative-time
     // anti-androgen ("2 天前") is words, not digits, and renders as a small line;
     // a lone numeric column (an em dash, or the AA headline) is its own length.
-    const primaryChars = (isTransmasc ? currentT.toFixed(0) : currentLevel.toFixed(1)).length;
+    // E2 and the transmasc nmol/L show a decimal place only when the setting asks
+    // (whole numbers by default); everything that sizes or measures the reading
+    // uses `primaryDecimals`, so "8" and "8.8" are each laid out for what is drawn.
+    const primaryDecimals = readingDecimals ? 1 : 0;
+    const primaryChars = (isTransmasc ? currentT.toFixed(0) : currentLevel.toFixed(primaryDecimals)).length;
     const aaChars = antiandrogen.kind === 'grams'
         ? antiandrogen.grams.toFixed(2).length
         : antiandrogen.kind === 'dose'
@@ -229,7 +236,7 @@ const Home: React.FC<HomeProps> = ({
     const pairedChars = aaChars != null ? Math.max(primaryChars, aaChars) : null;
     // Transmasc shows the same reading twice (ng/dL and nmol/L); both are numeric,
     // so they too share the longer count rather than drifting apart.
-    const tPairChars = Math.max(currentT.toFixed(0).length, (currentT / 28.842).toFixed(1).length);
+    const tPairChars = Math.max(currentT.toFixed(0).length, (currentT / 28.842).toFixed(primaryDecimals).length);
 
     // The candle terminal's compact price header. Same two readings, same
     // calculators as the card, just laid out as a strip above the chart rather
@@ -239,7 +246,7 @@ const Home: React.FC<HomeProps> = ({
     // value-plus-unit pair.
     const pricePair = isTransmasc
         ? { label: t('label.total_t'), value: currentT.toFixed(0), unit: 'ng/dl', tinted: true }
-        : { label: t('label.e2'), value: currentLevel.toFixed(1), unit: 'pg/ml', tinted: true };
+        : { label: t('label.e2'), value: currentLevel.toFixed(primaryDecimals), unit: 'pg/ml', tinted: true };
     const aaPair = {
         label: aaHeading,
         value: antiandrogen.kind === 'grams' ? antiandrogen.grams.toFixed(2)
@@ -279,10 +286,18 @@ const Home: React.FC<HomeProps> = ({
     // "sits as it always did" and "moves things". When it drops, the row gains
     // `flex-wrap` so the tube can actually reach its own line, and centres itself
     // under the digits.
-    const vialDrops = (isTransmasc ? currentT.toFixed(0) : currentLevel.toFixed(1)).length > 5;
+    const vialDrops = (isTransmasc ? currentT.toFixed(0) : currentLevel.toFixed(primaryDecimals)).length > 5;
     const vial = (events.length > 0 || hormoneLabs.length > 0) ? (
+        // On a phone the tube always takes its own row (the column is ~146px and the
+        // reading plus the tube do not fit across), centred under the number, so the
+        // unit ("pg/ml") stays up beside the number rather than being pushed down by
+        // the tube. From `sm` it sits beside the reading again, and only drops to its
+        // own row for an over-long reading (`vialDrops`). `--vial-drop` nudges it
+        // down off the unit's line whenever it is on its own row.
         <span
-            className={`flex shrink-0 self-start ${vialDrops ? 'w-full justify-center [--vial-drop:14px]' : ''}`}
+            className={`flex w-full shrink-0 justify-center self-start [--vial-drop:14px] ${
+                vialDrops ? 'sm:w-full sm:justify-center' : 'sm:w-auto sm:justify-normal sm:[--vial-drop:0px]'
+            }`}
             style={{ marginTop: `calc(${vialOffset}px + var(--vial-drop, 0px))` }}
         >
             {/* Sized against the reading beside it. The canvas is 26 wide but the tube is
@@ -451,7 +466,7 @@ const Home: React.FC<HomeProps> = ({
                                 <p className={`text-xs font-semibold ${muted} mb-2`}>
                                     {t('label.total_t')} <span className="opacity-60">(ng/dL)</span>
                                 </p>
-                                <div className={`flex items-start justify-center gap-x-2 ${vialDrops ? 'flex-wrap' : ''} [--reading-lane:146px] sm:[--reading-lane:272px]`}>
+                                <div className={`flex flex-wrap items-start justify-center gap-x-2 gap-y-1 [--reading-lane:146px] sm:[--reading-lane:272px]`}>
                                     <span className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
                                         {currentT > 0 ? (
                                             <Reading value={currentT} decimals={0} unit="ng/dl" className={on} muted={muted} sprayable chars={tPairChars} />
@@ -468,7 +483,7 @@ const Home: React.FC<HomeProps> = ({
                                 </p>
                                 <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1 [--reading-lane:146px] sm:[--reading-lane:272px]">
                                     {currentT > 0 ? (
-                                        <Reading value={currentT / 28.842} decimals={1} unit="nmol/l" className={on} muted={muted} chars={tPairChars} />
+                                        <Reading value={currentT / 28.842} decimals={primaryDecimals} unit="nmol/l" className={on} muted={muted} chars={tPairChars} />
                                     ) : (
                                         <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
                                     )}
@@ -479,14 +494,14 @@ const Home: React.FC<HomeProps> = ({
                         <>
                             <div className="min-w-0">
                                 <p className={`text-xs font-semibold ${muted} mb-2`}>{t('label.e2')}</p>
-                                <div className={`flex items-start justify-center gap-x-2 ${vialDrops ? 'flex-wrap' : ''} [--reading-lane:146px] sm:[--reading-lane:272px]`}>
+                                <div className={`flex flex-wrap items-start justify-center gap-x-2 gap-y-1 [--reading-lane:146px] sm:[--reading-lane:272px]`}>
                                     {/* `leading-none` is what makes "the top of the number" a
                                         real edge: at the shared 1.4 line-height the box top sat
                                         a few px above the ink, and the vial had nothing precise
                                         to hang from. */}
                                     <span className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
                                         {currentLevel > 0 ? (
-                                            <Reading value={currentLevel} decimals={1} unit="pg/ml" className={on} muted={muted} sprayable chars={pairedChars ?? undefined} />
+                                            <Reading value={currentLevel} decimals={primaryDecimals} unit="pg/ml" className={on} muted={muted} sprayable chars={pairedChars ?? undefined} />
                                         ) : (
                                             <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
                                         )}
