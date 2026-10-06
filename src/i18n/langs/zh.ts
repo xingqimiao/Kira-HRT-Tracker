@@ -490,6 +490,12 @@ const PACK: LangPack = {
     "licence.this_app_copyright": "Copyright (c) 2026 KiraEqual",
     "licence.generated": "版本 {version} · 依赖清单更新于 {date}",
     "drawer.disclaimer": "免责声明",
+
+    "settings.privacy": "隐私政策",
+
+    "settings.privacy_desc": "KiraMyao Equal 隐私与数据处理说明（第 26 节涵盖本应用）",
+
+    "settings.privacy_confirm": "即将访问第三方网站 (kiramyao.com)，是否继续？",
     "drawer.disclaimer_desc": "关于医学信息的重要声明。",
     "scan.title": "扫描化验单",
     "scan.intro": "拍下或选择一张化验单照片，自动读出雌二醇和睾酮的数值。识别结果只用来预填表单，需要你确认后才会保存。",

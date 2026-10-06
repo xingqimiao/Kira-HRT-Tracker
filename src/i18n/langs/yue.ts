@@ -346,6 +346,12 @@ const PACK: LangPack = {
     "licence.this_app_copyright": "Copyright (c) 2026 KiraEqual",
     "licence.generated": "版本 {version} · 相依清單更新於 {date}",
     "drawer.disclaimer": "免責聲明",
+
+    "settings.privacy": "私隱政策",
+
+    "settings.privacy_desc": "KiraMyao Equal 私隱與資料處理說明（第 26 節涵蓋本應用）",
+
+    "settings.privacy_confirm": "就快會去第三方網站 (kiramyao.com)，繼唔繼續？",
     "drawer.disclaimer_desc": "關於醫學資訊嘅重要聲明。",
     "scan.title": "掃描化驗單",
     "scan.intro": "影低或者揀一張化驗單相，自動讀出雌二醇同睪固酮嘅數值。辨識結果淨係用嚟預填表格，要你確認咗先會儲存。",

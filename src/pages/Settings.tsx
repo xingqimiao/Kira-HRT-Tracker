@@ -375,6 +375,21 @@ const Settings: React.FC<SettingsProps> = ({
                 <Icon icon={ChevronRight} size={15} className={muted} />
             </button>
 
+            {/* The privacy policy. Lives on kiramyao.com (the wider KiraMyao Equal
+                policy, whose §26 covers this app), so it opens externally. Kept in
+                About rather than hidden behind a link, because this app stores health
+                data and the policy is the statement of what it does with it. */}
+            <button
+                onClick={() => showDialog('confirm', t('settings.privacy_confirm'), () => window.open('https://kiramyao.com/privacy', '_blank'))}
+                className={rowBase}
+            >
+                <div>
+                    <p className={rowLabel}>{t('settings.privacy')}</p>
+                    <p className={`text-xs ${muted} mt-0.5`}>{t('settings.privacy_desc')}</p>
+                </div>
+                <Icon icon={ChevronRight} size={15} className={muted} />
+            </button>
+
             {/* Open-source licence notice. This is the row "About" was missing: the
                 algorithm, the model and the app we forked are all other people's
                 work, and until now the only acknowledgement was a credits row that

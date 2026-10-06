@@ -355,6 +355,12 @@ const PACK: LangPack = {
     "licence.this_app_copyright": "Copyright (c) 2026 KiraEqual",
     "licence.generated": "버전 {version} · 의존성 목록 갱신 {date}",
     "drawer.disclaimer": "면책 조항",
+
+    "settings.privacy": "개인정보 처리방침",
+
+    "settings.privacy_desc": "KiraMyao Equal 개인정보·데이터 처리 설명 (제26조가 본 앱 대상)",
+
+    "settings.privacy_confirm": "제3자 사이트 (kiramyao.com)로 이동합니다. 계속할까요?",
     "drawer.disclaimer_desc": "의학 정보에 관한 중요 공지",
     "import.title": "데이터 가져오기",
     "export.title": "데이터 내보내기",

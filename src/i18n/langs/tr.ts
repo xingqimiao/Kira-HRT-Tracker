@@ -490,6 +490,12 @@ const PACK: LangPack = {
     "licence.this_app_copyright": "Copyright (c) 2026 KiraEqual",
     "licence.generated": "Sürüm {version} · bağımlılık listesi {date} tarihinde üretildi",
     "drawer.disclaimer": "Sorumluluk Reddi",
+
+    "settings.privacy": "Gizlilik politikası",
+
+    "settings.privacy_desc": "KiraMyao Equal gizlilik ve veri politikası (§26 bu uygulamayı kapsar)",
+
+    "settings.privacy_confirm": "Üçüncü taraf bir siteye (kiramyao.com) gidiyorsunuz. Devam edilsin mi?",
     "drawer.disclaimer_desc": "Tıbbi bilgilerle ilgili önemli bildirim.",
     "scan.title": "Tahlil tara",
     "scan.intro": "Bir tahlil fotoğrafı çekin ya da seçin; estradiol ve testosteron değerleri okunur. Okunanlar yalnızca formu doldurur — kaydetmeden önce siz onaylarsınız.",

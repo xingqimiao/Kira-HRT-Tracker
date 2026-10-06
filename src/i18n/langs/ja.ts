@@ -597,6 +597,12 @@ const PACK: LangPack = {
     "licence.this_app_copyright": "Copyright (c) 2026 KiraEqual",
     "licence.generated": "バージョン {version} · 依存リスト更新日 {date}",
     "drawer.disclaimer": "免責事項",
+
+    "settings.privacy": "プライバシーポリシー",
+
+    "settings.privacy_desc": "KiraMyao Equal のプライバシー・データ取扱説明（第26節が本アプリ対象）",
+
+    "settings.privacy_confirm": "第三者サイト (kiramyao.com) に移動します。続行しますか？",
     "drawer.disclaimer_desc": "医学情報に関する重要な通知。",
     "scan.title": "検査結果をスキャン",
     "scan.intro": "検査結果の写真を撮るか選ぶと、エストラジオールとテストステロンの数値を読み取ります。読み取り結果はフォームに入るだけで、確認して保存するまで記録されません。",

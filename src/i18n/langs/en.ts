@@ -490,6 +490,12 @@ const PACK: LangPack = {
     "licence.this_app_copyright": "Copyright (c) 2026 KiraEqual",
     "licence.generated": "Version {version} · dependency list generated {date}",
     "drawer.disclaimer": "Disclaimer",
+
+    "settings.privacy": "Privacy policy",
+
+    "settings.privacy_desc": "KiraMyao Equal privacy & data policy (§26 covers this app)",
+
+    "settings.privacy_confirm": "You are about to visit a third-party website (kiramyao.com). Continue?",
     "drawer.disclaimer_desc": "Important notice regarding medical information.",
     "scan.title": "Scan a report",
     "scan.intro": "Photograph or choose a lab report and the estradiol and testosterone values are read out. What is read only prefills the form — you confirm it before anything is saved.",
