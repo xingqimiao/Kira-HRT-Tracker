@@ -72,6 +72,31 @@ export const formatRelative = (unixSec: number, nowSec: number, t: (k: string) =
     return t('time.days').replace('{n}', String(Math.floor(diff / 86400)));
 };
 
+/**
+ * The same relative time, split so the caller can style the number apart from
+ * its words: `{ value: '18', unit: '天前' }`. Every one of the app's seven
+ * locales puts `{n}` first in the template, so the unit is the text after it.
+ *
+ * Returns null for "just now", which has no number — the caller renders the
+ * whole phrase itself in that case.
+ */
+export const formatRelativeParts = (
+    unixSec: number,
+    nowSec: number,
+    t: (k: string) => string,
+): { value: string; unit: string } | null => {
+    const diff = Math.max(0, nowSec - unixSec);
+    const split = (template: string, n: number): { value: string; unit: string } | null => {
+        const marker = template.indexOf('{n}');
+        if (marker < 0) return null;
+        return { value: String(n), unit: template.slice(marker + 3).trim() };
+    };
+    if (diff < 60) return null;
+    if (diff < 3600) return split(t('time.minutes'), Math.floor(diff / 60));
+    if (diff < 86400) return split(t('time.hours'), Math.floor(diff / 3600));
+    return split(t('time.days'), Math.floor(diff / 86400));
+};
+
 // No locale: `hour12: false` with two-digit fields renders "14:05" identically
 // in all seven of the app's locales, so threading `lang` through here would
 // change three call sites and no pixels.

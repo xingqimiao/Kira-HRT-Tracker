@@ -19,7 +19,7 @@ import { AppTheme, ChartStyle } from '../constants';
 import { useTranslation } from '../contexts/LanguageContext';
 import { getShareCopy } from '../i18n/share';
 import { Tooltip } from '../components/ui';
-import { formatRelative } from '../utils/helpers';
+import { formatRelative, formatRelativeParts } from '../utils/helpers';
 
 /** Drawn width of the vial, in px. Height follows the canvas' 18:42. */
 const VIAL_SIZE = 44;
@@ -514,18 +514,28 @@ const Home: React.FC<HomeProps> = ({
                                         // anti-androgens use and CPA uses on a dose day.
                                         <Reading value={antiandrogen.mgToday} decimals={mgDecimals(antiandrogen.mgToday)} unit="mg" className={on} muted={muted} sprayable chars={pairedChars ?? undefined} />
                                     )}
-                                    {antiandrogen.kind === 'since' && (
-                                        // How long ago the last dose was, in the reader's own
-                                        // relative-time wording — the honest reading for a drug
-                                        // taken every few days, where a mg count says nothing.
-                                        // Shown small: it is words, not a number, so the
-                                        // display role the numeric readings use made it the
-                                        // loudest thing on the card. A small line reads as the
-                                        // quiet fact it is.
-                                        <span className={`text-sm ${on}`}>
-                                            {formatRelative(nowSec - antiandrogen.sinceH * 3600, nowSec, t)}
-                                        </span>
-                                    )}
+                                    {antiandrogen.kind === 'since' && (() => {
+                                        // How long ago the last dose was — the honest reading
+                                        // for a drug taken every few days, where a mg count
+                                        // says nothing. The number keeps the display role the
+                                        // other readings use; only its words ("天前") drop to
+                                        // the small muted unit size, exactly as "pg/ml" does
+                                        // beside the estradiol number. "刚刚" has no number,
+                                        // so it renders small on its own.
+                                        const parts = formatRelativeParts(nowSec - antiandrogen.sinceH * 3600, nowSec, t);
+                                        if (!parts) {
+                                            return <span className={`text-xs lowercase ${muted}`}>{t('time.just_now')}</span>;
+                                        }
+                                        return (
+                                            <>
+                                                <span
+                                                    className={`leading-none tabular-nums ${on}`}
+                                                    style={{ fontSize: `min(var(--md-sys-typescale-display-large-size), calc(var(--reading-lane) / ${parts.value.length} / 0.5))` }}
+                                                >{parts.value}</span>
+                                                <span className={`text-xs lowercase ${muted}`}>{parts.unit}</span>
+                                            </>
+                                        );
+                                    })()}
                                     {antiandrogen.kind === 'none' && (
                                         // E2's placeholder is `text-m3-display-large
                                         // leading-none ${dim}`; this one matches it now. The
