@@ -102,7 +102,7 @@ const PACK: LangPack = {
     "update.later": "Sonra",
     "settings.check_updates.title": "Android güncellemelerini kontrol et",
     "settings.download_android": "Android uygulamasını indir",
-    "settings.download_android_desc": "Yerel Android uygulamasını kur (doğrudan APK indirme)",
+    "settings.download_android_desc": "Daha eksiksiz deneyim için Android uygulamasını kur",
     "settings.check_updates.version": "Geçerli sürüm {version}",
     "settings.check_updates.latest": "En son sürümü kullanıyorsunuz",
     "settings.check_updates.error": "Güncellemeler kontrol edilemedi. Daha sonra tekrar deneyin.",

@@ -102,7 +102,7 @@ const PACK: LangPack = {
     "update.later": "Later",
     "settings.check_updates.title": "Check for Android updates",
     "settings.download_android": "Download the Android app",
-    "settings.download_android_desc": "Install the native Android app (direct APK download)",
+    "settings.download_android_desc": "Install the Android app for the fuller experience",
     "settings.check_updates.version": "Current version {version}",
     "settings.check_updates.latest": "You are up to date",
     "settings.check_updates.error": "Could not check for updates. Please try again later.",

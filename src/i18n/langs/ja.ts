@@ -153,7 +153,7 @@ const PACK: LangPack = {
     "update.later": "後で",
     "settings.check_updates.title": "Android の更新を確認",
     "settings.download_android": "Android 版をダウンロード",
-    "settings.download_android_desc": "ネイティブ Android アプリをインストール（APK を直接ダウンロード）",
+    "settings.download_android_desc": "Android 版アプリをインストール（より快適に）",
     "settings.check_updates.version": "現在のバージョン {version}",
     "settings.check_updates.latest": "最新バージョンです",
     "settings.check_updates.error": "更新を確認できません。後でもう一度お試しください。",

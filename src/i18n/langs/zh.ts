@@ -103,7 +103,7 @@ const PACK: LangPack = {
     "update.later": "稍后",
     "settings.check_updates.title": "检查 Android 更新",
     "settings.download_android": "下载 Android 版",
-    "settings.download_android_desc": "安装原生 Android 应用（直接下载 APK）",
+    "settings.download_android_desc": "安装 Android 版应用，体验更完整",
     "settings.check_updates.version": "当前版本 {version}",
     "settings.check_updates.latest": "已是最新版本",
     "settings.check_updates.error": "暂时无法检查更新，请稍后重试。",

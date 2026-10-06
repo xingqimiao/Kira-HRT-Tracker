@@ -789,7 +789,7 @@ const PACK: LangPack = {
     "update.later": "遲啲",
     "settings.check_updates.title": "檢查 Android 更新",
     "settings.download_android": "下載 Android 版",
-    "settings.download_android_desc": "裝原生 Android 應用（直接下載 APK）",
+    "settings.download_android_desc": "裝 Android 版應用，體驗更完整",
     "settings.check_updates.version": "目前版本 {version}",
     "settings.check_updates.latest": "已經係最新版本",
     "settings.check_updates.error": "暫時檢查唔到更新，遲啲再試。",

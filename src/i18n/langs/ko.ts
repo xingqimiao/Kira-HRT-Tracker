@@ -153,7 +153,7 @@ const PACK: LangPack = {
     "update.later": "나중에",
     "settings.check_updates.title": "Android 업데이트 확인",
     "settings.download_android": "Android 앱 다운로드",
-    "settings.download_android_desc": "네이티브 Android 앱 설치 (APK 직접 다운로드)",
+    "settings.download_android_desc": "Android 앱 설치 (더 나은 환경)",
     "settings.check_updates.version": "현재 버전 {version}",
     "settings.check_updates.latest": "최신 버전입니다",
     "settings.check_updates.error": "업데이트를 확인할 수 없습니다. 나중에 다시 시도하세요.",
