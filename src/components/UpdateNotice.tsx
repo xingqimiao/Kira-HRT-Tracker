@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Icon from './Icon';
 import FloatingToast from './ui/FloatingToast';
 import { RefreshCw, X } from '../icons';
@@ -24,6 +25,12 @@ import { isNativeApp } from '../utils/platform';
  * Dismissible, because "later" is a legitimate answer and a notice with no exit is a
  * nuisance. Dismissing hides it for this session only — the build still updates on the
  * next natural open, which would have happened anyway.
+ *
+ * The *web* prompt is one line ("A new version is ready" + Update), so it rides the
+ * single-line `FloatingToast` pill. The *native* one is a card instead: an APK replace
+ * asks the user to leave the app and install something, so it owes them the changelog,
+ * and a changelog is a list — the pill's one-line `rounded-full` shell reflowed five
+ * notes into an unreadable paragraph. See `NativeUpdateCard` below.
  */
 const UpdateNotice: React.FC = () => {
     const { t } = useTranslation();
@@ -41,26 +48,11 @@ const UpdateNotice: React.FC = () => {
 
     if (isNativeApp() && nativeUpdate) {
         return (
-            <FloatingToast
+            <NativeUpdateCard
+                update={nativeUpdate}
                 open={!dismissed}
-                edge="top"
-                icon={<Icon icon={RefreshCw} size={13} strokeWidth={2.5} />}
                 onDismiss={() => setDismissed(true)}
-                actions={
-                    <button
-                        type="button"
-                        onClick={() => void downloadNativeUpdate(nativeUpdate)}
-                        className="shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold text-[var(--color-m3-primary)] transition-colors hover:bg-[var(--color-m3-primary)]/10"
-                    >
-                        {t('update.download')}
-                    </button>
-                }
-            >
-                <span>
-                    {t('update.native_ready').replace('{version}', nativeUpdate.version)}
-                    {nativeUpdate.notes.length > 0 && ` · ${nativeUpdate.notes.join(' · ')}`}
-                </span>
-            </FloatingToast>
+            />
         );
     }
 
@@ -92,6 +84,93 @@ const UpdateNotice: React.FC = () => {
         >
             {t('update.ready')}
         </FloatingToast>
+    );
+};
+
+/** How many changelog lines the card lists before folding the rest into "…". */
+const MAX_NOTES = 4;
+
+/**
+ * The native update prompt: a card at the top edge, not the shared pill.
+ *
+ * Left as its own element rather than added to `FloatingToast` because the two want
+ * different shells — a one-line pill and a multi-line card — and forcing one component
+ * to be both would cost more than the few lines here. It borrows the same top-edge
+ * placement and swipe-to-dismiss gesture is intentionally NOT offered: a destructive
+ * "throw it away" on a prompt whose only job is to inform reads as discarding the
+ * update. The close button is the dismissal.
+ */
+const NativeUpdateCard: React.FC<{
+    update: NativeUpdate;
+    open: boolean;
+    onDismiss: () => void;
+}> = ({ update, open, onDismiss }) => {
+    const { t } = useTranslation();
+    const [entered, setEntered] = useState(false);
+    useEffect(() => {
+        if (!open) { setEntered(false); return; }
+        const id = requestAnimationFrame(() => setEntered(true));
+        return () => cancelAnimationFrame(id);
+    }, [open]);
+    if (!open) return null;
+
+    const notes = update.notes.slice(0, MAX_NOTES);
+    const extra = update.notes.length - notes.length;
+
+    return createPortal(
+        <div
+            className="fixed inset-x-0 z-[95] flex justify-center px-4"
+            style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1rem)' }}
+        >
+            <div
+                role="status"
+                aria-live="polite"
+                className="w-full max-w-[24rem] rounded-[var(--radius-lg)] border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-highest)] p-4 shadow-[var(--shadow-m3-3)]"
+                style={{
+                    transform: entered ? 'none' : 'translateY(-18px) scale(0.97)',
+                    opacity: entered ? 1 : 0,
+                    transition: 'transform 220ms var(--md-sys-motion-easing-emphasized-decelerate, cubic-bezier(0.2,0,0,1)), opacity 220ms linear',
+                }}
+            >
+                <div className="flex items-start gap-3">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--color-m3-primary)] text-[var(--color-m3-on-primary)]">
+                        <Icon icon={RefreshCw} size={14} strokeWidth={2.5} />
+                    </span>
+                    <p className="min-w-0 flex-1 pt-0.5 text-sm font-semibold text-[var(--color-m3-on-surface)]">
+                        {t('update.native_ready').replace('{version}', update.version)}
+                    </p>
+                    <button
+                        type="button"
+                        onClick={onDismiss}
+                        aria-label={t('update.later')}
+                        className="-mr-1 -mt-1 shrink-0 rounded-full p-1.5 text-[var(--color-m3-on-surface-variant)] transition-colors hover:bg-[var(--color-m3-surface-container)]"
+                    >
+                        <Icon icon={X} size={14} />
+                    </button>
+                </div>
+
+                {notes.length > 0 && (
+                    <ul className="mt-3 space-y-1.5 ps-1 text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)]">
+                        {notes.map((note, i) => (
+                            <li key={i} className="flex gap-2">
+                                <span aria-hidden className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-[var(--color-m3-outline)]" />
+                                <span className="min-w-0">{note}</span>
+                            </li>
+                        ))}
+                        {extra > 0 && <li className="ps-3 opacity-70">{t('update.more').replace('{n}', String(extra))}</li>}
+                    </ul>
+                )}
+
+                <button
+                    type="button"
+                    onClick={() => void downloadNativeUpdate(update)}
+                    className="mt-4 w-full rounded-full bg-[var(--color-m3-primary)] px-4 py-2.5 text-sm font-semibold text-[var(--color-m3-on-primary)] transition-colors hover:brightness-105"
+                >
+                    {t('update.download')}
+                </button>
+            </div>
+        </div>,
+        document.body,
     );
 };
 

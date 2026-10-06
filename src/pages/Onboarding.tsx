@@ -18,8 +18,14 @@ import { LOCALE_MAP } from '../utils/helpers';
 import { toYmd, fromYmd } from '../utils/hrtStart';
 import { usePresence } from '../hooks/usePresence';
 import { isNativeApp } from '../utils/platform';
+import { APP_VERSION } from '../constants';
 
 const ONBOARDING_KEY = 'app-onboarded';
+
+/** The signed Android APK the update manifest serves, at this build's version.
+ *  Built from `APP_VERSION` rather than written out, so a version bump cannot
+ *  leave this link pointing at the previous release. */
+const ANDROID_APK_URL = `https://hrt.kiramyao.com/android/KiraHRT-${APP_VERSION.replace(/^v/, '')}-release.apk`;
 
 /** One definition, shared with the AI-assistant settings page. */
 const INSTALL_PROMPT = buildMcpInstallPrompt();
@@ -501,6 +507,15 @@ const PwaVisual: React.FC = () => {
             <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-m3-outline)] px-4 py-2 text-m3-title-medium text-[var(--color-m3-on-surface)]">
                 {t('onboarding.pwa_add')}
             </span>
+            {/* The native Android build, for a visitor who would rather install the app
+                than the PWA. A direct link to the signed APK the update manifest also
+                names; the same file the in-app updater downloads. */}
+            <a
+                href={ANDROID_APK_URL}
+                className="text-xs font-medium text-[var(--color-m3-primary)] underline-offset-4 hover:underline"
+            >
+                {t('onboarding.pwa_android')}
+            </a>
         </div>
     );
 };

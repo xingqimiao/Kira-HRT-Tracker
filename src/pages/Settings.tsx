@@ -316,6 +316,23 @@ const Settings: React.FC<SettingsProps> = ({
                 </button>
             )}
 
+            {/* The Android app, for a web visitor: a direct link to the signed APK.
+                Not shown inside the native app (which updates itself — the row above),
+                so the two are mutually exclusive. The URL is built from APP_VERSION so
+                a version bump cannot leave it pointing at the previous release. */}
+            {!isNativeApp() && (
+                <button
+                    onClick={() => window.open(`https://hrt.kiramyao.com/android/KiraHRT-${APP_VERSION.replace(/^v/, '')}-release.apk`, '_blank')}
+                    className={rowBase}
+                >
+                    <div>
+                        <p className={rowLabel}>{t('settings.download_android')}</p>
+                        <p className={`text-xs ${muted} mt-0.5`}>{t('settings.download_android_desc')}</p>
+                    </div>
+                    <Icon icon={ChevronRight} size={15} className={muted} />
+                </button>
+            )}
+
             {/* Algorithm attribution. Required by the upstream project's README, and
                 it is the honest thing regardless: the pharmacokinetic model is the
                 substance of this app and it is not our work. Kept as its own row with
