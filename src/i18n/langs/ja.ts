@@ -238,6 +238,8 @@ const PACK: LangPack = {
     "journal.delete_confirm": "このテキスト記録を削除しますか？元に戻せません。",
     "nav.home": "概要",
     "app.title": "Kira HRT Tracker",
+
+    "app.doc_title": "HRT 記録 · Kira HRT Tracker",
     "nav.history": "記録",
     "nav.lab": "健診",
     "nav.settings": "設定",

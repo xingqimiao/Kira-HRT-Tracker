@@ -1,24 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:xhtml="http://www.w3.org/1999/xhtml"
         xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+    <!-- One URL: the app switches language client-side, so there is no per-language
+         version to annotate. Per-language `hreflang` entries pointing every language
+         at the same URL are invalid (hreflang must name alternate URLs) and this site
+         does not set them — see robots.txt. -->
     <url>
         <loc>https://hrt.kiramyao.com/</loc>
-        <lastmod>2026-09-22</lastmod>
+        <lastmod>2026-10-06</lastmod>
         <changefreq>weekly</changefreq>
         <priority>1.0</priority>
-        <xhtml:link rel="alternate" hreflang="zh-CN" href="https://hrt.kiramyao.com/" />
-        <xhtml:link rel="alternate" hreflang="zh-TW" href="https://hrt.kiramyao.com/" />
-        <xhtml:link rel="alternate" hreflang="en" href="https://hrt.kiramyao.com/" />
-        <xhtml:link rel="alternate" hreflang="ja" href="https://hrt.kiramyao.com/" />
-        <xhtml:link rel="alternate" hreflang="ko" href="https://hrt.kiramyao.com/" />
-        <xhtml:link rel="alternate" hreflang="ru" href="https://hrt.kiramyao.com/" />
-        <xhtml:link rel="alternate" hreflang="uk" href="https://hrt.kiramyao.com/" />
-        <xhtml:link rel="alternate" hreflang="x-default" href="https://hrt.kiramyao.com/" />
         <image:image>
             <image:loc>https://hrt.kiramyao.com/og.png</image:loc>
-            <image:title>Kira HRT Tracker</image:title>
-            <image:caption>Kira HRT Tracker — 公开的跨性别 HRT 激素治疗记录与云同步工具，支持用药追踪、化验结果分析与药代动力学估算</image:caption>
+            <image:title>Kira HRT Tracker — HRT 记录工具</image:title>
+            <image:caption>HRT 记录工具：记录 HRT 激素治疗的用药与化验结果，云同步备份，并按药代动力学模型估算激素水平曲线</image:caption>
         </image:image>
     </url>
 </urlset>

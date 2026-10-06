@@ -53,6 +53,25 @@ const LANG_LOCALE: Record<Lang, string> = {
 };
 
 /**
+ * Write the language to the document head.
+ *
+ * The rendered `<title>` is what search engines index once they run the app, so
+ * it is the language's own SEO title — leading with the phrase a reader actually
+ * searches ("HRT 记录") rather than a brand-only English string. `title` is passed
+ * in rather than resolved here because the caller owns the pack lookup.
+ *
+ * Shared by two effects: one on `lang`, one when a pack lands. The second matters
+ * on a cold start: a selected pack is still downloading on the first render, so
+ * the title is answered from the `zh` fallback, and an effect keyed only on `lang`
+ * would never rerun to correct it — an English reader would index under Chinese.
+ */
+const applyDocLanguage = (lang: Lang, title: string): void => {
+    document.title = title;
+    document.documentElement.lang = LANG_LOCALE[lang] ?? lang;
+    document.documentElement.dir = RTL_LANGS.has(lang) ? 'rtl' : 'ltr';
+};
+
+/**
  * Where a key falls through to when its own pack hasn't got it.
  *
  * The old chain was zh then en for everyone, which put Simplified Chinese in
@@ -152,7 +171,13 @@ export const LanguageProvider = ({ children }: { children: React.ReactNode }) =>
             }
             // Repaint once the chain is resident, so strings that were answered
             // from `zh` while the real pack loaded are replaced.
-            if (!cancelled) forceRepaint((n) => n + 1);
+            if (!cancelled) {
+                // The doc title is one of those strings: a late-landing pack flips
+                // it off the Chinese fallback, and the `lang` effect will not rerun
+                // to do it.
+                applyDocLanguage(lang, t('app.doc_title') || 'Kira HRT Tracker');
+                forceRepaint((n) => n + 1);
+            }
         })();
         return () => { cancelled = true; };
     }, [lang]);
@@ -167,9 +192,7 @@ export const LanguageProvider = ({ children }: { children: React.ReactNode }) =>
 
     useEffect(() => {
         localStorage.setItem('hrt-lang', lang);
-        document.title = "Kira HRT Tracker";
-        document.documentElement.lang = LANG_LOCALE[lang] ?? lang;
-        document.documentElement.dir = RTL_LANGS.has(lang) ? 'rtl' : 'ltr';
+        applyDocLanguage(lang, t('app.doc_title') || 'Kira HRT Tracker');
     }, [lang]);
 
     /**

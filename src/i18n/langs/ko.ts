@@ -237,6 +237,8 @@ const PACK: LangPack = {
     "journal.empty": "아직 기록이 없습니다.",
     "journal.delete_confirm": "이 글 기록을 삭제할까요? 되돌릴 수 없습니다.",
     "app.title": "Kira HRT Tracker",
+
+    "app.doc_title": "HRT 기록 · Kira HRT Tracker",
     "nav.home": "개요",
     "nav.history": "기록",
     "nav.lab": "검진",

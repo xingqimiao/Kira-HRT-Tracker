@@ -10,6 +10,8 @@ import type { LangPack } from '../types';
  */
 const PACK: LangPack = {
     "app.title": "Kira HRT Tracker",
+
+    "app.doc_title": "HRT Records & Hormone Tracking · Kira HRT",
     "nav.home": "Overview",
     "core.sign_in": "Sign in",
     "core.create_account": "Create an account",

@@ -11,6 +11,8 @@ import type { LangPack } from '../types';
 const PACK: LangPack = {
     "nav.home": "概览",
     "app.title": "Kira HRT Tracker",
+
+    "app.doc_title": "HRT 记录 · Kira HRT Tracker",
     "nav.history": "记录",
     "core.sign_in": "登录",
     "core.create_account": "创建账户",

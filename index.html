@@ -7,24 +7,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="theme-color" content="#0D0D12">
-    <meta name="description" content="Kira HRT Tracker 是公开的跨性别 HRT 激素治疗记录与云同步工具，支持药物与化验结果追踪、药代动力学激素水平估算与 AI 助手 MCP 接口。An agent-friendly HRT tracker with cloud sync and pharmacokinetic hormone-level estimates.">
-    <meta name="keywords" content="HRT, HRT Tracker, HRT 记录, HRT 云同步, 激素治疗, 雌二醇, 睾酮, 跨性别, 药代动力学, 用药追踪, 化验单识别, MCP, Transgender, KiraEqual">
+    <meta name="description" content="HRT 记录工具：记录激素治疗（HRT）的用药与化验结果，用云同步备份，并按药代动力学模型估算激素水平曲线。Kira HRT Tracker — an agent-friendly HRT records and hormone-level tracking tool with cloud sync.">
+    <meta name="keywords" content="HRT 记录, HRT记录, HRT, 激素治疗, 用药记录, 雌二醇, 睾酮, 跨性别, HRT Tracker, 药代动力学, 化验单识别, 云同步, MCP, Transgender, KiraEqual">
     <link rel="canonical" href="https://hrt.kiramyao.com/">
     <meta name="robots" content="index, follow">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Kira HRT Tracker">
     <meta property="og:url" content="https://hrt.kiramyao.com/">
-    <meta property="og:title" content="Kira HRT Tracker - 公开的 HRT 激素治疗记录与云同步工具">
-    <meta property="og:description" content="公开的跨性别 HRT 激素治疗记录与云同步工具，支持用药追踪、化验单 OCR 识别、药代动力学激素水平模拟曲线与 AI 助手 MCP 协议。">
+    <meta property="og:title" content="HRT 记录 · Kira HRT Tracker">
+    <meta property="og:description" content="HRT 记录工具：记录用药与化验结果，云同步备份，按药代动力学模型估算激素水平曲线。">
     <meta property="og:image" content="https://hrt.kiramyao.com/og.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
-    <meta property="og:image:alt" content="Kira HRT Tracker — dose logging, pharmacokinetic estimates, private by default">
+    <meta property="og:image:alt" content="Kira HRT Tracker — HRT 记录、用药追踪与激素水平估算">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Kira HRT Tracker - 公开的 HRT 激素治疗记录与云同步工具">
-    <meta name="twitter:description" content="公开的跨性别 HRT 激素治疗记录与云同步工具，支持用药追踪、化验单 OCR 识别、药代动力学激素水平模拟曲线与 AI 助手 MCP 协议。">
+    <meta name="twitter:title" content="HRT 记录 · Kira HRT Tracker">
+    <meta name="twitter:description" content="HRT 记录工具：记录用药与化验结果，云同步备份，按药代动力学模型估算激素水平曲线。">
     <meta name="twitter:image" content="https://hrt.kiramyao.com/og.png">
-    <meta name="twitter:image:alt" content="Kira HRT Tracker — dose logging, pharmacokinetic estimates, private by default">
+    <meta name="twitter:image:alt" content="Kira HRT Tracker — HRT 记录、用药追踪与激素水平估算">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <!-- Structured Data for Search Engine WebApplication indexing -->
     <script type="application/ld+json">
@@ -32,12 +32,12 @@
       "@context": "https://schema.org",
       "@type": "WebApplication",
       "name": "Kira HRT Tracker",
-      "alternateName": ["Kira HRT", "Kira HRT 激素治疗记录与云同步"],
+      "alternateName": ["HRT 记录", "Kira HRT", "HRT 记录工具", "HRT Records"],
       "url": "https://hrt.kiramyao.com/",
       "image": "https://hrt.kiramyao.com/og.png",
       "applicationCategory": "HealthApplication",
       "operatingSystem": "Web, iOS, Android, Windows, macOS",
-      "description": "公开的跨性别 HRT 激素治疗记录与云同步工具，支持用药追踪、化验结果趋势记录、药代动力学激素水平模拟曲线与 AI MCP 接口。",
+      "description": "HRT 记录工具：记录激素替代治疗（HRT）的用药与化验结果，云同步备份，并按药代动力学模型估算激素水平曲线。",
       "inLanguage": ["zh-CN", "zh-TW", "en", "ja", "ko", "ru", "uk"],
       "author": {
         "@type": "Organization",
@@ -56,7 +56,7 @@
          explicitly by TurnstileWidget, because this is a third-party request the
          privacy policy now discloses. -->
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-    <title>Kira HRT - HRT Tracker &amp; Agent-Friendly HRT Records</title>
+    <title>HRT 记录 · Kira HRT Tracker</title>
     <!-- The app is a client-rendered SPA, so without this the page served to a client
          that does not run JavaScript — a crawler, a link-preview bot, an SEO checker,
          or the reviewer checking our OAuth branding — is an empty shell. Google's
@@ -128,22 +128,22 @@
 <body class="text-gray-900 dark:text-white transition-colors duration-300" style="background:#0D0D12;color:#F4F5F7">
     <div id="root" style="background:#0D0D12;color:#F4F5F7">
         <div class="boot-fallback">
-            <h1>Kira HRT - HRT 激素治疗记录与用药追踪</h1>
-            <p lang="en">
-                Kira HRT is an agent-friendly HRT tracker for medications, lab results, treatment
-                history, and pharmacokinetic hormone-level estimates.
-            </p>
-            <!-- The Chinese title and description are the ones the owner specified, and the
-                 English pair above is the same page seen by an English crawler; a page has one
-                 `<title>` and one description, so both languages live here in the body where
-                 the markup can carry `lang` for each. -->
+            <h1>HRT 记录 —— Kira HRT Tracker</h1>
+            <!-- Chinese first: the primary audience and the phrase they search
+                 ("HRT 记录"). The English pair follows for an English crawler; a
+                 page has one `<title>` and one description, so both languages live
+                 here in the body where the markup can carry `lang` for each. -->
             <p lang="zh-CN">
-                Kira HRT 是面向 AI Agent 的 HRT 记录工具，用于记录用药、化验结果和治疗历程，
-                并提供基于药代动力学模型的激素水平估算。
+                HRT 记录工具：记录激素替代治疗（HRT）的用药与化验结果，支持云同步备份，
+                并按药代动力学模型估算激素水平变化曲线。
+            </p>
+            <p lang="en">
+                An HRT records tool: log hormone-therapy doses and blood-test results, sync
+                them across devices, and model estimated hormone levels over time.
             </p>
             <h2>功能 / Features</h2>
             <ul>
-                <li>记录用药：药物、制剂、剂量与时间 / Log doses: drug, preparation, amount and time</li>
+                <li>HRT 用药记录：药物、制剂、剂量与时间 / Log HRT doses: drug, preparation, amount and time</li>
                 <li>记录化验结果并跟踪长期趋势 / Log blood-test results and follow long-term trends</li>
                 <li>根据剂量与时间推算激素水平的估算曲线 / Estimate hormone-level curves from your doses and timing</li>
                 <li>记录以 AES-256-GCM 加密保存 / Records are stored encrypted with AES-256-GCM</li>
