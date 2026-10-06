@@ -63,6 +63,39 @@ const on = 'text-[var(--color-m3-on-surface)] ';
 const muted = settingsMuted;
 
 /**
+ * The summary as this account last had it, one storage key per account — the
+ * same account-scoped shape the calibration preferences use (`hrt-u<id>-…`).
+ *
+ * This page mounts fresh on every visit, and the summary used to start at null:
+ * the avatar, the created date and the record counts all popped in a beat after
+ * the page had already slid in, which read as the pane flickering. Reading the
+ * last known values back makes the page draw whole on frame one; the fetch
+ * below still runs every time and corrects the numbers underneath, so the cache
+ * is a first paint, never the answer.
+ */
+const summaryCacheKey = (userId: string | null | undefined) =>
+    userId ? `hrt-u${userId}-summary` : null;
+
+const readCachedSummary = (userId: string | null | undefined): AccountSummary | null => {
+    const key = summaryCacheKey(userId);
+    if (!key) return null;
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return null;
+        const v = JSON.parse(raw) as AccountSummary;
+        // Shaped-enough guard: a half-written or stale-schema value must not
+        // render as an account.
+        if (!v || typeof v !== 'object') return null;
+        if (typeof v.doseCount !== 'number' || typeof v.labCount !== 'number') return null;
+        if (v.createdAt !== null && typeof v.createdAt !== 'string') return null;
+        if (v.avatarUrl !== null && typeof v.avatarUrl !== 'string') return null;
+        return v;
+    } catch {
+        return null;
+    }
+};
+
+/**
  * The account page: one identity, the Core's.
  *
  * ── What changed, and why ────────────────────────────────────────────────────
@@ -99,7 +132,9 @@ const Account: React.FC<AccountProps> = ({
     // then simply does not render.
     const daysSinceStart = hrtDaysSince(hrtStartDate);
     const { showDialog } = useDialog();
-    const [summary, setSummary] = useState<AccountSummary | null>(null);
+    const userId = session.user?.userId ?? null;
+    // Seeded from what this account cached last visit, so the first paint is whole.
+    const [summary, setSummary] = useState<AccountSummary | null>(() => readCachedSummary(userId));
     const [methods, setMethods] = useState<LoginMethods | null>(null);
     const [isStartPickerOpen, setIsStartPickerOpen] = useState(false);
 
@@ -112,6 +147,9 @@ const Account: React.FC<AccountProps> = ({
 
     useEffect(() => {
         if (!token) { setSummary(null); setMethods(null); return; }
+        // A user id can change under an unchanged page (fast account switch), so
+        // hydrate here too rather than trusting the mount-time seed.
+        setSummary(readCachedSummary(session.user?.userId));
         let cancelled = false;
         void Promise.all([
             coreAuth.summary(token),
@@ -120,10 +158,24 @@ const Account: React.FC<AccountProps> = ({
             // worth putting in front of someone who came here to look at their account.
             coreAuth.loginMethods(token).catch(() => null),
         ])
-            .then(([s, m]) => { if (!cancelled) { setSummary(s); setMethods(m); } })
-            .catch(() => { if (!cancelled) { setSummary(null); setMethods(null); } });
+            .then(([s, m]) => {
+                if (cancelled) return;
+                setSummary(s);
+                setMethods(m);
+                const key = summaryCacheKey(session.user?.userId);
+                if (key) {
+                    try { localStorage.setItem(key, JSON.stringify(s)); } catch { /* storage refused — the fetch stays the only source */ }
+                }
+            })
+            .catch(() => {
+                // `methods` clears, but `summary` deliberately keeps whatever the
+                // cache seeded: yesterday's counts describe the same account, while
+                // dashes describe nothing. The sync row below tells the truth about
+                // the connection either way.
+                if (!cancelled) setMethods(null);
+            });
         return () => { cancelled = true; };
-    }, [token]);
+    }, [token, userId]);
 
     const handleSignOut = () => {
         showDialog('confirm', t('core.acct.sign_out_confirm'), () => { void session.signOut(); });
