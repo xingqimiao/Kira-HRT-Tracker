@@ -282,8 +282,13 @@ const Home: React.FC<HomeProps> = ({
     // under the digits.
     const vialDrops = (isTransmasc ? currentT.toFixed(0) : currentLevel.toFixed(1)).length > 5;
     const vial = (events.length > 0 || hormoneLabs.length > 0) ? (
+        // Hidden on a phone (`hidden sm:flex`): the card is narrow there, and the
+        // vial beside a reading crowds the number that matters more. It is a
+        // second reading of the value already printed next to it, so nothing is
+        // lost — the desktop card keeps it. `vialDrops` still governs the wrap on
+        // the wider card.
         <span
-            className={`flex shrink-0 self-start ${vialDrops ? 'w-full justify-center [--vial-drop:14px]' : ''}`}
+            className={`hidden shrink-0 self-start sm:flex ${vialDrops ? 'w-full justify-center [--vial-drop:14px]' : ''}`}
             style={{ marginTop: `calc(${vialOffset}px + var(--vial-drop, 0px))` }}
         >
             {/* Sized against the reading beside it. The canvas is 26 wide but the tube is
