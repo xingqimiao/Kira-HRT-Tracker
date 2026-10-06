@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Icon from '../components/Icon';
 import { Info, Share2, AlertTriangle } from '../icons';
 import { DoseEvent, SimulationResult, LabResult, AntiandrogenChartMode, getDoseAdvisory, getHormoneLevelAdvisory, isT_LabUnit, isMonitoringOnlyLab, modelledEvents, antiandrogenReading, type PkEngineId } from '../../logic';
@@ -258,37 +258,71 @@ const Home: React.FC<HomeProps> = ({
         tinted: false,
     };
 
-    // The vial stands in the gap BETWEEN the two readings, as the middle column of
-    // the readings grid — not inside either reading's column. It shows the current
-    // estimate, the number printed beside it: the drawing is a second reading of one
-    // value, not a summary of two. Standing in the gap also keeps it clear of both
-    // readings at every viewport — on a 375px phone the number and its unit already
-    // fill the half-column, which is why an in-column vial used to be pushed down
-    // onto its own line under the digits.
+    // The vial shows the current estimate — the number printed beside it: the
+    // drawing is a second reading of one value, not a summary of two.
     //
-    // It hangs from the *label* line: the tube is tall (103px against a 16px label),
-    // and the glass mouth is RIM_Y of the canvas' 18-unit width down from the top —
-    // scaled by the drawn width so it tracks VIAL_SIZE. The grid item is `self-start`
-    // against the label's own 16px line, whose centre is 8px down, so raising the
-    // canvas by mouth-minus-8 puts the mouth level with the label's centre.
+    // Which placement is live is a viewport fact, and the two placements differ
+    // structurally (a grid column of its own vs. a flex sibling inside the reading's
+    // own row), so it is resolved in JS rather than by `sm:` classes. Same shape as
+    // BloodVial's reduced-motion reader: state seeded from the live query, kept
+    // current by a listener.
+    //
+    //  - Narrow viewports stand it in the gap BETWEEN the two readings, as the
+    //    middle column of the readings grid: on a 375px phone the number and its
+    //    unit already fill the half-column, so an in-column vial gets pushed down
+    //    onto its own line under the digits, which read as the vial sinking.
+    //  - From `sm` it stands beside the estradiol reading again, inside the
+    //    reading's own row — and on its own centred line when the reading is too
+    //    long to share (`vialDrops`), dropped 14px off the unit's line.
+    //
+    // Both placements hang from the *label* line, not the digits': the tube is tall
+    // (103px against a 16px label). The glass mouth is RIM_Y of the canvas' 18-unit
+    // width down from the top, scaled by the drawn width so it tracks VIAL_SIZE.
+    //  - Middle column: the item is `self-start` against the label's own 16px line,
+    //    whose centre is 8px down, so raising the canvas by mouth-minus-8 puts the
+    //    mouth at the label's centre.
+    //  - In-column: it hangs inside the number row, which sits a fixed 24px below
+    //    the label top (the label's 16px line plus its `mb-2`), so the offset is
+    //    mouth plus 16 — constant across number sizes, because the label-to-row gap
+    //    is: the label does not grow with the reading.
+    const [isNarrow, setIsNarrow] = useState(
+        () => typeof window !== 'undefined' && window.matchMedia('(max-width: 639.98px)').matches,
+    );
+    useEffect(() => {
+        const mq = window.matchMedia('(max-width: 639.98px)');
+        const onChange = () => setIsNarrow(mq.matches);
+        mq.addEventListener('change', onChange);
+        return () => mq.removeEventListener('change', onChange);
+    }, []);
+
     const vialOffset = 8 - VIAL_SIZE * (CANVAS.RIM_Y / CANVAS.W);
+    const vialInlineOffset = -(VIAL_SIZE * (6 / 18) + 16);
+    // Five characters is "1234.5" — the widest reading that still fits the lane
+    // beside the vial at the display role, which is why it is the line between
+    // "sits as it always did" and "moves things" in the in-column placement.
+    const vialDrops = (isTransmasc ? currentT.toFixed(0) : currentLevel.toFixed(primaryDecimals)).length > 5;
     // Drawn only when there is a reading to draw. A record whose estimate has since
     // fallen to zero shows "--" in the column; the vial measures that same value, so
     // it must not sit there implying something to read. (An empty `events`/labs
     // already hides it; this also covers records that are all long past.)
     const vialReading = isTransmasc ? currentT : currentLevel;
-    const vial = (vialReading > 0 && (events.length > 0 || hormoneLabs.length > 0)) ? (
-        // The drawn canvas is 18 units wide but the tube only 10 of them — the rest
-        // is spill room for the overflow animation. The layout box is the tube's own
-        // width (`w-4` on a phone, where the readings need every column px, `w-6`
-        // from `sm`) and lets the empty spill overhang both readings instead of
-        // charging them space.
-        <span className="flex w-4 justify-center self-start sm:w-6" style={{ marginTop: `${vialOffset}px` }}>
-            <BloodVial
-                level={vialReading}
-                mode={isTransmasc ? 'transmasc' : 'transfem'}
-                size={VIAL_SIZE}
-            />
+    const drawVial = vialReading > 0 && (events.length > 0 || hormoneLabs.length > 0);
+    // Middle-gap placement. The layout box is the tube's own width (`w-4`) — the
+    // drawn canvas is 18 units wide but the tube only 10, and the empty spill
+    // overhangs the readings instead of charging them space.
+    const vial = drawVial && isNarrow ? (
+        <span className="flex w-4 justify-center self-start" style={{ marginTop: `${vialOffset}px` }}>
+            <BloodVial level={vialReading} mode={isTransmasc ? 'transmasc' : 'transfem'} size={VIAL_SIZE} />
+        </span>
+    ) : null;
+    // In-column placement. `justify-normal` keeps it right after the reading; a
+    // dropped one centres itself under the digits.
+    const vialInline = drawVial && !isNarrow ? (
+        <span
+            className={`flex shrink-0 self-start ${vialDrops ? 'w-full justify-center' : 'justify-normal'}`}
+            style={{ marginTop: `${vialInlineOffset + (vialDrops ? 14 : 0)}px` }}
+        >
+            <BloodVial level={vialReading} mode={isTransmasc ? 'transmasc' : 'transfem'} size={VIAL_SIZE} />
         </span>
     ) : null;
 
@@ -429,12 +463,13 @@ const Home: React.FC<HomeProps> = ({
                     </div>
                 </div>
 
-                {/* Blood level grid — two readings, each centred in its own half, with
-                    the vial standing in the gap between them (`grid-cols-[1fr_auto_1fr]`;
-                    without the vial the plain two-column grid keeps the pair's gap from
-                    doubling). The container stays narrow (max-w-xl) and centred:
-                    stretched across the card, the two numbers sit ~700px apart on a
-                    desktop and stop reading as a pair. */}
+                {/* Blood level grid — two readings, each centred in its own half. On a
+                    narrow viewport the vial takes a middle grid column between them
+                    (`grid-cols-[1fr_auto_1fr]`; without it the plain two-column grid
+                    keeps the pair's gap from doubling); from `sm` it lives inside the
+                    first reading's row again, so the grid is two columns. The container
+                    stays narrow (max-w-xl) and centred: stretched across the card, the
+                    two numbers sit ~700px apart on a desktop and stop reading as a pair. */}
                 <div className={`mx-auto grid w-full gap-x-1.5 gap-y-4 text-center sm:gap-x-8 sm:gap-y-8 ${vial ? 'grid-cols-[1fr_auto_1fr]' : 'grid-cols-2'} ${isTransmasc ? 'max-w-md' : 'max-w-xl'}`}>
                     {isTransmasc ? (
                         <>
@@ -442,20 +477,33 @@ const Home: React.FC<HomeProps> = ({
                                 <p className={`text-xs font-semibold ${muted} mb-2`}>
                                     {t('label.total_t')} <span className="opacity-60">(ng/dL)</span>
                                 </p>
-                                <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1 [--reading-lane:146px] sm:[--reading-lane:240px]">
-                                    {currentT > 0 ? (
-                                        <Reading value={currentT} decimals={0} unit="ng/dl" className={on} muted={muted} sprayable chars={tPairChars} />
-                                    ) : (
-                                        <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
-                                    )}
-                                </div>
+                                {isNarrow ? (
+                                    <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1 [--reading-lane:146px]">
+                                        {currentT > 0 ? (
+                                            <Reading value={currentT} decimals={0} unit="ng/dl" className={on} muted={muted} sprayable chars={tPairChars} />
+                                        ) : (
+                                            <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="flex min-w-0 flex-wrap items-start justify-center gap-x-2 gap-y-1 [--reading-lane:272px]">
+                                        <span className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
+                                            {currentT > 0 ? (
+                                                <Reading value={currentT} decimals={0} unit="ng/dl" className={on} muted={muted} sprayable chars={tPairChars} />
+                                            ) : (
+                                                <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
+                                            )}
+                                        </span>
+                                        {vialInline}
+                                    </div>
+                                )}
                             </div>
                             {vial}
                             <div className="min-w-0">
                                 <p className={`text-xs font-semibold ${muted} mb-2`}>
                                     {t('label.total_t')} <span className="opacity-60">(nmol/L)</span>
                                 </p>
-                                <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1 [--reading-lane:146px] sm:[--reading-lane:240px]">
+                                <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1 [--reading-lane:146px] sm:[--reading-lane:272px]">
                                     {currentT > 0 ? (
                                         <Reading value={currentT / 28.842} decimals={primaryDecimals} unit="nmol/l" className={on} muted={muted} chars={tPairChars} />
                                     ) : (
@@ -468,21 +516,35 @@ const Home: React.FC<HomeProps> = ({
                         <>
                             <div className="min-w-0">
                                 <p className={`text-xs font-semibold ${muted} mb-2`}>{t('label.e2')}</p>
-                                <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1 [--reading-lane:146px] sm:[--reading-lane:240px]">
-                                    {currentLevel > 0 ? (
-                                        <Reading value={currentLevel} decimals={primaryDecimals} unit="pg/ml" className={on} muted={muted} sprayable chars={pairedChars ?? undefined} />
-                                    ) : (
-                                        <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
-                                    )}
-                                </div>
+                                {isNarrow ? (
+                                    <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1 [--reading-lane:146px]">
+                                        {currentLevel > 0 ? (
+                                            <Reading value={currentLevel} decimals={primaryDecimals} unit="pg/ml" className={on} muted={muted} sprayable chars={pairedChars ?? undefined} />
+                                        ) : (
+                                            <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
+                                        )}
+                                    </div>
+                                ) : (
+                                    /* `leading-none` on the number is what makes "the top of
+                                        the number" a real edge for the hanging vial: at the
+                                        shared 1.4 line-height the box top sat a few px above
+                                        the ink, and the vial had nothing precise to hang from. */
+                                    <div className="flex min-w-0 flex-wrap items-start justify-center gap-x-2 gap-y-1 [--reading-lane:272px]">
+                                        <span className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
+                                            {currentLevel > 0 ? (
+                                                <Reading value={currentLevel} decimals={primaryDecimals} unit="pg/ml" className={on} muted={muted} sprayable chars={pairedChars ?? undefined} />
+                                            ) : (
+                                                <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
+                                            )}
+                                        </span>
+                                        {vialInline}
+                                    </div>
+                                )}
                             </div>
                             {vial}
                             <div className="min-w-0">
                                 <p className={`text-xs font-semibold ${muted} mb-2`}>{aaHeading}</p>
-                                {/* The lane is the reading's column at every width: the
-                                    vial stands in its own grid column between the two
-                                    readings, so neither lane gives up width for it. */}
-                                <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1 [--reading-lane:146px] sm:[--reading-lane:240px]">
+                                <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1 [--reading-lane:146px] sm:[--reading-lane:272px]">
                                     {antiandrogen.kind === 'grams' && (
                                         // Cumulative grams, not a concentration: CPA has no
                                         // curve, and the monitoring notice quotes the same
