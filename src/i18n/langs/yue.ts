@@ -150,6 +150,7 @@ const PACK: LangPack = {
     "export.btn_encrypted": "匯出加密檔案",
     "btn.add": "新增記錄",
     "btn.save": "儲存",
+    "dose.add_submit": "記錄用藥",
     "btn.cancel": "取消",
     "btn.edit": "編輯",
     "btn.ok": "確定",

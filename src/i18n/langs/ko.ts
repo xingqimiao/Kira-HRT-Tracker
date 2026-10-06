@@ -404,6 +404,7 @@ const PACK: LangPack = {
     "export.btn_encrypted": "암호화된 파일 내보내기",
     "btn.add": "용량 추가",
     "btn.save": "저장",
+    "dose.add_submit": "투약 기록",
     "btn.cancel": "취소",
     "btn.edit": "편집",
     "btn.ok": "확인",

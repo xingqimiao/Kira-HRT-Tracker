@@ -277,6 +277,7 @@ const PACK: LangPack = {
     "export.copied": "JSON kopyalandı",
     "btn.add": "Doz Ekle",
     "btn.save": "Kaydet",
+    "dose.add_submit": "Doz kaydet",
     "btn.cancel": "İptal",
     "btn.edit": "Düzenle",
     "btn.ok": "Tamam",

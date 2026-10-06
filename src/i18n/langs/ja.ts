@@ -394,6 +394,7 @@ const PACK: LangPack = {
     "export.btn_encrypted": "暗号化ファイルをエクスポート",
     "btn.add": "投薬を追加",
     "btn.save": "保存",
+    "dose.add_submit": "投与を記録",
     "btn.cancel": "キャンセル",
     "btn.edit": "編集",
     "btn.ok": "OK",

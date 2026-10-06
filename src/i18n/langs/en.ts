@@ -277,6 +277,7 @@ const PACK: LangPack = {
     "export.copied": "JSON copied",
     "btn.add": "Add Dose",
     "btn.save": "Save",
+    "dose.add_submit": "Log dose",
     "btn.cancel": "Cancel",
     "btn.edit": "Edit",
     "btn.ok": "OK",

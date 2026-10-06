@@ -144,6 +144,9 @@ const Home: React.FC<HomeProps> = ({
     activeEngine,
 }) => {
     const isDarkMode = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    // Candle view is the terminal layout, and it replaces the overview's big
+    // readings card with a compact price strip — so this is read in the header too.
+    const isCandle = chartStyle !== 'line';
     const [isEstimateInfoOpen, setIsEstimateInfoOpen] = React.useState(false);
     const [isAbsurdOpen, setIsAbsurdOpen] = React.useState(false);
     // The record the inline form is pre-filled from, when a dose row was clicked
@@ -229,6 +232,25 @@ const Home: React.FC<HomeProps> = ({
     // so they too share the longer count rather than drifting apart.
     const tPairChars = Math.max(currentT.toFixed(0).length, (currentT / 28.842).toFixed(1).length);
 
+    // The candle terminal's compact price header. Same two readings, same
+    // calculators as the card, just laid out as a strip above the chart rather
+    // than a full card: the model's current estimate in the theme's accent colour
+    // (like a market price), the anti-androgen in plain on-surface (it is not a
+    // concentration and has no curve to be coloured by). Each is a labelled
+    // value-plus-unit pair.
+    const pricePair = isTransmasc
+        ? { label: t('label.total_t'), value: currentT.toFixed(0), unit: 'ng/dl', tinted: true }
+        : { label: t('label.e2'), value: currentLevel.toFixed(1), unit: 'pg/ml', tinted: true };
+    const aaPair = {
+        label: aaHeading,
+        value: antiandrogen.kind === 'grams' ? antiandrogen.grams.toFixed(2)
+            : antiandrogen.kind === 'dose' ? antiandrogen.mgToday.toFixed(mgDecimals(antiandrogen.mgToday))
+                : antiandrogen.kind === 'since' ? formatRelative(nowSec - antiandrogen.sinceH * 3600, nowSec, t)
+                    : '--',
+        unit: antiandrogen.kind === 'grams' ? 'g' : antiandrogen.kind === 'dose' ? 'mg' : '',
+        tinted: false,
+    };
+
     // The vial stands in the gap between the two readings, so it has to be
     // rendered inside whichever mode branch is active. It shows the current
     // estimate, which is the number printed directly beside it — the drawing is a
@@ -284,7 +306,10 @@ const Home: React.FC<HomeProps> = ({
     const dim = "text-[var(--color-m3-on-surface-variant)] opacity-35 ";
 
     return (
-        <div className="mx-auto w-full max-w-[1040px] px-4 sm:px-6 md:px-8">
+        // Wider in candle view: the three-pane terminal (chart | order book |
+        // record) needs the room, and the card's 1040px was leaving the two side
+        // panes cramped. The line view keeps the narrow reading column.
+        <div className={`mx-auto w-full px-4 sm:px-6 md:px-8 ${chartStyle !== 'line' ? 'max-w-[1400px]' : 'max-w-[1040px]'}`}>
             <EstimateInfoModal isOpen={isEstimateInfoOpen} onClose={() => setIsEstimateInfoOpen(false)} />
             <NoticeModal
                 isOpen={isAbsurdOpen}
@@ -294,7 +319,74 @@ const Home: React.FC<HomeProps> = ({
                 icon={<Icon icon={AlertTriangle} weight="Filled" size={28} className="text-[var(--color-m3-vial-warn)]" />}
             />
 
-            <header className="pt-8 pb-6">
+            <header className={isCandle ? 'pt-5 pb-4' : 'pt-8 pb-6'}>
+                {isCandle ? (
+                /* The terminal's price strip. No card: the candle view is a chart
+                   with the current estimate as its "last price" — the modelled
+                   hormone in the theme's accent colour, the anti-androgen in plain
+                   on-surface (it is a record, not a concentration on the curve).
+                   Sits above the chart the way a market header sits above its
+                   candles, and keeps the share / quick-add actions to its right. */
+                <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+                    <div className="flex flex-wrap items-end gap-x-8 gap-y-2">
+                        <div className="min-w-0">
+                            <p className={`text-xs font-semibold ${muted}`}>{pricePair.label}</p>
+                            <p className="flex items-baseline gap-1.5 leading-none">
+                                <span className="text-[2.5rem] font-semibold tabular-nums text-[var(--color-m3-primary)]">{pricePair.value}</span>
+                                <span className={`text-sm lowercase ${muted}`}>{pricePair.unit}</span>
+                            </p>
+                        </div>
+                        <div className="min-w-0">
+                            <p className={`text-xs font-semibold ${muted}`}>{aaPair.label}</p>
+                            <p className="flex items-baseline gap-1.5 leading-none">
+                                <span className={`font-semibold tabular-nums ${on} ${aaPair.value.length > 6 ? 'text-2xl' : 'text-[2.5rem]'}`}>{aaPair.value}</span>
+                                {aaPair.unit && <span className={`text-sm lowercase ${muted}`}>{aaPair.unit}</span>}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <Tooltip label={t('status.read_me')}>
+                            <button
+                                onClick={() => setIsEstimateInfoOpen(true)}
+                                className={`${muted} hover:text-[var(--color-m3-on-surface)] `}
+                                aria-label={t('status.read_me')}
+                            >
+                                <Icon icon={Info} size={13} />
+                            </button>
+                        </Tooltip>
+                        {currentStatus && (
+                            <span className={`text-xs font-medium ${currentStatus.color}`}>
+                                {t(currentStatus.label)}
+                            </span>
+                        )}
+                        <button
+                            type="button"
+                            disabled={!events.length}
+                            aria-label={shareCopy.action}
+                            onClick={() => {
+                                if (!authToken) { onAuthRequired(); return; }
+                                onNavigateToShare();
+                            }}
+                            className={`${muted} inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium hover:text-[var(--color-m3-on-surface)] hover:bg-[var(--color-m3-surface-container)] disabled:cursor-not-allowed disabled:opacity-40`}
+                            title={events.length ? shareCopy.modalDescription : shareCopy.noData}
+                        >
+                            <Icon icon={Share2} size={14} strokeWidth={1.75} />
+                            <span className="hidden sm:inline">{shareCopy.action}</span>
+                        </button>
+                        <HomeQuickAdd
+                            templates={doseTemplates}
+                            onAddEvent={onAddEvent}
+                            onRemoveEvent={onRemoveEvent}
+                        />
+                    </div>
+                    {/* The advisories stay in candle view too — a "doses running
+                        high" notice must not be lost just because the layout
+                        changed. They sit under the price strip, full width. */}
+                    <div className="w-full">
+                        <DoseAdvisoryNotice advisory={doseAdvisory} hormoneAdvisory={hormoneAdvisory} showCalibrate={showCalibrate} onCalibrate={onNavigateToLab} t={t} />
+                    </div>
+                </div>
+                ) : (
                 <div className="m3-card mb-2">
                 {/* Title row */}
                 <div className="flex items-center justify-between mb-5">
@@ -458,6 +550,7 @@ const Home: React.FC<HomeProps> = ({
                     <DoseAdvisoryNotice advisory={doseAdvisory} hormoneAdvisory={hormoneAdvisory} showCalibrate={showCalibrate} onCalibrate={onNavigateToLab} t={t} />
                 </div>
                 </div>
+                )}
             </header>
 
             {/* The chart column keeps its reading width; on a wide desktop the
@@ -479,7 +572,6 @@ const Home: React.FC<HomeProps> = ({
                     </div>
                 ) : (
                     (() => {
-                        const isCandle = chartStyle !== 'line';
                         // Candle view is the terminal layout: chart | order book |
                         // record. Line view keeps its simpler chart | grid pair.
                         // The inline record form is prefilled from `repeatFrom` when
@@ -501,6 +593,7 @@ const Home: React.FC<HomeProps> = ({
                                     onAddQuickDose={onAddQuickDose}
                                     onDeleteQuickDose={onDeleteQuickDose}
                                     isInline
+                                    accentSubmit
                                     events={events}
                                     activeEngine={activeEngine}
                                 />
@@ -532,8 +625,8 @@ const Home: React.FC<HomeProps> = ({
                         );
                         if (isCandle) {
                             return (
-                                <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-                                    <div className="min-w-0 lg:flex-[3]">{chart}</div>
+                                <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
+                                    <div className="min-w-0 2xl:flex-[4]">{chart}</div>
                                     {sidePanel}
                                     {inlineForm}
                                 </div>

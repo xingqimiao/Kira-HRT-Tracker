@@ -186,6 +186,13 @@ interface DoseFormProps {
     isInline?: boolean;
     hideHeader?: boolean;
     /**
+     * Render the submit as the panel's one big action — full width, green, and
+     * labelled "add" rather than "save". The overview's candle terminal uses this:
+     * its right pane is a "place the order" column (the dose being logged), so the
+     * submit is the green call-to-action, not a quiet confirm.
+     */
+    accentSubmit?: boolean;
+    /**
      * Treat `eventToEdit` as a *source to copy*, not a record to edit: the form is
      * pre-filled from it, but saving adds a new dose (fresh id, time defaults to
      * now) and no delete control appears. The overview's "record this again" sets
@@ -209,7 +216,7 @@ interface DoseFormProps {
     activeEngine?: PkEngineId;
 }
 
-const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDelete, templates = [], onSaveTemplate, onDeleteTemplate, isInline = false, hideHeader = false, addMode = false, quickDoses, onAddQuickDose, onDeleteQuickDose, events = [], activeEngine = 'builtin' }) => {
+const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDelete, templates = [], onSaveTemplate, onDeleteTemplate, isInline = false, hideHeader = false, addMode = false, accentSubmit = false, quickDoses, onAddQuickDose, onDeleteQuickDose, events = [], activeEngine = 'builtin' }) => {
     // A record that exists *and* is being edited — not one being copied into a new
     // dose. `addMode` is the explicit signal for the copy case: an `eventToEdit`
     // that is a real record looks identical to an edit otherwise (its id is in
@@ -1301,7 +1308,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
             </div>
 
             {/* Footer Buttons */}
-            <div className={`flex flex-wrap gap-y-2 justify-between items-center shrink-0 border-t border-[var(--color-m3-outline-variant)]  ${!isInline ? 'px-6 py-3' : hideHeader ? 'py-2' : 'py-3'}`}>
+            <div className={`flex flex-wrap gap-y-2 justify-between items-center shrink-0 ${accentSubmit ? '' : 'border-t border-[var(--color-m3-outline-variant)]  '}${!isInline ? 'px-6 py-3' : hideHeader ? 'py-2' : 'py-3'}`}>
                 <div className="flex gap-2 items-center flex-wrap min-h-10 w-full sm:w-auto">
 
                     {/* Template Save Section */}
@@ -1394,8 +1401,8 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                     )}
                 </div>
 
-                <div className="flex gap-2 ml-auto shrink-0 w-full sm:w-auto justify-end">
-                    {hideHeader && (
+                <div className={`flex gap-2 shrink-0 ${accentSubmit ? 'w-full' : 'ml-auto w-full sm:w-auto justify-end'}`}>
+                    {hideHeader && !accentSubmit && (
                         <button
                             onClick={onCancel}
                             className="flex-1 sm:flex-none sm:min-w-[88px] flex items-center justify-center px-4 py-2 text-cos-on-surface-variant  hover:bg-cos-surface-container  rounded-md text-sm"
@@ -1406,14 +1413,16 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                     <button
                         onClick={handleSave}
                         disabled={isSaving}
-                        className="flex-1 sm:flex-none sm:min-w-[88px] px-4 py-2 bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] text-cos-on-primary rounded-md font-medium text-sm disabled:opacity-70 flex items-center justify-center gap-1.5"
+                        className={accentSubmit
+                            ? 'flex-1 px-4 py-3 bg-[var(--color-m3-success)] hover:brightness-105 text-[var(--color-m3-on-success)] rounded-lg font-semibold text-base disabled:opacity-70 flex items-center justify-center gap-2'
+                            : 'flex-1 sm:flex-none sm:min-w-[88px] px-4 py-2 bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] text-cos-on-primary rounded-md font-medium text-sm disabled:opacity-70 flex items-center justify-center gap-1.5'}
                     >
                         {isSaving ? (
-                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            <div className={`w-4 h-4 border-2 rounded-full animate-spin ${accentSubmit ? 'border-current border-t-transparent opacity-70' : 'border-white/30 border-t-white'}`} />
                         ) : (
                             <>
-                                <Icon icon={Save} size={16} />
-                                <span>{t('btn.save')}</span>
+                                {accentSubmit ? <span className="text-xl leading-none">＋</span> : <Icon icon={Save} size={16} />}
+                                <span>{accentSubmit ? t('dose.add_submit') : t('btn.save')}</span>
                             </>
                         )}
                     </button>

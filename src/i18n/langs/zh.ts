@@ -277,6 +277,7 @@ const PACK: LangPack = {
     "export.copied": "JSON 已复制",
     "btn.add": "新增用药",
     "btn.save": "保存",
+    "dose.add_submit": "记录用药",
     "btn.cancel": "取消",
     "btn.edit": "编辑",
     "btn.ok": "确定",
