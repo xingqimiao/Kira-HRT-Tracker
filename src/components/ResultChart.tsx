@@ -854,14 +854,16 @@ const ResultChart = ({
                             )}
                         </g>
 
-                            {/* "Now" line + dot */}
+                            {/* "Now" line + dot. The dot is line-view only: in
+                                candle view the vertical line alone marks "now",
+                                and a circle on a candle reads as a selected point. */}
                             {now >= t0 && now <= t1 && (
                                 <line className="chart-appear" style={{ animationDelay: sweepDelay(X(now)) }} x1={X(now)} y1={mT} x2={X(now)} y2={mT + plotH} stroke={c.primary} strokeWidth={1} strokeDasharray="3 4" opacity={0.5} />
                             )}
-                            {nowValS != null && now >= t0 && now <= t1 && (
+                            {!isCandle && nowValS != null && now >= t0 && now <= t1 && (
                                 <circle className="chart-mark" style={{ animationDelay: sweepDelay(X(now)) }} cx={X(now)} cy={YS(nowValS)} r={4} fill={c.second} stroke={c.dot} strokeWidth={2} />
                             )}
-                            {nowVal != null && now >= t0 && now <= t1 && (
+                            {!isCandle && nowVal != null && now >= t0 && now <= t1 && (
                                 <circle className="chart-mark" style={{ animationDelay: sweepDelay(X(now)) }} cx={X(now)} cy={YP(nowVal)} r={4} fill={c.primary} stroke={c.dot} strokeWidth={2} />
                             )}
 

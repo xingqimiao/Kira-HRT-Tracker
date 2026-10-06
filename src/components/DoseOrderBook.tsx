@@ -24,6 +24,11 @@ import { formatDate, formatTime } from '../utils/helpers';
  */
 const ROWS = 14;
 
+/** A dose of this many mg fills the bar; larger doses cap at full. A fixed
+ *  yardstick (not the list's own maximum) so the bars mean the same thing in
+ *  every window — a 3 mg dose is always three-fifths of a bar. */
+const BAR_FULL_MG = 5;
+
 /** Order of esters that share a time, so the list is stable rather than
  *  whichever order the store happened to return. */
 const esterRank = (e: Ester) => e;
@@ -42,15 +47,9 @@ const DoseOrderBook = ({ events, onRepeat, className = '' }: { events: DoseEvent
         [events],
     );
 
-    // The bar measures the doses that draw the curve — the modelled hormones.
-    // An anti-androgen has no curve of its own, so its row carries no bar, and a
-    // 12.5 mg CPA tablet does not become the yardstick every estradiol dose is
-    // measured against. Max is over the bar-bearing rows only.
-    const maxMG = recent.reduce((m, e) => (ANTIANDROGENS.has(e.ester) ? m : Math.max(m, e.doseMG)), 0);
-
     return (
-        <div className={`w-full ${className}`}>
-            <p className="mb-2 text-xs font-semibold text-[var(--color-m3-on-surface-variant)]">
+        <div className={`flex w-full flex-col ${className}`}>
+            <p className="mb-2 shrink-0 text-xs font-semibold text-[var(--color-m3-on-surface-variant)]">
                 {t('orderbook.title')}
             </p>
             {recent.length === 0 ? (
@@ -58,12 +57,14 @@ const DoseOrderBook = ({ events, onRepeat, className = '' }: { events: DoseEvent
                     {t('orderbook.empty')}
                 </p>
             ) : (
-                <ul className="flex flex-col gap-0.5 2xl:max-h-[36rem] 2xl:overflow-y-auto">
+                <ul className="flex min-h-0 flex-1 flex-col gap-0.5 lg:overflow-y-auto">
                     {recent.map(e => {
                         const at = new Date(e.timeH * 3600000);
                         // No bar for an anti-androgen — it is not on the curve the
-                        // candles beside this list draw (see the max note above).
-                        const bar = ANTIANDROGENS.has(e.ester) ? 0 : (maxMG > 0 ? Math.max(6, (e.doseMG / maxMG) * 100) : 0);
+                        // candles beside this list draw. Otherwise: 5 mg is a full
+                        // bar, capped there, with a small floor so a tiny dose is
+                        // still visible.
+                        const bar = ANTIANDROGENS.has(e.ester) ? 0 : Math.min(100, Math.max(6, (e.doseMG / BAR_FULL_MG) * 100));
                         return (
                             <li key={e.id} className="relative overflow-hidden rounded-[var(--radius-sm)]">
                                 {/* The depth bar. Red, as order-book asks are, and

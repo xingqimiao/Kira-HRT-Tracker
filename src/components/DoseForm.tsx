@@ -193,6 +193,19 @@ interface DoseFormProps {
      */
     accentSubmit?: boolean;
     /**
+     * Hide the time field and log at "now". The overview's candle terminal uses
+     * this: its form is "place the dose you are taking", which is happening now —
+     * the time picker is a step with no purpose there. Times stay editable on the
+     * History page's forms, which is where a past dose is entered.
+     */
+    hideTime?: boolean;
+    /**
+     * Hide the load-template control, the quick-dose buttons and the save-as-
+     * template button. The candle terminal's pane is a straight "record this
+     * dose" form; templates are a History-page affordance.
+     */
+    hideTemplates?: boolean;
+    /**
      * Treat `eventToEdit` as a *source to copy*, not a record to edit: the form is
      * pre-filled from it, but saving adds a new dose (fresh id, time defaults to
      * now) and no delete control appears. The overview's "record this again" sets
@@ -216,7 +229,7 @@ interface DoseFormProps {
     activeEngine?: PkEngineId;
 }
 
-const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDelete, templates = [], onSaveTemplate, onDeleteTemplate, isInline = false, hideHeader = false, addMode = false, accentSubmit = false, quickDoses, onAddQuickDose, onDeleteQuickDose, events = [], activeEngine = 'builtin' }) => {
+const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDelete, templates = [], onSaveTemplate, onDeleteTemplate, isInline = false, hideHeader = false, addMode = false, accentSubmit = false, hideTime = false, hideTemplates = false, quickDoses, onAddQuickDose, onDeleteQuickDose, events = [], activeEngine = 'builtin' }) => {
     // A record that exists *and* is being edited — not one being copied into a new
     // dose. `addMode` is the explicit signal for the copy case: an `eventToEdit`
     // that is a real record looks identical to an edit otherwise (its id is in
@@ -666,7 +679,10 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
             isSavingRef.current = false;
             setIsSaving(false);
         };
-        let timeH = new Date(dateStr).getTime() / 3600000;
+        // With the time field hidden the dose is logged at the moment it is saved,
+        // not at the moment the form mounted — "taking it now" means now, even if
+        // the form sat open for a while. Otherwise the field's value is used.
+        let timeH = hideTime ? Date.now() / 3600000 : new Date(dateStr).getTime() / 3600000;
         if (isNaN(timeH)) {
             timeH = new Date().getTime() / 3600000;
         }
@@ -962,7 +978,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                         {isEditingExisting ? t('modal.dose.edit_title') : t('modal.dose.add_title')}
                     </h3>
                     <div className="flex gap-2 items-center">
-                        {renderLoadTemplateControl()}
+                        {!hideTemplates && renderLoadTemplateControl()}
                         <button onClick={onCancel} className="p-1.5 hover:bg-[var(--color-m3-surface-container)]  rounded-lg">
                             <Icon icon={X} size={18} className="text-[var(--color-m3-on-surface-variant)] " />
                         </button>
@@ -976,12 +992,13 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
           <span className="text-m3-title-small text-[var(--color-m3-on-surface-variant)] ">
                         {t('timeline.add_title')}
                     </span>
-                    {renderLoadTemplateControl()}
+                    {!hideTemplates && renderLoadTemplateControl()}
                 </div>
             )}
 
             <div className={`space-y-4 flex-1 overflow-y-auto ${!isInline ? 'px-6 pb-4' : hideHeader ? 'pb-2' : 'pb-4'}`}>
                 {/* Time */}
+                {!hideTime && (
                 <div>
                     <button
                         type="button"
@@ -1011,6 +1028,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                         title={t('field.time')}
                     />
                 </div>
+                )}
 
                 {/* Route */}
                 <CustomSelect
@@ -1044,7 +1062,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                             />
                         )}
 
-                        {quickDoses && onAddQuickDose && onDeleteQuickDose && (
+                        {!hideTemplates && quickDoses && onAddQuickDose && onDeleteQuickDose && (
                             <div className="mt-2">
                                 <QuickDoseButtons
                                     route={route}
@@ -1311,7 +1329,9 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
             <div className={`flex flex-wrap gap-y-2 justify-between items-center shrink-0 ${accentSubmit ? '' : 'border-t border-[var(--color-m3-outline-variant)]  '}${!isInline ? 'px-6 py-3' : hideHeader ? 'py-2' : 'py-3'}`}>
                 <div className="flex gap-2 items-center flex-wrap min-h-10 w-full sm:w-auto">
 
-                    {/* Template Save Section */}
+                    {/* Template Save Section (hidden on the candle terminal's pane,
+                        which is a straight "record this dose" form) */}
+                    {!hideTemplates && (
                     <div className="flex items-center">
                         <div className={`overflow-hidden flex items-center transition-all duration-200 ease-out ${
                             showSaveTemplateInput ? 'w-[14rem] sm:w-[13.5rem] opacity-100' : 'w-0 opacity-0 pointer-events-none'
@@ -1354,6 +1374,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                             </button>
                         </div>
                     </div>
+                    )}
 
                     {/* Delete Event Section (only for a record that exists) */}
                     {isEditingExisting && (

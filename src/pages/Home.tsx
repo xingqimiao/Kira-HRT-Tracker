@@ -578,11 +578,17 @@ const Home: React.FC<HomeProps> = ({
                         // a dose row was clicked ("record this again") — its `formSeq`
                         // key remounts it so the fields pick up that prefill.
                         const inlineForm = (
-                            <div className="m3-card min-w-0 2xl:flex-[2] 2xl:min-w-[20rem] p-4">
+                            // Only from lg: on a phone the terminal is chart + order
+                            // book, and recording happens on the History page. The
+                            // card stretches so its footer sits level with the other
+                            // two panes.
+                            <div className="m3-card hidden min-w-0 p-4 lg:flex lg:flex-[2] lg:min-w-[17rem] lg:flex-col">
                                 <DoseForm
                                     key={`${repeatFrom?.id ?? 'new'}-${formSeq}`}
                                     eventToEdit={repeatFrom}
                                     addMode={!!repeatFrom}
+                                    hideTime
+                                    hideTemplates
                                     onSave={(e) => onAddEvent(e as DoseEvent)}
                                     onCancel={() => { setRepeatFrom(null); setFormSeq(s => s + 1); }}
                                     onDelete={() => {}}
@@ -603,7 +609,9 @@ const Home: React.FC<HomeProps> = ({
                             <DoseOrderBook
                                 events={events}
                                 onRepeat={(e) => { setRepeatFrom(e); setFormSeq(s => s + 1); }}
-                                className="min-w-0 2xl:flex-[2] 2xl:min-w-[16rem]"
+                                // Shrinks first when the row is tight, so a desktop
+                                // stays a row instead of collapsing.
+                                className="min-w-0 lg:flex-[2] lg:min-w-[9rem]"
                             />
                         ) : showHeatmap ? (
                             <DoseHeatmap events={events} className="min-w-0 2xl:flex-[2] 2xl:min-w-[16rem]" />
@@ -625,8 +633,10 @@ const Home: React.FC<HomeProps> = ({
                         );
                         if (isCandle) {
                             return (
-                                <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
-                                    <div className="min-w-0 2xl:flex-[4]">{chart}</div>
+                                // Row from lg up (stretched so the three panes end
+                                // together); stacked below lg, where the form is gone.
+                                <div className="flex flex-col gap-6 lg:flex-row lg:items-stretch">
+                                    <div className="min-w-0 lg:flex-[4]">{chart}</div>
                                     {sidePanel}
                                     {inlineForm}
                                 </div>
