@@ -1,11 +1,13 @@
 {
-  "version": "1.0.1",
-  "versionCode": 1000001,
-  "apk": "https://hrt.kiramyao.com/android/KiraHRT-1.0.1-release.apk",
-  "sha256": "42A206B2FB93C5C788C6ED9B84D7E0516E957A745C2682999E7D9EB0979BF2A2",
+  "version": "1.0.2",
+  "versionCode": 1000002,
+  "apk": "https://hrt.kiramyao.com/android/KiraHRT-1.0.2-release.apk",
+  "sha256": "26AED99AD48AE6C55188B6FE712D2AD222EF12C2A5DE034A2FF0AA27CF87D444",
   "notes": [
-    "新增 Android 版本检查、更新日志和官网 APK 下载入口",
-    "改进第三方登录回跳和外部浏览器打开方式"
+    "K 线模式：交易终端式三栏布局（图表 / 近期剂量 / 记录）",
+    "K 线支持 4 小时与日/周自动切换，红跌绿涨，悬停显示开高低收",
+    "外观设置可切换曲线样式、用药方格图与像素试管",
+    "记录用药更快：订单可一键再次记录，即时记录默认当前时间",
+    "OCR 模型改为首次扫描时下载，安装包体积大幅减小"
   ]
 }
-

@@ -1,5 +1,5 @@
 import path from 'path';
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -93,6 +93,35 @@ function ocrOrtGlue(): Plugin {
 
 export default defineConfig(({ mode }) => {
   const isAndroid = mode === 'android';
+
+  /**
+   * Native builds do not ship the OCR runtime or models.
+   *
+   * The two PP-OCRv6 models and the ONNX Runtime WASM are ~44 MB; bundling them would
+   * roughly double the APK for a feature most users never open. The native app fetches
+   * them from the project origin on first scan (see `NATIVE_BASE` in
+   * `src/utils/ppocr.ts`, which also sets `ort.env.wasm.wasmPaths` to that origin, so
+   * the bundled copy of the runtime is never used). Vite copies `public/ocr/` into
+   * `dist/` and emits `ort-wasm-*.wasm` into `dist/assets/` because `ppocr.ts` imports
+   * `onnxruntime-web/wasm`; Tauri then bundles all of `dist/`. Both are removed here —
+   * a plugin's `closeBundle` runs after Vite writes `dist/` and before Tauri packs it.
+   */
+  const stripOcrForNative = (): Plugin => ({
+    name: 'strip-ocr-for-native',
+    apply: 'build',
+    closeBundle() {
+      const distDir = path.resolve(import.meta.dirname, 'dist');
+      const ocrDir = path.join(distDir, 'ocr');
+      if (existsSync(ocrDir)) rmSync(ocrDir, { recursive: true, force: true });
+      const assetsDir = path.join(distDir, 'assets');
+      if (existsSync(assetsDir)) {
+        for (const name of readdirSync(assetsDir)) {
+          if (/^ort-wasm-.*\.wasm$/.test(name)) rmSync(path.join(assetsDir, name), { force: true });
+        }
+      }
+    },
+  });
+
   return {
     base: isAndroid ? './' : '/',
     define: {
@@ -111,6 +140,7 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       ocrOrtGlue(),
+      ...(isAndroid ? [stripOcrForNative()] : []),
       react(),
       ...(!isAndroid ? [VitePWA({
         registerType: 'autoUpdate',

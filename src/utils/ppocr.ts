@@ -37,9 +37,22 @@
 
 import * as ort from 'onnxruntime-web/wasm'
 import type { OcrModelTier } from '../../logic'
+import { isNativeApp } from './platform'
 
-/** Where the self-hosted assets live. Every request is same-origin — see sync-ocr-assets.mjs. */
-const DEFAULT_BASE = '/ocr/'
+/**
+ * Where the self-hosted assets live.
+ *
+ * On the web this is same-origin, served from the deploy's `/ocr/` directory. In
+ * the native app that directory is *not* bundled — the two models and the ORT
+ * runtime are ~44 MB, and shipping them inside the APK would roughly double it for
+ * a feature most users never open. The app fetches them from the project's origin on
+ * first scan instead (kept in the webview's HTTP cache afterwards). The web deploy
+ * serves the same files, so the bytes are identical either way; only the base
+ * differs. `options.base` still overrides both, for the headless harness.
+ */
+const WEB_BASE = '/ocr/'
+const NATIVE_BASE = 'https://hrt.kiramyao.com/ocr/'
+const DEFAULT_BASE = isNativeApp() ? NATIVE_BASE : WEB_BASE
 
 /**
  * Asset file names per model tier.
