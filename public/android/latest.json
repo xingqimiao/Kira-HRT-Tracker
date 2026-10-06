@@ -2,7 +2,7 @@
   "version": "1.0.2",
   "versionCode": 1000002,
   "apk": "https://hrt.kiramyao.com/android/KiraHRT-1.0.2-release.apk",
-  "sha256": "93D894177D8659D497E810036EF47619F339456C655C78F351DBED2BB1AA7D97",
+  "sha256": "6851FFF625881D2B82444E28E1AE88DE498CA50E2D34F7CBEDD1896C588F4272",
   "notes": [
     "K 线模式：交易终端式三栏布局（图表 / 近期剂量 / 记录）",
     "K 线支持 4 小时与日/周自动切换，红跌绿涨，悬停显示开高低收",
