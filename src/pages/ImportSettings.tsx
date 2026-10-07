@@ -2,6 +2,7 @@ import React from 'react';
 import Icon from '../components/Icon';
 import { ArrowLeft } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
+import { openExternalUrl } from '../utils/externalLinks';
 import ImportSection from '../components/ImportSection';
 
 interface ImportSettingsProps {
@@ -47,7 +48,7 @@ const ImportSettings: React.FC<ImportSettingsProps> = ({ onImportJson, onBack })
                            default branch, so the link survives the branch being renamed
                            or the work being merged. A hard-coded `rewrite` would rot the
                            day it moved. */
-                        onClick={() => window.open('https://github.com/xingqimiao/Kira-HRT-Tracker/blob/HEAD/docs/hrt-import-export-protocol.zh-CN.md', '_blank', 'noopener,noreferrer')}
+                        onClick={() => void openExternalUrl('https://github.com/xingqimiao/Kira-HRT-Tracker/blob/HEAD/docs/hrt-import-export-protocol.zh-CN.md')}
                         className="text-[var(--color-m3-primary)] underline underline-offset-2"
                     >
                         docs/hrt-import-export-protocol.zh-CN.md

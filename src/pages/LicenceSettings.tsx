@@ -3,6 +3,7 @@ import Icon from '../components/Icon';
 import { ArrowLeft, CodeFile, ExternalLink } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { CreditsRoll } from '../components/CreditsRoll';
+import { openExternalUrl } from '../utils/externalLinks';
 
 interface LicenceSettingsProps {
     onBack: () => void;
@@ -117,7 +118,7 @@ const LicenceSettings: React.FC<LicenceSettingsProps> = ({ onBack, appVersion })
                                 )}
                                 {work.url && (
                                     <button
-                                        onClick={() => window.open(work.url, '_blank', 'noopener')}
+                                        onClick={() => void openExternalUrl(work.url as string)}
                                         className="mt-1 inline-flex items-center gap-1.5 text-xs text-[var(--color-m3-primary)] hover:underline"
                                     >
                                         <Icon icon={ExternalLink} size={12} />

@@ -9,6 +9,7 @@ import { Route, Ester, ExtraKey, DoseEvent, SL_TIER_ORDER, SublingualTierParams,
 import { Save, Trash2, Info, Bookmark, BookmarkPlus, X, ChevronDown, Check, AlertTriangle, ExternalLink } from '../icons';
 import { DoseAdvisoryLine } from './DoseAdvisory';
 import { LOCALE_MAP } from '../utils/helpers';
+import { openExternalUrl } from '../utils/externalLinks';
 import InjectionFields from './dose_form/InjectionFields';
 import OralFields from './dose_form/OralFields';
 import SublingualFields from './dose_form/SublingualFields';
@@ -888,7 +889,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
         })();
         const confirmText = t('drawer.model_confirm').replace('mahiro.uk', host);
         showDialog('confirm', confirmText, () => {
-            window.open(url, '_blank', 'noopener,noreferrer');
+            void openExternalUrl(url);
         });
     };
     const renderLoadTemplateControl = () => {

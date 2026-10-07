@@ -9,7 +9,9 @@ import { AppTheme } from '../constants';
 import { AntiandrogenChartMode, ANTIANDROGEN_CHART_MODES, DoseEvent, PKCustomParams, RecheckIntervals, OcrModelTier, OCR_MODEL_TIERS, PkEngineId, PK_ENGINES, DEFAULT_PK_ENGINE } from '../../logic';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { isNativeApp } from '../utils/platform';
+import { openExternalUrl } from '../utils/externalLinks';
 import { readMedReminders, writeMedReminders, rescheduleAllNativeNotifications, type MedReminder } from '../utils/medReminders';
+import { useBackHandler } from '../utils/nativeBack';
 import { APP_VERSION } from '../constants';
 import { checkNativeUpdate, downloadNativeUpdate } from '../utils/nativeUpdate';
 
@@ -117,6 +119,12 @@ const Settings: React.FC<SettingsProps> = ({
         _savedMobileView = 'list';
         setMobileView('list');
     };
+
+    // On mobile the category screen (常规设置 / 复查提醒 / …) is an internal
+    // state below the `settings` view, so system back must exit it before the
+    // view-level handler pops to home. The time-picker sheet sits above it.
+    useBackHandler(mobileView !== 'list', () => { exitMobileCat(); return true; });
+    useBackHandler(medTimeOpen, () => { setMedTimeOpen(false); return true; });
 
     const navTo = (fn: () => void, forCat: SettingsCat) => {
         _savedCat = forCat;
@@ -330,7 +338,7 @@ const Settings: React.FC<SettingsProps> = ({
                 a version bump cannot leave it pointing at the previous release. */}
             {!isNativeApp() && (
                 <button
-                    onClick={() => window.open(`https://hrt.kiramyao.com/android/KiraHRT-${APP_VERSION.replace(/^v/, '')}-release.apk`, '_blank')}
+                    onClick={() => void openExternalUrl(`https://hrt.kiramyao.com/android/KiraHRT-${APP_VERSION.replace(/^v/, '')}-release.apk`)}
                     className={rowBase}
                 >
                     <div>
@@ -347,7 +355,7 @@ const Settings: React.FC<SettingsProps> = ({
                 "visibly link back" is the actual requirement — a link nobody can find
                 does not satisfy it. */}
             <button
-                onClick={() => showDialog('confirm', t('drawer.algorithm_confirm'), () => window.open('https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test', '_blank'))}
+                onClick={() => showDialog('confirm', t('drawer.algorithm_confirm'), () => void openExternalUrl('https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test'))}
                 className={rowBase}
             >
                 <div>
@@ -361,7 +369,7 @@ const Settings: React.FC<SettingsProps> = ({
                 one is where *this* app lives; it pointed at a different project's
                 repo, which reads as a misattribution in both directions. */}
             <button
-                onClick={() => showDialog('confirm', t('drawer.github_confirm'), () => window.open('https://github.com/xingqimiao/Kira-HRT-Tracker', '_blank'))}
+                onClick={() => showDialog('confirm', t('drawer.github_confirm'), () => void openExternalUrl('https://github.com/xingqimiao/Kira-HRT-Tracker'))}
                 className={rowBase}
             >
                 <span className={rowLabel}>{t('drawer.github')}</span>
@@ -378,7 +386,7 @@ const Settings: React.FC<SettingsProps> = ({
                 About rather than hidden behind a link, because this app stores health
                 data and the policy is the statement of what it does with it. */}
             <button
-                onClick={() => showDialog('confirm', t('settings.privacy_confirm'), () => window.open('https://kiramyao.com/privacy', '_blank'))}
+                onClick={() => showDialog('confirm', t('settings.privacy_confirm'), () => void openExternalUrl('https://kiramyao.com/privacy'))}
                 className={rowBase}
             >
                 <div>
@@ -453,16 +461,16 @@ const Settings: React.FC<SettingsProps> = ({
         if (!medName.trim()) return;
         const next = [...medReminders, { id: crypto.randomUUID(), name: medName.trim(), hour, minute, enabled: true }].sort((a, b) => a.hour - b.hour || a.minute - b.minute);
         setMedReminders(next); writeMedReminders(next);
-        void rescheduleAllNativeNotifications(true).then(setMedPermission).catch(() => setMedError(true));
+        void rescheduleAllNativeNotifications(true).then(setMedPermission).catch(e => { console.error('[med-reminders] initial schedule failed', e); setMedError(true); });
         setMedName('');
     };
     const removeMedReminder = (id: string) => {
         const next = medReminders.filter(r => r.id !== id);
-        setMedReminders(next); writeMedReminders(next); void rescheduleAllNativeNotifications().catch(() => setMedError(true));
+        setMedReminders(next); writeMedReminders(next); void rescheduleAllNativeNotifications().catch(e => { console.error('[med-reminders] schedule failed', e); setMedError(true); });
     };
     const toggleMedReminder = (id: string) => {
         const next = medReminders.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r);
-        setMedReminders(next); writeMedReminders(next); void rescheduleAllNativeNotifications().catch(() => setMedError(true));
+        setMedReminders(next); writeMedReminders(next); void rescheduleAllNativeNotifications().catch(e => { console.error('[med-reminders] schedule failed', e); setMedError(true); });
     };
 
     const MedReminderContent = () => isNativeApp() ? (

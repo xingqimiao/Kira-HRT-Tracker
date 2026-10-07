@@ -53,6 +53,8 @@ import { armMilestone, clearArmedMilestone, type MilestoneNotice } from './utils
 import SplashScreen from './components/SplashScreen';
 import { isNativeApp } from './utils/platform';
 import { rescheduleAllNativeNotifications } from './utils/medReminders';
+import { installNativeBack, useBackHandler } from './utils/nativeBack';
+import { installNativeLinkInterceptor } from './utils/externalLinks';
 
 const AppContent = () => {
     const { t, lang, setLang } = useTranslation();
@@ -140,7 +142,7 @@ const AppContent = () => {
     } = useAppData(showDialog, coreSession.user?.userId ?? null);
 
     const [splashDone, setSplashDone] = useState(() => !isNativeApp());
-    useEffect(() => { void rescheduleAllNativeNotifications(); }, []);
+    useEffect(() => { void rescheduleAllNativeNotifications().catch(e => console.error('[med-reminders] reschedule failed', e)); }, []);
 
     // A confirmed bind belongs to the account that made it. Reset when the signed-in
     // user changes (or is signed out), so the next account is not waved past a gate it
@@ -380,6 +382,22 @@ const AppContent = () => {
         document.body.style.overflow = shouldLock ? 'hidden' : '';
         return () => { document.body.style.overflow = ''; };
     }, [isPasswordInputOpen, isWeightModalOpen, isFormOpen, isImportModalOpen, isDisclaimerOpen]);
+
+    // Android system back closes the topmost overlay. Registered after the
+    // navigation handler (declared later wins the top of the stack), and the
+    // dialog provider above this closes dialogs before modals.
+    useBackHandler(isQuickAddOpen, () => { setIsQuickAddOpen(false); return true; });
+    useBackHandler(isQuickAddLabOpen, () => { setIsQuickAddLabOpen(false); return true; });
+    useBackHandler(isPasswordInputOpen, () => { setIsPasswordInputOpen(false); return true; });
+    useBackHandler(isWeightModalOpen, () => { setIsWeightModalOpen(false); return true; });
+    useBackHandler(isFormOpen, () => { setIsFormOpen(false); return true; });
+    useBackHandler(isDisclaimerOpen, () => { setIsDisclaimerOpen(false); return true; });
+    useBackHandler(isImportModalOpen, () => { setIsImportModalOpen(false); return true; });
+    useBackHandler(isCoreAuthOpen, () => { setIsCoreAuthOpen(false); setPrefillUsername(''); return true; });
+
+    // Native shell wiring: system back dispatch and system-browser links.
+    useEffect(() => installNativeBack(), []);
+    useEffect(() => installNativeLinkInterceptor(), []);
 
 
     /**

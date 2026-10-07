@@ -7,20 +7,13 @@ import { formatDate, formatTime } from '../utils/helpers';
  * The overview's dose list, shown in the slot the dose grid occupies when the
  * chart is in candle (K线) view.
  *
- * A trading terminal pairs its candles with an order book, and the order book's
- * signature is the depth bar: a horizontal measure of *how much* sits on each
- * row. The honest equivalent here is the dose itself — each row carries a red
- * bar whose length is that dose against the largest one on screen, with the
- * amount printed over it. So the panel answers "how big was each recent dose,
- * at a glance" beside the candles those doses drew, rather than a plain list.
+ * Each row carries a depth bar in the theme's primary colour whose length is
+ * that dose against a fixed 5 mg yardstick, with the amount printed over it —
+ * "how big was each recent dose, at a glance" beside the candles those doses
+ * drew. Hover tints are deliberately absent: the rows stay plain.
  *
- * The bar scales against the biggest dose *in the shown list*, which is what an
- * order book does and what keeps a week of 2–3 mg gel visible instead of one
- * large dose flattening the rest. Milligrams of different esters do not share a
- * scale, so the bar is a per-row magnitude, not a summed quantity.
- *
- * Read-only and unclickable: the timeline owns editing, and a row here that
- * opened a form would be a second editing surface to keep in sync.
+ * Read-only and unclickable-looking but it does repeat: a row click offers the
+ * same "log this again" shortcut via `onRepeat`.
  */
 const ROWS = 14;
 
@@ -67,16 +60,16 @@ const DoseOrderBook = ({ events, onRepeat, className = '' }: { events: DoseEvent
                         const bar = ANTIANDROGENS.has(e.ester) ? 0 : Math.min(100, Math.max(6, (e.doseMG / BAR_FULL_MG) * 100));
                         return (
                             <li key={e.id} className="relative overflow-hidden rounded-[var(--radius-sm)]">
-                                {/* The depth bar. Red, as order-book asks are, and
-                                    anchored to the right edge growing leftward — the
-                                    order-book direction. The fill is quiet enough that
-                                    the numbers stay legible over the widest bars.
-                                    Decorative, so it is hidden from the accessibility
-                                    tree — the amount beside it carries the same fact. */}
+                                {/* The depth bar, anchored to the right edge growing
+                                    leftward — the order-book direction. Themed with
+                                    the primary colour so it follows the user's theme
+                                    rather than a fixed red. Decorative, so it is
+                                    hidden from the accessibility tree — the amount
+                                    beside it carries the same fact. */}
                                 {bar > 0 && (
                                     <span
                                         aria-hidden
-                                        className="absolute inset-y-0 end-0 bg-[var(--color-m3-error)] opacity-25"
+                                        className="absolute inset-y-0 end-0 bg-[var(--color-m3-primary)] opacity-20"
                                         style={{ width: `${bar}%` }}
                                     />
                                 )}
@@ -85,7 +78,7 @@ const DoseOrderBook = ({ events, onRepeat, className = '' }: { events: DoseEvent
                                     disabled={!onRepeat}
                                     onClick={() => onRepeat?.(e)}
                                     title={onRepeat ? t('orderbook.repeat') : undefined}
-                                    className="relative flex w-full items-baseline justify-between gap-3 px-2 py-1.5 text-xs text-start transition-colors enabled:hover:bg-[var(--color-m3-surface-container)] enabled:active:bg-[var(--color-m3-primary-container)] disabled:cursor-default"
+                                    className="relative flex w-full items-baseline justify-between gap-3 px-2 py-1.5 text-xs text-start disabled:cursor-default"
                                 >
                                     <span className="min-w-0">
                                         <span className="block truncate font-medium text-[var(--color-m3-on-surface)]">

@@ -1,8 +1,27 @@
 import { useState, useRef, useEffect } from 'react';
 import { Home, ListTodo, Settings as SettingsIcon, UserCircle, CalibrationCurve } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
+import { useBackHandler } from '../utils/nativeBack';
 
 export type ViewKey = 'home' | 'share' | 'history' | 'lab' | 'lab-calibration' | 'settings' | 'account' | 'pk-params' | 'settings-hrt-mode' | 'settings-language' | 'settings-appearance' | 'settings-weight' | 'settings-export' | 'settings-import' | 'settings-security' | 'settings-mcp' | 'settings-licences';
+
+/** Where system back lands from each view. Sub-pages return to their parent
+ *  tab; a tab returns home; home returns false so the gesture falls through to
+ *  the system (predictive back-to-home). */
+const BACK_PARENT: Partial<Record<ViewKey, ViewKey>> = {
+    'share': 'home',
+    'lab-calibration': 'lab',
+    'pk-params': 'settings',
+    'settings-hrt-mode': 'settings',
+    'settings-language': 'settings',
+    'settings-appearance': 'settings',
+    'settings-weight': 'settings',
+    'settings-export': 'settings',
+    'settings-import': 'settings',
+    'settings-security': 'account',
+    'settings-mcp': 'settings',
+    'settings-licences': 'settings',
+};
 
 /**
  * `initialView` exists for the X landing: it renders instead of the app shell, so it
@@ -35,6 +54,19 @@ export const useAppNavigation = (initialView: ViewKey = 'home') => {
         const el = mainScrollRef.current;
         if (el) el.scrollTo({ top: 0, behavior: 'smooth' });
     }, [currentView]);
+
+    // Android system back walks the view hierarchy (dialogs and modals register
+    // above this handler, so they pop first). Deregistered at home so an empty
+    // stack tells Kotlin to let the system handle back there — that is what
+    // plays the predictive back-to-home animation instead of eating the event.
+    const viewRef = useRef({ currentView, handleViewChange });
+    viewRef.current = { currentView, handleViewChange };
+    useBackHandler(currentView !== 'home', () => {
+        const { currentView: view, handleViewChange: change } = viewRef.current;
+        if (view === 'home') return false;
+        change(BACK_PARENT[view] ?? 'home');
+        return true;
+    });
 
     // --- Derived Data ---
     const navItems = [

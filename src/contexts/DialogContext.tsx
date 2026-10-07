@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from './LanguageContext';
 import { usePresence } from '../hooks/usePresence';
+import { useBackHandler } from '../utils/nativeBack';
 
 type DialogType = 'alert' | 'confirm';
 
@@ -35,6 +36,14 @@ export const DialogProvider = ({ children }: { children: React.ReactNode }) => {
     const contextValue = useMemo(() => ({ showDialog }), [showDialog]);
 
     const { mounted, state } = usePresence(isOpen, 200);
+
+    // System back dismisses the dialog instead of leaving the page beneath it.
+    // The provider mounts above AppContent, so this registers after the page
+    // handler and takes the top of the back stack while a dialog is open.
+    useBackHandler(isOpen, () => {
+        setIsOpen(false);
+        return true;
+    });
 
     const handleConfirm = () => {
         if (onConfirm) onConfirm();

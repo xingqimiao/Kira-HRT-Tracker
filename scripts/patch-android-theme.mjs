@@ -40,3 +40,17 @@ writeFileSync(gradleBuild, gradleSource.replace('kotlin-gradle-plugin:1.9.25', '
 // system bars from WindowInsets and expose their dp sizes to the local app page.
 const activity = resolve(root, '..', 'java', 'com', 'kiramyao', 'hrt', 'MainActivity.kt');
 writeFileSync(activity, readFileSync(resolve(import.meta.dirname, 'MainActivity.kt'), 'utf8'));
+
+// R8 strips/renames the plugins' Jackson model classes' default constructors
+// and fields in the minified release build — the notifications plugin then
+// fails to deserialize every schedule ("Cannot construct instance of
+// app.tauri.notification.DateMatch"). Keep the whole tauri Kotlin runtime
+// intact; build.gradle.kts picks up every *.pro in the app module dir.
+const proguard = resolve(root, '..', 'proguard-tauri.pro');
+writeFileSync(proguard, [
+    '# Keep the tauri Kotlin plugin runtime: plugins deserialize their args',
+    '# (notifications, opener, ...) into these classes via Jackson reflection.',
+    '-keep class app.tauri.** { *; }',
+    '-dontwarn app.tauri.**',
+    '',
+].join('\n'));
