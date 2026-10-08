@@ -57,77 +57,65 @@
          privacy policy now discloses. -->
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <title>HRT 记录 · Kira HRT Tracker</title>
-    <!-- The app is a client-rendered SPA, so without this the page served to a client
-         that does not run JavaScript — a crawler, a link-preview bot, an SEO checker,
-         or the reviewer checking our OAuth branding — is an empty shell. Google's
+    <!-- The app is a client-rendered SPA, so the served HTML must itself carry the
+         facts a client that does not run JavaScript needs — a crawler, a link-preview
+         bot, an SEO checker, or the reviewer checking our OAuth branding. Google's
          brand verification requires the home page to be publicly accessible, to say
-         what the app does and to link to the privacy policy; SEO checks read the same
-         document. Both do it without executing JavaScript, so every fact they need —
+         what the app does, and to link to the privacy policy. Every fact they need —
          the title, the description, the canonical URL, the Open Graph and Twitter
          cards, and the two claims below (agent-friendly, made by KiraEqual) — lives in
          this served HTML and never depends on a script.
 
-         Hidden by default, revealed by noscript. The obvious version of this is the
-         other way round — visible, then hidden by a script that sets a class — and it
-         does not work here: this site sits behind Cloudflare, whose Rocket Loader
-         rewrites every inline script's type to a non-executing value and re-runs it
-         after load, so the hiding script ran too late and the block flashed on every
-         visit. Styling the no-JavaScript case from inside noscript has no script to
-         defer, so it is correct before the first paint and cannot be broken by an edge
-         feature we do not control. index.tsx also empties #root before the first
-         render, which is belt and braces: this never lays the block out, that removes it. -->
+         This block used to be hidden (`display:none`, un-hidden only inside noscript).
+         That served no-JavaScript clients but left the page Google *actually* indexed
+         as a ~100-character onboarding greeting, because Google does run JavaScript.
+         It now lives OUTSIDE `#root`, always visible, as an ordinary page footer: a
+         no-JavaScript client reads it as the page body, a JavaScript client scrolls to
+         it below the app, and a crawler sees the real, visible content it is. Living
+         outside `#root` is load-bearing — index.tsx calls `container.replaceChildren()`
+         on mount and would otherwise wipe it. Always-visible also drops the old
+         hide-then-reveal dance that Cloudflare's Rocket Loader used to break. -->
     <style>
-        .boot-fallback {
+        /* Colours are inherited from `body` on purpose, so the footer follows the app
+           theme once index.tsx has handed the body back to Tailwind; the body's own
+           inline dark colours are what a no-JavaScript client sees. Never set an
+           explicit colour here — it would fight whichever theme wins. */
+        .site-about {
             max-width: 46rem;
             margin: 0 auto;
-            padding: 2.5rem 1.25rem;
+            padding: 3rem 1.25rem 4rem;
             font: 16px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+            border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
         }
 
-        .boot-fallback {
-            display: none;
-        }
-
-        .boot-fallback h1 {
+        .site-about h1 {
             font-size: 1.75rem;
             line-height: 1.3;
             margin: 0 0 0.5rem;
         }
 
-        .boot-fallback h2 {
+        .site-about h2 {
             font-size: 1.125rem;
             margin: 2rem 0 0.5rem;
         }
 
-        .boot-fallback ul {
+        .site-about ul {
             padding-left: 1.25rem;
         }
 
-        .boot-fallback a {
-            color: #0b57d0;
-        }
-
-        @media (prefers-color-scheme: dark) {
-            .boot-fallback a {
-                color: #a8c7fa;
-            }
+        .site-about a {
+            color: inherit;
+            text-decoration: underline;
         }
     </style>
-    <!-- The other half of the pair above: with scripting unavailable, show the block.
-         noscript in the head may only contain link/style/meta, which is why this is
-         a second style block rather than a rule in the first one. -->
-    <noscript>
-        <style>
-            .boot-fallback {
-                display: block;
-            }
-        </style>
-    </noscript>
 </head>
 
 <body class="text-gray-900 dark:text-white transition-colors duration-300" style="background:#0D0D12;color:#F4F5F7">
-    <div id="root" style="background:#0D0D12;color:#F4F5F7">
-        <div class="boot-fallback">
+    <div id="root" style="background:#0D0D12;color:#F4F5F7"></div>
+    <!-- Outside #root: index.tsx replaces #root's children on mount, so anything that
+         must survive into the rendered DOM (this footer, for crawlers) has to live
+         here, as a sibling. See the head comment above. -->
+    <footer class="site-about">
             <h1>HRT 记录 —— Kira HRT Tracker</h1>
             <!-- Chinese first: the primary audience and the phrase they search
                  ("HRT 记录"). The English pair follows for an English crawler; a
@@ -179,8 +167,7 @@
             <p>
                 <a href="https://kiramyao.com/privacy">隐私说明 / Privacy Policy</a>
             </p>
-        </div>
-    </div>
+    </footer>
     <script type="module" src="/index.tsx"></script>
 </body>
 
