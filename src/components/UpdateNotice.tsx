@@ -5,7 +5,7 @@ import FloatingToast from './ui/FloatingToast';
 import { RefreshCw, X } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { onUpdateReady, applyUpdate } from '../utils/swUpdate';
-import { checkNativeUpdate, downloadNativeUpdate, type NativeUpdate } from '../utils/nativeUpdate';
+import { checkNativeUpdate, downloadNativeUpdate, type NativeUpdate, type UpdatePhase } from '../utils/nativeUpdate';
 import { isNativeApp } from '../utils/platform';
 
 /**
@@ -107,12 +107,37 @@ const NativeUpdateCard: React.FC<{
 }> = ({ update, open, onDismiss }) => {
     const { t } = useTranslation();
     const [entered, setEntered] = useState(false);
+    // The hand-off to the system installer is a native, multi-second job (download,
+    // then a prompt), so the card reflects each phase instead of closing on the tap
+    // and looking like the tap did nothing.
+    const [phase, setPhase] = useState<UpdatePhase>('idle');
+    const [pct, setPct] = useState(0);
     useEffect(() => {
         if (!open) { setEntered(false); return; }
         const id = requestAnimationFrame(() => setEntered(true));
         return () => cancelAnimationFrame(id);
     }, [open]);
     if (!open) return null;
+
+    const start = () => {
+        setPhase('downloading');
+        setPct(0);
+        downloadNativeUpdate(update, {
+            onProgress: setPct,
+            onInstalling: () => setPhase('installing'),
+            onPermission: () => setPhase('permission'),
+            onError: () => setPhase('error'),
+        });
+    };
+
+    const busy = phase === 'downloading' || phase === 'installing';
+    const label = phase === 'downloading'
+        ? t('update.downloading').replace('{pct}', String(pct))
+        : phase === 'installing'
+            ? t('update.installing')
+            : phase === 'permission' || phase === 'error'
+                ? t('update.retry')
+                : t('update.download');
 
     const notes = update.notes.slice(0, MAX_NOTES);
     const extra = update.notes.length - notes.length;
@@ -149,7 +174,7 @@ const NativeUpdateCard: React.FC<{
                     </button>
                 </div>
 
-                {notes.length > 0 && (
+                {(phase === 'idle') && notes.length > 0 && (
                     <ul className="mt-3 space-y-1.5 ps-1 text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)]">
                         {notes.map((note, i) => (
                             <li key={i} className="flex gap-2">
@@ -161,12 +186,35 @@ const NativeUpdateCard: React.FC<{
                     </ul>
                 )}
 
+                {phase === 'permission' && (
+                    <p className="mt-3 text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)]">
+                        {t('update.perm_hint')}
+                    </p>
+                )}
+                {phase === 'error' && (
+                    <p className="mt-3 text-xs leading-relaxed text-[var(--color-m3-error)]">
+                        {t('update.failed')}
+                    </p>
+                )}
+
+                {/* Determinate while downloading; an indeterminate filler bar while the
+                    installer is coming up, so the button always shows it is working. */}
+                {(phase === 'downloading' || phase === 'installing') && (
+                    <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-[var(--color-m3-surface-container)]">
+                        <div
+                            className={`h-full rounded-full bg-[var(--color-m3-primary)] ${phase === 'installing' ? 'w-full animate-pulse' : ''}`}
+                            style={phase === 'installing' ? undefined : { width: `${pct}%` }}
+                        />
+                    </div>
+                )}
+
                 <button
                     type="button"
-                    onClick={() => void downloadNativeUpdate(update)}
-                    className="mt-4 w-full rounded-full bg-[var(--color-m3-primary)] px-4 py-2.5 text-sm font-semibold text-[var(--color-m3-on-primary)] transition-colors hover:brightness-105"
+                    onClick={start}
+                    disabled={busy}
+                    className="mt-4 w-full rounded-full bg-[var(--color-m3-primary)] px-4 py-2.5 text-sm font-semibold text-[var(--color-m3-on-primary)] transition-colors hover:brightness-105 disabled:opacity-70"
                 >
-                    {t('update.download')}
+                    {label}
                 </button>
             </div>
         </div>,

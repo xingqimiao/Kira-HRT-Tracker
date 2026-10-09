@@ -54,3 +54,22 @@ writeFileSync(proguard, [
     '-dontwarn app.tauri.**',
     '',
 ].join('\n'));
+
+// The in-app updater (UpdateBridge in MainActivity.kt) hands the downloaded APK
+// to the system package installer, which Android only permits with this
+// permission declared. The manifest is in the gitignored gen/ tree, so it is
+// patched here rather than edited in place — `tauri android init` would drop an
+// in-place edit, and this script runs on every android build.
+const manifest = resolve(root, '..', 'AndroidManifest.xml');
+const manifestXml = readFileSync(manifest, 'utf8');
+if (!manifestXml.includes('REQUEST_INSTALL_PACKAGES')) {
+    writeFileSync(
+        manifest,
+        manifestXml.replace(
+            '<uses-permission android:name="android.permission.INTERNET" />',
+            '<uses-permission android:name="android.permission.INTERNET" />\n' +
+            '    <!-- Self-update: lets UpdateBridge pass the fetched APK to the package installer. -->\n' +
+            '    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />',
+        ),
+    );
+}

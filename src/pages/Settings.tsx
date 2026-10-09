@@ -318,7 +318,14 @@ const Settings: React.FC<SettingsProps> = ({
                             showDialog(
                                 'confirm',
                                 `${t('settings.check_updates.available').replace('{version}', update.version)}${notes}`,
-                                () => { void downloadNativeUpdate(update); },
+                                () => {
+                                    // The download runs in the background; only its terminal
+                                    // outcomes get a dialog (the top card drives progress).
+                                    downloadNativeUpdate(update, {
+                                        onPermission: () => showDialog('alert', t('update.perm_hint')),
+                                        onError: () => showDialog('alert', t('update.failed')),
+                                    });
+                                },
                             );
                         }).catch(() => showDialog('alert', t('settings.check_updates.error')));
                     }}
