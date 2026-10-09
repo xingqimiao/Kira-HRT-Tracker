@@ -659,6 +659,118 @@ missed once during the 2026-09-18 deployment for exactly that reason.
 
 ---
 
+## 4b. Build, sign and publish the Android APK
+
+The Android app polls `https://hrt.kiramyao.com/android/latest.json` on launch and
+offers whatever `apk` it names. Two files make up a release, both served by Caddy (not
+the SPA — see the `/android/*` handler in §3):
+
+    /srv/hrt-web/android/latest.json
+    /srv/hrt-web/android/KiraHRT-<version>-release.apk
+
+**The client only updates on a version bump.** `checkNativeUpdate` compares semver
+(`isNewer`), so re-publishing the *same* version never reaches an installed device — it
+must be a new `version`/`versionCode`, or a manual reinstall.
+
+### Bump the version first
+
+Three places, and they must agree: `package.json` `version`, `src-tauri/tauri.conf.json`
+`version` (that file is gitignored — the bump lives only in the worktree), and
+`public/android/latest.json` `version` + `versionCode` (`vX.Y.Z` → `X000YZ`, e.g.
+1.0.4 → 1000004). Leave latest.json's `sha256` alone until the signing step prints the real
+one.
+
+### Build the APK (arm64 only — this is what ships)
+
+No Android SDK env vars are set on a dev box; export them per shell. `ANDROID_HOME` is
+`$LOCALAPPDATA/Android/Sdk`, `NDK_HOME` is its `ndk/<version>`, `JAVA_HOME` is the JDK 17
+install. `build:android` runs `check-web-bundle.mjs` at the end, so `VITE_API_ORIGIN`
+is mandatory here too or the android build fails at that check:
+
+```bash
+export ANDROID_HOME="$LOCALAPPDATA/Android/Sdk"
+export NDK_HOME="$LOCALAPPDATA/Android/Sdk/ndk/27.0.12077973"
+export JAVA_HOME="/c/Program Files/Java/jdk-17"
+export VITE_API_ORIGIN=https://api.kiramyao.com/hrt
+export PATH="$JAVA_HOME/bin:$PATH"
+node_modules/.bin/tauri android build --apk --target aarch64   # ~5 min
+```
+
+The frontend is embedded at `beforeBuildCommand` time. **Edits made after the build
+starts are silently absent** — finish all source changes, then build, then sign. Build the
+universal target and the APK is 4× the size; ships arm64.
+
+Output (unsigned): `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk`.
+
+### Sign it with the KiraEqual key
+
+The release key is `~/.android/kiraequal-hrt-release.p12` (PKCS12, alias
+`kiraequal-hrt`), password in the sibling `kiraequal-hrt-release-password.txt`. It is
+**not** a `.jks`/`.keystore`, so a name-based search misses it. There is no gradle
+`signingConfig`; sign externally. `zipalign` then `apksigner` from
+`$ANDROID_HOME/build-tools/<ver>`:
+
+```bash
+BT="$LOCALAPPDATA/Android/Sdk/build-tools/36.0.0"
+PW=$(cat ~/.android/kiraequal-hrt-release-password.txt)
+"$BT/zipalign" -f -p 4 <unsigned>.apk /tmp/aligned.apk
+"$BT/apksigner" sign --ks ~/.android/kiraequal-hrt-release.p12 --ks-type PKCS12 \
+  --ks-key-alias kiraequal-hrt --ks-pass "pass:$PW" --key-pass "pass:$PW" \
+  --out releases/KiraHRT-1.0.4-release.apk /tmp/aligned.apk
+```
+
+build-tools 36.0.0's `apksigner` has **no `--idsig` option** — sign straight to
+`releases/`, no `.idsig`. The certificate SHA-256 must match the live APK or the new
+build will not install over the existing app (it is `4d5837f8…` for this key).
+
+### Update latest.json, then publish
+
+Put the real APK SHA-256 into `public/android/latest.json` (`sha256`, uppercase) and the
+release `notes`. Then commit and push (**commit first** — the SW filename derives from
+HEAD). `npm run build` runs `prepare-android-release.mjs`, which copies the signed APK
+from `releases/` into `dist/android/` and asserts its SHA-256 equals the manifest's. Do
+**not** hand-place the APK under `public/android/` — an Android build would bundle the APK
+inside another APK.
+
+```bash
+sha256sum releases/KiraHRT-1.0.4-release.apk   # paste into latest.json
+VITE_API_ORIGIN=https://api.kiramyao.com/hrt npm run build:release
+ls -lh dist/android/latest.json dist/android/*.apk
+```
+
+Upload the **APK first, then latest.json**, into `/srv/hrt-web/android/` — a device that
+asks for the manifest and is pointed at an APK not yet on the box downloads a 404:
+
+```bash
+scp -O -i <key> dist/android/KiraHRT-1.0.4-release.apk dist/android/latest.json \
+  ubuntu@161.33.157.62:/tmp/
+ssh -i <key> ubuntu@161.33.157.62 "sudo mkdir -p /srv/hrt-web/android && \
+  sudo mv /tmp/KiraHRT-1.0.4-release.apk /tmp/latest.json /srv/hrt-web/android/"
+```
+
+**Purge both URLs at Cloudflare, and verify the BYTES, not just the header.** CF caches a
+`/android/*` path's earlier SPA-fallback `text/html` 200 for its TTL, so `curl -I` can
+read a clean type while the body is HTML. The `.apk` must be
+`application/vnd.android.package-archive` with `cf-cache-status: BYPASS`, and the first
+bytes must be the ZIP magic `504b` (`PK`), not `<!`:
+
+```bash
+ZONE=6e55a37a88282e92bbe6fe8b9d3fc5f8
+TOKEN=$(grep -oE 'cfat_[A-Za-z0-9_-]+' ~/Downloads/cloudflarewrite.txt)
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "https://api.cloudflare.com/client/v4/zones/$ZONE/purge_cache" \
+  --data '{"files":["https://hrt.kiramyao.com/android/KiraHRT-1.0.4-release.apk","https://hrt.kiramyao.com/android/latest.json"]}'
+
+curl -sI "https://hrt.kiramyao.com/android/KiraHRT-1.0.4-release.apk" | grep -iE 'content-type|cf-cache-status'
+curl -s --range 0-1 "https://hrt.kiramyao.com/android/KiraHRT-1.0.4-release.apk" | xxd   # want 504b
+curl -s "https://hrt.kiramyao.com/android/latest.json?cb=$RANDOM" | head            # new version/sha256
+```
+
+Finally, hash the downloaded APK and compare it to latest.json's `sha256` — whichever the
+client fetches is the one the manifest must describe.
+
+---
+
 ## 5. Verifying a deployment
 
 ```bash
