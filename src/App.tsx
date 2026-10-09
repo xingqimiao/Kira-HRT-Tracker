@@ -595,6 +595,8 @@ const AppContent = () => {
                    writes through the data layer that knows the account. */
                 hrtStartDate={hrtStartDate}
                 onHrtStartChange={setHrtStartDate}
+                weight={weight}
+                onWeightChange={setWeight}
                 /* On a replay the step above goes read-only — see `replayOnboarding`. */
                 replay={replayOnboarding}
                 onDone={() => { markOnboardingSeen(); setShowOnboarding(false); setReplayOnboarding(false); }}

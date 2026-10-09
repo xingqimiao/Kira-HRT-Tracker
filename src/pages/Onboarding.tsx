@@ -16,6 +16,7 @@ import { Check, Plus, ChevronDown, AlertTriangle } from '../icons';
 import { buildMcpInstallPrompt } from '../utils/mcpInstallPrompt';
 import { LOCALE_MAP } from '../utils/helpers';
 import { toYmd, fromYmd } from '../utils/hrtStart';
+import { isPlausibleBodyWeightKG } from '../../logic';
 import { usePresence } from '../hooks/usePresence';
 import { isNativeApp } from '../utils/platform';
 import { APP_VERSION } from '../constants';
@@ -114,6 +115,9 @@ const STEP_ROLES: Record<string, StepRoles> = {
     // themes.
     how: { surface: '--md-sys-color-surface-dim', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' },
     started: TERTIARY,
+    // Shares the date step's block: the two are the personal baseline the model is
+    // fitted against, and the slide between them repaints for neither.
+    weight: TERTIARY,
     // The feature steps wear one of two adjacent containers. Templates and the
     // lab scan are two ways records arrive, so they share a ground and the slide
     // between them does not repaint. The journal and the reminder are cards of
@@ -141,7 +145,7 @@ const STEP_ROLES: Record<string, StepRoles> = {
 };
 
 /** Step order, for the colour lookup above; `steps` holds the panels themselves. */
-const STEP_KEYS = ['welcome', 'mode', 'how', 'started', 'quick', 'scan', 'journal', 'recheck', 'signin', 'import', 'account', 'pwa', 'mcp', 'privacy', 'disclaimer', 'sendoff'] as const;
+const STEP_KEYS = ['welcome', 'mode', 'how', 'started', 'weight', 'quick', 'scan', 'journal', 'recheck', 'signin', 'import', 'account', 'pwa', 'mcp', 'privacy', 'disclaimer', 'sendoff'] as const;
 
 /**
  * The three slots of the "how it works" step, and the only step that splits in
@@ -268,6 +272,59 @@ const HOW_ROWS: { mark: MarkName; title: string; desc: string }[] = [
 ];
 
 /**
+ * The weight step's visual, under the same contract as the start date it follows:
+ * it writes through the data layer, and on a replay it is shown read-only, so
+ * re-reading the intro cannot overwrite a weight the user set months ago.
+ *
+ * Weight feeds the distribution volume, so the value is validated at the boundary
+ * (`isPlausibleBodyWeightKG`) rather than trusted from the field: a half-typed or
+ * out-of-range entry falls back to the last committed value on blur instead of
+ * reaching the model. The step's own heading and explanation live on the IntroCard,
+ * so this is the field alone.
+ */
+const WeightVisual: React.FC<{ weight: number; onChange: (kg: number) => void; replay: boolean }> = ({ weight, onChange, replay }) => {
+    const { t } = useTranslation();
+    const [text, setText] = useState(String(weight));
+    // Re-sync when the stored value moves underneath — a sync or an import — but
+    // the effect only fires on commit, so it never fights the field mid-edit.
+    useEffect(() => setText(String(weight)), [weight]);
+
+    const commit = () => {
+        const kg = parseFloat(text);
+        if (isPlausibleBodyWeightKG(kg)) onChange(kg);
+        else setText(String(weight));
+    };
+
+    return (
+        <div className="flex w-full flex-col gap-2 text-start">
+            {/* Labelled like the date field above it: a bare number in a box reads
+                as a readout, and the label is what says "this one you type in". */}
+            <span className="text-m3-title-medium text-[var(--color-m3-on-surface)]">
+                {t('onboarding.weight_label')}
+            </span>
+            {replay ? (
+                <div className="flex items-center rounded-lg border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container)] px-3 py-2.5">
+                    <span className="text-m3-title-medium tabular-nums text-[var(--color-m3-on-surface)]">{weight} kg</span>
+                </div>
+            ) : (
+                <div className="flex items-center gap-2 rounded-lg border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container)] px-3 py-2.5 focus-within:border-[var(--color-m3-primary)]">
+                    <input
+                        type="number"
+                        inputMode="decimal"
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        onBlur={commit}
+                        aria-label={t('onboarding.weight_label')}
+                        className="w-full min-w-0 bg-transparent text-m3-title-medium tabular-nums text-[var(--color-m3-on-surface)] outline-none"
+                    />
+                    <span className="shrink-0 text-m3-body-medium text-[var(--color-m3-on-surface-variant)]">kg</span>
+                </div>
+            )}
+        </div>
+    );
+};
+
+/**
  * The "how it works" step: the chart is the argument and the three rows are
  * its captions, one per beat. The sequence plays itself once on arrival, since
  * most people will just watch — but a film that runs while the title is still
@@ -355,8 +412,6 @@ const HowStep: React.FC<{ curve: CurveData | null }> = ({ curve }) => {
                         onClick={() => play(i as Beat)}
                     />
                 ))}
-                <p className="mt-5 text-m3-body-large intro-muted">{t('onboarding.how_note')}</p>
-
                 {/* The two engines, named and credited, with nothing to choose.
                     The choice lives in Settings where it can be revisited; this step's
                     job is to say that the curve above came from a model that is someone
@@ -365,39 +420,43 @@ const HowStep: React.FC<{ curve: CurveData | null }> = ({ curve }) => {
                     feature, and the attribution is already the licence's requirement.
                     Feminine mode only, because the Transmtf engine models estradiol and
                     nothing else, so on the transmasc path one of the two is not a thing
-                    that could be used. */}
+                    that could be used. Filled and headline-sized rather than a hairline
+                    footnote: the two models are the answer to the question this step
+                    asks, so they sit above the disclaimer, not under it. */}
                 {!isTransmasc && (
-                    <div className="mt-4 rounded-[var(--radius-lg)] border border-[var(--color-m3-outline-variant)] p-3.5">
-                        <p className="text-xs font-medium text-[var(--color-m3-on-surface)]">
+                    <div className="mt-5 rounded-[var(--radius-lg)] bg-[var(--color-m3-surface-container)] p-4">
+                        <p className="text-m3-title-small text-[var(--color-m3-on-surface)]">
                             {t('onboarding.how_models_title')}
                         </p>
-                        <ul className="mt-2.5 space-y-2">
+                        <ul className="mt-3 space-y-3">
                             {([
                                 { img: 'mihari.jpg', nameKey: 'onboarding.how_model_mihari', noteKey: 'onboarding.how_model_mihari_note' },
                                 { img: 'transmtf.png', nameKey: 'onboarding.how_model_transmtf', noteKey: 'onboarding.how_model_transmtf_note' },
                             ] as const).map(({ img, nameKey, noteKey }) => (
-                                <li key={img} className="flex items-start gap-2.5">
+                                <li key={img} className="flex items-start gap-3">
                                     <img
                                         src={`/${img}`}
                                         alt=""
-                                        className="mt-0.5 h-8 w-8 shrink-0 rounded-full object-cover"
+                                        className="h-10 w-10 shrink-0 rounded-full object-cover"
                                     />
                                     <span className="min-w-0">
-                                        <span className="block text-xs font-medium text-[var(--color-m3-on-surface)]">
+                                        <span className="block text-m3-body-medium font-medium text-[var(--color-m3-on-surface)]">
                                             {t(nameKey)}
                                         </span>
-                                        <span className="mt-0.5 block text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)]">
+                                        <span className="mt-0.5 block text-m3-body-small leading-relaxed text-[var(--color-m3-on-surface-variant)]">
                                             {t(noteKey)}
                                         </span>
                                     </span>
                                 </li>
                             ))}
                         </ul>
-                        <p className="mt-2.5 text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)]">
+                        <p className="mt-3 text-m3-body-small leading-relaxed text-[var(--color-m3-on-surface-variant)]">
                             {t('onboarding.how_models_footer')}
                         </p>
                     </div>
                 )}
+
+                <p className="mt-5 text-m3-body-medium intro-muted">{t('onboarding.how_note')}</p>
             </Body>
         </>
     );
@@ -531,12 +590,17 @@ interface OnboardingProps {
      * account's namespace to write (and to adopt the signed-out value into).
      */
     onHrtStartChange: (value: string) => void;
+    /** Current body weight in kg; feeds the distribution volume. */
+    weight: number;
+    /** Commits an edited weight through the same account-scoped data layer. */
+    onWeightChange: (kg: number) => void;
     /**
      * True when reached from Settings' "replay the intro" row rather than on a
      * first run. The flow is a re-read then, so it must not write back — the
      * start-date step in particular, where a stray tap would replace a date the
-     * user set months ago. Every other step is either purely informational or
-     * idempotent (language/mode), so only the start date is frozen.
+     * user set months ago. The body-weight step that follows is frozen for the
+     * same reason. Every other step is either purely informational or idempotent
+     * (language/mode), so only those two values are frozen.
      */
     replay?: boolean;
     onDone: () => void;
@@ -552,7 +616,7 @@ interface OnboardingProps {
  * invite tabbing away halfway through, leaving language and mode on defaults
  * that the flow exists to ask about.
  */
-const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, onHrtStartChange, replay = false, onDone }) => {
+const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, onHrtStartChange, weight, onWeightChange, replay = false, onDone }) => {
     const { t, lang, setLang, tIn, ensureAll } = useTranslation();
     const { mode, setMode, isTransmasc } = useHRTMode();
     const curve = useOnboardingCurve(isTransmasc);
@@ -787,8 +851,11 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                         Collapsible), with the picker held mounted through the close so
                         there is something to show on the way out. */}
                     {/* DateTimePicker's inline mode owns the unfolding motion, so
-                        the card just holds it. */}
-                    <div className="rounded-lg border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-low)] p-2">
+                        the card just holds it. The wrapper's own border and padding
+                        have to collapse with the picker, or a closed picker leaves an
+                        empty ~18px box under the field — the picker's content reaches
+                        zero height, but its parent's `p-2` does not. */}
+                    <div className={`rounded-lg border bg-[var(--color-m3-surface-container-low)] transition-[padding,border-color] duration-[250ms] ease-out ${isStartPickerOpen ? 'border-[var(--color-m3-outline-variant)] p-2' : 'border-transparent p-0'}`}>
                         <DateTimePicker
                             isOpen={isStartPickerOpen}
                             inline
@@ -811,6 +878,16 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                 </div>
                 )
             }
+        />,
+
+        /* Its own step, right after the date: both are the personal baseline the
+           model is fitted against, but the weight is a number to type rather than a
+           day to pick, so bundling the two made one step hold two answers. */
+        <IntroCard
+            key="weight"
+            title={t('onboarding.weight_title')}
+            description={t('onboarding.weight_subtitle')}
+            visual={<WeightVisual weight={weight} onChange={onWeightChange} replay={replay} />}
         />,
 
         <IntroCard
@@ -964,11 +1041,11 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                         {t('onboarding.privacy_title_2')}
                     </FitText>
                 </h1>
-                <p className="mt-4 text-m3-body-large intro-muted">
+                <p className="mt-4 text-m3-title-medium intro-muted">
                     {t('onboarding.privacy_subtitle')}
                 </p>
             </div>
-            <p className="w-full pb-1 pt-5 text-m3-label-medium intro-muted">
+            <p className="w-full pb-1 pt-5 text-m3-body-medium intro-muted">
                 {t('onboarding.privacy_cloud_note')}
             </p>
         </div>,
@@ -1087,7 +1164,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                     >
                         {isLast
                             ? t('onboarding.start')
-                            : (activeStepKeys[step] === 'started' && !hrtStartDate)
+                            : (activeStepKeys[step] === 'weight' || (activeStepKeys[step] === 'started' && !hrtStartDate))
                                 ? t('onboarding.skip_step')
                                 : t('onboarding.next')}
                     </button>

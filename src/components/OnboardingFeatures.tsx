@@ -519,8 +519,8 @@ export const BigLockAnimation: React.FC = () => {
         <div className="flex w-full items-center justify-center py-4 select-none">
             <svg
                 viewBox="0 0 96 116"
-                width={88}
-                height={106}
+                width={136}
+                height={164}
                 className="overflow-visible"
                 aria-hidden="true"
             >
