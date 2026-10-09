@@ -13,7 +13,7 @@ import { openExternalUrl } from '../utils/externalLinks';
 import { readMedReminders, writeMedReminders, rescheduleAllNativeNotifications, type MedReminder } from '../utils/medReminders';
 import { useBackHandler } from '../utils/nativeBack';
 import { APP_VERSION } from '../constants';
-import { checkNativeUpdate, downloadNativeUpdate } from '../utils/nativeUpdate';
+import { checkNativeUpdate, downloadNativeUpdate, fetchLatestApkUrl } from '../utils/nativeUpdate';
 
 interface SettingsProps {
     t: (key: string) => string;
@@ -341,11 +341,12 @@ const Settings: React.FC<SettingsProps> = ({
 
             {/* The Android app, for a web visitor: a direct link to the signed APK.
                 Not shown inside the native app (which updates itself — the row above),
-                so the two are mutually exclusive. The URL is built from APP_VERSION so
-                a version bump cannot leave it pointing at the previous release. */}
+                so the two are mutually exclusive. The URL comes from the update
+                manifest rather than this bundle's version, so re-releasing only the
+                APK does not leave the link pointing at the previous one. */}
             {!isNativeApp() && (
                 <button
-                    onClick={() => void openExternalUrl(`https://hrt.kiramyao.com/android/KiraHRT-${APP_VERSION.replace(/^v/, '')}-release.apk`)}
+                    onClick={async () => void openExternalUrl(await fetchLatestApkUrl())}
                     className={rowBase}
                 >
                     <div>

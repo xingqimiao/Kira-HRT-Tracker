@@ -15,6 +15,29 @@ export interface NativeUpdate {
 /** The manifest is deliberately hosted beside the public APK on the website. */
 export const NATIVE_UPDATE_MANIFEST_URL = UPDATE_MANIFEST_URL;
 
+/**
+ * The APK a *web* visitor should download.
+ *
+ * The website's download link used to be built from this bundle's own version, so
+ * re-releasing only the APK left the site pointing at the previous one — the web tree
+ * had to be redeployed just to move a link. Read the installed APK from the manifest
+ * instead, so the link follows the release; fall back to this build's own version only
+ * if the manifest cannot be read.
+ */
+const APK_URL_FROM_VERSION = `https://hrt.kiramyao.com/android/KiraHRT-${APP_VERSION.replace(/^v/, '')}-release.apk`;
+
+export async function fetchLatestApkUrl(): Promise<string> {
+    try {
+        const response = await fetch(UPDATE_MANIFEST_URL, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`Update manifest HTTP ${response.status}`);
+        const raw = await response.json() as { apk?: unknown };
+        if (typeof raw.apk === 'string' && /^https:\/\//i.test(raw.apk)) return raw.apk;
+    } catch {
+        // Fall through to the version-derived URL.
+    }
+    return APK_URL_FROM_VERSION;
+}
+
 /** Status of the self-update hand-off — see `downloadNativeUpdate`. */
 export type UpdatePhase = 'idle' | 'downloading' | 'installing' | 'permission' | 'error';
 
@@ -57,8 +80,7 @@ export async function checkNativeUpdate(): Promise<NativeUpdate | null> {
     };
 }
 
-/** The native bridge that fetches the APK and hands it to the installer. */
-interface UpdateBridge {
+/** The native bridge that fetches the APK and hands it to the installer. */interface UpdateBridge {
     download: (url: string) => void;
 }
 function updateBridge(): UpdateBridge | null {

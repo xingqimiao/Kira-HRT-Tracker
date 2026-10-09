@@ -14,6 +14,7 @@ import Icon from '../components/Icon';
 import DateTimePicker from '../components/DateTimePicker';
 import { Check, Plus, ChevronDown, AlertTriangle } from '../icons';
 import { buildMcpInstallPrompt } from '../utils/mcpInstallPrompt';
+import { fetchLatestApkUrl } from '../utils/nativeUpdate';
 import { LOCALE_MAP } from '../utils/helpers';
 import { toYmd, fromYmd } from '../utils/hrtStart';
 import { isPlausibleBodyWeightKG } from '../../logic';
@@ -549,6 +550,15 @@ const AccountPreview: React.FC = () => {
  */
 const PwaVisual: React.FC = () => {
     const { t } = useTranslation();
+    // Resolved from the update manifest so the download link tracks the released APK
+    // rather than this bundle's version; the version-derived URL is the initial value
+    // and the fallback, so the link is never empty.
+    const [apkUrl, setApkUrl] = useState(ANDROID_APK_URL);
+    useEffect(() => {
+        let alive = true;
+        void fetchLatestApkUrl().then(url => { if (alive) setApkUrl(url); });
+        return () => { alive = false; };
+    }, []);
     return (
         <div className="flex w-full flex-col items-center gap-5 py-6">
             <div className="relative">
@@ -570,7 +580,7 @@ const PwaVisual: React.FC = () => {
                 than the PWA. A direct link to the signed APK the update manifest also
                 names; the same file the in-app updater downloads. */}
             <a
-                href={ANDROID_APK_URL}
+                href={apkUrl}
                 className="text-xs font-medium text-[var(--color-m3-primary)] underline-offset-4 hover:underline"
             >
                 {t('onboarding.pwa_android')}
