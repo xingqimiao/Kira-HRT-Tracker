@@ -723,6 +723,23 @@ build-tools 36.0.0's `apksigner` has **no `--idsig` option** — sign straight t
 `releases/`, no `.idsig`. The certificate SHA-256 must match the live APK or the new
 build will not install over the existing app (it is `4d5837f8…` for this key).
 
+**How the install itself is offered (the `HrtUpdate` bridge).** The in-app update is not
+`openUrl` — handing an `.apk` URL to the browser only *downloads* the file and never offers
+to install it (the 1.0.3→1.0.4 bug: "tap update, jump away, nothing happens"). Instead
+`scripts/MainActivity.kt` exposes an `HrtUpdate` JavascriptInterface that fetches the APK
+into the app cache, serves it through the FileProvider in the manifest, and fires
+`ACTION_VIEW` with `application/vnd.android.package-archive` — the system installer prompt.
+That needs **`android.permission.REQUEST_INSTALL_PACKAGES`**, which
+`scripts/patch-android-theme.mjs` declares into the gitignored gen/ manifest on every build
+(an in-place edit there would not survive `tauri android init`). On Android 8+ the first
+install also needs the per-app "install unknown apps" toggle; the bridge detects that,
+opens the settings screen, and reports a `permission` state the JS retries from.
+
+Because the fix lives in the *installed app's* code, a device still running a build from
+before it must install the new APK **once, by hand** (download from the website, open it) —
+an in-app tap on the broken build does nothing by definition. In-app updates work from
+1.0.5 onward.
+
 ### Update latest.json, then publish
 
 Put the real APK SHA-256 into `public/android/latest.json` (`sha256`, uppercase) and the
