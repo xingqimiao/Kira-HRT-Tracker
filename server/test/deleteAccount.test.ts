@@ -133,28 +133,39 @@ test('the account summary reports what deletion would remove', async () => {
   assert.equal(summary.body.dose_count, 1);
   assert.equal(summary.body.lab_count, 1);
   assert.ok(summary.body.created_at, 'reports when the account was created');
-  // No X linked, so there is no avatar to show — and the header falls back to its
-  // placeholder glyph. Asserted explicitly because `null` and "absent" are easy to
-  // confuse, and the client reads this key directly.
-  assert.equal(summary.body.x_avatar_url, null, 'no linked X means no avatar');
+  // No provider linked, so there is no stored image and no avatar to show — the header
+  // falls back to its placeholder glyph. Asserted explicitly because `null` and "absent"
+  // are easy to confuse, and the client reads this key directly. The field is
+  // `avatar_url` (not the old `x_avatar_url`): it is a path on our own origin, not a
+  // provider URL, because the app is served with `img-src 'self'`.
+  assert.equal(summary.body.avatar_url, null, 'no stored image means no avatar');
 
   const anon = await call(base, '/auth/account');
   assert.equal(anon.status, 401, 'the summary requires a session');
 });
 
-test('the account summary carries the linked X avatar for the header', async () => {
+test('the account summary carries the linked avatar for the header', async () => {
   const account = await registerAccount(base);
   const userId = await userIdFor(account.username);
+  const providerUrl = 'https://example.test/avatar.jpg';
   const pool = await getPool();
+  // The summary keys off stored *bytes*, not the provider's URL: the app is served with
+  // `img-src 'self'`, so a provider URL could never render. The row therefore carries an
+  // image, and what the summary returns is our own path on the API origin.
   await pool.query(
-    `INSERT INTO oauth_accounts (user_id, provider, provider_user_id, handle, avatar_url)
-     VALUES ($1, 'x', '12345', 'somebody', $2)`,
-    [userId, 'https://example.test/avatar.jpg'],
+    `INSERT INTO oauth_accounts
+       (user_id, provider, provider_user_id, handle, avatar_url, avatar_image, avatar_content_type)
+     VALUES ($1, 'x', '12345', 'somebody', $2, $3, 'image/jpeg')`,
+    [userId, providerUrl, Buffer.from('jpeg-bytes')],
   );
 
   const summary = await call(base, '/auth/account', auth(account.token));
   assert.equal(summary.status, 200, JSON.stringify(summary.body));
-  assert.equal(summary.body.x_avatar_url, 'https://example.test/avatar.jpg');
+  assert.equal(summary.body.avatar_url, `https://api.hrt.test/auth/avatar/${userId}`);
+  assert.ok(
+    !String(summary.body.avatar_url).includes('example.test'),
+    'the provider URL is never what the browser is handed',
+  );
 });
 
 test('deletion is complete: no user-scoped row survives', async () => {

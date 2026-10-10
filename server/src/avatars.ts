@@ -30,6 +30,7 @@
  * the request the browser makes reveals nothing to X or Google.
  */
 import { getPool } from './db.ts';
+import { isBlockedHost } from './urlGuard.ts';
 
 /**
  * Source and ceiling, recorded because they are the two things a later reader cannot
@@ -126,10 +127,15 @@ export async function fetchAvatarImage(url: string | null): Promise<
     return null;
   }
   if (target.protocol !== 'https:') return null;
+  // The URL comes from a provider token response, which is parsed rather than verified,
+  // so the host is screened before the request: `https:` alone still permits the loopback
+  // interface or the link-local metadata endpoint. Redirects are refused rather than
+  // followed, which closes the "public host bounces to an internal one" bypass.
+  if (isBlockedHost(target.hostname)) return null;
 
   try {
     const res = await fetch(target, {
-      redirect: 'follow',
+      redirect: 'error',
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!res.ok) return null;

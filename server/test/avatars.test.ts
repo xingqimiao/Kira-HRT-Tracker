@@ -315,6 +315,24 @@ test('a URL the provider calls a picture is not trusted to be one', async () => 
   assert.equal(await fetchAvatarImage('file:///etc/passwd'), null);
   assert.equal(await fetchAvatarImage('http://cdn.example.test/insecure.png'), null);
 
+  // The host itself is screened, not just the scheme. These never reach the network: a
+  // provider that named its own loopback, a private address, or the cloud metadata
+  // endpoint must produce "no avatar", not a request from inside our network.
+  const intraNetwork = [
+    'https://127.0.0.1/photo.png',
+    'https://localhost/photo.png',
+    'https://[::1]/photo.png',
+    'https://169.254.169.254/latest/meta-data/',
+    'https://10.0.0.5/photo.png',
+    'https://192.168.1.1/photo.png',
+    'https://172.16.9.9/photo.png',
+    'https://[::ffff:127.0.0.1]/photo.png',
+    'https://metadata.google.internal/photo.png',
+  ];
+  for (const url of intraNetwork) {
+    assert.equal(await fetchAvatarImage(url), null, `refused: ${url}`);
+  }
+
   const svg = stubCdn(() => new Response('<svg onload="alert(1)"/>', {
     status: 200,
     headers: { 'Content-Type': 'image/svg+xml' },

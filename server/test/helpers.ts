@@ -13,6 +13,7 @@
  * The config must already be installed by the caller (see `setConfigForTesting`).
  */
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 
 import { call } from './pg.ts';
 export interface TestAccount {
@@ -25,7 +26,7 @@ export interface TestAccount {
 
 /** A distinct username per call, so tests never collide across runs. */
 function freshUsername(prefix = 't'): string {
-  return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.slice(0, 30);
+  return `${prefix}${Date.now().toString(36)}${randomBytes(4).toString('hex')}`.slice(0, 30);
 }
 
 /**

@@ -1,136 +1,124 @@
 # Security Documentation
 
-This document outlines the security measures implemented in this application and provides guidance for secure deployment.
+How this project protects accounts and record data, and what a deployment has to
+configure. It describes the code in `server/src/`; when a claim here and the code
+disagree, the code wins — this file has drifted before.
 
-## Security Improvements Implemented
+Two hosts, by design: the web app is static (`PUBLIC_ORIGIN`, e.g. `hrt.example.com`)
+and the API is a stateful process (`API_ORIGIN`, e.g. `api.example.com`). A compromise
+or cache poisoning on the static side therefore cannot reach the data plane.
 
-### 1. JWT Secret Validation
-- **Issue**: Application previously used a weak fallback secret (`'fallback-secret'`) if `JWT_SECRET` environment variable was not set
-- **Fix**: Added `validateJWTSecret()` function that:
-  - Ensures `JWT_SECRET` is set
-  - Rejects secrets shorter than 32 characters
-  - Rejects the hardcoded fallback value
-  - Throws an error on startup if requirements are not met
-- **Impact**: Prevents deployment with weak JWT secrets
+## Authentication
 
-### 2. Timing Attack Protection
-- **Issue**: Admin password comparison used simple string equality (`===`), vulnerable to timing attacks
-- **Fix**: Implemented `timingSafeEqual()` function for constant-time string comparison
-- **Impact**: Prevents attackers from using timing analysis to guess admin credentials
+- **Passwords** are hashed with `scrypt` and verified with `crypto.timingSafeEqual`, so
+  comparison is constant-time (`server/src/accounts.ts`).
+- **Sessions** are opaque `ks_` tokens, stored hashed and expiring after
+  `SESSION_TTL_MINUTES`. A session can be listed and revoked individually.
+- **Durable agent tokens** are `hrt_` values, stored only as a SHA-256 hash
+  (`hashToken()`); the plaintext is shown once and never persisted. Lookups are
+  parameterized queries keyed on the hash.
+- **Social login** (X, Google) is optional per provider. X uses PKCE; Google's web
+  client authenticates with the secret and carries identity in the ID token. Google
+  asks for `openid profile` and never `email`.
+- **Username enumeration** is avoided: a wrong password and an unknown user return the
+  same generic failure.
+- **Turnstile** (optional) is enabled only when both `TURNSTILE_SECRET` and
+  `TURNSTILE_HOSTNAMES` are set; the reply's hostname is checked against the allowlist,
+  because a token alone would not prove which site minted it.
 
-### 3. Rate Limiting
-- **Issue**: No rate limiting on authentication endpoints allowed brute-force attacks
-- **Fix**: Added rate limiting with:
-  - 5 requests per minute per IP for `/api/login` and `/api/register`
-  - Returns HTTP 429 (Too Many Requests) when limit exceeded
-  - Includes `Retry-After` header
-  - Automatic cleanup of expired entries to prevent memory leaks (max 10,000 entries)
-  - Rejects requests without identifiable IP to prevent rate limit bypass
-- **Impact**: Significantly reduces brute-force attack effectiveness
-- **Note**: This is an in-memory implementation suitable for single-instance deployments
+## Record encryption
 
-### 4. Input Validation
-- **Issue**: No validation of username format or password strength
-- **Fix**: Added validation functions:
-  - `validateUsername()`: Ensures 3-30 characters, alphanumeric plus underscore and hyphen
-  - `validatePassword()`: Enforces 8-128 character length
-- **Impact**: Prevents injection attacks and ensures basic password security
+Every business field of a dose, lab, journal entry, or template is stored as one
+AES-256-GCM blob under `ENCRYPTION_KEY`. The GCM tag length (16 bytes) and IV length
+(12 bytes) are validated before decryption, not merely assumed.
 
-### 5. Content-Type Validation
-- **Issue**: Endpoints accepting JSON did not validate Content-Type header
-- **Fix**: Added Content-Type validation for all JSON endpoints
-- **Impact**: Prevents potential CSRF and content-type confusion attacks
+This is **not** end-to-end encryption: the server decrypts on read. The guarantee is
+"a database dump is useless without the key". Each account has its own data key (DEK);
+`SERVER_DEK_KEY` is the deployment's wrapped copy so an unlocked token can reach records
+without the user re-entering a password. With no `SERVER_DEK_KEY`, the account is
+"locked" and record tools report that rather than failing as an auth error.
 
-### 6. Username Enumeration Protection
-- **Issue**: Different error messages for non-existent users vs wrong password
-- **Fix**: Returns generic "Invalid credentials" message in both cases
-- **Impact**: Prevents attackers from determining valid usernames
+## Transport and request handling
 
-### 7. Response Headers
-- **Issue**: Missing Content-Type headers in JSON responses
-- **Fix**: Added `Content-Type: application/json` to all JSON responses
-- **Impact**: Prevents content-type confusion attacks
+- **CORS is an exact-match allowlist**, never a reflected `Origin`, and
+  `Allow-Credentials` is only sent to a listed origin. This is required because the API
+  is called with credentials from one known site.
+- **Baseline response headers** on every response (`server/src/http.ts`): `nosniff`,
+  `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`,
+  `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'`,
+  HSTS, and `Cache-Control: no-store`.
+- **Rate limiting** is a per-IP fixed window plus a per-account lockout: the first stops
+  one host spraying many accounts, the second stops a botnet focusing on one account.
+  It is in-memory and per-process (a `ponytail:` note marks the Redis upgrade path).
+- **Inbound JSON** endpoints validate `Content-Type`.
+- **SQL** is parameterized throughout (`pg` with `$1…` placeholders). No string-built
+  queries.
 
-## Security Configuration Requirements
+## Outbound requests (SSRF)
 
-### Required Environment Variables
+The server fetches two kinds of URL: fixed provider endpoints (X/Google token and
+profile hosts, which are compile-time constants) and the avatar URL named by a provider
+token response. That second one is untrusted — it is parsed, not verified — so before
+the request the host is screened (`server/src/urlGuard.ts`): loopback, private, CGNAT,
+link-local (including the cloud metadata endpoint `169.254.169.254`), reserved, and
+multicast ranges are refused, as are `.localhost`/`.internal` names and IPv4-mapped IPv6
+literals. Redirects are refused rather than followed, so a public host cannot bounce the
+request to an internal one. The body is size-capped and must be a png/jpeg/webp —
+`image/svg+xml` and `text/html` are dropped, so an error page or a script container can
+never be stored as an avatar.
 
-1. **JWT_SECRET** (Required)
-   - Must be at least 32 characters long
-   - Should be cryptographically random
-   - Example generation: `openssl rand -base64 48`
-   - **NEVER** commit this to version control
+## Security configuration requirements
 
-2. **ADMIN_USERNAME** (Optional)
-   - If set, enables admin access via environment variables
-   - Should be unique and not easily guessable
+Set these in the process environment (the systemd unit on the deployment host keeps the
+secrets encrypted on disk). Read once and validated at boot, so a bad paste fails at
+startup rather than on the first request.
 
-3. **ADMIN_PASSWORD** (Optional)
-   - If set alongside ADMIN_USERNAME, enables admin login
-   - Should be strong and unique
-   - Store securely (e.g., in Cloudflare Workers secrets)
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | yes | PostgreSQL connection string. |
+| `PUBLIC_ORIGIN` | yes | The web app origin. Used for the CORS allowlist and OAuth bounce targets. Bare origin, no trailing slash. |
+| `API_ORIGIN` | yes | This server's own public origin — the OAuth callback host. |
+| `ENCRYPTION_KEY` | production | Record-payload key. `openssl rand -base64 32`. Required when `NODE_ENV=production`. |
+| `SERVER_DEK_KEY` | production | Deployment's wrapped copy of each account's data key, 32+ chars. Required in production. |
+| `PORT` | no | Default `8788`. |
+| `BASE_PATH` | no | Path prefix on a shared host (e.g. `/hrt`). No `.`/`..` segments. |
+| `BIND_HOST` | no | Interface to bind. Defaults to `127.0.0.1` — put a reverse proxy in front. |
+| `SESSION_TTL_MINUTES` | no | Session lifetime. |
+| `RATE_LIMIT_LOGIN` / `RATE_LIMIT_REGISTER` / `RATE_LIMIT_WINDOW_MS` | no | Rate-limit tuning. |
+| `X_CLIENT_ID` / `X_CLIENT_SECRET` / `X_REDIRECT_URI` | optional | All three together, or none. `X_REDIRECT_URI` must be https outside localhost. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` | optional | All three together, or none. Must match the Cloud Console registration byte for byte. |
+| `TURNSTILE_SECRET` / `TURNSTILE_HOSTNAMES` | optional | Both together, or neither. |
+| `CREDENTIALS_DIRECTORY` | no | systemd credential directory, read for keys. |
+| `HRT_UNLOCK_TOKEN` | no | For the stdio MCP adapter: an unlock token so the local server can read records. |
 
-### Deployment Checklist
+Half-configured provider blocks (one of three variables set) are refused at boot, because
+that is the mistake that silently half-works.
 
-- [ ] Generate a strong JWT_SECRET (at least 32 characters)
-- [ ] Configure JWT_SECRET in your deployment environment
-- [ ] If using admin account, set strong ADMIN_USERNAME and ADMIN_PASSWORD
-- [ ] Verify CORS configuration matches your deployment needs
-- [ ] Enable HTTPS (should be automatic with Cloudflare Workers)
-- [ ] Review rate limiting settings for your expected traffic
-- [ ] Monitor authentication logs for suspicious activity
+## Deployment checklist
 
-## Known Security Considerations
+- [ ] Set `DATABASE_URL`, `PUBLIC_ORIGIN`, `API_ORIGIN` in the environment.
+- [ ] Generate and set `ENCRYPTION_KEY` and `SERVER_DEK_KEY` (`openssl rand -base64 32`); never commit them.
+- [ ] Keep `BIND_HOST` on loopback and terminate TLS at the reverse proxy.
+- [ ] Configure the CORS allowlist to the exact production origin.
+- [ ] If social login is used, register the callback URIs exactly as configured.
+- [ ] If Turnstile is used, list the site hostnames.
+- [ ] Review rate-limit settings for expected traffic.
+- [ ] Monitor authentication and error logs for suspicious activity.
 
-### CORS Configuration
-The application currently uses `Access-Control-Allow-Origin: *` which allows requests from any origin. This is appropriate for a public-facing API where authentication is handled via JWT tokens. However, consider restricting this to specific domains in production if your use case allows.
+## Known considerations
 
-### Rate Limiting
-The current rate limiting implementation is in-memory and will be reset when the worker restarts. For production deployments with multiple instances, consider using:
-- Cloudflare Workers KV or Durable Objects for distributed rate limiting
-- Cloudflare's built-in rate limiting features
+- **Rate limiting** is in-memory; a multi-instance deployment needs a shared store.
+- **Password policy** enforces 8–128 characters. No composition rules are imposed.
+- **DNS rebinding** is not guarded: `urlGuard.ts` screens the literal host, not where a
+  public name resolves. The only writers of an avatar URL are the X and Google callbacks;
+  the upgrade path is to resolve the name and pin the connection to the address.
+- **Dependencies**: run `npm audit` (root and `server/`) before a release.
 
-### Password Strength
-The current password validation enforces a minimum length of 8 characters. Consider implementing additional requirements:
-- At least one uppercase letter
-- At least one lowercase letter
-- At least one number
-- At least one special character
+## Reporting security issues
 
-### Session Management
-JWT tokens are set to expire after:
-- Admin tokens: 1 day
-- User tokens: 7 days
-
-Consider implementing:
-- Refresh tokens for longer sessions
-- Token revocation mechanism
-- Session logging and monitoring
-
-### SQL Injection
-The application uses parameterized queries throughout, which provides good protection against SQL injection. Continue to use prepared statements with `.bind()` for all database operations.
-
-### Dependencies
-Regularly update dependencies to patch security vulnerabilities:
-```bash
-npm audit
-npm audit fix
-```
-
-## Security Best Practices
-
-1. **Never commit secrets**: Use environment variables for all sensitive data
-2. **Use HTTPS**: Always deploy with HTTPS enabled (automatic with Cloudflare Workers)
-3. **Monitor logs**: Regularly review authentication and error logs
-4. **Update dependencies**: Keep all packages up to date
-5. **Test security**: Regularly test authentication and authorization logic
-6. **Backup data**: Maintain regular backups of the database
-7. **Incident response**: Have a plan for responding to security incidents
-
-## Reporting Security Issues
-
-If you discover a security vulnerability, please report it to the maintainers privately rather than opening a public issue. This allows for coordinated disclosure and patching.
+Report privately to the maintainers rather than in a public issue, so a fix can ship
+before disclosure.
 
 ## License
 
-This security documentation is part of the HRT Recorder Web project and is subject to the same MIT License.
+This documentation is part of the HRT project and subject to the same license as the code.
