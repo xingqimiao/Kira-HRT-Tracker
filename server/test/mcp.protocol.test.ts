@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { test, before, after } from 'node:test';
 import type { Server } from 'node:http';
 
-import { bootPostgres, useDatabase, startApiServer, teardown, TEST_ENCRYPTION_KEY, type PostgresHandle } from './pg.ts';
+import { bootPostgres, useDatabase, startApiServer, teardown, type PostgresHandle } from './pg.ts';
 import { registerAccount } from './helpers.ts';
 import { setConfigForTesting } from '../src/config.ts';
 import {
@@ -44,7 +44,6 @@ before(async () => {
     // The add tools write records, and the store seals every payload: without a key
     // it refuses rather than writing plaintext, which is the behaviour under test in
     // `check-records.mjs` rather than something to work around here.
-    encryptionKey: TEST_ENCRYPTION_KEY,
     google: null,
     turnstile: null,
     x: null,

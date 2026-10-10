@@ -34,7 +34,6 @@
 import { randomUUID } from 'node:crypto';
 
 import { getPool, withTransaction } from './db.ts';
-import { getConfig } from './config.ts';
 import { openPayload, sealPayload } from './payloadCrypto.ts';
 import {
     settings, settingsScalarFor, settingsScalars, appStateForRead, type SettingsScalar,
@@ -281,19 +280,14 @@ function dekKey(ctx: AuthContext): Buffer {
     return key;
 }
 
-/** The v1 platform key, for rows written before per-account sealing. Null if unset. */
-function platformKey(): Buffer | null {
-    return getConfig().encryptionKey;
-}
-
-/** Seal a payload under its account's DEK, tagged so a reader knows that. */
+/** Seal a payload under its account's DEK. */
 function seal(data: unknown, ctx: AuthContext): string {
     return sealPayload(data, dekKey(ctx));
 }
 
-/** Open a payload with the key its version names, honouring v1 legacy rows. */
+/** Open a payload under its account's DEK. */
 function open(sealed: string, ctx: AuthContext): unknown {
-    return openPayload(sealed, { dek: dekKey(ctx), platform: platformKey() });
+    return openPayload(sealed, dekKey(ctx));
 }
 
 function isCategory(value: unknown): value is RecordCategory {

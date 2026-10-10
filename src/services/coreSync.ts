@@ -27,9 +27,10 @@
  * ── Encryption is the server's job here ──────────────────────────────────────
  *
  * The client sends plaintext JSON and receives plaintext JSON. Sealing and opening
- * happen server-side under `ENCRYPTION_KEY`, which is what the hosted architecture
- * chose: the server can read the records it stores. The claim this supports is that a
- * stolen database dump is useless, not that the operator cannot see the data.
+ * happen server-side under the account's data key, which the deployment can unwrap
+ * with `SERVER_DEK_KEY`: the server can read the records it stores. The claim this
+ * supports is that a stolen database dump is useless, not that the operator cannot see
+ * the data.
  */
 import { apiEndpoint, apiFetch } from './apiClient';
 import { payloadToRecords, recordsToPayload, type RecordDoc } from './recordDocs';

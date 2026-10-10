@@ -64,8 +64,9 @@ needs a specific shape:
 server wrapper) and an `advanced` one (password wrapper only, no server wrapper).
 The choice was the last piece of the zero-knowledge design this service abandoned:
 it only meant anything while `advanced` could be enforced, and it could not be,
-because the same deployment already held `ENCRYPTION_KEY` and decrypted every
-record on read. An account whose wrapper set promises the operator cannot open it,
+because the same deployment already held the key material that opens every account's
+records and decrypted them on read (`SERVER_DEK_KEY` unwraps each DEK). An account
+whose wrapper set promises the operator cannot open it,
 on a server that opens it anyway, is a claim in the database that nothing checks.
 So the column and its check are dropped, every account is written with the server
 wrapper from its first request, and a password unlock adds the wrapper to an
@@ -82,7 +83,8 @@ The honest description was never **"the server never sees the data"**, and one
 arrangement makes that easier to state rather than harder: there is no longer a
 mode in which it is even arguably true. What the arrangement does deliver is the
 bound `payloadCrypto.ts` states — **a stolen database dump is unreadable without
-`ENCRYPTION_KEY`**, a key kept outside the database. Nobody should read the
+the deployment's key material**, `SERVER_DEK_KEY` being kept outside the database.
+Nobody should read the
 encryption and conclude the operator cannot see the data.
 
 Two consequences follow, both accepted deliberately:
@@ -114,8 +116,9 @@ operations", and the app states the same boundary to the user on its MCP page.
 protect the data key: a credential's **PRF extension output** derived the KEK that
 wrapped the DEK, registration refused any credential that did not return a PRF output,
 and the UI hid the whole thing on a browser that could not do PRF. That is the
-zero-knowledge design this service abandoned. Once the server holds `ENCRYPTION_KEY`
-and decrypts on read, a passkey that no longer derives anything is a button whose
+zero-knowledge design this service abandoned. Once the server holds the key material
+that opens every account's records (`SERVER_DEK_KEY`) and decrypts on read, a passkey
+that no longer derives anything is a button whose
 description is a lie — so it is gone, along with `webauthn_credentials` and
 `webauthn_challenges`.
 

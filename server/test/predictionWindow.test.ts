@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import { test, before, after } from 'node:test';
 import type { Server } from 'node:http';
 
-import { bootPostgres, useDatabase, startApiServer, teardown, call, TEST_ENCRYPTION_KEY, type PostgresHandle } from './pg.ts';
+import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
 import { registerAccount } from './helpers.ts';
 import { setConfigForTesting } from '../src/config.ts';
 
@@ -28,7 +28,7 @@ before(async () => {
     publicOrigin: 'https://hrt.test', apiOrigin: 'https://api.hrt.test', basePath: '',
     apiBaseUrl: 'https://api.hrt.test', port: 0, databaseUrl: '',
     serverDekKey: 'test-server-dek-key-0123456789abcdef', keysFromCredentials: [],
-    encryptionKey: TEST_ENCRYPTION_KEY, turnstile: null, x: null, google: null,
+    turnstile: null, x: null, google: null,
     sessionTtlMinutes: 30, rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },
   });
   pg = await bootPostgres({ dir: './.pgdata-window', port: 55446, database: 'hrt_window' });

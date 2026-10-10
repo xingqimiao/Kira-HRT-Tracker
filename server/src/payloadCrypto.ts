@@ -6,10 +6,10 @@
  * This is **encryption at rest with a server-held key**, not end-to-end encryption.
  * The server can decrypt every record it stores, because it is the server that
  * decrypts them on read. That is the deliberate architecture: a cloud-hosted product
- * where the operator holds the key, so the operator can also help when something goes
- * wrong. Nobody should read `ENCRYPTION_KEY` and conclude the operator cannot see the
- * data — the honest claim is "a stolen database dump is useless without this key", and
- * that is the claim this module delivers.
+ * where the operator holds the keys, so the operator can also help when something goes
+ * wrong. Nobody should read the account key material and conclude the operator cannot
+ * see the data — the honest claim is "a stolen database dump is useless without the
+ * deployment's `SERVER_DEK_KEY`", and that is the claim this module delivers.
  *
  * ── Why the payload is one blob ──────────────────────────────────────────────
  *
@@ -19,19 +19,17 @@
  * encryption would leak the shape of every record (which fields exist, how many), and
  * buys nothing here because the same process holds the key either way.
  *
- * ── Format, and the version tag ──────────────────────────────────────────────
+ * ── Format ───────────────────────────────────────────────────────────────────
  *
  * `"iv:tag:ciphertext"`, each part base64. AES-256-GCM, so the ciphertext carries an
  * authentication tag: a modified value fails to decrypt rather than producing a
  * plausible-looking dose. For medication history that distinction matters — refusing
  * to read is far better than confidently reading the wrong number.
  *
- * V1 is that three-part form, sealed under the deployment's `ENCRYPTION_KEY`.
- * V2 is `"v2:iv:tag:ciphertext"`, sealed under the owning account's own DEK. The
- * tag travels **inside the value** rather than in a column because a reader holding
- * a row must know which key opens it before it tries, and a new column cannot be
- * added by `CREATE TABLE IF NOT EXISTS` on boot. A row with no tag is v1 by
- * definition, which is what lets an old backup still open.
+ * Every stored row is a tagged value: `sealPayload` prefixes `"v2:"` to mark that the
+ * row is sealed under the owning account's own DEK (`records.ts`). The tag is a fixed
+ * marker now; it once distinguished a row sealed under a since-retired deployment-wide
+ * key, and a row carrying no tag is that old shape, which `openPayload` refuses.
  */
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
@@ -44,35 +42,6 @@ const KEY_BYTES = 32;
 /** GCM's authentication tag. */
 const TAG_BYTES = 16;
 
-/**
- * The master key, from the environment.
- *
- * Accepts base64 or hex, because both are things people paste into a `.env`. A wrong
- * length is rejected here rather than at the first request: a 16-byte value would
- * otherwise fail per write, or be silently stretched into something that looks like it
- * works, and either way the failure would surface as "records won't save" long after
- * deployment.
- *
- * Called at startup, not per request — see `requireEncryptionKey`.
- */
-export function keyFromEnv(raw: string | undefined): Buffer {
-    if (!raw || raw.trim() === '') {
-        throw new Error('ENCRYPTION_KEY is required (32 bytes, base64 or hex)');
-    }
-
-    const value = raw.trim();
-    const isHex = /^[0-9a-fA-F]{64}$/.test(value);
-    const key = Buffer.from(value, isHex ? 'hex' : 'base64');
-
-    if (key.length !== KEY_BYTES) {
-        throw new Error(
-            `ENCRYPTION_KEY must decode to 32 bytes, got ${key.length}. `
-            + 'Generate one with: openssl rand -base64 32',
-        );
-    }
-    return key;
-}
-
 /** Serialise a record for storage. Stable enough that the same input seals twice. */
 function serialise(payload: unknown): Buffer {
     return Buffer.from(JSON.stringify(payload), 'utf8');
@@ -81,42 +50,35 @@ function serialise(payload: unknown): Buffer {
 /**
  * The tag on a payload sealed under an account's own DEK.
  *
- * Exported so callers and diagnostics do not hand-roll the string; the version is
- * part of the value, not a convention to be remembered.
+ * Exported so callers and diagnostics do not hand-roll the string; the tag is part of
+ * the value, not a convention to be remembered.
  */
 export const DEK_SEALED_PREFIX = 'v2:';
 
 /**
- * Seal one account's payload under its DEK, tagged as v2.
+ * Seal one account's payload under its DEK.
  *
- * The tag is what tells a later reader that this row is the account's, not the
- * deployment's — see `openPayload`.
+ * The tag marks the row as the account's own, which is what `openPayload` requires.
  */
 export function sealPayload(payload: unknown, dekKey: Buffer): string {
     return DEK_SEALED_PREFIX + encryptPayload(payload, dekKey);
 }
 
 /**
- * Open a payload with the key its version says sealed it.
+ * Open one account's payload.
  *
- * A `v2:` row is the owning account's: it opens under the DEK the caller resolved
- * for that account, so the row is useless to anyone holding a *different* account's
- * key. A row with no tag is v1, sealed under the deployment's platform key before
- * per-account sealing existed; it stays readable so an old backup restored into a
- * fresh database still opens. A v1 row seen by a deployment with no platform key is
- * unreadable, which every caller already reports as such rather than as empty.
+ * The row must carry the `v2:` tag and open under the DEK the caller resolved for that
+ * account, so it is useless to anyone holding a *different* account's key. A row with
+ * no tag is refused rather than guessed at: the only untagged rows this service ever
+ * wrote were sealed under the retired deployment-wide key, which no longer exists, so
+ * reading one as if it were DEK-sealed would produce an authentication failure at best
+ * and a mis-attributed record at worst.
  */
-export function openPayload(
-    sealed: string,
-    keys: { dek: Buffer; platform: Buffer | null },
-): unknown {
-    if (sealed.startsWith(DEK_SEALED_PREFIX)) {
-        return decryptPayload(sealed.slice(DEK_SEALED_PREFIX.length), keys.dek);
+export function openPayload(sealed: string, dekKey: Buffer): unknown {
+    if (!sealed.startsWith(DEK_SEALED_PREFIX)) {
+        throw new Error('row has no per-account seal tag; it predates per-account keys and cannot be read');
     }
-    if (!keys.platform) {
-        throw new Error('row is sealed under the v1 platform key, which is not configured');
-    }
-    return decryptPayload(sealed, keys.platform);
+    return decryptPayload(sealed.slice(DEK_SEALED_PREFIX.length), dekKey);
 }
 
 /**
@@ -180,10 +142,8 @@ export function decryptPayload(sealed: string, key: Buffer): unknown {
  * handed to `decryptPayload` and surfacing as a generic authentication failure.
  */
 export function isEncryptedPayload(value: unknown): value is string {
-    if (typeof value !== 'string') return false;
-    const body = value.startsWith(DEK_SEALED_PREFIX)
-        ? value.slice(DEK_SEALED_PREFIX.length)
-        : value;
+    if (typeof value !== 'string' || !value.startsWith(DEK_SEALED_PREFIX)) return false;
+    const body = value.slice(DEK_SEALED_PREFIX.length);
     const parts = body.split(':');
     if (parts.length !== 3) return false;
     return Buffer.from(parts[0], 'base64').length === IV_BYTES

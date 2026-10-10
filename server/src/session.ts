@@ -2,12 +2,12 @@
  * Session-scoped key handling.
  *
  * What the product claims, and what this file has to keep true: the operator cannot
- * read a record from a stolen database dump, because every payload is sealed under
- * `ENCRYPTION_KEY` and that key is not in the database. It is **not** the stronger
- * claim that the server can never read a record — this deployment holds the key and
- * decrypts on read, and every account's DEK is also wrapped under `SERVER_DEK_KEY` so
- * the server can open it without the user being present. `payloadCrypto.ts` states the
- * same bound; a comment here that promises more is the defect that keeps getting
+ * read a record from a stolen database dump, because every payload is sealed under the
+ * account's own DEK, and that DEK is stored only as a ciphertext. It is **not** the
+ * stronger claim that the server can never read a record — this deployment holds
+ * `SERVER_DEK_KEY`, unwraps every account's DEK with it, and decrypts on read, so the
+ * server can open a record without the user being present. `payloadCrypto.ts` states
+ * the same bound; a comment here that promises more is the defect that keeps getting
  * reintroduced.
  *
  * So this is what each party holds:

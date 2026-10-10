@@ -14,7 +14,7 @@ import type { Server } from 'node:http';
 
 import {
   bootPostgres, useDatabase, startApiServer, teardown, call,
-  TEST_ENCRYPTION_KEY, type PostgresHandle,
+  type PostgresHandle,
 } from './pg.ts';
 import { registerAccount, registerAccountWithKey } from './helpers.ts';
 import { DEK_SEALED_PREFIX } from '../src/payloadCrypto.ts';
@@ -35,7 +35,6 @@ before(async () => {
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
     keysFromCredentials: [],
     google: null,
-    encryptionKey: TEST_ENCRYPTION_KEY,
     turnstile: null,
     x: null,
     sessionTtlMinutes: 30,
@@ -169,8 +168,8 @@ test('a record is sealed under its own account, not the platform key', async () 
   const opened = decryptPayload(body, Buffer.from(a.dek, 'base64')) as { med_name: string };
   assert.equal(opened.med_name, secret, "the owner's key did not open the row");
   assert.throws(
-    () => decryptPayload(body, TEST_ENCRYPTION_KEY),
-    'the platform key opened a per-account row',
+    () => decryptPayload(body, Buffer.alloc(32, 0x2a)),
+    'an unrelated key opened a per-account row',
   );
   assert.throws(
     () => decryptPayload(body, Buffer.from(b.dek, 'base64')),
@@ -178,15 +177,15 @@ test('a record is sealed under its own account, not the platform key', async () 
   );
 });
 
-test('a v1 row sealed under the platform key still opens', async () => {
-  // The format carries which key sealed a row so an old backup restored into a fresh
-  // database still reads. This seeds a row in the pre-DEK shape and reads it back
-  // through the API, which is the path a restored backup takes.
+test('an untagged legacy row is refused rather than mis-read', async () => {
+  // The only untagged rows this service ever wrote were sealed under the retired
+  // deployment-wide key, which no longer exists. A row in that shape must be reported
+  // unreadable rather than guessed at: opening it as if it were DEK-sealed would at
+  // best fail authentication and at worst attach one account's data to another's row.
   const account = await registerAccountWithKey(base, {});
-  const secret = 'LEGACY_V1_PROBE_7741';
   const { getPool } = await import('../src/db.ts');
   const { encryptPayload } = await import('../src/payloadCrypto.ts');
-  const legacy = encryptPayload({ med_name: secret }, TEST_ENCRYPTION_KEY);
+  const legacy = encryptPayload({ med_name: 'LEGACY_PROBE' }, Buffer.alloc(32, 0x2a));
 
   await getPool().query(
     `INSERT INTO records (user_id, taken_at, category, payload_encrypted, id)
@@ -199,10 +198,10 @@ test('a v1 row sealed under the platform key still opens', async () => {
     records: { data: { med_name: string } }[];
     unreadable: number;
   };
-  assert.equal(unreadable, 0, 'a v1 row must not be reported unreadable');
+  assert.equal(unreadable, 1, 'an untagged row must be reported unreadable, not silently dropped');
   assert.ok(
-    records.some((r) => r.data?.med_name === secret),
-    'the v1 row did not open',
+    !records.some((r) => r.data?.med_name === 'LEGACY_PROBE'),
+    'the untagged row must not appear as readable data',
   );
 });
 

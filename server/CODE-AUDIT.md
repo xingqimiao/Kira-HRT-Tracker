@@ -51,8 +51,10 @@ pasted token sufficient. The policy sentence that follows is **"treat an agent t
 as a password"**, not "a token cannot read on its own".
 
 The bound that survives is the one `payloadCrypto.ts` states: a stolen database dump
-is unreadable without `ENCRYPTION_KEY`. It is not that the operator cannot see the
-data — the operator holds both keys.
+is unreadable without the deployment's key material. Each account's records are sealed
+under its own DEK; the server opens them only because it also holds `SERVER_DEK_KEY`,
+which unwraps every account's DEK. It is not that the operator cannot see the
+data — the operator holds the key.
 
 One change would narrow the gap, not made yet because it alters security behaviour
 rather than wording: give `mintApiToken` a non-NULL default expiry, so a forgotten

@@ -17,7 +17,6 @@ import type { Server } from 'node:http';
 import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
 import { registerAccount } from './helpers.ts';
 import { setConfigForTesting } from '../src/config.ts';
-import { TEST_ENCRYPTION_KEY } from './pg.ts';
 import { emptySyncState, mergeSyncStates, normalizeSyncState } from '../../src/utils/syncMerge.ts';
 
 let pg: PostgresHandle;
@@ -39,7 +38,6 @@ before(async () => {
     google: null,
     // v1 platform key: records seal under each account's DEK now, but this keeps any
     // legacy row readable and matches the other record suites.
-    encryptionKey: TEST_ENCRYPTION_KEY,
     turnstile: null,
     x: null,
     sessionTtlMinutes: 30,

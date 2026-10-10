@@ -14,7 +14,7 @@
 
 import { readFileSync } from 'node:fs';
 
-import { keyFromEnv } from './payloadCrypto.ts';
+import { getPool } from './db.ts';
 
 export interface XOAuthConfig {
   clientId: string;
@@ -84,14 +84,6 @@ export interface Config {
    * instance that stored an account and could not open it again would be lying.
    */
   serverDekKey: string | null;
-  /**
-   * The master key for record payloads, or null outside production.
-   *
-   * Not end-to-end encryption: the server decrypts on read. What it buys is that a
-   * stolen database dump is useless on its own. `null` means no record can be written,
-   * which is why production requires it rather than degrading silently.
-   */
-  encryptionKey: Buffer | null;
   /** Human-verification on the register and X-setup entry points. Absent = off. */
   turnstile: TurnstileConfig | null;
   /** Tokens live this long without use. */
@@ -168,19 +160,17 @@ function requireOrigin(raw: string | undefined, name: string): string {
 /**
  * Fold systemd's encrypted credentials into the environment, before anything reads it.
  *
- * The two keys this deployment cannot lose — `ENCRYPTION_KEY`, which seals every
- * record, and `SERVER_DEK_KEY`, which unwraps every account's data key — used to sit
- * as plaintext lines in `/srv/hrt/.env`, on the same disk as the database they
- * protect, and the backup habit produced nine further copies of that file before
- * anyone counted. `systemd-creds` keeps them encrypted at rest and hands them to the
- * process through a tmpfs directory that exists only while the service runs, so a
- * disk image or a stray backup no longer contains them.
+ * The key this deployment cannot lose — `SERVER_DEK_KEY`, which unwraps every account's
+ * data key — used to sit as a plaintext line in `/srv/hrt/.env`, on the same disk as
+ * the database it protects, and the backup habit produced nine further copies of that
+ * file before anyone counted. `systemd-creds` keeps it encrypted at rest and hands it
+ * to the process through a tmpfs directory that exists only while the service runs, so
+ * a disk image or a stray backup no longer contains it.
  *
  * What this does **not** buy, stated here so nobody reads it as more than it is: the
- * server still holds both keys in memory for as long as it runs, so root on a live
- * box sees them, and the operator can still read every record. This is encryption at
- * rest with a server-held key, and the change is where that key lives, not who can
- * reach it.
+ * server still holds the key in memory for as long as it runs, so root on a live box
+ * sees it, and the operator can still read every record. This is encryption at rest
+ * with a server-held key, and the change is where that key lives, not who can reach it.
  *
  * A credential file is used rather than an environment variable because
  * `LoadCredential=` puts the value in a file, and `systemd-creds` encrypts that file;
@@ -192,7 +182,7 @@ function applyCredentials(env: NodeJS.ProcessEnv, readFile: (p: string) => strin
   const dir = env.CREDENTIALS_DIRECTORY?.trim();
   if (!dir) return [];
   const loaded: string[] = [];
-  for (const name of ['ENCRYPTION_KEY', 'SERVER_DEK_KEY'] as const) {
+  for (const name of ['SERVER_DEK_KEY'] as const) {
     try {
       const value = readFile(`${dir}/${name}`).trim();
       if (value) {
@@ -316,33 +306,6 @@ export function loadConfig(
     );
   }
 
-  // The record-payload key. Required in production: every business field is stored as
-  // one AES-256-GCM blob under this key, so a deployment without it cannot store a
-  // single record. Validated here rather than at the first write so a bad paste fails
-  // at startup, where it is obvious, instead of as "nothing saves".
-  //
-  // Note this is NOT end-to-end encryption: the server decrypts on read. The guarantee
-  // is "a database dump is useless without this key", nothing stronger.
-  const encryptionKeyRaw = env.ENCRYPTION_KEY?.trim();
-  if (env.NODE_ENV === 'production' && !encryptionKeyRaw) {
-    throw new ConfigError(
-      'ENCRYPTION_KEY is required in production: record payloads are encrypted under it. '
-      + 'Generate one with: openssl rand -base64 32',
-    );
-  }
-  const encryptionKey = encryptionKeyRaw
-    ? (() => {
-      // Delegated to the crypto module so the format rules live in one place: this is
-      // the same function the check script exercises, not a second parser that could
-      // accept a key the cipher would then refuse.
-      try {
-        return keyFromEnv(encryptionKeyRaw);
-      } catch (error) {
-        throw new ConfigError(`ENCRYPTION_KEY is invalid: ${(error as Error).message}`);
-      }
-    })()
-    : null;
-
   // Turnstile is optional as a unit. Half-configured is the failure worth catching:
   // a secret with no hostname allowlist would accept a token minted on any site.
   const turnstileSecret = env.TURNSTILE_SECRET?.trim();
@@ -392,7 +355,6 @@ export function loadConfig(
     keysFromCredentials,
     turnstile,
     sessionTtlMinutes,
-    encryptionKey,
     rateLimits,
   };
 }

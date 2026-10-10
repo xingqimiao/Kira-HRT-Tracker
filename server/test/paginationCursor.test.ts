@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { test, before, after } from 'node:test';
 import type { Server } from 'node:http';
 
-import { bootPostgres, useDatabase, startApiServer, teardown, call, TEST_ENCRYPTION_KEY, type PostgresHandle } from './pg.ts';
+import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
 import { registerAccount } from './helpers.ts';
 import { setConfigForTesting } from '../src/config.ts';
 
@@ -29,7 +29,6 @@ before(async () => {
     databaseUrl: '',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
     keysFromCredentials: [],
-    encryptionKey: TEST_ENCRYPTION_KEY,
     turnstile: null,
     x: null,
     google: null,

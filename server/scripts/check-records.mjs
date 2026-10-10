@@ -32,7 +32,6 @@ await instance.start()
 await instance.createDatabase(DATABASE)
 
 process.env.DATABASE_URL = `postgres://postgres:postgres@127.0.0.1:${PORT}/${DATABASE}`
-process.env.ENCRYPTION_KEY = Buffer.alloc(32, 5).toString('base64')
 process.env.NODE_ENV = 'production'
 process.env.PUBLIC_ORIGIN = 'https://example.test'
 process.env.API_ORIGIN = 'https://api.example.test'

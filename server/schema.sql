@@ -8,9 +8,9 @@
 --    out SQL-level reporting or analytics over doses — a cost accepted on purpose.
 --
 --    Each payload is sealed under its own account's DEK, not one deployment-wide key,
---    so a single leaked account key opens one history rather than the whole table. (A
---    `v1` row sealed under the old `ENCRYPTION_KEY` is still read; see the records
---    section below.)
+--    so a single leaked account key opens one history rather than the whole table.
+--    Every stored row carries the `v2:` tag; the untagged form an older deployment
+--    wrote is refused on read. See the records section below.
 --
 --    Do not read that as "the operator cannot see the data", which is what an earlier
 --    version of this comment implied. The server decrypts on read, and every account's
@@ -133,7 +133,7 @@ DROP INDEX IF EXISTS idx_users_email_unique;
 -- choice was a leftover of the zero-knowledge design this service abandoned, and it
 -- is gone: every account carries the server wrapper, so the server can always open
 -- the records it stores. The honest bound is the one `payloadCrypto.ts` states —
--- a stolen database dump is unreadable without `ENCRYPTION_KEY`.
+-- a stolen database dump is unreadable without the deployment's key material.
 --
 -- `wrapped_dek` is kept in step with `wrappers.password`: it is what existing rows
 -- hold and what the previous release reads, so this file neither drops it nor
@@ -202,8 +202,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 -- — `users.encryption_metadata` carried a `wrappers.passkeys[credential_id]` entry,
 -- and the KEK came from the authenticator's WebAuthn PRF output. That is the
 -- zero-knowledge design this service abandoned when it moved to a hosted model where
--- the server holds `ENCRYPTION_KEY`, and a passkey that no longer guards the key would
--- be a button claiming to do something it does not. Dropped rather than left inert.
+-- the server holds the account key material, and a passkey that no longer guards the
+-- key would be a button claiming to do something it does not. Dropped rather than inert.
 DROP TABLE IF EXISTS webauthn_credentials;
 DROP TABLE IF EXISTS webauthn_challenges;
 
@@ -490,9 +490,9 @@ CREATE INDEX IF NOT EXISTS idx_shares_user ON shares(user_id);
 --   real privacy cost — the server learns when someone doses — and it is the price of
 --   not pulling the entire history to the client to sort it there.
 --
---   `payload_encrypted` is TEXT holding either "v2:iv:tag:ciphertext" (sealed under the
---   account's DEK) or the untagged "iv:tag:ciphertext" written before this change
---   (sealed under the old deployment-wide `ENCRYPTION_KEY`, still readable). See
+--   `payload_encrypted` is TEXT holding "v2:iv:tag:ciphertext", sealed under the
+--   account's DEK. The `v2:` tag is required on read: a value with no tag is the old
+--   deployment-wide shape, which `openPayload` refuses rather than guessing at. See
 --   src/payloadCrypto.ts. TEXT rather than bytea so the column is readable in a psql
 --   session during an incident, at a 33% storage cost.
 CREATE TABLE IF NOT EXISTS records (

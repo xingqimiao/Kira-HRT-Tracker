@@ -23,8 +23,10 @@ this document:
   to derive the data key, and once the server holds that key a passkey derives nothing.
   Nothing in the policy may promise an authenticator, a verification code, a recovery
   code, or signing in with a passkey. See §0 and §10.
-- **We hold the key.** The architecture was reversed on purpose: the server keeps
-  `ENCRYPTION_KEY` and decrypts records on read (`server/src/payloadCrypto.ts`). The
+- **We hold the key.** The architecture was reversed on purpose: records are sealed
+  under each account's own DEK, and the server can open them because the deployment
+  holds `SERVER_DEK_KEY`, which unwraps every account's DEK — it decrypts records on read
+  (`server/src/payloadCrypto.ts`). The
   claim that survives is "a stolen database dump is unreadable without the key". The
   claim that does not is "the operator cannot see your data". §2 is about keeping those
   two apart, because an earlier draft of this guide instructed the opposite.
@@ -152,7 +154,7 @@ Two things to avoid, and they are the two that were wrong before:
   true. `server/src/payloadCrypto.ts` opens with exactly this instruction to whoever
   reads it next: the server can decrypt every record it stores, the honest claim is
   "a stolen database dump is useless without this key", and *"nobody should read
-  `ENCRYPTION_KEY` and conclude the operator cannot see the data"*. `records.ts` says the
+  the key material and conclude the operator cannot see the data"*. `records.ts` says the
   same in its own header. If you write the opposite, you are contradicting both files.
 - **Do not copy the wording from the upstream project's README.** It describes a
   browser-only model where the server never sees plaintext. That was true before this
@@ -187,7 +189,7 @@ available for `advanced` accounts and applied to a minority. Do not write it for
 account now, and do not write a mode-conditional version of it either: there is no mode
 to condition on, and `GET /auth/account` no longer reports `privacy_mode`,
 `has_recovery_key` or `server_recovery_available`. The only encryption claim left is the
-one in §2 — a dump is unreadable without `ENCRYPTION_KEY`, which we hold.
+one in §2 — a dump is unreadable without the deployment's key material (`SERVER_DEK_KEY`), which we hold.
 
 ---
 
@@ -419,8 +421,9 @@ unreadable to us — see §2.
 
 State what you actually do, briefly:
 
-- records encrypted at rest under `ENCRYPTION_KEY`, which is held outside the database,
-  and decrypted server-side on read
+- records encrypted at rest under each account's own DEK; the deployment key that opens
+  them (`SERVER_DEK_KEY`) is held outside the database, and records are decrypted
+  server-side on read
 - passwords stored only as salted scrypt hashes (`hashPassword`, `server/src/accounts.ts`)
 - rate limiting and per-account lockout on sign-in, and on the delete endpoint
   (`noteFailedUnlock`; `MAX_FAILED_UNLOCKS` / `LOCKOUT_MS`)

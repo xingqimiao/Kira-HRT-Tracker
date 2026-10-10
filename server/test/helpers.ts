@@ -103,9 +103,9 @@ export async function listRecords(
 /**
  * Write one record the way the app does: plaintext JSON in, ciphertext at rest.
  *
- * The suite's config must carry an `encryptionKey`, because the store refuses to
- * write a payload it cannot seal — and that refusal is the point of the module
- * rather than an obstacle to work around here.
+ * The suite's config must carry a `serverDekKey`, because the store wraps each
+ * account's data key under it and refuses to write a payload it cannot seal — and that
+ * refusal is the point of the module rather than an obstacle to work around here.
  */
 export async function putRecord(
   base: string,

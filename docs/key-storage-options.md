@@ -1,3 +1,5 @@
+> **Superseded 2026-10-10.** `ENCRYPTION_KEY` was removed from the codebase; records are sealed under each account's DEK and only `SERVER_DEK_KEY` remains. See `docs/auth-design.md` §5.
+
 # 密钥放在哪里 — Cloudflare Secrets Store 能不能解决问题
 
 **结论（先说不顺耳的）：不能。Cloudflare Secrets Store 只是把密钥从「你一台上有一份的磁盘文件」

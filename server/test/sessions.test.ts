@@ -39,7 +39,6 @@ before(async () => {
     databaseUrl: '',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
     keysFromCredentials: [],
-    encryptionKey: null,
     google: null,
     turnstile: null,
     x: null,

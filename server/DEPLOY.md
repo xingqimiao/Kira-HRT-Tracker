@@ -202,11 +202,6 @@ BASE_PATH=/hrt
 PORT=8788
 BIND_HOST=127.0.0.1
 
-# Encrypts record payloads at rest (AES-256-GCM). Back this up separately from the
-# database: a dump without it is unreadable, and losing it makes every stored record
-# unreadable too. Rotating it has the same effect — there is no re-wrap path.
-ENCRYPTION_KEY=<openssl rand -base64 32>
-
 # Wraps each account's data key, alongside the password wrapper. Every account carries
 # it, which is what lets provider sign-in finish in one round-trip and lets a durable
 # `hrt_` agent token read records with no live unlock. Required in production: the
@@ -880,14 +875,14 @@ app calls with the `code` from the URL.
 
 ## 6. Operations
 
-**Backups.** Two keys, not one. `ENCRYPTION_KEY` opens every record payload, and
-`SERVER_DEK_KEY` unwraps every account's data key. A database restore without both is a
-database full of ciphertext. Store both off the database host.
+**Backups.** One deployment key remains: `SERVER_DEK_KEY` unwraps every account's data
+key, and the records themselves are sealed under each account's own DEK. A database
+restore without `SERVER_DEK_KEY` is a database full of ciphertext. Store it off the
+database host.
 
-**Rotating either key is destructive.** `ENCRYPTION_KEY` has no re-wrap path: rotating
-it makes every existing `payload_encrypted` unreadable. `SERVER_DEK_KEY` can be
+**Rotating that key is destructive.** `SERVER_DEK_KEY` can be
 rotated only by re-wrapping each account's DEK with the password in hand, so in
-practice it is not rotatable either. Treat both as permanent.
+practice it is not rotatable either. Treat it as permanent.
 
 **A lost password.** There is no recovery key, no self-service reset, and no admin
 endpoint. What makes it survivable is the server wrapper: the deployment holds a copy of

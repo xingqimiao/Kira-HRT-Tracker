@@ -29,8 +29,8 @@ or cache poisoning on the static side therefore cannot reach the data plane.
 ## Record encryption
 
 Every business field of a dose, lab, journal entry, or template is stored as one
-AES-256-GCM blob under `ENCRYPTION_KEY`. The GCM tag length (16 bytes) and IV length
-(12 bytes) are validated before decryption, not merely assumed.
+AES-256-GCM blob under each account's own data key (DEK). The GCM tag length (16 bytes)
+and IV length (12 bytes) are validated before decryption, not merely assumed.
 
 This is **not** end-to-end encryption: the server decrypts on read. The guarantee is
 "a database dump is useless without the key". Each account has its own data key (DEK);
@@ -78,7 +78,6 @@ startup rather than on the first request.
 | `DATABASE_URL` | yes | PostgreSQL connection string. |
 | `PUBLIC_ORIGIN` | yes | The web app origin. Used for the CORS allowlist and OAuth bounce targets. Bare origin, no trailing slash. |
 | `API_ORIGIN` | yes | This server's own public origin — the OAuth callback host. |
-| `ENCRYPTION_KEY` | production | Record-payload key. `openssl rand -base64 32`. Required when `NODE_ENV=production`. |
 | `SERVER_DEK_KEY` | production | Deployment's wrapped copy of each account's data key, 32+ chars. Required in production. |
 | `PORT` | no | Default `8788`. |
 | `BASE_PATH` | no | Path prefix on a shared host (e.g. `/hrt`). No `.`/`..` segments. |
@@ -97,7 +96,7 @@ that is the mistake that silently half-works.
 ## Deployment checklist
 
 - [ ] Set `DATABASE_URL`, `PUBLIC_ORIGIN`, `API_ORIGIN` in the environment.
-- [ ] Generate and set `ENCRYPTION_KEY` and `SERVER_DEK_KEY` (`openssl rand -base64 32`); never commit them.
+- [ ] Generate and set `SERVER_DEK_KEY` (`openssl rand -base64 48`); never commit it.
 - [ ] Keep `BIND_HOST` on loopback and terminate TLS at the reverse proxy.
 - [ ] Configure the CORS allowlist to the exact production origin.
 - [ ] If social login is used, register the callback URIs exactly as configured.

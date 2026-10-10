@@ -16,8 +16,9 @@ import assert from 'node:assert/strict'
 const {
     encryptPayload,
     decryptPayload,
+    sealPayload,
+    openPayload,
     isEncryptedPayload,
-    keyFromEnv,
 } = await import('../server/src/payloadCrypto.ts')
 
 const results = []
@@ -132,33 +133,38 @@ check('an empty ciphertext is rejected', () => {
 // ── Recognition ──────────────────────────────────────────────────────────────
 
 check('isEncryptedPayload accepts the sealed form and refuses lookalikes', () => {
-    const sealed = encryptPayload({ a: 1 }, KEY)
+    const sealed = sealPayload({ a: 1 }, KEY)
     assert.equal(isEncryptedPayload(sealed), true)
+    assert.equal(isEncryptedPayload(encryptPayload({ a: 1 }, KEY)), false, 'an untagged value is not a stored payload')
     assert.equal(isEncryptedPayload(''), false)
     assert.equal(isEncryptedPayload('plain json'), false)
-    assert.equal(isEncryptedPayload('a:b:c'), false, 'right shape, wrong lengths')
+    assert.equal(isEncryptedPayload('v2:a:b:c'), false, 'right tag, wrong shape')
     assert.equal(isEncryptedPayload(null), false)
     assert.equal(isEncryptedPayload(undefined), false)
     assert.equal(isEncryptedPayload({ iv: 'x' }), false)
 })
 
-// ── Key handling ─────────────────────────────────────────────────────────────
+// ── Seal / open, and the refusal of the retired form ─────────────────────────
 //
-// A key of the wrong length must fail loudly at startup. AES-256 with a short key
-// would otherwise throw per request, or worse, be silently stretched.
+// Every stored row is sealed under its own account's DEK and tagged `v2:`. A row with
+// no tag predates per-account keys and was sealed under the retired deployment-wide
+// key, so opening it must fail rather than be guessed at.
 
-check('keyFromEnv accepts 32 bytes in base64 and hex', () => {
-    const b64 = KEY.toString('base64')
-    assert.deepEqual(keyFromEnv(b64), KEY)
-    assert.deepEqual(keyFromEnv(KEY.toString('hex')), KEY)
+check('sealPayload then openPayload round-trips under one key', () => {
+    const record = { med_name: '雌二醇', dosage: '2mg' }
+    const sealed = sealPayload(record, KEY)
+    assert.ok(sealed.startsWith('v2:'), 'a sealed payload carries the per-account tag')
+    assert.deepEqual(openPayload(sealed, KEY), record)
 })
 
-check('keyFromEnv refuses a missing, short, or long key', () => {
-    assert.throws(() => keyFromEnv(undefined), /ENCRYPTION_KEY/)
-    assert.throws(() => keyFromEnv(''), /ENCRYPTION_KEY/)
-    assert.throws(() => keyFromEnv(Buffer.alloc(16, 1).toString('base64')), /32 bytes/)
-    assert.throws(() => keyFromEnv(Buffer.alloc(64, 1).toString('base64')), /32 bytes/)
-    assert.throws(() => keyFromEnv('not-a-key'), /ENCRYPTION_KEY/)
+check('openPayload refuses a payload with no per-account tag', () => {
+    const untagged = encryptPayload({ med_name: 'legacy' }, KEY)
+    assert.throws(() => openPayload(untagged, KEY), /no per-account seal tag/)
+})
+
+check('openPayload refuses another account\'s key', () => {
+    const sealed = sealPayload({ dosage: '2mg' }, KEY)
+    assert.throws(() => openPayload(sealed, KEY2))
 })
 
 for (const [status, name, detail] of results) {

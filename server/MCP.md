@@ -57,9 +57,10 @@ on its own, indefinitely, with nobody signed in. That is deliberate — it is th
 that makes a forgotten password recoverable — but it means minting a token is granting
 standing access, not a temporary one.
 
-**Where those records are, and who can read them.** They are sealed at rest with the
-deployment's platform key — `requireKey()` in `server/src/records.ts:59` reads
-`ENCRYPTION_KEY` — not with a key only the user holds. The operator can read them. State
+**Where those records are, and who can read them.** They are sealed at rest under each
+account's own DEK, and the deployment can open them because it holds `SERVER_DEK_KEY`,
+which unwraps every account's DEK — not a key only the user holds. The operator can read
+them. State
 that plainly to a user before asking for a token; never describe this service as end-to-end
 or zero-knowledge encrypted.
 
