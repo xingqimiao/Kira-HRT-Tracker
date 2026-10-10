@@ -69,12 +69,22 @@
          This block used to be hidden (`display:none`, un-hidden only inside noscript).
          That served no-JavaScript clients but left the page Google *actually* indexed
          as a ~100-character onboarding greeting, because Google does run JavaScript.
-         It now lives OUTSIDE `#root`, always visible, as an ordinary page footer: a
-         no-JavaScript client reads it as the page body, a JavaScript client scrolls to
-         it below the app, and a crawler sees the real, visible content it is. Living
-         outside `#root` is load-bearing — index.tsx calls `container.replaceChildren()`
-         on mount and would otherwise wipe it. Always-visible also drops the old
-         hide-then-reveal dance that Cloudflare's Rocket Loader used to break. -->
+         It now lives OUTSIDE `#root`, always present, as an ordinary page footer: a
+         no-JavaScript client reads it as the page body, a crawler sees the real,
+         visible content it is, and it stays in the rendered DOM for a JS client too.
+         Living outside `#root` is load-bearing — index.tsx calls
+         `container.replaceChildren()` on mount and would otherwise wipe it. Always
+         present also drops the old hide-then-reveal dance that Cloudflare's Rocket
+         Loader used to break.
+
+         One correction earned the hard way (2026-10-11): "the JS client scrolls to it
+         below the app" sounded like a feature and shipped as a bug — every page's
+         scroll, chained past the shell's end, dragged this footer into view. Once the
+         bundle runs it adds the `app-viewport` class (see index.tsx and index.css),
+         which clamps the document to the viewport; the footer stays in the DOM and in
+         the crawler's view, but no signed-in user ever scrolls onto it again. A client
+         that never runs JavaScript keeps a scrollable page and reads the footer in
+         full. -->
     <style>
         /* Colours are inherited from `body` on purpose, so the footer follows the app
            theme once index.tsx has handed the body back to Tailwind; the body's own

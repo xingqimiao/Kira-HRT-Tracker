@@ -37,6 +37,28 @@ if (!entry) {
 }
 const bundle = readFileSync(path.join(assetsDir, entry), 'utf8');
 
+// The crawler footer below `#root` and the viewport clamp are a pair: index.tsx adds
+// the `app-viewport` class that clamps the document so no signed-in user can scroll
+// onto the footer, and index.html ships the footer that no-JavaScript clients read.
+// Losing either half silently reintroduces the 2026-10-11 bug (SEO text dragged into
+// every screen by chained scroll) or the 2026-10-08 one (footer gone from the served
+// page). Both halves ship in the build output, so both are asserted here.
+const indexHtml = readFileSync(path.join(root, 'dist', 'index.html'), 'utf8');
+const cssEntry = readdirSync(assetsDir).find((f) => /^index-.*\.css$/.test(f));
+const css = cssEntry ? readFileSync(path.join(assetsDir, cssEntry), 'utf8') : '';
+for (const [what, present] of [
+  ['the site-about crawler footer in dist/index.html', indexHtml.includes('site-about')],
+  ['the app-viewport class add in the entry bundle', bundle.includes('app-viewport')],
+  [`the app-viewport clamp rule in ${cssEntry ?? 'the built CSS'}`, css.includes('html.app-viewport')],
+]) {
+  if (!present) {
+    console.error(`check-web-bundle: missing ${what}.\n` +
+      `  The crawler footer and the viewport clamp must ship together — see the\n` +
+      `  comment in index.html and the rule beside #root in src/index.css.`);
+    process.exit(1);
+  }
+}
+
 const sameOrigin = process.env.HRT_SAME_ORIGIN === '1';
 // Vite inlines the value as a literal in the env object it substitutes.
 const hasOrigin = /VITE_API_ORIGIN:\s*["'`]https?:\/\//.test(bundle);

@@ -916,6 +916,18 @@ body.native-app .m3-rail {
     width: 100%;
 }
 
+/* The document is clamped to the viewport once the app is running (index.tsx adds
+   this class). `#root` fills the screen and every page scrolls inside the shell's
+   own container; without the clamp the crawler footer below `#root` makes the
+   document one footer taller than the viewport, and the scroll that reaches the
+   shell's end chains onto the page and drags the SEO text into every screen —
+   APK included. The class is added only when the bundle runs, so a no-JavaScript
+   client keeps a scrollable page and reads the footer as its body. */
+html.app-viewport,
+html.app-viewport body {
+    overflow: hidden;
+}
+
 /* Utilities */
 .scrollbar-hide::-webkit-scrollbar {
     display: none;
