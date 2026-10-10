@@ -15,6 +15,7 @@
 import { readFileSync } from 'node:fs';
 
 import { getPool } from './db.ts';
+import { kmsEndpointError, kmsKeyIdError, type KmsConfig } from './kms.ts';
 
 export interface XOAuthConfig {
   clientId: string;
@@ -84,6 +85,17 @@ export interface Config {
    * instance that stored an account and could not open it again would be lying.
    */
   serverDekKey: string | null;
+  /**
+   * The KMS master key that wraps every account's DEK, or null when the deployment
+   * wraps locally under `SERVER_DEK_KEY`.
+   *
+   * Set from `KMS_KEY_OCID` + `KMS_CRYPTO_ENDPOINT`, which are validated as a pair:
+   * half-configured is the failure worth catching, because a key without its
+   * endpoint could mint wrappers no reader can open. When present it takes
+   * precedence over `SERVER_DEK_KEY` for newly minted wrappers; the local scheme
+   * stays readable until every account has been migrated.
+   */
+  kms: KmsConfig | null;
   /** Human-verification on the register and X-setup entry points. Absent = off. */
   turnstile: TurnstileConfig | null;
   /** Tokens live this long without use. */
@@ -293,16 +305,37 @@ export function loadConfig(
   }
 
   // The deployment's copy of every account's data key. Optional in the type,
-  // required in production — see the interface comment. 32 bytes is the floor.
+  // required in production unless the KMS master key carries that role — see the
+  // interface comment. 32 bytes is the floor.
   const serverDekKeyRaw = env.SERVER_DEK_KEY?.trim();
   const serverDekKey = serverDekKeyRaw ? serverDekKeyRaw : null;
   if (serverDekKey && serverDekKey.length < MIN_SECRET_LENGTH) {
     throw new ConfigError(`SERVER_DEK_KEY must be at least ${MIN_SECRET_LENGTH} characters`);
   }
-  if (env.NODE_ENV === 'production' && !serverDekKey) {
+
+  // The KMS alternative: both variables or neither, each validated for shape. The
+  // endpoint is where wrapped key material goes, so its host is checked against the
+  // OCI KMS zone rather than accepted because it is in the environment.
+  const kmsKeyIdRaw = env.KMS_KEY_OCID?.trim() || null;
+  const kmsEndpointRaw = env.KMS_CRYPTO_ENDPOINT?.trim() || null;
+  let kms: KmsConfig | null = null;
+  if (!!kmsKeyIdRaw !== !!kmsEndpointRaw) {
+    const missing = kmsKeyIdRaw ? 'KMS_CRYPTO_ENDPOINT' : 'KMS_KEY_OCID';
+    throw new ConfigError(`${missing} is required when its pair is set: configure both or neither`);
+  }
+  if (kmsKeyIdRaw && kmsEndpointRaw) {
+    const idError = kmsKeyIdError(kmsKeyIdRaw);
+    if (idError) throw new ConfigError(idError);
+    const endpointError = kmsEndpointError(kmsEndpointRaw);
+    if (endpointError) throw new ConfigError(endpointError);
+    kms = { keyId: kmsKeyIdRaw, cryptoEndpoint: kmsEndpointRaw };
+  }
+
+  // Exactly one of the two must carry the deployment's copy of every data key.
+  if (env.NODE_ENV === 'production' && !serverDekKey && !kms) {
     throw new ConfigError(
-      'SERVER_DEK_KEY is required in production: it is the deployment\'s copy of every ' +
-        'account\'s data key. Set it to 32+ random characters.',
+      'SERVER_DEK_KEY (or KMS_KEY_OCID + KMS_CRYPTO_ENDPOINT) is required in production: '
+        + 'the deployment must be able to open every account\'s data key.',
     );
   }
 
@@ -352,6 +385,7 @@ export function loadConfig(
     x,
     google,
     serverDekKey,
+    kms,
     keysFromCredentials,
     turnstile,
     sessionTtlMinutes,

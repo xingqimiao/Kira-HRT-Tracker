@@ -40,6 +40,7 @@ before(async () => {
     port: 0,
     databaseUrl: '',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    kms: null,
     keysFromCredentials: [],
     // The add tools write records, and the store seals every payload: without a key
     // it refuses rather than writing plaintext, which is the behaviour under test in

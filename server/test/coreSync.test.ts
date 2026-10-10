@@ -34,6 +34,7 @@ before(async () => {
     port: 0,
     databaseUrl: '',
     serverDekKey: 'test-server-dek-key-0123456789abcdef',
+    kms: null,
     keysFromCredentials: [],
     google: null,
     // v1 platform key: records seal under each account's DEK now, but this keeps any

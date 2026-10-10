@@ -27,7 +27,7 @@ before(async () => {
   setConfigForTesting({
     publicOrigin: 'https://hrt.test', apiOrigin: 'https://api.hrt.test', basePath: '',
     apiBaseUrl: 'https://api.hrt.test', port: 0, databaseUrl: '',
-    serverDekKey: 'test-server-dek-key-0123456789abcdef', keysFromCredentials: [],
+    serverDekKey: 'test-server-dek-key-0123456789abcdef', kms: null, keysFromCredentials: [],
     turnstile: null, x: null, google: null,
     sessionTtlMinutes: 30, rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },
   });
