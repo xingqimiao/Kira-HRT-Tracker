@@ -213,7 +213,7 @@ async function saveMetadata(userId: string, metadata: EncryptionMetadata): Promi
  * wrapper. Server-side only.
  */
 async function serverDekFor(user: AccountRow): Promise<string | null> {
-  return await unwrapWithServer(metadataFor(user), user.id, getConfig().serverDekKey);
+  return await unwrapWithServer(metadataFor(user), user.id);
 }
 
 // ---------------------------------------------------------------------------
@@ -281,9 +281,7 @@ export const AccountService = {
     if (!password.ok) return password;
 
     const userId = randomUUID();
-    const { metadata } = await createKeyMaterial(password.value, userId, {
-      serverKey: getConfig().serverDekKey,
-    });
+    const { metadata } = await createKeyMaterial(password.value, userId);
     const passwordHash = await hashPassword(password.value);
 
     try {
@@ -383,9 +381,8 @@ export const AccountService = {
     // again without the user. An account created before this release may not; a
     // password unlock is the one moment the key is in hand to add it without asking
     // the user for anything twice.
-    const serverKey = getConfig().serverDekKey;
-    if (!metadata.wrappers.server && serverKey) {
-      await saveMetadata(user.id, await addServerWrapper(metadata, dek, user.id, serverKey));
+    if (!metadata.wrappers.server) {
+      await saveMetadata(user.id, await addServerWrapper(metadata, dek, user.id));
     }
 
     const token = await openSession(user.id, { persistent: opts.persistent });
@@ -955,7 +952,6 @@ export const AccountService = {
     // nothing to unwrap and sign-in could only hand back identity — which made
     // binding a fallback credential impossible, because that endpoint needs a real
     // session. That deadlock is why this exists.
-    const serverKey = getConfig().serverDekKey;
 
     // Usernames are unique; a provider handle or address may collide with a local
     // account that already holds the name. Try the plain name, then suffixed variants.
@@ -964,7 +960,7 @@ export const AccountService = {
       const userId = randomUUID();
       // The metadata is bound to the id it was wrapped for, so it has to be built per
       // attempt rather than hoisted out of the loop.
-      const { metadata } = await createPasswordlessKeyMaterial(userId, { serverKey });
+      const { metadata } = await createPasswordlessKeyMaterial(userId);
       try {
         const { rows } = await getPool().query<AccountRow>(
           `INSERT INTO users (id, username, display_name, wrapped_dek, encryption_metadata,

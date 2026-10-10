@@ -13,9 +13,11 @@
  * The config must already be installed by the caller (see `setConfigForTesting`).
  */
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
 import { call } from './pg.ts';
+import { setKmsClientForTesting } from '../src/kms.ts';
+
 export interface TestAccount {
   userId: string;
   username: string;
@@ -23,6 +25,54 @@ export interface TestAccount {
   /** A live session token, issued by registration itself. */
   token: string;
 }
+
+/**
+ * The KMS the tests run against, and the fake HSM behind it.
+ *
+ * The real client needs instance principals, which a dev box does not have, so the
+ * suite installs a stand-in that speaks the same two operations with AES-GCM and —
+ * the part that matters — honors the `associatedData` contract: a wrapper encrypted
+ * for one user does not decrypt for another, exactly as the HSM behaves. Installed
+ * at module load of any suite that mints accounts; inert elsewhere.
+ */
+export const TEST_KMS_CONFIG = {
+  keyId: 'ocid1.key.oc1.test.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  cryptoEndpoint: 'https://test-crypto.kms.ap-tokyo-1.oraclecloud.com',
+};
+
+const FAKE_HSM_KEY = Buffer.alloc(32, 0x5a);
+
+export function installFakeKms(): void {
+  setKmsClientForTesting({
+    async encrypt({ encryptDataDetails }) {
+      const iv = randomBytes(12);
+      const cipher = createCipheriv('aes-256-gcm', FAKE_HSM_KEY, iv);
+      cipher.setAAD(Buffer.from(JSON.stringify(encryptDataDetails.associatedData)));
+      const ciphertext = Buffer.concat([
+        cipher.update(Buffer.from(encryptDataDetails.plaintext, 'base64')),
+        cipher.final(),
+      ]);
+      return {
+        encryptedData: {
+          ciphertext: `${iv.toString('base64')}:${cipher.getAuthTag().toString('base64')}:${ciphertext.toString('base64')}`,
+        },
+      };
+    },
+    async decrypt({ decryptDataDetails }) {
+      const [ivB64, tagB64, ctB64] = decryptDataDetails.ciphertext.split(':');
+      const decipher = createDecipheriv('aes-256-gcm', FAKE_HSM_KEY, Buffer.from(ivB64, 'base64'));
+      decipher.setAAD(Buffer.from(JSON.stringify(decryptDataDetails.associatedData)));
+      decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
+      const plaintext = Buffer.concat([
+        decipher.update(Buffer.from(ctB64, 'base64')),
+        decipher.final(),
+      ]);
+      return { decryptedData: { plaintext: plaintext.toString('base64') } };
+    },
+  });
+}
+
+installFakeKms();
 
 /** A distinct username per call, so tests never collide across runs. */
 function freshUsername(prefix = 't'): string {

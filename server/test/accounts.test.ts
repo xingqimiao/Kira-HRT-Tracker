@@ -22,6 +22,7 @@ import { bootPostgres, useDatabase, startApiServer, teardown, call, type Postgre
 import { setConfigForTesting } from '../src/config.ts';
 import { resetRateLimits } from '../src/http.ts';
 import { closeUserSessions } from '../src/session.ts';
+import { TEST_KMS_CONFIG } from './helpers.ts';
 
 let pg: PostgresHandle;
 let server: Server | undefined;
@@ -44,9 +45,7 @@ before(async () => {
     apiBaseUrl: API_ORIGIN,
     port: 0,
     databaseUrl: '',
-    serverDekKey: 'test-server-dek-key-0123456789abcdef',
-    kms: null,
-    keysFromCredentials: [],
+    kms: TEST_KMS_CONFIG,
     // The record store seals every payload; a suite that writes records must carry a
     // key, because the store refuses rather than writing plaintext.
     turnstile: null,
@@ -662,9 +661,7 @@ test('the per-IP limiter refuses a burst of sign-in attempts', async () => {
     apiBaseUrl: API_ORIGIN,
     port: 0,
     databaseUrl: '',
-    serverDekKey: 'test-server-dek-key-0123456789abcdef',
-    kms: null,
-    keysFromCredentials: [],
+    kms: TEST_KMS_CONFIG,
     turnstile: null,
     x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
     google: null,
@@ -690,9 +687,7 @@ test('the per-IP limiter refuses a burst of sign-in attempts', async () => {
     apiBaseUrl: API_ORIGIN,
       port: 0,
       databaseUrl: '',
-      serverDekKey: 'test-server-dek-key-0123456789abcdef',
-      kms: null,
-      keysFromCredentials: [],
+      kms: TEST_KMS_CONFIG,
       turnstile: null,
       x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
       google: null,

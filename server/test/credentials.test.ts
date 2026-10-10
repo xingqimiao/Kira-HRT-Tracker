@@ -1,10 +1,8 @@
 /**
- * The key that must not sit on the same disk as the database.
- *
- * `applyCredentials` is the seam: it folds a systemd credential directory into the
- * environment before anything reads the environment. These pin the three states a
- * deployment can be in while migrating, because the middle one -- credentials
- * configured but not yet read -- looks identical from the outside.
+ * The KMS master key is the deployment's only way to open an account, so its
+ * configuration is validated as a unit: both variables or neither, an endpoint host
+ * under the OCI KMS zone, and a production boot that refuses to start without it —
+ * an instance that stored an account and could not open it again would be lying.
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -16,31 +14,35 @@ const BASE = {
   API_ORIGIN: 'https://api.kiramyao.com',
   DATABASE_URL: 'postgres://hrt@127.0.0.1:5432/hrt',
   NODE_ENV: 'production',
-  SERVER_DEK_KEY: 'a'.repeat(64),
+  KMS_KEY_OCID: 'ocid1.key.oc1.ap-tokyo-1.ezvmu6vqaabfc.abxhiljr3o6ah4yxsioulouvpn3cev63s3vxvfg6m5xm6np27djpnric45qq',
+  KMS_CRYPTO_ENDPOINT: 'https://ezvmu6vqaabfc-crypto.kms.ap-tokyo-1.oraclecloud.com',
 };
 
-const missing = () => { throw new Error('ENOENT'); };
+test('a complete KMS pair loads and lands in the config', () => {
+  const config = loadConfig({ ...BASE });
+  assert.equal(config.kms?.keyId, BASE.KMS_KEY_OCID);
+  assert.equal(config.kms?.cryptoEndpoint, BASE.KMS_CRYPTO_ENDPOINT);
+});
 
-test('a credential overrides a stale line in the environment', () => {
-  const files: Record<string, string> = { '/cred/SERVER_DEK_KEY': 'b'.repeat(64) };
-  const config = loadConfig(
-    { ...BASE, SERVER_DEK_KEY: 'stale', CREDENTIALS_DIRECTORY: '/cred' },
-    (p) => { const v = files[p]; if (v === undefined) throw new Error('ENOENT'); return v; },
+test('half a KMS pair is the failure worth catching', () => {
+  const { KMS_CRYPTO_ENDPOINT: _endpoint, ...noEndpoint } = BASE;
+  assert.throws(() => loadConfig(noEndpoint), /KMS_CRYPTO_ENDPOINT is required/);
+  const { KMS_KEY_OCID: _key, ...noKey } = BASE;
+  assert.throws(() => loadConfig(noKey), /KMS_KEY_OCID is required/);
+});
+
+test('an endpoint outside the OCI KMS zone is refused at startup', () => {
+  assert.throws(
+    () => loadConfig({ ...BASE, KMS_CRYPTO_ENDPOINT: 'https://evil.example.com/decrypt' }),
+    /not an OCI KMS crypto endpoint/,
   );
-  assert.equal(config.serverDekKey, 'b'.repeat(64));
-  assert.deepEqual(config.keysFromCredentials, ['SERVER_DEK_KEY']);
+  assert.throws(
+    () => loadConfig({ ...BASE, KMS_CRYPTO_ENDPOINT: 'http://ezvmu6vqaabfc-crypto.kms.ap-tokyo-1.oraclecloud.com' }),
+    /must be https/,
+  );
 });
 
-test('with no credential directory the environment is still enough', () => {
-  const config = loadConfig({ ...BASE }, missing);
-  assert.equal(config.serverDekKey, 'a'.repeat(64));
-  assert.deepEqual(config.keysFromCredentials, [], 'nothing claimed that did not happen');
-});
-
-test('a credential directory that lacks the file falls back rather than failing', () => {
-  // This is the half-migrated deployment: the unit names the credential, the file
-  // is not there yet. Booting must not depend on the order of those two steps.
-  const config = loadConfig({ ...BASE, CREDENTIALS_DIRECTORY: '/cred' }, missing);
-  assert.equal(config.serverDekKey, 'a'.repeat(64));
-  assert.deepEqual(config.keysFromCredentials, []);
+test('a production boot without any KMS refuses to start', () => {
+  const { KMS_KEY_OCID: _key, KMS_CRYPTO_ENDPOINT: _endpoint, ...noKms } = BASE;
+  assert.throws(() => loadConfig(noKms), /KMS_KEY_OCID \+ KMS_CRYPTO_ENDPOINT are required in production/);
 });

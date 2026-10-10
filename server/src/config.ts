@@ -12,8 +12,6 @@
  * than on the first request that needs the value.
  */
 
-import { readFileSync } from 'node:fs';
-
 import { getPool } from './db.ts';
 import { kmsEndpointError, kmsKeyIdError, type KmsConfig } from './kms.ts';
 
@@ -77,23 +75,14 @@ export interface Config {
    */
   google: XOAuthConfig | null;
   /**
-   * The key every account's `server` wrapper is wrapped under.
-   *
-   * Optional in the type so the test suite does not have to carry every field, but
-   * its presence is what makes an account recoverable by the deployment, so
-   * production refuses to start without it rather than degrading silently: an
-   * instance that stored an account and could not open it again would be lying.
-   */
-  serverDekKey: string | null;
   /**
-   * The KMS master key that wraps every account's DEK, or null when the deployment
-   * wraps locally under `SERVER_DEK_KEY`.
+   * The KMS master key that wraps every account's DEK.
    *
    * Set from `KMS_KEY_OCID` + `KMS_CRYPTO_ENDPOINT`, which are validated as a pair:
    * half-configured is the failure worth catching, because a key without its
-   * endpoint could mint wrappers no reader can open. When present it takes
-   * precedence over `SERVER_DEK_KEY` for newly minted wrappers; the local scheme
-   * stays readable until every account has been migrated.
+   * endpoint could mint wrappers no reader can open. Production refuses to start
+   * without it — an instance that stored an account and could not open it again
+   * would be lying.
    */
   kms: KmsConfig | null;
   /** Human-verification on the register and X-setup entry points. Absent = off. */
@@ -109,14 +98,6 @@ export interface Config {
    * are conservative; raise them when legitimate users hit them.
    */
   rateLimits: RateLimitConfig;
-  /**
-   * Which of the two critical keys came from a systemd credential rather than the
-   * environment. Logged once at boot: a deployment that has added
-   * `LoadCredentialEncrypted=` but is still reading `.env` looks identical from the
-   * outside, and the whole point of moving them is to be able to say which one is in
-   * force. Empty on a deployment that has not migrated, and empty is honest.
-   */
-  keysFromCredentials: string[];
 }
 
 export interface RateLimitConfig {
@@ -127,8 +108,6 @@ export interface RateLimitConfig {
   /** Window length in milliseconds, shared by both. */
   windowMs: number;
 }
-
-const MIN_SECRET_LENGTH = 32;
 
 class ConfigError extends Error {
   constructor(message: string) {
@@ -169,53 +148,7 @@ function requireOrigin(raw: string | undefined, name: string): string {
  * origin in production would put unlock tokens on the wire in the clear — so it
  * is an explicit opt-in rather than an inferred allowance.
  */
-/**
- * Fold systemd's encrypted credentials into the environment, before anything reads it.
- *
- * The key this deployment cannot lose — `SERVER_DEK_KEY`, which unwraps every account's
- * data key — used to sit as a plaintext line in `/srv/hrt/.env`, on the same disk as
- * the database it protects, and the backup habit produced nine further copies of that
- * file before anyone counted. `systemd-creds` keeps it encrypted at rest and hands it
- * to the process through a tmpfs directory that exists only while the service runs, so
- * a disk image or a stray backup no longer contains it.
- *
- * What this does **not** buy, stated here so nobody reads it as more than it is: the
- * server still holds the key in memory for as long as it runs, so root on a live box
- * sees it, and the operator can still read every record. This is encryption at rest
- * with a server-held key, and the change is where that key lives, not who can reach it.
- *
- * A credential file is used rather than an environment variable because
- * `LoadCredential=` puts the value in a file, and `systemd-creds` encrypts that file;
- * an `Environment=` line would be readable in `/proc/<pid>/environ` and in
- * `systemctl show`. The credential wins over the environment when both are present,
- * so a stale line in `.env` cannot silently override what systemd injected.
- */
-function applyCredentials(env: NodeJS.ProcessEnv, readFile: (p: string) => string): string[] {
-  const dir = env.CREDENTIALS_DIRECTORY?.trim();
-  if (!dir) return [];
-  const loaded: string[] = [];
-  for (const name of ['SERVER_DEK_KEY'] as const) {
-    try {
-      const value = readFile(`${dir}/${name}`).trim();
-      if (value) {
-        env[name] = value;
-        loaded.push(name);
-      }
-    } catch {
-      // No credential of that name: leave whatever the environment already has. A
-      // deployment that has not migrated yet must keep working, and a missing file
-      // is exactly what "not migrated" looks like.
-    }
-  }
-  return loaded;
-}
-
-export function loadConfig(
-  env: NodeJS.ProcessEnv = process.env,
-  readFile: (path: string) => string = (path) => readFileSync(path, 'utf8'),
-): Config {
-  const keysFromCredentials = applyCredentials(env, readFile);
-
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const publicOrigin = requireOrigin(env.PUBLIC_ORIGIN ?? env.VITE_PUBLIC_ORIGIN, 'PUBLIC_ORIGIN');
   const apiOrigin = requireOrigin(env.API_ORIGIN, 'API_ORIGIN');
 
@@ -304,16 +237,7 @@ export function loadConfig(
     google = { clientId: gClientId, clientSecret: gClientSecret, redirectUri };
   }
 
-  // The deployment's copy of every account's data key. Optional in the type,
-  // required in production unless the KMS master key carries that role — see the
-  // interface comment. 32 bytes is the floor.
-  const serverDekKeyRaw = env.SERVER_DEK_KEY?.trim();
-  const serverDekKey = serverDekKeyRaw ? serverDekKeyRaw : null;
-  if (serverDekKey && serverDekKey.length < MIN_SECRET_LENGTH) {
-    throw new ConfigError(`SERVER_DEK_KEY must be at least ${MIN_SECRET_LENGTH} characters`);
-  }
-
-  // The KMS alternative: both variables or neither, each validated for shape. The
+  // The KMS master key: both variables or neither, each validated for shape. The
   // endpoint is where wrapped key material goes, so its host is checked against the
   // OCI KMS zone rather than accepted because it is in the environment.
   const kmsKeyIdRaw = env.KMS_KEY_OCID?.trim() || null;
@@ -331,11 +255,14 @@ export function loadConfig(
     kms = { keyId: kmsKeyIdRaw, cryptoEndpoint: kmsEndpointRaw };
   }
 
-  // Exactly one of the two must carry the deployment's copy of every data key.
-  if (env.NODE_ENV === 'production' && !serverDekKey && !kms) {
+  // The deployment must be able to open every account's data key, and since the
+  // per-account KMS cutover the ONLY mechanism is the KMS master key: production
+  // without it could mint accounts it could never open again.
+  if (env.NODE_ENV === 'production' && !kms) {
     throw new ConfigError(
-      'SERVER_DEK_KEY (or KMS_KEY_OCID + KMS_CRYPTO_ENDPOINT) is required in production: '
-        + 'the deployment must be able to open every account\'s data key.',
+      'KMS_KEY_OCID + KMS_CRYPTO_ENDPOINT are required in production: every account\'s '
+        + 'data key is wrapped by the KMS master key, so a deployment without it cannot '
+        + 'open any account.',
     );
   }
 
@@ -384,9 +311,7 @@ export function loadConfig(
     databaseUrl,
     x,
     google,
-    serverDekKey,
     kms,
-    keysFromCredentials,
     turnstile,
     sessionTtlMinutes,
     rateLimits,

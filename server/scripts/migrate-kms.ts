@@ -3,10 +3,8 @@
  *
  * Run on the deployment host, as a bundled single file (the server carries no TS
  * sources). Requires in the environment: DATABASE_URL, KMS_KEY_OCID,
- * KMS_CRYPTO_ENDPOINT, and SERVER_DEK_KEY — the last one because accounts minted
- * before the cutover hold a legacy HMAC wrapper that only the old key can open.
- * Per-account, idempotent: wrappers already in the KMS scheme are skipped, so a
- * crashed or interrupted run is re-run rather than repaired.
+ * KMS_CRYPTO_ENDPOINT. Per-account, idempotent: wrappers already in the KMS scheme
+ * are skipped, so a crashed or interrupted run is re-run rather than repaired.
  *
  * Safety rails, in order: every account's pre-migration metadata is snapshotted to
  * a local JSON backup before its row is updated; every new wrapper is round-trip
@@ -16,8 +14,10 @@
  *
  *   node migrate-kms-bundled.cjs
  *
- * After a clean run (migrated + alreadyKms == total, failed == 0), the legacy path
- * and SERVER_DEK_KEY are ready to be retired.
+ * Historical note: the 2026-10-11 run also unwrapped the legacy HMAC-scheme
+ * wrappers with SERVER_DEK_KEY, which is why the runtime carried that key until
+ * this migration completed. Now that every row is kms-v1 and the runtime knows no
+ * other scheme, this script only re-verifies KMS wrappers.
  */
 import { writeFileSync } from 'node:fs';
 
@@ -38,7 +38,6 @@ interface Summary {
 async function main(): Promise<Summary> {
   const keyId = process.env.KMS_KEY_OCID?.trim() ?? '';
   const cryptoEndpoint = process.env.KMS_CRYPTO_ENDPOINT?.trim() ?? '';
-  const serverDekKey = process.env.SERVER_DEK_KEY?.trim() || null;
   if (!keyId || !cryptoEndpoint) {
     throw new Error('KMS_KEY_OCID and KMS_CRYPTO_ENDPOINT are required in the environment');
   }
@@ -68,7 +67,7 @@ async function main(): Promise<Summary> {
       continue;
     }
 
-    const dek = await unwrapWithServer(metadata, row.id, serverDekKey);
+    const dek = await unwrapWithServer(metadata, row.id);
     if (!dek) {
       summary.failed.push({ id: row.id, username: row.username, error: 'legacy unwrap returned null' });
       continue;

@@ -15,7 +15,7 @@ import { test, before, after } from 'node:test';
 import type { Server } from 'node:http';
 
 import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
-import { registerAccount } from './helpers.ts';
+import { registerAccount , TEST_KMS_CONFIG} from './helpers.ts';
 import { setConfigForTesting } from '../src/config.ts';
 import { emptySyncState, mergeSyncStates, normalizeSyncState } from '../../src/utils/syncMerge.ts';
 
@@ -33,9 +33,7 @@ before(async () => {
     apiBaseUrl: 'https://api.hrt.test',
     port: 0,
     databaseUrl: '',
-    serverDekKey: 'test-server-dek-key-0123456789abcdef',
-    kms: null,
-    keysFromCredentials: [],
+    kms: TEST_KMS_CONFIG,
     google: null,
     // v1 platform key: records seal under each account's DEK now, but this keeps any
     // legacy row readable and matches the other record suites.

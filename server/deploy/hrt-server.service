@@ -9,12 +9,10 @@ User=hrt
 Group=hrt
 WorkingDirectory=/srv/hrt
 EnvironmentFile=/srv/hrt/.env
-# The key that must not sit on the same disk as the database. systemd keeps it
-# encrypted and decrypts it into a tmpfs directory for the lifetime of the process.
-# The .env line stays as the fallback; config.ts prefers the credential when both
-# are present. ENCRYPTION_KEY was retired 2026-10-10: records now seal under each
-# account's own DEK, so this is the only deployment key.
-LoadCredentialEncrypted=SERVER_DEK_KEY
+# The deployment carries no key material of its own: every account's data key is
+# wrapped by the OCI KMS master key (an HSM-held key the process never sees), and
+# the instance authenticates to KMS via Instance Principals. KMS_KEY_OCID and
+# KMS_CRYPTO_ENDPOINT are identifiers, not secrets, and live in the .env above.
 
 # The bundled CJS build: schema.sql sits beside dist/, which is what db.ts resolves
 # relative to its own location.

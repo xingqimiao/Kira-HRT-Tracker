@@ -12,7 +12,7 @@ import { test, before, after } from 'node:test';
 import type { Server } from 'node:http';
 
 import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
-import { registerAccount } from './helpers.ts';
+import { registerAccount , TEST_KMS_CONFIG} from './helpers.ts';
 import { setConfigForTesting } from '../src/config.ts';
 
 let pg: PostgresHandle;
@@ -27,9 +27,7 @@ before(async () => {
     apiBaseUrl: 'https://api.hrt.test',
     port: 0,
     databaseUrl: '',
-    serverDekKey: 'test-server-dek-key-0123456789abcdef',
-    kms: null,
-    keysFromCredentials: [],
+    kms: TEST_KMS_CONFIG,
     turnstile: null,
     x: null,
     google: null,

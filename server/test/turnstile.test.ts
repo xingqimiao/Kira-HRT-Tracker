@@ -16,6 +16,7 @@ import { test, before, after } from 'node:test';
 
 import { setConfigForTesting, type Config } from '../src/config.ts';
 import { verifyTurnstile, __setTurnstileFetchForTest } from '../src/turnstile.ts';
+import { TEST_KMS_CONFIG } from './helpers.ts';
 
 const SECRET = 'turnstile-secret-value';
 const HOSTS = ['hrt.test', 'kiramyao.com'];
@@ -28,9 +29,7 @@ function configWith(turnstile: Config['turnstile']): Config {
     apiBaseUrl: 'https://api.hrt.test',
     port: 0,
     databaseUrl: '',
-    serverDekKey: 'test-server-dek-key-0123456789abcdef',
-    kms: null,
-    keysFromCredentials: [],
+    kms: TEST_KMS_CONFIG,
     google: null,
     turnstile,
     x: null,

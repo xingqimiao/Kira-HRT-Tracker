@@ -11,7 +11,7 @@ import { test, before, after } from 'node:test';
 import type { Server } from 'node:http';
 
 import { bootPostgres, useDatabase, startApiServer, teardown, type PostgresHandle } from './pg.ts';
-import { registerAccount } from './helpers.ts';
+import { registerAccount , TEST_KMS_CONFIG} from './helpers.ts';
 import { setConfigForTesting } from '../src/config.ts';
 import {
   ExtraKey,
@@ -39,9 +39,7 @@ before(async () => {
     apiBaseUrl: 'https://api.hrt.test',
     port: 0,
     databaseUrl: '',
-    serverDekKey: 'test-server-dek-key-0123456789abcdef',
-    kms: null,
-    keysFromCredentials: [],
+    kms: TEST_KMS_CONFIG,
     // The add tools write records, and the store seals every payload: without a key
     // it refuses rather than writing plaintext, which is the behaviour under test in
     // `check-records.mjs` rather than something to work around here.

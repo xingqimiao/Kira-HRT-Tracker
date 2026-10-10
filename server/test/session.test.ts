@@ -24,6 +24,7 @@ import { encryptCloudPayload, decryptCloudPayload } from '../src/engine.ts';
 import { bootPostgres, useDatabase, teardown, type PostgresHandle } from './pg.ts';
 import { setConfigForTesting } from '../src/config.ts';
 import { getPool } from '../src/db.ts';
+import { TEST_KMS_CONFIG } from './helpers.ts';
 
 const userId = 'user-8f2c';
 const password = 'correct horse battery staple';
@@ -90,9 +91,7 @@ before(async () => {
     apiBaseUrl: 'https://api.hrt.test',
     port: 0,
     databaseUrl: '',
-    serverDekKey: 'test-server-dek-key-0123456789abcdef',
-    kms: null,
-    keysFromCredentials: [],
+    kms: TEST_KMS_CONFIG,
     google: null,
     turnstile: null,
     x: null,

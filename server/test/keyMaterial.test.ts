@@ -18,15 +18,13 @@ import type { Server } from 'node:http';
 import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
 import { setConfigForTesting } from '../src/config.ts';
 import { resetRateLimits } from '../src/http.ts';
-import { registerAccount, signIn } from './helpers.ts';
+import { TEST_KMS_CONFIG, registerAccount, signIn } from './helpers.ts';
 import { getPool } from '../src/db.ts';
 import { readMetadata, unwrapWithServer, unwrapWithPassword } from '../src/session.ts';
 
 let pg: PostgresHandle;
 let server: Server | undefined;
 let base = '';
-
-const SERVER_DEK_KEY = 'test-server-dek-key-0123456789abcdef';
 
 before(async () => {
   setConfigForTesting({
@@ -36,9 +34,7 @@ before(async () => {
     apiBaseUrl: 'https://api.hrt.test',
     port: 0,
     databaseUrl: '',
-    serverDekKey: SERVER_DEK_KEY,
-    kms: null,
-    keysFromCredentials: [],
+    kms: TEST_KMS_CONFIG,
     // The record store seals every payload; a suite that writes records must carry a
     // key, because the store refuses rather than writing plaintext.
     google: null,
@@ -83,9 +79,9 @@ test('every account stores a server wrapper, and the deployment key opens the sa
   assert.ok(metadata.wrappers.password, 'a password wrapper always exists');
   assert.ok(metadata.wrappers.server, 'so does the server wrapper');
   assert.equal(metadata.version, 2, 'the document is versioned explicitly');
-  assert.equal(metadata.wrappers.server.scheme, 'server-hmac-sha256-v1');
+  assert.equal(metadata.wrappers.server.scheme, 'server-kms-v1');
 
-  const dek = await unwrapWithServer(metadata, account.userId, SERVER_DEK_KEY);
+  const dek = await unwrapWithServer(metadata, account.userId);
   assert.ok(dek, 'the deployment key opens it');
   // And the password opens the same key — one DEK, two wrappers.
   const viaPassword = await unwrapWithPassword(metadata, account.password, account.userId);

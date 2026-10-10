@@ -95,7 +95,22 @@ type CryptoClient = {
  */
 let clientPromise: Promise<CryptoClient> | null = null;
 
+/** The test seam: a fake client installed here takes precedence over the real one.
+ *
+ *  The suite exercises the wrapper mechanics through this module — minting, the
+ *  userId binding, unwrap failure shapes — and instance principals do not exist on
+ *  a dev box. A fake that honors the associatedData contract stands in for the
+ *  HSM; only `setConfigForTesting`-driven suites install one, and the deployment
+ *  never does. */
+let fakeClient: CryptoClient | null = null;
+
+export function setKmsClientForTesting(client: CryptoClient | null): void {
+  fakeClient = client;
+  clientPromise = null;
+}
+
 function getClient(kms: KmsConfig): Promise<CryptoClient> {
+  if (fakeClient) return Promise.resolve(fakeClient);
   if (!clientPromise) {
     clientPromise = (async () => {
       const common = await import('oci-common');

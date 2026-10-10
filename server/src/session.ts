@@ -5,9 +5,8 @@
  * read a record from a stolen database dump, because every payload is sealed under the
  * account's own DEK, and that DEK is stored only as a ciphertext. It is **not** the
  * stronger claim that the server can never read a record — the deployment opens every
- * account's DEK without the user being present, either by unwrapping it with
- * `SERVER_DEK_KEY` (the legacy scheme) or by asking the KMS master key in its HSM
- * (`kms.ts`), and decrypts on read. `payloadCrypto.ts` states the same bound; a
+ * account's DEK without the user being present, by asking the KMS master key in its
+ * HSM (`kms.ts`), and decrypts on read. `payloadCrypto.ts` states the same bound; a
  * comment here that promises more is the defect that keeps getting reintroduced.
  *
  * So this is what each party holds:
@@ -138,7 +137,6 @@ export interface EncryptionMetadata {
 
 export const ENCRYPTION_VERSION = 2;
 const PASSWORD_KDF = 'pbkdf2-sha256-600k';
-const SERVER_SCHEME = 'server-hmac-sha256-v1';
 
 /** Coerce whatever the jsonb column holds into a well-formed document. */
 export function readMetadata(raw: unknown): EncryptionMetadata {
@@ -156,18 +154,6 @@ export function passwordEnvelopeOf(metadata: EncryptionMetadata): WrappedKey | n
   const wrapper = metadata.wrappers.password;
   if (!isCloudEncrypted(wrapper)) return null;
   return { cloud: 1, iv: wrapper.iv, data: wrapper.data };
-}
-
-/**
- * The key the server wrapper is wrapped under, for one user.
- *
- * HMAC-SHA256 rather than PBKDF2: the server secret is machine-generated and
- * already high-entropy, so a deliberately slow KDF buys nothing, and this runs on
- * every request that resolves an `hrt_` token. One HMAC is the right primitive and
- * costs microseconds.
- */
-function serverKekFor(userId: string, serverKey: string): string {
-  return createHmac('sha256', serverKey).update(`hrt-server-v1:${userId}`).digest('base64');
 }
 
 async function unwrapEnvelope(
@@ -196,56 +182,77 @@ export async function unwrapWithPassword(
 }
 
 /**
- * Recover the DEK from the server wrapper, whichever scheme sealed it.
+ * Recover the DEK from the server wrapper.
  *
- * The scheme tag on the wrapper decides the path: `server-kms-v1` goes to the HSM
- * (a null here means KMS unreachable, the master key disabled, or the wrapper is
- * not this user's — "locked" is the right report for all three), and the legacy
- * HMAC scheme opens under `SERVER_DEK_KEY` for accounts the migration has not
- * reached yet. No scheme tag means the oldest rows, which were minted before the
- * tag existed; they are the legacy shape, so they take the local path too.
+ * Every wrapper is sealed by the KMS master key (`kms.ts`); a null here means KMS
+ * unreachable, the master key disabled, or the wrapper is not this user's — "locked"
+ * is the right report for all three, because no key is better than a wrong one.
  */
 export async function unwrapWithServer(
   metadata: EncryptionMetadata,
   userId: string,
-  serverKey: string | null,
 ): Promise<string | null> {
   const wrapper = metadata.wrappers.server;
   if (!wrapper) return null;
-  if (wrapper.scheme === KMS_SCHEME) {
-    const kms = getConfig().kms;
-    if (!kms) return null;
-    return await unwrapWithKms(wrapper, userId, kms);
-  }
-  if (!serverKey) return null;
-  return unwrapEnvelope(wrapper, async () => serverKekFor(userId, serverKey));
+  const kms = getConfig().kms;
+  if (!kms) return null;
+  return await unwrapWithKms(wrapper, userId, kms);
 }
 
 /**
- * Mint the server wrapper: the deployment's copy of the account's DEK.
- *
- * Two schemes coexist, chosen by configuration rather than by row:
- *
- *   - **KMS** (`server-kms-v1`) when `getConfig().kms` is set — the DEK is wrapped
- *     by the OCI master key inside the HSM, so the process never holds a secret
- *     that could open every account. This is what new and re-wrapped accounts get.
- *   - **Local HMAC** (`server-hmac-sha256-v1`) when no KMS is configured — the
- *     historical scheme, sealed under `SERVER_DEK_KEY`. Kept readable so accounts
- *     minted before the KMS cutover stay openable until the migration reaches them.
- *
- * Returns null when neither path is available; the caller then mints an account
- * with no server wrapper at all rather than one nobody can open.
+ * Mint the server wrapper: the deployment's copy of the account's DEK, sealed by
+ * the KMS master key in its HSM (`kms.ts`). Returns null when no KMS is configured,
+ * which leaves the account with no server wrapper at all — one nobody but the
+ * password can open — rather than one sealed under something weaker.
  */
-async function mintServerWrapper(
+async function mintServerWrapper(dek: string, userId: string): Promise<WrapperEnvelope | null> {
+  const kms = getConfig().kms;
+  if (!kms) return null;
+  return await wrapWithKms(dek, userId, kms);
+}
+
+/** Add the server wrapper, so the deployment's own key can open this account's DEK. */
+export async function addServerWrapper(
+  metadata: EncryptionMetadata,
   dek: string,
   userId: string,
-  serverKey: string | null,
-): Promise<WrapperEnvelope | null> {
-  const kms = getConfig().kms;
-  if (kms) return await wrapWithKms(dek, userId, kms);
-  if (!serverKey) return null;
-  const wrapped = (await encryptCloudPayload(dek, serverKekFor(userId, serverKey))) as WrappedKey;
-  return { ...wrapped, scheme: SERVER_SCHEME };
+): Promise<EncryptionMetadata> {
+  const wrapped = await mintServerWrapper(dek, userId);
+  if (!wrapped) return metadata;
+  return {
+    ...metadata,
+    wrappers: { ...metadata.wrappers, server: wrapped },
+  };
+}
+
+/**
+ * Mint the wrappers for a brand-new account.
+ *
+ * The DEK is returned so the caller can open an unlocked session without a second
+ * request. Without a KMS configured the account mints with no server wrapper at all,
+ * which production refuses to do — config requires the master key — and which tests
+ * accept because they exercise the password path.
+ */
+export async function createKeyMaterial(
+  password: string,
+  userId: string,
+): Promise<{ metadata: EncryptionMetadata; dek: string }> {
+  const dek = randomKeyB64();
+  const kek = await deriveCloudKey(password, userId);
+  const passwordWrapper = (await encryptCloudPayload(dek, kek)) as WrappedKey;
+  const wrappers: EncryptionMetadata['wrappers'] = {
+    password: { ...passwordWrapper, kdf: PASSWORD_KDF },
+  };
+  const serverWrapper = await mintServerWrapper(dek, userId);
+  if (serverWrapper) wrappers.server = serverWrapper;
+  return {
+    metadata: {
+      version: ENCRYPTION_VERSION,
+      dek: { alg: 'AES-GCM', createdAt: new Date().toISOString() },
+      wrappers,
+    },
+    dek,
+  };
 }
 
 /** Replace the password wrapper, keeping every other wrapper and the DEK. */
@@ -263,67 +270,21 @@ export async function setPasswordWrapper(
   };
 }
 
-/** Add the server wrapper, so the deployment's own key can open this account's DEK. */
-export async function addServerWrapper(
-  metadata: EncryptionMetadata,
-  dek: string,
-  userId: string,
-  serverKey: string | null,
-): Promise<EncryptionMetadata> {
-  const wrapped = await mintServerWrapper(dek, userId, serverKey);
-  if (!wrapped) return metadata;
-  return {
-    ...metadata,
-    wrappers: { ...metadata.wrappers, server: wrapped },
-  };
-}
-
-/**
- * Mint the wrappers for a brand-new account.
- *
- * The DEK is returned so the caller can open an unlocked session without a second
- * request. `serverKey` is the deployment's own key, and an account minted without it
- * is one the server cannot open — a misconfiguration, not a choice the product offers.
- */
-export async function createKeyMaterial(
-  password: string,
-  userId: string,
-  opts: { serverKey?: string | null } = {},
-): Promise<{ metadata: EncryptionMetadata; dek: string }> {
-  const dek = randomKeyB64();
-  const kek = await deriveCloudKey(password, userId);
-  const passwordWrapper = (await encryptCloudPayload(dek, kek)) as WrappedKey;
-  const wrappers: EncryptionMetadata['wrappers'] = {
-    password: { ...passwordWrapper, kdf: PASSWORD_KDF },
-  };
-  const serverWrapper = await mintServerWrapper(dek, userId, opts.serverKey ?? null);
-  if (serverWrapper) wrappers.server = serverWrapper;
-  return {
-    metadata: {
-      version: ENCRYPTION_VERSION,
-      dek: { alg: 'AES-GCM', createdAt: new Date().toISOString() },
-      wrappers,
-    },
-    dek,
-  };
-}
-
 /**
  * Key material for an account that has no password yet.
  *
  * A social signup has no password, so there is no KEK to wrap a DEK under — and the
  * account would have no DEK at all, which is what made an X-created account unable to
- * reach its own records. The deployment holds the record key, so a server wrapper is
- * enough to make the account work immediately, and binding a password later adds the
- * password wrapper alongside it (`setPasswordWrapper`).
+ * reach its own records. A server wrapper is enough to make the account work
+ * immediately, and binding a password later adds the password wrapper alongside it
+ * (`setPasswordWrapper`).
  */
 export async function createPasswordlessKeyMaterial(
   userId: string,
-  opts: { serverKey?: string | null } = {},
 ): Promise<{ metadata: EncryptionMetadata; dek: string }> {
   const dek = randomKeyB64();
   const wrappers: EncryptionMetadata['wrappers'] = {};
-  const serverWrapper = await mintServerWrapper(dek, userId, opts.serverKey ?? null);
+  const serverWrapper = await mintServerWrapper(dek, userId);
   if (serverWrapper) wrappers.server = serverWrapper;
   return {
     metadata: {
