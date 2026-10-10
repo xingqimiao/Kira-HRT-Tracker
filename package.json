@@ -17,7 +17,6 @@
   "dependencies": {
     "@choochmeque/tauri-plugin-notifications-api": "^0.5.0-rc.14",
     "@tauri-apps/plugin-opener": "^2.5.5",
-    "@types/uuid": "^10.0.0",
     "hash-wasm": "^4.12.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
@@ -28,10 +27,16 @@
     "reicon-mcp": "^1.1.102",
     "tauri-plugin-secure-storage-api": "^1.5.0",
     "tesseract.js": "^7.0.0",
-    "uuid": "^10.0.0"
+    "uuid": "^11.1.1"
   },
   "overrides": {
-    "serialize-javascript": "^7.0.3"
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "dompurify": "^3.4.16",
+    "fast-uri": "^3.1.8",
+    "fflate": "^0.8.3",
+    "serialize-javascript": "^7.1.2",
+    "source-map-js": "^1.2.2",
+    "uuid": "^11.1.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
@@ -43,7 +48,7 @@
     "autoprefixer": "^10.4.23",
     "lucide-react": "^1.47.0",
     "postcss": "^8.5.6",
-    "sharp": "^0.35.4",
+    "sharp": "^0.35.5",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.0",
