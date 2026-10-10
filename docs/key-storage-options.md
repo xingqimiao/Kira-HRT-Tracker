@@ -1,4 +1,5 @@
-> **Superseded 2026-10-10.** `ENCRYPTION_KEY` was removed from the codebase; records are sealed under each account's DEK and only `SERVER_DEK_KEY` remains. See `docs/auth-design.md` §5.
+> **Superseded 2026-10-10.** `ENCRYPTION_KEY` was removed from the codebase; records are sealed under each account's DEK and only `SERVER_DEK_KEY` remains.
+> **Superseded again 2026-10-11.** The KMS cutover removed `SERVER_DEK_KEY` too — every DEK is now wrapped by the OCI KMS master key in its HSM, the box holds no key material, and the runtime knows no local wrapping scheme. This document's premise (relocating a deployment-held secret) is fully resolved by `server/src/kms.ts`; kept as a historical record. See `docs/auth-design.md` §5.
 
 # 密钥放在哪里 — Cloudflare Secrets Store 能不能解决问题
 

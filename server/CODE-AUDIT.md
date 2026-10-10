@@ -19,7 +19,7 @@ refuse to publish any row you cannot confirm.
 | **An agent token is a full credential for the account's records** | `server/src/accounts.ts`, `resolveApiContext` — a `hrt_` token resolves to a user id (`resolveApiToken`), and `serverDekFor` then opens the key from the account's own server wrapper. No live unlock is consulted |
 | **An agent token is permanent by default, and ends only by revocation** | `server/src/accounts.ts`, `mintApiToken` defaults `expires_at` to NULL; `revokeApiToken` deletes the row. `POST /auth/logout` (`AccountService.lock`) closes a live unlock and does not touch an API token |
 | **The password is the other thing that ends a token** | `server/src/accounts.ts`, `changePassword` — deletes every `api_tokens` row for the account and calls `closeUserSessions` |
-| **A token cannot be locked out by account state** | `server/src/accounts.ts`, `resolveApiContext` — a `hrt_` token whose account carries no server wrapper, or a deployment with no `SERVER_DEK_KEY`, returns `{ denied: 'locked' }`; that is the only state in which a durable token reads nothing |
+| **A token cannot be locked out by account state** | `server/src/accounts.ts`, `resolveApiContext` — a `hrt_` token whose account carries no server wrapper, or a deployment with no KMS master key configured, returns `{ denied: 'locked' }`; that is the only state in which a durable token reads nothing |
 | Deletion removes everything user-scoped | `server/test/deleteAccount.test.ts` — asserts each table is empty |
 | The deletion tombstone carries no identifier | `server/schema.sql`, `deletion_log`, and the tombstone test |
 | Individual record deletes are **physical**, with no tombstone | `server/src/records.ts`, `RecordService.remove` — unlike account deletion, which writes one identifier-free `deletion_log` row |
@@ -52,9 +52,9 @@ as a password"**, not "a token cannot read on its own".
 
 The bound that survives is the one `payloadCrypto.ts` states: a stolen database dump
 is unreadable without the deployment's key material. Each account's records are sealed
-under its own DEK; the server opens them only because it also holds `SERVER_DEK_KEY`,
-which unwraps every account's DEK. It is not that the operator cannot see the
-data — the operator holds the key.
+under its own DEK; the server opens them only because each DEK is also wrapped by the
+deployment's KMS master key, which unwraps every account's DEK. It is not that the operator cannot see the
+data — the operator controls the key.
 
 One change would narrow the gap, not made yet because it alters security behaviour
 rather than wording: give `mintApiToken` a non-NULL default expiry, so a forgotten

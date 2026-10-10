@@ -24,14 +24,15 @@ this document:
   Nothing in the policy may promise an authenticator, a verification code, a recovery
   code, or signing in with a passkey. See §0 and §10.
 - **We hold the key.** The architecture was reversed on purpose: records are sealed
-  under each account's own DEK, and the server can open them because the deployment
-  holds `SERVER_DEK_KEY`, which unwraps every account's DEK — it decrypts records on read
+  under each account's own DEK, and the server can open them because each account's DEK
+  is wrapped by the deployment's OCI KMS master key,
+  which unwraps every account's DEK — it decrypts records on read
   (`server/src/payloadCrypto.ts`). The
   claim that survives is "a stolen database dump is unreadable without the key". The
   claim that does not is "the operator cannot see your data". §2 is about keeping those
   two apart, because an earlier draft of this guide instructed the opposite.
 - **There are no privacy modes.** Every account's data key is wrapped under a
-  password-derived key *and* under the deployment's `SERVER_DEK_KEY`, so there is no
+  password-derived key *and* under the deployment's KMS master key, so there is no
   account for which "we hold no copy of your unlock key" is true. Any sentence
   conditioned on "if you use advanced privacy mode" is now a sentence about nobody.
   See §2 and §3.
@@ -170,7 +171,7 @@ the operator cannot see your data. Read `server/src/session.ts` before writing a
 
 - An account has a per-account data key (a DEK). It is stored only as ciphertext wrapped
   under two wrappers (`encryption_metadata` in `schema.sql`): one derived from the
-  password, and one derived from the deployment's `SERVER_DEK_KEY`. A session holds the
+  password, and one wrapped by the deployment's KMS master key. A session holds the
   unwrapped DEK **in process memory** for a sliding idle window — `SESSION_TTL_MINUTES`,
   renewed by use and capped absolutely by `MAX_SESSION_AGE_MS` (`openSession` / `renew` /
   `lookupSession` in `server/src/session.ts`).
@@ -189,7 +190,8 @@ available for `advanced` accounts and applied to a minority. Do not write it for
 account now, and do not write a mode-conditional version of it either: there is no mode
 to condition on, and `GET /auth/account` no longer reports `privacy_mode`,
 `has_recovery_key` or `server_recovery_available`. The only encryption claim left is the
-one in §2 — a dump is unreadable without the deployment's key material (`SERVER_DEK_KEY`), which we hold.
+one in §2 — a dump is unreadable without the deployment's key material (the OCI KMS
+master key, which we control and which lives in an HSM, not on the server).
 
 ---
 
@@ -246,7 +248,7 @@ The mechanism, from the code (`server/src/mcp.ts`, `server/src/accounts.ts`,
   things that end it are revoking the token (`DELETE /api/tokens/{id}`) and changing the
   password (`changePassword` deletes every token for the account).
 - The only state in which a token reads nothing is `{ denied: 'locked' }`: the account
-  carries no server wrapper, or the deployment has no `SERVER_DEK_KEY`. That is a
+  carries no server wrapper, or the deployment has no KMS master key configured. That is a
   misconfiguration or a pre-existing account, not a protection to describe.
 
 So write the conservative version, and write it without hedging: **a token is a
@@ -421,9 +423,9 @@ unreadable to us — see §2.
 
 State what you actually do, briefly:
 
-- records encrypted at rest under each account's own DEK; the deployment key that opens
-  them (`SERVER_DEK_KEY`) is held outside the database, and records are decrypted
-  server-side on read
+- records encrypted at rest under each account's own DEK, wrapped by the KMS master
+  key; that key is held in an OCI HSM, outside both the database and the server, and
+  records are decrypted server-side on read
 - passwords stored only as salted scrypt hashes (`hashPassword`, `server/src/accounts.ts`)
 - rate limiting and per-account lockout on sign-in, and on the delete endpoint
   (`noteFailedUnlock`; `MAX_FAILED_UNLOCKS` / `LOCKOUT_MS`)

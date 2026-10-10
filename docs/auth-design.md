@@ -23,7 +23,7 @@
 ### 非目标
 
 - 不做邮箱注册、邮箱验证、邮箱找回。登录标识是**自定义账号名**。
-- 不做 E2EE。记录按每个账户自己的 DEK 封存，服务端持有 `SERVER_DEK_KEY`、能解开封存记录——见 §5 的诚实口径。
+- 不做 E2EE。记录按每个账户自己的 DEK 封存，服务端能通过 KMS 主密钥（HSM）解封记录——见 §5 的诚实口径。
 
 ---
 
@@ -163,8 +163,8 @@ DELETE /auth/oauth/{provider}     解绑一个 provider
 
 ## 5. 诚实口径（必须与文档/隐私声明一致）
 
-1. **这不是端到端加密。** 记录按每个账户自己的 DEK 封存，服务端持有 `SERVER_DEK_KEY`（解封每个账户的 DEK），读记录时解密。
-   能宣称的是「数据库被拖库、没有这把密钥则数据不可读」，**不是**「运营方看不到数据」。
+1. **这不是端到端加密。** 记录按每个账户自己的 DEK 封存，服务端能凭 KMS 主密钥解封每个账户的 DEK（HSM 内持有，2026-10-11 起），读记录时解密。
+   能宣称的是「数据库被拖库、没有 KMS 访问权则数据不可读，且每次解封留有审计」，**不是**「运营方看不到数据」。
 2. **没有邮箱找回。** 登录标识是账号名，忘记密码且 OAuth 也失效时，账号无法自助恢复。
    所以产品必须主动引导绑定（§4.4），这是该设计成立的前提，不是锦上添花。
 3. **`provider_user_id` 会存第三方 id。** 可推断「某人的 X/Google 账号与这个账号有关」，
@@ -181,7 +181,7 @@ DELETE /auth/oauth/{provider}     解绑一个 provider
 | `oauth_accounts` 改名 + 放开到 `x`/`google` | ✅ 已在生产生效 |
 | `records` 表（整包加密） | ✅ 已建表，索引齐 |
 | `payloadCrypto.ts`（AES-256-GCM，按账户 DEK 封存） | ✅ 已实现，启动期校验 |
-| `SERVER_DEK_KEY` 写入生产环境 | ✅ 已生成（48 字节）并写入 |
+| 数据密钥交由 OCI KMS 主密钥封存 | ✅ 2026-10-11 起生产生效（`KMS_KEY_OCID` + `KMS_CRYPTO_ENDPOINT`，`server/src/kms.ts`） |
 | `crypto.scrypt` 密码哈希 | ✅ **既有实现**（`accounts.ts:188`），无需重写 |
 | Google OAuth provider | ✅ 已实现（只申请 `openid`，身份取 ID token 的 `sub`；见 `docs/add-google-oauth.md`） |
 | 绑定/解绑接口（§4.4 / §4.5） | ✅ 已实现（`/auth/credentials/bind`、`/auth/oauth/{provider}/unlink`） |

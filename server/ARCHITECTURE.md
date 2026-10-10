@@ -53,8 +53,8 @@ needs a specific shape:
   nothing.
 - The **DEK** is random per account and is what actually encrypts records. It is
   stored server-side only as a ciphertext, wrapped once per credential that can
-  open it: under the password's KEK, and under the deployment's own key
-  (`SERVER_DEK_KEY`).
+  open it: under the password's KEK, and under the deployment's OCI KMS master key
+  (an HSM-held key; the box reaches it with Instance Principals — `kms.ts`).
 - An **unlocked** session holds the DEK in memory for `SESSION_TTL_MINUTES` of
   idle time. That window is when a request carries the key directly. It is not the
   only way in, because the server wrapper opens the same DEK.
@@ -65,7 +65,7 @@ server wrapper) and an `advanced` one (password wrapper only, no server wrapper)
 The choice was the last piece of the zero-knowledge design this service abandoned:
 it only meant anything while `advanced` could be enforced, and it could not be,
 because the same deployment already held the key material that opens every account's
-records and decrypted them on read (`SERVER_DEK_KEY` unwraps each DEK). An account
+records and decrypted them on read (the KMS master key unwraps each DEK). An account
 whose wrapper set promises the operator cannot open it,
 on a server that opens it anyway, is a claim in the database that nothing checks.
 So the column and its check are dropped, every account is written with the server
@@ -83,7 +83,8 @@ The honest description was never **"the server never sees the data"**, and one
 arrangement makes that easier to state rather than harder: there is no longer a
 mode in which it is even arguably true. What the arrangement does deliver is the
 bound `payloadCrypto.ts` states — **a stolen database dump is unreadable without
-the deployment's key material**, `SERVER_DEK_KEY` being kept outside the database.
+the deployment's key material**, the KMS master key living in an OCI HSM, outside the
+database and outside the server itself.
 Nobody should read the
 encryption and conclude the operator cannot see the data.
 
@@ -117,7 +118,8 @@ protect the data key: a credential's **PRF extension output** derived the KEK th
 wrapped the DEK, registration refused any credential that did not return a PRF output,
 and the UI hid the whole thing on a browser that could not do PRF. That is the
 zero-knowledge design this service abandoned. Once the server holds the key material
-that opens every account's records (`SERVER_DEK_KEY`) and decrypts on read, a passkey
+that opens every account's records (the KMS master key, which unwraps each DEK) and
+decrypts on read, a passkey
 that no longer derives anything is a button whose
 description is a lie — so it is gone, along with `webauthn_credentials` and
 `webauthn_challenges`.
@@ -130,7 +132,7 @@ the denial had become unreachable and was removed rather than left as a state no
 caller can receive. The step-up would have been aimed at the wrong target anyway:
 the token path no longer consults a live unlock at all, so presence is not part of
 what it checks. What remains is `'locked'`, and it means one specific thing — the
-account carries no server wrapper, or the deployment has no `SERVER_DEK_KEY`, so
+account carries no server wrapper, or the deployment has no KMS master key configured, so
 there is no key to hand over. A password unlock adds the wrapper.
 
 ### Record ids are opaque client strings, scoped per account
@@ -355,7 +357,7 @@ gone with TOTP, so `register` is the only action left.
 
 **Registration mints both wrappers**, so the account's key material is complete from
 its first request: the password wrapper under the KEK just chosen, and the server
-wrapper under `SERVER_DEK_KEY`. There is no mode to choose, and no second step.
+wrapper under the deployment's KMS master key. There is no mode to choose, and no second step.
 
 That also collapses two ideas the design used to keep apart — **authentication** (who
 you are) and **data unlock** (the key). They were separate states while an account
@@ -406,7 +408,7 @@ live unlock.
 The alternative — wrapping the DEK under something the provider can supply — would make
 the key recoverable from the provider account, which is precisely the dependency this
 rules out, and would hand that provider a path to the encryption key. The server
-wrapper is *not* that: it is wrapped under a deployment secret (`SERVER_DEK_KEY`), not
+wrapper is *not* that: it is wrapped under the deployment's KMS master key, not
 anything the provider controls.
 
 ### What a provider is allowed to tell us

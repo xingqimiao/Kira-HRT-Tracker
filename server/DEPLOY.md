@@ -203,10 +203,14 @@ PORT=8788
 BIND_HOST=127.0.0.1
 
 # Wraps each account's data key, alongside the password wrapper. Every account carries
-# it, which is what lets provider sign-in finish in one round-trip and lets a durable
-# `hrt_` agent token read records with no live unlock. Required in production: the
-# server refuses to boot without it.
-SERVER_DEK_KEY=<openssl rand -base64 48>
+# that wrapper, which is what lets provider sign-in finish in one round-trip and lets a
+# durable `hrt_` agent token read records with no live unlock. Required in production:
+# the server refuses to boot without it. Both values are identifiers, not secrets — get
+# both from the OCI console (the vault's cryptographic endpoint and the key's OCID), and
+# create nothing on this box: the instance authenticates with Instance Principals and
+# holds no key material.
+KMS_KEY_OCID=ocid1.key.oc1.<region>..<key-ocid>
+KMS_CRYPTO_ENDPOINT=https://<vault-id>-crypto.kms.<region>.oraclecloud.com
 
 SESSION_TTL_MINUTES=10080
 
@@ -875,14 +879,17 @@ app calls with the `code` from the URL.
 
 ## 6. Operations
 
-**Backups.** One deployment key remains: `SERVER_DEK_KEY` unwraps every account's data
-key, and the records themselves are sealed under each account's own DEK. A database
-restore without `SERVER_DEK_KEY` is a database full of ciphertext. Store it off the
-database host.
+**Backups.** The records themselves are sealed under each account's own DEK, wrapped by
+the KMS master key. A database restore without KMS access is a database full of
+ciphertext. No master key exists on this box: every unwrap is an audited OCI KMS API
+call, so wherever the database is restored, the OCI vault, its key and this instance's
+IAM path to them must come along.
 
-**Rotating that key is destructive.** `SERVER_DEK_KEY` can be
-rotated only by re-wrapping each account's DEK with the password in hand, so in
-practice it is not rotatable either. Treat it as permanent.
+**Rotating the master key happens in OCI, not here.** Rotate the KMS key in the OCI
+console and the service keeps working — old key versions remain decryptable, so no
+data is re-wrapped and nothing is destructive. There is no second key on the box to
+rotate: the old `SERVER_DEK_KEY` scheme (and the systemd-creds setup that carried it)
+is gone entirely.
 
 **A lost password.** There is no recovery key, no self-service reset, and no admin
 endpoint. What makes it survivable is the server wrapper: the deployment holds a copy of

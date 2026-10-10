@@ -6,16 +6,17 @@ user's records. Written from the code that implements it (`server/src/mcp.ts`,
 `src/pages/McpSettings.tsx`); every value below is what the server actually sends.
 
 **A durable token needs nobody present.** There is no live-unlock guard on the MCP
-path: `resolveApiContext` (`server/src/accounts.ts:392`) turns an `hrt_` token into a
+path: `resolveApiContext` (`server/src/accounts.ts:426`) turns an `hrt_` token into a
 user id and then attaches the account's key from the deployment's own copy
 (`serverDekFor` → `unwrapWithServer`). No browser session is consulted, and signing out
 does not stop it.
 
 The one refusal left is `{ denied: 'locked' }`, and it is a deployment state rather than a
 user action: it is returned only when `serverDekFor` finds no server-side wrapper to open
-(`server/src/accounts.ts:402` and `:415`) — a deployment missing `SERVER_DEK_KEY`, which
-production requires (`server/src/config.ts:255`), or an account created before the wrapper
-existed. A password sign-in adds the missing wrapper (`server/src/accounts.ts:350`). On a
+(`server/src/accounts.ts:436` and `:449`) — a deployment missing its KMS master key
+(`KMS_KEY_OCID` + `KMS_CRYPTO_ENDPOINT`), which
+production requires (`server/src/config.ts:261`), or an account created before the wrapper
+existed. A password sign-in adds the missing wrapper (`server/src/accounts.ts:385`). On a
 correctly configured deployment this should never appear; if it does, it is a bug, not a
 locked account waiting for a browser.
 
@@ -43,7 +44,7 @@ The bearer token is one of two things, and they differ in lifetime rather than i
   session: only revoking it in the app or changing the password ends it.
 - **`ks_…`** — a session token from the web UI, not minted for an agent. It reaches the
   same key the same way, because a session row carries none of its own
-  (`server/src/accounts.ts:398`); it expires on its own idle window
+  (`server/src/accounts.ts:432`); it expires on its own idle window
   (`SESSION_TTL_MINUTES`).
 
 So an `hrt_` token is a full credential for the account's records — read and write.
@@ -58,7 +59,8 @@ that makes a forgotten password recoverable — but it means minting a token is 
 standing access, not a temporary one.
 
 **Where those records are, and who can read them.** They are sealed at rest under each
-account's own DEK, and the deployment can open them because it holds `SERVER_DEK_KEY`,
+account's own DEK, and the deployment can open them because each DEK is wrapped by the
+deployment's KMS master key,
 which unwraps every account's DEK — not a key only the user holds. The operator can read
 them. State
 that plainly to a user before asking for a token; never describe this service as end-to-end
@@ -223,7 +225,7 @@ Then `hrt_get_timeline` to confirm the token actually reaches records.
 
 | Symptom | Cause |
 |---|---|
-| `the account is locked` | Not a session state: the deployment holds no copy of the key (`server/src/accounts.ts:415`) — no `SERVER_DEK_KEY`, or an account from before the wrapper existed. A new token will not help; a password sign-in adds the wrapper. |
+| `the account is locked` | Not a session state: the deployment holds no copy of the key (`server/src/accounts.ts:449`) — no KMS master key configured, or an account from before the wrapper existed. A new token will not help; a password sign-in adds the wrapper. |
 | `401` on every call | Token missing, mistyped, or revoked in the app. |
 | `404` | Wrong path. It is `/hrt/mcp` — the `/hrt` prefix is part of it, because the host is shared with the comment service. |
 | `405` | Sent a GET. The transport is POST-only. |

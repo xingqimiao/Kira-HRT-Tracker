@@ -33,9 +33,12 @@ AES-256-GCM blob under each account's own data key (DEK). The GCM tag length (16
 and IV length (12 bytes) are validated before decryption, not merely assumed.
 
 This is **not** end-to-end encryption: the server decrypts on read. The guarantee is
-"a database dump is useless without the key". Each account has its own data key (DEK);
-`SERVER_DEK_KEY` is the deployment's wrapped copy so an unlocked token can reach records
-without the user re-entering a password. With no `SERVER_DEK_KEY`, the account is
+"a database dump is useless without the key". Each account has its own data key (DEK),
+and records are sealed under that DEK; the deployment's copy of every DEK is wrapped by
+an OCI KMS master key living in an HSM (`server/src/kms.ts`), so no master key exists
+on the box and every unwrap is an audited KMS API call. That wrapper is what lets an
+unlocked token reach records without the user re-entering a password. An account with
+no server wrapper at all — one predating the wrapper — is
 "locked" and record tools report that rather than failing as an auth error.
 
 ## Transport and request handling
@@ -69,16 +72,15 @@ never be stored as an avatar.
 
 ## Security configuration requirements
 
-Set these in the process environment (the systemd unit on the deployment host keeps the
-secrets encrypted on disk). Read once and validated at boot, so a bad paste fails at
-startup rather than on the first request.
+Set these in the process environment. Read once and validated at boot, so a bad paste
+fails at startup rather than on the first request.
 
 | Variable | Required | Notes |
 | --- | --- | --- |
 | `DATABASE_URL` | yes | PostgreSQL connection string. |
 | `PUBLIC_ORIGIN` | yes | The web app origin. Used for the CORS allowlist and OAuth bounce targets. Bare origin, no trailing slash. |
 | `API_ORIGIN` | yes | This server's own public origin — the OAuth callback host. |
-| `SERVER_DEK_KEY` | production | Deployment's wrapped copy of each account's data key, 32+ chars. Required in production. |
+| `KMS_KEY_OCID` + `KMS_CRYPTO_ENDPOINT` | production | The OCI KMS master key that wraps each account's data key, and its vault's cryptographic endpoint. Identifiers, not secrets — create the key in the OCI console; nothing to generate. Validated as a pair, host must be `*.crypto.kms.<region>.oraclecloud.com`. Required in production. |
 | `PORT` | no | Default `8788`. |
 | `BASE_PATH` | no | Path prefix on a shared host (e.g. `/hrt`). No `.`/`..` segments. |
 | `BIND_HOST` | no | Interface to bind. Defaults to `127.0.0.1` — put a reverse proxy in front. |
@@ -87,7 +89,6 @@ startup rather than on the first request.
 | `X_CLIENT_ID` / `X_CLIENT_SECRET` / `X_REDIRECT_URI` | optional | All three together, or none. `X_REDIRECT_URI` must be https outside localhost. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` | optional | All three together, or none. Must match the Cloud Console registration byte for byte. |
 | `TURNSTILE_SECRET` / `TURNSTILE_HOSTNAMES` | optional | Both together, or neither. |
-| `CREDENTIALS_DIRECTORY` | no | systemd credential directory, read for keys. |
 | `HRT_UNLOCK_TOKEN` | no | For the stdio MCP adapter: an unlock token so the local server can read records. |
 
 Half-configured provider blocks (one of three variables set) are refused at boot, because
@@ -96,7 +97,9 @@ that is the mistake that silently half-works.
 ## Deployment checklist
 
 - [ ] Set `DATABASE_URL`, `PUBLIC_ORIGIN`, `API_ORIGIN` in the environment.
-- [ ] Generate and set `SERVER_DEK_KEY` (`openssl rand -base64 48`); never commit it.
+- [ ] Create a master encryption key in OCI KMS (OCI console — vault's cryptographic
+      endpoint + key OCID) and set `KMS_KEY_OCID` + `KMS_CRYPTO_ENDPOINT`. Both are
+      identifiers, not secrets — generate nothing; there is no master key on this box.
 - [ ] Keep `BIND_HOST` on loopback and terminate TLS at the reverse proxy.
 - [ ] Configure the CORS allowlist to the exact production origin.
 - [ ] If social login is used, register the callback URIs exactly as configured.
