@@ -1,0 +1,42 @@
+[Unit]
+Description=HRT tracker API and MCP server
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hrt
+Group=hrt
+WorkingDirectory=/srv/hrt
+EnvironmentFile=/srv/hrt/.env
+# The key that must not sit on the same disk as the database. systemd keeps it
+# encrypted and decrypts it into a tmpfs directory for the lifetime of the process.
+# The .env line stays as the fallback; config.ts prefers the credential when both
+# are present. ENCRYPTION_KEY was retired 2026-10-10: records now seal under each
+# account's own DEK, so this is the only deployment key.
+LoadCredentialEncrypted=SERVER_DEK_KEY
+
+# The bundled CJS build: schema.sql sits beside dist/, which is what db.ts resolves
+# relative to its own location.
+ExecStart=/usr/bin/node /srv/hrt/dist/index.cjs http
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+# Left false on purpose: V8 needs writable-executable memory for JIT, and enabling
+# this makes Node die at startup with an unhelpful signal.
+MemoryDenyWriteExecute=false
+ReadWritePaths=/srv/hrt
+
+[Install]
+WantedBy=multi-user.target
