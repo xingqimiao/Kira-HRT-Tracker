@@ -431,7 +431,7 @@ export const AccountService = {
       if (!sessionUser) return null;
       // The session proves the login, not the key: a session row carries none, so the
       // key comes from the account's own server wrapper, exactly as a durable token's
-      // does below. A deployment with no SERVER_DEK_KEY is the only "locked" left.
+      // does below. A KMS outage or a disabled master key is the only "locked" left.
       const sessionDek = await serverDekFor(sessionUser);
       if (!sessionDek) return { denied: 'locked' };
       return { userId: session.userId, dek: sessionDek };
