@@ -61,6 +61,20 @@ const PACK: LangPack = {
     "core.acct.signin_methods": "Sign-in methods",
     "core.acct.active": "Active",
     "core.acct.change_pw": "Change password",
+
+    "core.acct.rotate": "Veri anahtarını döndür",
+
+    "core.acct.rotate_sub": "Tüm kayıtları yeni bir anahtarla yeniden şifreler; sızan eski anahtarı geçersiz kılar",
+
+    "core.rotate.title": "Veri anahtarını döndür",
+
+    "core.rotate.desc": "Yeni bir veri anahtarı oluşturulur ve tüm kayıtlar yeniden şifrelenir; sızan eski anahtar geçersiz hale gelir. Şifreniz, oturum açmada olduğu gibi yalnızca bir kez doğrulanır.",
+
+    "core.rotate.password": "Şifreyi onayla",
+
+    "core.rotate.action": "Döndür",
+
+    "core.rotate.success": "Döndürüldü: {records} kayıt yeniden şifrelendi",
     "core.acct.change_pw_sub": "Your records are re-locked under the new password. Nothing is re-encrypted from scratch, so this is safe and quick.",
     "core.acct.x_section": "X",
     "core.acct.connect": "Connect {provider}",

@@ -61,6 +61,20 @@ const PACK: LangPack = {
     "core.acct.signin_methods": "Sign-in methods",
     "core.acct.active": "Active",
     "core.acct.change_pw": "Change password",
+
+    "core.acct.rotate": "Rotate data key",
+
+    "core.acct.rotate_sub": "Re-encrypt all records under a fresh key, invalidating any leaked copy of the old one",
+
+    "core.rotate.title": "Rotate data key",
+
+    "core.rotate.desc": "Generates a new data key and re-encrypts every record, so any copy of the old key that leaked becomes useless. Your password is verified once, as at sign-in.",
+
+    "core.rotate.password": "Confirm password",
+
+    "core.rotate.action": "Rotate",
+
+    "core.rotate.success": "Rotated: {records} records re-encrypted",
     "core.acct.change_pw_sub": "Your records are re-locked under the new password. Nothing is re-encrypted from scratch, so this is safe and quick.",
     "core.acct.x_section": "X",
     "core.acct.connect": "Connect {provider}",

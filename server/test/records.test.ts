@@ -682,3 +682,65 @@ test('a partial settings bag does not erase the settings keys it never read', as
   );
   assert.equal(after.body.appState.settings.lang, 'ja');
 });
+
+test('key rotation re-encrypts every record and retires the old DEK', async () => {
+  const account = await registerAccountWithKey(base, {});
+  await call(base, '/api/records', json({
+    id: 'dose:transfem:rotate-1', takenAt: Date.now(), category: 'dose', data: { med_name: 'ROTATE_A' },
+  }, account.token));
+  await call(base, '/api/records', json({
+    id: 'dose:transfem:rotate-2', takenAt: Date.now(), category: 'dose', data: { med_name: 'ROTATE_B' },
+  }, account.token));
+
+  const rotated = await call(base, '/auth/keys/rotate', json({ password: account.password }, account.token));
+  assert.equal(rotated.status, 200, JSON.stringify(rotated.body));
+  assert.deepEqual(rotated.body, { ok: true, records: 2, unreadable: 0 });
+
+  // The same records read back through the API — sealed under a different key now.
+  const listed = await call(base, '/api/records', bearer(account.token));
+  const names = (listed.body as { records: { data?: { med_name?: string } }[] }).records
+    .map((r) => r.data?.med_name).sort();
+  assert.deepEqual(names, ['ROTATE_A', 'ROTATE_B']);
+
+  // The stored rows no longer open under the pre-rotation DEK...
+  const { getPool } = await import('../src/db.ts');
+  const { rows } = await getPool().query<{ payload_encrypted: string }>(
+    `SELECT payload_encrypted FROM records WHERE user_id = $1 AND id = 'dose:transfem:rotate-1'`,
+    [account.userId],
+  );
+  const { decryptPayload } = await import('../src/payloadCrypto.ts');
+  assert.ok(rows[0].payload_encrypted.startsWith(DEK_SEALED_PREFIX));
+  assert.throws(
+    () => decryptPayload(rows[0].payload_encrypted.slice(DEK_SEALED_PREFIX.length), Buffer.from(account.dek, 'base64')),
+    'a captured pre-rotation DEK still opened the row',
+  );
+
+  // ...while the password derives the NEW DEK, which opens them.
+  const meta = await getPool().query<{ encryption_metadata: unknown }>(
+    `SELECT encryption_metadata FROM users WHERE id = $1`, [account.userId],
+  );
+  const { readMetadata, unwrapWithPassword } = await import('../src/session.ts');
+  const newDek = await unwrapWithPassword(readMetadata(meta.rows[0].encryption_metadata), account.password, account.userId);
+  assert.ok(newDek, 'the password wrapper still opens, now onto the new key');
+  assert.notEqual(newDek, account.dek, 'the DEK actually changed');
+  const opened = decryptPayload(
+    rows[0].payload_encrypted.slice(DEK_SEALED_PREFIX.length),
+    Buffer.from(newDek!, 'base64'),
+  ) as { med_name: string };
+  assert.equal(opened.med_name, 'ROTATE_A');
+});
+
+test('key rotation refuses a wrong password and leaves the records untouched', async () => {
+  const account = await registerAccountWithKey(base, {});
+  await call(base, '/api/records', json({
+    id: 'dose:transfem:rotkeep', takenAt: Date.now(), category: 'dose', data: { med_name: 'ROTATE_KEEP' },
+  }, account.token));
+
+  const refused = await call(base, '/auth/keys/rotate', json({ password: 'definitely-wrong-9' }, account.token));
+  assert.equal(refused.status, 400, JSON.stringify(refused.body));
+
+  const listed = await call(base, '/api/records', bearer(account.token));
+  const names = (listed.body as { records: { data?: { med_name?: string } }[] }).records
+    .map((r) => r.data?.med_name);
+  assert.deepEqual(names, ['ROTATE_KEEP']);
+});

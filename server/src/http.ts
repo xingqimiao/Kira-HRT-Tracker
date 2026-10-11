@@ -527,6 +527,25 @@ export function createRequestHandler() {
         return send(res, 200, { ok: true });
       }
 
+      // --- Auth: data-key rotation -------------------------------------------
+      //
+      // Re-encrypts the account's records under a fresh DEK, invalidating any copy of
+      // the old key that a compromised server might have leaked from memory. It
+      // verifies a password, which puts it on the credential-guessing surface — so it
+      // rides the login rate bucket, not an unbounded one.
+      if (path === '/auth/keys/rotate' && req.method === 'POST') {
+        const limits = getConfig().rateLimits;
+        if (rateLimited(`rotate:${clientIp(req)}`, limits.login, limits.windowMs)) {
+          return send(res, 429, { error: 'too many attempts, try again later' });
+        }
+        const ctx = await contextFor(req);
+        if (!ctx) return send(res, 401, { error: 'authentication required' });
+        const body = (await readBody(req)) as { password?: unknown } | undefined;
+        const result = await AccountService.rotateKeys(ctx, body?.password);
+        if (!result.ok) return send(res, 400, { error: result.error });
+        return send(res, 200, { ok: true, records: result.value.records, unreadable: result.value.unreadable });
+      }
+
       // --- Auth: Google OAuth ----------------------------------------------
       //
       // Same shape as X's pair, and deliberately so: the app decides how to present the

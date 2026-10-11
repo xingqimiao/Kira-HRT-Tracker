@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Icon from '../components/Icon';
 import { useTranslation } from '../contexts/LanguageContext';
-import { AlertTriangle, Check, LogOut, RefreshCw, Trash2, Unlink, DevicePhone, DeviceTablet, DeviceDesktop, DeviceBrowser, DeviceAgent } from '../icons';
+import { AlertTriangle, Check, KeyRound, LogOut, RefreshCw, Trash2, Unlink, DevicePhone, DeviceTablet, DeviceDesktop, DeviceBrowser, DeviceAgent } from '../icons';
 import { Progress } from '../components/ui';
 
 import { coreAuth, CoreAuthError, PROVIDER_NAMES, type AccountSummary, type LoginMethods, type OAuthLink, type SessionInfo } from '../services/coreAuth';
@@ -35,7 +35,7 @@ interface CoreAccountSettingsProps {
   onDeleted: () => void;
 }
 
-type Dialog = null | 'password' | 'unlink' | 'delete';
+type Dialog = null | 'password' | 'rotate' | 'unlink' | 'delete';
 
 /**
  * A date for display, or null when there is not one to show.
@@ -376,6 +376,12 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
               subtitle={t('core.acct.change_pw_sub')}
               onClick={() => setDialog('password')}
             />
+            <Row
+              icon={<Icon icon={KeyRound} size={17} />}
+              title={t('core.acct.rotate')}
+              subtitle={t('core.acct.rotate_sub')}
+              onClick={() => setDialog('rotate')}
+            />
           </div>
         </section>
 
@@ -587,6 +593,21 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
         />
       )}
 
+      {dialog === 'rotate' && (
+        <RotateDialog
+          busy={busy}
+          onClose={() => { setDialog(null); setError(null); }}
+          onSubmit={async (password) => {
+            await run(async () => {
+              const r = await coreAuth.rotateDataKey(token!, password);
+              setNotice(t('core.rotate.success').replace('{records}', String(r.records)));
+            });
+            setDialog(null);
+          }}
+          describeError={describe}
+        />
+      )}
+
       {dialog === 'unlink' && unlinkTarget && (
         <UnlinkDialog
           busy={busy}
@@ -791,6 +812,48 @@ const PasswordDialog: React.FC<{
         <Field label={t('core.pw.confirm')} type="password" value={confirm} onChange={setConfirm} />
         {localError && <p className="text-xs text-cos-error" role="alert">{localError}</p>}
         <Submit busy={busy} disabled={!current || next.length < 8}>{t('core.pw.submit')}</Submit>
+      </form>
+    </Dialog>
+  );
+};
+
+/**
+ * Rotate the data key.
+ *
+ * One password field, deliberately: the whole point of the operation is that the
+ * server re-encrypts the history under a key the old one no longer matches, and the
+ * password is the one credential that proves the person asking is the person the
+ * wrapper was minted for. The description says what it does and what it costs —
+ * a key rotation that surprises its user is indistinguishable from an outage.
+ */
+const RotateDialog: React.FC<{
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (password: string) => Promise<void>;
+  describeError: (e: unknown) => string;
+}> = ({ busy, onClose, onSubmit, describeError }) => {
+  const { t } = useTranslation();
+  const [password, setPassword] = useState('');
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  return (
+    <Dialog title={t('core.rotate.title')} onClose={onClose}>
+      <form
+        className="space-y-3 mt-1"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setLocalError(null);
+          try {
+            await onSubmit(password);
+          } catch (err) {
+            setLocalError(describeError(err));
+          }
+        }}
+      >
+        <p className="text-xs opacity-70 leading-relaxed">{t('core.rotate.desc')}</p>
+        <Field label={t('core.rotate.password')} type="password" value={password} onChange={setPassword} autoFocus />
+        {localError && <p className="text-xs text-cos-error" role="alert">{localError}</p>}
+        <Submit busy={busy} disabled={!password}>{t('core.rotate.action')}</Submit>
       </form>
     </Dialog>
   );

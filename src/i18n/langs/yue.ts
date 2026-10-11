@@ -762,6 +762,20 @@ const PACK: LangPack = {
     "core.acct.signin_methods": "登入方法",
     "core.acct.active": "已啟用",
     "core.acct.change_pw": "改密碼",
+
+    "core.acct.rotate": "輪換資料金鑰",
+
+    "core.acct.rotate_sub": "用全新金鑰重新加密全部記錄,令洩漏嘅舊金鑰失效",
+
+    "core.rotate.title": "輪換資料金鑰",
+
+    "core.rotate.desc": "會產生新嘅資料金鑰並重新加密全部記錄,令任何洩漏嘅舊金鑰失效。密碼只喺本次驗證一次,同登入一樣。",
+
+    "core.rotate.password": "確認密碼",
+
+    "core.rotate.action": "輪換",
+
+    "core.rotate.success": "已輪換:重新加密 {records} 條記錄",
     "core.acct.change_pw_sub": "紀錄會喺新密碼之下重新鎖起，唔會將全部內容重新加密，所以又安全又快。",
     "core.acct.x_section": "X",
     "core.acct.connect": "綁 {provider} 帳戶",

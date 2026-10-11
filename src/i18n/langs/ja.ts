@@ -116,6 +116,20 @@ const PACK: LangPack = {
     "core.acct.signin_methods": "ログイン方法",
     "core.acct.active": "有効",
     "core.acct.change_pw": "パスワードを変更",
+
+    "core.acct.rotate": "データキーをローテーション",
+
+    "core.acct.rotate_sub": "新しいキーですべての記録を再暗号化し、漏えいした古いキーを無効化します",
+
+    "core.rotate.title": "データキーをローテーション",
+
+    "core.rotate.desc": "新しいデータキーを生成し、すべての記録を再暗号化します。漏えいした古いキーは無効になります。パスワードはログイン時と同様、今回のみ確認します。",
+
+    "core.rotate.password": "パスワードの確認",
+
+    "core.rotate.action": "ローテーション",
+
+    "core.rotate.success": "ローテーション完了:{records} 件の記録を再暗号化しました",
     "core.acct.change_pw_sub": "記録は新しいパスワードで再びロックされます。すべてを再暗号化するわけではないので、安全で短時間で完了します。",
     "core.acct.x_section": "X",
     "core.acct.connect": "{provider} アカウントを連携",

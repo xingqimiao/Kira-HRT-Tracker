@@ -408,6 +408,53 @@ async function reflectSettings(ctx: AuthContext, synced: SyncedScalar[]): Promis
 
 export const RecordService = {
     /**
+     * Re-seal every record under a fresh DEK, in one transaction.
+     *
+     * This is the response half of the compromise story: a DEK captured from process
+     * memory by malware stays valid for as long as the records are sealed under it, so
+     * invalidating a theft means re-encrypting the history. Rows that no longer open
+     * under the old key (already unreadable, or a pre-per-account-format row) are
+     * counted and left alone rather than dropped — rotation must not be the thing that
+     * finally destroys a damaged row. The transaction spans the reads and writes: a
+     * crash mid-rotation leaves every row on the old key rather than a half-migrated
+     * account.
+     *
+     * Called by `AccountService.rotateKeys`, which re-issues both wrappers afterwards.
+     */
+    async reencryptAll(
+        userId: string,
+        oldDek: Buffer,
+        newDek: Buffer,
+    ): Promise<{ reencrypted: number; unreadable: number }> {
+        if (oldDek.length !== 32 || newDek.length !== 32) {
+            throw new Error('key rotation needs two 32-byte keys');
+        }
+        return await withTransaction(async (client) => {
+            const { rows } = await client.query<{ id: string; payload_encrypted: string }>(
+                `SELECT id, payload_encrypted FROM records WHERE user_id = $1 ORDER BY id FOR UPDATE`,
+                [userId],
+            );
+            let reencrypted = 0;
+            let unreadable = 0;
+            for (const row of rows) {
+                let plain: unknown;
+                try {
+                    plain = openPayload(row.payload_encrypted, oldDek);
+                } catch {
+                    unreadable++;
+                    continue;
+                }
+                await client.query(
+                    `UPDATE records SET payload_encrypted = $1 WHERE id = $2`,
+                    [sealPayload(plain, newDek), row.id],
+                );
+                reencrypted++;
+            }
+            return { reencrypted, unreadable };
+        });
+    },
+
+    /**
      * Store one record, encrypting the payload on the way in.
      *
      * Upsert on the record id, so a retried write after a flaky connection updates the

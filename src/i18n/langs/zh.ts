@@ -62,6 +62,20 @@ const PACK: LangPack = {
     "core.acct.signin_methods": "登录方式",
     "core.acct.active": "已启用",
     "core.acct.change_pw": "修改密码",
+
+    "core.acct.rotate": "轮换数据密钥",
+
+    "core.acct.rotate_sub": "以全新密钥重新加密全部记录,使泄露的旧密钥失效",
+
+    "core.rotate.title": "轮换数据密钥",
+
+    "core.rotate.desc": "将生成新的数据密钥并重新加密全部记录,使任何泄露的旧密钥失效。密码只在本次验证一次,与登录相同。",
+
+    "core.rotate.password": "确认密码",
+
+    "core.rotate.action": "轮换",
+
+    "core.rotate.success": "已轮换:重加密 {records} 条记录",
     "core.acct.change_pw_sub": "记录会在新密码下重新锁定，不会重新加密全部内容，因此安全且快速。",
     "core.acct.x_section": "X",
     "core.acct.connect": "绑定 {provider} 账户",

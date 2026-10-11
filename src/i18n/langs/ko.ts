@@ -116,6 +116,20 @@ const PACK: LangPack = {
     "core.acct.signin_methods": "로그인 방법",
     "core.acct.active": "사용 중",
     "core.acct.change_pw": "비밀번호 변경",
+
+    "core.acct.rotate": "데이터 키 순환",
+
+    "core.acct.rotate_sub": "새 키로 모든 기록을 다시 암호화하여 유출된 이전 키를 무효화합니다",
+
+    "core.rotate.title": "데이터 키 순환",
+
+    "core.rotate.desc": "새 데이터 키를 생성하고 모든 기록을 다시 암호화하여 유출된 이전 키를 무효화합니다. 비밀번호는 로그인과 동일하게 이번 한 번만 확인합니다.",
+
+    "core.rotate.password": "비밀번호 확인",
+
+    "core.rotate.action": "순환",
+
+    "core.rotate.success": "순환 완료: {records}개의 기록이 재암호화되었습니다",
     "core.acct.change_pw_sub": "기록은 새 비밀번호로 다시 잠기며, 전체를 다시 암호화하지는 않으므로 안전하고 빠릅니다.",
     "core.acct.x_section": "X",
     "core.acct.connect": "{provider} 계정 연결",

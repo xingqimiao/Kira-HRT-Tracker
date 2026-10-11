@@ -499,6 +499,63 @@ export const AccountService = {
   },
 
   /**
+   * Rotate the account's data key: every record is re-encrypted under a fresh DEK,
+   * and both wrappers — password and KMS — are re-issued against it.
+   *
+   * Why the password is required: the password wrapper can only be re-issued by
+   * someone able to derive its KEK, and the server stores no password — so the
+   * holder of a stolen, captured DEK cannot use this endpoint, and neither can an
+   * unattended script. The password rides TLS exactly as it does at sign-in and is
+   * never stored; it is verified against the scrypt hash and used once, to unwrap
+   * the current DEK locally.
+   *
+   * Order matters: records are re-encrypted inside one transaction first, and the
+   * wrappers swap only after every row is under the new key — a failure in either
+   * step leaves the account exactly as it was rather than half-migrated. Sessions
+   * and API tokens survive the rotation: no row holds a key, so the next request
+   * re-resolves the DEK from the fresh KMS wrapper with no sign-out.
+   *
+   * This is the response half of a memory-capture compromise: a DEK lifted from
+   * process memory stays valid for as long as the records are sealed under it, and
+   * this operation is what ends that validity.
+   */
+  async rotateKeys(
+    ctx: AuthContext,
+    passwordRaw: unknown,
+  ): Promise<Result<{ records: number; unreadable: number }>> {
+    const password = validatePassword(passwordRaw);
+    if (!password.ok) return password;
+
+    const user = await loadUser({ id: ctx.userId });
+    if (!user) return { ok: false, error: 'account not found' };
+    if (!user.password_hash) {
+      return { ok: false, error: 'bind a password to this account before rotating its key' };
+    }
+    if (!(await verifyPassword(password.value, user.password_hash))) {
+      return { ok: false, error: 'password is incorrect' };
+    }
+
+    const metadata = metadataFor(user);
+    const oldDek = await unwrapWithPassword(metadata, password.value, ctx.userId);
+    if (!oldDek || oldDek !== ctx.dek) {
+      return { ok: false, error: 'the password does not open this account’s current key' };
+    }
+
+    const newDek = randomBytes(32).toString('base64');
+    const { reencrypted, unreadable } = await RecordService.reencryptAll(
+      ctx.userId,
+      Buffer.from(oldDek, 'base64'),
+      Buffer.from(newDek, 'base64'),
+    );
+
+    let next = await setPasswordWrapper(metadata, newDek, password.value, ctx.userId);
+    next = await addServerWrapper(next, newDek, ctx.userId);
+    await saveMetadata(ctx.userId, next);
+    await this.recordAuthEvent(ctx.userId, 'key_rotation');
+    return { ok: true, value: { records: reencrypted, unreadable } };
+  },
+
+  /**
    * Whether this account has bound an account name and password.
    *
    * The gate on records, not on the account. A social signup produces an account with
