@@ -33,7 +33,7 @@
 import { createHash, createHmac } from 'node:crypto';
 import { getConfig } from './config.ts';
 import { getPool } from './db.ts';
-import { KMS_SCHEME, unwrapWithKms, wrapWithKms } from './kms.ts';
+import { KMS_SCHEME, unwrapWithKms, wrapWithKms, type KmsWrapped } from './kms.ts';
 import { deriveCloudKey, encryptCloudPayload, decryptCloudPayload, isCloudEncrypted } from './engine.ts';
 
 /** A wrapped DEK as stored server-side. Identical envelope to a cloud backup. */
@@ -133,6 +133,13 @@ export interface EncryptionMetadata {
     password?: WrapperEnvelope;
     server?: WrapperEnvelope;
   };
+  /**
+   * The HSM-held half of the record key, under key splitting: records are sealed
+   * under R = DEK ⊕ H, where this field carries H as KMS ciphertext and the DEK
+   * keeps its own wrappers. Neither half alone opens a record. Absent on accounts
+   * minted before the split — they seal under the bare DEK until migrated.
+   */
+  pad?: KmsWrapped;
 }
 
 export const ENCRYPTION_VERSION = 2;
@@ -146,7 +153,29 @@ export function readMetadata(raw: unknown): EncryptionMetadata {
     doc.wrappers && typeof doc.wrappers === 'object' && !Array.isArray(doc.wrappers)
       ? doc.wrappers
       : {};
-  return { version: doc.version ?? ENCRYPTION_VERSION, dek: doc.dek, wrappers };
+  return { version: doc.version ?? ENCRYPTION_VERSION, dek: doc.dek, wrappers, pad: doc.pad };
+}
+
+/**
+ * XOR two base64 32-byte keys into a third — the split that puts the record key
+ * halfway inside the HSM.
+ *
+ * R = DEK ⊕ H means neither half alone opens a record: a DEK lifted from server
+ * memory is a random string without H, and H exists only as KMS ciphertext, bound
+ * to the account, unsealed by the hardware. The server reconstructs R per request;
+ * whoever wants it offline needs both halves. Not valid against an attacker who
+ * reads memory continuously — that one catches both halves as they flow — and said
+ * plainly so nobody oversells it.
+ */
+export function xorKeys(a: string, b: string): string {
+  const ab = Buffer.from(a, 'base64');
+  const bb = Buffer.from(b, 'base64');
+  if (ab.length !== 32 || bb.length !== 32) {
+    throw new Error(`key split needs two 32-byte halves, got ${ab.length} and ${bb.length}`);
+  }
+  const out = Buffer.alloc(32);
+  for (let i = 0; i < 32; i++) out[i] = ab[i]! ^ bb[i]!;
+  return out.toString('base64');
 }
 
 /** The password wrapper alone, in the shape the legacy `wrapped_dek` column wants. */
@@ -245,13 +274,26 @@ export async function createKeyMaterial(
   };
   const serverWrapper = await mintServerWrapper(dek, userId);
   if (serverWrapper) wrappers.server = serverWrapper;
+
+  // Key splitting: records are sealed under R = DEK ⊕ H, so neither the DEK (which
+  // the wrappers protect) nor the KMS half alone opens anything. The returned dek is
+  // R — the effective record key the caller's session will carry.
+  const kms = getConfig().kms;
+  let recordKey = dek;
+  let pad: KmsWrapped | undefined;
+  if (kms) {
+    const h = randomKeyB64();
+    pad = await wrapWithKms(h, userId, kms);
+    recordKey = xorKeys(dek, h);
+  }
   return {
     metadata: {
       version: ENCRYPTION_VERSION,
       dek: { alg: 'AES-GCM', createdAt: new Date().toISOString() },
       wrappers,
+      pad,
     },
-    dek,
+    dek: recordKey,
   };
 }
 
@@ -286,13 +328,25 @@ export async function createPasswordlessKeyMaterial(
   const wrappers: EncryptionMetadata['wrappers'] = {};
   const serverWrapper = await mintServerWrapper(dek, userId);
   if (serverWrapper) wrappers.server = serverWrapper;
+
+  // The same split as the password path: the KMS half (the only half a passwordless
+  // account has) wraps the DEK, the pad wraps H, and the records seal under DEK ⊕ H.
+  const kms = getConfig().kms;
+  let recordKey = dek;
+  let pad: KmsWrapped | undefined;
+  if (kms) {
+    const h = randomKeyB64();
+    pad = await wrapWithKms(h, userId, kms);
+    recordKey = xorKeys(dek, h);
+  }
   return {
     metadata: {
       version: ENCRYPTION_VERSION,
       dek: { alg: 'AES-GCM', createdAt: new Date().toISOString() },
       wrappers,
+      pad,
     },
-    dek,
+    dek: recordKey,
   };
 }
 

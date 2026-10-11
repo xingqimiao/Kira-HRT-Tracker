@@ -34,6 +34,7 @@ import { getPool, withTransaction } from './db.ts';
 import { getConfig } from './config.ts';
 import { settings, APP_SETTING_BY_COLUMN, type UserSettings } from './settings.ts';
 import { RecordService } from './records.ts';
+import { unwrapWithKms, wrapWithKms } from './kms.ts';
 import {
   createUserKeyMaterial,
   rewrapForNewPassword,
@@ -51,6 +52,7 @@ import {
   unwrapWithServer,
   addServerWrapper,
   setPasswordWrapper,
+  xorKeys,
   passwordEnvelopeOf,
   type EncryptionMetadata,
 } from './session.ts';
@@ -214,6 +216,24 @@ async function saveMetadata(userId: string, metadata: EncryptionMetadata): Promi
  */
 async function serverDekFor(user: AccountRow): Promise<string | null> {
   return await unwrapWithServer(metadataFor(user), user.id);
+}
+
+/**
+ * The live record key R for an account: the DEK ⊕ its HSM-held pad, under key
+ * splitting; the bare DEK for accounts not yet migrated. Null means locked — the
+ * KMS half is unreachable, the master key is disabled, or the pad is not this
+ * account's, and no half alone is worth reporting.
+ */
+async function recordKeyFor(user: AccountRow): Promise<string | null> {
+  const dekPlain = await serverDekFor(user);
+  if (!dekPlain) return null;
+  const metadata = metadataFor(user);
+  if (!metadata.pad) return dekPlain;
+  const kms = getConfig().kms;
+  if (!kms) return null;
+  const h = await unwrapWithKms(metadata.pad, user.id, kms);
+  if (!h) return null;
+  return xorKeys(dekPlain, h);
 }
 
 // ---------------------------------------------------------------------------
@@ -430,11 +450,12 @@ export const AccountService = {
       const sessionUser = await loadUser({ id: session.userId });
       if (!sessionUser) return null;
       // The session proves the login, not the key: a session row carries none, so the
-      // key comes from the account's own server wrapper, exactly as a durable token's
-      // does below. A KMS outage or a disabled master key is the only "locked" left.
-      const sessionDek = await serverDekFor(sessionUser);
-      if (!sessionDek) return { denied: 'locked' };
-      return { userId: session.userId, dek: sessionDek };
+      // key is reconstructed from the account's own material — the server wrapper for
+      // the DEK, the pad for its HSM-held half — exactly as a durable token's is
+      // below. A KMS outage or a disabled master key is the only "locked" left.
+      const sessionKey = await recordKeyFor(sessionUser);
+      if (!sessionKey) return { denied: 'locked' };
+      return { userId: session.userId, dek: sessionKey };
     }
     const userId = await this.resolveApiToken(token);
     if (!userId) return null;
@@ -442,12 +463,12 @@ export const AccountService = {
     const user = await loadUser({ id: userId });
     if (!user) return null;
 
-    const serverDek = await serverDekFor(user);
-    // No deployment key, so there is no copy of this account's key to hand over.
+    const recordKey = await recordKeyFor(user);
+    // No KMS half, so there is no copy of this account's record key to hand over.
     // A denial rather than a failure, so an adapter can say "locked" instead of
     // reporting an authentication error the credential does not have.
-    if (!serverDek) return { denied: 'locked' };
-    return { userId, dek: serverDek };
+    if (!recordKey) return { denied: 'locked' };
+    return { userId, dek: recordKey };
   },
 
   async lock(token: string): Promise<void> {
@@ -499,25 +520,22 @@ export const AccountService = {
   },
 
   /**
-   * Rotate the account's data key: every record is re-encrypted under a fresh DEK,
-   * and both wrappers — password and KMS — are re-issued against it.
+   * Rotate the account's record key: every record is re-encrypted under a fresh one,
+   * invalidating any copy of the old key that leaked — say, from a compromised
+   * server's memory.
    *
-   * Why the password is required: the password wrapper can only be re-issued by
-   * someone able to derive its KEK, and the server stores no password — so the
-   * holder of a stolen, captured DEK cannot use this endpoint, and neither can an
-   * unattended script. The password rides TLS exactly as it does at sign-in and is
-   * never stored; it is verified against the scrypt hash and used once, to unwrap
-   * the current DEK locally.
+   * Under key splitting, rotation turns the HSM-held pad: the DEK and both wrappers
+   * are untouched, the password is only a confirmation that the person asking is the
+   * account's owner, and — the property that matters — a server-side caller could
+   * not skip it even in an emergency, because a stolen DEK must not be able to
+   * rotate itself out of validity. Pre-split accounts rotate the DEK itself instead,
+   * re-issuing both wrappers, exactly as before the split existed.
    *
-   * Order matters: records are re-encrypted inside one transaction first, and the
-   * wrappers swap only after every row is under the new key — a failure in either
-   * step leaves the account exactly as it was rather than half-migrated. Sessions
-   * and API tokens survive the rotation: no row holds a key, so the next request
-   * re-resolves the DEK from the fresh KMS wrapper with no sign-out.
-   *
-   * This is the response half of a memory-capture compromise: a DEK lifted from
-   * process memory stays valid for as long as the records are sealed under it, and
-   * this operation is what ends that validity.
+   * Order matters in both branches: records are re-encrypted inside one transaction
+   * first, and the pad or wrappers swap only after every row is under the new key —
+   * a failure leaves the account exactly as it was rather than half-migrated.
+   * Sessions and API tokens survive: no row holds a key, so the next request
+   * re-resolves the record key with no sign-out.
    */
   async rotateKeys(
     ctx: AuthContext,
@@ -536,15 +554,44 @@ export const AccountService = {
     }
 
     const metadata = metadataFor(user);
-    const oldDek = await unwrapWithPassword(metadata, password.value, ctx.userId);
-    if (!oldDek || oldDek !== ctx.dek) {
-      return { ok: false, error: 'the password does not open this account’s current key' };
+    const dekPlain = await unwrapWithPassword(metadata, password.value, ctx.userId);
+    if (!dekPlain) {
+      return { ok: false, error: 'the password does not open this account’s key' };
+    }
+    const kms = getConfig().kms;
+    if (!kms) return { ok: false, error: 'key rotation requires the KMS master key' };
+
+    if (metadata.pad) {
+      // Split account: rotate the pad. The old R is re-derived and checked against
+      // the session's own key first, so a drifted row is caught before any write.
+      const h = await unwrapWithKms(metadata.pad, ctx.userId, kms);
+      if (!h) return { ok: false, error: 'the key’s HSM half could not be opened' };
+      const oldR = xorKeys(dekPlain, h);
+      if (oldR !== ctx.dek) {
+        return { ok: false, error: 'the password does not open this account’s current key' };
+      }
+      const newH = randomBytes(32).toString('base64');
+      const newR = xorKeys(dekPlain, newH);
+      const { reencrypted, unreadable } = await RecordService.reencryptAll(
+        ctx.userId,
+        Buffer.from(oldR, 'base64'),
+        Buffer.from(newR, 'base64'),
+      );
+      const pad = await wrapWithKms(newH, ctx.userId, kms);
+      await saveMetadata(ctx.userId, { ...metadata, pad });
+      await this.recordAuthEvent(ctx.userId, 'key_rotation');
+      return { ok: true, value: { records: reencrypted, unreadable } };
     }
 
+    // Pre-split account: the records are sealed under the bare DEK, so the rotation
+    // mints a new DEK and re-issues both wrappers around it.
+    if (dekPlain !== ctx.dek) {
+      return { ok: false, error: 'the password does not open this account’s current key' };
+    }
     const newDek = randomBytes(32).toString('base64');
     const { reencrypted, unreadable } = await RecordService.reencryptAll(
       ctx.userId,
-      Buffer.from(oldDek, 'base64'),
+      Buffer.from(dekPlain, 'base64'),
       Buffer.from(newDek, 'base64'),
     );
 

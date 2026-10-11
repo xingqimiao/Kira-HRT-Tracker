@@ -683,7 +683,7 @@ test('a partial settings bag does not erase the settings keys it never read', as
   assert.equal(after.body.appState.settings.lang, 'ja');
 });
 
-test('key rotation re-encrypts every record and retires the old DEK', async () => {
+test('key rotation re-encrypts every record and retires the old record key', async () => {
   const account = await registerAccountWithKey(base, {});
   await call(base, '/api/records', json({
     id: 'dose:transfem:rotate-1', takenAt: Date.now(), category: 'dose', data: { med_name: 'ROTATE_A' },
@@ -702,31 +702,40 @@ test('key rotation re-encrypts every record and retires the old DEK', async () =
     .map((r) => r.data?.med_name).sort();
   assert.deepEqual(names, ['ROTATE_A', 'ROTATE_B']);
 
-  // The stored rows no longer open under the pre-rotation DEK...
   const { getPool } = await import('../src/db.ts');
   const { rows } = await getPool().query<{ payload_encrypted: string }>(
     `SELECT payload_encrypted FROM records WHERE user_id = $1 AND id = 'dose:transfem:rotate-1'`,
     [account.userId],
   );
+  const body = rows[0].payload_encrypted;
+  assert.ok(body.startsWith(DEK_SEALED_PREFIX));
   const { decryptPayload } = await import('../src/payloadCrypto.ts');
-  assert.ok(rows[0].payload_encrypted.startsWith(DEK_SEALED_PREFIX));
-  assert.throws(
-    () => decryptPayload(rows[0].payload_encrypted.slice(DEK_SEALED_PREFIX.length), Buffer.from(account.dek, 'base64')),
-    'a captured pre-rotation DEK still opened the row',
-  );
 
-  // ...while the password derives the NEW DEK, which opens them.
+  // The captured pre-rotation record key no longer opens the row…
+  assert.throws(
+    () => decryptPayload(body.slice(DEK_SEALED_PREFIX.length), Buffer.from(account.dek, 'base64')),
+    'the pre-rotation record key still opened the row',
+  );
+  // …and neither does the bare DEK: under the split, records are sealed under
+  // DEK ⊕ H, so a key captured from memory alone is a random string.
   const meta = await getPool().query<{ encryption_metadata: unknown }>(
     `SELECT encryption_metadata FROM users WHERE id = $1`, [account.userId],
   );
-  const { readMetadata, unwrapWithPassword } = await import('../src/session.ts');
-  const newDek = await unwrapWithPassword(readMetadata(meta.rows[0].encryption_metadata), account.password, account.userId);
-  assert.ok(newDek, 'the password wrapper still opens, now onto the new key');
-  assert.notEqual(newDek, account.dek, 'the DEK actually changed');
-  const opened = decryptPayload(
-    rows[0].payload_encrypted.slice(DEK_SEALED_PREFIX.length),
-    Buffer.from(newDek!, 'base64'),
-  ) as { med_name: string };
+  const { readMetadata, unwrapWithPassword, xorKeys } = await import('../src/session.ts');
+  const { unwrapWithKms } = await import('../src/kms.ts');
+  const metadata = readMetadata(meta.rows[0].encryption_metadata);
+  const bareDek = await unwrapWithPassword(metadata, account.password, account.userId);
+  assert.ok(bareDek, 'the password wrapper still opens');
+  assert.throws(
+    () => decryptPayload(body.slice(DEK_SEALED_PREFIX.length), Buffer.from(bareDek!, 'base64')),
+    'the bare DEK must not open a split-sealed row',
+  );
+
+  // Positive check of the split algebra: DEK ⊕ (H from the fresh pad) opens the row.
+  const { TEST_KMS_CONFIG } = await import('./helpers.ts');
+  const h = await unwrapWithKms(metadata.pad!, account.userId, TEST_KMS_CONFIG);
+  const recordKey = xorKeys(bareDek!, h!);
+  const opened = decryptPayload(body.slice(DEK_SEALED_PREFIX.length), Buffer.from(recordKey, 'base64')) as { med_name: string };
   assert.equal(opened.med_name, 'ROTATE_A');
 });
 
@@ -743,4 +752,39 @@ test('key rotation refuses a wrong password and leaves the records untouched', a
   const names = (listed.body as { records: { data?: { med_name?: string } }[] }).records
     .map((r) => r.data?.med_name);
   assert.deepEqual(names, ['ROTATE_KEEP']);
+});
+
+test('records are sealed under the split record key, not the bare DEK', async () => {
+  const account = await registerAccountWithKey(base, {});
+  await call(base, '/api/records', json({
+    id: 'dose:transfem:split-1', takenAt: Date.now(), category: 'dose', data: { med_name: 'SPLIT_A' },
+  }, account.token));
+
+  const { getPool } = await import('../src/db.ts');
+  const meta = await getPool().query<{ encryption_metadata: unknown }>(
+    `SELECT encryption_metadata FROM users WHERE id = $1`, [account.userId],
+  );
+  const { readMetadata, unwrapWithPassword } = await import('../src/session.ts');
+  const metadata = readMetadata(meta.rows[0].encryption_metadata);
+  assert.ok(metadata.pad, 'a KMS-configured deployment mints the pad');
+
+  const { rows } = await getPool().query<{ payload_encrypted: string }>(
+    `SELECT payload_encrypted FROM records WHERE user_id = $1 AND id = 'dose:transfem:split-1'`,
+    [account.userId],
+  );
+  const { decryptPayload } = await import('../src/payloadCrypto.ts');
+  const body = rows[0].payload_encrypted;
+
+  // The bare DEK — the thing a compromised server could capture — does not open it.
+  const bareDek = await unwrapWithPassword(metadata, account.password, account.userId);
+  assert.throws(
+    () => decryptPayload(body.slice(DEK_SEALED_PREFIX.length), Buffer.from(bareDek!, 'base64')),
+    'the bare DEK opened a split-sealed row',
+  );
+
+  // The session's record key does, and the records read back through the API.
+  const listed = await call(base, '/api/records', bearer(account.token));
+  const names = (listed.body as { records: { data?: { med_name?: string } }[] }).records
+    .map((r) => r.data?.med_name);
+  assert.deepEqual(names, ['SPLIT_A']);
 });
