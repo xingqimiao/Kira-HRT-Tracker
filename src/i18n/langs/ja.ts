@@ -905,7 +905,6 @@ const PACK: LangPack = {
     "mcp.token_never_used": "未使用",
     "mcp.token_permanent": "無期限",
     "mcp.token_expires": "{date} に失効",
-    "mcp.step_endpoint": "ステップ 2 · エンドポイントを設定",
     "mcp.endpoint_hint": "POST のみ受け付けます。",
     "mcp.step_install": "ステップ 3 · ワンクリックで導入",
     "mcp.install_desc": "以下を AI アシスタントに貼り付けると、設定ファイルを見つけて接続まで行います。JSON を手で編集する必要はありません。",

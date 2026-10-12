@@ -587,7 +587,6 @@ const PACK: LangPack = {
     "mcp.token_never_used": "從未用過",
     "mcp.token_permanent": "永久有效",
     "mcp.token_expires": "{date} 到期",
-    "mcp.step_endpoint": "第二步 · 填介面位址",
     "mcp.endpoint_hint": "淨係收 POST 請求。",
     "mcp.step_install": "第三步 · 一鍵安裝",
     "mcp.install_desc": "將下面呢段嘢複製畀任何 AI 助手，佢會自己搵到設定檔同完成接入。唔使你手動改 JSON。",

@@ -828,7 +828,6 @@ const PACK: LangPack = {
     "mcp.token_never_used": "Hiç kullanılmadı",
     "mcp.token_permanent": "Süresiz",
     "mcp.token_expires": "{date} tarihinde sona erer",
-    "mcp.step_endpoint": "2. adım · Uç noktayı girin",
     "mcp.endpoint_hint": "Yalnızca POST.",
     "mcp.step_install": "3. adım · Tek yapıştırmayla kurun",
     "mcp.install_desc": "Aşağıdakini bir yapay zekâ asistanına yapıştırın; yapılandırma dosyasını bulup kendini bağlar. JSON'u elle düzenlemeniz gerekmez.",

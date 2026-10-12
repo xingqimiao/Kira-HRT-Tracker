@@ -828,7 +828,6 @@ const PACK: LangPack = {
     "mcp.token_never_used": "Never used",
     "mcp.token_permanent": "Never expires",
     "mcp.token_expires": "Expires {date}",
-    "mcp.step_endpoint": "Step 2 · Point the client at the endpoint",
     "mcp.endpoint_hint": "POST only.",
     "mcp.step_install": "Step 3 · Install it in one paste",
     "mcp.install_desc": "Copy this into any AI assistant and it will find the config file and wire itself up. No hand-editing JSON.",

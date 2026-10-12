@@ -301,6 +301,14 @@ const McpSettings: React.FC<McpSettingsProps> = ({ session, onBack, onSignIn }) 
             <div className="mx-auto w-full px-6 md:px-8 mt-2 max-w-2xl">
                 <p className={`pb-2 ${muted}`}>{t('mcp.intro')}</p>
 
+                {/* What the token reaches, stated before the reader makes one: whoever
+                    holds it can read every record. It sits at the top so it is read
+                    first, not after the mint button. */}
+                <div className="mb-2 flex gap-3 rounded-[var(--radius-md)] border border-[var(--color-m3-error)]/40 bg-[var(--color-m3-error)]/8 p-3">
+                    <Icon icon={AlertTriangle} size={18} className="mt-0.5 shrink-0 text-[var(--color-m3-error)]" />
+                    <p className={body}>{t('mcp.token_read_warning')}</p>
+                </div>
+
                 {/* 1 — a token. First because nothing else works without it. */}
                 <TokenManager session={session} />
 
@@ -308,21 +316,16 @@ const McpSettings: React.FC<McpSettingsProps> = ({ session, onBack, onSignIn }) 
                     <button onClick={onSignIn} className="m3-btn m3-btn-filled mt-4">{t('core.sign_in')}</button>
                 )}
 
-                {/* 2 — where the client points. */}
+                {/* 2 — install it in one paste. The endpoint address lives inside the
+                    prompt and the manual config, so it needs no step of its own. The
+                    prompt comes first because it works without the reader knowing where
+                    their client keeps its files. */}
                 <section className={`py-4 ${divider}`}>
-                    <StepHeading n={2} title={t('mcp.step_endpoint')} desc={t('mcp.endpoint_hint')} />
+                    <StepHeading n={2} title={t('mcp.step_install')} desc={t('mcp.install_desc')} />
                     <div className="mt-3">
-                        <CopyRow value={MCP_ENDPOINT} hint={t('mcp.endpoint_hint')} />
+                        <CopyRow variant="single" value={installPrompt} hint={t('mcp.install_hint')} />
                     </div>
-                </section>
-
-                {/* 3 — the config. The prompt first, because it is the path that works
-                    without the reader knowing where their client keeps its files. */}
-                <section className={`py-4 ${divider}`}>
-                    <StepHeading n={3} title={t('mcp.step_install')} desc={t('mcp.install_desc')} />
-                    <div className="mt-3">
-                        <CopyRow value={installPrompt} hint={t('mcp.install_hint')} />
-                    </div>
+                    <p className={`mt-1 ${muted}`}>{t('mcp.endpoint_hint')}</p>
                 </section>
 
                 {/* 3 — the config, by hand. */}
@@ -350,16 +353,6 @@ const McpSettings: React.FC<McpSettingsProps> = ({ session, onBack, onSignIn }) 
                             </li>
                         ))}
                     </ul>
-                </section>
-
-                {/* What the token reaches. One fact, stated plainly: whoever holds it
-                    can read every record. The old block here ("full credential / treat
-                    like a password") was removed; this is the part that matters. */}
-                <section className={`py-4 ${divider}`}>
-                    <div className="flex gap-3 rounded-[var(--radius-md)] border border-[var(--color-m3-error)]/40 bg-[var(--color-m3-error)]/8 p-3">
-                        <Icon icon={AlertTriangle} size={18} className="mt-0.5 shrink-0 text-[var(--color-m3-error)]" />
-                        <p className={body}>{t('mcp.token_read_warning')}</p>
-                    </div>
                 </section>
 
                 {/* What the token deliberately cannot do. Stated because "everything the

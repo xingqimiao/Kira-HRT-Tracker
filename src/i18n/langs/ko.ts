@@ -883,7 +883,6 @@ const PACK: LangPack = {
     "mcp.token_never_used": "사용 안 함",
     "mcp.token_permanent": "만료 없음",
     "mcp.token_expires": "{date} 만료",
-    "mcp.step_endpoint": "2단계 · 엔드포인트 입력",
     "mcp.endpoint_hint": "POST만 허용합니다.",
     "mcp.step_install": "3단계 · 한 번에 설치",
     "mcp.install_desc": "아래 내용을 AI 어시스턴트에 붙여넣으면 설정 파일을 찾아 스스로 연결합니다. JSON을 직접 편집할 필요가 없습니다.",
