@@ -809,6 +809,9 @@ const PACK: LangPack = {
 
     "mcp.token_rename": "Yeniden adlandır",
 
+
+    "mcp.token_name_label": "Ad",
+
     "mcp.token_rename_save": "Kaydet",
 
     "mcp.token_rename_cancel": "İptal",

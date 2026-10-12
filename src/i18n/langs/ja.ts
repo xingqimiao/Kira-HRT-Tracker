@@ -886,6 +886,9 @@ const PACK: LangPack = {
 
     "mcp.token_rename": "名前を変更",
 
+
+    "mcp.token_name_label": "名前",
+
     "mcp.token_rename_save": "保存",
 
     "mcp.token_rename_cancel": "キャンセル",

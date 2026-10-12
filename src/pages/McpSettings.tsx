@@ -95,6 +95,10 @@ const TokenManager: React.FC<{ session: CoreSession }> = ({ session }) => {
     // dialog so the row stays in place and the change reads as an edit of that row.
     const [renamingId, setRenamingId] = useState<string | null>(null);
     const [renameValue, setRenameValue] = useState('');
+    // The name for the token about to be minted. Named up front (a client name like
+    // "Claude Desktop") so the list is readable from the start; the rename control
+    // stays for changing it later.
+    const [newName, setNewName] = useState('');
 
     const load = useCallback(async () => {
         if (!session.token) return;
@@ -114,8 +118,9 @@ const TokenManager: React.FC<{ session: CoreSession }> = ({ session }) => {
         setMinting(true);
         setError(null);
         try {
-            const created = await coreAuth.mintToken(session.token, t('mcp.token_default_name'));
+            const created = await coreAuth.mintToken(session.token, newName.trim() || t('mcp.token_default_name'));
             setFresh(created.token);
+            setNewName('');
             setCopied(false);
             await load();
         } catch (e: any) {
@@ -172,19 +177,34 @@ const TokenManager: React.FC<{ session: CoreSession }> = ({ session }) => {
 
     return (
         <section className={`py-4 ${divider}`}>
-            <div className="flex items-start justify-between gap-3">
-                <StepHeading n={1} title={t('mcp.tokens_label')} desc={t('mcp.tokens_desc')} />
-                <button onClick={mint} disabled={minting} className="m3-btn m3-btn-filled m3-btn-sm shrink-0">
-                    {minting ? <Progress size={14} /> : <Icon icon={Plus} size={14} />}
+            <StepHeading n={1} title={t('mcp.tokens_label')} desc={t('mcp.tokens_desc')} />
+
+            {/* Name it as you make it: a client name makes the list readable, and asking
+                here saves a rename right after. The Generate button follows. */}
+            <div className="mt-3 flex items-end gap-2">
+                <label className="min-w-0 flex-1">
+                    <span className={`mb-1.5 block text-xs font-semibold text-[var(--color-m3-on-surface-variant)]`}>{t('mcp.token_name_label')}</span>
+                    <input
+                        value={newName}
+                        onChange={e => setNewName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && !minting) void mint(); }}
+                        maxLength={64}
+                        placeholder={t('mcp.token_default_name')}
+                        className="input-base w-full"
+                    />
+                </label>
+                <button onClick={mint} disabled={minting} className="m3-btn m3-btn-filled shrink-0">
+                    {minting ? <Progress size={14} /> : <Icon icon={Plus} size={16} />}
                     <span className="ps-1.5">{t('mcp.token_generate')}</span>
                 </button>
             </div>
 
             {error && <p className="mt-3 text-xs text-[var(--color-m3-error)]">{error}</p>}
 
-            {/* The plaintext, once. Stays until dismissed. */}
+            {/* The plaintext, once. Stays until dismissed. `m3-panel-in` animates it in
+                so minting reads as an action with a result, not a silent re-render. */}
             {fresh && (
-                <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--color-m3-primary)] p-3">
+                <div className="m3-panel-in mt-4 rounded-[var(--radius-md)] border border-[var(--color-m3-primary)] p-3">
                     <p className="text-xs font-semibold text-[var(--color-m3-primary)]">{t('mcp.token_once_title')}</p>
                     <p className={`mt-1 ${muted}`}>{t('mcp.token_once_desc')}</p>
                     <div className="mt-2 flex items-start gap-2">
@@ -193,7 +213,7 @@ const TokenManager: React.FC<{ session: CoreSession }> = ({ session }) => {
                             <Icon icon={copied ? Check : Copy} size={16} strokeWidth={1.5} />
                         </button>
                     </div>
-                    <button onClick={() => setFresh(null)} className="mt-2 text-xs font-medium text-[var(--color-m3-primary)] hover:underline">
+                    <button onClick={() => setFresh(null)} className="m3-btn m3-btn-text m3-btn-sm mt-2">
                         {t('mcp.token_once_done')}
                     </button>
                 </div>
@@ -208,7 +228,7 @@ const TokenManager: React.FC<{ session: CoreSession }> = ({ session }) => {
                 ) : (
                     <ul>
                         {tokens.map((tk) => (
-                            <li key={tk.id} className={`flex items-center gap-3 py-3 ${divider} last:border-b-0`}>
+                            <li key={tk.id} className={`m3-content-in flex items-center gap-3 py-3 ${divider} last:border-b-0`}>
                                 <Icon icon={KeyRound} size={20} strokeWidth={1.5} className={`${muted} shrink-0`} />
                                 {renamingId === tk.id ? (
                                     <div className="flex min-w-0 flex-1 items-center gap-2">
