@@ -252,7 +252,13 @@ const Home: React.FC<HomeProps> = ({
                                 <span className={`text-sm lowercase ${muted}`}>{pricePair.unit}</span>
                             </p>
                         </div>
-                        {!hideAA && (
+                        {/* The anti-androgen column shows only when there is something to
+                            report. With no anti-androgen on record `kind` is 'none', and
+                            the old behaviour drew a "--" placeholder — an empty column
+                            taking the space of a real reading. Hidden unless the user
+                            explicitly turned it off, this reads as "no anti-androgen
+                            logged yet", which is the truth. */}
+                        {!hideAA && antiandrogen.kind !== 'none' && (
                         <div className="min-w-0">
                             <p className={`text-xs font-semibold ${muted}`}>{aaPair.label}</p>
                             <p className="flex items-baseline gap-1.5 leading-none">
