@@ -597,6 +597,46 @@ const PACK: LangPack = {
     "mcp.config_hint": "將 hrt_... 換成你真正嘅權杖。",
     "mcp.tools_label": "可用工具",
     "mcp.tools_desc": "{count} 個工具，助手可以讀寫你嘅記錄，亦可以建立、睇、撤銷分享連結。",
+
+    "mcp.tool.hrt_get_timeline": "將用藥紀錄同化驗結果合併成一條最新喺前嘅紀錄線",
+
+    "mcp.tool.hrt_list_medications": "你紀錄咗嘅用藥",
+
+    "mcp.tool.hrt_list_labs": "你嘅化驗結果",
+
+    "mcp.tool.hrt_list_journal": "你嘅私密日記（你自己嘅原話）",
+
+    "mcp.tool.hrt_list_dose_templates": "你儲低嘅一鍵用藥範本",
+
+    "mcp.tool.hrt_predict_levels": "推算嘅激素水平曲線，有峰值、谷值同當前估算",
+
+    "mcp.tool.hrt_check_advisories": "App 本身會畀嘅用藥提示",
+
+    "mcp.tool.hrt_med_plan_status": "今日嘅用藥方案，同埋仲差邊幾劑",
+
+    "mcp.tool.hrt_get_settings": "體重、模式、校準同藥代參數覆寫",
+
+    "mcp.tool.hrt_sync_state": "一次過攞晒全部紀錄（可能好大，建議用分頁讀取工具）",
+
+    "mcp.tool.hrt_reference": "可用嘅畀藥途徑、酯類、單位，同工具清單本身",
+
+    "mcp.tool.hrt_add_medication": "記一次用藥",
+
+    "mcp.tool.hrt_add_lab_result": "記一次化驗結果",
+
+    "mcp.tool.hrt_add_journal_entry": "寫一條日記",
+
+    "mcp.tool.hrt_add_dose_template": "儲低一個一鍵用藥範本",
+
+    "mcp.tool.hrt_update_settings": "改某項設定（體重、模式、校準……）",
+
+    "mcp.tool.hrt_delete_record": "刪用藥、化驗、日記或者範本",
+
+    "mcp.tool.hrt_create_share": "發布一個唯讀分享連結（淨係顯示一次）",
+
+    "mcp.tool.hrt_list_shares": "列出目前發布嘅分享連結",
+
+    "mcp.tool.hrt_revoke_share": "撤銷一個分享連結",
     "mcp.scope_label": "權杖做唔到嘅嘢",
 
     "mcp.token_read_warning": "拎住呢個令牌嘅助手可以讀晒你戶口入面所有記錄（包括用藥記錄、化驗結果同私密日記）。只交畀你信得過嘅助手。",

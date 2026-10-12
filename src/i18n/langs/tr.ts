@@ -838,6 +838,46 @@ const PACK: LangPack = {
     "mcp.config_hint": "hrt_... yerine gerçek jetonunuzu yazın.",
     "mcp.tools_label": "Kullanılabilir araçlar",
     "mcp.tools_desc": "{count} araç. Bir asistan kayıtlarınızı okuyup yazabilir, paylaşım bağlantısı oluşturabilir, listeleyebilir veya iptal edebilir.",
+
+    "mcp.tool.hrt_get_timeline": "Dozları ve tahlilleri en yeni önce olacak tek bir zaman çizelgesinde birleştirir",
+
+    "mcp.tool.hrt_list_medications": "Kaydettiğiniz dozlar",
+
+    "mcp.tool.hrt_list_labs": "Tahlil sonuçlarınız",
+
+    "mcp.tool.hrt_list_journal": "Özel günlük notlarınız (kendi sözlerinizle)",
+
+    "mcp.tool.hrt_list_dose_templates": "Kaydettiğiniz tek dokunuş doz şablonları",
+
+    "mcp.tool.hrt_predict_levels": "Modellenen seviye eğrisi — tepe, çukur ve güncel tahmin",
+
+    "mcp.tool.hrt_check_advisories": "Uygulamanın kendisinin göstereceği doz uyarıları",
+
+    "mcp.tool.hrt_med_plan_status": "Bugünün ilaç planı ve hâlâ bekleyen dozlar",
+
+    "mcp.tool.hrt_get_settings": "Vücut ağırlığı, mod, kalibrasyon ve PK geçersiz kılmaları",
+
+    "mcp.tool.hrt_sync_state": "Tüm kayıt durumunu tek çağrıda — büyük olabilir; sayfalanmış okumaları tercih edin",
+
+    "mcp.tool.hrt_reference": "Geçerli yollar, esterler ve birimler ile araç listesinin kendisi",
+
+    "mcp.tool.hrt_add_medication": "Doz kaydet",
+
+    "mcp.tool.hrt_add_lab_result": "Tahlil sonucu kaydet",
+
+    "mcp.tool.hrt_add_journal_entry": "Günlük notu yaz",
+
+    "mcp.tool.hrt_add_dose_template": "Tek dokunuş doz şablonu kaydet",
+
+    "mcp.tool.hrt_update_settings": "Bir ayarı değiştir (ağırlık, mod, kalibrasyon…)",
+
+    "mcp.tool.hrt_delete_record": "Doz, tahlil, günlük notu veya şablonu sil",
+
+    "mcp.tool.hrt_create_share": "Salt okunur paylaşım bağlantısı yayımla (bir kez gösterilir)",
+
+    "mcp.tool.hrt_list_shares": "Şu anda yayımlanmış paylaşım bağlantılarını listele",
+
+    "mcp.tool.hrt_revoke_share": "Bir paylaşım bağlantısını iptal et",
     "mcp.scope_label": "Jetonun yapamadıkları",
 
     "mcp.token_read_warning": "Bu belirteci taşıyan bir asistan hesabınızdaki tüm kayıtları (dozlar, tahlil sonuçları ve özel günlüğünüz) okuyabilir. Yalnızca güvendiğiniz bir asistana verin.",

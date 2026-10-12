@@ -915,6 +915,46 @@ const PACK: LangPack = {
     "mcp.config_hint": "hrt_... を実際のトークンに置き換えてください。",
     "mcp.tools_label": "利用できるツール",
     "mcp.tools_desc": "{count} 個のツール。記録の読み書きと、共有リンクの作成・一覧・失効ができます。",
+
+    "mcp.tool.hrt_get_timeline": "服薬と検査結果を新しい順の1本のタイムラインに統合",
+
+    "mcp.tool.hrt_list_medications": "記録した服薬",
+
+    "mcp.tool.hrt_list_labs": "検査結果",
+
+    "mcp.tool.hrt_list_journal": "非公開の日記（あなた自身の言葉）",
+
+    "mcp.tool.hrt_list_dose_templates": "保存したワンタップ服薬テンプレート",
+
+    "mcp.tool.hrt_predict_levels": "推定ホルモン値の曲線（ピーク・トラフ・現在値）",
+
+    "mcp.tool.hrt_check_advisories": "アプリが出す服薬の注意",
+
+    "mcp.tool.hrt_med_plan_status": "今日の服薬プランと、まだ残っている分",
+
+    "mcp.tool.hrt_get_settings": "体重・モード・較正・PK 上書き",
+
+    "mcp.tool.hrt_sync_state": "全記録を一度に取得（大きい場合あり・ページ分割の読み取り推奨）",
+
+    "mcp.tool.hrt_reference": "有効な経路・エステル・単位と、ツール一覧そのもの",
+
+    "mcp.tool.hrt_add_medication": "服薬を記録",
+
+    "mcp.tool.hrt_add_lab_result": "検査結果を記録",
+
+    "mcp.tool.hrt_add_journal_entry": "日記を書く",
+
+    "mcp.tool.hrt_add_dose_template": "ワンタップ服薬テンプレートを保存",
+
+    "mcp.tool.hrt_update_settings": "設定を変更（体重・モード・較正…）",
+
+    "mcp.tool.hrt_delete_record": "服薬・検査・日記・テンプレートを削除",
+
+    "mcp.tool.hrt_create_share": "読み取り専用の共有リンクを発行（一度だけ表示）",
+
+    "mcp.tool.hrt_list_shares": "発行中の共有リンクを一覧",
+
+    "mcp.tool.hrt_revoke_share": "共有リンクを失効",
     "mcp.scope_label": "トークンではできないこと",
 
     "mcp.token_read_warning": "このトークンを持つアシスタントは、アカウント内のすべての記録（服薬・検査結果・非公開の日記）を読み取れます。信頼できるアシスタントにのみ渡してください。",

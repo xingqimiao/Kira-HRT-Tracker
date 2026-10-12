@@ -893,6 +893,46 @@ const PACK: LangPack = {
     "mcp.config_hint": "hrt_... 를 실제 토큰으로 바꾸세요.",
     "mcp.tools_label": "사용 가능한 도구",
     "mcp.tools_desc": "{count}개 도구. 기록을 읽고 쓰며 공유 링크를 만들고, 보이고, 폐기할 수 있습니다.",
+
+    "mcp.tool.hrt_get_timeline": "복약과 검사 결과를 최신순 한 줄기 타임라인으로 통합",
+
+    "mcp.tool.hrt_list_medications": "기록한 복약",
+
+    "mcp.tool.hrt_list_labs": "검사 결과",
+
+    "mcp.tool.hrt_list_journal": "비공개 일기(당신의 말 그대로)",
+
+    "mcp.tool.hrt_list_dose_templates": "저장한 한 번에 복약 템플릿",
+
+    "mcp.tool.hrt_predict_levels": "추정 호르몬 곡선 — 최고·최저·현재 추정",
+
+    "mcp.tool.hrt_check_advisories": "앱이 직접 보여주는 복약 주의",
+
+    "mcp.tool.hrt_med_plan_status": "오늘의 복약 계획과 아직 남은 용량",
+
+    "mcp.tool.hrt_get_settings": "체중·모드·보정·PK 재정의",
+
+    "mcp.tool.hrt_sync_state": "전체 기록을 한 번에(클 수 있음 — 페이징 읽기 권장)",
+
+    "mcp.tool.hrt_reference": "유효한 경로·에스터·단위와 도구 목록 자체",
+
+    "mcp.tool.hrt_add_medication": "복약 기록",
+
+    "mcp.tool.hrt_add_lab_result": "검사 결과 기록",
+
+    "mcp.tool.hrt_add_journal_entry": "일기 쓰기",
+
+    "mcp.tool.hrt_add_dose_template": "한 번에 복약 템플릿 저장",
+
+    "mcp.tool.hrt_update_settings": "설정 변경(체중·모드·보정…)",
+
+    "mcp.tool.hrt_delete_record": "복약·검사·일기·템플릿 삭제",
+
+    "mcp.tool.hrt_create_share": "읽기 전용 공유 링크 발행(한 번만 표시)",
+
+    "mcp.tool.hrt_list_shares": "현재 발행된 공유 링크 목록",
+
+    "mcp.tool.hrt_revoke_share": "공유 링크 폐기",
     "mcp.scope_label": "토큰으로 할 수 없는 일",
 
     "mcp.token_read_warning": "이 토큰을 가진 어시스턴트는 계정의 모든 기록(복약, 검사 결과, 비공개 일기)을 읽을 수 있습니다. 신뢰하는 어시스턴트에게만 전달하세요.",

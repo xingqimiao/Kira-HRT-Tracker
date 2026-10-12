@@ -597,6 +597,46 @@ const PACK: LangPack = {
     "mcp.config_hint": "把 hrt_... 換成你的真實權杖。",
     "mcp.tools_label": "可用工具",
     "mcp.tools_desc": "{count} 個工具，助手可以讀取與寫入你的記錄，也能建立、查看、撤銷分享連結。",
+
+    "mcp.tool.hrt_get_timeline": "把用藥記錄與檢驗結果合併成一條最新在前的記錄線",
+
+    "mcp.tool.hrt_list_medications": "你記錄的用藥",
+
+    "mcp.tool.hrt_list_labs": "你的檢驗結果",
+
+    "mcp.tool.hrt_list_journal": "你的私密日記（你自己的原話）",
+
+    "mcp.tool.hrt_list_dose_templates": "你儲存的一鍵用藥範本",
+
+    "mcp.tool.hrt_predict_levels": "推算出的激素水平曲線，含峰值、谷值與當前估算",
+
+    "mcp.tool.hrt_check_advisories": "應用本身會給出的用藥提示",
+
+    "mcp.tool.hrt_med_plan_status": "今天的用藥方案，以及還差哪幾劑",
+
+    "mcp.tool.hrt_get_settings": "體重、模式、校準與藥代參數覆寫",
+
+    "mcp.tool.hrt_sync_state": "一次取回全部記錄（可能很大，建議用分頁的讀取工具）",
+
+    "mcp.tool.hrt_reference": "可用的給藥途徑、酯類、單位，以及工具清單本身",
+
+    "mcp.tool.hrt_add_medication": "記錄一次用藥",
+
+    "mcp.tool.hrt_add_lab_result": "記錄一次檢驗結果",
+
+    "mcp.tool.hrt_add_journal_entry": "寫一則日記",
+
+    "mcp.tool.hrt_add_dose_template": "儲存一個一鍵用藥範本",
+
+    "mcp.tool.hrt_update_settings": "修改某項設定（體重、模式、校準……）",
+
+    "mcp.tool.hrt_delete_record": "刪除用藥、檢驗、日記或範本",
+
+    "mcp.tool.hrt_create_share": "發布一個唯讀分享連結（僅顯示一次）",
+
+    "mcp.tool.hrt_list_shares": "列出目前發布的分享連結",
+
+    "mcp.tool.hrt_revoke_share": "撤銷一個分享連結",
     "mcp.scope_label": "權杖做不到的事",
 
     "mcp.token_read_warning": "持有這個權杖的助手可以讀取你帳戶裡的全部記錄（包含用藥記錄、檢驗結果與私密日記）。請只把它交給你信任的助手。",

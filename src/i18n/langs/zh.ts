@@ -838,6 +838,46 @@ const PACK: LangPack = {
     "mcp.config_hint": "把 hrt_... 换成你的真实令牌。",
     "mcp.tools_label": "可用工具",
     "mcp.tools_desc": "{count} 个工具，助手可以读取与写入你的记录，也能创建、查看、吊销分享链接。",
+
+    "mcp.tool.hrt_get_timeline": "把用药记录与化验结果合并成一条最新在前的记录线",
+
+    "mcp.tool.hrt_list_medications": "你记录的用药",
+
+    "mcp.tool.hrt_list_labs": "你的化验结果",
+
+    "mcp.tool.hrt_list_journal": "你的私密日记（你自己的原话）",
+
+    "mcp.tool.hrt_list_dose_templates": "你保存的一键用药模板",
+
+    "mcp.tool.hrt_predict_levels": "推算出的激素水平曲线，含峰值、谷值与当前估算",
+
+    "mcp.tool.hrt_check_advisories": "应用本身会给出的用药提示",
+
+    "mcp.tool.hrt_med_plan_status": "今天的用药方案，以及还差哪几剂",
+
+    "mcp.tool.hrt_get_settings": "体重、模式、校准与药代参数覆盖",
+
+    "mcp.tool.hrt_sync_state": "一次性取回全部记录（可能很大，建议用分页的读取工具）",
+
+    "mcp.tool.hrt_reference": "可用的给药途径、酯类、单位，以及工具清单本身",
+
+    "mcp.tool.hrt_add_medication": "记录一次用药",
+
+    "mcp.tool.hrt_add_lab_result": "记录一次化验结果",
+
+    "mcp.tool.hrt_add_journal_entry": "写一条日记",
+
+    "mcp.tool.hrt_add_dose_template": "保存一个一键用药模板",
+
+    "mcp.tool.hrt_update_settings": "修改某项设置（体重、模式、校准……）",
+
+    "mcp.tool.hrt_delete_record": "删除用药、化验、日记或模板",
+
+    "mcp.tool.hrt_create_share": "发布一个只读分享链接（仅显示一次）",
+
+    "mcp.tool.hrt_list_shares": "列出当前发布的分享链接",
+
+    "mcp.tool.hrt_revoke_share": "撤销一个分享链接",
     "mcp.scope_label": "令牌做不到的事",
 
     "mcp.token_read_warning": "持有这个令牌的助手可以读取你账户里的全部记录（包括用药记录、化验结果和私密日记）。请只把它交给你信任的助手。",

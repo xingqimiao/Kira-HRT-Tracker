@@ -18,42 +18,39 @@ interface McpSettingsProps {
 }
 
 /**
- * What an assistant can do, one line each — the tool name and a plain-language
- * description of what it gives back.
+ * The tools an assistant can call, by name. The **names come from here** and the
+ * **count is derived** (`MCP_TOOLS.length`), because `scripts/check-mcp-tools.mjs`
+ * compares this list against the tools the server registers and the tables in MCP.md —
+ * the count was wrong twice when it was typed into copy, so it is read from this one
+ * set instead.
  *
- * Previously a three-column table (tool / input / returns). The input signatures were
- * the "玄乎" part: an agent discovers parameters from the tool schema itself, so
- * spelling `limit?, before?` in the UI told a person nothing and made every row dense.
- * A name beside what it does is what a reader can actually act on.
- *
- * The **names still come from here** and the **count is derived** (`MCP_TOOLS.length`),
- * because `scripts/check-mcp-tools.mjs` compares this list against the tools the
- * server registers and the tables in MCP.md — the count was wrong twice when it was
- * typed into copy, so it is read from this one set instead.
+ * Each tool's one-line description is a translation (`mcp.tool.<name>`), not a field
+ * here: it is prose a person reads, so it belongs with the copy. It was hardcoded
+ * English under the Chinese headings.
  */
-const MCP_TOOLS: { name: string; does: string }[] = [
-    { name: 'hrt_get_timeline', does: 'Doses and labs merged into one newest-first timeline' },
-    { name: 'hrt_list_medications', does: 'Your logged doses' },
-    { name: 'hrt_list_labs', does: 'Your blood-test results' },
-    { name: 'hrt_list_journal', does: 'Your private journal entries, in your own words' },
-    { name: 'hrt_list_dose_templates', does: 'Your saved one-tap dose templates' },
-    { name: 'hrt_predict_levels', does: 'The modelled level curve, with peak, trough and current estimate' },
-    { name: 'hrt_check_advisories', does: 'Any dosage advisory the app itself would show' },
-    { name: 'hrt_med_plan_status', does: 'Today\'s medication plan and any doses still due' },
-    { name: 'hrt_get_settings', does: 'Body weight, mode, calibration and PK overrides' },
-    { name: 'hrt_sync_state', does: 'The whole record state in one call — can be large; prefer the paged read tools' },
-    { name: 'hrt_reference', does: 'The valid routes, esters and units, and the tool list itself' },
-    { name: 'hrt_add_medication', does: 'Log a dose' },
-    { name: 'hrt_add_lab_result', does: 'Log a blood-test result' },
-    { name: 'hrt_add_journal_entry', does: 'Write a journal entry' },
-    { name: 'hrt_add_dose_template', does: 'Save a one-tap dose template' },
-    { name: 'hrt_update_settings', does: 'Change a setting (weight, mode, calibration, …)' },
-    { name: 'hrt_delete_record', does: 'Delete a dose, lab, journal entry or template' },
+const MCP_TOOLS: { name: string }[] = [
+    { name: 'hrt_get_timeline' },
+    { name: 'hrt_list_medications' },
+    { name: 'hrt_list_labs' },
+    { name: 'hrt_list_journal' },
+    { name: 'hrt_list_dose_templates' },
+    { name: 'hrt_predict_levels' },
+    { name: 'hrt_check_advisories' },
+    { name: 'hrt_med_plan_status' },
+    { name: 'hrt_get_settings' },
+    { name: 'hrt_sync_state' },
+    { name: 'hrt_reference' },
+    { name: 'hrt_add_medication' },
+    { name: 'hrt_add_lab_result' },
+    { name: 'hrt_add_journal_entry' },
+    { name: 'hrt_add_dose_template' },
+    { name: 'hrt_update_settings' },
+    { name: 'hrt_delete_record' },
     // The share tools, grouped at the end because they are the only ones whose effect
     // is visible outside the account — a link anyone can open.
-    { name: 'hrt_create_share', does: 'Publish a read-only share link (shown once)' },
-    { name: 'hrt_list_shares', does: 'List the share links currently published' },
-    { name: 'hrt_revoke_share', does: 'Revoke a share link' },
+    { name: 'hrt_create_share' },
+    { name: 'hrt_list_shares' },
+    { name: 'hrt_revoke_share' },
 ];
 
 const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
@@ -315,7 +312,7 @@ const McpSettings: React.FC<McpSettingsProps> = ({ session, onBack, onSignIn }) 
                 <section className={`py-4 ${divider}`}>
                     <StepHeading n={2} title={t('mcp.step_endpoint')} desc={t('mcp.endpoint_hint')} />
                     <div className="mt-3">
-                        <CopyRow value={MCP_ENDPOINT} hint={t('mcp.step_endpoint')} />
+                        <CopyRow value={MCP_ENDPOINT} hint={t('mcp.endpoint_hint')} />
                     </div>
                 </section>
 
@@ -348,7 +345,7 @@ const McpSettings: React.FC<McpSettingsProps> = ({ session, onBack, onSignIn }) 
                                 <Icon icon={Check} size={16} className="mt-0.5 shrink-0 text-[var(--color-m3-primary)]" />
                                 <div className="min-w-0">
                                     <p className="font-mono text-xs text-[var(--color-m3-on-surface)]">{tool.name}</p>
-                                    <p className={`mt-0.5 ${muted}`}>{tool.does}</p>
+                                    <p className={`mt-0.5 ${muted}`}>{t(`mcp.tool.${tool.name}`)}</p>
                                 </div>
                             </li>
                         ))}

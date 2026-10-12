@@ -838,6 +838,46 @@ const PACK: LangPack = {
     "mcp.config_hint": "Replace hrt_... with your real token.",
     "mcp.tools_label": "Available tools",
     "mcp.tools_desc": "{count} tools. An assistant can read and write your records, and create, list or revoke share links.",
+
+    "mcp.tool.hrt_get_timeline": "Doses and labs merged into one newest-first timeline",
+
+    "mcp.tool.hrt_list_medications": "Your logged doses",
+
+    "mcp.tool.hrt_list_labs": "Your blood-test results",
+
+    "mcp.tool.hrt_list_journal": "Your private journal entries, in your own words",
+
+    "mcp.tool.hrt_list_dose_templates": "Your saved one-tap dose templates",
+
+    "mcp.tool.hrt_predict_levels": "The modelled level curve — peak, trough and current estimate",
+
+    "mcp.tool.hrt_check_advisories": "Any dosage advisory the app itself would show",
+
+    "mcp.tool.hrt_med_plan_status": "Today's medication plan and any doses still due",
+
+    "mcp.tool.hrt_get_settings": "Body weight, mode, calibration and PK overrides",
+
+    "mcp.tool.hrt_sync_state": "The whole record state in one call — can be large; prefer the paged reads",
+
+    "mcp.tool.hrt_reference": "The valid routes, esters and units, and the tool list itself",
+
+    "mcp.tool.hrt_add_medication": "Log a dose",
+
+    "mcp.tool.hrt_add_lab_result": "Log a blood-test result",
+
+    "mcp.tool.hrt_add_journal_entry": "Write a journal entry",
+
+    "mcp.tool.hrt_add_dose_template": "Save a one-tap dose template",
+
+    "mcp.tool.hrt_update_settings": "Change a setting (weight, mode, calibration, …)",
+
+    "mcp.tool.hrt_delete_record": "Delete a dose, lab, journal entry or template",
+
+    "mcp.tool.hrt_create_share": "Publish a read-only share link (shown once)",
+
+    "mcp.tool.hrt_list_shares": "List the share links currently published",
+
+    "mcp.tool.hrt_revoke_share": "Revoke a share link",
     "mcp.scope_label": "What the token cannot do",
 
     "mcp.token_read_warning": "An assistant holding this token can read every record in your account — doses, lab results and your private journal. Only give it to an assistant you trust.",
