@@ -47,11 +47,6 @@ if (isNativeApp()) {
         const delayedOAuthUrl = (window as unknown as { HrtSafeArea?: { takeOAuthUrl?: () => string | null } }).HrtSafeArea?.takeOAuthUrl?.();
         if (delayedOAuthUrl) window.dispatchEvent(new CustomEvent('hrt-oauth-callback', { detail: delayedOAuthUrl }));
     }, 700);
-} else {
-    document.body.style.removeProperty('background');
-    document.body.style.removeProperty('color');
-    document.getElementById('root')?.style.removeProperty('background');
-    document.getElementById('root')?.style.removeProperty('color');
 }
 if (isNativeApp()) {
     document.addEventListener('click', event => {

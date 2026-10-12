@@ -9,6 +9,7 @@ import android.provider.Settings
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
@@ -211,7 +212,16 @@ class MainActivity : TauriActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     pendingOAuthUrl = intent?.dataString
-    enableEdgeToEdge()
+    // Transparent, system-following bars. `enableEdgeToEdge()` with no args applies a
+    // default LIGHT scrim (≈90% white) to the navigation bar in light mode; on launch
+    // that scrim is what showed as a white strip along the bottom before the app
+    // painted. Passing transparent scrims removes it entirely and lets the page's own
+    // (now correctly themed) background show through; the icon tint still follows the
+    // system's dark/light setting.
+    enableEdgeToEdge(
+      statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
+      navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
+    )
     super.onCreate(savedInstanceState)
     onBackPressedDispatcher.addCallback(this, backCallback)
   }

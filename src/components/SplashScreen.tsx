@@ -33,13 +33,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ mode, onDone }) => {
     const level = vialLevelForFill(TARGET_FILL, mode);
 
     useEffect(() => {
-        const fillTimer = window.setTimeout(() => {
-            document.body.style.removeProperty('background');
-            document.body.style.removeProperty('color');
-            document.getElementById('root')?.style.removeProperty('background');
-            document.getElementById('root')?.style.removeProperty('color');
-            setLeaving(true);
-        }, VALUE_EASE_MS);
+        const fillTimer = window.setTimeout(() => setLeaving(true), VALUE_EASE_MS);
         return () => window.clearTimeout(fillTimer);
     }, []);
 
