@@ -823,7 +823,7 @@ const PACK: LangPack = {
     "mcp.token_generate": "生成令牌",
     "mcp.token_once_title": "请立即复制",
     "mcp.token_once_desc": "服务器只保存哈希值，关闭后无法再次查看。",
-    "mcp.token_once_done": "我已保存，收起",
+    "mcp.token_once_done": "完成",
     "mcp.token_revoke": "删除令牌",
     "mcp.token_revoke_confirm": "删除令牌「{name}」？使用它的助手会立即失去访问权限。",
     "mcp.token_created": "创建于 {date}",

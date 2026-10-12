@@ -823,7 +823,7 @@ const PACK: LangPack = {
     "mcp.token_generate": "Generate token",
     "mcp.token_once_title": "Copy this now",
     "mcp.token_once_desc": "The server stores only a hash, so this cannot be shown again.",
-    "mcp.token_once_done": "I have saved it — dismiss",
+    "mcp.token_once_done": "Done",
     "mcp.token_revoke": "Revoke token",
     "mcp.token_revoke_confirm": "Revoke \"{name}\"? Any assistant using it loses access immediately.",
     "mcp.token_created": "Created {date}",

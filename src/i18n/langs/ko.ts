@@ -878,7 +878,7 @@ const PACK: LangPack = {
     "mcp.token_generate": "토큰 발급",
     "mcp.token_once_title": "지금 복사하세요",
     "mcp.token_once_desc": "서버는 해시만 저장하므로 닫으면 다시 볼 수 없습니다.",
-    "mcp.token_once_done": "저장했습니다 — 닫기",
+    "mcp.token_once_done": "완료",
     "mcp.token_revoke": "토큰 삭제",
     "mcp.token_revoke_confirm": "\"{name}\"을(를) 삭제할까요? 사용 중인 어시스턴트는 즉시 접근할 수 없게 됩니다.",
     "mcp.token_created": "{date} 생성",

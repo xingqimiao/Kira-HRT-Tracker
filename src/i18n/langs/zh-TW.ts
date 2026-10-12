@@ -582,7 +582,7 @@ const PACK: LangPack = {
     "mcp.token_generate": "產生權杖",
     "mcp.token_once_title": "請立即複製",
     "mcp.token_once_desc": "伺服器只保存雜湊值，收起後無法再次查看。",
-    "mcp.token_once_done": "我已保存，收起",
+    "mcp.token_once_done": "完成",
     "mcp.token_revoke": "刪除權杖",
     "mcp.token_revoke_confirm": "刪除權杖「{name}」？使用它的助理會立即失去存取權限。",
     "mcp.token_created": "建立於 {date}",

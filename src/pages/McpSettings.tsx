@@ -133,6 +133,47 @@ const MintTokenModal: React.FC<{
 };
 
 /**
+ * The minted token, shown once in a dialog.
+ *
+ * The value cannot be read again (the server keeps only a hash), so the dialog stays
+ * until the user hits Done — a panel on the page could be scrolled past and lost.
+ * Opened by `value` being non-null.
+ */
+const RevealTokenModal: React.FC<{
+    value: string | null;
+    copied: boolean;
+    onCopy: () => void;
+    onClose: () => void;
+}> = ({ value, copied, onCopy, onClose }) => {
+    const { t } = useTranslation();
+    const isOpen = value !== null;
+    useEscape(onClose, isOpen);
+    const { mounted, state } = usePresence(isOpen, 200);
+    if (!mounted || value === null) return null;
+
+    return createPortal(
+        <div className="modal-overlay z-[60]" data-state={state}>
+            <div className="modal-shell">
+                <div className="modal-card">
+                    <h3 className="modal-title">{t('mcp.token_once_title')}</h3>
+                    <p className="text-sm text-muted mb-4 leading-relaxed">{t('mcp.token_once_desc')}</p>
+                    <div className="flex items-start gap-2 mb-5">
+                        <code className={`${codeBlock} flex-1 break-all whitespace-pre-wrap`}>{value}</code>
+                        <button onClick={onCopy} className="m3-icon-button shrink-0" aria-label={t('mcp.copy')}>
+                            <Icon icon={copied ? Check : Copy} size={16} strokeWidth={1.5} />
+                        </button>
+                    </div>
+                    <button onClick={onClose} className="m3-btn m3-btn-filled w-full">
+                        {t('mcp.token_once_done')}
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body,
+    );
+};
+
+/**
  * Token management: mint, list, rename, revoke.
  *
  * The minted value is shown once, in a panel that stays until the user dismisses it,
@@ -173,8 +214,10 @@ const TokenManager: React.FC<{ session: CoreSession }> = ({ session }) => {
         setError(null);
         try {
             const created = await coreAuth.mintToken(session.token, name || t('mcp.token_default_name'));
+            // Show the value in a dialog, not a panel above the list: the token is the
+            // whole point of the action, and a modal that holds it until dismissed is
+            // harder to miss (and harder to lose by scrolling away).
             setFresh(created.token);
-            setMintOpen(false);
             setCopied(false);
             await load();
         } catch (e: any) {
@@ -240,26 +283,16 @@ const TokenManager: React.FC<{ session: CoreSession }> = ({ session }) => {
             </div>
 
             <MintTokenModal isOpen={mintOpen} onClose={() => setMintOpen(false)} onGenerate={mint} busy={minting} />
+            {/* The minted value lives in a dialog of its own, opened by the mint
+                above. It stays until dismissed — the value cannot be shown again. */}
+            <RevealTokenModal
+                value={fresh}
+                copied={copied}
+                onCopy={copyFresh}
+                onClose={() => setFresh(null)}
+            />
 
             {error && <p className="mt-3 text-xs text-[var(--color-m3-error)]">{error}</p>}
-
-            {/* The plaintext, once. Stays until dismissed. `m3-panel-in` animates it in
-                so minting reads as an action with a result, not a silent re-render. */}
-            {fresh && (
-                <div className="m3-panel-in mt-4 rounded-[var(--radius-md)] border border-[var(--color-m3-primary)] p-3">
-                    <p className="text-xs font-semibold text-[var(--color-m3-primary)]">{t('mcp.token_once_title')}</p>
-                    <p className={`mt-1 ${muted}`}>{t('mcp.token_once_desc')}</p>
-                    <div className="mt-2 flex items-start gap-2">
-                        <code className={`${codeBlock} flex-1 break-all whitespace-pre-wrap`}>{fresh}</code>
-                        <button onClick={copyFresh} className="m3-icon-button shrink-0" aria-label={t('mcp.copy')}>
-                            <Icon icon={copied ? Check : Copy} size={16} strokeWidth={1.5} />
-                        </button>
-                    </div>
-                    <button onClick={() => setFresh(null)} className="m3-btn m3-btn-text m3-btn-sm mt-2">
-                        {t('mcp.token_once_done')}
-                    </button>
-                </div>
-            )}
 
             {/* The list. */}
             <div className="mt-2">

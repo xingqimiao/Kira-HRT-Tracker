@@ -900,7 +900,7 @@ const PACK: LangPack = {
     "mcp.token_generate": "トークンを発行",
     "mcp.token_once_title": "今すぐコピーしてください",
     "mcp.token_once_desc": "サーバーはハッシュのみ保存するため、閉じると再表示できません。",
-    "mcp.token_once_done": "保存しました — 閉じる",
+    "mcp.token_once_done": "完了",
     "mcp.token_revoke": "トークンを削除",
     "mcp.token_revoke_confirm": "「{name}」を削除しますか？ 使用中のアシスタントは直ちにアクセスできなくなります。",
     "mcp.token_created": "作成 {date}",

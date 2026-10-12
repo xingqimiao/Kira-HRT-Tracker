@@ -823,7 +823,7 @@ const PACK: LangPack = {
     "mcp.token_generate": "Jeton üret",
     "mcp.token_once_title": "Bunu şimdi kopyalayın",
     "mcp.token_once_desc": "Sunucu yalnızca bir karma saklar, bu yüzden bir daha gösterilemez.",
-    "mcp.token_once_done": "Kaydettim — kapat",
+    "mcp.token_once_done": "Tamam",
     "mcp.token_revoke": "Jetonu sil",
     "mcp.token_revoke_confirm": "\"{name}\" silinsin mi? Onu kullanan asistan erişimini hemen kaybeder.",
     "mcp.token_created": "{date} tarihinde oluşturuldu",
