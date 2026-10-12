@@ -214,9 +214,10 @@ const TokenManager: React.FC<{ session: CoreSession }> = ({ session }) => {
         setError(null);
         try {
             const created = await coreAuth.mintToken(session.token, name || t('mcp.token_default_name'));
-            // Show the value in a dialog, not a panel above the list: the token is the
-            // whole point of the action, and a modal that holds it until dismissed is
-            // harder to miss (and harder to lose by scrolling away).
+            // Close the generate dialog and open the reveal one. Both must be toggled:
+            // leaving the generate dialog open stacked the reveal on top of it, so
+            // dismissing the reveal dropped the user back into the generate dialog.
+            setMintOpen(false);
             setFresh(created.token);
             setCopied(false);
             await load();
