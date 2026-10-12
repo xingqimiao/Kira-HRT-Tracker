@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Icon from '../components/Icon';
 import { ArrowLeft, AlertTriangle, Check, Copy, Edit2, KeyRound, Plus, Trash2, X } from '../icons';
 import { Progress } from '../components/ui';
@@ -9,6 +10,8 @@ import type { CoreSession } from '../hooks/useCoreSession';
 import { MCP_ENDPOINT } from '../constants';
 import CopyRow from '../components/CopyRow';
 import { buildMcpInstallPrompt } from '../utils/mcpInstallPrompt';
+import { useEscape } from '../hooks/useEscape';
+import { usePresence } from '../hooks/usePresence';
 
 interface McpSettingsProps {
     session: CoreSession;
@@ -77,6 +80,59 @@ const StepHeading: React.FC<{ n: number; title: string; desc?: string }> = ({ n,
 );
 
 /**
+ * The "generate a token" dialog: a name field and a confirm.
+ *
+ * A dialog rather than an inline field beside the button, so the token list stays a
+ * clean list and minting is one deliberate step. `modal-overlay/shell/card` +
+ * `usePresence`+`useEscape` are the app's shared dialog shell (see WeightEditorModal).
+ */
+const MintTokenModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    onGenerate: (name: string) => void;
+    busy: boolean;
+}> = ({ isOpen, onClose, onGenerate, busy }) => {
+    const { t } = useTranslation();
+    const [name, setName] = useState('');
+    useEscape(onClose, isOpen);
+    const { mounted, state } = usePresence(isOpen, 200);
+    // Clear each time it opens, so a previous attempt does not linger.
+    useEffect(() => { if (isOpen) setName(''); }, [isOpen]);
+    if (!mounted) return null;
+
+    const generate = () => { if (!busy) onGenerate(name.trim()); };
+
+    return createPortal(
+        <div className="modal-overlay z-[60]" data-state={state}>
+            <div className="modal-shell">
+                <div className="modal-card">
+                    <h3 className="modal-title">{t('mcp.token_generate')}</h3>
+                    <label className="block mb-5">
+                        <span className="mb-1.5 block text-xs font-semibold text-[var(--color-m3-on-surface-variant)]">{t('mcp.token_name_label')}</span>
+                        <input
+                            autoFocus
+                            value={name}
+                            onChange={e => setName(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') generate(); }}
+                            maxLength={64}
+                            placeholder={t('mcp.token_default_name')}
+                            className="input-base w-full"
+                        />
+                    </label>
+                    <div className="flex gap-2">
+                        <button onClick={onClose} className="m3-btn m3-btn-outlined flex-1">{t('btn.cancel')}</button>
+                        <button onClick={generate} disabled={busy} className="m3-btn m3-btn-filled flex-1">
+                            {busy ? <Progress size={14} /> : t('mcp.token_generate')}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>,
+        document.body,
+    );
+};
+
+/**
  * Token management: mint, list, rename, revoke.
  *
  * The minted value is shown once, in a panel that stays until the user dismisses it,
@@ -95,10 +151,8 @@ const TokenManager: React.FC<{ session: CoreSession }> = ({ session }) => {
     // dialog so the row stays in place and the change reads as an edit of that row.
     const [renamingId, setRenamingId] = useState<string | null>(null);
     const [renameValue, setRenameValue] = useState('');
-    // The name for the token about to be minted. Named up front (a client name like
-    // "Claude Desktop") so the list is readable from the start; the rename control
-    // stays for changing it later.
-    const [newName, setNewName] = useState('');
+    /** Whether the generate-token dialog is open. */
+    const [mintOpen, setMintOpen] = useState(false);
 
     const load = useCallback(async () => {
         if (!session.token) return;
@@ -113,14 +167,14 @@ const TokenManager: React.FC<{ session: CoreSession }> = ({ session }) => {
 
     useEffect(() => { void load(); }, [load]);
 
-    const mint = async () => {
+    const mint = async (name: string) => {
         if (!session.token) return;
         setMinting(true);
         setError(null);
         try {
-            const created = await coreAuth.mintToken(session.token, newName.trim() || t('mcp.token_default_name'));
+            const created = await coreAuth.mintToken(session.token, name || t('mcp.token_default_name'));
             setFresh(created.token);
-            setNewName('');
+            setMintOpen(false);
             setCopied(false);
             await load();
         } catch (e: any) {
@@ -177,27 +231,15 @@ const TokenManager: React.FC<{ session: CoreSession }> = ({ session }) => {
 
     return (
         <section className={`py-4 ${divider}`}>
-            <StepHeading n={1} title={t('mcp.tokens_label')} desc={t('mcp.tokens_desc')} />
-
-            {/* Name it as you make it: a client name makes the list readable, and asking
-                here saves a rename right after. The Generate button follows. */}
-            <div className="mt-3 flex items-end gap-2">
-                <label className="min-w-0 flex-1">
-                    <span className={`mb-1.5 block text-xs font-semibold text-[var(--color-m3-on-surface-variant)]`}>{t('mcp.token_name_label')}</span>
-                    <input
-                        value={newName}
-                        onChange={e => setNewName(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter' && !minting) void mint(); }}
-                        maxLength={64}
-                        placeholder={t('mcp.token_default_name')}
-                        className="input-base w-full"
-                    />
-                </label>
-                <button onClick={mint} disabled={minting} className="m3-btn m3-btn-filled shrink-0">
-                    {minting ? <Progress size={14} /> : <Icon icon={Plus} size={16} />}
+            <div className="flex items-start justify-between gap-3">
+                <StepHeading n={1} title={t('mcp.tokens_label')} desc={t('mcp.tokens_desc')} />
+                <button onClick={() => setMintOpen(true)} className="m3-btn m3-btn-filled shrink-0">
+                    <Icon icon={Plus} size={16} />
                     <span className="ps-1.5">{t('mcp.token_generate')}</span>
                 </button>
             </div>
+
+            <MintTokenModal isOpen={mintOpen} onClose={() => setMintOpen(false)} onGenerate={mint} busy={minting} />
 
             {error && <p className="mt-3 text-xs text-[var(--color-m3-error)]">{error}</p>}
 
