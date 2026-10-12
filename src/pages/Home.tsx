@@ -248,7 +248,7 @@ const Home: React.FC<HomeProps> = ({
                         <div className="min-w-0">
                             <p className={`text-xs font-semibold ${muted}`}>{pricePair.label}</p>
                             <p className="flex items-baseline gap-1.5 leading-none">
-                                <span className="text-[2.5rem] font-semibold tabular-nums text-[var(--color-m3-primary)]">{pricePair.value}</span>
+                                <span className="text-[5rem] font-semibold tabular-nums text-[var(--color-m3-primary)]">{pricePair.value}</span>
                                 <span className={`text-sm lowercase ${muted}`}>{pricePair.unit}</span>
                             </p>
                         </div>
@@ -262,7 +262,7 @@ const Home: React.FC<HomeProps> = ({
                         <div className="min-w-0">
                             <p className={`text-xs font-semibold ${muted}`}>{aaPair.label}</p>
                             <p className="flex items-baseline gap-1.5 leading-none">
-                                {aaPair.value && <span className={`font-semibold tabular-nums ${on} ${aaPair.value.length > 6 ? 'text-2xl' : 'text-[2.5rem]'}`}>{aaPair.value}</span>}
+                                {aaPair.value && <span className={`font-semibold tabular-nums ${on} ${aaPair.value.length > 6 ? 'text-[3rem]' : 'text-[5rem]'}`}>{aaPair.value}</span>}
                                 {aaPair.unit && <span className={`text-sm lowercase ${muted}`}>{aaPair.unit}</span>}
                             </p>
                         </div>
