@@ -13,6 +13,9 @@ src-tauri/target/
 src-tauri/gen/
 releases/
 public/android/*.apk
+# FCM web-push compat builds, copied from node_modules at build time by
+# scripts/sync-firebase-messaging-sw.mjs. Build artifacts, never committed.
+public/firebase/
 tmp-*.png
 hrt-start.mp4
 dist

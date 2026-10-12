@@ -3,6 +3,8 @@
 
 interface ImportMetaEnv {
     readonly VITE_API_ORIGIN?: string;
+    /** FCM web push VAPID public key. Absent disables web push. */
+    readonly VITE_FIREBASE_VAPID_KEY?: string;
 }
 
 interface ImportMeta {

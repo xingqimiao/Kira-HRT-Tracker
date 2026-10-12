@@ -1,8 +1,14 @@
+<!-- This file is the earlier design note. The implementation, and the
+     implementation-facing details (HTTP v1 sender, dedup claim, the native
+     data-only handler, and the web push-in-worker wiring), live in the code:
+     server/src/push.ts, server/test/push.test.ts, src/utils/pushRegister.ts,
+     scripts/HrtMessagingService.kt, public/firebase-messaging-sw.js. -->
 # Android 推送设计：本地排程为主，FCM 补推为辅
 
-状态：**服务端 + 客户端已实现**（`server/src/push.ts`、`server/test/push.test.ts`、
-`src/utils/pushRegister.ts`、`scripts/HrtMessagingService.kt`）。唯一未落地的是把
-服务账号凭据放上生产机（见文末），以及一个 APK 构建发布。
+状态：**服务端 + Android 原生 + Web Push 均已实现**（`server/src/push.ts`、
+`server/test/push.test.ts`、`src/utils/pushRegister.ts`、`scripts/HrtMessagingService.kt`、
+`public/firebase-messaging-sw.js`）。唯一未落地的是把服务账号凭据放上生产机（见文末），
+以及一个 APK 构建发布。
 
 ## 目标与分工
 
@@ -61,9 +67,25 @@ Android 的 FCM **通知消息**（`notification` 字段）在 App 后台时**�
 - 发送器：FCM **HTTP v1**（`POST https://fcm.googleapis.com/v1/projects/hrt-kiramyao/messages:send`），用服务账号 OAuth2 取 access token。
 - 定时任务：按账号扫描已过宽限窗口、无匹配剂量、且未补推过的剂量实例 → 发 data-only。
 
-### 3. 客户端（Web 侧）
-- 原生"启用通知"授权后获取 FCM token，`POST /api/push/register` 绑定当前账号。
+### 3. 客户端
+- 原生"启用通知"授权后由 Android 桥取 FCM token，`POST /api/push/register` 绑定当前账号。
 - 退出登录 / 关闭提醒时注销 token。
+
+### 4. 实现补充：Web Push（原设计只覆盖了 Android）
+
+Web 端也接了 FCM，作为**附加**通道（浏览器没有"本地到点提醒"这一半，所以 App 内每
+60 秒的检查仍是 web 的主提醒，FCM 只是补一条服务器判定的补推）。
+
+- **Service Worker**：root 作用域只能有一个 SW，所以 FCM 的后台处理不新起
+  `firebase-messaging-sw.js`，而是通过 workbox 的 `importScripts` 注入现有的 `sw.js`；
+  处理逻辑在 `public/firebase-messaging-sw.js`，其 firebase compat 依赖在构建期从
+  node_modules 拷到 `public/firebase/`（同源，不走 CDN）。
+- **VAPID**：web 取 token 需要 VAPID 公钥，由 `VITE_FIREBASE_VAPID_KEY` 提供；未设置时
+  web push 静默关闭（不影响其它功能）。
+- **不走预缓存**：Firebase/FCM 是懒加载 + 可选的，且 `importScripts` 本就每次按需取，
+  所以 `globIgnores` 把它排除出 precache（用 `manualChunks` 命名成 `firebase` 才能按名
+  排除），避免给每个访客的首装 +~80KB。
+- **载荷**：同一套 data-only；web token 不带 `android.priority`，改用 `webpush` 的 TTL。
 
 ## 阻塞
 

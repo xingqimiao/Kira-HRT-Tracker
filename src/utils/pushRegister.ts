@@ -2,22 +2,31 @@ import { apiEndpoint, apiFetch } from '../services/apiClient';
 import { isNativeApp } from './platform';
 
 /**
- * FCM token registration — the client half of supplementary push.
+ * FCM token registration — the client half of supplementary push, on both transports.
  *
  * The server can only send a catch-up nudge once it has a device's FCM token, so
- * this binds the token to the signed-in account. It runs on the *native* APK only:
- * a browser gets the app-open web notification path instead, and has no FCM token
- * to bind.
+ * this binds that token to the signed-in account. Two transports, one contract:
  *
- * The device token is device-wide (not account-scoped), so the token is remembered
- * locally and only re-POSTed when it changes — FCM rotates it rarely, and a
- * re-register on every launch would be a write per launch for nothing. On sign-out
- * the token is unregistered server-side and deleted from FCM, so a signed-out device
- * stops receiving that account's nudges.
+ *   - **Native APK**: the token comes from the Android bridge (see `PushBridge` in
+ *     scripts/MainActivity.kt), not the notifications plugin — its push command is
+ *     gated by a build flag that lags the build enabling it.
+ *   - **Web**: the token comes from the Firebase JS SDK, which needs a VAPID key and
+ *     the shared service worker. Web push is a data-only catch-up channel too; the
+ *     always-on local ring does not exist in a browser, so the in-app 60-second
+ *     check (`startPlanWebNotifications`) remains the primary web reminder and FCM
+ *     is additive.
+ *
+ * The device token is device-wide, not account-scoped, so it is remembered locally
+ * and only re-POSTed when it changes — FCM rotates it rarely. On sign-out the token
+ * is unregistered server-side and deleted from FCM.
  */
 const LAST_TOKEN_KEY = 'hrt-fcm-token';
 
-/** The native bridge MainActivity installs for FCM token access. */
+/** The VAPID public key for web push. Public by design; absent disables web push. */
+const VAPID_KEY = (import.meta.env.VITE_FIREBASE_VAPID_KEY as string | undefined)?.trim() ?? '';
+
+// --- Native token -----------------------------------------------------------
+
 interface HrtPushBridge {
     requestToken: () => void;
     deleteToken: () => void;
@@ -31,12 +40,9 @@ function pushBridge(): HrtPushBridge | null {
  * Ask the native side for the device's FCM token.
  *
  * The token comes back as a `hrt-push-token` DOM event (the native call is async),
- * so this resolves on that event or null on a timeout/error. Using the app's own
- * bridge rather than the notifications plugin's `registerForPushNotifications` keeps
- * push independent of that plugin's build-flag gating — see `PushBridge` in
- * scripts/MainActivity.kt.
+ * so this resolves on that event or null on a timeout/error.
  */
-function requestDeviceToken(timeoutMs = 8000): Promise<string | null> {
+function requestNativeToken(timeoutMs = 8000): Promise<string | null> {
     const bridge = pushBridge();
     if (!bridge) return Promise.resolve(null);
     return new Promise((resolve) => {
@@ -62,17 +68,48 @@ function requestDeviceToken(timeoutMs = 8000): Promise<string | null> {
     });
 }
 
-/** Fetch the device's FCM token (native only), or null when unavailable. */
-async function currentDeviceToken(): Promise<string | null> {
-    if (!isNativeApp()) return null;
-    return await requestDeviceToken();
+// --- Web token --------------------------------------------------------------
+
+/**
+ * The web FCM token, or null when web push is unavailable.
+ *
+ * `firebase/messaging` is imported lazily so it never lands in the entry chunk for
+ * the many users who never enable notifications. The registration is the workbox
+ * service worker the PWA already installs; FCM's background handler rides inside it
+ * (see public/firebase-messaging-sw.js), so no second registration is created.
+ */
+async function requestWebToken(): Promise<string | null> {
+    if (VAPID_KEY === '') return null;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return null;
+    try {
+        const { getFirebaseApp } = await import('./firebase');
+        const { getMessaging, getToken } = await import('firebase/messaging');
+        const registration = await navigator.serviceWorker?.getRegistration();
+        if (!registration) return null;
+        const token = await getToken(getMessaging(getFirebaseApp()), {
+            vapidKey: VAPID_KEY,
+            serviceWorkerRegistration: registration,
+        });
+        return token || null;
+    } catch {
+        // No VAPID match, no worker yet, or blocked — none of which the user needs
+        // to act on; the in-app web check still fires.
+        return null;
+    }
 }
+
+/** Fetch the device's FCM token for the transport in use, or null. */
+async function currentDeviceToken(): Promise<string | null> {
+    return isNativeApp() ? await requestNativeToken() : await requestWebToken();
+}
+
+// --- Registration -----------------------------------------------------------
 
 /**
  * Bind this device's FCM token to the signed-in account.
  *
  * Safe to call whenever notifications are enabled and the user is signed in; it is
- * a no-op on web, when no token is available, and when the token is unchanged.
+ * a no-op when no token is available and when the token is unchanged.
  */
 export async function syncPushRegistration(authToken: string): Promise<void> {
     if (!authToken) return;
@@ -87,7 +124,7 @@ export async function syncPushRegistration(authToken: string): Promise<void> {
         const res = await apiFetch(apiEndpoint('/api/push/register'), {
             method: 'POST',
             headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: deviceToken, platform: 'android' }),
+            body: JSON.stringify({ token: deviceToken, platform: isNativeApp() ? 'android' : 'web' }),
         });
         if (res.ok) localStorage.setItem(LAST_TOKEN_KEY, deviceToken);
     } catch {
@@ -103,7 +140,6 @@ export async function syncPushRegistration(authToken: string): Promise<void> {
  * local record and FCM's own token are cleared.
  */
 export async function unregisterPush(authToken: string | null): Promise<void> {
-    if (!isNativeApp()) return;
     let deviceToken: string | null = null;
     try {
         deviceToken = localStorage.getItem(LAST_TOKEN_KEY);
@@ -122,9 +158,20 @@ export async function unregisterPush(authToken: string | null): Promise<void> {
     } catch {
         // Ignore: nothing more can be done if storage is unavailable.
     }
+    if (isNativeApp()) {
+        try {
+            pushBridge()?.deleteToken();
+        } catch {
+            // Best-effort: the server side is already told.
+        }
+        return;
+    }
+    // Web: delete the token so a later getToken mints a fresh one only if re-enabled.
     try {
-        pushBridge()?.deleteToken();
+        const { getFirebaseApp } = await import('./firebase');
+        const { getMessaging, deleteToken } = await import('firebase/messaging');
+        await deleteToken(getMessaging(getFirebaseApp()));
     } catch {
-        // Best-effort: the server side is already told.
+        // Best-effort.
     }
 }

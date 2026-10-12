@@ -154,13 +154,13 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
             // Web: start the 60-second in-app check.
             if (isNativeApp()) {
                 void reschedulePlanNotifications().catch(() => undefined);
-                // Bind this device's FCM token so the server can send a catch-up
-                // nudge for a dose that was never logged. No-op until signed in.
-                if (session.token) void syncPushRegistration(session.token).catch(() => undefined);
             } else {
                 const { startPlanWebNotifications } = await import('../utils/medPlanNotify');
                 startPlanWebNotifications();
             }
+            // Bind this device's FCM token so the server can send a catch-up nudge
+            // for a dose that was never logged. Both transports; no-op until signed in.
+            if (session.token) void syncPushRegistration(session.token).catch(() => undefined);
         }
     };
 

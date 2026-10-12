@@ -127,6 +127,21 @@ export default defineConfig(({ mode }) => {
     define: {
       __APP_VERSION__: JSON.stringify(`v${pkg.version}`),
     },
+    build: {
+      rollupOptions: {
+        output: {
+          // Give every Firebase module one chunk named `firebase`. Without this,
+          // Rollup splits them by their own source filenames (index.esm-*.js), which
+          // no glob can exclude from the precache by name and which would therefore
+          // ship ~50 KB of opt-in FCM code to every visitor. The name is what lets
+          // globIgnores below keep it out — the same lever the i18n chunks use.
+          manualChunks(id: string) {
+            if (/node_modules[\\/](?:@firebase|firebase)[\\/]/.test(id)) return 'firebase';
+            return undefined;
+          },
+        },
+      },
+    },
     server: {
       port: 3000,
       host: '0.0.0.0',
@@ -176,6 +191,12 @@ export default defineConfig(({ mode }) => {
           ]
         },
         workbox: {
+          // The FCM background handler rides inside this worker rather than a second
+          // one: a service worker's scope admits only one controller, so a separate
+          // firebase-messaging-sw.js would fight this worker for the root scope. The
+          // file sets up `onBackgroundMessage` and a notificationclick handler; its
+          // firebase compat imports are copied to public/firebase/ at build time.
+          importScripts: ['/firebase-messaging-sw.js'],
           // Navigations that must reach the network instead of the precached app
           // shell. Workbox's NavigationRoute answers *every* in-scope navigation
           // with `index.html`, so a person who has the app installed and then opens
@@ -230,6 +251,14 @@ export default defineConfig(({ mode }) => {
             '**/ocr/**',
             '**/ort-wasm*.wasm',
             'assets/{ja,ko,tr,yue,zh-TW}-*.js',
+            // Firebase/FCM is opt-in and lazy: `import('firebase/messaging')` only
+            // runs after the user enables notifications, and the SW's own
+            // importScripts targets fetch their files on every worker startup anyway.
+            // Preaching them would put ~80 KB on every visitor's first install for a
+            // feature most never turn on — the same reason the i18n chunks are out.
+            '**/firebase/**',
+            'firebase-messaging-sw.js',
+            'assets/firebase-*.js',
           ],
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           runtimeCaching: [

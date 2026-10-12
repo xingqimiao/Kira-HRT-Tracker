@@ -125,17 +125,30 @@ export interface SendResult {
 /**
  * Send one data-only message to one device token.
  *
- * `android.priority: high` is what lets a data-only message be delivered while the
- * app is backgrounded — without it FCM may hold it until the app is next opened,
- * which for a catch-up nudge is the same as not sending it.
+ * `android.priority: high` is what lets a data-only message be delivered while an
+ * Android app is backgrounded — without it FCM may hold it until the app is next
+ * opened, which for a catch-up nudge is the same as not sending it. It is Android
+ * only: the platform-specific block carries `android` options, so a web token gets a
+ * message without it (a web push reaches the service worker's background handler
+ * either way). `webpush` sets a delivery TTL so an undelivered nudge expires rather
+ * than arriving stale days later.
  */
 export async function sendMessage(
   fcm: FcmConfig,
   token: string,
   data: Record<string, string>,
+  platform = 'android',
 ): Promise<SendResult> {
   const accessToken = await getAccessToken(fcm);
   const url = `https://fcm.googleapis.com/v1/projects/${fcm.projectId}/messages:send`;
+  const message: Record<string, unknown> = { token, data };
+  if (platform === 'android') {
+    message.android = { priority: 'high' };
+  } else {
+    // 4 hours: long enough to survive a phone that was off, short enough that a
+    // missed nudge does not surface the next day as if it were current.
+    message.webpush = { headers: { TTL: '14400' } };
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
   try {
@@ -145,7 +158,7 @@ export async function sendMessage(
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ message: { token, data, android: { priority: 'high' } } }),
+      body: JSON.stringify({ message }),
       signal: controller.signal,
     });
     if (response.ok) return { ok: true, unregistered: false };
@@ -186,13 +199,13 @@ export const PushStore = {
     await getPool().query('DELETE FROM device_tokens WHERE user_id = $1 AND token = $2', [userId, token]);
   },
 
-  /** Live tokens for an account. */
-  async tokensFor(userId: string): Promise<string[]> {
-    const { rows } = await getPool().query<{ token: string }>(
-      'SELECT token FROM device_tokens WHERE user_id = $1',
+  /** Live tokens for an account, with their platform (the send differs by it). */
+  async tokensFor(userId: string): Promise<{ token: string; platform: string }[]> {
+    const { rows } = await getPool().query<{ token: string; platform: string }>(
+      'SELECT token, platform FROM device_tokens WHERE user_id = $1',
       [userId],
     );
-    return rows.map((r) => r.token);
+    return rows;
   },
 
   /** Accounts that have at least one device registered. */
@@ -273,8 +286,8 @@ export async function scanMissedDoses(nowMs: number = Date.now()): Promise<ScanR
         if (instance.dose) data.dose = instance.dose;
 
         let sentAny = false;
-        for (const token of tokens) {
-          const outcome = await sendMessage(fcm, token, data).catch((): SendResult => ({ ok: false, unregistered: false }));
+        for (const { token, platform } of tokens) {
+          const outcome = await sendMessage(fcm, token, data, platform).catch((): SendResult => ({ ok: false, unregistered: false }));
           if (outcome.unregistered) {
             await PushStore.unregister(userId, token);
           } else if (outcome.ok) {

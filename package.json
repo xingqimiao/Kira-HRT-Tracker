@@ -6,10 +6,10 @@
   "scripts": {
     "dev": "vite",
     "tauri": "tauri",
-    "prebuild": "node scripts/sync-ocr-assets.mjs",
+    "prebuild": "node scripts/sync-ocr-assets.mjs && node scripts/sync-firebase-messaging-sw.mjs",
     "build": "vite build",
     "build:release": "npm run build && node scripts/prepare-android-release.mjs --require",
-    "build:android": "node scripts/sync-ocr-assets.mjs && node scripts/patch-android-theme.mjs && vite build --mode android && node scripts/check-web-bundle.mjs",
+    "build:android": "node scripts/sync-ocr-assets.mjs && node scripts/sync-firebase-messaging-sw.mjs && node scripts/patch-android-theme.mjs && vite build --mode android && node scripts/check-web-bundle.mjs",
     "build:watch": "vite build --watch",
     "preview": "vite preview",
     "postbuild": "node scripts/check-web-bundle.mjs && node scripts/prepare-android-release.mjs"

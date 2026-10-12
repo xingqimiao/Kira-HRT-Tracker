@@ -185,6 +185,22 @@ test('a dead token is dropped instead of retried', async () => {
   assert.deepEqual(tokens, [], 'the dead token is removed');
 });
 
+test('a web token is sent without the Android priority block', async () => {
+  const account = await registerAccount(base);
+  await seed(account.token, [midnightPlan()]);
+  // Re-register the same device as web: the platform decides the payload shape.
+  await PushStore.register(account.userId, 'web-token-1', 'web');
+
+  const sends = installFakeFcm();
+  const result = await scanMissedDoses(noon);
+  assert.equal(result.pushed, 1);
+  const web = sends.find((s) => (s.message as { token: string }).token === 'web-token-1');
+  assert.ok(web, 'the web token received a message');
+  const msg = (web as { message: Record<string, unknown> }).message;
+  assert.equal(msg.android, undefined, 'no android block for a web token');
+  assert.ok(msg.webpush, 'a webpush block is present');
+});
+
 test('the JWT is a well-formed RS256 assertion for the messaging scope', () => {
   const nowMs = Date.parse('2026-06-01T00:00:00Z');
   const jwt = signServiceAccountJwt(
@@ -215,7 +231,11 @@ test('a failed send releases the claim so the instance is retried later', async 
   installFakeFcm({ sendOk: false, sendStatus: 500 });
   const first = await scanMissedDoses(noon);
   assert.equal(first.pushed, 0);
-  assert.deepEqual(await PushStore.tokensFor(account.userId), ['device-token-1'], 'a 500 keeps the token');
+  assert.deepEqual(
+    await PushStore.tokensFor(account.userId),
+    [{ token: 'device-token-1', platform: 'android' }],
+    'a 500 keeps the token',
+  );
 
   // The claim was released, so a later scan retries and succeeds.
   const sends = installFakeFcm();

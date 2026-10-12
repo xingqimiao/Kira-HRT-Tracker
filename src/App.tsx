@@ -163,11 +163,13 @@ const AppContent = () => {
     }, []);
 
     // Keep the device's FCM token bound to the signed-in account, so a catch-up
-    // nudge can reach it. Runs when the account or the notification permission
-    // changes: FCM rotates the token rarely, so re-registering is cheap and a
-    // missing token (first launch, rotation) is the case that matters. No-op on web.
+    // nudge can reach it. Runs when the account changes: FCM rotates the token
+    // rarely, so re-registering is cheap and a missing token (first launch,
+    // rotation) is the case that matters. Both transports bind here — native via the
+    // Android bridge, web via the Firebase SDK; `syncPushRegistration` is a no-op
+    // when notifications are not granted or web push is unconfigured.
     useEffect(() => {
-        if (!isNativeApp() || !coreSession.token) return;
+        if (!coreSession.token) return;
         void isPlanNotificationGranted()
             .then(granted => (granted ? syncPushRegistration(coreSession.token as string) : undefined))
             .catch(() => undefined);
