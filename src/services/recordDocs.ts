@@ -172,6 +172,7 @@ export function payloadToRecords(payload: SyncPayload): RecordDoc[] {
     for (const [name, valueKey, stampKey] of [
         ['weight', 'weight', 'weightUpdatedAt'],
         ['pkParams', 'pkParams', 'pkParamsUpdatedAt'],
+        ['medPlan', 'medPlan', 'medPlanUpdatedAt'],
     ] as const) {
         const value = (payload as Record<string, unknown>)[valueKey];
         const stamp = (payload as Record<string, unknown>)[stampKey];
@@ -250,6 +251,7 @@ export function recordsToPayload(records: RecordDoc[]): { payload: SyncPayload; 
             const body = record.data as { value?: unknown; stamp?: number } | undefined;
             if (name === 'weight') { payload.weight = body?.value ?? undefined; payload.weightUpdatedAt = body?.stamp; continue; }
             if (name === 'pkParams') { payload.pkParams = body?.value ?? null; payload.pkParamsUpdatedAt = body?.stamp; continue; }
+            if (name === 'medPlan') { payload.medPlan = body?.value ?? []; payload.medPlanUpdatedAt = body?.stamp; continue; }
             // The settings bag goes back under `appState`, the shape `normalizeSyncState`
             // reads. Reassembling it as a top-level `appSettings` was the read half of
             // the same name mismatch and dropped it just as silently.

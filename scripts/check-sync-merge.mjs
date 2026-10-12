@@ -38,6 +38,7 @@ const {
 } = await import('../src/utils/syncMerge.ts');
 const { payloadToRecords, recordsToPayload } = await import('../src/services/recordDocs.ts');
 const { toLocalPayload, withRemoteTombstones } = await import('../src/services/coreSync.ts');
+const { sanitizeMedPlans } = await import('../src/utils/medPlan.ts');
 
 // --- helpers ----------------------------------------------------------------
 
@@ -364,6 +365,11 @@ const SCALAR_SAMPLES = {
   weight: 61.5,
   pkParams: { e2_kclear: 0.4 },
   appSettings: { theme: 'dark', lang: 'ja', hrtMode: 'transmasc', calMethod: 'ekf', timezone: 'Asia/Tokyo' },
+  medPlan: [{
+    id: 'plan-1', ester: 'E2', dose: '2mg', mode: 'times',
+    doseTimes: [{ hour: 8, minute: 0 }, { hour: 20, minute: 0 }],
+    tzOffsetMinutes: -480, firstHour: 8, firstMinute: 0, enabled: true,
+  }],
 };
 
 check('every declared scalar has a sample that proves it travels', () => {
@@ -384,7 +390,11 @@ check('every scalar survives payload -> records -> payload', () => {
   assert.equal(unknown, 0, 'nothing was filed as unknown');
   const back = normalizeSyncState(payload);
   for (const key of SYNC_SCALARS) {
-    assert.deepEqual(back[key], SCALAR_SAMPLES[key], `${key} did not travel`);
+    // `medPlan` runs through `sanitizeMedPlans`, which materialises optional keys as
+    // `undefined` (alias, intervalHours, …). That is a real normalisation, not a lost
+    // field, so compare against the sanitiser's own output rather than the raw sample.
+    const expected = key === 'medPlan' ? sanitizeMedPlans(SCALAR_SAMPLES[key]) : SCALAR_SAMPLES[key];
+    assert.deepEqual(back[key], expected, `${key} did not travel`);
     assert.equal(back[`${key}UpdatedAt`], 111, `${key} stamp did not travel`);
   }
 });

@@ -365,6 +365,9 @@ export function toLocalPayload(state: SyncState): SyncPayload {
     ...(state.pkParams !== undefined
       ? { pkParams: state.pkParams, pkParamsUpdatedAt: state.pkParamsUpdatedAt }
       : {}),
+    ...(state.medPlan !== undefined
+      ? { medPlan: state.medPlan, medPlanUpdatedAt: state.medPlanUpdatedAt }
+      : {}),
     modes: state.modes,
     appState: toAppState(state),
   };

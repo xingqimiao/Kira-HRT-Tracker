@@ -29,6 +29,7 @@
  */
 
 import { isTestosteroneEster, isT_LabUnit } from '../../logic';
+import { sanitizeMedPlans, type MedPlan } from './medPlan';
 
 export type ModeKey = 'transfem' | 'transmasc';
 export const MODE_KEYS: readonly ModeKey[] = ['transfem', 'transmasc'];
@@ -155,6 +156,17 @@ export interface SyncState {
     pkParams?: any;
     pkParamsUpdatedAt: number;
     /**
+     * The medication plan (用药方案) — the user's own schedule.
+     *
+     * A scalar like the two above rather than a record collection: it is one small
+     * array edited as a whole, so last-write-wins on its stamp is the right rule and
+     * a per-plan record would be more machinery for the same outcome. It is carried
+     * on the record path so a second device *receives* it — the earlier version only
+     * pushed `scalar:medPlan` and never read it, so the plan never left its device.
+     */
+    medPlan?: MedPlan[];
+    medPlanUpdatedAt: number;
+    /**
      * App-only configuration, carried in `app_state.settings`.
      *
      * Resolved as a *whole bag* on its stamp, like the two scalars above, rather
@@ -178,7 +190,7 @@ export interface SyncState {
  * `toLocalPayload` built only `weight`, so PK overrides were dropped before a
  * record was ever written and nothing failed.
  */
-export const SYNC_SCALARS = ['weight', 'pkParams', 'appSettings'] as const;
+export const SYNC_SCALARS = ['weight', 'pkParams', 'appSettings', 'medPlan'] as const;
 
 type SyncScalarField = (typeof SYNC_SCALARS)[number] | `${(typeof SYNC_SCALARS)[number]}UpdatedAt`;
 type UnaccountedSyncField = Exclude<keyof SyncState, 'modes' | SyncScalarField>;
@@ -237,6 +249,7 @@ export function emptySyncState(): SyncState {
         weightUpdatedAt: 0,
         pkParamsUpdatedAt: 0,
         appSettingsUpdatedAt: 0,
+        medPlanUpdatedAt: 0,
     };
 }
 
@@ -401,6 +414,13 @@ export function normalizeSyncState(payload: unknown): SyncState {
     if (p.pkParams !== undefined) {
         state.pkParams = p.pkParams ?? null;
         state.pkParamsUpdatedAt = asTimestamp(p.pkParamsUpdatedAt) || 1;
+    }
+    // The plan rides at the top level, next to weight and pkParams. Sanitised on the
+    // way in, so a hand-written file or a newer client cannot put an unusable plan
+    // into storage.
+    if (p.medPlan !== undefined) {
+        state.medPlan = sanitizeMedPlans(p.medPlan);
+        state.medPlanUpdatedAt = asTimestamp(p.medPlanUpdatedAt) || 1;
     }
 
     // App-only settings ride in the Core's `app_state.settings`, read here rather
@@ -666,6 +686,10 @@ export function mergeSyncStates(local: SyncState, remote: SyncState | null): Mer
     merged.appSettings = appSettings.value;
     merged.appSettingsUpdatedAt = appSettings.at;
 
+    const medPlan = resolveScalar(local.medPlan, local.medPlanUpdatedAt, remote.medPlan, remote.medPlanUpdatedAt);
+    merged.medPlan = medPlan.value;
+    merged.medPlanUpdatedAt = medPlan.at;
+
     const mergedFp = fingerprintState(merged);
     return {
         merged,
@@ -692,7 +716,7 @@ export function hasContent(state: SyncState): boolean {
             if (Object.keys(block.deletions[kind]).length > 0) return true;
         }
     }
-    return state.weightUpdatedAt > 1 || state.pkParamsUpdatedAt > 1;
+    return state.weightUpdatedAt > 1 || state.pkParamsUpdatedAt > 1 || state.medPlanUpdatedAt > 1;
 }
 
 /**
@@ -732,5 +756,6 @@ export function fingerprintState(state: SyncState): string {
     // omitting them here would have the change sit locally until some unrelated
     // record edit happened to make the fingerprint differ.
     parts.push(`appSettings:${state.appSettings === undefined ? '' : stableString(state.appSettings)}`);
+    parts.push(`medPlan:${state.medPlan === undefined ? '' : stableString(state.medPlan)}`);
     return parts.join('\n');
 }

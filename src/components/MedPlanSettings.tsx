@@ -14,7 +14,6 @@ import {
 import { reschedulePlanNotifications } from '../utils/medPlanNotify';
 import { syncPushRegistration } from '../utils/pushRegister';
 import { isNativeApp } from '../utils/platform';
-import { pushMedPlan } from '../services/coreSync';
 import { useCoreSession } from '../hooks/useCoreSession';
 import { useHRTMode } from '../contexts/HRTModeContext';
 
@@ -80,20 +79,11 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
         setPlans(clean);
         writeMedPlans(clean);
         void reschedulePlanNotifications(true).catch(() => undefined);
-        // The plan travels to the account as its own sealed scalar so an agent (MCP)
-        // can read it and tell whether today's doses kept up. A failed push costs
-        // nothing: the plan also lives on-device, and the next commit re-uploads.
-        if (session.token) void pushMedPlan(session.token, clean).catch(() => undefined);
+        // No explicit upload here: the plan is a synced scalar now (buildExportPayload
+        // includes it, applySyncedState applies it), so the change fingerprint arms the
+        // ordinary sync. The old pushMedPlan call wrote the same record out of band,
+        // which is what let the plan go up but never come back down.
     };
-
-    // A plan written before this build shipped never reached the server. Push the
-    // on-device copy once when a session is available, so an agent sees a plan the
-    // user did not re-edit after the upgrade.
-    useEffect(() => {
-        if (!session.token) return;
-        const current = readMedPlans();
-        if (current.length > 0) void pushMedPlan(session.token, current).catch(() => undefined);
-    }, [session.token]);
 
     const status = useMemo<{ plan: MedPlan; overdue: boolean }[]>(() => {
         // The badge state shown here is a local read: the overdue badge lives on the

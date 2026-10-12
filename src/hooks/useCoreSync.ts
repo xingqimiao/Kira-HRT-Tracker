@@ -58,6 +58,8 @@ interface Options {
   quickDoses: unknown;
   weight: unknown;
   pkParams: unknown;
+  /** The medication plan scalar — included so a plan edit schedules a push. */
+  medPlan: unknown;
   /** Account-scoped settings, same contract as the data above. */
   calibrationMethod: unknown;
   calibrationHistoryMode: unknown;
@@ -92,6 +94,7 @@ export const useCoreSync = ({
   quickDoses,
   weight,
   pkParams,
+  medPlan,
   calibrationMethod,
   calibrationHistoryMode,
   aaChartMode,
@@ -336,7 +339,7 @@ export const useCoreSync = ({
   // to `events`. `readAppSettings` returns the same values until one of them
   // actually changes, which is what makes it a usable dependency.
   const localFingerprint = JSON.stringify([
-    events, labResults, doseTemplates, journal, quickDoses, weight, pkParams,
+    events, labResults, doseTemplates, journal, quickDoses, weight, pkParams, medPlan,
     readAppSettings(), calibrationMethod, calibrationHistoryMode, aaChartMode, hrtStartDate, recheckIntervals, ocrModelTier, pkEngine,
   ]);
   useEffect(() => {

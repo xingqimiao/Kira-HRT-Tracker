@@ -20,6 +20,7 @@ import { hrtDaysSince, normalizeHrtStartDate } from '../utils/hrtStart';
 import { milestoneFor } from '../utils/hrtMilestone';
 import { isThirdDayStreak } from '../utils/hrtStreak';
 import { get as secureGet, set as secureSet, remove as secureRemove } from '../utils/secureStore';
+import { readMedPlans, writeMedPlans, medPlanUpdatedAt, MED_PLAN_CHANGED_EVENT } from '../utils/medPlan';
 
 /** Namespace used while signed out. Its keys are the original, un-prefixed ones. */
 const LOCAL_OWNER = 'local';
@@ -130,6 +131,18 @@ export const useAppData = (
     const scope = `${owner}|${mode}`;
     const keyFor = (m: 'transfem' | 'transmasc', suffix: string) => modeKeyFor(owner, m, suffix);
     const sharedKey = (suffix: string) => nsFor(owner, suffix);
+
+    // The medication plan lives in its own storage key (see medPlan.ts), edited by the
+    // plan settings and read directly by Home. Mirroring it into state here is what
+    // lets a plan edit become a sync-visible change: `writeMedPlans` dispatches the
+    // event, this re-reads, and the value feeds the sync fingerprint — otherwise a plan
+    // edit re-rendered nothing that the sync hook depends on and the push never armed.
+    const [medPlan, setMedPlanState] = useState(() => readMedPlans());
+    useEffect(() => {
+        const reread = () => setMedPlanState(readMedPlans());
+        window.addEventListener(MED_PLAN_CHANGED_EVENT, reread);
+        return () => window.removeEventListener(MED_PLAN_CHANGED_EVENT, reread);
+    }, []);
 
     const loadJSON = <T,>(key: string, fallback: T): T => {
         try {
@@ -1400,6 +1413,12 @@ export const useAppData = (
             // about PK params", and the cleared state would never propagate.
             pkParams: pkParams ?? null,
             pkParamsUpdatedAt: Number(localStorage.getItem(sharedKey('pk-params-at'))) || undefined,
+            // The medication plan (用药方案) as a synced scalar, next to weight and PK
+            // overrides. It lives in its own key (see medPlan.ts) rather than an
+            // account-scoped one, so it is read here verbatim; the stamp makes the
+            // merge's last-write-wins work across devices.
+            medPlan: readMedPlans(),
+            medPlanUpdatedAt: medPlanUpdatedAt() || undefined,
             // App-only collections. The Core stores this verbatim in
             // `user_settings.app_state` and is the *only* place templates and
             // quick doses persist — it does not read them out of `modes` — so
@@ -1551,6 +1570,11 @@ export const useAppData = (
             else localStorage.removeItem(sharedKey('pk-params'));
             if (state.pkParamsUpdatedAt > 0) localStorage.setItem(sharedKey('pk-params-at'), String(state.pkParamsUpdatedAt));
         }
+        // The plan's own stamp travels with it, so adopting the account's copy is not
+        // restamped as a fresh local edit — see `writeMedPlans`.
+        if (state.medPlan !== undefined) {
+            writeMedPlans(state.medPlan, state.medPlanUpdatedAt);
+        }
     };
 
     return {
@@ -1563,6 +1587,8 @@ export const useAppData = (
         setPkParams,
         clearPkParams,
         resetPkParams,
+        /** The medication plan, mirrored from storage; drives the sync fingerprint. */
+        medPlan,
         simulation,
         currentTime,
         calibrationFn,
