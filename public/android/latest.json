@@ -2,7 +2,7 @@
   "version": "1.0.6",
   "versionCode": 1000006,
   "apk": "https://hrt.kiramyao.com/android/KiraHRT-1.0.6-release.apk",
-  "sha256": "5F24E4A430C87BEE3F7F24AC88ED8711B80CDCEDB9D186ED106DE0E71F2E4126",
+  "sha256": "8F48EE252C63C843ADE9FE7AF2C2BD37FDEC1B83271F768524626D71AE24DE33",
   "notes": [
     "新增「用药方案」：设定用药方式（每天几次 / 每几小时 / 每几天）、首次时间、追加剂次、药物与剂量；首页会按方案提示今天还差哪一剂。",
     "逾期提醒：到点后仍未记录，首页快速记录键会高亮并标出今天漏掉的剂量；可一键补记。",

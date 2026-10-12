@@ -18,7 +18,7 @@ import { AppTheme, ChartStyle } from '../constants';
 import { useTranslation } from '../contexts/LanguageContext';
 import { getShareCopy } from '../i18n/share';
 import { Tooltip } from '../components/ui';
-import { formatRelative } from '../utils/helpers';
+import { formatRelativeParts } from '../utils/helpers';
 import { readMedPlans, planStatuses, planQuickEntries, type PlanStatus } from '../utils/medPlan';
 import { usePresence } from '../hooks/usePresence';
 
@@ -207,13 +207,25 @@ const Home: React.FC<HomeProps> = ({
     const pricePair = isTransmasc
         ? { label: t('label.total_t'), value: currentT.toFixed(0), unit: 'ng/dl' }
         : { label: t('label.e2'), value: currentLevel.toFixed(primaryDecimals), unit: 'pg/ml' };
+    // The "N 小时前" reading is a number plus its words, like every other reading
+    // in this strip: the digits keep the display size and the words ("小时前") drop
+    // to the small muted unit size — the same split "pg/ml" gets beside the
+    // estradiol value. `formatRelative` returns the whole phrase as one string, so
+    // using it here put "23 小时前" all at display size; `formatRelativeParts` does
+    // the split ("23" + "小时前"), exactly as the older day-ago reading did.
+    const sinceParts = antiandrogen.kind === 'since'
+        ? formatRelativeParts(nowSec - antiandrogen.sinceH * 3600, nowSec, t)
+        : null;
     const aaPair = {
         label: aaHeading,
         value: antiandrogen.kind === 'grams' ? antiandrogen.grams.toFixed(2)
             : antiandrogen.kind === 'dose' ? antiandrogen.mgToday.toFixed(mgDecimals(antiandrogen.mgToday))
-                : antiandrogen.kind === 'since' ? formatRelative(nowSec - antiandrogen.sinceH * 3600, nowSec, t)
+                : antiandrogen.kind === 'since' ? (sinceParts?.value ?? '')
                     : '--',
-        unit: antiandrogen.kind === 'grams' ? 'g' : antiandrogen.kind === 'dose' ? 'mg' : '',
+        // "刚刚" has no number, so it renders small on its own (an empty value span).
+        unit: antiandrogen.kind === 'grams' ? 'g' : antiandrogen.kind === 'dose' ? 'mg'
+            : antiandrogen.kind === 'since' ? (sinceParts?.unit ?? t('time.just_now'))
+                : '',
     };
 
     const on = "text-[var(--color-m3-on-surface)] ";
@@ -249,7 +261,7 @@ const Home: React.FC<HomeProps> = ({
                         <div className="min-w-0">
                             <p className={`text-xs font-semibold ${muted}`}>{aaPair.label}</p>
                             <p className="flex items-baseline gap-1.5 leading-none">
-                                <span className={`font-semibold tabular-nums ${on} ${aaPair.value.length > 6 ? 'text-2xl' : 'text-[2.5rem]'}`}>{aaPair.value}</span>
+                                {aaPair.value && <span className={`font-semibold tabular-nums ${on} ${aaPair.value.length > 6 ? 'text-2xl' : 'text-[2.5rem]'}`}>{aaPair.value}</span>}
                                 {aaPair.unit && <span className={`text-sm lowercase ${muted}`}>{aaPair.unit}</span>}
                             </p>
                         </div>
