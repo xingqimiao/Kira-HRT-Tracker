@@ -626,9 +626,20 @@ const AppContent = () => {
     // the bind gate, the shell — mounts underneath it while the fill plays, so the
     // frame after the vial settles is already a live screen. The old early return
     // (and its 600 ms hold) made the app boot only after the splash ended.
+    //
+    // The hand-over is the app fading IN, and only that — the splash does not fade
+    // itself out (see SplashScreen). Fading both at once cross-fades two things and
+    // reads as the vial ghosting away rather than as the app arriving. On web there is
+    // no splash (`splashDone` starts true), so the reveal is a no-op there.
     const splash = !splashDone ? (
         <SplashScreen mode={mode} onDone={() => setSplashDone(true)} />
     ) : null;
+    const revealStyle: React.CSSProperties = isNativeApp()
+        ? {
+            opacity: splashDone ? 1 : 0,
+            transition: 'opacity 300ms var(--md-sys-motion-easing-emphasized-decelerate, cubic-bezier(0.2,0,0,1))',
+        }
+        : {};
 
     // Takes over the whole screen rather than sitting in the view stack: the
     // intro is where language and HRT mode get chosen, and leaving the nav up
@@ -637,6 +648,7 @@ const AppContent = () => {
         return (
             <>
             {splash}
+            <div style={revealStyle}>
             <Onboarding
                 languageOptions={languageOptions}
                 /* So the start-date step opens on whatever is already saved, and
@@ -649,6 +661,7 @@ const AppContent = () => {
                 replay={replayOnboarding}
                 onDone={() => { markOnboardingSeen(); setShowOnboarding(false); setReplayOnboarding(false); }}
             />
+            </div>
             </>
         );
     }
@@ -672,6 +685,7 @@ const AppContent = () => {
         return (
             <>
             {splash}
+            <div style={revealStyle}>
             <BindCredentials
                 session={coreSession}
                 onDone={async () => {
@@ -690,6 +704,7 @@ const AppContent = () => {
                     await coreSyncState.syncNow();
                 }}
             />
+            </div>
             </>
         );
     }
@@ -697,6 +712,7 @@ const AppContent = () => {
     return (
         <>
         {splash}
+        <div style={revealStyle}>
         <AppShell
             navItems={navItems}
             activeId={activeSection}
@@ -993,6 +1009,7 @@ const AppContent = () => {
                     </div>
                 </div>
         </AppShell>
+        </div>
 
             <PasswordInputModal
                 isOpen={isPasswordInputOpen}

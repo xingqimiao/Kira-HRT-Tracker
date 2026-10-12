@@ -109,6 +109,10 @@ interface BloodVialProps {
     className?: string;
     /** Ignore the "show blood vial" preference. */
     force?: boolean;
+    /** Fired once the liquid's fill glide actually completes — see `useEasedValue`.
+     *  The launch splash uses it to hand over to the app only after the animation has
+     *  truly played, rather than on a wall-clock timer the rAF starves behind. */
+    onFillDone?: () => void;
 }
 
 const FILL: Record<VialRect['role'], string> = {
@@ -147,14 +151,14 @@ const paint = (
 };
 
 const BloodVial: React.FC<BloodVialProps> = ({
-    level, mode, size = 32, className = '', force = false,
+    level, mode, size = 32, className = '', force = false, onFillDone,
 }) => {
     const { showVial } = useVial();
     const reduced = usePrefersReducedMotion();
 
     // The eased level, on the shared clock. A hook, so it sits with the others rather
     // than inside an effect — the effects below decide when the *spill* plays.
-    const eased = useEasedValue(level);
+    const eased = useEasedValue(level, { onDone: onFillDone });
 
     /**
      * The liquid's level, eased on the same clock as the number beside it.

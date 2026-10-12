@@ -28,18 +28,32 @@ export function easeOutCubic(t: number): number {
  * Counts up from `from` (zero by default) on mount rather than appearing at its final
  * figure, so a first paint shows the same movement a change does.
  *
+ * `onDone` fires once when the glide actually reaches its target — on the frame the
+ * ease completes, or immediately under reduced motion. A caller that needs to act "after
+ * the animation" must use this rather than a timer matching `duration`: on a cold launch
+ * the main thread is busy mounting the app underneath, so the rAF ticks are starved and
+ * the animation runs *behind* wall-clock — a `setTimeout(duration)` fires while the
+ * liquid is still visibly short of its mark.
+ *
  * Respects `prefers-reduced-motion` by snapping: the preference means "do not animate",
  * and a slower glide would be the opposite of what it asks for.
  */
-export function useEasedValue(value: number, { from = 0, duration = VALUE_EASE_MS } = {}): number {
+export function useEasedValue(
+    value: number,
+    { from = 0, duration = VALUE_EASE_MS, onDone }: { from?: number; duration?: number; onDone?: () => void } = {},
+): number {
     const [shown, setShown] = useState(from);
     const fromRef = useRef(from);
+    // Kept in a ref so a new inline callback each render does not restart the effect.
+    const onDoneRef = useRef(onDone);
+    onDoneRef.current = onDone;
 
     useEffect(() => {
         if (typeof window !== 'undefined'
             && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
             fromRef.current = value;
             setShown(value);
+            onDoneRef.current?.();
             return;
         }
 
@@ -55,6 +69,7 @@ export function useEasedValue(value: number, { from = 0, duration = VALUE_EASE_M
             fromRef.current = current;
             setShown(current);
             if (t < 1) raf = requestAnimationFrame(tick);
+            else onDoneRef.current?.();
         };
         raf = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(raf);

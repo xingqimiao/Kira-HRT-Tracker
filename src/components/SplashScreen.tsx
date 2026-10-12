@@ -1,11 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import BloodVial from './BloodVial';
 import { vialLevelForFill, type VialMode } from '../utils/vialLevel';
-import { VALUE_EASE_MS } from '../utils/motion';
 
 const TARGET_FILL = 0.98;
-/** How long the splash fades into the live UI before it unmounts. */
-const FADE_MS = 320;
+/**
+ * How long the full tube is held before the splash leaves.
+ *
+ * The fill itself is driven by the vial's own clock and the hand-off waits for that to
+ * *actually* finish (see `onFillDone`), so this is a deliberate beat, not a stand-in for
+ * the animation's length. Without it the screen changed the instant the last pixel of
+ * liquid landed, which read as the splash being cut off mid-motion.
+ */
+const HOLD_MS = 500;
 
 interface SplashScreenProps {
     mode: VialMode;
@@ -16,43 +22,32 @@ interface SplashScreenProps {
  * Short Android launch screen: the same illustrative vial used by onboarding.
  *
  * An overlay, not a gate — the app mounts underneath while the fill plays (see
- * App.tsx), so the fill reaching its mark is the moment to hand over. No hold after
- * the animation: the hold existed when the splash gated the app, and a pause on an
- * already-live screen reads as lag.
+ * App.tsx), so the reveal is instant once the fill is done. The splash does **not**
+ * fade itself out: the hand-over is the app fading in (App wraps its content in a
+ * fade-in keyed on `splashDone`), and a splash that also dimmed would cross-fade two
+ * things at once and read as the vial ghosting away. So this stays fully opaque until
+ * the hold ends, then unmounts in one frame.
  *
- * The hand-over is a cross-fade, not a cut: the fill finishes and the splash fades
- * out over `FADE_MS`, revealing the UI that has been laying itself out underneath.
- * Unmounting the instant the fill completed was an abrupt cut from a full-screen
- * black panel to the app — the two shared no frame, so it read as a flash. Pointer
- * events are dropped the moment the fade starts, so the app is interactive
- * immediately and a tap during the fade reaches it, not the vanishing overlay.
+ * The wait is measured from the fill completing, not from mount: on a cold launch the
+ * main thread is busy mounting the app underneath, the fill's rAF ticks are starved,
+ * and a fixed timer would fire while the liquid was still short of its mark. Letting the
+ * animation report its own finish is what makes "wait for it to play" actually true.
  */
 const SplashScreen: React.FC<SplashScreenProps> = ({ mode, onDone }) => {
-    const [leaving, setLeaving] = useState(false);
     // BloodVial owns the easing; passing an already eased value would animate twice.
     const level = vialLevelForFill(TARGET_FILL, mode);
+    const [fillDone, setFillDone] = useState(false);
+    const handleFillDone = React.useCallback(() => setFillDone(true), []);
 
     useEffect(() => {
-        const fillTimer = window.setTimeout(() => setLeaving(true), VALUE_EASE_MS);
-        return () => window.clearTimeout(fillTimer);
-    }, []);
-
-    useEffect(() => {
-        if (!leaving) return;
-        const fadeTimer = window.setTimeout(onDone, FADE_MS);
-        return () => window.clearTimeout(fadeTimer);
-    }, [leaving, onDone]);
+        if (!fillDone) return;
+        const timer = window.setTimeout(onDone, HOLD_MS);
+        return () => window.clearTimeout(timer);
+    }, [fillDone, onDone]);
 
     return (
-        <div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0D0D12]"
-            style={{
-                opacity: leaving ? 0 : 1,
-                pointerEvents: leaving ? 'none' : undefined,
-                transition: `opacity ${FADE_MS}ms var(--md-sys-motion-easing-emphasized-decelerate, cubic-bezier(0.2,0,0,1))`,
-            }}
-        >
-            <BloodVial level={level} mode={mode} size={140} force />
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0D0D12]">
+            <BloodVial level={level} mode={mode} size={140} force onFillDone={handleFillDone} />
         </div>
     );
 };
