@@ -275,11 +275,14 @@ const Account: React.FC<AccountProps> = ({
                     <div className={`py-4 ${divider}`}>
                         <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
-                                <p className={`text-m3-body-medium ${on}`}>{t('account.hrt_start_label')}</p>
-                                {daysSinceStart !== null && (
-                                    <p className={`text-xs ${muted} mt-0.5`}>
+                                {/* The day count is the title now — the card's fact
+                                    is the number, not the field name. */}
+                                {daysSinceStart !== null ? (
+                                    <p className={`text-m3-body-medium ${on}`}>
                                         {t('account.hrt_started').replace('{days}', String(daysSinceStart))}
                                     </p>
+                                ) : (
+                                    <p className={`text-m3-body-medium ${on}`}>{t('account.hrt_start_label')}</p>
                                 )}
                             </div>
                             <div className="flex shrink-0 items-center gap-1.5">

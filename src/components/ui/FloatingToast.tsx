@@ -141,7 +141,9 @@ const FloatingToast: React.FC<FloatingToastProps> = ({
             className="fixed inset-x-0 z-[95] flex justify-center px-4"
             style={{
                 ...(edge === 'top'
-                    ? { top: 'calc(env(safe-area-inset-top, 0px) + 1rem)' }
+                    // `--app-safe-top` is the Android status-bar inset the native shell
+                    // reports; `env(safe-area-inset-top)` is 0 in the Android WebView.
+                    ? { top: 'calc(max(env(safe-area-inset-top, 0px), var(--app-safe-top, 0px)) + 1rem)' }
                     : { bottom: 'var(--floating-toast-bottom)' }),
                 // A leaving notice must not eat clicks meant for the page.
                 pointerEvents: open ? undefined : 'none',

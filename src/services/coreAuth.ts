@@ -329,23 +329,6 @@ export const coreAuth = {
   },
 
   /**
-   * Rotate the data key: the server re-encrypts every record under a fresh DEK, so
-   * any copy of the old key that leaked — say, from a compromised server — stops
-   * opening anything. The password is verified once, as at sign-in.
-   */
-  async rotateDataKey(
-    token: string,
-    password: string,
-  ): Promise<{ records: number; unreadable: number }> {
-    const raw = await request<any>('/auth/keys/rotate', {
-      method: 'POST',
-      token,
-      body: JSON.stringify({ password }),
-    });
-    return { records: raw.records ?? 0, unreadable: raw.unreadable ?? 0 };
-  },
-
-  /**
    * Delete the account and everything in it.
    *
    * Requires the password, so a stolen session is not enough.

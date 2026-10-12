@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Icon from '../components/Icon';
 import Switch from '../components/Switch';
 import DateTimePicker from '../components/DateTimePicker';
-import { ChevronRight, Settings2, Database, Info, ArrowLeft, Globe, CalendarDays, Check } from '../icons';
+import { ChevronRight, Settings2, Database, Info, ArrowLeft, Globe, CalendarDays, Check, Clock3, Dna } from '../icons';
 import type { IconComponent } from '../icons';
 import type { Lang } from '../i18n/types';
 import { AppTheme } from '../constants';
@@ -10,7 +10,8 @@ import { AntiandrogenChartMode, ANTIANDROGEN_CHART_MODES, DoseEvent, PKCustomPar
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { isNativeApp } from '../utils/platform';
 import { openExternalUrl } from '../utils/externalLinks';
-import { readMedReminders, writeMedReminders, rescheduleAllNativeNotifications, type MedReminder } from '../utils/medReminders';
+import MedPlanSettings from '../components/MedPlanSettings';
+import type { DoseTemplate } from '../components/DoseForm';
 import { useBackHandler } from '../utils/nativeBack';
 import { APP_VERSION } from '../constants';
 import { checkNativeUpdate, downloadNativeUpdate, fetchLatestApkUrl } from '../utils/nativeUpdate';
@@ -21,6 +22,8 @@ interface SettingsProps {
     setLang: (lang: Lang) => void;
     theme: AppTheme;
     setTheme: (theme: AppTheme) => void;
+    /** Saved dose templates, so a plan can import a drug from one. */
+    doseTemplates: DoseTemplate[];
     languageOptions: { value: Lang; label: string }[];
     onImportJson: (text: string) => boolean | Promise<boolean>;
     labResults: any[];
@@ -37,7 +40,6 @@ interface SettingsProps {
     setIsWeightModalOpen: (isOpen: boolean) => void;
     pkParams: PKCustomParams | null;
     onNavigateToPKParams: () => void;
-    onNavigateToHRTMode: () => void;
     onNavigateToLanguage: () => void;
     onNavigateToAppearance: () => void;
     onNavigateToWeight: () => void;
@@ -50,6 +52,9 @@ interface SettingsProps {
     /** Which reading the Home card's anti-androgen column shows. */
     aaChartMode: AntiandrogenChartMode;
     setAaChartMode: (m: AntiandrogenChartMode) => void;
+    /** Whether the overview hides the anti-androgen column entirely. */
+    hideAA: boolean;
+    setHideAA: (v: boolean) => void;
     /** The user's re-check intervals — each individually adjustable. */
     recheckIntervals: RecheckIntervals;
     setRecheckIntervals: (v: RecheckIntervals) => void;
@@ -63,7 +68,7 @@ interface SettingsProps {
     engineInUse: PkEngineId;
 }
 
-type SettingsCat = 'general' | 'reminders' | 'data' | 'about';
+type SettingsCat = 'general' | 'plans' | 'reminders' | 'data' | 'about';
 type MobileView = 'list' | SettingsCat;
 
 const rowBase = "w-full flex items-center justify-between py-[18px] border-b border-[var(--color-m3-outline-variant)]  text-start";
@@ -79,29 +84,19 @@ const Settings: React.FC<SettingsProps> = ({
     t, lang, theme, languageOptions, onClearAllEvents, events,
     showDialog, setIsDisclaimerOpen, onShowIntro,
     onOpenLicences,
-    weight, pkParams, onNavigateToPKParams, onNavigateToHRTMode,
+    weight, pkParams, onNavigateToPKParams,
     onNavigateToLanguage, onNavigateToAppearance, onNavigateToWeight,
     onNavigateToExport, onNavigateToImport, autoSync, setAutoSync, isLoggedIn,
     aaChartMode, setAaChartMode,
+    hideAA, setHideAA,
     recheckIntervals, setRecheckIntervals,
     ocrModelTier, setOcrModelTier,
     pkEngine, setPkEngine, engineInUse,
+    doseTemplates,
 }) => {
-    const { mode } = useHRTMode();
+    const { mode, setMode } = useHRTMode();
     const [cat, setCat] = useState<SettingsCat>(_savedCat);
     const [mobileView, setMobileView] = useState<MobileView>(_savedMobileView);
-    const [medReminders, setMedReminders] = useState<MedReminder[]>(() => isNativeApp() ? readMedReminders() : []);
-    const [medName, setMedName] = useState('');
-    // The picked time, as a Date the shared picker round-trips. Was a native
-    // `<input type="time">`, which rendered a different control on every OS and
-    // matched nothing else in the app; the M3 picker is the one every other time
-    // field here uses.
-    const [medTime, setMedTime] = useState<Date>(() => {
-        const d = new Date(); d.setHours(8, 0, 0, 0); return d;
-    });
-    const [medTimeOpen, setMedTimeOpen] = useState(false);
-    const [medPermission, setMedPermission] = useState<boolean | null>(null);
-    const [medError, setMedError] = useState(false);
 
     const selectCat = (c: SettingsCat) => {
         _savedCat = c;
@@ -124,7 +119,6 @@ const Settings: React.FC<SettingsProps> = ({
     // state below the `settings` view, so system back must exit it before the
     // view-level handler pops to home. The time-picker sheet sits above it.
     useBackHandler(mobileView !== 'list', () => { exitMobileCat(); return true; });
-    useBackHandler(medTimeOpen, () => { setMedTimeOpen(false); return true; });
 
     const navTo = (fn: () => void, forCat: SettingsCat) => {
         _savedCat = forCat;
@@ -133,22 +127,44 @@ const Settings: React.FC<SettingsProps> = ({
     };
 
     const cats: { id: SettingsCat; label: string; icon: IconComponent; hint: string }[] = [
-        { id: 'general', label: t('settings.group.general'), icon: Settings2, hint: [t('settings.hrt_mode'), t('drawer.lang'), t('settings.theme')].join(' · ') },
+        { id: 'general', label: t('settings.group.general'), icon: Settings2, hint: [t('settings.pk_engine'), t('drawer.lang'), t('settings.theme')].join(' · ') },
+        { id: 'plans',   label: t('plan.title'),             icon: Clock3,    hint: t('plan.hint') },
         { id: 'reminders', label: t('settings.group.reminders'), icon: CalendarDays, hint: [t('settings.reminders.liver'), t('settings.reminders.estradiol')].join(' · ') },
         { id: 'data',    label: t('settings.group.data'),    icon: Database,  hint: [t('export.title'), t('import.title')].join(' · ') },
         { id: 'about',   label: t('settings.group.about'),   icon: Info,      hint: [t('drawer.algorithm_credits'), t('licence.title')].join(' · ') },
     ];
 
+    // HRT mode sits at the top of the medication-plan section: which mode the app
+    // is in is what the plan is a plan *for* (which compounds exist, which readings
+    // show), so the choice belongs with the schedule rather than beside the theme.
+    const HrtModeSection = () => (
+        <div className="mb-6">
+            <div className="flex items-center gap-2 mb-1">
+                <Icon icon={Dna} size={16} className={muted} />
+                <span className={`text-m3-body-medium font-medium ${on}`}>{t('settings.hrt_mode')}</span>
+            </div>
+            <p className={`text-xs ${muted} mb-2.5 leading-relaxed`}>{t('settings.hrt_mode_hint')}</p>
+            <div className="grid grid-cols-2 gap-1.5 max-w-sm" role="group" aria-label={t('settings.hrt_mode')}>
+                {([
+                    { value: 'transfem', labelKey: 'mode.transfem' },
+                    { value: 'transmasc', labelKey: 'mode.transmasc' },
+                ] as const).map(({ value, labelKey }) => (
+                    <button
+                        key={value}
+                        type="button"
+                        aria-pressed={mode === value}
+                        onClick={() => setMode(value)}
+                        className={`m3-btn m3-btn-sm ${mode === value ? 'm3-btn-filled' : 'm3-btn-outlined'}`}
+                    >
+                        {t(labelKey)}
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+
     const GeneralContent = () => (
         <div>
-            <button onClick={() => navTo(onNavigateToHRTMode, 'general')} className={rowBase}>
-                <span className={rowLabel}>{t('settings.hrt_mode')}</span>
-                <span className={rowValue}>
-                    {t(mode === 'transfem' ? 'mode.transfem' : 'mode.transmasc')}
-                    <Icon icon={ChevronRight} size={15} />
-                </span>
-            </button>
-
             <button onClick={() => navTo(onNavigateToLanguage, 'general')} className={rowBase}>
                 <span className={rowLabel}>{t('drawer.lang')}</span>
                 <span className={rowValue}>
@@ -248,13 +264,24 @@ const Settings: React.FC<SettingsProps> = ({
                             <button
                                 key={m}
                                 type="button"
-                                aria-pressed={aaChartMode === m}
-                                onClick={() => setAaChartMode(m)}
-                                className={`m3-btn m3-btn-sm ${aaChartMode === m ? 'm3-btn-filled' : 'm3-btn-outlined'}`}
+                                aria-pressed={!hideAA && aaChartMode === m}
+                                onClick={() => { setHideAA(false); setAaChartMode(m); }}
+                                className={`m3-btn m3-btn-sm ${!hideAA && aaChartMode === m ? 'm3-btn-filled' : 'm3-btn-outlined'}`}
                             >
                                 {t(`settings.aa_display.${m}`)}
                             </button>
                         ))}
+                        {/* Hiding the column is its own choice, not a fifth reading mode —
+                            it toggles a separate flag and leaves the last mode remembered,
+                            so turning it back on restores whichever reading was shown. */}
+                        <button
+                            type="button"
+                            aria-pressed={hideAA}
+                            onClick={() => setHideAA(true)}
+                            className={`m3-btn m3-btn-sm ${hideAA ? 'm3-btn-filled' : 'm3-btn-outlined'}`}
+                        >
+                            {t('settings.aa_display.none')}
+                        </button>
                     </div>
                 </div>
             )}
@@ -463,69 +490,14 @@ const Settings: React.FC<SettingsProps> = ({
      * rather than a constant — including estradiol, which had no reminder before.
      * The description names them as the app's own defaults and points at a doctor,
      * because an interval is a number the reader can change, not advice.
+     *
+     * The medication plan (用药方案) lives under general settings now — see
+     * MedPlanSettings. These intervals are the lab re-check schedule, a different
+     * thing that only looks related.
      */
-    const addMedReminder = () => {
-        const hour = medTime.getHours(), minute = medTime.getMinutes();
-        if (!medName.trim()) return;
-        const next = [...medReminders, { id: crypto.randomUUID(), name: medName.trim(), hour, minute, enabled: true }].sort((a, b) => a.hour - b.hour || a.minute - b.minute);
-        setMedReminders(next); writeMedReminders(next);
-        void rescheduleAllNativeNotifications(true).then(setMedPermission).catch(e => { console.error('[med-reminders] initial schedule failed', e); setMedError(true); });
-        setMedName('');
-    };
-    const removeMedReminder = (id: string) => {
-        const next = medReminders.filter(r => r.id !== id);
-        setMedReminders(next); writeMedReminders(next); void rescheduleAllNativeNotifications().catch(e => { console.error('[med-reminders] schedule failed', e); setMedError(true); });
-    };
-    const toggleMedReminder = (id: string) => {
-        const next = medReminders.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r);
-        setMedReminders(next); writeMedReminders(next); void rescheduleAllNativeNotifications().catch(e => { console.error('[med-reminders] schedule failed', e); setMedError(true); });
-    };
-
-    const MedReminderContent = () => isNativeApp() ? (
-        <div className="mb-5 rounded-xl border border-[var(--color-m3-outline-variant)] p-4">
-            <p className={`${rowLabel} mb-1`}>{t('med.title')}</p>
-            <p className={`text-xs ${muted} mb-3`}>{t('med.desc')}</p>
-            {medPermission === false && <p className="text-xs text-[var(--color-m3-warning)]">{t('med.permission')}</p>}
-            {medError && <p className="text-xs text-[var(--color-m3-error)]">{t('med.error')}</p>}
-            {medReminders.map(r => (
-                <div key={r.id} className="flex items-center gap-3 py-2 border-b border-[var(--color-m3-outline-variant)]">
-                    <button type="button" aria-pressed={r.enabled} onClick={() => toggleMedReminder(r.id)} className={`flex-1 text-start ${r.enabled ? on : muted}`}>
-                        {r.name} · {String(r.hour).padStart(2, '0')}:{String(r.minute).padStart(2, '0')}
-                    </button>
-                    <button type="button" onClick={() => removeMedReminder(r.id)} className={`text-xs ${muted}`}>{t('med.remove')}</button>
-                </div>
-            ))}
-            <div className="mt-3 flex gap-2">
-                <input aria-label={t('med.name')} value={medName} onChange={e => setMedName(e.target.value)} placeholder={t('med.name')} className="input-text min-w-0 flex-1" />
-                <button
-                    type="button"
-                    onClick={() => setMedTimeOpen(v => !v)}
-                    aria-expanded={medTimeOpen}
-                    aria-label={t('med.time')}
-                    className="input-text flex w-28 shrink-0 items-center justify-between tabular-nums"
-                >
-                    <span>{String(medTime.getHours()).padStart(2, '0')}:{String(medTime.getMinutes()).padStart(2, '0')}</span>
-                    <Icon icon={ChevronRight} size={14} className={`shrink-0 transition-transform duration-200 ${medTimeOpen ? 'rotate-90' : ''}`} />
-                </button>
-                <button type="button" onClick={addMedReminder} className="m3-button-filled shrink-0">{t('med.add')}</button>
-            </div>
-            {/* The app's own M3 picker, time mode — the same control every other time
-                field here uses. It unfolds in place, like the date fields do. */}
-            <DateTimePicker
-                isOpen={medTimeOpen}
-                inline
-                mode="time"
-                onClose={() => setMedTimeOpen(false)}
-                onConfirm={(d) => { setMedTime(d); setMedTimeOpen(false); }}
-                initialDate={medTime}
-                title={t('med.time')}
-            />
-        </div>
-    ) : null;
 
     const RemindersContent = () => (
         <div>
-            <MedReminderContent />
             <p className={`text-xs ${muted} py-3 leading-relaxed`}>{t('settings.reminders.desc')}</p>
             {intervalSection(t('settings.reminders.liver'), (
                 <>
@@ -549,6 +521,12 @@ const Settings: React.FC<SettingsProps> = ({
 
     const catContent = (id: SettingsCat) => {
         if (id === 'general') return <GeneralContent />;
+        if (id === 'plans') return (
+            <div>
+                <HrtModeSection />
+                <MedPlanSettings muted={muted} on={on} doseTemplates={doseTemplates} />
+            </div>
+        );
         if (id === 'reminders') return <RemindersContent />;
         if (id === 'data') return <DataContent />;
         return <AboutContent />;
@@ -591,7 +569,11 @@ const Settings: React.FC<SettingsProps> = ({
             {/* ── Mobile ──────────────────────────────────────────────── */}
             {/* See Admin.tsx: a stretched `flex-1` child under the shell's `min-h-full`
                 hides its own overflow from the scroller. */}
-            <div className="md:hidden flex-1 self-start px-6 pb-32">
+            {/* `min-w-0` matters: as a `flex-1` child, its default `min-width:auto`
+                makes the pane at least as wide as its min-content, and a plan row's
+                nowrap (truncated) summary line is wider than a phone — the pane would
+                then overflow the viewport instead of letting the line ellipsize. */}
+            <div className="md:hidden min-w-0 flex-1 self-start px-6 pb-32">
                 {mobileView === 'list' ? (
                     <>
                         <h1 className={`sticky top-0 z-20 -mx-6 px-6 pt-2 pb-3 mb-3 bg-[var(--color-m3-surface-dim)]  text-m3-title-xl ${on}`}>{t('nav.settings')}</h1>

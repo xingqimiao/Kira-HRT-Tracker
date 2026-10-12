@@ -80,6 +80,8 @@ export interface AppSettings {
     showVial?: boolean;
     /** Whether the overview draws the dose-day grid (DoseHeatmap). Default on. */
     showHeatmap?: boolean;
+    /** Whether the overview hides the anti-androgen reading entirely. Default off. */
+    hideAA?: boolean;
     /** Whether E2/T readings show a decimal place. Default off (whole numbers). */
     readingDecimals?: boolean;
     /**
@@ -141,7 +143,7 @@ export interface AppSettings {
 export const APP_SETTING_KEYS: readonly (keyof AppSettings)[] = [
     'theme', 'keyColor', 'lang', 'hrtMode', 'showVial', 'calMethod', 'calHistoryMode', 'aaChartMode',
     'hrtStartDate', 'recheckIntervals', 'ocrModelTier', 'pkEngine', 'timezone',
-    'showHeatmap', 'chartStyle', 'readingDecimals',
+    'showHeatmap', 'chartStyle', 'readingDecimals', 'hideAA',
 ];
 
 export interface SyncState {
@@ -285,7 +287,7 @@ export function sanitizeTombstones(raw: unknown): Tombstones {
  * payload put `showVial: 'false'` into state, where its own reader — which
  * compares against the string 'false' — would read it as *true*.
  */
-const BOOLEAN_SETTING_KEYS: ReadonlySet<keyof AppSettings> = new Set(['showVial', 'showHeatmap', 'readingDecimals']);
+const BOOLEAN_SETTING_KEYS: ReadonlySet<keyof AppSettings> = new Set(['showVial', 'showHeatmap', 'readingDecimals', 'hideAA']);
 
 export function sanitizeAppSettings(raw: unknown): AppSettings {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};

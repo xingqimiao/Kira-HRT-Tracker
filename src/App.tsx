@@ -37,7 +37,6 @@ import UpdateNotice from './components/UpdateNotice';
 import BindCredentials from './pages/BindCredentials';
 import OAuthLanding from './pages/OAuthLanding';
 import PKParamsPage from './pages/PKParams';
-import HRTModeSettings from './pages/HRTModeSettings';
 import LanguageSettings from './pages/LanguageSettings';
 import AppearanceSettings from './pages/AppearanceSettings';
 import WeightSettings from './pages/WeightSettings';
@@ -52,7 +51,12 @@ import HrtMilestoneEffect from './components/HrtMilestoneEffect';
 import { armMilestone, clearArmedMilestone, type MilestoneNotice } from './utils/hrtMilestone';
 import SplashScreen from './components/SplashScreen';
 import { isNativeApp } from './utils/platform';
-import { rescheduleAllNativeNotifications } from './utils/medReminders';
+import {
+    migrateOldRemindersToPlans,
+    reschedulePlanNotifications,
+    startPlanWebNotifications,
+    registerDoseSource,
+} from './utils/medPlanNotify';
 import { installNativeBack, useBackHandler } from './utils/nativeBack';
 import { installNativeLinkInterceptor } from './utils/externalLinks';
 
@@ -124,6 +128,7 @@ const AppContent = () => {
         currentLevel,
         currentT,
         currentStatus,
+        dosePeaks,
         currentTime,
         groupedEvents,
         addEvent, addEvents, updateEvent, deleteEvent, deleteEvents, clearAllEvents,
@@ -142,7 +147,18 @@ const AppContent = () => {
     } = useAppData(showDialog, coreSession.user?.userId ?? null);
 
     const [splashDone, setSplashDone] = useState(() => !isNativeApp());
-    useEffect(() => { void rescheduleAllNativeNotifications().catch(e => console.error('[med-reminders] reschedule failed', e)); }, []);
+
+    // The medication-plan notifier reads today's doses through a getter, not a
+    // captured array: the interval registered here must see every re-render's
+    // events, so a ref carries the live value across its 60-second ticks.
+    const eventsRef = useRef(events);
+    eventsRef.current = events;
+    useEffect(() => {
+        registerDoseSource(() => eventsRef.current);
+        migrateOldRemindersToPlans();
+        void reschedulePlanNotifications().catch(e => console.error('[med-plan] reschedule failed', e));
+        startPlanWebNotifications();
+    }, []);
 
     // A confirmed bind belongs to the account that made it. Reset when the signed-in
     // user changes (or is signed out), so the next account is not waved past a gate it
@@ -237,6 +253,10 @@ const AppContent = () => {
     const [readingDecimals, setReadingDecimals] = useState<boolean>(() =>
         localStorage.getItem('app-reading-decimals') === 'true'
     );
+    // Whether the overview hides the anti-androgen reading. Off by default.
+    const [hideAA, setHideAA] = useState<boolean>(() =>
+        localStorage.getItem('app-hide-aa') === 'true'
+    );
 
     useEffect(() => {
         localStorage.setItem('app-key-color', keyColor);
@@ -257,6 +277,10 @@ const AppContent = () => {
         localStorage.setItem('app-reading-decimals', String(readingDecimals));
     }, [readingDecimals]);
 
+    useEffect(() => {
+        localStorage.setItem('app-hide-aa', String(hideAA));
+    }, [hideAA]);
+
     // Adopt theme and key colour when a sync brings the account's choices in.
     // Each value is validated against what this build understands before being
     // taken, so a payload from a newer version cannot set a theme it has no
@@ -268,6 +292,7 @@ const AppContent = () => {
         setShowHeatmap(localStorage.getItem('app-dose-heatmap') !== 'false');
         setChartStyle(normalizeChartStyle(localStorage.getItem('app-chart-style')));
         setReadingDecimals(localStorage.getItem('app-reading-decimals') === 'true');
+        setHideAA(localStorage.getItem('app-hide-aa') === 'true');
     }), []);
 
     useEffect(() => {
@@ -580,15 +605,21 @@ const AppContent = () => {
     };
     const activeSection = sectionFor(currentView);
 
-    if (!splashDone) {
-        return <SplashScreen mode={mode} onDone={() => setSplashDone(true)} />;
-    }
+    // The splash is an overlay, not a gate: whatever screen is next — onboarding,
+    // the bind gate, the shell — mounts underneath it while the fill plays, so the
+    // frame after the vial settles is already a live screen. The old early return
+    // (and its 600 ms hold) made the app boot only after the splash ended.
+    const splash = !splashDone ? (
+        <SplashScreen mode={mode} onDone={() => setSplashDone(true)} />
+    ) : null;
 
     // Takes over the whole screen rather than sitting in the view stack: the
     // intro is where language and HRT mode get chosen, and leaving the nav up
     // would let someone tab away with both still on their defaults.
     if (showOnboarding) {
         return (
+            <>
+            {splash}
             <Onboarding
                 languageOptions={languageOptions}
                 /* So the start-date step opens on whatever is already saved, and
@@ -601,6 +632,7 @@ const AppContent = () => {
                 replay={replayOnboarding}
                 onDone={() => { markOnboardingSeen(); setShowOnboarding(false); setReplayOnboarding(false); }}
             />
+            </>
         );
     }
 
@@ -621,6 +653,8 @@ const AppContent = () => {
         bindConfirmations === 0 && (coreSyncState.accountIncomplete || bindRequested);
     if (coreSession.isSignedIn && needsBinding) {
         return (
+            <>
+            {splash}
             <BindCredentials
                 session={coreSession}
                 onDone={async () => {
@@ -639,11 +673,13 @@ const AppContent = () => {
                     await coreSyncState.syncNow();
                 }}
             />
+            </>
         );
     }
 
     return (
         <>
+        {splash}
         <AppShell
             navItems={navItems}
             activeId={activeSection}
@@ -685,6 +721,7 @@ const AppContent = () => {
                             currentLevel={currentLevel}
                             currentT={currentT}
                             currentStatus={currentStatus}
+                            dosePeaks={dosePeaks}
                             events={events}
                             simulation={simulation}
                             labResults={labResults}
@@ -706,6 +743,7 @@ const AppContent = () => {
                             showHeatmap={showHeatmap}
                             chartStyle={chartStyle}
                             readingDecimals={readingDecimals}
+                            hideAA={hideAA}
                             onSaveTemplate={addTemplate}
                             onDeleteTemplate={deleteTemplate}
                             quickDoses={quickDoses}
@@ -810,7 +848,6 @@ const AppContent = () => {
                             setIsWeightModalOpen={setIsWeightModalOpen}
                             pkParams={pkParams}
                             onNavigateToPKParams={() => handleViewChange('pk-params')}
-                            onNavigateToHRTMode={() => handleViewChange('settings-hrt-mode')}
                             onNavigateToLanguage={() => handleViewChange('settings-language')}
                             onNavigateToAppearance={() => handleViewChange('settings-appearance')}
                             onNavigateToWeight={() => handleViewChange('settings-weight')}
@@ -821,6 +858,8 @@ const AppContent = () => {
                             isLoggedIn={coreSession.isSignedIn}
                             aaChartMode={aaChartMode}
                             setAaChartMode={setAaChartMode}
+                            hideAA={hideAA}
+                            setHideAA={setHideAA}
                             recheckIntervals={recheckIntervals}
                             setRecheckIntervals={setRecheckIntervals}
                             ocrModelTier={ocrModelTier}
@@ -828,6 +867,7 @@ const AppContent = () => {
                             pkEngine={pkEngine}
                             setPkEngine={setPkEngine}
                             engineInUse={engineInUse}
+                            doseTemplates={doseTemplates}
                         />
                     )}
 
@@ -836,12 +876,6 @@ const AppContent = () => {
                             session={coreSession}
                             onBack={() => handleViewChange('account')}
                             onDeleted={() => handleViewChange('home')}
-                        />
-                    )}
-
-                    {currentView === 'settings-hrt-mode' && (
-                        <HRTModeSettings
-                            onBack={() => handleViewChange('settings')}
                         />
                     )}
 

@@ -60,29 +60,84 @@ const PACK: LangPack = {
     "core.acct.labs": "Lab results",
     "core.acct.signin_methods": "Sign-in methods",
     "core.acct.active": "Active",
+    "plan.title": "İlaç planı",
+
+    "plan.hint": "Doz programınızı ayarlayın; gecikenler hızlı kayıt düğmesinde gösterilir.",
+
+    "plan.web_enable": "Tarayıcı bildirimlerini aç",
+
+    "plan.web_on": "Tarayıcı bildirimleri açık",
+
+    "plan.enable": "Bildirimleri aç",
+
+    "plan.on": "Bildirimler açık",
+
+    "plan.empty": "Henüz plan yok — aşağıdan ekleyin.",
+
+    "plan.remove": "Kaldır",
+
+    "plan.sum.times": "günde {n}× · {gap} saat arayla · {time} itibarıyla",
+
+    "plan.sum.hours": "her {h} saatte · {time} itibarıyla",
+
+    "plan.sum.days": "{d} günde bir · {time}",
+
+    "plan.mode.times": "Günde N kez",
+
+    "plan.mode.hours": "x saatte bir",
+
+    "plan.mode.days": "x günde bir",
+
+    "plan.add_drug": "İlaç",
+
+    "plan.add_route": "Uygulama yolu",
+
+    "plan.add_alias": "Takma ad (isteğe bağlı)",
+
+    "plan.add_alias_ph": "ör. sabah iğnesi",
+
+    "plan.add_dose": "Doz",
+
+    "plan.add_mode": "Hatırlatma şekli",
+
+    "plan.add_interval": "Aralık (saat)",
+
+    "plan.add_every": "Aralık (gün)",
+
+    "plan.add_dose_n": "{n}. doz",
+
+    "plan.add_dose_add": "Bir doz daha ekle",
+
+    "plan.from_template": "Kayıtlı şablondan içe aktar",
+
+    "plan.add_first": "İlk doz",
+
+    "plan.add_submit": "Plan ekle",
+
+    "plan.overdue_title": "Bugün atlanan dozlar",
+
+    "plan.overdue_none": "Bugün atlanan yok.",
+
+    "plan.overdue_missed_at": "Saat",
+
+    "plan.badge_hint": "Vakti geçen planlı dozlar var — görmek için dokunun",
+
+    "plan.quick_suffix": "·Plan",
+
     "core.acct.change_pw": "Change password",
 
-    "core.acct.rotate": "Veri anahtarını döndür",
 
-    "core.acct.rotate_sub": "Tüm kayıtları yeni bir anahtarla yeniden şifreler; sızan eski anahtarı geçersiz kılar",
 
-    "core.rotate.title": "Veri anahtarını döndür",
 
-    "core.rotate.desc": "Yeni bir veri anahtarı oluşturulur ve tüm kayıtlar yeniden şifrelenir; sızan eski anahtar geçersiz hale gelir. Şifreniz, oturum açmada olduğu gibi yalnızca bir kez doğrulanır.",
 
-    "core.rotate.password": "Şifreyi onayla",
 
-    "core.rotate.action": "Döndür",
 
-    "core.rotate.success": "Döndürüldü: {records} kayıt yeniden şifrelendi",
     "core.acct.change_pw_sub": "Your records are re-locked under the new password. Nothing is re-encrypted from scratch, so this is safe and quick.",
     "core.acct.x_section": "X",
     "core.acct.connect": "Connect {provider}",
     "core.acct.connect_sub": "İsteğe bağlı. Oturum açarken kim olduğunuzu doğrular. Kayıtları saklamak için ayrıca bir hesap adı ve parola gerekir.",
     "core.acct.linked": "Linked {date}",
     "core.acct.linked_used": "Linked {date} · last used {last}",
-    "core.acct.avatar_hint": "Profil resminiz oturum açarken {provider} üzerinden kopyalanıp bu hizmette saklandı; bu sayfayı açmak {provider} adresine istek göndermez.",
-    "core.acct.unlink_note": "Unlinking never locks you out: an account always keeps a password, so losing {provider} costs a button, not your data.",
     "core.acct.delete_section": "Delete",
     "core.acct.delete": "Delete this account",
     "core.acct.delete_sub": "Removes {doses} dose record(s), {labs} lab result(s) and everything else. Not reversible.",
@@ -161,6 +216,8 @@ const PACK: LangPack = {
     "mode.transfem": "Feminizan HRT",
     "mode.transmasc": "Maskülinize HRT",
     "settings.hrt_mode": "HRT Modu",
+
+    "settings.hrt_mode_hint": "Uygulamanın kullandığı hormon modu; seçilebilen ilaçları ve gösterilen değerleri değiştirir.",
     "field.dose_t": "Eşdeğer T dozu (mg)",
     "ester.T": "Testosteron",
     "ester.TC": "Testosteron Sipionat",
@@ -818,6 +875,8 @@ const PACK: LangPack = {
     "settings.aa_display.today": "Bugünkü doz",
     "settings.aa_display.since": "Son dozdan bu yana",
     "settings.aa_display.cumulative": "Kümülatif toplam",
+
+    "settings.aa_display.none": "Gizle",
     "backup.auto_saved": "Buluta otomatik yedeklendi",
     "onboarding.privacy_title_1": "Gizlilik koruması",
     "onboarding.privacy_title_highlight": "KiraEqual ve Kira Tracker",

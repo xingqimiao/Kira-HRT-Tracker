@@ -653,6 +653,8 @@ const PACK: LangPack = {
     "settings.aa_display.today": "今日劑量",
     "settings.aa_display.since": "距上次食藥",
     "settings.aa_display.cumulative": "累計總量",
+
+    "settings.aa_display.none": "唔顯示",
     "label.t": "睪固酮",
     "label.total_t": "總睪固酮",
     "label.total_t_nmol": "總睪固酮",
@@ -660,6 +662,8 @@ const PACK: LangPack = {
     "mode.transfem": "女性化 HRT",
     "mode.transmasc": "男性化 HRT",
     "settings.hrt_mode": "HRT 模式",
+
+    "settings.hrt_mode_hint": "揀 App 用嘅激素模式，會改變揀得到嘅藥同顯示嘅讀數。",
     "field.dose_t": "等效睪固酮劑量（mg）",
     "ester.T": "睪固酮",
     "ester.TC": "環戊丙酸睪固酮",
@@ -761,29 +765,84 @@ const PACK: LangPack = {
     "core.acct.labs": "檢驗結果",
     "core.acct.signin_methods": "登入方法",
     "core.acct.active": "已啟用",
+    "plan.title": "用藥方案",
+
+    "plan.hint": "設定用藥時間，逾期會喺快捷記錄掣上提示。",
+
+    "plan.web_enable": "開瀏覽器通知",
+
+    "plan.web_on": "瀏覽器通知已開",
+
+    "plan.enable": "開通知",
+
+    "plan.on": "通知已開",
+
+    "plan.empty": "仲未有方案,喺下面加。",
+
+    "plan.remove": "刪除",
+
+    "plan.sum.times": "每日 {n} 次 · 隔 {gap} 小時 · 首劑 {time}",
+
+    "plan.sum.hours": "每 {h} 小時 · {time} 起",
+
+    "plan.sum.days": "每 {d} 日 · {time}",
+
+    "plan.mode.times": "每日 N 次",
+
+    "plan.mode.hours": "每 x 小時",
+
+    "plan.mode.days": "每 x 日",
+
+    "plan.add_drug": "藥物",
+
+    "plan.add_route": "給藥途徑",
+
+    "plan.add_alias": "別名(可選)",
+
+    "plan.add_alias_ph": "如:朝早嗰針",
+
+    "plan.add_dose": "用量",
+
+    "plan.add_mode": "提醒方式",
+
+    "plan.add_interval": "間隔(小時)",
+
+    "plan.add_every": "間隔(日)",
+
+    "plan.add_dose_n": "第 {n} 劑",
+
+    "plan.add_dose_add": "加多一劑",
+
+    "plan.from_template": "由快捷範本匯入",
+
+    "plan.add_first": "首劑時間",
+
+    "plan.add_submit": "加方案",
+
+    "plan.overdue_title": "今日未用藥",
+
+    "plan.overdue_none": "今日冇漏嘅用藥。",
+
+    "plan.overdue_missed_at": "應於",
+
+    "plan.badge_hint": "有到點嘅用藥未記錄 — 撳呢度睇",
+
+    "plan.quick_suffix": "·方案",
+
     "core.acct.change_pw": "改密碼",
 
-    "core.acct.rotate": "輪換資料金鑰",
 
-    "core.acct.rotate_sub": "用全新金鑰重新加密全部記錄,令洩漏嘅舊金鑰失效",
 
-    "core.rotate.title": "輪換資料金鑰",
 
-    "core.rotate.desc": "會產生新嘅資料金鑰並重新加密全部記錄,令任何洩漏嘅舊金鑰失效。密碼只喺本次驗證一次,同登入一樣。",
 
-    "core.rotate.password": "確認密碼",
 
-    "core.rotate.action": "輪換",
 
-    "core.rotate.success": "已輪換:重新加密 {records} 條記錄",
     "core.acct.change_pw_sub": "紀錄會喺新密碼之下重新鎖起，唔會將全部內容重新加密，所以又安全又快。",
     "core.acct.x_section": "X",
     "core.acct.connect": "綁 {provider} 帳戶",
     "core.acct.connect_sub": "可以唔揀。用嚟喺登入嗰陣確認你嘅身分。要保存紀錄，你仲需要一個帳號名同密碼。",
     "core.acct.linked": "喺 {date} 綁咗",
     "core.acct.linked_used": "喺 {date} 綁咗 · 上次用 {last}",
-    "core.acct.avatar_hint": "頭像喺你登入嗰陣由 {provider} 複製一份，擺喺本服務度，所以開呢一頁唔會向 {provider} 發任何請求。",
-    "core.acct.unlink_note": "解綁唔會搞到你入唔返：帳戶永遠都保留密碼，冇咗 {provider} 淨係少粒掣，唔係唔見資料。",
     "core.acct.delete_section": "刪除",
     "core.acct.delete": "刪除呢個帳戶",
     "core.acct.delete_sub": "會刪走 {doses} 條用藥紀錄、{labs} 條檢驗結果，同埋其他所有嘢。冇得救返。",

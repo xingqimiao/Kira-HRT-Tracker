@@ -35,6 +35,7 @@
 import { apiEndpoint, apiFetch } from './apiClient';
 import { payloadToRecords, recordsToPayload, type RecordDoc } from './recordDocs';
 import { toAppState, RECORD_KINDS, type SyncState } from '../utils/syncMerge';
+import { type MedPlan } from '../utils/medPlan';
 
 /** The app's own payload shape, as `normalizeSyncState` reads it. */
 export interface SyncPayload {
@@ -367,4 +368,22 @@ export function toLocalPayload(state: SyncState): SyncPayload {
     modes: state.modes,
     appState: toAppState(state),
   };
+}
+
+/**
+ * Push the medication plan (用药方案) as its own settings scalar.
+ *
+ * This is what makes the plan visible to agents: the MCP plan-status tool reads
+ * exactly this record back, decrypted under the account's key. The plan also
+ * lives on-device, so a failed push costs nothing — the next commit re-uploads.
+ */
+export async function pushMedPlan(token: string, plans: MedPlan[]): Promise<void> {
+  const stamp = Date.now();
+  await apiFetch(apiEndpoint('/api/records/batch'), {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      records: [{ id: 'scalar:medPlan', takenAt: stamp, category: 'setting', data: { value: plans, stamp } }],
+    }),
+  });
 }

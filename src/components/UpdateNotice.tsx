@@ -145,7 +145,11 @@ const NativeUpdateCard: React.FC<{
     return createPortal(
         <div
             className="fixed inset-x-0 z-[95] flex justify-center px-4"
-            style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1rem)' }}
+            /* `--app-safe-top` is the Android status-bar inset the native shell reports
+               (see androidSafeArea.ts); `env(safe-area-inset-top)` is 0 inside the
+               Android WebView, so without it the card sat under the status bar. The
+               max() is the same expression the onboarding header uses. */
+            style={{ top: 'calc(max(env(safe-area-inset-top, 0px), var(--app-safe-top, 0px)) + 1rem)' }}
         >
             <div
                 role="status"

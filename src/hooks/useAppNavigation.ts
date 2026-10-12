@@ -3,7 +3,7 @@ import { Home, ListTodo, Settings as SettingsIcon, UserCircle, CalibrationCurve 
 import { useTranslation } from '../contexts/LanguageContext';
 import { useBackHandler } from '../utils/nativeBack';
 
-export type ViewKey = 'home' | 'share' | 'history' | 'lab' | 'lab-calibration' | 'settings' | 'account' | 'pk-params' | 'settings-hrt-mode' | 'settings-language' | 'settings-appearance' | 'settings-weight' | 'settings-export' | 'settings-import' | 'settings-security' | 'settings-mcp' | 'settings-licences';
+export type ViewKey = 'home' | 'share' | 'history' | 'lab' | 'lab-calibration' | 'settings' | 'account' | 'pk-params' | 'settings-language' | 'settings-appearance' | 'settings-weight' | 'settings-export' | 'settings-import' | 'settings-security' | 'settings-mcp' | 'settings-licences';
 
 /** Where system back lands from each view. Sub-pages return to their parent
  *  tab; a tab returns home; home returns false so the gesture falls through to
@@ -12,7 +12,6 @@ const BACK_PARENT: Partial<Record<ViewKey, ViewKey>> = {
     'share': 'home',
     'lab-calibration': 'lab',
     'pk-params': 'settings',
-    'settings-hrt-mode': 'settings',
     'settings-language': 'settings',
     'settings-appearance': 'settings',
     'settings-weight': 'settings',
@@ -37,7 +36,7 @@ export const useAppNavigation = (initialView: ViewKey = 'home') => {
     const [transitionDirection, setTransitionDirection] = useState<'forward' | 'backward'>('forward');
     const mainScrollRef = useRef<HTMLDivElement>(null);
 
-    const viewOrder: ViewKey[] = ['home', 'share', 'history', 'lab', 'lab-calibration', 'settings', 'account', 'pk-params', 'settings-hrt-mode', 'settings-language', 'settings-appearance', 'settings-weight', 'settings-export', 'settings-import', 'settings-security', 'settings-mcp', 'settings-licences'];
+    const viewOrder: ViewKey[] = ['home', 'share', 'history', 'lab', 'lab-calibration', 'settings', 'account', 'pk-params', 'settings-language', 'settings-appearance', 'settings-weight', 'settings-export', 'settings-import', 'settings-security', 'settings-mcp', 'settings-licences'];
 
     // --- Actions ---
     const handleViewChange = (view: ViewKey) => {

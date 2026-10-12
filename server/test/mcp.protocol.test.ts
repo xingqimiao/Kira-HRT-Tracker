@@ -89,7 +89,7 @@ test('an MCP client can list and call tools', async () => {
   }
   // Exact, not a floor: the documented count is derived from this surface, so a tool
   // added without updating the count has to fail here rather than in a doc.
-  assert.equal(names.length, 19, `expected the full tool surface, got ${names.length}: ${names}`);
+  assert.equal(names.length, 20, `expected the full tool surface, got ${names.length}: ${names}`);
 
   // Every tool must describe itself — an agent picks tools from descriptions.
   for (const tool of tools) {
@@ -322,6 +322,55 @@ test('a validation failure is returned as a correctable message', async () => {
   assert.equal(bad.isError, true, 'a negative dose is rejected');
   const text = (bad.content as any)[0].text as string;
   assert.match(text, /dose_mg/, `the message should name the field, got: ${text}`);
+
+  await client.close();
+});
+
+test('hrt_med_plan_status reads the pushed plan and reports overdue doses', async () => {
+  const account = await registerAccount(base, { password: 'mcp-password-3' });
+  const token: string = account.token;
+
+  // The plan travels as its own sealed scalar record with an unknown-to-the-settings
+  // id (`scalar:medPlan`), exactly as `pushMedPlan` writes it. A plan due from 00:00
+  // every 8 hours has at least one passed due time on any real run of the day.
+  const stamp = Date.now();
+  const plan = {
+    id: 'plan-1',
+    ester: 'E2',
+    tzOffsetMinutes: 0,
+    dose: '2mg',
+    how: 'sublingual',
+    mode: 'hours',
+    intervalHours: 8,
+    firstHour: 0,
+    firstMinute: 0,
+    enabled: true,
+  };
+  const pushed = await fetch(`${base}/api/records/batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      records: [{ id: 'scalar:medPlan', takenAt: stamp, category: 'setting', data: { value: [plan], stamp } }],
+    }),
+  });
+  assert.ok(pushed.ok, `plan push accepted, got ${pushed.status}`);
+  const pushedBody = (await pushed.json()) as { rejected?: unknown[] };
+  assert.equal((pushedBody.rejected ?? []).length, 0, 'the scalar record was not rejected');
+
+  const { client, transport } = connect(token);
+  await client.connect(transport);
+
+  const result = await client.callTool({ name: 'hrt_med_plan_status', arguments: {} });
+  assert.ok(!result.isError, 'the plan-status tool succeeds');
+  const plans = JSON.parse((result.content as any)[0].text) as {
+    esters: { ester: string };
+    overdue: boolean;
+    missed_times: string[];
+  }[];
+  assert.equal(plans.length, 1, 'the pushed plan is returned');
+  assert.equal(plans[0].esters.ester, 'E2', 'the plan keeps its compound');
+  assert.ok(plans[0].overdue, 'a plan due every 8h from midnight has a passed due time');
+  assert.ok(plans[0].missed_times.length > 0, 'at least one missed due time is listed');
 
   await client.close();
 });

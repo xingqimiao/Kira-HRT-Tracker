@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { DoseEvent, Route, Ester, SimulationResult, runSimulation, interpolateConcentration_E2, interpolateConcentration_T, LabResult, computeCalibration, CalibrationMethod, CalibrationHistoryMode, normalizeCalibrationMethod, AntiandrogenChartMode, normalizeAntiandrogenChartMode, isTestosteroneEster, isT_LabUnit, PKCustomParams, applyPKOverrides, sanitizePKParams, isPlausibleBodyWeightKG,
+import { DoseEvent, Route, Ester, SimulationResult, runSimulation, interpolateConcentration_E2, interpolateConcentration_T, LabResult, computeCalibration, CalibrationMethod, CalibrationHistoryMode, normalizeCalibrationMethod, AntiandrogenChartMode, normalizeAntiandrogenChartMode, isTestosteroneEster, isAntiandrogen, isT_LabUnit, PKCustomParams, applyPKOverrides, sanitizePKParams, isPlausibleBodyWeightKG,
          RecheckIntervals, normalizeRecheckIntervals,
          OcrModelTier, normalizeOcrModelTier,
          PkEngineId, normalizePkEngine, DEFAULT_PK_ENGINE,
@@ -617,6 +617,35 @@ export const useAppData = (
         return activeEngine.computeCalibration(simulation, events, weight, labResults, calibrationMethod, calibrationHistoryMode);
     }, [simulation, events, weight, labResults, calibrationMethod, calibrationHistoryMode, activeEngine]);
     const calibrationFn = calibration.factorFn;
+
+    /**
+     * The peak concentration each recent dose produces on its own.
+     *
+     * The order book's depth bar is "how big is this dose's *hormone contribution*",
+     * not its raw mg — two 5 mg doses can differ by route and ester — so each dose is
+     * simulated in isolation and the curve's maximum is taken. Only the newest window
+     * the list can show is computed. The engine and body weight are the same ones the
+     * chart uses, so the bars and the curve agree on what a dose does.
+     *
+     * Anti-androgens are not modelled (their series is structurally zero), so they get
+     * no bar. `pkParams` is a dependency though not an argument, for the same reason
+     * the curve memo lists it: overrides reach the engine through a module global.
+     */
+    const dosePeaks = useMemo(() => {
+        const out: Record<string, number> = {};
+        const recent = events
+            .filter(e => e.route !== Route.patchRemove)
+            .slice()
+            .sort((a, b) => b.timeH - a.timeH)
+            .slice(0, 16);
+        for (const e of recent) {
+            if (isAntiandrogen(e.ester)) { out[e.id] = 0; continue; }
+            const sim = activeEngine.runSimulation([e], weight);
+            const series = isTransmasc ? sim?.concNGdL_T : sim?.concPGmL_E2;
+            out[e.id] = series && series.length ? Math.max(...series) : 0;
+        }
+        return out;
+    }, [events, weight, pkParams, activeEngine, isTransmasc]);
 
     const currentLevel = useMemo(() => {
         if (!simulation) return 0;
@@ -1557,6 +1586,7 @@ export const useAppData = (
         currentLevel,
         currentT,
         currentStatus,
+        dosePeaks,
         groupedEvents,
         addEvent, addEvents, updateEvent, deleteEvent, deleteEvents, clearAllEvents,
         addLabResult, updateLabResult, deleteLabResult, clearLabResults,

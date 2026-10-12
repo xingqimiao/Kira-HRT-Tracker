@@ -1,33 +1,44 @@
 import React from 'react';
 import { DoseEvent, Route, Ester, ANTIANDROGENS } from '../../logic';
 import { useTranslation } from '../contexts/LanguageContext';
+import { useHRTMode } from '../contexts/HRTModeContext';
 import { formatDate, formatTime } from '../utils/helpers';
 
 /**
  * The overview's dose list, shown in the slot the dose grid occupies when the
  * chart is in candle (K线) view.
  *
- * Each row carries a depth bar in the theme's primary colour whose length is
- * that dose against a fixed 5 mg yardstick, with the amount printed over it —
- * "how big was each recent dose, at a glance" beside the candles those doses
- * drew. Hover tints are deliberately absent: the rows stay plain.
+ * Each row carries a depth bar in the theme's primary colour whose length is the
+ * *hormone peak* that dose produces on its own — not its raw mg, because two doses
+ * of the same mg can differ by route and ester — against a fixed full-scale peak,
+ * with the amount printed over it. "How big is each recent dose, at a glance"
+ * beside the candles those doses drew. Hover tints are deliberately absent: the
+ * rows stay plain.
  *
  * Read-only and unclickable-looking but it does repeat: a row click offers the
  * same "log this again" shortcut via `onRepeat`.
  */
 const ROWS = 14;
 
-/** A dose of this many mg fills the bar; larger doses cap at full. A fixed
- *  yardstick (not the list's own maximum) so the bars mean the same thing in
- *  every window — a 3 mg dose is always three-fifths of a bar. */
-const BAR_FULL_MG = 5;
+/**
+ * The hormone peak that fills the bar, per mode.
+ *
+ * A fixed yardstick (not the list's own maximum) so the bars mean the same thing
+ * in every window: 100 pg/mL is a full bar in feminizing mode (the model's own
+ * target-band ceiling), 400 ng/dL in masculinizing mode, and a larger dose caps at
+ * full. A small floor keeps a tiny dose visible.
+ */
+const BAR_FULL_PGML = 100;
+const BAR_FULL_NGDL = 400;
 
 /** Order of esters that share a time, so the list is stable rather than
  *  whichever order the store happened to return. */
 const esterRank = (e: Ester) => e;
 
-const DoseOrderBook = ({ events, onRepeat, className = '' }: { events: DoseEvent[]; onRepeat?: (e: DoseEvent) => void; className?: string }) => {
+const DoseOrderBook = ({ events, dosePeaks = {}, onRepeat, className = '' }: { events: DoseEvent[]; dosePeaks?: Record<string, number>; onRepeat?: (e: DoseEvent) => void; className?: string }) => {
     const { t, lang } = useTranslation();
+    const { isTransmasc } = useHRTMode();
+    const fullPeak = isTransmasc ? BAR_FULL_NGDL : BAR_FULL_PGML;
 
     // Newest first. `patchRemove` is the end of a dose, not an order, so it is
     // left out — the same rule the heatmap counts by.
@@ -54,10 +65,12 @@ const DoseOrderBook = ({ events, onRepeat, className = '' }: { events: DoseEvent
                     {recent.map(e => {
                         const at = new Date(e.timeH * 3600000);
                         // No bar for an anti-androgen — it is not on the curve the
-                        // candles beside this list draw. Otherwise: 5 mg is a full
-                        // bar, capped there, with a small floor so a tiny dose is
-                        // still visible.
-                        const bar = ANTIANDROGENS.has(e.ester) ? 0 : Math.min(100, Math.max(6, (e.doseMG / BAR_FULL_MG) * 100));
+                        // candles beside this list draw. Otherwise: the dose's own
+                        // peak against the mode's full scale, capped at full, with a
+                        // small floor so a tiny dose is still visible.
+                        const bar = ANTIANDROGENS.has(e.ester)
+                            ? 0
+                            : Math.min(100, Math.max(6, ((dosePeaks[e.id] ?? 0) / fullPeak) * 100));
                         return (
                             <li key={e.id} className="relative overflow-hidden rounded-[var(--radius-sm)]">
                                 {/* The depth bar, anchored to the right edge growing

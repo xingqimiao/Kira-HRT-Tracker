@@ -115,29 +115,84 @@ const PACK: LangPack = {
     "core.acct.labs": "검사 결과",
     "core.acct.signin_methods": "로그인 방법",
     "core.acct.active": "사용 중",
+    "plan.title": "복용 계획",
+
+    "plan.hint": "복용 일정을 설정합니다. 늦은 복용은 빠른 기록 버튼에 표시됩니다.",
+
+    "plan.web_enable": "브라우저 알림 켜기",
+
+    "plan.web_on": "브라우저 알림이 켜져 있습니다",
+
+    "plan.enable": "알림 켜기",
+
+    "plan.on": "알림이 켜져 있습니다",
+
+    "plan.empty": "아직 계획이 없습니다. 아래에서 추가하세요.",
+
+    "plan.remove": "삭제",
+
+    "plan.sum.times": "하루 {n}회 · {gap}시간 간격 · {time}부터",
+
+    "plan.sum.hours": "{h}시간마다 · {time}부터",
+
+    "plan.sum.days": "{d}일마다 · {time}",
+
+    "plan.mode.times": "하루 N 회",
+
+    "plan.mode.hours": "x시간마다",
+
+    "plan.mode.days": "x일마다",
+
+    "plan.add_drug": "약",
+
+    "plan.add_route": "투여 경로",
+
+    "plan.add_alias": "별칭(선택)",
+
+    "plan.add_alias_ph": "예: 아침 주사",
+
+    "plan.add_dose": "용량",
+
+    "plan.add_mode": "알림 방식",
+
+    "plan.add_interval": "간격(시간)",
+
+    "plan.add_every": "간격(일)",
+
+    "plan.add_dose_n": "{n}번째 투여",
+
+    "plan.add_dose_add": "한 번 더 추가",
+
+    "plan.from_template": "저장된 템플릿에서 가져오기",
+
+    "plan.add_first": "첫 복용",
+
+    "plan.add_submit": "계획 추가",
+
+    "plan.overdue_title": "오늘 놓친 복용",
+
+    "plan.overdue_none": "오늘 놓친 복용이 없습니다.",
+
+    "plan.overdue_missed_at": "예정",
+
+    "plan.badge_hint": "예정 시각이 지난 복용이 있습니다 — 눌러서 확인",
+
+    "plan.quick_suffix": "·계획",
+
     "core.acct.change_pw": "비밀번호 변경",
 
-    "core.acct.rotate": "데이터 키 순환",
 
-    "core.acct.rotate_sub": "새 키로 모든 기록을 다시 암호화하여 유출된 이전 키를 무효화합니다",
 
-    "core.rotate.title": "데이터 키 순환",
 
-    "core.rotate.desc": "새 데이터 키를 생성하고 모든 기록을 다시 암호화하여 유출된 이전 키를 무효화합니다. 비밀번호는 로그인과 동일하게 이번 한 번만 확인합니다.",
 
-    "core.rotate.password": "비밀번호 확인",
 
-    "core.rotate.action": "순환",
 
-    "core.rotate.success": "순환 완료: {records}개의 기록이 재암호화되었습니다",
     "core.acct.change_pw_sub": "기록은 새 비밀번호로 다시 잠기며, 전체를 다시 암호화하지는 않으므로 안전하고 빠릅니다.",
     "core.acct.x_section": "X",
     "core.acct.connect": "{provider} 계정 연결",
     "core.acct.connect_sub": "선택 사항. 로그인할 때 본인 확인에 사용됩니다. 기록을 저장하려면 계정 이름과 비밀번호도 필요합니다.",
     "core.acct.linked": "{date} 연결",
     "core.acct.linked_used": "{date} 연결 · 마지막 사용 {last}",
-    "core.acct.avatar_hint": "프로필 사진은 로그인할 때 {provider}에서 복사해 이 서비스에 저장한 것입니다. 이 페이지를 열어도 {provider}로 요청이 가지 않습니다.",
-    "core.acct.unlink_note": "연결을 해제해도 계정이 잠기지 않습니다. 계정에는 항상 비밀번호가 남아 있고, {provider}를 잃는 것은 버튼 하나가 줄어드는 것일 뿐 데이터를 잃는 것이 아닙니다.",
     "core.acct.delete_section": "삭제",
     "core.acct.delete": "이 계정 삭제",
     "core.acct.delete_sub": "투약 기록 {doses}건, 검사 결과 {labs}건과 그 밖의 모든 내용이 삭제됩니다. 되돌릴 수 없습니다.",
@@ -864,6 +919,8 @@ const PACK: LangPack = {
     "settings.aa_display.today": "오늘 용량",
     "settings.aa_display.since": "마지막 복용 이후",
     "settings.aa_display.cumulative": "누적 총량",
+
+    "settings.aa_display.none": "표시 안 함",
     "label.t": "테스토스테론",
     "label.total_t": "총 테스토스테론",
     "label.total_t_nmol": "총 테스토스테론",
@@ -871,6 +928,8 @@ const PACK: LangPack = {
     "mode.transfem": "여성화 HRT",
     "mode.transmasc": "남성화 HRT",
     "settings.hrt_mode": "HRT 모드",
+
+    "settings.hrt_mode_hint": "앱이 사용하는 호르몬 모드입니다. 선택할 수 있는 약과 표시되는 수치가 달라집니다.",
     "field.dose_t": "T 동등량 (mg)",
     "ester.T": "테스토스테론",
     "ester.TC": "테스토스테론 시피오네이트",

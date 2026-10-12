@@ -61,29 +61,84 @@ const PACK: LangPack = {
     "core.acct.labs": "化验结果",
     "core.acct.signin_methods": "登录方式",
     "core.acct.active": "已启用",
+    "plan.title": "用药方案",
+
+    "plan.hint": "设定用药时间，逾期的会在快捷记录按键上提示。",
+
+    "plan.web_enable": "启用浏览器通知",
+
+    "plan.web_on": "浏览器通知已启用",
+
+    "plan.enable": "启用通知",
+
+    "plan.on": "通知已启用",
+
+    "plan.empty": "还没有用药方案,在下面添加。",
+
+    "plan.remove": "删除",
+
+    "plan.sum.times": "每日 {n} 次 · 间隔 {gap} 小时 · 首剂 {time}",
+
+    "plan.sum.hours": "每 {h} 小时 · {time} 起",
+
+    "plan.sum.days": "每 {d} 天 · {time}",
+
+    "plan.mode.times": "每日 N 次",
+
+    "plan.mode.hours": "每 x 小时",
+
+    "plan.mode.days": "每 x 天",
+
+    "plan.add_drug": "药物",
+
+    "plan.add_route": "给药途径",
+
+    "plan.add_alias": "别名(可选)",
+
+    "plan.add_alias_ph": "如:早上那针",
+
+    "plan.add_dose": "用量",
+
+    "plan.add_mode": "提醒方式",
+
+    "plan.add_interval": "间隔(小时)",
+
+    "plan.add_every": "间隔(天)",
+
+    "plan.add_dose_n": "第 {n} 剂",
+
+    "plan.add_dose_add": "添加一剂",
+
+    "plan.from_template": "从快捷模板导入",
+
+    "plan.add_first": "首剂时间",
+
+    "plan.add_submit": "添加方案",
+
+    "plan.overdue_title": "今日未用药",
+
+    "plan.overdue_none": "今天没有遗漏的用药。",
+
+    "plan.overdue_missed_at": "应于",
+
+    "plan.badge_hint": "有到点的用药还没记录 — 点这里查看",
+
+    "plan.quick_suffix": "·方案",
+
     "core.acct.change_pw": "修改密码",
 
-    "core.acct.rotate": "轮换数据密钥",
 
-    "core.acct.rotate_sub": "以全新密钥重新加密全部记录,使泄露的旧密钥失效",
 
-    "core.rotate.title": "轮换数据密钥",
 
-    "core.rotate.desc": "将生成新的数据密钥并重新加密全部记录,使任何泄露的旧密钥失效。密码只在本次验证一次,与登录相同。",
 
-    "core.rotate.password": "确认密码",
 
-    "core.rotate.action": "轮换",
 
-    "core.rotate.success": "已轮换:重加密 {records} 条记录",
     "core.acct.change_pw_sub": "记录会在新密码下重新锁定，不会重新加密全部内容，因此安全且快速。",
     "core.acct.x_section": "X",
     "core.acct.connect": "绑定 {provider} 账户",
     "core.acct.connect_sub": "可选。用于登录时确认身份。要保存记录，你还需要一个账号名和密码。",
     "core.acct.linked": "已绑定 {date}",
     "core.acct.linked_used": "已绑定 {date} · 上次使用 {last}",
-    "core.acct.avatar_hint": "头像在你登录时从 {provider} 复制一份并存放在本服务上，因此打开这一页不会向 {provider} 发起任何请求。",
-    "core.acct.unlink_note": "解绑不会把你锁在外面：账户始终保留密码，失去 {provider} 只是少一个按钮，不是丢数据。",
     "core.acct.delete_section": "删除",
     "core.acct.delete": "删除此账户",
     "core.acct.delete_sub": "会移除 {doses} 条用药记录、{labs} 条化验结果以及全部其他内容。不可恢复。",
@@ -161,6 +216,8 @@ const PACK: LangPack = {
     "mode.transfem": "女性化 HRT",
     "mode.transmasc": "男性化 HRT",
     "settings.hrt_mode": "HRT 模式",
+
+    "settings.hrt_mode_hint": "选择应用使用的激素模式，会改变可选的药物与显示的读数。",
     "field.dose_t": "等效睾酮剂量 (mg)",
     "ester.T": "睾酮",
     "ester.TC": "环戊丙酸睾酮",
@@ -818,6 +875,8 @@ const PACK: LangPack = {
     "settings.aa_display.today": "今日剂量",
     "settings.aa_display.since": "距上次服药",
     "settings.aa_display.cumulative": "累计总量",
+
+    "settings.aa_display.none": "不显示",
     "backup.auto_saved": "已自动备份到云端",
     "onboarding.privacy_title_1": "隐私保护根植于",
     "onboarding.privacy_title_highlight": "KiraEqual 和 Kira Tracker",

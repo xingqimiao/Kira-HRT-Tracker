@@ -2,7 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import Icon from './Icon';
 import FloatingToast from './ui/FloatingToast';
-import { Bookmark, ChevronDown, RotateCcw, Check } from '../icons';
+import { Bookmark, ChevronDown, RotateCcw, Check, TriangleWarning } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { usePresence } from '../hooks/usePresence';
 import { DoseEvent } from '../../logic';
@@ -30,6 +30,15 @@ interface HomeQuickAddProps {
     onAddEvent: (event: DoseEvent) => void;
     /** The undo, once the notice has timed out and there is no other way back. */
     onRemoveEvent: (id: string) => void;
+    /**
+     * Entries generated from the user's medication plans for plans their own saved
+     * templates do not already cover, appended to the menu (see `planQuickEntries`).
+     */
+    planTemplates?: QuickTemplate[];
+    /** At least one plan's due time has passed unmatched — the badge state. */
+    overdue?: boolean;
+    /** Tap on the warning badge: show today's missed doses. */
+    onOverdueClick?: () => void;
 }
 
 /** How long the undo stays offered before the notice closes itself. */
@@ -45,8 +54,8 @@ const UNDO_MS = 6000;
  * would make a showcase with no words a picture of a nondescript icon. The colour,
  * edge, radius and gap stay the same at both sizes.
  */
-const triggerClass = (open: boolean, empty: boolean, large = false) =>
-    `inline-flex items-center border border-[var(--color-m3-outline-variant)] font-medium transition-colors ${
+const triggerClass = (open: boolean, empty: boolean, large = false, overdue = false) =>
+    `inline-flex items-center border font-medium transition-colors ${
         large
             ? 'h-12 gap-1.5 rounded-full pe-3 ps-4 text-sm'
             // A phone-only pill: below `sm` the label is hidden, so a padded row
@@ -55,9 +64,13 @@ const triggerClass = (open: boolean, empty: boolean, large = false) =>
             // glyph, and it grows back into the labelled pill from `sm` up.
             : 'h-9 w-9 justify-center gap-0 rounded-full p-0 text-xs sm:w-auto sm:justify-normal sm:gap-1.5 sm:pl-3 sm:pr-2'
     } ${
-        open
-            ? 'bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-surface)]'
-            : 'text-[var(--color-m3-on-surface-variant)] hover:bg-[var(--color-m3-surface-container)] hover:text-[var(--color-m3-on-surface)]'
+        // Overdue is the theme's own colour, filled: the button reads as "act now"
+        // without a red that would clash with the warning badge beside it.
+        overdue
+            ? 'border-transparent bg-[var(--color-m3-primary)] text-[var(--color-m3-on-primary)] hover:bg-[var(--color-m3-primary-light)]'
+            : open
+                ? 'border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-surface)]'
+                : 'border-[var(--color-m3-outline-variant)] text-[var(--color-m3-on-surface-variant)] hover:bg-[var(--color-m3-surface-container)] hover:text-[var(--color-m3-on-surface)]'
     } ${empty ? 'cursor-not-allowed opacity-40' : ''}`;
 
 /**
@@ -79,18 +92,19 @@ const triggerClass = (open: boolean, empty: boolean, large = false) =>
  * Sized and spaced for a card's corner slot rather than dropped in the flow: the
  * parent decides where it sits, so there is no margin of its own to fight.
  */
-const HomeQuickAdd: React.FC<HomeQuickAddProps> = ({ templates, onAddEvent, onRemoveEvent }) => {
+const HomeQuickAdd: React.FC<HomeQuickAddProps> = ({ templates, onAddEvent, onRemoveEvent, planTemplates = [], overdue = false, onOverdueClick }) => {
     const { t } = useTranslation();
     const [open, setOpen] = React.useState(false);
     const [undo, setUndo] = React.useState<{ id: string; name: string } | null>(null);
     const buttonRef = React.useRef<HTMLButtonElement>(null);
 
-    const empty = templates.length === 0;
+    const all = [...templates, ...planTemplates];
+    const empty = all.length === 0;
 
     // Most recently made first. Templates carry no "last used" stamp, and adding
     // one means touching the data shape and every device's stored copy — not worth
     // it for ordering a menu the user reads, not the app.
-    const ordered = [...templates].sort((a, b) => b.createdAt - a.createdAt);
+    const ordered = [...all].sort((a, b) => b.createdAt - a.createdAt);
 
     const add = (template: QuickTemplate) => {
         const event = templateToEvent(template, crypto.randomUUID(), Date.now() / 3600000);
@@ -101,7 +115,7 @@ const HomeQuickAdd: React.FC<HomeQuickAddProps> = ({ templates, onAddEvent, onRe
 
     return (
         <>
-            <div className="relative inline-block">
+            <div className="relative inline-flex items-center gap-1.5">
                 <button
                     ref={buttonRef}
                     type="button"
@@ -110,14 +124,20 @@ const HomeQuickAdd: React.FC<HomeQuickAddProps> = ({ templates, onAddEvent, onRe
                     aria-expanded={open}
                     aria-haspopup="menu"
                     aria-label={t('quickadd.button')}
-                    className={triggerClass(open, empty)}
+                    className={triggerClass(open, empty, false, overdue)}
                     style={{ transitionDuration: 'var(--md-sys-motion-duration-short3)' }}
                     /* The hint doubles as the explanation when there is nothing to
                        log yet: the same words that describe the feature tell you
                        what is missing. */
                     title={empty ? t('quickadd.empty_hint') : t('quickadd.button_hint')}
                 >
-                    <Icon icon={Bookmark} size={13} />
+                    {/* Optical centring. Measured, the glyph box is already centred
+                        (its ink bbox matches the label's), but the bookmark's mass is
+                        its solid top bar over a notched foot, so it reads a touch high.
+                        A half-pixel drop is the balance; more overshoots. */}
+                    <span className="inline-flex" style={{ transform: 'translateY(0.5px)' }}>
+                        <Icon icon={Bookmark} size={13} />
+                    </span>
                     {/* Label only from `sm` up: on a 390px card the title row has room for
                         three items, and the words were what overflowed. The icon keeps its
                         aria-label, so nothing is lost to a screen reader. */}
@@ -128,6 +148,28 @@ const HomeQuickAdd: React.FC<HomeQuickAddProps> = ({ templates, onAddEvent, onRe
                         className={`hidden transition-transform duration-200 ease-[cubic-bezier(0.2,0,0,1)] sm:block ${open ? 'rotate-180' : ''}`}
                     />
                 </button>
+
+                {/* The overdue warning. A filled circle the same 36px as the quick-record
+                    key it sits beside, so the two read as a matched pair rather than a
+                    lone glyph; the key's own label (from `sm` up) is what makes the row
+                    shift left when the badge appears and return when it clears. Tapping
+                    the badge lists today's missed doses. */}
+                {overdue && (
+                    <button
+                        type="button"
+                        onClick={onOverdueClick}
+                        aria-label={t('plan.badge_hint')}
+                        title={t('plan.badge_hint')}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-m3-warning-container)] text-[var(--color-m3-warning)] transition-colors hover:opacity-90"
+                    >
+                        {/* Optical centring: the glyph box is centred, but a triangle's
+                            mass sits at its base (~0.4px below the box centre at this
+                            size), so a small lift restores the visual centre. */}
+                        <span className="inline-flex" style={{ transform: 'translateY(-0.5px)' }}>
+                            <Icon icon={TriangleWarning} weight="Filled" size={20} />
+                        </span>
+                    </button>
+                )}
 
                 {/* Always rendered, so the menu can play its exit; it returns
                     null itself once closed and spent. `anchor` is read from the

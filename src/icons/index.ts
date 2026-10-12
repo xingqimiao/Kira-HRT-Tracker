@@ -69,6 +69,7 @@ export {
     TestTube2,
     Trash,
     Trash2,
+    TriangleWarning,
     Upload,
     UserCircle,
     Users,

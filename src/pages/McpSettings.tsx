@@ -39,6 +39,7 @@ const MCP_TOOLS: { name: string; input: string; returns: string }[] = [
     { name: 'hrt_list_dose_templates', input: 'limit?, before?', returns: 'Saved one-tap dose templates' },
     { name: 'hrt_predict_levels', input: 'analyte?, from_days?, to_days?, points?, with_calibration?', returns: 'Modelled curve plus peak, trough and current level' },
     { name: 'hrt_check_advisories', input: '—', returns: 'Any dosage advisory the app would show' },
+    { name: 'hrt_med_plan_status', input: '—', returns: 'Today\'s medication plan and any doses still due' },
     { name: 'hrt_get_settings', input: '—', returns: 'Body weight, mode, calibration, PK overrides' },
     { name: 'hrt_sync_state', input: '—', returns: 'Full record state — the whole export, can be truncated; prefer the paginated read tools' },
     { name: 'hrt_reference', input: '—', returns: 'Routes, esters, units and the tool list itself' },

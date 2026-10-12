@@ -1,9 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import Icon from '../components/Icon';
-import { Info, Share2, AlertTriangle } from '../icons';
+import { Info, Share2, AlertTriangle, TriangleWarning } from '../icons';
 import { DoseEvent, SimulationResult, LabResult, AntiandrogenChartMode, getDoseAdvisory, getHormoneLevelAdvisory, isT_LabUnit, isMonitoringOnlyLab, modelledEvents, antiandrogenReading, type PkEngineId } from '../../logic';
 import ResultChart from '../components/ResultChart';
-import DoseHeatmap from '../components/DoseHeatmap';
 import DoseOrderBook from '../components/DoseOrderBook';
 import EstimateInfoModal from '../components/EstimateInfoModal';
 import NoticeModal from '../components/NoticeModal';
@@ -12,74 +11,24 @@ import HomeQuickAdd from '../components/HomeQuickAdd';
 import DoseForm from '../components/DoseForm';
 import { DoseTemplate } from '../components/DoseFormModal';
 import { QuickDose } from '../components/dose_form/QuickDoseButtons';
-import AnimatedNumber from '../components/AnimatedNumber';
-import BloodVial from '../components/BloodVial';
-import { CANVAS } from '../utils/vialLevel';
+import { createPortal } from 'react-dom';
+import { useEscape } from '../hooks/useEscape';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { AppTheme, ChartStyle } from '../constants';
 import { useTranslation } from '../contexts/LanguageContext';
 import { getShareCopy } from '../i18n/share';
 import { Tooltip } from '../components/ui';
-import { formatRelative, formatRelativeParts } from '../utils/helpers';
-
-/** Drawn width of the vial, in px. Height follows the canvas' 18:42. */
-const VIAL_SIZE = 44;
-
-/**
- * A blood-level reading: the number, its unit, and the size it has to be.
- *
- * The card's display role is sized for four digits and a point — "112.8", the width
- * the card was built around. A calibrated estimate can read 23184.5, which at the
- * full role drew straight past the card and off a phone. So the size is capped
- * against the lane the reading actually has: it steps down as far as the digits
- * need, and never grows past the display role.
- *
- * Per-character width is measured, not chosen. `tabular-nums` at this size runs
- * 0.47em per digit at four digits and settles at 0.49 by six; 0.5 is the safe end
- * of that range, so a long reading never overruns the lane it was fitted to.
- *
- * The lane arrives as a CSS custom property rather than a prop because the space a
- * reading gets is a fact about its own column, not about the viewport — a caller
- * sets `--reading-lane` on the reading's column.
- *
- * `chars` lets the two columns agree on a size. Sized independently, a long
- * estradiol (nine glyphs, stepped down hard) beside a short anti-androgen (five
- * glyphs, still at the display role) read as two different weights side by side.
- * A caller that knows both readings passes the longer count to each, so the pair
- * steps down together and shares a height. Absent, the count is the reading's own.
- */
-const Reading: React.FC<{
-    value: number;
-    decimals: number;
-    unit: string;
-    className: string;
-    muted: string;
-    /** Set when this reading's digits are a droplet target for the vial. */
-    sprayable?: boolean;
-    /** Glyph count to size against, so paired readings share a size. */
-    chars?: number;
-}> = ({ value, decimals, unit, className, muted, sprayable = false, chars }) => {
-    const text = value.toFixed(decimals);
-    const sized = chars ?? text.length;
-    return (
-        <>
-            <span
-                data-vial-sprayable={sprayable ? true : undefined}
-                className={`leading-none tabular-nums ${className}`}
-                style={{
-                    fontSize: `min(var(--md-sys-typescale-display-large-size), calc(var(--reading-lane) / ${sized} / 0.5))`,
-                }}
-            ><AnimatedNumber value={value} decimals={decimals} /></span>
-            <span className={`text-xs lowercase ${muted}`}>{unit}</span>
-        </>
-    );
-};
+import { formatRelative } from '../utils/helpers';
+import { readMedPlans, planStatuses, planQuickEntries, type PlanStatus } from '../utils/medPlan';
+import { usePresence } from '../hooks/usePresence';
 
 interface HomeProps {
     t: (key: string) => string;
     currentLevel: number;
     currentT: number;
     currentStatus: { label: string, color: string, bg: string, border: string } | null;
+    /** The peak concentration each dose produces alone — the order book's bar basis. */
+    dosePeaks: Record<string, number>;
     events: DoseEvent[];
     simulation: SimulationResult | null;
     labResults: LabResult[];
@@ -100,13 +49,18 @@ interface HomeProps {
     aaChartMode: AntiandrogenChartMode;
     /** "Now" for that reading, so "today" rolls over when the day does. */
     nowMs: number;
-    /** Whether the dose-day grid draws at all — a personalization setting. */
+    /**
+     * The dose-day grid setting. Retained for the settings page's own switch; the
+     * overview no longer draws the grid — its side panel is the order book.
+     */
     showHeatmap: boolean;
     /** Line or candles for the chart — the same personalization setting. */
     chartStyle: ChartStyle;
     /** Whether E2/T readings show a decimal place. Default off (whole numbers). */
     readingDecimals: boolean;
-    /** Passthroughs for the inline dose form the candle view embeds. */
+    /** Whether the overview hides the anti-androgen reading entirely. */
+    hideAA: boolean;
+    /** Passthroughs for the inline dose form the terminal embeds. */
     onSaveTemplate: (t: DoseTemplate) => void;
     onDeleteTemplate: (id: string) => void;
     quickDoses: QuickDose[];
@@ -115,11 +69,24 @@ interface HomeProps {
     activeEngine: PkEngineId;
 }
 
+/**
+ * The overview: a market-style terminal.
+ *
+ * One layout, not two. It used to be a reading card (with a drawn blood-vial) for
+ * the line chart and a three-pane terminal (price strip | chart | order book |
+ * record form) for the candles. The terminal is what a person reads at a glance —
+ * the modelled estimate as a "last price", the recent doses as an order book, and
+ * a one-tap record form — so it is now the overview for both chart styles, and the
+ * chart itself is the personalization: the line curve by default, candles on request.
+ * The vial and the big readings card are gone with the second layout; the price
+ * strip carries the same two readings.
+ */
 const Home: React.FC<HomeProps> = ({
     t,
     currentLevel,
     currentT,
     currentStatus,
+    dosePeaks,
     events,
     simulation,
     labResults,
@@ -136,9 +103,9 @@ const Home: React.FC<HomeProps> = ({
     onRemoveEvent,
     aaChartMode,
     nowMs,
-    showHeatmap,
     chartStyle,
     readingDecimals,
+    hideAA,
     onSaveTemplate,
     onDeleteTemplate,
     quickDoses,
@@ -147,13 +114,10 @@ const Home: React.FC<HomeProps> = ({
     activeEngine,
 }) => {
     const isDarkMode = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    // Candle view is the terminal layout, and it replaces the overview's big
-    // readings card with a compact price strip — so this is read in the header too.
-    const isCandle = chartStyle !== 'line';
     const [isEstimateInfoOpen, setIsEstimateInfoOpen] = React.useState(false);
     const [isAbsurdOpen, setIsAbsurdOpen] = React.useState(false);
     // The record the inline form is pre-filled from, when a dose row was clicked
-    // in candle view ("record this again"). Null leaves the form at its defaults
+    // in the order book ("record this again"). Null leaves the form at its defaults
     // for a plain new dose. Bumped key remounts the form so its fields take the
     // prefill (its state initialises once, at mount).
     const [repeatFrom, setRepeatFrom] = React.useState<DoseEvent | null>(null);
@@ -167,7 +131,7 @@ const Home: React.FC<HomeProps> = ({
     const doseAdvisory = React.useMemo(() => getDoseAdvisory(events), [events]);
     const hormoneAdvisory = React.useMemo(() => getHormoneLevelAdvisory(labResults), [labResults]);
     // Only the compounds the model simulates reach the chart; an anti-androgen
-    // record keeps its row in the timeline below without adding a curve or an axis.
+    // record keeps its row in the order book without adding a curve or an axis.
     const chartEvents = React.useMemo(() => modelledEvents(events), [events]);
     // The chart and the "have you calibrated" nudge only read hormone labs; a
     // monitoring-only record carries a placeholder 0/pg-mL and would be plotted as
@@ -194,17 +158,15 @@ const Home: React.FC<HomeProps> = ({
         }
     }, [absurd]);
     // Anti-androgens are recorded, not modelled, so their "current concentration"
-    // is structurally zero. What the column shows is derived from the records
+    // is structurally zero. What the strip shows is derived from the records
     // instead: the drug the user actually logs, and either today's mg or the time
-    // since the last dose — see antiandrogenReading. Cumulative CPA grams, the
-    // figure the ≥10 g monitoring notice quotes, is one of the settings rather
-    // than the only reading.
+    // since the last dose — see antiandrogenReading.
     const antiandrogen = React.useMemo(
         () => antiandrogenReading(events, nowMs / 3_600_000, aaChartMode),
         [events, nowMs, aaChartMode],
     );
-    // Names the drug the reading is about. 'none' keeps the column's old CPA
-    // heading, and 'grams' is CPA by definition; the rest carry their own compound.
+    // Names the drug the reading is about. 'none' keeps the old CPA heading, and
+    // 'grams' is CPA by definition; the rest carry their own compound.
     const aaHeading = antiandrogen.kind === 'grams'
         ? t('ester.CPA')
         : antiandrogen.kind === 'none'
@@ -215,39 +177,36 @@ const Home: React.FC<HomeProps> = ({
     const mgDecimals = (v: number) => (Number.isInteger(v) ? 0 : Number.isInteger(v * 10) ? 1 : 2);
     const nowSec = nowMs / 1000;
 
-    // The two columns share one size. Sized independently, a nine-glyph estradiol
-    // (stepped down hard) beside a five-glyph anti-androgen (still at the display
-    // role) read as two different weights side by side; sizing both against the
-    // longer of the pair makes them the same height whenever either is long.
-    //
-    // Only the paired *numeric* readings take part — estradiol (or the transmasc
-    // testosterone pair) and the anti-androgen's grams/mg. A relative-time
-    // anti-androgen ("2 天前") is words, not digits, and renders as a small line;
-    // a lone numeric column (an em dash, or the AA headline) is its own length.
-    // E2 and the transmasc nmol/L show a decimal place only when the setting asks
-    // (whole numbers by default); everything that sizes or measures the reading
-    // uses `primaryDecimals`, so "8" and "8.8" are each laid out for what is drawn.
-    const primaryDecimals = readingDecimals ? 1 : 0;
-    const primaryChars = (isTransmasc ? currentT.toFixed(0) : currentLevel.toFixed(primaryDecimals)).length;
-    const aaChars = antiandrogen.kind === 'grams'
-        ? antiandrogen.grams.toFixed(2).length
-        : antiandrogen.kind === 'dose'
-            ? antiandrogen.mgToday.toFixed(mgDecimals(antiandrogen.mgToday)).length
-            : null;
-    const pairedChars = aaChars != null ? Math.max(primaryChars, aaChars) : null;
-    // Transmasc shows the same reading twice (ng/dL and nmol/L); both are numeric,
-    // so they too share the longer count rather than drifting apart.
-    const tPairChars = Math.max(currentT.toFixed(0).length, (currentT / 28.842).toFixed(primaryDecimals).length);
+    // The medication plan, read on-device and checked against the doses on record.
+    // This is what drives the overdue badge and the quick-record entries generated
+    // for plans the user's own saved templates do not already cover. Recomputed when
+    // the log or the clock moves; a plan edited in settings re-reads on the next visit.
+    const [showOverdue, setShowOverdue] = React.useState(false);
+    const planState = React.useMemo(() => {
+        const plans = readMedPlans();
+        if (plans.length === 0) return { overdue: false, statuses: [] as PlanStatus[], entries: [] };
+        const tz = new Date().getTimezoneOffset();
+        const refs = events.map(e => ({ ester: e.ester, route: e.route, timeH: e.timeH }));
+        const statuses = planStatuses(plans, refs, nowMs, tz);
+        const covered = new Set(doseTemplates.map(d => `${d.ester}:${d.route}`));
+        return {
+            overdue: statuses.some(s => s.overdue),
+            statuses,
+            entries: planQuickEntries(plans, covered, t('plan.quick_suffix')),
+        };
+    }, [events, nowMs, doseTemplates, t]);
 
-    // The candle terminal's compact price header. Same two readings, same
-    // calculators as the card, just laid out as a strip above the chart rather
-    // than a full card: the model's current estimate in the theme's accent colour
-    // (like a market price), the anti-androgen in plain on-surface (it is not a
-    // concentration and has no curve to be coloured by). Each is a labelled
+    // E2 and the transmasc testosterone reading show a decimal place only when the
+    // setting asks (whole numbers by default).
+    const primaryDecimals = readingDecimals ? 1 : 0;
+
+    // The compact price strip. The model's current estimate in the theme's accent
+    // colour (like a market price), the anti-androgen in plain on-surface (it is not
+    // a concentration and has no curve to be coloured by). Each is a labelled
     // value-plus-unit pair.
     const pricePair = isTransmasc
-        ? { label: t('label.total_t'), value: currentT.toFixed(0), unit: 'ng/dl', tinted: true }
-        : { label: t('label.e2'), value: currentLevel.toFixed(primaryDecimals), unit: 'pg/ml', tinted: true };
+        ? { label: t('label.total_t'), value: currentT.toFixed(0), unit: 'ng/dl' }
+        : { label: t('label.e2'), value: currentLevel.toFixed(primaryDecimals), unit: 'pg/ml' };
     const aaPair = {
         label: aaHeading,
         value: antiandrogen.kind === 'grams' ? antiandrogen.grams.toFixed(2)
@@ -255,86 +214,13 @@ const Home: React.FC<HomeProps> = ({
                 : antiandrogen.kind === 'since' ? formatRelative(nowSec - antiandrogen.sinceH * 3600, nowSec, t)
                     : '--',
         unit: antiandrogen.kind === 'grams' ? 'g' : antiandrogen.kind === 'dose' ? 'mg' : '',
-        tinted: false,
     };
-
-    // The vial shows the current estimate — the number printed beside it: the
-    // drawing is a second reading of one value, not a summary of two.
-    //
-    // Which placement is live is a viewport fact, and the two placements differ
-    // structurally (a grid column of its own vs. a flex sibling inside the reading's
-    // own row), so it is resolved in JS rather than by `sm:` classes. Same shape as
-    // BloodVial's reduced-motion reader: state seeded from the live query, kept
-    // current by a listener.
-    //
-    //  - Narrow viewports stand it in the gap BETWEEN the two readings, as the
-    //    middle column of the readings grid: on a 375px phone the number and its
-    //    unit already fill the half-column, so an in-column vial gets pushed down
-    //    onto its own line under the digits, which read as the vial sinking.
-    //  - From `sm` it stands beside the estradiol reading again, inside the
-    //    reading's own row — and on its own centred line when the reading is too
-    //    long to share (`vialDrops`), dropped 14px off the unit's line.
-    //
-    // Both placements hang from the *label* line, not the digits': the tube is tall
-    // (103px against a 16px label). The glass mouth is RIM_Y of the canvas' 18-unit
-    // width down from the top, scaled by the drawn width so it tracks VIAL_SIZE.
-    //  - Middle column: the item is `self-start` against the label's own 16px line,
-    //    whose centre is 8px down, so raising the canvas by mouth-minus-8 puts the
-    //    mouth at the label's centre.
-    //  - In-column: it hangs inside the number row, which sits a fixed 24px below
-    //    the label top (the label's 16px line plus its `mb-2`), so the offset is
-    //    mouth plus 16 — constant across number sizes, because the label-to-row gap
-    //    is: the label does not grow with the reading.
-    const [isNarrow, setIsNarrow] = useState(
-        () => typeof window !== 'undefined' && window.matchMedia('(max-width: 639.98px)').matches,
-    );
-    useEffect(() => {
-        const mq = window.matchMedia('(max-width: 639.98px)');
-        const onChange = () => setIsNarrow(mq.matches);
-        mq.addEventListener('change', onChange);
-        return () => mq.removeEventListener('change', onChange);
-    }, []);
-
-    const vialOffset = 8 - VIAL_SIZE * (CANVAS.RIM_Y / CANVAS.W);
-    const vialInlineOffset = -(VIAL_SIZE * (6 / 18) + 16);
-    // Five characters is "1234.5" — the widest reading that still fits the lane
-    // beside the vial at the display role, which is why it is the line between
-    // "sits as it always did" and "moves things" in the in-column placement.
-    const vialDrops = (isTransmasc ? currentT.toFixed(0) : currentLevel.toFixed(primaryDecimals)).length > 5;
-    // Drawn only when there is a reading to draw. A record whose estimate has since
-    // fallen to zero shows "--" in the column; the vial measures that same value, so
-    // it must not sit there implying something to read. (An empty `events`/labs
-    // already hides it; this also covers records that are all long past.)
-    const vialReading = isTransmasc ? currentT : currentLevel;
-    const drawVial = vialReading > 0 && (events.length > 0 || hormoneLabs.length > 0);
-    // Middle-gap placement. The layout box is the tube's own width (`w-4`) — the
-    // drawn canvas is 18 units wide but the tube only 10, and the empty spill
-    // overhangs the readings instead of charging them space.
-    const vial = drawVial && isNarrow ? (
-        <span className="flex w-4 justify-center self-start" style={{ marginTop: `${vialOffset}px` }}>
-            <BloodVial level={vialReading} mode={isTransmasc ? 'transmasc' : 'transfem'} size={VIAL_SIZE} />
-        </span>
-    ) : null;
-    // In-column placement. `justify-normal` keeps it right after the reading; a
-    // dropped one centres itself under the digits.
-    const vialInline = drawVial && !isNarrow ? (
-        <span
-            className={`flex shrink-0 self-start ${vialDrops ? 'w-full justify-center' : 'justify-normal'}`}
-            style={{ marginTop: `${vialInlineOffset + (vialDrops ? 14 : 0)}px` }}
-        >
-            <BloodVial level={vialReading} mode={isTransmasc ? 'transmasc' : 'transfem'} size={VIAL_SIZE} />
-        </span>
-    ) : null;
 
     const on = "text-[var(--color-m3-on-surface)] ";
     const muted = "text-[var(--color-m3-on-surface-variant)] ";
-    const dim = "text-[var(--color-m3-on-surface-variant)] opacity-35 ";
 
     return (
-        // Wider in candle view: the three-pane terminal (chart | order book |
-        // record) needs the room, and the card's 1040px was leaving the two side
-        // panes cramped. The line view keeps the narrow reading column.
-        <div className={`mx-auto w-full px-4 sm:px-6 md:px-8 ${chartStyle !== 'line' ? 'max-w-[1400px]' : 'max-w-[1040px]'}`}>
+        <div className="mx-auto w-full max-w-[1400px] px-4 sm:px-6 md:px-8">
             <EstimateInfoModal isOpen={isEstimateInfoOpen} onClose={() => setIsEstimateInfoOpen(false)} />
             <NoticeModal
                 isOpen={isAbsurdOpen}
@@ -343,15 +229,13 @@ const Home: React.FC<HomeProps> = ({
                 bodyKey="modal.absurd.body"
                 icon={<Icon icon={AlertTriangle} weight="Filled" size={28} className="text-[var(--color-m3-vial-warn)]" />}
             />
+            <OverdueModal statuses={planState.statuses} isOpen={showOverdue} onClose={() => setShowOverdue(false)} t={t} />
 
-            <header className={isCandle ? 'pt-5 pb-4' : 'pt-8 pb-6'}>
-                {isCandle ? (
-                /* The terminal's price strip. No card: the candle view is a chart
-                   with the current estimate as its "last price" — the modelled
-                   hormone in the theme's accent colour, the anti-androgen in plain
-                   on-surface (it is a record, not a concentration on the curve).
-                   Sits above the chart the way a market header sits above its
-                   candles, and keeps the share / quick-add actions to its right. */
+            <header className="pt-5 pb-4">
+                {/* The terminal's price strip. No card: the overview is a chart with
+                    the current estimate as its "last price". Sits above the chart the
+                    way a market header sits above its candles, and keeps the share /
+                    quick-add actions to its right. */}
                 <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
                     <div className="flex flex-wrap items-end gap-x-8 gap-y-2">
                         <div className="min-w-0">
@@ -361,6 +245,7 @@ const Home: React.FC<HomeProps> = ({
                                 <span className={`text-sm lowercase ${muted}`}>{pricePair.unit}</span>
                             </p>
                         </div>
+                        {!hideAA && (
                         <div className="min-w-0">
                             <p className={`text-xs font-semibold ${muted}`}>{aaPair.label}</p>
                             <p className="flex items-baseline gap-1.5 leading-none">
@@ -368,6 +253,7 @@ const Home: React.FC<HomeProps> = ({
                                 {aaPair.unit && <span className={`text-sm lowercase ${muted}`}>{aaPair.unit}</span>}
                             </p>
                         </div>
+                        )}
                     </div>
                     <div className="flex items-center gap-3">
                         <Tooltip label={t('status.read_me')}>
@@ -402,211 +288,24 @@ const Home: React.FC<HomeProps> = ({
                             templates={doseTemplates}
                             onAddEvent={onAddEvent}
                             onRemoveEvent={onRemoveEvent}
+                            planTemplates={planState.entries}
+                            overdue={planState.overdue}
+                            onOverdueClick={() => setShowOverdue(true)}
                         />
                     </div>
-                    {/* The advisories stay in candle view too — a "doses running
+                    {/* The advisories stay in the terminal too — a "doses running
                         high" notice must not be lost just because the layout
                         changed. They sit under the price strip, full width. */}
                     <div className="w-full">
                         <DoseAdvisoryNotice advisory={doseAdvisory} hormoneAdvisory={hormoneAdvisory} showCalibrate={showCalibrate} onCalibrate={onNavigateToLab} t={t} />
                     </div>
                 </div>
-                ) : (
-                <div className="m3-card mb-2">
-                {/* Title row */}
-                <div className="flex items-center justify-between mb-5">
-                    <div className="flex items-center gap-1.5">
-                        <h1 className="m3-card-title">{t('status.estimate')}</h1>
-                        <Tooltip label={t('status.read_me')}>
-                            <button
-                                onClick={() => setIsEstimateInfoOpen(true)}
-                                className={`${muted} hover:text-[var(--color-m3-on-surface)] `}
-                                aria-label={t('status.read_me')}
-                            >
-                                <Icon icon={Info} size={13} />
-                            </button>
-                        </Tooltip>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        {currentStatus && (
-                            <span className={`hidden sm:inline text-xs font-medium ${currentStatus.color}`}>
-                                {t(currentStatus.label)}
-                            </span>
-                        )}
-                        <button
-                            type="button"
-                            disabled={!events.length}
-                            aria-label={shareCopy.action}
-                            onClick={() => {
-                                if (!authToken) {
-                                    onAuthRequired();
-                                    return;
-                                }
-                                onNavigateToShare();
-                            }}
-                            className={`${muted} inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium hover:text-[var(--color-m3-on-surface)] hover:bg-[var(--color-m3-surface-container)]   disabled:cursor-not-allowed disabled:opacity-40`}
-                            title={events.length ? shareCopy.modalDescription : shareCopy.noData}
-                        >
-                            <Icon icon={Share2} size={14} strokeWidth={1.75} />
-                            {/* Same as the quick-add control beside it: the word is what
-                                overflows a 390px card, so it waits for `sm`. */}
-                            <span className="hidden sm:inline">{shareCopy.action}</span>
-                        </button>
-                        {/* The card's corner slot. It reads as the card's own action here
-                            rather than as a page control, which is what it is — it adds to
-                            the same readings the card is showing. */}
-                        <HomeQuickAdd
-                            templates={doseTemplates}
-                            onAddEvent={onAddEvent}
-                            onRemoveEvent={onRemoveEvent}
-                        />
-                    </div>
-                </div>
-
-                {/* Blood level grid — two readings, each centred in its own half. On a
-                    narrow viewport the vial takes a middle grid column between them
-                    (`grid-cols-[1fr_auto_1fr]`; without it the plain two-column grid
-                    keeps the pair's gap from doubling); from `sm` it lives inside the
-                    first reading's row again, so the grid is two columns. The container
-                    stays narrow (max-w-xl) and centred: stretched across the card, the
-                    two numbers sit ~700px apart on a desktop and stop reading as a pair. */}
-                <div className={`mx-auto grid w-full gap-x-1.5 gap-y-4 text-center sm:gap-x-8 sm:gap-y-8 ${vial ? 'grid-cols-[1fr_auto_1fr]' : 'grid-cols-2'} ${isTransmasc ? 'max-w-md' : 'max-w-xl'}`}>
-                    {isTransmasc ? (
-                        <>
-                            <div className="min-w-0">
-                                <p className={`text-xs font-semibold ${muted} mb-2`}>
-                                    {t('label.total_t')} <span className="opacity-60">(ng/dL)</span>
-                                </p>
-                                {isNarrow ? (
-                                    <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1 [--reading-lane:146px]">
-                                        {currentT > 0 ? (
-                                            <Reading value={currentT} decimals={0} unit="ng/dl" className={on} muted={muted} sprayable chars={tPairChars} />
-                                        ) : (
-                                            <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className="flex min-w-0 flex-wrap items-start justify-center gap-x-2 gap-y-1 [--reading-lane:272px]">
-                                        <span className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
-                                            {currentT > 0 ? (
-                                                <Reading value={currentT} decimals={0} unit="ng/dl" className={on} muted={muted} sprayable chars={tPairChars} />
-                                            ) : (
-                                                <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
-                                            )}
-                                        </span>
-                                        {vialInline}
-                                    </div>
-                                )}
-                            </div>
-                            {vial}
-                            <div className="min-w-0">
-                                <p className={`text-xs font-semibold ${muted} mb-2`}>
-                                    {t('label.total_t')} <span className="opacity-60">(nmol/L)</span>
-                                </p>
-                                <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1 [--reading-lane:146px] sm:[--reading-lane:272px]">
-                                    {currentT > 0 ? (
-                                        <Reading value={currentT / 28.842} decimals={primaryDecimals} unit="nmol/l" className={on} muted={muted} chars={tPairChars} />
-                                    ) : (
-                                        <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
-                                    )}
-                                </div>
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            <div className="min-w-0">
-                                <p className={`text-xs font-semibold ${muted} mb-2`}>{t('label.e2')}</p>
-                                {isNarrow ? (
-                                    <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1 [--reading-lane:146px]">
-                                        {currentLevel > 0 ? (
-                                            <Reading value={currentLevel} decimals={primaryDecimals} unit="pg/ml" className={on} muted={muted} sprayable chars={pairedChars ?? undefined} />
-                                        ) : (
-                                            <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
-                                        )}
-                                    </div>
-                                ) : (
-                                    /* `leading-none` on the number is what makes "the top of
-                                        the number" a real edge for the hanging vial: at the
-                                        shared 1.4 line-height the box top sat a few px above
-                                        the ink, and the vial had nothing precise to hang from. */
-                                    <div className="flex min-w-0 flex-wrap items-start justify-center gap-x-2 gap-y-1 [--reading-lane:272px]">
-                                        <span className="flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1">
-                                            {currentLevel > 0 ? (
-                                                <Reading value={currentLevel} decimals={primaryDecimals} unit="pg/ml" className={on} muted={muted} sprayable chars={pairedChars ?? undefined} />
-                                            ) : (
-                                                <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
-                                            )}
-                                        </span>
-                                        {vialInline}
-                                    </div>
-                                )}
-                            </div>
-                            {vial}
-                            <div className="min-w-0">
-                                <p className={`text-xs font-semibold ${muted} mb-2`}>{aaHeading}</p>
-                                <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-1.5 gap-y-1 [--reading-lane:146px] sm:[--reading-lane:272px]">
-                                    {antiandrogen.kind === 'grams' && (
-                                        // Cumulative grams, not a concentration: CPA has no
-                                        // curve, and the monitoring notice quotes the same
-                                        // figure against the ≥10 g threshold. Two decimals
-                                        // because a 12.5 mg tablet is 0.0125 g — and the
-                                        // figure only ever grows, so a few years of records
-                                        // reaches five figures and would have run off the card.
-                                        <Reading value={antiandrogen.grams} decimals={2} unit="g" className={on} muted={muted} sprayable chars={pairedChars ?? undefined} />
-                                    )}
-                                    {antiandrogen.kind === 'dose' && (
-                                        // Today's total, the reading the daily-dosed
-                                        // anti-androgens use and CPA uses on a dose day.
-                                        <Reading value={antiandrogen.mgToday} decimals={mgDecimals(antiandrogen.mgToday)} unit="mg" className={on} muted={muted} sprayable chars={pairedChars ?? undefined} />
-                                    )}
-                                    {antiandrogen.kind === 'since' && (() => {
-                                        // How long ago the last dose was — the honest reading
-                                        // for a drug taken every few days, where a mg count
-                                        // says nothing. The number keeps the display role the
-                                        // other readings use; only its words ("天前") drop to
-                                        // the small muted unit size, exactly as "pg/ml" does
-                                        // beside the estradiol number. "刚刚" has no number,
-                                        // so it renders small on its own.
-                                        const parts = formatRelativeParts(nowSec - antiandrogen.sinceH * 3600, nowSec, t);
-                                        if (!parts) {
-                                            return <span className={`text-xs lowercase ${muted}`}>{t('time.just_now')}</span>;
-                                        }
-                                        return (
-                                            <>
-                                                <span
-                                                    className={`leading-none tabular-nums ${on}`}
-                                                    style={{ fontSize: `min(var(--md-sys-typescale-display-large-size), calc(var(--reading-lane) / ${parts.value.length} / 0.5))` }}
-                                                >{parts.value}</span>
-                                                <span className={`text-xs lowercase ${muted}`}>{parts.unit}</span>
-                                            </>
-                                        );
-                                    })()}
-                                    {antiandrogen.kind === 'none' && (
-                                        // E2's placeholder is `text-m3-display-large
-                                        // leading-none ${dim}`; this one matches it now. The
-                                        // old cumulative reading used a smaller size and the
-                                        // *muted text* role, so the two dashes read as different
-                                        // states rather than as the same absence.
-                                        <span className={`text-m3-display-large leading-none ${dim}`}>--</span>
-                                    )}
-                                </div>
-                            </div>
-                        </>
-                    )}
-                </div>
-
-                <div className="mt-3">
-                    <DoseAdvisoryNotice advisory={doseAdvisory} hormoneAdvisory={hormoneAdvisory} showCalibrate={showCalibrate} onCalibrate={onNavigateToLab} t={t} />
-                </div>
-                </div>
-                )}
             </header>
 
-            {/* The chart column keeps its reading width; on a wide desktop the
-                dose heatmap takes the space left over beside it rather than
-                letting it sit empty, and drops underneath when there isn't any.
-                Only widened once there's data — the empty state centres itself
-                on this container and should stay in the narrow column. */}
+            {/* The three-pane terminal: chart | order book | record. Stretch so the
+                three panes end together; stacked below `lg`, where the form is gone
+                (recording happens on the History page on a phone). Only widened once
+                there's data — the empty state centres itself in the narrow column. */}
             <main className="w-full pb-24">
                 {events.length === 0 ? (
                     <div className="m3-card flex flex-col items-center justify-center text-center !py-20">
@@ -620,52 +319,8 @@ const Home: React.FC<HomeProps> = ({
                         </button>
                     </div>
                 ) : (
-                    (() => {
-                        // Candle view is the terminal layout: chart | order book |
-                        // record. Line view keeps its simpler chart | grid pair.
-                        // The inline record form is prefilled from `repeatFrom` when
-                        // a dose row was clicked ("record this again") — its `formSeq`
-                        // key remounts it so the fields pick up that prefill.
-                        const inlineForm = (
-                            // Only from lg: on a phone the terminal is chart + order
-                            // book, and recording happens on the History page. The
-                            // card stretches so its footer sits level with the other
-                            // two panes.
-                            <div className="m3-card hidden min-w-0 p-4 lg:flex lg:flex-[2] lg:min-w-[17rem] lg:flex-col">
-                                <DoseForm
-                                    key={`${repeatFrom?.id ?? 'new'}-${formSeq}`}
-                                    eventToEdit={repeatFrom}
-                                    addMode={!!repeatFrom}
-                                    hideTime
-                                    hideTemplates
-                                    onSave={(e) => onAddEvent(e as DoseEvent)}
-                                    onCancel={() => { setRepeatFrom(null); setFormSeq(s => s + 1); }}
-                                    onDelete={() => {}}
-                                    templates={doseTemplates}
-                                    onSaveTemplate={onSaveTemplate}
-                                    onDeleteTemplate={onDeleteTemplate}
-                                    quickDoses={quickDoses}
-                                    onAddQuickDose={onAddQuickDose}
-                                    onDeleteQuickDose={onDeleteQuickDose}
-                                    isInline
-                                    accentSubmit
-                                    events={events}
-                                    activeEngine={activeEngine}
-                                />
-                            </div>
-                        );
-                        const sidePanel = isCandle ? (
-                            <DoseOrderBook
-                                events={events}
-                                onRepeat={(e) => { setRepeatFrom(e); setFormSeq(s => s + 1); }}
-                                // Shrinks first when the row is tight, so a desktop
-                                // stays a row instead of collapsing.
-                                className="min-w-0 lg:flex-[2] lg:min-w-[9rem]"
-                            />
-                        ) : showHeatmap ? (
-                            <DoseHeatmap events={events} className="min-w-0 2xl:flex-[2] 2xl:min-w-[16rem]" />
-                        ) : null;
-                        const chart = (
+                    <div className="flex flex-col gap-6 lg:flex-row lg:items-stretch">
+                        <div className="min-w-0 lg:flex-[4]">
                             <ResultChart
                                 sim={simulation}
                                 events={chartEvents}
@@ -673,36 +328,112 @@ const Home: React.FC<HomeProps> = ({
                                 labResults={hormoneLabs}
                                 calibrationFn={calibrationFn}
                                 isDarkMode={isDarkMode}
+                                // The chart is the personalization: the line curve by
+                                // default, candles on request. The layout around it is
+                                // the same either way.
                                 chartStyle={chartStyle}
-                                // Tall unless the grid sits beside it. In candle view
-                                // the pane beside it is tall, so the chart grows to
-                                // meet it rather than stopping short.
-                                tall={!sidePanel || isCandle}
+                                tall
                             />
-                        );
-                        if (isCandle) {
-                            return (
-                                // Row from lg up (stretched so the three panes end
-                                // together); stacked below lg, where the form is gone.
-                                <div className="flex flex-col gap-6 lg:flex-row lg:items-stretch">
-                                    <div className="min-w-0 lg:flex-[4]">{chart}</div>
-                                    {sidePanel}
-                                    {inlineForm}
-                                </div>
-                            );
-                        }
-                        return sidePanel ? (
-                            <div className="flex flex-col gap-8 2xl:flex-row 2xl:items-start 2xl:gap-6">
-                                <div className="min-w-0 2xl:flex-[3]">{chart}</div>
-                                {sidePanel}
-                            </div>
-                        ) : (
-                            <div className="min-w-0">{chart}</div>
-                        );
-                    })()
+                        </div>
+                        <DoseOrderBook
+                            events={events}
+                            dosePeaks={dosePeaks}
+                            onRepeat={(e) => { setRepeatFrom(e); setFormSeq(s => s + 1); }}
+                            // Shrinks first when the row is tight, so a desktop
+                            // stays a row instead of collapsing.
+                            className="min-w-0 lg:flex-[2] lg:min-w-[9rem]"
+                        />
+                        <div className="m3-card hidden min-w-0 p-4 lg:flex lg:flex-[2] lg:min-w-[17rem] lg:flex-col">
+                            <DoseForm
+                                key={`${repeatFrom?.id ?? 'new'}-${formSeq}`}
+                                eventToEdit={repeatFrom}
+                                addMode={!!repeatFrom}
+                                hideTime
+                                hideTemplates
+                                onSave={(e) => onAddEvent(e as DoseEvent)}
+                                onCancel={() => { setRepeatFrom(null); setFormSeq(s => s + 1); }}
+                                onDelete={() => {}}
+                                templates={doseTemplates}
+                                onSaveTemplate={onSaveTemplate}
+                                onDeleteTemplate={onDeleteTemplate}
+                                quickDoses={quickDoses}
+                                onAddQuickDose={onAddQuickDose}
+                                onDeleteQuickDose={onDeleteQuickDose}
+                                isInline
+                                accentSubmit
+                                events={events}
+                                activeEngine={activeEngine}
+                            />
+                        </div>
+                    </div>
                 )}
             </main>
         </div>
+    );
+};
+
+/**
+ * Today's missed doses, listed from the plan the user wrote.
+ *
+ * The same portal/escape/presence shell `NoticeModal` uses, but with a list rather
+ * than a paragraph: this answers "what am I behind on" with the plans themselves,
+ * each due time the app is still waiting on, and what the user said to take. It
+ * offers no logging of its own — the quick-record button beside the badge is what
+ * clears a dose, and hitting it from the list would be a second path to the same
+ * write with none of the undo the button carries.
+ */
+const OverdueModal: React.FC<{
+    statuses: PlanStatus[];
+    isOpen: boolean;
+    onClose: () => void;
+    t: (key: string) => string;
+}> = ({ statuses, isOpen, onClose, t }) => {
+    useEscape(onClose, isOpen);
+    const { mounted, state } = usePresence(isOpen, 200);
+    const missed = statuses.filter(s => s.overdue);
+
+    if (!mounted) return null;
+
+    const timeOf = (ms: number) => {
+        const d = new Date(ms);
+        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    };
+
+    return createPortal(
+        // Centred on every width, unlike the shared `.modal-overlay` (a bottom sheet
+        // below 768px): this is a short status list with one action, not a sheet, and
+        // a dialog pinned to the bottom edge of a tall phone reads as unanchored. The
+        // inline style overrides the unlayered `.modal-overlay` alignment, which a
+        // Tailwind utility could not (unlayered CSS wins over the utility layer here).
+        <div className="modal-overlay z-[60]" data-state={state} style={{ alignItems: 'center', padding: '1rem' }}>
+            <div className="modal-shell">
+                <div className="modal-card">
+                    <div className="flex justify-center mb-3">
+                        <Icon icon={TriangleWarning} weight="Filled" size={28} className="text-[var(--color-m3-warning)]" />
+                    </div>
+                    <h3 className="modal-title text-center">{t('plan.overdue_title')}</h3>
+                    <div className="text-sm text-[var(--color-m3-on-surface)] space-y-3 mb-5 leading-relaxed text-center">
+                        {missed.length === 0 ? (
+                            <p className="text-[var(--color-m3-on-surface-variant)]">{t('plan.overdue_none')}</p>
+                        ) : missed.map(s => (
+                            <div key={s.plan.id} className="border-b border-[var(--color-m3-outline-variant)] pb-2.5 last:border-b-0 last:pb-0">
+                                <p className="font-medium">
+                                    {s.plan.alias || t(`ester.${s.plan.ester}`)}
+                                    {s.plan.dose ? <span className="text-[var(--color-m3-on-surface-variant)]"> · {s.plan.dose}</span> : null}
+                                </p>
+                                <p className="text-xs text-[var(--color-m3-on-surface-variant)] mt-0.5">
+                                    {t('plan.overdue_missed_at')}: {s.missed.map(timeOf).join(' · ')}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                    <button onClick={onClose} className="btn-primary w-full">
+                        {t('btn.ok')}
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body,
     );
 };
 

@@ -29,6 +29,7 @@ import {
   TemplateService,
   TimelineService,
   PKSimulationService,
+  MedPlanService,
 } from './core.ts';
 import type { AuthContext, ContextDenial } from './types.ts';
 
@@ -470,6 +471,45 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
   );
 
   server.registerTool(
+    'hrt_med_plan_status',
+    {
+      title: 'Medication plan status',
+      description:
+        'The user\'s own medication schedule (用药方案) and whether today\'s doses have kept ' +
+        'up with it: each plan with its due times that have passed with no matching dose ' +
+        'logged, and an `overdue` flag. Use this to answer "did I miss a dose today". ' +
+        'A plan matches a dose by compound and (when the plan names one) route — the alias ' +
+        'is display-only. The plan is the user\'s own schedule, not medical advice; report ' +
+        'what it says and direct any dosing question to the user\'s prescriber.',
+      inputSchema: {},
+    },
+    async () => {
+      const r = await withContext((ctx) => MedPlanService.status(ctx, Date.now()));
+      if ('error' in r) return toolError(r.error);
+      return toolResult(
+        r.value.map((s) => ({
+          esters: {
+            ester: s.plan.ester,
+            route: s.plan.route ?? null,
+            alias: s.plan.alias ?? null,
+          },
+          dose: s.plan.dose,
+          schedule: {
+            mode: s.plan.mode,
+            // For 'times', the day's doses are the first time plus each extra one.
+            first_time: `${String(s.plan.firstHour).padStart(2, '0')}:${String(s.plan.firstMinute).padStart(2, '0')}`,
+            dose_times: (s.plan.doseTimes ?? []).map((t) => `${String(t.hour).padStart(2, '0')}:${String(t.minute).padStart(2, '0')}`),
+            interval_hours: s.plan.intervalHours ?? null,
+            every_days: s.plan.everyDays ?? null,
+          },
+          overdue: s.overdue,
+          missed_times: s.missed,
+        })),
+      );
+    },
+  );
+
+  server.registerTool(
     'hrt_get_settings',
     {
       title: 'Get simulation settings',
@@ -801,6 +841,7 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
             'hrt_list_dose_templates',
             'hrt_predict_levels',
             'hrt_check_advisories',
+            'hrt_med_plan_status',
             'hrt_get_settings',
             'hrt_sync_state',
             'hrt_reference',

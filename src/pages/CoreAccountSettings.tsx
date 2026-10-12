@@ -2,10 +2,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Icon from '../components/Icon';
 import { useTranslation } from '../contexts/LanguageContext';
-import { AlertTriangle, Check, KeyRound, LogOut, RefreshCw, Trash2, Unlink, DevicePhone, DeviceTablet, DeviceDesktop, DeviceBrowser, DeviceAgent } from '../icons';
+import { AlertTriangle, Check, LogOut, RefreshCw, Trash2, Unlink, DevicePhone, DeviceTablet, DeviceDesktop, DeviceBrowser, DeviceAgent } from '../icons';
 import { Progress } from '../components/ui';
 
 import { coreAuth, CoreAuthError, PROVIDER_NAMES, type AccountSummary, type LoginMethods, type OAuthLink, type SessionInfo } from '../services/coreAuth';
+import { getCachedAvatar, refreshCachedAvatar, clearCachedAvatar } from '../utils/avatarCache';
 import type { CoreSession } from '../hooks/useCoreSession';
 import { openExternalUrl } from '../utils/externalLinks';
 import { isNativeApp } from '../utils/platform';
@@ -35,7 +36,7 @@ interface CoreAccountSettingsProps {
   onDeleted: () => void;
 }
 
-type Dialog = null | 'password' | 'rotate' | 'unlink' | 'delete';
+type Dialog = null | 'password' | 'unlink' | 'delete';
 
 /**
  * A date for display, or null when there is not one to show.
@@ -166,6 +167,11 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
   const [methods, setMethods] = useState<LoginMethods | null>(null);
   const [googleAvailable, setGoogleAvailable] = useState(false);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  // The avatar paints with the first render from the device cache — same frame as
+  // the text, no late mount, no flash. See utils/avatarCache.ts.
+  const [avatarDataUrl, setAvatarDataUrl] = useState<string | null>(
+    () => getCachedAvatar(session.user?.username ?? '')?.dataUrl ?? null,
+  );
   // Nothing paints until the first load lands — see the skeleton below.
   const [loaded, setLoaded] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -198,6 +204,18 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
       setMethods(m);
       setGoogleAvailable(offered.google);
       setSessions(d);
+      // The picture: first paint came from the device cache; now revalidate in the
+      // background — an unchanged avatar is answered by the browser's own cache, a
+      // changed one swaps in without blanking. A removed avatar clears the cache.
+      const username = session.user?.username ?? '';
+      if (s.avatarUrl) {
+        void refreshCachedAvatar(username, s.avatarUrl).then((dataUrl) => {
+          if (dataUrl) setAvatarDataUrl(dataUrl);
+        });
+      } else {
+        clearCachedAvatar(username);
+        setAvatarDataUrl(null);
+      }
     } catch {
       // Leave the previous values rather than blanking the page on a transient
       // failure; the next refresh will correct them.
@@ -291,13 +309,6 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
   // as a flicker on every visit.
   if (!loaded) return <AccountSkeleton />;
 
-  // Named once and used twice below. It was called twice inline, which also hid a bug:
-  // the hint names the provider *twice* in one sentence, and `.replace()` rewrites only
-  // the first match — so the line rendered "copied from X … makes no request to
-  // {provider}". Every other `{provider}` substitution in the app already uses
-  // `replaceAll` (see OAuthLanding); this one call site did not.
-  const avatarProvider = summary?.avatarUrl ? linkedProviderName() : null;
-
   return (
     <div className="pt-4 pb-32 min-h-full flex justify-start md:justify-center">
       <div className="mx-auto w-full max-w-[36rem] px-4">
@@ -315,9 +326,9 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
             nothing is drawn: a placeholder beside a one-line "signed in as" would be
             noise, unlike the account page header where it is the identity block. */}
         <div className={`flex items-center gap-2.5 mb-6`}>
-          {summary?.avatarUrl && (
+          {(avatarDataUrl ?? summary?.avatarUrl) && (
             <img
-              src={summary.avatarUrl}
+              src={(avatarDataUrl ?? summary?.avatarUrl) as string}
               alt=""
               className="w-8 h-8 rounded-full object-cover shrink-0"
               onError={(e) => { e.currentTarget.hidden = true; }}
@@ -328,16 +339,6 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
               {t('core.acct.signed_in_as')} <span className="font-medium">{session.user?.username}</span>
               {createdDate ? ` · ${t('core.acct.created').replace('{date}', createdDate)}` : ''}
             </p>
-            {/* One sentence, shown only when there is a picture to explain it, naming
-                the provider it came from. This is the promise the design makes — no
-                request to X or Google on page load — said where a user can see it. The
-                provider name is already stored in `links`, so nothing new is fetched
-                to render this. */}
-            {avatarProvider && (
-              <p className={`text-[11px] mt-0.5 ${muted}`}>
-                {t('core.acct.avatar_hint').replaceAll('{provider}', avatarProvider)}
-              </p>
-            )}
           </div>
         </div>
 
@@ -375,12 +376,6 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
               title={t('core.acct.change_pw')}
               subtitle={t('core.acct.change_pw_sub')}
               onClick={() => setDialog('password')}
-            />
-            <Row
-              icon={<Icon icon={KeyRound} size={17} />}
-              title={t('core.acct.rotate')}
-              subtitle={t('core.acct.rotate_sub')}
-              onClick={() => setDialog('rotate')}
             />
           </div>
         </section>
@@ -434,9 +429,11 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
               )}
             </div>
 
-            <p className={`text-xs mt-2 ${muted}`}>
-              {canDetach('x') ? t('core.acct.unlink_note') : t('core.bind.banner')}
-            </p>
+            {!canDetach('x') && (
+              <p className={`text-xs mt-2 ${muted}`}>
+                {t('core.bind.banner')}
+              </p>
+            )}
           </section>
         )}
 
@@ -475,9 +472,11 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
               )}
             </div>
 
-            <p className={`text-xs mt-2 ${muted}`}>
-              {canDetach('google') ? t('core.acct.unlink_note') : t('core.bind.banner')}
-            </p>
+            {!canDetach('google') && (
+              <p className={`text-xs mt-2 ${muted}`}>
+                {t('core.bind.banner')}
+              </p>
+            )}
           </section>
         )}
 
@@ -586,21 +585,6 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
             await run(async () => {
               await coreAuth.changePassword(token!, current, next);
               setNotice(t('core.acct.notice_pw_changed'));
-            });
-            setDialog(null);
-          }}
-          describeError={describe}
-        />
-      )}
-
-      {dialog === 'rotate' && (
-        <RotateDialog
-          busy={busy}
-          onClose={() => { setDialog(null); setError(null); }}
-          onSubmit={async (password) => {
-            await run(async () => {
-              const r = await coreAuth.rotateDataKey(token!, password);
-              setNotice(t('core.rotate.success').replace('{records}', String(r.records)));
             });
             setDialog(null);
           }}
@@ -812,48 +796,6 @@ const PasswordDialog: React.FC<{
         <Field label={t('core.pw.confirm')} type="password" value={confirm} onChange={setConfirm} />
         {localError && <p className="text-xs text-cos-error" role="alert">{localError}</p>}
         <Submit busy={busy} disabled={!current || next.length < 8}>{t('core.pw.submit')}</Submit>
-      </form>
-    </Dialog>
-  );
-};
-
-/**
- * Rotate the data key.
- *
- * One password field, deliberately: the whole point of the operation is that the
- * server re-encrypts the history under a key the old one no longer matches, and the
- * password is the one credential that proves the person asking is the person the
- * wrapper was minted for. The description says what it does and what it costs —
- * a key rotation that surprises its user is indistinguishable from an outage.
- */
-const RotateDialog: React.FC<{
-  busy: boolean;
-  onClose: () => void;
-  onSubmit: (password: string) => Promise<void>;
-  describeError: (e: unknown) => string;
-}> = ({ busy, onClose, onSubmit, describeError }) => {
-  const { t } = useTranslation();
-  const [password, setPassword] = useState('');
-  const [localError, setLocalError] = useState<string | null>(null);
-
-  return (
-    <Dialog title={t('core.rotate.title')} onClose={onClose}>
-      <form
-        className="space-y-3 mt-1"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setLocalError(null);
-          try {
-            await onSubmit(password);
-          } catch (err) {
-            setLocalError(describeError(err));
-          }
-        }}
-      >
-        <p className="text-xs opacity-70 leading-relaxed">{t('core.rotate.desc')}</p>
-        <Field label={t('core.rotate.password')} type="password" value={password} onChange={setPassword} autoFocus />
-        {localError && <p className="text-xs text-cos-error" role="alert">{localError}</p>}
-        <Submit busy={busy} disabled={!password}>{t('core.rotate.action')}</Submit>
       </form>
     </Dialog>
   );

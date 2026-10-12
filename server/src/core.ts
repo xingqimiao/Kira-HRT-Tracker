@@ -31,6 +31,8 @@ import {
   hormoneLevelAdvisory,
   DEFAULT_PK_PARAMS,
   isT_LabUnit,
+  Ester,
+  Route,
 } from './engine.ts';
 import type { DoseEvent, LabResult, SimulationResult, PKCustomParams, PkEngineId } from './engine.ts';
 import { RecordService } from './records.ts';
@@ -47,6 +49,12 @@ import type { JournalRecord, Result, TemplateRecord } from './domain.ts';
 import { settings } from './settings.ts';
 import { AccountService } from './accounts.ts';
 import type { AuthContext } from './types.ts';
+import {
+  sanitizeMedPlans,
+  planStatuses,
+  type MedPlan,
+  type PlanDoseRef,
+} from '../../src/utils/medPlan.ts';
 
 export type { AuthContext };
 export { hashPassword, verifyPassword, AccountService } from './accounts.ts';
@@ -541,6 +549,70 @@ export const TimelineService = {
         merged.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
         return merged.slice(0, limit);
     },
+};
+
+// ---------------------------------------------------------------------------
+// MedPlanService — the user's own schedule, read as a scalar record
+// ---------------------------------------------------------------------------
+
+/**
+ * The medication plan (用药方案) is the user's own schedule, not advice: what to
+ * take, how much, and when. It travels as a standalone sealed scalar record
+ * (`scalar:medPlan`) that the app pushes, and this service reads it back so an
+ * agent can answer "did today's doses keep up".
+ *
+ * The record is deliberately not absorbed into a `user_settings` column — nothing
+ * server-side needs it to run a prediction, and the same record shape is what the
+ * app already holds. The overdue computation is the app's own (`planStatuses`),
+ * reused rather than reimplemented, so the badge on the quick-record button and
+ * what an agent sees cannot disagree.
+ */
+export type MedPlanStatus = {
+  plan: MedPlan;
+  /** Due times today (ISO 8601) with no matching dose taken at or after them. */
+  missed: string[];
+  /** True when at least one due time has passed unmatched. */
+  overdue: boolean;
+};
+
+export const MedPlanService = {
+  /** The stored plan, sanitised. Empty when the account never pushed one. */
+  async read(ctx: AuthContext): Promise<MedPlan[]> {
+    const record = await RecordService.get(ctx, 'scalar:medPlan').catch(() => null);
+    const value = (record?.data as { value?: unknown } | null)?.value;
+    return sanitizeMedPlans(value);
+  },
+
+  /**
+   * Today's status for every enabled plan.
+   *
+   * Doses are read newest-first; a single generous page bounds the query and any
+   * real daily count fits well inside it. `nowMs` is passed in so the day boundary
+   * is the caller's, and each plan's own saved UTC offset places its midnight where
+   * the user's is (a plan made on a device in CST is due 08:00 CST wherever the
+   * server sits).
+   */
+  async status(ctx: AuthContext, nowMs: number): Promise<MedPlanStatus[]> {
+    const plans = await MedPlanService.read(ctx);
+    if (plans.length === 0) return [];
+    const { records } = await MedicationService.list(ctx, { limit: 500 });
+    const doses: PlanDoseRef[] = records.map((r) => ({
+      ester: r.data.ester as Ester,
+      route: r.data.route as Route,
+      timeH: r.data.timeH,
+    }));
+    const out: MedPlanStatus[] = [];
+    for (const plan of plans) {
+      const [status] = planStatuses([plan], doses, nowMs, plan.tzOffsetMinutes ?? 0);
+      if (!status) continue;
+      out.push({
+        plan,
+        missed: status.missed.map((ms) => new Date(ms).toISOString()),
+        overdue: status.overdue,
+      });
+    }
+    return out;
+  },
 };
 
 // ---------------------------------------------------------------------------

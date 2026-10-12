@@ -115,29 +115,84 @@ const PACK: LangPack = {
     "core.acct.labs": "検査結果",
     "core.acct.signin_methods": "ログイン方法",
     "core.acct.active": "有効",
+    "plan.title": "服薬スケジュール",
+
+    "plan.hint": "服薬スケジュールを設定。遅れはクイック記録ボタンで知らせます。",
+
+    "plan.web_enable": "ブラウザ通知を有効にする",
+
+    "plan.web_on": "ブラウザ通知は有効です",
+
+    "plan.enable": "通知を有効にする",
+
+    "plan.on": "通知は有効です",
+
+    "plan.empty": "スケジュールはまだありません。下から追加してください。",
+
+    "plan.remove": "削除",
+
+    "plan.sum.times": "1日 {n} 回 · {gap}時間間隔 · {time} から",
+
+    "plan.sum.hours": "{h}時間ごと · {time} から",
+
+    "plan.sum.days": "{d}日ごと · {time}",
+
+    "plan.mode.times": "1日 N 回",
+
+    "plan.mode.hours": "x時間ごと",
+
+    "plan.mode.days": "x日ごと",
+
+    "plan.add_drug": "薬",
+
+    "plan.add_route": "投与経路",
+
+    "plan.add_alias": "別名(任意)",
+
+    "plan.add_alias_ph": "例:朝の注射",
+
+    "plan.add_dose": "用量",
+
+    "plan.add_mode": "リマインダー方式",
+
+    "plan.add_interval": "間隔(時間)",
+
+    "plan.add_every": "間隔(日)",
+
+    "plan.add_dose_n": "{n} 回目",
+
+    "plan.add_dose_add": "もう一剤追加",
+
+    "plan.from_template": "保存済みテンプレートから読み込む",
+
+    "plan.add_first": "最初の服用",
+
+    "plan.add_submit": "追加",
+
+    "plan.overdue_title": "本日の飲み忘れ",
+
+    "plan.overdue_none": "今日の飲み忘れはありません。",
+
+    "plan.overdue_missed_at": "予定",
+
+    "plan.badge_hint": "予定時刻を過ぎた服薬があります — タップで確認",
+
+    "plan.quick_suffix": "・プラン",
+
     "core.acct.change_pw": "パスワードを変更",
 
-    "core.acct.rotate": "データキーをローテーション",
 
-    "core.acct.rotate_sub": "新しいキーですべての記録を再暗号化し、漏えいした古いキーを無効化します",
 
-    "core.rotate.title": "データキーをローテーション",
 
-    "core.rotate.desc": "新しいデータキーを生成し、すべての記録を再暗号化します。漏えいした古いキーは無効になります。パスワードはログイン時と同様、今回のみ確認します。",
 
-    "core.rotate.password": "パスワードの確認",
 
-    "core.rotate.action": "ローテーション",
 
-    "core.rotate.success": "ローテーション完了:{records} 件の記録を再暗号化しました",
     "core.acct.change_pw_sub": "記録は新しいパスワードで再びロックされます。すべてを再暗号化するわけではないので、安全で短時間で完了します。",
     "core.acct.x_section": "X",
     "core.acct.connect": "{provider} アカウントを連携",
     "core.acct.connect_sub": "任意です。ログイン時の本人確認に使われます。記録を保存するには、アカウント名とパスワードも必要です。",
     "core.acct.linked": "連携済み：{date}",
     "core.acct.linked_used": "連携済み：{date} · 最終使用 {last}",
-    "core.acct.avatar_hint": "プロフィール画像はログイン時に {provider} から複製して本サービスに保存したものです。このページを開いても {provider} への通信は発生しません。",
-    "core.acct.unlink_note": "連携を解除してもログインできなくなったりしません。アカウントには常にパスワードが残るので、{provider} を失うのはボタンがひとつ減るだけであり、データを失うわけではありません。",
     "core.acct.delete_section": "削除",
     "core.acct.delete": "このアカウントを削除",
     "core.acct.delete_sub": "{doses} 件の投薬記録、{labs} 件の検査結果、その他すべてが削除されます。元に戻せません。",
@@ -289,6 +344,8 @@ const PACK: LangPack = {
     "mode.transfem": "女性化 HRT",
     "mode.transmasc": "男性化 HRT",
     "settings.hrt_mode": "HRT モード",
+
+    "settings.hrt_mode_hint": "アプリが使うホルモンモード。選べる薬と表示される数値が変わります。",
     "field.dose_t": "等価テストステロン用量 (mg)",
     "ester.T": "テストステロン",
     "ester.TC": "シピオン酸テストステロン",
@@ -884,6 +941,8 @@ const PACK: LangPack = {
     "settings.aa_display.today": "今日の用量",
     "settings.aa_display.since": "前回服用からの経過",
     "settings.aa_display.cumulative": "累計量",
+
+    "settings.aa_display.none": "非表示",
     "export.btn_csv": "CSV ファイルをエクスポート",
     "export.btn_pdf": "PDF ファイルをエクスポート",
     "export.btn_copy_json": "JSON をコピー",

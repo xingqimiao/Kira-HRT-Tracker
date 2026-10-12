@@ -60,29 +60,84 @@ const PACK: LangPack = {
     "core.acct.labs": "Lab results",
     "core.acct.signin_methods": "Sign-in methods",
     "core.acct.active": "Active",
+    "plan.title": "Medication plan",
+
+    "plan.hint": "Set your dose schedule; overdue doses are flagged on the quick-record button.",
+
+    "plan.web_enable": "Enable browser notifications",
+
+    "plan.web_on": "Browser notifications are on",
+
+    "plan.enable": "Enable notifications",
+
+    "plan.on": "Notifications are on",
+
+    "plan.empty": "No plans yet — add one below.",
+
+    "plan.remove": "Remove",
+
+    "plan.sum.times": "{n}×/day · every {gap}h · from {time}",
+
+    "plan.sum.hours": "every {h}h · from {time}",
+
+    "plan.sum.days": "every {d} days · {time}",
+
+    "plan.mode.times": "N per day",
+
+    "plan.mode.hours": "Every x hours",
+
+    "plan.mode.days": "Every x days",
+
+    "plan.add_drug": "Drug",
+
+    "plan.add_route": "Route",
+
+    "plan.add_alias": "Alias (optional)",
+
+    "plan.add_alias_ph": "e.g. my morning shot",
+
+    "plan.add_dose": "Dose",
+
+    "plan.add_mode": "Schedule",
+
+    "plan.add_interval": "Interval (hours)",
+
+    "plan.add_every": "Interval (days)",
+
+    "plan.add_dose_n": "Dose {n}",
+
+    "plan.add_dose_add": "Add another dose",
+
+    "plan.from_template": "Import from a saved template",
+
+    "plan.add_first": "First dose",
+
+    "plan.add_submit": "Add plan",
+
+    "plan.overdue_title": "Today's missed doses",
+
+    "plan.overdue_none": "Nothing missed today.",
+
+    "plan.overdue_missed_at": "Due",
+
+    "plan.badge_hint": "Some planned doses are due — tap to see them",
+
+    "plan.quick_suffix": "·Plan",
+
     "core.acct.change_pw": "Change password",
 
-    "core.acct.rotate": "Rotate data key",
 
-    "core.acct.rotate_sub": "Re-encrypt all records under a fresh key, invalidating any leaked copy of the old one",
 
-    "core.rotate.title": "Rotate data key",
 
-    "core.rotate.desc": "Generates a new data key and re-encrypts every record, so any copy of the old key that leaked becomes useless. Your password is verified once, as at sign-in.",
 
-    "core.rotate.password": "Confirm password",
 
-    "core.rotate.action": "Rotate",
 
-    "core.rotate.success": "Rotated: {records} records re-encrypted",
     "core.acct.change_pw_sub": "Your records are re-locked under the new password. Nothing is re-encrypted from scratch, so this is safe and quick.",
     "core.acct.x_section": "X",
     "core.acct.connect": "Connect {provider}",
     "core.acct.connect_sub": "Optional. It confirms who you are when you sign in. To store records you also need an account name and password.",
     "core.acct.linked": "Linked {date}",
     "core.acct.linked_used": "Linked {date} · last used {last}",
-    "core.acct.avatar_hint": "Your picture was copied from {provider} at sign-in and is stored on this service, so opening this page makes no request to {provider}.",
-    "core.acct.unlink_note": "Unlinking never locks you out: an account always keeps a password, so losing {provider} costs a button, not your data.",
     "core.acct.delete_section": "Delete",
     "core.acct.delete": "Delete this account",
     "core.acct.delete_sub": "Removes {doses} dose record(s), {labs} lab result(s) and everything else. Not reversible.",
@@ -161,6 +216,8 @@ const PACK: LangPack = {
     "mode.transfem": "Feminizing HRT",
     "mode.transmasc": "Masculinizing HRT",
     "settings.hrt_mode": "HRT Mode",
+
+    "settings.hrt_mode_hint": "Which mode the app runs in — it changes which drugs are available and which readings are shown.",
     "field.dose_t": "Equivalent T dose (mg)",
     "ester.T": "Testosterone",
     "ester.TC": "Testosterone Cypionate",
@@ -818,6 +875,8 @@ const PACK: LangPack = {
     "settings.aa_display.today": "Today's dose",
     "settings.aa_display.since": "Time since last dose",
     "settings.aa_display.cumulative": "Cumulative total",
+
+    "settings.aa_display.none": "Hide",
     "backup.auto_saved": "Auto-backed up to cloud",
     "onboarding.privacy_title_1": "Privacy protection is rooted in",
     "onboarding.privacy_title_highlight": "KiraEqual and Kira Tracker",

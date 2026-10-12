@@ -103,7 +103,7 @@ Config file locations, for reference: `claude_desktop_config.json` (Claude Deskt
 
 ## The tools
 
-Nineteen, grouped by what they touch. Every one is described for an agent to choose from,
+Twenty, grouped by what they touch. Every one is described for an agent to choose from,
 and `hrt_reference` exists so an agent can learn the vocabulary — and the whole surface,
 because it returns its own catalogue — before writing anything.
 
@@ -126,6 +126,7 @@ unbounded history.
 | `hrt_list_dose_templates` | `limit?, before?` | Saved dose templates — the shapes the app offers as one-tap buttons |
 | `hrt_predict_levels` | `analyte?, from_days?, to_days?, points?, with_calibration?` | A downsampled modelled curve plus peak, trough and current level |
 | `hrt_check_advisories` | — | Any dosage advisory the app would show |
+| `hrt_med_plan_status` | — | The user's own medication schedule and whether today's doses have kept up — the plans, and any due time with no matching dose logged. The plan is the user's schedule, not medical advice. |
 | `hrt_get_settings` | — | Body weight, mode, calibration, PK overrides, and the app's opaque `appState` |
 | `hrt_sync_state` | — | The full record state in one call. This is the whole export (~76 KB) and can be truncated by the result budget — read history with the paginated tools above instead. |
 | `hrt_reference` | — | Routes, esters, units, parameter ranges, and the tool catalogue. Static: it reads no records, so it needs no key at all. |
