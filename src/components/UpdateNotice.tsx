@@ -107,13 +107,17 @@ const NativeUpdateCard: React.FC<{
 }> = ({ update, open, onDismiss }) => {
     const { t } = useTranslation();
     const [entered, setEntered] = useState(false);
+    // The changelog can be long; the card lists a few and folds the rest behind a
+    // toggle. The toggle is the point — an earlier revision printed a "+N more" line
+    // with no way to see them, which reads as the app hiding what it is about to do.
+    const [expanded, setExpanded] = useState(false);
     // The hand-off to the system installer is a native, multi-second job (download,
     // then a prompt), so the card reflects each phase instead of closing on the tap
     // and looking like the tap did nothing.
     const [phase, setPhase] = useState<UpdatePhase>('idle');
     const [pct, setPct] = useState(0);
     useEffect(() => {
-        if (!open) { setEntered(false); return; }
+        if (!open) { setEntered(false); setExpanded(false); return; }
         const id = requestAnimationFrame(() => setEntered(true));
         return () => cancelAnimationFrame(id);
     }, [open]);
@@ -139,8 +143,10 @@ const NativeUpdateCard: React.FC<{
                 ? t('update.retry')
                 : t('update.download');
 
-    const notes = update.notes.slice(0, MAX_NOTES);
-    const extra = update.notes.length - notes.length;
+    const allNotes = update.notes;
+    const hasMore = allNotes.length > MAX_NOTES;
+    const notes = expanded || !hasMore ? allNotes : allNotes.slice(0, MAX_NOTES);
+    const hidden = allNotes.length - notes.length;
 
     return createPortal(
         <div
@@ -186,8 +192,17 @@ const NativeUpdateCard: React.FC<{
                                 <span className="min-w-0">{note}</span>
                             </li>
                         ))}
-                        {extra > 0 && <li className="ps-3 opacity-70">{t('update.more').replace('{n}', String(extra))}</li>}
                     </ul>
+                )}
+                {(phase === 'idle') && hasMore && (
+                    <button
+                        type="button"
+                        onClick={() => setExpanded(v => !v)}
+                        aria-expanded={expanded}
+                        className="mt-2 ps-1 text-xs font-medium text-[var(--color-m3-primary)] transition-colors hover:underline"
+                    >
+                        {expanded ? t('update.less') : t('update.more').replace('{n}', String(hidden))}
+                    </button>
                 )}
 
                 {phase === 'permission' && (

@@ -227,6 +227,7 @@ const PACK: LangPack = {
     "update.perm_hint": "이 앱에 '알 수 없는 앱 설치'를 허용한 뒤 다시 시도하세요.",
     "update.failed": "업데이트에 실패했습니다. 다시 시도해 주세요.",
     "update.more": "+{n}개 더",
+    "update.less": "접기",
     "update.native_ready": "Android {version} 업데이트가 있습니다",
     "update.later": "나중에",
     "settings.check_updates.title": "Android 업데이트 확인",

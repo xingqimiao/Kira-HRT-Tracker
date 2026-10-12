@@ -227,6 +227,7 @@ const PACK: LangPack = {
     "update.perm_hint": "このアプリに「不明なアプリのインストール」を許可してから再試行してください。",
     "update.failed": "更新に失敗しました。もう一度お試しください。",
     "update.more": "他 {n} 件",
+    "update.less": "折りたたむ",
     "update.native_ready": "Android {version} の更新があります",
     "update.later": "後で",
     "settings.check_updates.title": "Android の更新を確認",

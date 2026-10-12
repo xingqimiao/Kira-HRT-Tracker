@@ -877,6 +877,7 @@ const PACK: LangPack = {
     "update.perm_hint": "請允許本應用「安裝未知應用」，然後重試。",
     "update.failed": "更新失敗，請稍後重試。",
     "update.more": "還有 {n} 項",
+    "update.less": "收起",
     "update.native_ready": "發現 Android {version} 更新",
     "update.later": "稍後",
     "settings.check_updates.title": "檢查 Android 更新",

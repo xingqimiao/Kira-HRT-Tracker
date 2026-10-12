@@ -172,6 +172,7 @@ const PACK: LangPack = {
     "update.perm_hint": "Bu uygulamaya 'bilinmeyen uygulamaları yükleme' iznini verin, sonra yeniden deneyin.",
     "update.failed": "Güncelleme başarısız. Lütfen tekrar deneyin.",
     "update.more": "+{n} tane daha",
+    "update.less": "Daha az göster",
     "update.native_ready": "Android {version} güncellemesi hazır",
     "update.later": "Sonra",
     "settings.check_updates.title": "Android güncellemelerini kontrol et",

@@ -172,6 +172,7 @@ const PACK: LangPack = {
     "update.perm_hint": "Allow this app to install unknown apps, then retry.",
     "update.failed": "Update failed. Please try again.",
     "update.more": "+{n} more",
+    "update.less": "Show less",
     "update.native_ready": "Android update {version} is ready",
     "update.later": "Later",
     "settings.check_updates.title": "Check for Android updates",
