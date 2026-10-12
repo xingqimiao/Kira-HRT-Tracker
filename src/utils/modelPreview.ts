@@ -196,6 +196,165 @@ export function sampleModelCurve(m: CalibrationMethod): Pt[] {
 }
 
 // ---------------------------------------------------------------------------
+// History-mode animation (retrospective vs forward)
+// ---------------------------------------------------------------------------
+//
+// Ported from the reference "應用於歷史・回顧 vs 前向" animation: one fixed scenario
+// with a day pointer that sweeps forward, and at each new lab the two modes show the
+// difference the words struggle to — *what a new lab does to the curve already drawn*.
+// Retrospective re-shapes the whole past (the line behind the pointer bends); forward
+// freezes it (locks appear on the settled points) and moves only what comes after.
+// The concept is what matters here, so this is the reference's own dataset, not the
+// user's — the model cards above already carry the user's real curve.
+
+const H_DAYS = 42;
+/** The day span the history sweep covers — the component scales its progress by this. */
+export const HISTORY_SWEEP_DAYS = H_DAYS;
+const H_P = 7;
+const H_KA = 1.5;
+const H_YMAX = 2.2;
+const H = { l: 10, r: 8, t: 24, b: 14 };
+
+const hNormCache: Record<string, number> = {};
+function hNorm(k: number): number {
+    const q = k.toFixed(3);
+    if (hNormCache[q]) return hNormCache[q];
+    let m = 0;
+    for (let x = 0; x < 25; x += 0.1) m = Math.max(m, Math.exp(-k * x) - Math.exp(-H_KA * x));
+    return (hNormCache[q] = m);
+}
+function hConc(t: number, A: number, k: number): number {
+    let s = 0;
+    for (let j = 0; j * H_P <= t; j++) {
+        const x = t - j * H_P;
+        s += Math.exp(-k * x) - Math.exp(-H_KA * x);
+    }
+    return A * s / hNorm(k);
+}
+const hTruth = (d: number) => hConc(d, 1, 0.22);
+
+const H_D2 = [4, 10, 22, 29, 36];
+const H_N2 = [0.06, -0.05, 0.04, -0.04, 0.05];
+const H_DOTS = H_D2.map((d, i) => ({ t: d, y: hTruth(d) * (1 + H_N2[i]) }));
+// The schedule a learning model walks through as labs accumulate.
+const H_S = [{ A: .65, k: .42 }, { A: .82, k: .42 }, { A: .95, k: .42 }, { A: 1, k: .25 }, { A: 1, k: .23 }, { A: 1, k: .22 }];
+
+function hStateAt(day: number): { A: number; k: number } {
+    let n = 0;
+    while (n < H_DOTS.length && H_DOTS[n].t <= day) n++;
+    if (!n) return H_S[0];
+    const p = sm(Math.min(1, (day - H_DOTS[n - 1].t) / 1.6));
+    const a = H_S[Math.min(n - 1, H_S.length - 1)];
+    const b = H_S[Math.min(n, H_S.length - 1)];
+    return { A: lerp(a.A, b.A, p), k: lerp(a.k, b.k, p) };
+}
+
+/**
+ * One frame of a history-mode card. `day` is the sweep position in [0, H_DAYS]; `mode`
+ * picks the behaviour: `retrospective` re-draws the past each time a lab lands,
+ * `forward` leaves it behind a lock and only redraws ahead of the pointer.
+ */
+export function drawHistoryFrame(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    day: number,
+    mode: CalibrationHistoryMode,
+    colors: Colors,
+    seed = 0,
+): void {
+    const iw = Math.max(1, w - H.l - H.r);
+    const ih = Math.max(1, h - H.t - H.b);
+    const X = (d: number) => H.l + (Math.max(0, Math.min(H_DAYS, d)) / H_DAYS) * iw;
+    const Y = (v: number) => H.t + ih * (1 - Math.max(0, Math.min(v, H_YMAX)) / H_YMAX);
+    const dayClamped = Math.max(0, Math.min(H_DAYS, day));
+
+    const curve = (f: (d: number) => number, d0 = 0, d1 = H_DAYS): Pt[] => {
+        const o: Pt[] = [];
+        for (let d = d0; d < d1; d += 0.6) o.push({ x: X(d), y: Y(f(d)) });
+        o.push({ x: X(d1), y: Y(f(d1)) });
+        return o;
+    };
+
+    // Frame: axes, the day pointer, and the population ("truth") curve.
+    stroke(ctx, [{ x: H.l, y: H.t - 6 }, { x: H.l, y: H.t + ih }, { x: H.l + iw, y: H.t + ih }], colors.ink, 2, 0.9, 0.8, undefined, seed);
+    stroke(ctx, [{ x: X(dayClamped), y: H.t }, { x: X(dayClamped), y: H.t + ih }], colors.muted, 1.5, 0.9, 0.6, [4, 6], seed);
+    stroke(ctx, curve(hTruth), colors.ink, 1.8, 0.4, 0.5, [6, 5], seed);
+
+    const alpha = (v: number, a: number) => Math.max(0, Math.min(1, v)) * a;
+
+    if (mode === 'retrospective') {
+        let n = 0;
+        while (n < H_DOTS.length && H_DOTS[n].t <= dayClamped) n++;
+        const cur = H_S[Math.min(n, H_S.length - 1)];
+        const prev = H_S[Math.max(0, n - 1)];
+        const td = n ? H_DOTS[n - 1].t : 0;
+        const age = dayClamped - td;
+        const dist = (d: number) => Math.max(0, td - d) / H_DAYS * 5;
+        const f = (d: number): number => {
+            if (!n) return hConc(d, prev.A, prev.k);
+            const p = sm(Math.max(0, Math.min(1, (age * 1.2 - dist(d)) / 1.2)));
+            return lerp(hConc(d, prev.A, prev.k), hConc(d, cur.A, cur.k), p);
+        };
+        // The fit being replaced, fading as the new one sweeps back over it.
+        if (n && age < 5) stroke(ctx, curve((d) => hConc(d, prev.A, prev.k), 0, td), colors.muted, 2, alpha(0.6, 1 - age / 5), 0.6, [3, 5], seed);
+        stroke(ctx, curve(f, 0, dayClamped), colors.accent, 3.4, 1, 1, undefined, seed);
+        stroke(ctx, curve(f, dayClamped, H_DAYS), colors.accent, 2, 0.45, 0.8, [5, 6], seed);
+        // The reach of the re-estimate: a left-pointing marker back along the past.
+        const df = td - (age * 1.2 - 0.6) * H_DAYS / 5;
+        if (n && df > 0 && df < td) {
+            stroke(ctx, [{ x: X(df) + 5, y: Y(f(df)) - 16 - 5 }, { x: X(df) - 5, y: Y(f(df)) - 16 }, { x: X(df) + 5, y: Y(f(df)) - 16 + 5 }, { x: X(df) + 5, y: Y(f(df)) - 16 - 5 }], colors.accent, 2.2, 0.9, 0.4, undefined, seed);
+        }
+        H_DOTS.forEach((o) => { if (o.t <= dayClamped) bloodDrop(ctx, X(o.t), Y(o.y), 5, colors.drop, colors.ink); });
+    } else {
+        const trail = (d: number): number => { const s = hStateAt(d); return hConc(d, s.A, s.k); };
+        const sn = hStateAt(dayClamped);
+        stroke(ctx, curve(trail, 0, dayClamped), colors.accent, 3.4, 1, 1, undefined, seed);
+        stroke(ctx, curve((d) => hConc(d, sn.A, sn.k), dayClamped, H_DAYS), colors.accent, 2, 0.45, 0.8, [5, 6], seed);
+        H_DOTS.forEach((o) => {
+            if (o.t <= dayClamped) {
+                bloodDrop(ctx, X(o.t), Y(o.y), 5, colors.drop, colors.ink);
+                // A settled point: the past is decided and will not be rewritten.
+                if (dayClamped - o.t > 1.6) padlock(ctx, X(o.t), Y(trail(o.t)) - 12, colors.accent, 0.85);
+            }
+        });
+        if (dayClamped > 0.5) {
+            const x = X(dayClamped) + 10, y = Y(trail(dayClamped)) - 16;
+            stroke(ctx, [{ x: x + 5, y: y - 5 }, { x: x - 5, y: y }, { x: x + 5, y: y + 5 }, { x: x + 5, y: y - 5 }], colors.accent, 2.2, 0.9, 0.4, undefined, seed);
+        }
+    }
+}
+
+/** Blood-drop marker drawn directly in pixel space. */
+function bloodDrop(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, col: string, ink: string, alpha = 1): void {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = col;
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(x, y - s * 1.7);
+    ctx.bezierCurveTo(x + s * .3, y - s * .8, x + s, y - s * .5, x + s, y + s * .2);
+    ctx.arc(x, y + s * .2, s, 0, Math.PI);
+    ctx.bezierCurveTo(x - s, y - s * .5, x - s * .3, y - s * .8, x, y - s * 1.7);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+}
+
+/** A small padlock — "this point is settled". */
+function padlock(ctx: CanvasRenderingContext2D, x: number, y: number, col: string, alpha: number): void {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = col;
+    ctx.fillRect(x - 4, y - 1, 8, 6);
+    ctx.restore();
+    const arc: Pt[] = [];
+    for (let i = 0; i <= 6; i++) { const t = Math.PI * i / 6; arc.push({ x: x - 3 * Math.cos(t), y: y - 1 - 4 * Math.sin(t) }); }
+    stroke(ctx, arc, col, 1.8, alpha, 0.2);
+}
+
+// ---------------------------------------------------------------------------
 // Drawing
 // ---------------------------------------------------------------------------
 
@@ -253,11 +412,11 @@ function cross(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, c
 }
 
 /**
- * Draw one frame.
+ * Draw one frame of a model card, at its finished state (`t = 1`).
  *
- * `t` is the play progress in [0,1]: the population curve is always faint, the model
- * curve is revealed left-to-right up to `t`, and each lab drops in as the reveal passes
- * it — so selecting a card plays the model "learning" from the observations.
+ * The population curve is faint and dashed under it; the model's own fitted curve is the
+ * solid accent line; each lab is a blood drop, and one the fit clearly fights gets an ×.
+ * OU-Kalman shades its recent two-week window, EKF shows its uncertainty band.
  */
 export function drawPreview(
     ctx: CanvasRenderingContext2D,
@@ -285,10 +444,10 @@ export function drawPreview(
     // Population curve — always visible, faint and dashed.
     stroke(ctx, data.base.map(toPx), colors.muted, 1.6, method === 'off' ? 0.35 : 0.6, 0.6, [5, 5], seed);
 
-    // OU-Kalman highlights its recent (2-week) window.
+    // OU-Kalman highlights its recent (2-week) window, up to the model's own end.
     if (method === 'ou_kalman') {
-        const x0 = X(Math.max(data.t0, revealDay - 14));
-        const x1 = X(revealDay);
+        const x0 = X(Math.max(data.t0, data.t1 - 14));
+        const x1 = X(data.t1);
         ctx.save();
         ctx.globalAlpha = 0.1;
         ctx.fillStyle = colors.accent;
@@ -332,8 +491,16 @@ export function drawPreview(
     });
 }
 
+/** The CSS variable that carries a model's identity hue. */
+export const MODEL_COLOR_VAR: Record<CalibrationMethod, string> = {
+    off: '--color-m3-model-off',
+    mipd: '--color-m3-model-mipd',
+    ekf: '--color-m3-model-ekf',
+    ou_kalman: '--color-m3-model-ou',
+};
+
 /** Read the theme's canvas colours from CSS custom properties, with sane fallbacks. */
-export function readColors(el: HTMLElement): Colors {
+export function readColors(el: HTMLElement, method: CalibrationMethod): Colors {
     const css = (name: string, fallback: string): string => {
         const v = getComputedStyle(el).getPropertyValue(name).trim();
         return v || fallback;
@@ -341,7 +508,7 @@ export function readColors(el: HTMLElement): Colors {
     return {
         ink: css('--color-m3-on-surface', '#e8e8ee'),
         muted: css('--color-m3-on-surface-variant', '#9a9aa6'),
-        accent: css('--color-m3-primary', '#c25570'),
+        accent: css(MODEL_COLOR_VAR[method], css('--color-m3-primary', '#c25570')),
         drop: css('--color-m3-error', '#e5484d'),
     };
 }

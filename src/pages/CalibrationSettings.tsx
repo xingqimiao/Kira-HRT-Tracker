@@ -1,12 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Icon from '../components/Icon';
-import { ArrowLeft, Check, Minus, CircleOff, Gauge, Radar, Wind, Rewind, FastForward } from '../icons';
-import type { IconComponent } from '../icons';
+import { ArrowLeft, Check, Minus } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { CalibrationMethod, CalibrationHistoryMode, CalibrationResult, type DoseEvent, type LabResult, type SimulationResult } from '../../logic';
 import ModelPreviewCanvas from '../components/ModelPreviewCanvas';
 import {
-    applyFactor, buildRealData, buildSampleData, sampleModelCurve,
+    applyFactor, buildRealData, buildSampleData, sampleModelCurve, MODEL_COLOR_VAR,
     type PreviewData, type Pt,
 } from '../utils/modelPreview';
 
@@ -32,7 +31,6 @@ const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
 
 interface MethodDef {
     value: CalibrationMethod;
-    icon: IconComponent;
     recommended?: boolean;
     pros: string[];
     cons: string[];
@@ -43,49 +41,44 @@ interface MethodDef {
 // Hybrid-MIPD Bayesian fit), reimplemented over this engine's two identifiable
 // parameters: a personal amplitude and a personal clearance.
 const METHODS: MethodDef[] = [
-    { value: 'off', icon: CircleOff, pros: ['cal.off.pro.1'], cons: ['cal.off.con.1'] },
-    { value: 'mipd', icon: Gauge, recommended: true, pros: ['cal.mipd.pro.1', 'cal.mipd.pro.2'], cons: ['cal.mipd.con.1'] },
-    { value: 'ekf', icon: Radar, pros: ['cal.ekf.pro.1', 'cal.ekf.pro.2'], cons: ['cal.ekf.con.1'] },
-    { value: 'ou_kalman', icon: Wind, pros: ['cal.ou_kalman.pro.1', 'cal.ou_kalman.pro.2'], cons: ['cal.ou_kalman.con.1'] },
+    { value: 'off', pros: ['cal.off.pro.1'], cons: ['cal.off.con.1'] },
+    { value: 'mipd', recommended: true, pros: ['cal.mipd.pro.1', 'cal.mipd.pro.2'], cons: ['cal.mipd.con.1'] },
+    { value: 'ekf', pros: ['cal.ekf.pro.1', 'cal.ekf.pro.2'], cons: ['cal.ekf.con.1'] },
+    { value: 'ou_kalman', pros: ['cal.ou_kalman.pro.1', 'cal.ou_kalman.pro.2'], cons: ['cal.ou_kalman.con.1'] },
 ];
 
 // Only EKF and MIPD fit a personal clearance; OU-Kalman corrects amplitude only.
 const fitsClearance = (m: CalibrationMethod) => m === 'ekf' || m === 'mipd';
 
-const HISTORY_MODES: { value: CalibrationHistoryMode; icon: IconComponent }[] = [
-    { value: 'retrospective', icon: Rewind },
-    { value: 'forward', icon: FastForward },
+const HISTORY_MODES: { value: CalibrationHistoryMode }[] = [
+    { value: 'retrospective' },
+    { value: 'forward' },
 ];
 
-// Shared selectable card (icon + title + radio) used for both the estimator
-// methods and the history modes so the two lists render identically.
+// Shared selectable card (title + radio) used for both the estimator methods
+// and the history modes so the two lists render identically.
 const OptionCard: React.FC<{
     selected: boolean;
-    icon: IconComponent;
     title: string;
+    /** The model's identity hue — the name and radio take it, so a card reads as
+     *  *that* model before the small preview is even looked at. */
+    accent?: string;
     badge?: string;
     onClick: () => void;
     children?: React.ReactNode;
-}> = ({ selected, icon, title, badge, onClick, children }) => (
+}> = ({ selected, title, accent, badge, onClick, children }) => (
     <button
         onClick={onClick}
         className="w-full text-start rounded-2xl border p-4 outline-none focus:outline-none focus-visible:outline-none transition-colors"
         style={{
-            borderColor: selected ? 'var(--color-m3-primary)' : 'var(--color-m3-outline-variant)',
-            background: selected ? 'color-mix(in srgb, var(--color-m3-primary) 6%, transparent)' : 'transparent',
+            borderColor: selected ? (accent ?? 'var(--color-m3-primary)') : 'var(--color-m3-outline-variant)',
+            background: selected ? `color-mix(in srgb, ${accent ?? 'var(--color-m3-primary)'} 6%, transparent)` : 'transparent',
         }}
     >
         <div className="flex items-start gap-3">
-            <div
-                className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center"
-                style={{ background: 'color-mix(in srgb, var(--color-m3-primary) 10%, transparent)' }}
-            >
-                <Icon icon={icon} size={17} className="text-[var(--color-m3-primary)]" />
-            </div>
-
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                    <span className={`text-m3-body-medium ${selected ? `font-semibold ${on}` : on}`}>{title}</span>
+                    <span className={`text-m3-body-medium ${on}`} style={{ fontWeight: 700, ...(accent ? { color: accent } : {}) }}>{title}</span>
                     {badge && (
                         <span className="m3-text-2xs font-medium px-1.5 py-0.5 rounded-full text-[var(--color-m3-primary)]  border border-[var(--color-m3-primary)]/30">
                             {badge}
@@ -98,58 +91,55 @@ const OptionCard: React.FC<{
             {/* Radio */}
             <span
                 className="shrink-0 mt-0.5 w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center"
-                style={{ borderColor: selected ? 'var(--color-m3-primary)' : 'var(--color-m3-outline)' }}
+                style={{ borderColor: selected ? (accent ?? 'var(--color-m3-primary)') : 'var(--color-m3-outline)' }}
             >
-                {selected && <span className="w-2.5 h-2.5 rounded-full bg-[var(--color-m3-primary)]" />}
+                {selected && <span className="w-2.5 h-2.5 rounded-full" style={{ background: accent ?? 'var(--color-m3-primary)' }} />}
             </span>
         </div>
     </button>
 );
 
 /**
- * The curves each card shows, computed lazily.
+ * Every card's own curve.
  *
- * The selected card's curve is free (its `calibration` is already on the page). Any
- * other card is only computed once it has been visited, and one at a time in an effect
- * so the selecting tap paints first — the EKF fit is about a second of work, and doing
- * it during render would freeze the tap. Until a card's curve exists it shows the
- * population curve and the labs, which is still a truthful "what you have".
+ * Each card shows *its own model's* fitted line even when it is not selected, so the
+ * four curves can be compared side by side. That means every card's curve is computed,
+ * not just the selected one — so the fits run one per tick in an effect (the EKF fit is
+ * about a second), letting the page paint before the work lands. Results are cached;
+ * the cache is dropped when the underlying data changes.
  */
 function useCardCurves(
     data: PreviewData,
-    requested: ReadonlySet<string>,
+    keys: readonly string[],
     calibrateFor: CalibrationSettingsProps['calibrateFor'],
-    selectedKey: string,
-    selectedFactor: (timeH: number) => number,
 ): Record<string, Pt[]> {
     const [curves, setCurves] = useState<Record<string, Pt[]>>({});
     const cacheKey = data.source + '|' + data.base.length + '|' + data.labs.length;
 
+    // Reset the cache when the data changes (new account / new labs).
+    const keyRef = useRef(cacheKey);
+    if (keyRef.current !== cacheKey) { keyRef.current = cacheKey; if (Object.keys(curves).length) setCurves({}); }
+
     useEffect(() => {
-        // The sample fallback draws a pure-maths curve, computed in `curveFor`; there is
-        // nothing to fit here, and setting state would loop.
+        // The sample fallback draws pure-maths curves in `curveFor`; nothing to fit.
         if (data.source !== 'real') return;
-        const missing = [...requested].filter((k) => !(k in curves));
+        const missing = keys.filter((k) => !(k in curves));
         if (missing.length === 0) return;
         let cancelled = false;
-        // One per tick: the effect re-runs when `curves` grows, so a heavy fit never
-        // blocks the whole list.
         const key = missing[0];
         const [m, hm] = key.split('|') as [CalibrationMethod, CalibrationHistoryMode];
         const id = window.setTimeout(() => {
             if (cancelled) return;
             try {
-                const fn = key === selectedKey ? selectedFactor : calibrateFor(m, hm).factorFn;
-                setCurves((prev) => ({ ...prev, [key]: applyFactor(data.base, fn) }));
+                setCurves((prev) => ({ ...prev, [key]: applyFactor(data.base, calibrateFor(m, hm).factorFn) }));
             } catch {
                 // A fit that throws simply leaves the card on the population curve.
                 setCurves((prev) => ({ ...prev, [key]: [] }));
             }
         }, 0);
         return () => { cancelled = true; window.clearTimeout(id); };
-        // `cacheKey` stands in for the data; a new account rebuilds the cache.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [requested, curves, cacheKey, calibrateFor, selectedKey]);
+    }, [keys, curves, cacheKey, calibrateFor]);
 
     return curves;
 }
@@ -170,21 +160,26 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({
         [events, labResults, simulation, calibration.points],
     );
 
-    // Which (method, historyMode) curves have been asked for. The one selected now is
-    // added on mount and on every change; the rest accumulate as cards are tapped.
-    const selectedKey = `${method}|${historyMode}`;
-    const [requested, setRequested] = useState<ReadonlySet<string>>(() => new Set([selectedKey]));
-    useEffect(() => {
-        setRequested((prev) => (prev.has(selectedKey) ? prev : new Set(prev).add(selectedKey)));
-    }, [selectedKey]);
+    // Every card shows its own model's curve, so ask for all of them: the four methods
+    // at the current history mode, plus the selected method at both history modes.
+    // Deduped so the selected combination is only fitted once.
+    const keys = useMemo(() => {
+        const set = new Set<string>();
+        for (const m of METHODS) set.add(`${m.value}|${historyMode}`);
+        for (const h of HISTORY_MODES) set.add(`${method}|${h.value}`);
+        return [...set];
+    }, [method, historyMode]);
 
-    const curves = useCardCurves(data, requested, calibrateFor, selectedKey, calibration.factorFn);
+    const curves = useCardCurves(data, keys, calibrateFor);
 
-    /** The curve for one key: instant for the fallback, computed/cached for real data. */
+    /** A model card's curve: instant for the fallback, computed/cached for real data. */
     const curveFor = (m: CalibrationMethod, hm: CalibrationHistoryMode): Pt[] | null => {
         if (data.source === 'sample') return sampleModelCurve(m);
         return curves[`${m}|${hm}`] ?? null;
     };
+
+    /** A model's identity hue as a CSS value, for the card name and border. */
+    const accentOf = (m: CalibrationMethod): string => `var(${MODEL_COLOR_VAR[m]})`;
 
     const stats: { label: string; value: string }[] = showFit
         ? [
@@ -212,39 +207,23 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({
             </div>
 
             <div className="mx-auto w-full px-6 md:px-8 mt-4 max-w-2xl">
-                {/* Method cards. Each carries a small preview that plays while it is the
-                    selected model — see ModelPreviewCanvas. */}
+                {/* Method cards. A title, the one-line description from the reference
+                    table, and the model's own finished curve — nothing else. The long
+                    write-up lives in the details block at the foot of the page. */}
                 <div className="space-y-2.5">
-                    {METHODS.map(({ value, icon, recommended, pros, cons }) => (
+                    {METHODS.map(({ value, recommended }) => (
                         <OptionCard
                             key={value}
                             selected={method === value}
-                            icon={icon}
+                            accent={accentOf(value)}
                             title={t(`cal.${value}`)}
                             badge={recommended ? t('cal.recommended') : undefined}
                             onClick={() => setMethod(value)}
                         >
                             <p className={`text-m3-body-compact leading-snug ${muted} mt-1`}>
-                                {t(`cal.desc.${value}`)}
+                                {t(`cal.short.${value}`)}
                             </p>
-
-                            <ul className="mt-3 space-y-1.5">
-                                {pros.map(k => (
-                                    <li key={k} className="flex items-start gap-2 m3-text-2xs leading-snug">
-                                        <Icon icon={Check} size={13} className="mt-[3px] shrink-0 text-cos-success/80 " />
-                                        <span className={muted}>{t(k)}</span>
-                                    </li>
-                                ))}
-                                {cons.map(k => (
-                                    <li key={k} className="flex items-start gap-2 m3-text-2xs leading-snug">
-                                        <Icon icon={Minus} size={13} className={`mt-[3px] shrink-0 ${muted}`} />
-                                        <span className={muted}>{t(k)}</span>
-                                    </li>
-                                ))}
-                            </ul>
-
                             <ModelPreviewCanvas
-                                active={method === value}
                                 method={value}
                                 data={data}
                                 model={curveFor(value, historyMode)}
@@ -261,23 +240,18 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({
                             {t('cal.history')}
                         </p>
                         <div className="space-y-2.5">
-                            {HISTORY_MODES.map(({ value: hm, icon }) => (
+                            {HISTORY_MODES.map(({ value: hm }) => (
                                 <OptionCard
                                     key={hm}
                                     selected={historyMode === hm}
-                                    icon={icon}
+                                    accent={accentOf(method)}
                                     title={t(`cal.${hm}`)}
                                     onClick={() => setHistoryMode(hm)}
                                 >
                                     <p className={`text-m3-body-compact leading-snug ${muted} mt-1`}>
-                                        {t(`cal.desc.${hm}`)}
+                                        {t(`cal.short.${hm}`)}
                                     </p>
-                                    <ModelPreviewCanvas
-                                        active={historyMode === hm}
-                                        method={method}
-                                        data={data}
-                                        model={curveFor(method, hm)}
-                                    />
+                                    <ModelPreviewCanvas method={method} history={hm} />
                                 </OptionCard>
                             ))}
                         </div>
@@ -298,6 +272,43 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({
                         ))}
                     </div>
                 )}
+
+                {/* The full write-up, kept small and out of the way: the cards above
+                    show only the one-liner, so the reasoning behind each model lives
+                    here rather than crowding the list. */}
+                <div className="mt-10">
+                    <p className={`text-m3-title-small ${muted} mb-3`}>{t('cal.details')}</p>
+                    <div className="space-y-4">
+                        {METHODS.map(({ value, pros, cons }) => (
+                            <div key={value}>
+                                <p className="text-m3-body-compact" style={{ fontWeight: 700, color: accentOf(value) }}>
+                                    {t(`cal.${value}`)}
+                                </p>
+                                <p className={`m3-text-2xs leading-snug ${muted} mt-1`}>{t(`cal.desc.${value}`)}</p>
+                                <ul className="mt-1.5 space-y-1">
+                                    {pros.map(k => (
+                                        <li key={k} className="flex items-start gap-2 m3-text-2xs leading-snug">
+                                            <Icon icon={Check} size={12} className="mt-[3px] shrink-0 text-cos-success/80 " />
+                                            <span className={muted}>{t(k)}</span>
+                                        </li>
+                                    ))}
+                                    {cons.map(k => (
+                                        <li key={k} className="flex items-start gap-2 m3-text-2xs leading-snug">
+                                            <Icon icon={Minus} size={12} className={`mt-[3px] shrink-0 ${muted}`} />
+                                            <span className={muted}>{t(k)}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ))}
+                        {method !== 'off' && (
+                            <div>
+                                <p className={`m3-text-2xs leading-snug mt-4 ${muted}`}>{t('cal.desc.retrospective')}</p>
+                                <p className={`m3-text-2xs leading-snug ${muted}`}>{t('cal.desc.forward')}</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
 
                 {/* Attribution: the learning models mirror those on hrt.transmtf.com. */}
                 <p className={`m3-text-2xs leading-snug ${muted} mt-8`}>

@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict';
 
 const {
-    buildRealData, buildSampleData, sampleModelCurve, applyFactor,
+    buildRealData, buildSampleData, sampleModelCurve, drawHistoryFrame, applyFactor,
 } = await import('../src/utils/modelPreview.ts');
 
 let failed = 0;
@@ -80,6 +80,31 @@ check('applyFactor multiplies the base curve by the model factor', () => {
     assert.deepEqual(doubled.map(p => p.y), [20, 40]);
     const byDay = applyFactor(base, (timeH) => (timeH === 0 ? 1.5 : 1));
     assert.deepEqual(byDay.map(p => p.y), [15, 20]);
+});
+
+check('history frames draw for both modes (stubbed 2D context)', () => {
+    // No canvas in node, so assert the drawing path runs and issues stroke/fill calls for
+    // each history mode across the sweep — the difference between the two is the whole
+    // point of the card, and a throw here is a blank card.
+    function stubCtx() {
+        const n = { stroke: 0, fill: 0, fillRect: 0 };
+        const noop = () => {};
+        return {
+            n,
+            save: noop, restore: noop, beginPath: noop, closePath: noop, moveTo: noop, lineTo: noop,
+            arc: noop, bezierCurveTo: noop,
+            fill() { n.fill++; }, stroke() { n.stroke++; }, fillRect() { n.fillRect++; },
+            setLineDash: noop, setTransform: noop, clearRect: noop,
+            fillStyle: '', strokeStyle: '', lineWidth: 1, lineCap: '', lineJoin: '', globalAlpha: 1,
+        };
+    }
+    const colors = { ink: '#eee', muted: '#999', accent: '#f5a', drop: '#e5484d' };
+    for (const mode of ['retrospective', 'forward']) {
+        const ctx = stubCtx();
+        // Sample a few sweep positions; each must draw without throwing.
+        for (const day of [0, 6, 21, 35, 42]) drawHistoryFrame(ctx, 400, 90, day, mode, colors, 0);
+        assert.ok(ctx.n.stroke > 0, `${mode}: drew strokes`);
+    }
 });
 
 console.log(`\n${failed === 0 ? 'model-preview: all checks passed' : `model-preview: ${failed} failed`}`);

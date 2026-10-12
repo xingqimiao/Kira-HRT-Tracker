@@ -49,6 +49,15 @@
     --color-m3-chart-marker: #16171D;
     --color-m3-chart-lab: #F5D08A;
 
+    /* — Calibration model identity. One hue per estimator so a card's little
+         preview reads as *that* model at a glance rather than four copies of the
+         accent. Deliberately independent of the key colour: these name a model, not
+         the user's theme. Light values live in :root:not(.dark). — */
+    --color-m3-model-off: #A2A4AD;
+    --color-m3-model-mipd: #F5A9B8;
+    --color-m3-model-ekf: #58CFC8;
+    --color-m3-model-ou: #FFB554;
+
     /* — Semantic roles, so no call site has to hard-code a hue. — */
     --color-m3-error: #FFB4AB;
     --color-m3-error-container: #3B1512;
@@ -816,6 +825,11 @@ html {
     --color-m3-chart-faint: #B4B7C0;
     --color-m3-chart-marker: #FFFFFF;
     --color-m3-chart-lab: #A16207;
+
+    --color-m3-model-off: #5C5F69;
+    --color-m3-model-mipd: #A8405A;
+    --color-m3-model-ekf: #0E7C74;
+    --color-m3-model-ou: #9A6410;
 
     --color-m3-error: #B3261E;
     --color-m3-error-container: #FCEAE8;
