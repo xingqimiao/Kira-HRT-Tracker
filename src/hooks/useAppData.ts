@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { DoseEvent, Route, Ester, SimulationResult, runSimulation, interpolateConcentration_E2, interpolateConcentration_T, LabResult, computeCalibration, CalibrationMethod, CalibrationHistoryMode, normalizeCalibrationMethod, AntiandrogenChartMode, normalizeAntiandrogenChartMode, isTestosteroneEster, isAntiandrogen, isT_LabUnit, PKCustomParams, applyPKOverrides, sanitizePKParams, isPlausibleBodyWeightKG,
          RecheckIntervals, normalizeRecheckIntervals,
@@ -630,6 +630,18 @@ export const useAppData = (
         return activeEngine.computeCalibration(simulation, events, weight, labResults, calibrationMethod, calibrationHistoryMode);
     }, [simulation, events, weight, labResults, calibrationMethod, calibrationHistoryMode, activeEngine]);
     const calibrationFn = calibration.factorFn;
+
+    /**
+     * Fit one (method, historyMode) on demand, with the engine in use and the data in
+     * force. The calibration settings page's card previews call this for the models you
+     * are *not* currently on, so a preview uses the same engine and inputs as the real
+     * `calibration` above and cannot disagree with it.
+     */
+    const calibrateFor = useCallback(
+        (m: CalibrationMethod, hm: CalibrationHistoryMode) =>
+            activeEngine.computeCalibration(simulation, events, weight, labResults, m, hm),
+        [simulation, events, weight, labResults, activeEngine],
+    );
 
     /**
      * The peak concentration each recent dose produces on its own.
@@ -1609,6 +1621,7 @@ export const useAppData = (
         pendingMilestone,
         showStreakNotice, dismissStreakNotice,
         calibration,
+        calibrateFor,
         currentLevel,
         currentT,
         currentStatus,
