@@ -45,6 +45,7 @@ before(async () => {
     // `check-records.mjs` rather than something to work around here.
     google: null,
     turnstile: null,
+    fcm: null,
     x: null,
     sessionTtlMinutes: 30,
     rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },

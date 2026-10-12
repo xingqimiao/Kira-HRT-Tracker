@@ -49,6 +49,7 @@ before(async () => {
     // The record store seals every payload; a suite that writes records must carry a
     // key, because the store refuses rather than writing plaintext.
     turnstile: null,
+    fcm: null,
     x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
     google: null,
     sessionTtlMinutes: 30,
@@ -663,6 +664,7 @@ test('the per-IP limiter refuses a burst of sign-in attempts', async () => {
     databaseUrl: '',
     kms: TEST_KMS_CONFIG,
     turnstile: null,
+    fcm: null,
     x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
     google: null,
     sessionTtlMinutes: 30,
@@ -689,6 +691,7 @@ test('the per-IP limiter refuses a burst of sign-in attempts', async () => {
       databaseUrl: '',
       kms: TEST_KMS_CONFIG,
       turnstile: null,
+      fcm: null,
       x: { clientId: X_CLIENT_ID, clientSecret: X_CLIENT_SECRET, redirectUri: X_REDIRECT_URI },
       google: null,
       sessionTtlMinutes: 30,

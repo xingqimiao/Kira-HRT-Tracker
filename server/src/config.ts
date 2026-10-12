@@ -12,6 +12,8 @@
  * than on the first request that needs the value.
  */
 
+import { readFileSync } from 'node:fs';
+
 import { getPool } from './db.ts';
 import { kmsEndpointError, kmsKeyIdError, type KmsConfig } from './kms.ts';
 
@@ -37,6 +39,27 @@ export interface TurnstileConfig {
   secret: string;
   /** Hostnames the widget is served from. Verified against the siteverify reply. */
   hostnames: string[];
+}
+
+/**
+ * Firebase Cloud Messaging, for supplementary push.
+ *
+ * Sending needs a *service account* (a private key), not the client
+ * `google-services.json` — the latter only lets a device obtain a token. The service
+ * account JSON is supplied as `FCM_SERVICE_ACCOUNT_JSON`, either inline or as a path
+ * to the file; keeping it out of the repo and off the command line is the deployer's
+ * job (the deployment loads it via a systemd credential, like `SERVER_DEK_KEY`).
+ */
+export interface FcmConfig {
+  projectId: string;
+  clientEmail: string;
+  privateKey: string;
+  tokenUri: string;
+  /**
+   * How long after a dose is due the scanner waits before treating it as missed and
+   * pushing. A grace window so a dose logged a few minutes late is not nudged.
+   */
+  graceMinutes: number;
 }
 
 export interface Config {
@@ -87,6 +110,8 @@ export interface Config {
   kms: KmsConfig | null;
   /** Human-verification on the register and X-setup entry points. Absent = off. */
   turnstile: TurnstileConfig | null;
+  /** FCM supplementary push. Absent = no push is sent (local notifications still run). */
+  fcm: FcmConfig | null;
   /** Tokens live this long without use. */
   sessionTtlMinutes: number;
   /**
@@ -114,6 +139,16 @@ class ConfigError extends Error {
     super(message);
     this.name = 'ConfigError';
   }
+}
+
+/** Parse a positive integer from the environment, or the fallback when unset. */
+function positiveInt(raw: string | undefined, fallback: number, name: string): number {
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new ConfigError(`${name} must be a positive integer (got ${raw})`);
+  }
+  return value;
 }
 
 /**
@@ -287,20 +322,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new ConfigError('SESSION_TTL_MINUTES must be a positive number');
   }
 
-  const positiveInt = (raw: string | undefined, fallback: number, name: string): number => {
-    if (raw === undefined || raw === '') return fallback;
-    const value = Number(raw);
-    if (!Number.isInteger(value) || value <= 0) {
-      throw new ConfigError(`${name} must be a positive integer (got ${raw})`);
-    }
-    return value;
-  };
-
   const rateLimits: RateLimitConfig = {
     register: positiveInt(env.RATE_LIMIT_REGISTER, 5, 'RATE_LIMIT_REGISTER'),
     login: positiveInt(env.RATE_LIMIT_LOGIN, 10, 'RATE_LIMIT_LOGIN'),
     windowMs: positiveInt(env.RATE_LIMIT_WINDOW_MS, 60_000, 'RATE_LIMIT_WINDOW_MS'),
   };
+
+  // FCM is optional and whole: the service-account JSON (inline or a path to it) is
+  // the one thing required. A malformed/missing file is refused at boot rather than
+  // at the first push, so a deployment either has working push or reports none.
+  const fcm = loadFcm(env);
 
   return {
     publicOrigin,
@@ -313,8 +344,50 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     google,
     kms,
     turnstile,
+    fcm,
     sessionTtlMinutes,
     rateLimits,
+  };
+}
+
+/** Parse the service-account JSON for FCM, or null when push is not configured. */
+function loadFcm(env: NodeJS.ProcessEnv): FcmConfig | null {
+  const raw = env.FCM_SERVICE_ACCOUNT_JSON?.trim();
+  if (!raw) return null;
+  let json = raw;
+  // A value that is a path (starts with `/` or a drive letter) is read from disk;
+  // otherwise it is treated as inline JSON. This lets the deployment pass a file
+  // path without the secret ever appearing in the environment or a command line.
+  if (!raw.startsWith('{')) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      json = readFileSync(raw, 'utf8');
+    } catch (error) {
+      throw new ConfigError(`FCM_SERVICE_ACCOUNT_JSON is not inline JSON and could not be read as a file: ${(error as Error).message}`);
+    }
+  }
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(json) as Record<string, unknown>;
+  } catch {
+    throw new ConfigError('FCM_SERVICE_ACCOUNT_JSON is not valid JSON');
+  }
+  if (parsed.type !== 'service_account') {
+    throw new ConfigError('FCM_SERVICE_ACCOUNT_JSON must be a service account key (type "service_account")');
+  }
+  const projectId = String(parsed.project_id ?? '').trim();
+  const clientEmail = String(parsed.client_email ?? '').trim();
+  const privateKey = String(parsed.private_key ?? '');
+  const tokenUri = String(parsed.token_uri ?? 'https://oauth2.googleapis.com/token').trim();
+  if (!projectId || !clientEmail || !privateKey) {
+    throw new ConfigError('FCM service account is missing project_id, client_email or private_key');
+  }
+  return {
+    projectId,
+    clientEmail,
+    privateKey,
+    tokenUri,
+    graceMinutes: positiveInt(env.FCM_GRACE_MINUTES, 30, 'FCM_GRACE_MINUTES'),
   };
 }
 

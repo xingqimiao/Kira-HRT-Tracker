@@ -574,3 +574,33 @@ BEGIN
     ALTER TABLE records ADD PRIMARY KEY (user_id, id);
   END IF;
 END $$;
+
+-- ---------------------------------------------------------------------------
+-- Push (FCM)
+-- ---------------------------------------------------------------------------
+-- A device's FCM registration token, one row per device. The token is the address
+-- FCM delivers to. It is scoped to the account and removed on sign-out.
+--
+-- PRIMARY KEY (user_id, token): a device that re-registers the same token is a
+-- no-op. Scoping the key by user_id keeps a re-assignment safe.
+CREATE TABLE IF NOT EXISTS device_tokens (
+    user_id     uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token       text NOT NULL,
+    platform    text NOT NULL DEFAULT 'android',
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    updated_at  timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, token)
+);
+CREATE INDEX IF NOT EXISTS idx_device_tokens_user ON device_tokens(user_id);
+
+-- One row per dose instance the server has ALREADY pushed a supplementary reminder
+-- for. Its whole purpose is dedup: the scanner runs on an interval and must not
+-- re-push an instance it already nudged. A dose instance is (user, plan, due time).
+CREATE TABLE IF NOT EXISTS push_log (
+    user_id     uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plan_id     text NOT NULL,
+    due_at      bigint NOT NULL,
+    sent_at     timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, plan_id, due_at)
+);
+CREATE INDEX IF NOT EXISTS idx_push_log_sent ON push_log(sent_at);

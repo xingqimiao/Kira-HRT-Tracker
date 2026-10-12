@@ -41,6 +41,7 @@ before(async () => {
     // and refuses rather than writing plaintext.
     google: null,
     turnstile: null,
+    fcm: null,
     x: null,
     sessionTtlMinutes: 30,
     // High enough that registering the fixture accounts never trips a limit; the

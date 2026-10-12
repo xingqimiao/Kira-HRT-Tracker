@@ -32,6 +32,7 @@ function configWith(turnstile: Config['turnstile']): Config {
     kms: TEST_KMS_CONFIG,
     google: null,
     turnstile,
+    fcm: null,
     x: null,
     sessionTtlMinutes: 30,
     rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },

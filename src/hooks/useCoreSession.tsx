@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import { coreAuth, CoreAuthError } from '../services/coreAuth';
+import { unregisterPush } from '../utils/pushRegister';
 
 /**
  * The Application Core session.
@@ -207,6 +208,10 @@ function useCoreSessionState() {
   const signOut = useCallback(async () => {
     const token = state.token;
     persist(null, null);
+    // Stop this device receiving the account's push nudges — told while the token
+    // is still valid, then FCM's own token is deleted. Fire-and-forget: the local
+    // session is already gone, and a failure must not leave the user stuck.
+    void unregisterPush(token).catch(() => undefined);
     // Revoke server-side too. Fire-and-forget: the local session is already gone,
     // and a failure here must not leave the user stuck in a signed-in UI.
     if (token) await coreAuth.logout(token).catch(() => undefined);

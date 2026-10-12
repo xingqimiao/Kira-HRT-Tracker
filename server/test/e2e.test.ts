@@ -37,6 +37,7 @@ before(async () => {
     databaseUrl: '',
     kms: TEST_KMS_CONFIG,
     turnstile: null,
+    fcm: null,
     x: null,
     google: null,
     sessionTtlMinutes: 30,

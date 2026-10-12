@@ -41,6 +41,62 @@ writeFileSync(gradleBuild, gradleSource.replace('kotlin-gradle-plugin:1.9.25', '
 const activity = resolve(root, '..', 'java', 'com', 'kiramyao', 'hrt', 'MainActivity.kt');
 writeFileSync(activity, readFileSync(resolve(import.meta.dirname, 'MainActivity.kt'), 'utf8'));
 
+// Supplementary push (FCM): the canonical Kotlin service, copied into the gitignored
+// gen/ tree on every build (same pattern as MainActivity.kt). It handles the
+// server's data-only catch-up nudge natively.
+const javaDir = resolve(root, '..', 'java', 'com', 'kiramyao', 'hrt');
+mkdirSync(javaDir, { recursive: true });
+writeFileSync(
+    resolve(javaDir, 'HrtMessagingService.kt'),
+    readFileSync(resolve(import.meta.dirname, 'HrtMessagingService.kt'), 'utf8'),
+);
+
+// FCM needs the Google Services Gradle plugin to turn google-services.json into
+// resources, plus the messaging SDK. The notifications plugin already pins the
+// Firebase BOM, so no version is needed here; the google-services plugin is the one
+// piece the plugin does not add.
+const rootGradle = resolve(root, '..', '..', '..', '..', 'build.gradle.kts');
+let rootGradleSource = readFileSync(rootGradle, 'utf8');
+if (!rootGradleSource.includes('google-services')) {
+    rootGradleSource = rootGradleSource.replace(
+        'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.21")',
+        'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.21")\n' +
+        '        classpath("com.google.gms:google-services:4.4.4")',
+    );
+    writeFileSync(rootGradle, rootGradleSource);
+}
+const appGradle = resolve(root, '..', '..', '..', 'build.gradle.kts');
+let appGradleSource = readFileSync(appGradle, 'utf8');
+if (!appGradleSource.includes('com.google.gms.google-services')) {
+    appGradleSource = appGradleSource.replace(
+        'id("rust")',
+        'id("rust")\n    id("com.google.gms.google-services")',
+    );
+}
+// The BOM must be declared in THIS module: the notifications plugin brings
+// firebase-messaging in with `implementation`, which is not exposed to consumers,
+// so without a local platform() BOM the version cannot resolve and the build fails.
+// Self-healing: whatever the current tree looks like, end with a BOM and the dep.
+if (!appGradleSource.includes('firebase-bom')) {
+    if (appGradleSource.includes('firebase-messaging')) {
+        // A tree from an earlier revision already has the dep, without its BOM.
+        appGradleSource = appGradleSource.replace(
+            /(\n\s*implementation\("com\.google\.firebase:firebase-messaging"\))/,
+            '\n    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))$1',
+        );
+    } else {
+        appGradleSource = appGradleSource.replace(
+            'rust {',
+            'dependencies {\n' +
+            '    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))\n' +
+            '    implementation("com.google.firebase:firebase-messaging")\n' +
+            '}\n\n' +
+            'rust {',
+        );
+    }
+}
+writeFileSync(appGradle, appGradleSource);
+
 // R8 strips/renames the plugins' Jackson model classes' default constructors
 // and fields in the minified release build — the notifications plugin then
 // fails to deserialize every schedule ("Cannot construct instance of
@@ -61,15 +117,62 @@ writeFileSync(proguard, [
 // patched here rather than edited in place — `tauri android init` would drop an
 // in-place edit, and this script runs on every android build.
 const manifest = resolve(root, '..', 'AndroidManifest.xml');
-const manifestXml = readFileSync(manifest, 'utf8');
+let manifestXml = readFileSync(manifest, 'utf8');
 if (!manifestXml.includes('REQUEST_INSTALL_PACKAGES')) {
-    writeFileSync(
-        manifest,
-        manifestXml.replace(
-            '<uses-permission android:name="android.permission.INTERNET" />',
-            '<uses-permission android:name="android.permission.INTERNET" />\n' +
-            '    <!-- Self-update: lets UpdateBridge pass the fetched APK to the package installer. -->\n' +
-            '    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />',
-        ),
+    manifestXml = manifestXml.replace(
+        '<uses-permission android:name="android.permission.INTERNET" />',
+        '<uses-permission android:name="android.permission.INTERNET" />\n' +
+        '    <!-- Self-update: lets UpdateBridge pass the fetched APK to the package installer. -->\n' +
+        '    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />',
     );
 }
+// Medication reminders must fire on time. On Android 12+ (API 31+) `setExact*`
+// throws unless the app holds exact-alarm access; the notifications plugin catches
+// that and falls back to `setAndAllowWhileIdle` — an INEXACT alarm Doze can delay by
+// minutes, which for a dose reminder is a missed reminder. Declaring
+// SCHEDULE_EXACT_ALARM is what lets `canScheduleExactAlarms()` be true; on 13+ it is
+// granted by default, on 12 the user grants it under "Alarms & reminders". (The
+// alternative, USE_EXACT_ALARM, is auto-granted but is a Play-policy carve-out for
+// alarm/calendar apps only, so it is deliberately not used here.) Declared in the
+// gitignored gen/ manifest via this script for the same reason as the permission above.
+if (!manifestXml.includes('SCHEDULE_EXACT_ALARM')) {
+    manifestXml = manifestXml.replace(
+        '<uses-permission android:name="android.permission.INTERNET" />',
+        '<uses-permission android:name="android.permission.INTERNET" />\n' +
+        '    <!-- Exact dose reminders: without this, scheduling silently degrades to inexact. -->\n' +
+        '    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />',
+    );
+}
+
+// Supplementary push (FCM). The notifications plugin declares its own
+// FirebaseMessagingService for MESSAGING_EVENT, but it auto-shows only when the
+// payload carries a `notification` field and otherwise forwards to a WebView that is
+// not running in the background — neither fits a data-only catch-up nudge. So the
+// plugin's service is removed from the merged manifest and HrtMessagingService is
+// registered in its place. `tools` namespace is required for the node removal.
+if (!manifestXml.includes('xmlns:tools')) {
+    manifestXml = manifestXml.replace(
+        '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+        '<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n' +
+        '    xmlns:tools="http://schemas.android.com/tools">',
+    );
+}
+if (!manifestXml.includes('HrtMessagingService')) {
+    manifestXml = manifestXml.replace(
+        '</application>',
+        '    <service\n' +
+        '            android:name=".HrtMessagingService"\n' +
+        '            android:exported="false">\n' +
+        '            <intent-filter>\n' +
+        '                <action android:name="com.google.firebase.MESSAGING_EVENT" />\n' +
+        '            </intent-filter>\n' +
+        '        </service>\n' +
+        '        <!-- Superseded by .HrtMessagingService (data-only, native dedup). -->\n' +
+        '        <service\n' +
+        '            android:name="app.tauri.notification.TauriFirebaseMessagingService"\n' +
+        '            tools:node="remove" />\n' +
+        '    </application>',
+    );
+}
+writeFileSync(manifest, manifestXml);
+

@@ -36,6 +36,7 @@ import { isGoogleConfigured } from './oauth.ts';
 import { RecordService, buildExportPayload, buildSettingsScalars, publicStats } from './records.ts';
 import { getPool } from './db.ts';
 import { ShareService } from './shares.ts';
+import { PushStore, startPushScanner } from './push.ts';
 import type { AuthContext } from './types.ts';
 import {
   lookupSession,
@@ -1058,6 +1059,36 @@ export function createRequestHandler() {
         if (!ctx) return;
         const removed = await AccountService.revokeApiToken(ctx.userId, tokenRevoke[1]);
         if (!removed) return send(res, 404, { error: 'no such token' });
+        return send(res, 200, { ok: true });
+      }
+
+      // --- Push (FCM supplementary) ----------------------------------------
+      //
+      // A device binds its FCM token here after the user enables notifications; the
+      // server then has somewhere to send a catch-up nudge. The token is the address
+      // FCM delivers to, so it is scoped to the account and removed on sign-out (or
+      // when FCM reports it dead during a scan). `requireCtx` — not `requireBoundCtx`
+      // — because a device that can sign in should be able to register for push even
+      // before it has bound fallback credentials.
+      if (path === '/api/push/register' && req.method === 'POST') {
+        const ctx = await requireCtx();
+        if (!ctx) return;
+        const body = (await readBody(req)) as { token?: unknown; platform?: unknown } | undefined;
+        const token = typeof body?.token === 'string' ? body.token.trim() : '';
+        if (token === '' || token.length > 4096) return send(res, 400, { error: 'a device token is required' });
+        const platform = typeof body?.platform === 'string' && body.platform.trim() !== ''
+          ? body.platform.trim().slice(0, 32)
+          : 'android';
+        await PushStore.register(ctx.userId, token, platform);
+        return send(res, 200, { ok: true });
+      }
+      if (path === '/api/push/unregister' && req.method === 'POST') {
+        const ctx = await requireCtx();
+        if (!ctx) return;
+        const body = (await readBody(req)) as { token?: unknown } | undefined;
+        const token = typeof body?.token === 'string' ? body.token.trim() : '';
+        if (token === '') return send(res, 400, { error: 'a device token is required' });
+        await PushStore.unregister(ctx.userId, token);
         return send(res, 200, { ok: true });
       }
 

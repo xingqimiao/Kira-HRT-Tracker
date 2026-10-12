@@ -38,6 +38,7 @@ before(async () => {
     // v1 platform key: records seal under each account's DEK now, but this keeps any
     // legacy row readable and matches the other record suites.
     turnstile: null,
+    fcm: null,
     x: null,
     sessionTtlMinutes: 30,
     rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },

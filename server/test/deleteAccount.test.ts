@@ -37,6 +37,7 @@ before(async () => {
     // The record store seals every payload; a suite that writes records must carry a
     // key, because the store refuses rather than writing plaintext.
     turnstile: null,
+    fcm: null,
     x: null,
     google: null,
     sessionTtlMinutes: 30,

@@ -29,6 +29,7 @@ before(async () => {
     apiBaseUrl: 'https://api.hrt.test', port: 0, databaseUrl: '',
     kms: TEST_KMS_CONFIG, 
     turnstile: null, x: null, google: null,
+    fcm: null,
     sessionTtlMinutes: 30, rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },
   });
   pg = await bootPostgres({ dir: './.pgdata-window', port: 55446, database: 'hrt_window' });

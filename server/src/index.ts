@@ -14,6 +14,7 @@
 import { getPool, migrate } from './db.ts';
 import { getConfig } from './config.ts';
 import { startServer } from './http.ts';
+import { startPushScanner } from './push.ts';
 import { buildServer } from './mcp.ts';
 import { AccountService } from './accounts.ts';
 
@@ -73,6 +74,9 @@ async function main(): Promise<void> {
 `,
     );
     startServer(config.port);
+    // Supplementary push only runs when a service account is configured; the
+    // scanner is a no-op otherwise, so a deployment that opted out spins no timer.
+    startPushScanner();
     // Drain in-flight queries on shutdown instead of severing connections.
     for (const signal of ['SIGINT', 'SIGTERM'] as const) {
       process.on(signal, () => {

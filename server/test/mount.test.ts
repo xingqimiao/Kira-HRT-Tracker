@@ -42,6 +42,7 @@ before(async () => {
     // key, because the store refuses rather than writing plaintext.
     google: null,
     turnstile: null,
+    fcm: null,
     x: null,
     sessionTtlMinutes: 30,
     rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },

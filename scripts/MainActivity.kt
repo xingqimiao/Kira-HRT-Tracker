@@ -65,6 +65,57 @@ class MainActivity : TauriActivity() {
   }
 
   /**
+   * Supplementary push (FCM): hand the device's FCM token to JS, and let it ask
+   * for a fresh one.
+   *
+   * Deliberately NOT the notifications plugin's `registerForPushNotifications`:
+   * that command is gated by `BuildConfig.ENABLE_PUSH_NOTIFICATIONS`, which the
+   * plugin's Rust build.rs writes into android/build.properties — a file Gradle
+   * reads at configuration time, i.e. before that build.rs has run. The flag
+   * therefore lags the build that enables it, and the command would reject on the
+   * very build meant to turn push on. Reading the token straight from
+   * FirebaseMessaging here has no such ordering hazard and needs no plugin feature.
+   *
+   * The token is async (a Task), so the result is posted back as a DOM event
+   * (`hrt-push-token`, detail `{token, error?}`) rather than returned — the same
+   * shape UpdateBridge uses for its progress events.
+   */
+  inner class PushBridge {
+    @JavascriptInterface fun requestToken() {
+      try {
+        com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+          .addOnCompleteListener { task ->
+            val detail = if (task.isSuccessful && !task.result.isNullOrEmpty()) {
+              "{\"token\":${org.json.JSONObject.quote(task.result)}}"
+            } else {
+              "{\"token\":\"\",\"error\":${org.json.JSONObject.quote(task.exception?.message ?: "unavailable")}}"
+            }
+            postPushEvent("hrt-push-token", detail)
+          }
+      } catch (e: Exception) {
+        postPushEvent("hrt-push-token", "{\"token\":\"\",\"error\":${org.json.JSONObject.quote(e.message ?: "unavailable")}}")
+      }
+    }
+
+    /** Nothing to delete locally; FCM rotates tokens itself. Kept so JS has one
+     *  symmetric call it can make on sign-out even though the server-side
+     *  unregister is the part that matters. */
+    @JavascriptInterface fun deleteToken() {
+      try {
+        com.google.firebase.messaging.FirebaseMessaging.getInstance().deleteToken()
+      } catch (e: Exception) {
+        // Best-effort.
+      }
+    }
+  }
+
+  private fun postPushEvent(name: String, detailJson: String) {
+    appWebView?.post {
+      appWebView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('$name',{detail:$detailJson}))", null)
+    }
+  }
+
+  /**
    * In-app APK update (src/utils/nativeUpdate.ts).
    *
    * Handing the .apk URL to the system browser (what `openUrl` does) only makes
@@ -182,6 +233,7 @@ class MainActivity : TauriActivity() {
     webView.addJavascriptInterface(SafeArea(), "HrtSafeArea")
     webView.addJavascriptInterface(BackBridge(), "HrtBack")
     webView.addJavascriptInterface(UpdateBridge(), "HrtUpdate")
+    webView.addJavascriptInterface(PushBridge(), "HrtPush")
     ViewCompat.setOnApplyWindowInsetsListener(webView) { _, insets ->
       val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
       val density = resources.displayMetrics.density

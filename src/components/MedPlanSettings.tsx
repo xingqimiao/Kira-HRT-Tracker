@@ -12,6 +12,7 @@ import {
     isPlanNotificationGranted, requestPlanNotificationPermission,
 } from '../utils/medPlanNotify';
 import { reschedulePlanNotifications } from '../utils/medPlanNotify';
+import { syncPushRegistration } from '../utils/pushRegister';
 import { isNativeApp } from '../utils/platform';
 import { pushMedPlan } from '../services/coreSync';
 import { useCoreSession } from '../hooks/useCoreSession';
@@ -153,6 +154,9 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
             // Web: start the 60-second in-app check.
             if (isNativeApp()) {
                 void reschedulePlanNotifications().catch(() => undefined);
+                // Bind this device's FCM token so the server can send a catch-up
+                // nudge for a dose that was never logged. No-op until signed in.
+                if (session.token) void syncPushRegistration(session.token).catch(() => undefined);
             } else {
                 const { startPlanWebNotifications } = await import('../utils/medPlanNotify');
                 startPlanWebNotifications();

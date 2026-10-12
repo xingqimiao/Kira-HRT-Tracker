@@ -471,6 +471,23 @@ export const AccountService = {
     return { userId, dek: recordKey };
   },
 
+  /**
+   * Resolve an account id straight to a context, for callers that hold no credential.
+   *
+   * The supplementary push scanner is the one caller: it runs on a timer over
+   * accounts it found in `device_tokens`, with no token in hand, and needs the same
+   * "what can this account reach" answer every other entry point gets. The key comes
+   * from the deployment's own copy — the server wrapper for the DEK, the pad for its
+   * HSM-held half — so a locked account denies exactly as it does over HTTP.
+   */
+  async resolveContextForUser(userId: string): Promise<AuthContext | ContextDenial | null> {
+    const user = await loadUser({ id: userId });
+    if (!user) return null;
+    const recordKey = await recordKeyFor(user);
+    if (!recordKey) return { denied: 'locked' };
+    return { userId, dek: recordKey };
+  },
+
   async lock(token: string): Promise<void> {
     await closeSession(token);
   },

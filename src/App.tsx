@@ -59,6 +59,8 @@ import {
 } from './utils/medPlanNotify';
 import { installNativeBack, useBackHandler } from './utils/nativeBack';
 import { installNativeLinkInterceptor } from './utils/externalLinks';
+import { syncPushRegistration } from './utils/pushRegister';
+import { isPlanNotificationGranted } from './utils/medPlanNotify';
 
 const AppContent = () => {
     const { t, lang, setLang } = useTranslation();
@@ -159,6 +161,17 @@ const AppContent = () => {
         void reschedulePlanNotifications().catch(e => console.error('[med-plan] reschedule failed', e));
         startPlanWebNotifications();
     }, []);
+
+    // Keep the device's FCM token bound to the signed-in account, so a catch-up
+    // nudge can reach it. Runs when the account or the notification permission
+    // changes: FCM rotates the token rarely, so re-registering is cheap and a
+    // missing token (first launch, rotation) is the case that matters. No-op on web.
+    useEffect(() => {
+        if (!isNativeApp() || !coreSession.token) return;
+        void isPlanNotificationGranted()
+            .then(granted => (granted ? syncPushRegistration(coreSession.token as string) : undefined))
+            .catch(() => undefined);
+    }, [coreSession.token]);
 
     // A confirmed bind belongs to the account that made it. Reset when the signed-in
     // user changes (or is signed out), so the next account is not waved past a gate it
