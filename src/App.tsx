@@ -2,7 +2,6 @@ import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { useTranslation, LanguageProvider } from './contexts/LanguageContext';
 import { useDialog, DialogProvider } from './contexts/DialogContext';
 import { HRTModeProvider, useHRTMode } from './contexts/HRTModeContext';
-import { VialProvider } from './contexts/VialContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import { APP_VERSION, AppTheme, ChartStyle, KeyColor, normalizeChartStyle } from './constants';
 import { DoseEvent, decompressData, encryptData, decryptData } from '../logic';
@@ -256,12 +255,9 @@ const AppContent = () => {
         localStorage.getItem('app-key-color') === 'blue' ? 'blue' : 'pink',
     );
 
-    // Personalization: whether the overview draws the dose-day grid, and how the
-    // chart draws the primary series. Same shape as theme above — a storage key,
-    // an adoption on sync, and a normaliser for a value this build may not know.
-    const [showHeatmap, setShowHeatmap] = useState<boolean>(() =>
-        localStorage.getItem('app-dose-heatmap') !== 'false'
-    );
+    // Personalization: how the chart draws the primary series. Same shape as theme
+    // above — a storage key, an adoption on sync, and a normaliser for a value this
+    // build may not know.
     const [chartStyle, setChartStyle] = useState<ChartStyle>(() =>
         normalizeChartStyle(localStorage.getItem('app-chart-style'))
     );
@@ -280,10 +276,6 @@ const AppContent = () => {
         // stylesheet blocks, and this only has to select which pair is in force.
         window.document.documentElement.classList.toggle('key-blue', keyColor === 'blue');
     }, [keyColor]);
-
-    useEffect(() => {
-        localStorage.setItem('app-dose-heatmap', String(showHeatmap));
-    }, [showHeatmap]);
 
     useEffect(() => {
         localStorage.setItem('app-chart-style', chartStyle);
@@ -305,7 +297,6 @@ const AppContent = () => {
         const savedTheme = localStorage.getItem('app-theme');
         if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') setTheme(savedTheme);
         setKeyColor(localStorage.getItem('app-key-color') === 'blue' ? 'blue' : 'pink');
-        setShowHeatmap(localStorage.getItem('app-dose-heatmap') !== 'false');
         setChartStyle(normalizeChartStyle(localStorage.getItem('app-chart-style')));
         setReadingDecimals(localStorage.getItem('app-reading-decimals') === 'true');
         setHideAA(localStorage.getItem('app-hide-aa') === 'true');
@@ -773,7 +764,6 @@ const AppContent = () => {
                             onRemoveEvent={deleteEvent}
                             aaChartMode={aaChartMode}
                             nowMs={currentTime.getTime()}
-                            showHeatmap={showHeatmap}
                             chartStyle={chartStyle}
                             readingDecimals={readingDecimals}
                             hideAA={hideAA}
@@ -927,8 +917,6 @@ const AppContent = () => {
                             setTheme={setTheme}
                             keyColor={keyColor}
                             setKeyColor={setKeyColor}
-                            showHeatmap={showHeatmap}
-                            setShowHeatmap={setShowHeatmap}
                             chartStyle={chartStyle}
                             setChartStyle={setChartStyle}
                             readingDecimals={readingDecimals}
@@ -1176,11 +1164,9 @@ const App = () => {
                         </ErrorBoundary>
                     ) : (
                         <DialogProvider>
-                            <VialProvider>
-                                <ErrorBoundary>
-                                    <AppContent />
-                                </ErrorBoundary>
-                            </VialProvider>
+                            <ErrorBoundary>
+                                <AppContent />
+                            </ErrorBoundary>
                         </DialogProvider>
                     )}
                     {/* Inside `LanguageProvider` for its copy, and outside `AppContent`

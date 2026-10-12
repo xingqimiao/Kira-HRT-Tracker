@@ -68,13 +68,13 @@ function check(name, fn) {
 check('keeps every known setting', () => {
   const out = sanitizeAppSettings({
     theme: 'light', keyColor: 'blue', lang: 'ja', hrtMode: 'transmasc',
-    showVial: false, calMethod: 'mipd', calHistoryMode: 'forward',
+    hideAA: false, calMethod: 'mipd', calHistoryMode: 'forward',
   });
   assert.equal(out.theme, 'light');
   assert.equal(out.keyColor, 'blue');
   assert.equal(out.lang, 'ja');
   assert.equal(out.hrtMode, 'transmasc');
-  assert.equal(out.showVial, false, 'a false boolean survives rather than reading as absent');
+  assert.equal(out.hideAA, false, 'a false boolean survives rather than reading as absent');
   assert.equal(out.calMethod, 'mipd');
   assert.equal(out.calHistoryMode, 'forward');
 });
@@ -89,7 +89,7 @@ check('drops unknown keys rather than storing what this build cannot read', () =
 check('refuses the wrong type for a key, and empty strings', () => {
   assert.deepEqual(sanitizeAppSettings({ theme: 42 }), {});
   assert.deepEqual(sanitizeAppSettings({ theme: '' }), {});
-  assert.deepEqual(sanitizeAppSettings({ showVial: 'false' }), {}, 'a string is not a boolean');
+  assert.deepEqual(sanitizeAppSettings({ hideAA: 'false' }), {}, 'a string is not a boolean');
   assert.deepEqual(sanitizeAppSettings(null), {});
   assert.deepEqual(sanitizeAppSettings([1, 2]), {});
 });
@@ -294,7 +294,7 @@ check('every settings key survives the round trip, not just the sampled ones', (
     // reporting a failure the app did not have -- the worst kind, because a red check
     // that is wrong teaches people to ignore red checks.
     theme: 'dark', keyColor: 'blue', lang: 'en', hrtMode: 'transmasc',
-    showVial: true, showHeatmap: false, chartStyle: '1d', readingDecimals: true,
+    chartStyle: '1d', readingDecimals: true,
     hideAA: true,
     calMethod: 'adaptive', calHistoryMode: 'forward', aaChartMode: 'auto',
     hrtStartDate: '2024-01-01', recheckIntervals: '{"liverMonths":3,"estradiolMonths":3}',

@@ -28,7 +28,7 @@ export const APP_SETTINGS_EVENT = 'app-settings-applied';
  * they are account-scoped (`hrt-u<id>-cal-method`), so the data layer, which
  * knows the owner, moves those itself.
  */
-export type GlobalSettingKey = 'theme' | 'keyColor' | 'lang' | 'hrtMode' | 'showVial' | 'showHeatmap' | 'chartStyle' | 'readingDecimals' | 'hideAA' | 'timezone';
+export type GlobalSettingKey = 'theme' | 'keyColor' | 'lang' | 'hrtMode' | 'chartStyle' | 'readingDecimals' | 'hideAA' | 'timezone';
 
 /**
  * Storage key per setting. These are the keys the owning contexts already use —
@@ -40,8 +40,6 @@ const KEYS: Record<GlobalSettingKey, string> = {
     keyColor: 'app-key-color',
     lang: 'hrt-lang',
     hrtMode: 'hrt-mode',
-    showVial: 'app-blood-vial',
-    showHeatmap: 'app-dose-heatmap',
     readingDecimals: 'app-reading-decimals',
     hideAA: 'app-hide-aa',
     chartStyle: 'app-chart-style',
@@ -52,7 +50,7 @@ const KEYS: Record<GlobalSettingKey, string> = {
 };
 
 /** The settings persisted as 'true'/'false' strings rather than bare strings. */
-const BOOLEAN_KEYS: ReadonlySet<GlobalSettingKey> = new Set(['showVial', 'showHeatmap', 'readingDecimals', 'hideAA']);
+const BOOLEAN_KEYS: ReadonlySet<GlobalSettingKey> = new Set(['readingDecimals', 'hideAA']);
 
 /**
  * When this device's bag last *changed*, for the sync merge's newest-wins rule.

@@ -49,11 +49,6 @@ interface HomeProps {
     aaChartMode: AntiandrogenChartMode;
     /** "Now" for that reading, so "today" rolls over when the day does. */
     nowMs: number;
-    /**
-     * The dose-day grid setting. Retained for the settings page's own switch; the
-     * overview no longer draws the grid — its side panel is the order book.
-     */
-    showHeatmap: boolean;
     /** Line or candles for the chart — the same personalization setting. */
     chartStyle: ChartStyle;
     /** Whether E2/T readings show a decimal place. Default off (whole numbers). */

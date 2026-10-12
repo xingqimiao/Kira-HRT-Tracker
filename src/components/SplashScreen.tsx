@@ -47,7 +47,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ mode, onDone }) => {
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0D0D12]">
-            <BloodVial level={level} mode={mode} size={140} force onFillDone={handleFillDone} />
+            <BloodVial level={level} mode={mode} size={140} onFillDone={handleFillDone} />
         </div>
     );
 };

@@ -3,7 +3,6 @@ import Icon from '../components/Icon';
 import Switch from '../components/Switch';
 import { ArrowLeft, Check } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
-import { useVial } from '../contexts/VialContext';
 import { AppTheme, ChartStyle, KeyColor } from '../constants';
 
 interface AppearanceSettingsProps {
@@ -11,9 +10,6 @@ interface AppearanceSettingsProps {
     setTheme: (theme: AppTheme) => void;
     keyColor: KeyColor;
     setKeyColor: (color: KeyColor) => void;
-    /** Whether the overview draws the dose-day grid. */
-    showHeatmap: boolean;
-    setShowHeatmap: (v: boolean) => void;
     /** How the overview chart draws the primary series. */
     chartStyle: ChartStyle;
     setChartStyle: (s: ChartStyle) => void;
@@ -32,13 +28,10 @@ const muted = 'text-[var(--color-m3-on-surface-variant)] ';
 
 const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({
     theme, setTheme, keyColor, setKeyColor,
-    showHeatmap, setShowHeatmap, chartStyle, setChartStyle,
+    chartStyle, setChartStyle,
     readingDecimals, setReadingDecimals, onBack,
 }) => {
     const { t } = useTranslation();
-    // The vial owns its own preference; the page reads it from the provider
-    // rather than taking a prop, the same way every other owner of it does.
-    const { showVial, setShowVial } = useVial();
 
     const options = [
         { value: 'system' as const, labelKey: 'theme.system' },
@@ -121,14 +114,6 @@ const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({
 
                 <div className={`${divider} w-full flex items-center justify-between py-4`}>
                     <div>
-                        <p className={rowLabel}>{t('settings.blood_vial')}</p>
-                        <p className={`text-xs ${muted} mt-0.5`}>{t('settings.blood_vial_desc')}</p>
-                    </div>
-                    <Switch checked={showVial} onChange={setShowVial} />
-                </div>
-
-                <div className={`${divider} w-full flex items-center justify-between py-4`}>
-                    <div>
                         <p className={rowLabel}>{t('settings.reading_decimals')}</p>
                         <p className={`text-xs ${muted} mt-0.5`}>{t('settings.reading_decimals_desc')}</p>
                     </div>
@@ -154,20 +139,6 @@ const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({
                             </button>
                         ))}
                     </div>
-                </div>
-
-                {/* The dose grid. Off and unavailable while the candle view is on:
-                    that view pairs the chart with the dose list (its "order book"),
-                    so the grid's switch is disabled and the hint says why rather
-                    than leaving a control that silently does nothing. */}
-                <div className={`${divider} w-full flex items-center justify-between py-4`}>
-                    <div>
-                        <p className={rowLabel}>{t('settings.dose_heatmap')}</p>
-                        <p className={`text-xs ${muted} mt-0.5`}>
-                            {chartStyle !== 'line' ? t('settings.dose_heatmap_candle') : t('settings.dose_heatmap_desc')}
-                        </p>
-                    </div>
-                    <Switch checked={showHeatmap} onChange={setShowHeatmap} disabled={chartStyle !== 'line'} />
                 </div>
             </div>
         </div>

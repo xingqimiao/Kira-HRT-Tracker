@@ -78,9 +78,6 @@ export interface AppSettings {
     keyColor?: string;
     lang?: string;
     hrtMode?: string;
-    showVial?: boolean;
-    /** Whether the overview draws the dose-day grid (DoseHeatmap). Default on. */
-    showHeatmap?: boolean;
     /** Whether the overview hides the anti-androgen reading entirely. Default off. */
     hideAA?: boolean;
     /** Whether E2/T readings show a decimal place. Default off (whole numbers). */
@@ -142,9 +139,9 @@ export interface AppSettings {
 
 /** Every key `sanitizeAppSettings` will carry. An unknown key is dropped. */
 export const APP_SETTING_KEYS: readonly (keyof AppSettings)[] = [
-    'theme', 'keyColor', 'lang', 'hrtMode', 'showVial', 'calMethod', 'calHistoryMode', 'aaChartMode',
+    'theme', 'keyColor', 'lang', 'hrtMode', 'calMethod', 'calHistoryMode', 'aaChartMode',
     'hrtStartDate', 'recheckIntervals', 'ocrModelTier', 'pkEngine', 'timezone',
-    'showHeatmap', 'chartStyle', 'readingDecimals', 'hideAA',
+    'chartStyle', 'readingDecimals', 'hideAA',
 ];
 
 export interface SyncState {
@@ -294,21 +291,21 @@ export function sanitizeTombstones(raw: unknown): Tombstones {
  * ought to police.
  */
 /**
- * Post-upgrade compatibility: `showVial` is the one non-string setting, so the
- * per-key value type is decided by the key rather than by the value. Accepting a
- * string for every key (the obvious `typeof value === 'string'` check) would let a
- * payload put `showVial: 'false'` into state, where its own reader — which
- * compares against the string 'false' — would read it as *true*.
+ * The non-string settings, so the per-key value type is decided by the key rather
+ * than by the value. Accepting a string for every key (the obvious
+ * `typeof value === 'string'` check) would let a payload put a boolean setting in
+ * as a string, where its own reader — which compares against the string 'false' —
+ * would read it as *true*.
  */
-const BOOLEAN_SETTING_KEYS: ReadonlySet<keyof AppSettings> = new Set(['showVial', 'showHeatmap', 'readingDecimals', 'hideAA']);
+const BOOLEAN_SETTING_KEYS: ReadonlySet<keyof AppSettings> = new Set(['readingDecimals', 'hideAA']);
 
 export function sanitizeAppSettings(raw: unknown): AppSettings {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
     const src = raw as Record<string, unknown>;
     // Accumulated as `unknown` and cast once: under the key union the write type
-    // is the *intersection* of the member types, so `showVial`'s boolean and the
-    // rest's string collapse to `never` and no per-key assignment type-checks —
-    // even though each branch here has just checked the value's type.
+    // is the *intersection* of the member types, so a boolean key and the rest's
+    // string collapse to `never` and no per-key assignment type-checks — even
+    // though each branch here has just checked the value's type.
     const out: Record<string, unknown> = {};
     for (const key of APP_SETTING_KEYS) {
         const value = src[key];

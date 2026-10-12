@@ -2,7 +2,6 @@ import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'reac
 import Icon from './Icon';
 import VialSpray from './VialSpray';
 import { AlertTriangle } from '../icons';
-import { useVial } from '../contexts/VialContext';
 import { useEasedValue } from '../utils/motion';
 import {
     CANVAS,
@@ -107,8 +106,6 @@ interface BloodVialProps {
     /** Rendered width in px. Height follows the 18:42 canvas. */
     size?: number;
     className?: string;
-    /** Ignore the "show blood vial" preference. */
-    force?: boolean;
     /** Fired once the liquid's fill glide actually completes — see `useEasedValue`.
      *  The launch splash uses it to hand over to the app only after the animation has
      *  truly played, rather than on a wall-clock timer the rAF starves behind. */
@@ -151,9 +148,8 @@ const paint = (
 };
 
 const BloodVial: React.FC<BloodVialProps> = ({
-    level, mode, size = 32, className = '', force = false, onFillDone,
+    level, mode, size = 32, className = '', onFillDone,
 }) => {
-    const { showVial } = useVial();
     const reduced = usePrefersReducedMotion();
 
     // The eased level, on the shared clock. A hook, so it sits with the others rather
@@ -288,8 +284,6 @@ const BloodVial: React.FC<BloodVialProps> = ({
             y: r.top + r.height * MOUTH_FRAC.y,
         });
     }, [phase]);
-
-    if (!showVial && !force) return null;
 
     const fraction = vialFraction(shown, mode);
     const over = overflowRows(shown, mode);

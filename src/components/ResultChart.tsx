@@ -287,23 +287,34 @@ const ResultChart = ({
     // without this the plot is mostly candles that have not happened yet.
     const futureCap = now + 2 * candleIntervalH * HOUR;
 
+    // The line view draws the modelled curve, which also runs past now (to the last
+    // dose plus its lifetime) — for a daily schedule that is a long, flat tail of
+    // "what is predicted to happen". Cap it at two days: the near future is the part
+    // that informs a decision, and beyond that the estimate is a straight line the
+    // chart is spending most of its width on. `data.length === 0` (nothing logged)
+    // keeps the plain window so an empty state still reads as empty.
+    const lineFutureCap = now + 2 * DAY;
+
     // Base window (before drag) — centered on "now" for 7d/30d, full span for "all".
     const baseWindow = useMemo<[number, number]>(() => {
         if (data.length === 0) return [fullMin, fullMax];
         const span = range === 'all' ? (fullMax - fullMin) : range === '7d' ? 7 * DAY : 30 * DAY;
         if (range === 'all') {
-            const hi = isCandle ? Math.min(fullMax, futureCap) : fullMax;
+            const hi = isCandle ? Math.min(fullMax, futureCap) : Math.min(fullMax, lineFutureCap);
             return [fullMin, Math.max(fullMin, hi)];
         }
         // Anchor the right edge then walk back one span. In candle view the right
-        // edge stops two candles past now; otherwise it is centred on now.
+        // edge stops two candles past now; in line view two days past now; the
+        // clamp to fullMax keeps a short history from opening on empty space.
         const center = Math.min(Math.max(now, fullMin), fullMax);
-        let hi = isCandle ? Math.min(futureCap, fullMax) : center + span / 2;
+        let hi = isCandle
+            ? Math.min(futureCap, fullMax)
+            : Math.min(center + span / 2, lineFutureCap, fullMax);
         let lo = hi - span;
         if (lo < fullMin) { lo = fullMin; hi = Math.min(fullMax, lo + span); }
         if (hi > fullMax) { hi = fullMax; lo = Math.max(fullMin, hi - span); }
         return [lo, hi];
-    }, [range, data.length, fullMin, fullMax, now, isCandle, futureCap]);
+    }, [range, data.length, fullMin, fullMax, now, isCandle, futureCap, lineFutureCap]);
 
     // How far the window can be dragged in each direction without leaving the data.
     const [minOffset, maxOffset] = useMemo<[number, number]>(() => {
