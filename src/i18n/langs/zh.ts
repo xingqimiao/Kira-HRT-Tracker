@@ -115,6 +115,24 @@ const PACK: LangPack = {
 
     "plan.add_submit": "添加方案",
 
+
+    "plan.add_open": "添加用药方案",
+
+
+    "plan.add_title": "新增用药方案",
+
+
+    "plan.edit_title": "编辑用药方案",
+
+
+    "plan.save": "保存",
+
+
+    "plan.cancel": "取消",
+
+
+    "plan.enabled_label": "启用",
+
     "plan.overdue_title": "今日未用药",
 
     "plan.overdue_none": "今天没有遗漏的用药。",

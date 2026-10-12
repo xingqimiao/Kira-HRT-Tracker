@@ -114,6 +114,24 @@ const PACK: LangPack = {
 
     "plan.add_submit": "Plan ekle",
 
+
+    "plan.add_open": "İlaç planı ekle",
+
+
+    "plan.add_title": "Yeni ilaç planı",
+
+
+    "plan.edit_title": "İlaç planını düzenle",
+
+
+    "plan.save": "Kaydet",
+
+
+    "plan.cancel": "İptal",
+
+
+    "plan.enabled_label": "Etkin",
+
     "plan.overdue_title": "Bugün atlanan dozlar",
 
     "plan.overdue_none": "Bugün atlanan yok.",

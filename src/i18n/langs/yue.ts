@@ -808,6 +808,24 @@ const PACK: LangPack = {
 
     "plan.add_submit": "加方案",
 
+
+    "plan.add_open": "加用藥方案",
+
+
+    "plan.add_title": "新加用藥方案",
+
+
+    "plan.edit_title": "改用藥方案",
+
+
+    "plan.save": "儲存",
+
+
+    "plan.cancel": "取消",
+
+
+    "plan.enabled_label": "啟用",
+
     "plan.overdue_title": "今日未用藥",
 
     "plan.overdue_none": "今日冇漏嘅用藥。",

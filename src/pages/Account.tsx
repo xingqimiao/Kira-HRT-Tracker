@@ -12,6 +12,7 @@ import type { CoreSession } from '../hooks/useCoreSession';
 import type { CoreSyncStatus } from '../hooks/useCoreSync';
 import { hrtDaysSince, toYmd, fromYmd } from '../utils/hrtStart';
 import { LOCALE_MAP } from '../utils/helpers';
+import { getCachedAvatar, refreshCachedAvatar, clearCachedAvatar } from '../utils/avatarCache';
 
 interface AccountProps {
     session: CoreSession;
@@ -133,8 +134,16 @@ const Account: React.FC<AccountProps> = ({
     const daysSinceStart = hrtDaysSince(hrtStartDate);
     const { showDialog } = useDialog();
     const userId = session.user?.userId ?? null;
+    const username = session.user?.username ?? '';
     // Seeded from what this account cached last visit, so the first paint is whole.
     const [summary, setSummary] = useState<AccountSummary | null>(() => readCachedSummary(userId));
+    // The avatar as a local data URL, so it paints with the first render like the
+    // text does. `summary.avatarUrl` is a network URL: even though the cached summary
+    // supplies it on the first paint, the <img> still has to fetch the bytes, so the
+    // identity block painted twice — text, then picture. See utils/avatarCache.ts.
+    const [avatarDataUrl, setAvatarDataUrl] = useState<string | null>(
+        () => getCachedAvatar(username)?.dataUrl ?? null,
+    );
     const [methods, setMethods] = useState<LoginMethods | null>(null);
     const [isStartPickerOpen, setIsStartPickerOpen] = useState(false);
 
@@ -176,6 +185,25 @@ const Account: React.FC<AccountProps> = ({
             });
         return () => { cancelled = true; };
     }, [token, userId]);
+
+    // Re-seed the avatar from cache when the account changes under the page, then
+    // refresh it in the background — the same copy the security page keeps, so a
+    // changed provider picture swaps in without ever blanking the avatar.
+    useEffect(() => {
+        setAvatarDataUrl(getCachedAvatar(username)?.dataUrl ?? null);
+    }, [username]);
+
+    useEffect(() => {
+        const url = summary?.avatarUrl;
+        if (!username) return;
+        if (!url) { clearCachedAvatar(username); setAvatarDataUrl(null); return; }
+        if (getCachedAvatar(username)?.url === url) return;
+        let cancelled = false;
+        void refreshCachedAvatar(username, url).then((dataUrl) => {
+            if (!cancelled && dataUrl) setAvatarDataUrl(dataUrl);
+        });
+        return () => { cancelled = true; };
+    }, [username, summary?.avatarUrl]);
 
     const handleSignOut = () => {
         showDialog('confirm', t('core.acct.sign_out_confirm'), () => { void session.signOut(); });
@@ -231,11 +259,11 @@ const Account: React.FC<AccountProps> = ({
                         provider's: `img-src 'self'` blocks those, and hotlinking one
                         would announce every visit to this page to X or Google. */}
                     <div className={`flex items-center gap-3 py-5 ${divider}`}>
-                        {summary?.avatarUrl ? (
+                        {(avatarDataUrl ?? summary?.avatarUrl) ? (
                             <img
-                                src={summary.avatarUrl}
+                                src={(avatarDataUrl ?? summary?.avatarUrl) as string}
                                 alt=""
-                                key={summary.avatarUrl}
+                                key={(avatarDataUrl ?? summary?.avatarUrl) as string}
                                 className="m3-content-in w-9 h-9 rounded-full object-cover shrink-0"
                                 // A broken fetch must not leave a torn glyph; degrading to
                                 // the placeholder is better than an empty hole. `hidden`

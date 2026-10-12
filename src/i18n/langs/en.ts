@@ -114,6 +114,24 @@ const PACK: LangPack = {
 
     "plan.add_submit": "Add plan",
 
+
+    "plan.add_open": "Add a medication plan",
+
+
+    "plan.add_title": "New medication plan",
+
+
+    "plan.edit_title": "Edit medication plan",
+
+
+    "plan.save": "Save",
+
+
+    "plan.cancel": "Cancel",
+
+
+    "plan.enabled_label": "Enabled",
+
     "plan.overdue_title": "Today's missed doses",
 
     "plan.overdue_none": "Nothing missed today.",

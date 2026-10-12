@@ -169,6 +169,24 @@ const PACK: LangPack = {
 
     "plan.add_submit": "追加",
 
+
+    "plan.add_open": "服薬プランを追加",
+
+
+    "plan.add_title": "新しい服薬プラン",
+
+
+    "plan.edit_title": "服薬プランを編集",
+
+
+    "plan.save": "保存",
+
+
+    "plan.cancel": "キャンセル",
+
+
+    "plan.enabled_label": "有効",
+
     "plan.overdue_title": "本日の飲み忘れ",
 
     "plan.overdue_none": "今日の飲み忘れはありません。",

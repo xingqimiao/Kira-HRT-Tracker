@@ -169,6 +169,24 @@ const PACK: LangPack = {
 
     "plan.add_submit": "계획 추가",
 
+
+    "plan.add_open": "복약 계획 추가",
+
+
+    "plan.add_title": "새 복약 계획",
+
+
+    "plan.edit_title": "복약 계획 편집",
+
+
+    "plan.save": "저장",
+
+
+    "plan.cancel": "취소",
+
+
+    "plan.enabled_label": "사용",
+
     "plan.overdue_title": "오늘 놓친 복용",
 
     "plan.overdue_none": "오늘 놓친 복용이 없습니다.",

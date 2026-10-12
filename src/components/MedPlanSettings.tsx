@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Icon from './Icon';
 import CustomSelect from './CustomSelect';
+import Switch from './Switch';
 import { useTranslation } from '../contexts/LanguageContext';
 import { Ester, Route } from '../../logic';
 import DateTimePicker from './DateTimePicker';
-import { ChevronRight, Clock3 as Clock, Plus, Trash2, Bookmark } from '../icons';
+import { ChevronRight, Clock3 as Clock, Plus, Trash2, Bookmark, Check } from '../icons';
 import type { DoseTemplate } from './DoseForm';
 import {
     readMedPlans, writeMedPlans, sanitizeMedPlans, isSavedTemplate, type MedPlan, type PlanStatus, type PlanTime,
@@ -66,6 +67,12 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
     const [extraTimes, setExtraTimes] = useState<{ id: string; date: Date }[]>([]);
     /** Which time picker is open: 'first', an extra row's id, or null. */
     const [openPicker, setOpenPicker] = useState<string | null>(null);
+    /** The plan being edited, or null when the form is adding a new one. Tapping a
+     *  plan loads it here; the submit button then saves in place instead of adding. */
+    const [editingId, setEditingId] = useState<string | null>(null);
+    /** Whether the add/edit form is open. Collapsed by default so an account with a
+     *  plan or two is not staring at the whole scheduling form. */
+    const [formOpen, setFormOpen] = useState(false);
 
     // Read the current permission on mount (async: the native check hits the plugin).
     useEffect(() => {
@@ -95,9 +102,52 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
 
     const overdueOf = (id: string): boolean => status.find(s => s.plan.id === id)?.overdue ?? false;
 
-    const addPlan = (): void => {
+    const emptyForm = (): void => {
+        setEster(Ester.E2);
+        setRoute(isTransmasc ? Route.injection : Route.sublingual);
+        setAlias('');
+        setDose('');
+        setMode('times');
+        setIntervalHours(8);
+        setEveryDays(2);
+        const d = new Date();
+        d.setHours(9, 0, 0, 0);
+        setFirstTime(d);
+        setExtraTimes([]);
+        setEditingId(null);
+    };
+
+    /** Open the form on an existing plan, prefilled, so it can be changed rather than
+     *  only toggled. The row used to toggle enabled on tap with no way to edit. */
+    const editPlan = (p: MedPlan): void => {
+        setEster(p.ester);
+        setRoute(p.route ?? (isTransmasc ? Route.injection : Route.sublingual));
+        setAlias(p.alias ?? '');
+        setDose(p.dose ?? '');
+        setMode(p.mode);
+        setIntervalHours(p.intervalHours ?? 8);
+        setEveryDays(p.everyDays ?? 2);
+        const d = new Date();
+        d.setHours(p.firstHour, p.firstMinute, 0, 0);
+        setFirstTime(d);
+        setExtraTimes((p.doseTimes ?? []).map((tt) => {
+            const x = new Date();
+            x.setHours(tt.hour, tt.minute, 0, 0);
+            return { id: crypto.randomUUID(), date: x };
+        }));
+        setEditingId(p.id);
+        setFormOpen(true);
+    };
+
+    const closeForm = (): void => {
+        emptyForm();
+        setFormOpen(false);
+        setOpenPicker(null);
+    };
+
+    const submitPlan = (): void => {
         const plan: MedPlan = {
-            id: crypto.randomUUID(),
+            id: editingId ?? crypto.randomUUID(),
             ester,
             route,
             alias: alias.trim() || undefined,
@@ -111,13 +161,19 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
             tzOffsetMinutes: new Date().getTimezoneOffset(),
             firstHour: firstTime.getHours(),
             firstMinute: firstTime.getMinutes(),
-            enabled: true,
+            // A new plan is on; an edit keeps whatever the row's switch says.
+            enabled: editingId ? (readMedPlans().find(p => p.id === editingId)?.enabled ?? true) : true,
         };
-        commit([...readMedPlans(), plan]);
-        setAlias(''); setDose(''); setExtraTimes([]);
+        commit(editingId
+            ? readMedPlans().map(p => p.id === editingId ? plan : p)
+            : [...readMedPlans(), plan]);
+        closeForm();
     };
 
-    const removePlan = (id: string): void => commit(readMedPlans().filter(p => p.id !== id));
+    const removePlan = (id: string): void => {
+        commit(readMedPlans().filter(p => p.id !== id));
+        if (editingId === id) closeForm();
+    };
     const togglePlan = (id: string): void => commit(readMedPlans().map(p => p.id === id ? { ...p, enabled: !p.enabled } : p));
 
     /** Fill the form from a saved quick-template (its drug, route and dose). */
@@ -243,12 +299,15 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                 ? <p className={`text-xs ${muted} mb-2`}>{t('plan.empty')}</p>
                 : plans.map(p => {
                     const overdue = overdueOf(p.id);
+                    const editing = editingId === p.id;
                     return (
-                        <div key={p.id} className="py-3 border-b border-[var(--color-m3-outline-variant)] flex items-center gap-3">
+                        <div key={p.id} className={`py-3 border-b border-[var(--color-m3-outline-variant)] flex items-center gap-3 ${editing ? 'bg-[var(--color-m3-surface-container)] -mx-2 px-2 rounded-[var(--radius-md)]' : ''}`}>
+                            {/* Tapping the plan opens it for editing — it used to toggle
+                                enabled on tap, which was the reported "点一下就变灰但改不了". */}
                             <button
                                 type="button"
-                                aria-pressed={p.enabled}
-                                onClick={() => togglePlan(p.id)}
+                                onClick={() => (editing ? closeForm() : editPlan(p))}
+                                aria-expanded={editing}
                                 className="flex-1 min-w-0 text-start"
                             >
                                 <span className={`text-m3-body-medium font-medium block truncate ${p.enabled ? on : muted}`}>
@@ -259,6 +318,9 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                                     {t(`ester.${p.ester}`)}{p.route ? ` · ${t(`route.${p.route}`)}` : ''} · {p.dose || '—'}{` · ${scheduleSummary(p)}`}
                                 </span>
                             </button>
+                            {/* The on/off is its own switch now, so the row's tap target
+                                means "edit" rather than silently changing state. */}
+                            <Switch checked={p.enabled} onChange={() => togglePlan(p.id)} label={t('plan.enabled_label')} />
                             <button type="button" onClick={() => removePlan(p.id)} aria-label={t('plan.remove')} className={`shrink-0 p-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] ${muted}`}>
                                 <Icon icon={Trash2} size={16} />
                             </button>
@@ -266,8 +328,21 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                     );
                 })}
 
-            {/* ── Add form ─────────────────────────────────────────────────── */}
-            <div className="mt-6 space-y-4">
+            {/* ── Add / edit form ─────────────────────────────────────────── */}
+            {!formOpen ? (
+                <button
+                    type="button"
+                    onClick={() => { emptyForm(); setFormOpen(true); }}
+                    className="m3-btn m3-btn-tonal w-full mt-4"
+                >
+                    <span className="inline-flex items-center gap-1.5"><Icon icon={Plus} size={16} />{t('plan.add_open')}</span>
+                </button>
+            ) : (
+            <div className="mt-5 space-y-4">
+                <div className="flex items-center justify-between">
+                    <span className={`text-m3-body-medium font-medium ${on}`}>{editingId ? t('plan.edit_title') : t('plan.add_title')}</span>
+                    <button type="button" onClick={closeForm} className={`text-xs font-medium ${muted} px-2 py-1`}>{t('plan.cancel')}</button>
+                </div>
                 {/* Import a drug from a saved quick-template: fills the drug, route,
                     dose and alias. Kept to the app's quiet chip style (a caption plus
                     small bordered chips, as in the quick-dose row) so it reads as a
@@ -360,13 +435,14 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
 
                 <button
                     type="button"
-                    onClick={addPlan}
+                    onClick={submitPlan}
                     disabled={!dose.trim()}
                     className="m3-btn m3-btn-filled w-full"
                 >
-                    <span className="inline-flex items-center gap-1.5"><Icon icon={Plus} size={16} />{t('plan.add_submit')}</span>
+                    <span className="inline-flex items-center gap-1.5"><Icon icon={editingId ? Check : Plus} size={16} />{editingId ? t('plan.save') : t('plan.add_submit')}</span>
                 </button>
             </div>
+            )}
         </div>
     );
 };
