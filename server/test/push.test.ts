@@ -97,8 +97,12 @@ function installFakeFcm(opts: { sendOk?: boolean; sendStatus?: number; sendBody?
   const sends: Record<string, unknown>[] = [];
   const ok = opts.sendOk ?? true;
   __setFcmFetchForTest((async (url: string | URL | Request, init?: RequestInit) => {
-    const href = String(url);
-    if (href.includes('oauth2.googleapis.com')) {
+    // Exact host, not a substring: the token endpoint is the only call whose URL is
+    // the OAuth2 host, and matching the parsed host avoids treating a crafted URL
+    // that merely contains the string as the token exchange (CodeQL js/incomplete-
+    // url-substring-sanitization). The path then distinguishes token vs send.
+    const { hostname } = new URL(String(url));
+    if (hostname === 'oauth2.googleapis.com') {
       return {
         ok: true,
         status: 200,
