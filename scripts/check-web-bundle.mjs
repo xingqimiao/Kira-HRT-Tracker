@@ -37,18 +37,21 @@ if (!entry) {
 }
 const bundle = readFileSync(path.join(assetsDir, entry), 'utf8');
 
-// The crawler footer below `#root` and the viewport clamp are a pair: index.tsx adds
-// the `app-viewport` class that clamps the document so no signed-in user can scroll
-// onto the footer, and index.html ships the footer that no-JavaScript clients read.
-// Losing either half silently reintroduces the 2026-10-11 bug (SEO text dragged into
-// every screen by chained scroll) or the 2026-10-08 one (footer gone from the served
-// page). Both halves ship in the build output, so both are asserted here.
+// The crawler footer below `#root` and the viewport clamp are a pair: index.html's
+// inline head script adds the `app-viewport` class that clamps the document so no
+// signed-in user can scroll onto the footer, and the same file ships the footer that
+// no-JavaScript clients read. (The clamp moved from the entry bundle into the head
+// script so it applies before first paint — adding it from the module let a scrollbar
+// flash while the footer made the document taller than the viewport.) Losing either
+// half silently reintroduces the 2026-10-11 bug (SEO text dragged into every screen by
+// chained scroll) or the 2026-10-08 one (footer gone from the served page). Both
+// halves ship in the build output, so both are asserted here.
 const indexHtml = readFileSync(path.join(root, 'dist', 'index.html'), 'utf8');
 const cssEntry = readdirSync(assetsDir).find((f) => /^index-.*\.css$/.test(f));
 const css = cssEntry ? readFileSync(path.join(assetsDir, cssEntry), 'utf8') : '';
 for (const [what, present] of [
   ['the site-about crawler footer in dist/index.html', indexHtml.includes('site-about')],
-  ['the app-viewport class add in the entry bundle', bundle.includes('app-viewport')],
+  ['the app-viewport class add in dist/index.html', indexHtml.includes('app-viewport')],
   [`the app-viewport clamp rule in ${cssEntry ?? 'the built CSS'}`, css.includes('html.app-viewport')],
 ]) {
   if (!present) {

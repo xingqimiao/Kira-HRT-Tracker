@@ -16,12 +16,10 @@ import { initAndroidSafeArea } from './src/utils/androidSafeArea';
 // buttons are part of its first paint instead of popping in a round trip later.
 void primeLoginProviders();
 
-// Clamp the document to the viewport once a script is running: the app scrolls
-// inside its own shell, and the crawler footer below `#root` otherwise sits one
-// chained fling away from every page (see the `html.app-viewport` rule and the
-// comment in index.html). A client that never runs this script keeps a scrollable
-// page and reads that footer as the body.
-document.documentElement.classList.add('app-viewport');
+// The document is clamped to the viewport (`app-viewport`) by the inline script in
+// index.html's <head>, so it is in force before the first paint — adding it here, as
+// this module used to, let a scrollbar flash while the crawler footer below `#root`
+// made the document taller than the viewport. Nothing to do here now.
 
 // Before the first render, not in an effect: `/auth/x/callback`, a share link and
 // the onboarding gate all render outside `AppContent` (where the app's own theme
