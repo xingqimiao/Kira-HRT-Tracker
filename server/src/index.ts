@@ -57,6 +57,15 @@ async function main(): Promise<void> {
     process.stdout.write('hrt-server: no KMS configured — accounts minted now carry no server wrapper\n');
   }
 
+  // Supplementary push is a silent no-op when unconfigured, which is a confusing
+  // state to diagnose from the outside ("why did nobody get a nudge?"). Say it once
+  // at boot, the same way the KMS line does.
+  if (command === 'http') {
+    process.stdout.write(config.fcm
+      ? `hrt-server: FCM supplementary push on (project ${config.fcm.projectId}, grace ${config.fcm.graceMinutes}m)\n`
+      : 'hrt-server: no FCM service account — supplementary push is off\n');
+  }
+
   if (command === 'migrate') {
     await migrate();
     process.stdout.write('schema applied\n');
