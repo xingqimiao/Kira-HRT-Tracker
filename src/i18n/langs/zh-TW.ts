@@ -565,6 +565,14 @@ const PACK: LangPack = {
     "mcp.intro": "Kira HRT Tracker提供符合 MCP 規範的介面。任何支援 Streamable HTTP 的 AI 用戶端——Claude Desktop、Cursor 等——都能讀取你的資料。三步即可接入。",
     "mcp.image_alt": "AI 助理透過 MCP 連接 Kira HRT Tracker的插圖",
     "mcp.tokens_label": "第一步 · 產生存取權杖",
+
+    "mcp.token_rename": "重新命名",
+
+    "mcp.token_rename_save": "儲存",
+
+    "mcp.token_rename_cancel": "取消",
+
+    "mcp.token_default_name": "AI 助手",
     "mcp.tokens_desc": "權杖沒有到期日，長期有效，你隨時可以在這裡刪除。產生時只會顯示一次，請立即複製。",
     "mcp.tokens_signin_required": "權杖只能對已登入的帳戶簽發。請先登入。",
     "mcp.tokens_empty": "還沒有權杖。產生一個即可開始。",
@@ -588,16 +596,11 @@ const PACK: LangPack = {
     "mcp.config_desc": "把第一步的權杖填入，貼到用戶端設定檔即可：",
     "mcp.config_hint": "把 hrt_... 換成你的真實權杖。",
     "mcp.tools_label": "可用工具",
-    "mcp.tools_desc": "共 {count} 個：讀寫紀錄，以及建立、查看和撤銷分享連結。",
+    "mcp.tools_desc": "{count} 個工具，助手可以讀取與寫入你的記錄，也能建立、查看、撤銷分享連結。",
     "mcp.scope_label": "權杖做不到的事",
+
+    "mcp.token_read_warning": "持有這個權杖的助手可以讀取你帳戶裡的全部記錄（包含用藥記錄、檢驗結果與私密日記）。請只把它交給你信任的助手。",
     "mcp.scope_note": "權杖涵蓋紀錄與分享。它不能刪除帳戶、修改密碼、查看或撤銷登入工作階段、綁定或解除綁定 X / Google，也不能簽發或撤銷其他權杖——這些只在網頁端進行，需要本人登入。但上表列出的所有工具，僅憑權杖即可呼叫，包括寫入。",
-    "mcp.token_warning_label": "這個權杖就是帳號的完整憑證",
-    "mcp.token_warning_desc": "拿到 hrt_ 權杖的助理不需要你線上，也不需要你登入，就能讀寫你的紀錄。只有撤銷權杖或者修改密碼才會終止。把它當作密碼一樣保管，不要貼到不信任的地方。",
-    "mcp.storage_label": "紀錄存在哪",
-    "mcp.storage_desc": "登入後紀錄保存在伺服器上，多台裝置之間同步，也可以隨時匯出。紀錄在伺服器上以平台金鑰加密保存，因此營運者可以讀取——這不是端對端加密。",
-    "mcp.col_tool": "工具",
-    "mcp.col_input": "參數",
-    "mcp.col_returns": "回傳",
     "mcp.copy": "複製",
     "mcp.copied": "已複製",
     "onboarding.privacy_subtitle": "力保個人資訊安全。這很 Equal。",

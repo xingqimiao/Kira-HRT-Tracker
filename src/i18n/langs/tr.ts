@@ -806,6 +806,14 @@ const PACK: LangPack = {
     "mcp.intro": "Kira HRT Tracker bir MCP uç noktası sunar. Streamable HTTP konuşan her yapay zekâ istemcisi — Claude Desktop, Cursor ve diğerleri — verilerinizi okuyabilir. Üç adım.",
     "mcp.image_alt": "AI asistanının MCP üzerinden Kira HRT Tracker'a bağlandığını gösteren çizim",
     "mcp.tokens_label": "1. adım · Erişim jetonu üretin",
+
+    "mcp.token_rename": "Yeniden adlandır",
+
+    "mcp.token_rename_save": "Kaydet",
+
+    "mcp.token_rename_cancel": "İptal",
+
+    "mcp.token_default_name": "AI asistanı",
     "mcp.tokens_desc": "Jetonların süresi dolmaz; buradan silene kadar geçerlidir. Değer yalnızca bir kez gösterilir, hemen kopyalayın.",
     "mcp.tokens_signin_required": "Jeton yalnızca oturum açmış bir hesaba üretilebilir. Önce oturum açın.",
     "mcp.tokens_empty": "Henüz jeton yok. Başlamak için bir tane üretin.",
@@ -829,16 +837,11 @@ const PACK: LangPack = {
     "mcp.config_desc": "1. adımdaki jetonu yerleştirip istemci yapılandırmanıza yapıştırın:",
     "mcp.config_hint": "hrt_... yerine gerçek jetonunuzu yazın.",
     "mcp.tools_label": "Kullanılabilir araçlar",
-    "mcp.tools_desc": "Toplam {count}: kayıtları okur ve yazar, ayrıca paylaşım bağlantısı oluşturur, listeler ve iptal eder.",
+    "mcp.tools_desc": "{count} araç. Bir asistan kayıtlarınızı okuyup yazabilir, paylaşım bağlantısı oluşturabilir, listeleyebilir veya iptal edebilir.",
     "mcp.scope_label": "Jetonun yapamadıkları",
+
+    "mcp.token_read_warning": "Bu belirteci taşıyan bir asistan hesabınızdaki tüm kayıtları (dozlar, tahlil sonuçları ve özel günlüğünüz) okuyabilir. Yalnızca güvendiğiniz bir asistana verin.",
     "mcp.scope_note": "Jeton kayıtları ve paylaşımı kapsar. Hesabı silme, parola değiştirme, oturumları listeleme veya iptal etme, X / Google bağlama ya da kaldırma, başka jeton üretme ve iptal etme yapamaz; bunlar yalnızca oturum açmış kişinin kullandığı web uygulamasındadır. Ancak yukarıdaki araçların tamamı, yazma araçları dahil, yalnızca jetonla çağrılabilir.",
-    "mcp.token_warning_label": "Jeton hesabın tam kimlik bilgisidir",
-    "mcp.token_warning_desc": "hrt_ jetonu taşıyan bir asistan, siz çevrimiçi olmasanız ve giriş yapmamış olsanız da kayıtlarınızı okuyup yazabilir. Yalnızca jetonu iptal etmek ya da parolayı değiştirmek durdurur. Parolanız gibi saklayın ve güvenmediğiniz yerlere yapıştırmayın.",
-    "mcp.storage_label": "Kayıtlar nerede durur",
-    "mcp.storage_desc": "Giriş yaptığınızda kayıtlar sunucuda saklanır, cihazlar arasında eşitlenir ve dilediğiniz zaman dışa aktarılabilir. Kayıtlar sunucunun anahtarıyla şifrelenerek saklanır; yani işletmeci okuyabilir — bu uçtan uca şifreleme değildir.",
-    "mcp.col_tool": "Araç",
-    "mcp.col_input": "Girdi",
-    "mcp.col_returns": "Döndürdüğü",
     "mcp.copy": "Kopyala",
     "mcp.copied": "Kopyalandı",
     "onboarding.privacy_subtitle": "Kişisel güvenliği korumak. Bu çok Equal.",

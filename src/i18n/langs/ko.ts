@@ -861,6 +861,14 @@ const PACK: LangPack = {
     "mcp.intro": "Kira HRT Tracker은 MCP 엔드포인트를 제공합니다. Streamable HTTP를 지원하는 AI 클라이언트——Claude Desktop, Cursor 등——라면 데이터를 읽을 수 있습니다. 세 단계입니다.",
     "mcp.image_alt": "AI 어시스턴트가 MCP로 Kira HRT Tracker에 연결하는 일러스트",
     "mcp.tokens_label": "1단계 · 액세스 토큰 발급",
+
+    "mcp.token_rename": "이름 변경",
+
+    "mcp.token_rename_save": "저장",
+
+    "mcp.token_rename_cancel": "취소",
+
+    "mcp.token_default_name": "AI 어시스턴트",
     "mcp.tokens_desc": "토큰은 만료되지 않으며 여기서 삭제할 때까지 유효합니다. 발급 시 한 번만 표시되니 즉시 복사하세요.",
     "mcp.tokens_signin_required": "토큰은 로그인한 계정에만 발급할 수 있습니다. 먼저 로그인하세요.",
     "mcp.tokens_empty": "아직 토큰이 없습니다. 하나 발급하면 시작됩니다.",
@@ -884,16 +892,11 @@ const PACK: LangPack = {
     "mcp.config_desc": "1단계의 토큰을 넣고 클라이언트 설정에 붙여넣으세요:",
     "mcp.config_hint": "hrt_... 를 실제 토큰으로 바꾸세요.",
     "mcp.tools_label": "사용 가능한 도구",
-    "mcp.tools_desc": "모두 {count}개입니다. 기록을 읽고 쓰며, 공유 링크를 만들고 확인하고 취소할 수 있습니다.",
+    "mcp.tools_desc": "{count}개 도구. 기록을 읽고 쓰며 공유 링크를 만들고, 보이고, 폐기할 수 있습니다.",
     "mcp.scope_label": "토큰으로 할 수 없는 일",
+
+    "mcp.token_read_warning": "이 토큰을 가진 어시스턴트는 계정의 모든 기록(복약, 검사 결과, 비공개 일기)을 읽을 수 있습니다. 신뢰하는 어시스턴트에게만 전달하세요.",
     "mcp.scope_note": "토큰은 기록과 공유를 다룹니다. 계정 삭제, 비밀번호 변경, 로그인 세션 조회·폐기, X / Google 연결·해제, 다른 토큰 발급·폐기는 할 수 없습니다. 이들은 로그인한 본인이 쓰는 웹 앱에만 있습니다. 다만 위에 나열된 도구는 쓰기까지 포함해 토큰만으로 호출할 수 있습니다.",
-    "mcp.token_warning_label": "토큰은 계정의 전체 자격 증명입니다",
-    "mcp.token_warning_desc": "hrt_ 토큰을 가진 어시스턴트는 당신이 접속해 있지 않아도, 로그인하지 않아도 기록을 읽고 쓸 수 있습니다. 토큰을 폐기하거나 비밀번호를 바꿔야만 멈춥니다. 비밀번호처럼 다루고, 믿지 못할 곳에 붙여넣지 마세요.",
-    "mcp.storage_label": "기록이 있는 곳",
-    "mcp.storage_desc": "로그인하면 기록이 서버에 저장되고 기기 간에 동기화되며 언제든 내보낼 수 있습니다. 기록은 서버의 키로 암호화해 보관하므로 운영자가 읽을 수 있습니다. 종단간 암호화가 아닙니다.",
-    "mcp.col_tool": "도구",
-    "mcp.col_input": "입력",
-    "mcp.col_returns": "반환",
     "mcp.copy": "복사",
     "mcp.copied": "복사됨",
     "onboarding.privacy_local": "계정 없이도 사용할 수 있습니다",

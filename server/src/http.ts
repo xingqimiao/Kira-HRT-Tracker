@@ -1061,6 +1061,19 @@ export function createRequestHandler() {
         if (!removed) return send(res, 404, { error: 'no such token' });
         return send(res, 200, { ok: true });
       }
+      // Rename a token. The name is a label with no security meaning, so it is the
+      // one thing about an issued credential the user can still change after the
+      // plaintext is gone.
+      if (tokenRevoke && req.method === 'PATCH') {
+        const ctx = await requireCtx();
+        if (!ctx) return;
+        const body = (await readBody(req)) as { name?: unknown } | undefined;
+        const name = typeof body?.name === 'string' ? body.name.trim() : '';
+        if (name === '' || name.length > 64) return send(res, 400, { error: 'a name between 1 and 64 characters is required' });
+        const renamed = await AccountService.renameApiToken(ctx.userId, tokenRevoke[1], name);
+        if (!renamed) return send(res, 404, { error: 'no such token' });
+        return send(res, 200, { ok: true, name });
+      }
 
       // --- Push (FCM supplementary) ----------------------------------------
       //

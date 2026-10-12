@@ -688,6 +688,23 @@ export const AccountService = {
   },
 
   /**
+   * Rename one of the caller's tokens.
+   *
+   * The name is a label with no security meaning ("Claude Desktop", "my laptop"), so
+   * renaming is a plain owning-scoped update. Scoped by `user_id` in the same
+   * statement as the id, for the same reason the revoke is: the id arrives from the
+   * client, and a lookup that took it alone would let anyone rename anyone's token by
+   * guessing a uuid. Returns whether a row changed, so the caller can 404.
+   */
+  async renameApiToken(userId: string, id: string, name: string): Promise<boolean> {
+    const { rowCount } = await getPool().query(
+      `UPDATE api_tokens SET name = $3 WHERE id = $1 AND user_id = $2`,
+      [id, userId, name],
+    );
+    return (rowCount ?? 0) > 0;
+  },
+
+  /**
    * Revoke one of the caller's tokens.
    *
    * Always scoped by `user_id` in the same statement as the id: the id arrives from

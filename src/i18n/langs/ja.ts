@@ -883,6 +883,14 @@ const PACK: LangPack = {
     "mcp.intro": "Kira HRT Trackerは MCP エンドポイントを公開しています。Streamable HTTP に対応した AI クライアント——Claude Desktop、Cursor など——ならデータを読めます。3 ステップです。",
     "mcp.image_alt": "AI アシスタントが MCP で Kira HRT Trackerに接続するイラスト",
     "mcp.tokens_label": "ステップ 1 · アクセストークンを発行",
+
+    "mcp.token_rename": "名前を変更",
+
+    "mcp.token_rename_save": "保存",
+
+    "mcp.token_rename_cancel": "キャンセル",
+
+    "mcp.token_default_name": "AI アシスタント",
     "mcp.tokens_desc": "トークンに有効期限はなく、ここで削除するまで有効です。発行時に一度だけ表示されるので、すぐコピーしてください。",
     "mcp.tokens_signin_required": "トークンはログイン済みのアカウントにしか発行できません。先にログインしてください。",
     "mcp.tokens_empty": "トークンはまだありません。発行すると始められます。",
@@ -906,16 +914,11 @@ const PACK: LangPack = {
     "mcp.config_desc": "ステップ 1 のトークンを入れ、クライアントの設定に貼り付けてください：",
     "mcp.config_hint": "hrt_... を実際のトークンに置き換えてください。",
     "mcp.tools_label": "利用できるツール",
-    "mcp.tools_desc": "{count} 個。記録の読み書きに加え、共有リンクの作成・確認・取り消しができます。",
+    "mcp.tools_desc": "{count} 個のツール。記録の読み書きと、共有リンクの作成・一覧・失効ができます。",
     "mcp.scope_label": "トークンではできないこと",
+
+    "mcp.token_read_warning": "このトークンを持つアシスタントは、アカウント内のすべての記録（服薬・検査結果・非公開の日記）を読み取れます。信頼できるアシスタントにのみ渡してください。",
     "mcp.scope_note": "トークンでできるのは記録と共有です。アカウントの削除、パスワード変更、ログインセッションの一覧・失効、X / Google の連携・解除、他のトークンの発行・失効はできません。これらは本人がログインする Web アプリ側だけです。ただし上の一覧のツールは、書き込みも含めてトークンだけで呼び出せます。",
-    "mcp.token_warning_label": "トークンはアカウントそのものの資格情報です",
-    "mcp.token_warning_desc": "hrt_ トークンを持つアシスタントは、あなたがオンラインでなくても、ログインしていなくても記録を読み書きできます。止められるのはトークンの失効かパスワード変更だけです。パスワードと同じように扱い、信頼できない場所には貼り付けないでください。",
-    "mcp.storage_label": "記録の置き場所",
-    "mcp.storage_desc": "ログインすると記録はサーバーに保存され、端末間で同期され、いつでも書き出せます。記録はサーバーの鍵で暗号化して保存されるため、運営者は読むことができます。これはエンドツーエンド暗号化ではありません。",
-    "mcp.col_tool": "ツール",
-    "mcp.col_input": "入力",
-    "mcp.col_returns": "返すもの",
     "mcp.copy": "コピー",
     "mcp.copied": "コピーしました",
     "onboarding.privacy_local": "アカウントなしでも使えます",

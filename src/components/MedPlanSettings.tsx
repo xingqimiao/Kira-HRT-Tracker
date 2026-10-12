@@ -329,20 +329,34 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                 })}
 
             {/* ── Add / edit form ─────────────────────────────────────────── */}
-            {!formOpen ? (
-                <button
-                    type="button"
-                    onClick={() => { emptyForm(); setFormOpen(true); }}
-                    className="m3-btn m3-btn-tonal w-full mt-4"
+            {/* Collapsed, this is a single button; open, it is the form. The body
+                animates with the grid-template-rows 0fr↔1fr trick — a smooth height
+                change with no JS measurement and no layout thrash — while the header
+                (button ↔ title + Cancel) swaps instantly. The fields stay mounted so
+                the picker state survives, and `inert` keeps the hidden form out of the
+                tab order. */}
+            <div className="mt-4">
+                {!formOpen ? (
+                    <button
+                        type="button"
+                        onClick={() => { emptyForm(); setFormOpen(true); }}
+                        className="m3-btn m3-btn-tonal w-full"
+                    >
+                        <span className="inline-flex items-center gap-1.5"><Icon icon={Plus} size={16} />{t('plan.add_open')}</span>
+                    </button>
+                ) : (
+                    <div className="flex items-center justify-between px-1">
+                        <span className={`text-m3-body-medium font-medium ${on}`}>{editingId ? t('plan.edit_title') : t('plan.add_title')}</span>
+                        <button type="button" onClick={closeForm} className={`text-xs font-medium ${muted} px-2 py-1`}>{t('plan.cancel')}</button>
+                    </div>
+                )}
+                <div
+                    className="grid transition-[grid-template-rows,opacity] duration-300 ease-out"
+                    style={{ gridTemplateRows: formOpen ? '1fr' : '0fr', opacity: formOpen ? 1 : 0 }}
+                    inert={!formOpen}
                 >
-                    <span className="inline-flex items-center gap-1.5"><Icon icon={Plus} size={16} />{t('plan.add_open')}</span>
-                </button>
-            ) : (
-            <div className="mt-5 space-y-4">
-                <div className="flex items-center justify-between">
-                    <span className={`text-m3-body-medium font-medium ${on}`}>{editingId ? t('plan.edit_title') : t('plan.add_title')}</span>
-                    <button type="button" onClick={closeForm} className={`text-xs font-medium ${muted} px-2 py-1`}>{t('plan.cancel')}</button>
-                </div>
+                    <div className="overflow-hidden">
+                        <div className="space-y-4 pt-3">
                 {/* Import a drug from a saved quick-template: fills the drug, route,
                     dose and alias. Kept to the app's quiet chip style (a caption plus
                     small bordered chips, as in the quick-dose row) so it reads as a
@@ -441,8 +455,10 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                 >
                     <span className="inline-flex items-center gap-1.5"><Icon icon={editingId ? Check : Plus} size={16} />{editingId ? t('plan.save') : t('plan.add_submit')}</span>
                 </button>
+                        </div>
+                    </div>
+                </div>
             </div>
-            )}
         </div>
     );
 };

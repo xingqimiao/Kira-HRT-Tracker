@@ -806,6 +806,14 @@ const PACK: LangPack = {
     "mcp.intro": "Kira HRT Tracker提供符合 MCP 规范的接口。任何支持 Streamable HTTP 的 AI 客户端——Claude Desktop、Cursor 等——都能读取你的数据。三步即可接入。",
     "mcp.image_alt": "AI 助手与 Kira HRT Tracker通过 MCP 相连的插画",
     "mcp.tokens_label": "第一步 · 生成访问令牌",
+
+    "mcp.token_rename": "重命名",
+
+    "mcp.token_rename_save": "保存",
+
+    "mcp.token_rename_cancel": "取消",
+
+    "mcp.token_default_name": "AI 助手",
     "mcp.tokens_desc": "令牌没有有效期，长期有效，你可以随时在这里删除。生成时只会显示一次，请立即复制。",
     "mcp.tokens_signin_required": "令牌只能对已登录的账户签发。请先登录。",
     "mcp.tokens_empty": "还没有令牌。生成一个即可开始。",
@@ -829,16 +837,11 @@ const PACK: LangPack = {
     "mcp.config_desc": "把第一步的令牌替换进去，粘到客户端配置文件即可：",
     "mcp.config_hint": "把 hrt_... 换成你的真实令牌。",
     "mcp.tools_label": "可用工具",
-    "mcp.tools_desc": "共 {count} 个：读写记录，以及创建、查看和撤销分享链接。",
+    "mcp.tools_desc": "{count} 个工具，助手可以读取与写入你的记录，也能创建、查看、吊销分享链接。",
     "mcp.scope_label": "令牌做不到的事",
+
+    "mcp.token_read_warning": "持有这个令牌的助手可以读取你账户里的全部记录（包括用药记录、化验结果和私密日记）。请只把它交给你信任的助手。",
     "mcp.scope_note": "令牌覆盖记录和分享。它不能删除账户、修改密码、查看或撤销登录会话、绑定或解绑 X / Google，也不能签发或撤销其他令牌——这些只在网页端进行，需要本人登录。但上表列出的所有工具，仅凭令牌即可调用，包括写入。",
-    "mcp.token_warning_label": "这个令牌就是账号的完整凭据",
-    "mcp.token_warning_desc": "拿到 hrt_ 令牌的助手不需要你在线，也不需要你登录，就能读写你的记录。只有吊销令牌或者修改密码才会终止。把它当作密码一样保管，不要粘贴到不信任的地方。",
-    "mcp.storage_label": "记录存在哪",
-    "mcp.storage_desc": "登录后记录保存在服务器上，多台设备之间同步，也可以随时导出。记录在服务器上以平台密钥加密保存，因此运营者可以读取——这不是端到端加密。",
-    "mcp.col_tool": "工具",
-    "mcp.col_input": "参数",
-    "mcp.col_returns": "返回",
     "mcp.copy": "复制",
     "mcp.copied": "已复制",
     "onboarding.privacy_subtitle": "力保个人信息安全。这很 Equal。",

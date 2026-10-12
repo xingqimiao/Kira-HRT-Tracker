@@ -806,6 +806,14 @@ const PACK: LangPack = {
     "mcp.intro": "Kira HRT Tracker exposes an MCP endpoint. Any AI client that speaks Streamable HTTP — Claude Desktop, Cursor, and others — can read your data. Three steps.",
     "mcp.image_alt": "An illustration of an AI assistant connecting to Kira HRT Tracker over MCP",
     "mcp.tokens_label": "Step 1 · Generate an access token",
+
+    "mcp.token_rename": "Rename",
+
+    "mcp.token_rename_save": "Save",
+
+    "mcp.token_rename_cancel": "Cancel",
+
+    "mcp.token_default_name": "AI assistant",
     "mcp.tokens_desc": "Tokens do not expire and stay valid until you delete them here. The value is shown once, so copy it immediately.",
     "mcp.tokens_signin_required": "A token can only be issued to a signed-in account. Sign in first.",
     "mcp.tokens_empty": "No tokens yet. Generate one to get started.",
@@ -829,16 +837,11 @@ const PACK: LangPack = {
     "mcp.config_desc": "Drop in the token from step 1 and paste this into your client’s config:",
     "mcp.config_hint": "Replace hrt_... with your real token.",
     "mcp.tools_label": "Available tools",
-    "mcp.tools_desc": "{count}: read and write records, and create, list or revoke share links.",
+    "mcp.tools_desc": "{count} tools. An assistant can read and write your records, and create, list or revoke share links.",
     "mcp.scope_label": "What the token cannot do",
+
+    "mcp.token_read_warning": "An assistant holding this token can read every record in your account — doses, lab results and your private journal. Only give it to an assistant you trust.",
     "mcp.scope_note": "The token covers records and sharing. It cannot delete the account, change the password, list or revoke sign-in sessions, bind or unlink X or Google, or mint and revoke other tokens — those stay in the web app, where they need a signed-in person. Everything listed above, though, is reachable with the token alone, including the writes.",
-    "mcp.token_warning_label": "A token is the account’s full credential",
-    "mcp.token_warning_desc": "An assistant holding an hrt_ token can read and write your records with no browser session and no unlock, whether or not you are present. Only revoking the token or changing your password stops it. Treat it like your password, and do not paste it anywhere you do not trust.",
-    "mcp.storage_label": "Where the records live",
-    "mcp.storage_desc": "Signed in, your records are stored on the server, synced across devices, and exportable at any time. They are sealed at rest with the server’s key, so the operator can read them — this is not end-to-end encryption.",
-    "mcp.col_tool": "Tool",
-    "mcp.col_input": "Input",
-    "mcp.col_returns": "Returns",
     "mcp.copy": "Copy",
     "mcp.copied": "Copied",
     "onboarding.privacy_subtitle": "Safeguarding personal data. Very Equal.",

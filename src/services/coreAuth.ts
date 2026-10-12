@@ -494,6 +494,11 @@ export const coreAuth = {
     return raw.tokens ?? [];
   },
 
+  /** Rename a token. The name is a label only; the token's value never changes. */
+  async renameToken(token: string, id: string, name: string): Promise<void> {
+    await request(`/api/tokens/${id}`, { method: 'PATCH', token, body: JSON.stringify({ name }) });
+  },
+
   async revokeToken(token: string, id: string): Promise<void> {
     await request(`/api/tokens/${id}`, { method: 'DELETE', token });
   },
