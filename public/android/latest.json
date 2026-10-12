@@ -1,8 +1,8 @@
 {
-  "version": "1.0.7",
-  "versionCode": 1000007,
-  "apk": "https://hrt.kiramyao.com/android/KiraHRT-1.0.7-release.apk",
-  "sha256": "7E2184A9C047BFCB053ECD4B397B7328FD896DEEF4E6742D87979C9263559532",
+  "version": "1.0.8",
+  "versionCode": 1000008,
+  "apk": "https://hrt.kiramyao.com/android/KiraHRT-1.0.8-release.apk",
+  "sha256": "C7BC7ACA04CE24D5E14DCC1E43A9E144B45662B694B4CD70C32C1A4FD52F34E4",
   "notes": [
     "用药方案现在会云同步：在另一台设备登录后能看到同一份方案（此前只上传、不下载）。",
     "启动动画：填液结束后渐隐过渡到主界面，不再生硬切换；修复打开时底部先闪一下白条的问题。",
