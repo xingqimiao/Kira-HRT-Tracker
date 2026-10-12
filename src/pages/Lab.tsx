@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import Icon from '../components/Icon';
 import { Plus, ChevronRight, Scan } from '../icons';
+import { FieldIcon } from '../components/compoundIcons';
 import { LabResult, DoseEvent, MONITORING_UNIT, getMonitoringNotices, getRecheckReminders, visibleRecheckReminders, recheckDueKey, isMonitoringOnlyLab, monitoringValues, CalibrationMethod, CalibrationResult, CalibrationPoint, getHormoneLevelAdvisory, Ester, RecheckIntervals, OcrModelTier } from '../../logic';
 import type { Lang } from '../i18n/types';
 import { formatDate, formatTime, LOCALE_MAP } from '../utils/helpers';
@@ -298,7 +299,7 @@ const Lab: React.FC<LabProps> = ({
                                             className={`py-3.5 flex items-start gap-3 cursor-pointer -mx-2 px-2 rounded-md hover:bg-[var(--color-m3-surface-container)]  ${isEditing ? 'bg-[var(--color-m3-surface-container)] ' : ''}`}
                                             onClick={() => setEditingLabId(isEditing ? null : res.id)}
                                         >
-                                            <div className="mt-[7px] w-1.5 h-1.5 rounded-full shrink-0 bg-[var(--color-m3-primary)]" />
+                                            <Icon icon={FieldIcon.drop} size={16} className="mt-[4px] shrink-0 text-[var(--color-m3-primary)]" />
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center justify-between mb-1">
                                                     <span className={`font-medium ${on} text-sm`}>

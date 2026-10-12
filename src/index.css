@@ -3519,3 +3519,132 @@ select,
     .m3-confetti__piece:nth-child(3n+1) { top: 44vh; transform: rotate(-38deg); }
     .m3-confetti__piece:nth-child(3n+2) { top: 62vh; transform: rotate(66deg); }
 }
+
+/* ── Dose-form vocabulary: picture pills, bars, chips ──────────────────────────
+   The record form and the medication-plan editor share one look: a rail of
+   picture-pills to pick a route or a compound, and full-width bars that lead with a
+   small icon.
+
+   Motion is quiet on purpose. A rail fades and lifts 6px as it appears, with a small
+   per-item delay; the bars do the same a step later. Nothing scales or springs — an
+   earlier pass animated each pill on every tap and read as a slot machine. The rail is
+   remounted (and so replays) only when the *set* it shows changes, which is what makes
+   the compounds below a route re-deal when the route changes. */
+.hrt-rail { }
+
+.hrt-pill {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 84px;
+    padding: 10px 6px;
+    border-radius: 20px;
+    border: 1.5px solid var(--color-m3-outline-variant);
+    background: var(--color-m3-surface-container-low);
+    color: var(--color-m3-on-surface);
+    cursor: pointer;
+    transition: border-color .18s ease, background .18s ease;
+    animation: hrt-pill-in .26s ease-out both;
+    animation-delay: calc(var(--i, 0) * 40ms);
+}
+.hrt-pill--dense { min-height: 74px; border-radius: 18px; }
+.hrt-pill__pic {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--tone, var(--color-m3-primary));
+    transition: transform .2s ease;
+}
+.hrt-pill--on { border-color: var(--tone, var(--color-m3-primary)); background: color-mix(in srgb, var(--tone, var(--color-m3-primary)) 12%, transparent); }
+.hrt-pill--on .hrt-pill__pic { transform: scale(1.08); }
+.hrt-pill__label { font-size: 13px; font-weight: 600; line-height: 1; white-space: nowrap; }
+.hrt-pill__sub { font-size: 10.5px; line-height: 1; color: var(--color-m3-on-surface-variant); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+@keyframes hrt-pill-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: none; }
+}
+
+.hrt-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 14px;
+    border-radius: 18px;
+    border: 1.5px solid var(--color-m3-outline-variant);
+    background: var(--color-m3-surface-container);
+    animation: hrt-bar-in .3s ease-out both;
+    animation-delay: calc(var(--i, 0) * 45ms);
+}
+.hrt-bar--engine { border-style: dashed; }
+.hrt-bar__ic {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--color-m3-surface-container-high);
+    color: var(--color-m3-primary);
+}
+.hrt-bar__b { flex: 1; min-width: 0; }
+.hrt-bar__b small { display: block; font-size: 11.5px; color: var(--color-m3-on-surface-variant); margin-bottom: 5px; }
+
+@keyframes hrt-bar-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: none; }
+}
+
+.m3-chiprow { display: flex; flex-wrap: wrap; gap: 6px; }
+.m3-chip {
+    flex: none;
+    font: inherit;
+    font-size: 13px;
+    color: var(--color-m3-on-surface);
+    background: transparent;
+    border: 1.2px solid var(--color-m3-outline-variant);
+    border-radius: 999px;
+    padding: 5px 12px;
+    cursor: pointer;
+    transition: background .16s ease, border-color .16s ease, color .16s ease;
+}
+.m3-chip--on { background: var(--color-m3-primary); border-color: var(--color-m3-primary); color: var(--color-m3-on-primary); font-weight: 600; }
+
+@media (prefers-reduced-motion: reduce) {
+    .hrt-pill, .hrt-bar { animation: none; }
+}
+
+/* The fields below the route/compound picks, re-dealt when the route changes: the
+   wrapper is keyed on the route, so it remounts and its bars stagger back in. This is
+   the animation a route change should produce — the rail above stays put. */
+.hrt-fields { display: flex; flex-direction: column; gap: 10px; }
+
+/* The PK-engine picker's two cards (原有的 Mihari / Transmtf). A leading circle glyph,
+   a name, a sentence and three ✓/— bullets, so the choice reads as a described model
+   rather than two bare names. */
+.hrt-engine-card {
+    display: flex;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 16px;
+    border: 1.5px solid var(--color-m3-outline-variant);
+    background: var(--color-m3-surface-container-low);
+    cursor: pointer;
+    transition: border-color .18s ease, background .18s ease;
+}
+.hrt-engine-card[aria-pressed="true"] {
+    border-color: var(--color-m3-primary);
+    background: color-mix(in srgb, var(--color-m3-primary) 12%, transparent);
+}
+.hrt-engine-card__ic {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: var(--color-m3-surface-container-high);
+    color: var(--color-m3-primary);
+}

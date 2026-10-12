@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Icon from '../components/Icon';
 import Switch from '../components/Switch';
 import DateTimePicker from '../components/DateTimePicker';
-import { ChevronRight, Settings2, Database, Info, ArrowLeft, Globe, CalendarDays, Check, Clock3, Dna } from '../icons';
+import { ChevronRight, Settings2, Database, Info, ArrowLeft, Globe, CalendarDays, Clock3, Dna } from '../icons';
 import type { IconComponent } from '../icons';
 import type { Lang } from '../i18n/types';
 import { AppTheme } from '../constants';
@@ -11,6 +11,7 @@ import { useHRTMode } from '../contexts/HRTModeContext';
 import { isNativeApp } from '../utils/platform';
 import { openExternalUrl } from '../utils/externalLinks';
 import MedPlanSettings from '../components/MedPlanSettings';
+import { EngineGlyph } from '../components/compoundIcons';
 import type { DoseTemplate } from '../components/DoseForm';
 import { useBackHandler } from '../utils/nativeBack';
 import { APP_VERSION } from '../constants';
@@ -220,29 +221,35 @@ const Settings: React.FC<SettingsProps> = ({
                 <div className="w-full py-[18px] border-b border-[var(--color-m3-outline-variant)]">
                     <p className={rowLabel}>{t('settings.pk_engine')}</p>
                     <p className={`text-xs ${muted} mt-0.5`}>{t('settings.pk_engine_desc')}</p>
-                    <div className="mt-3 flex flex-col gap-2" role="group" aria-label={t('settings.pk_engine')}>
+                    <div className="mt-3 flex flex-col gap-2.5" role="group" aria-label={t('settings.pk_engine')}>
                         {PK_ENGINES.map(id => {
                             const active = pkEngine === id;
+                            const glyph = id === 'transmtf' ? EngineGlyph.transmtf : EngineGlyph.mihari;
+                            const bullets = [`b1`, `b2`, `b3`] as const;
                             return (
                                 <button
                                     key={id}
                                     type="button"
                                     aria-pressed={active}
                                     onClick={() => setPkEngine(id)}
-                                    className={`w-full text-start rounded-[var(--radius-lg)] border p-3 transition-colors ${
-                                        active
-                                            ? 'border-[var(--color-m3-primary)] bg-[var(--color-m3-surface-container)] '
-                                            : 'border-[var(--color-m3-outline-variant)]  hover:border-[var(--color-m3-outline)] '
-                                    }`}
+                                    className="hrt-engine-card w-full text-start"
                                 >
-                                    <span className="flex items-center justify-between gap-2">
-                                        <span className={`text-sm font-medium ${active ? 'text-[var(--color-m3-primary)]' : on}`}>
+                                    <span className="hrt-engine-card__ic"><Icon icon={glyph} size={20} /></span>
+                                    <span className="min-w-0 flex-1">
+                                        <span className={`block text-[15px] font-bold ${active ? 'text-[var(--color-m3-primary)]' : on}`}>
                                             {t(`settings.pk_engine.${id}`)}
                                         </span>
-                                        {active && <Icon icon={Check} size={15} className="shrink-0 text-[var(--color-m3-primary)]" strokeWidth={2.5} />}
-                                    </span>
-                                    <span className={`mt-1 block text-xs leading-relaxed ${muted}`}>
-                                        {t(`settings.pk_engine.${id}_note`)}
+                                        <span className={`mt-1 block text-[13px] leading-relaxed ${muted}`}>
+                                            {t(`settings.pk_engine.${id}_note`)}
+                                        </span>
+                                        <span className="mt-2 block space-y-1">
+                                            {bullets.map((b, bi) => (
+                                                <span key={b} className={`flex gap-2 text-xs leading-relaxed ${muted}`}>
+                                                    <span className="shrink-0 text-[var(--color-m3-primary)] w-3">{bi === 2 ? '—' : '✓'}</span>
+                                                    <span>{t(`settings.pk_engine.${id}.${b}`)}</span>
+                                                </span>
+                                            ))}
+                                        </span>
                                     </span>
                                 </button>
                             );

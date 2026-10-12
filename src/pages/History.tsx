@@ -6,6 +6,7 @@ import { DoseEvent, Route, Ester, ExtraKey, getToE2Factor, isTestosteroneEster, 
 import { formatTime } from '../utils/helpers';
 import { useDialog } from '../contexts/DialogContext';
 import DoseForm from '../components/DoseForm';
+import { compoundIcon } from '../components/compoundIcons';
 import Collapsible from '../components/Collapsible';
 import BloodVial from '../components/BloodVial';
 import { useHRTMode } from '../contexts/HRTModeContext';
@@ -279,7 +280,12 @@ const History: React.FC<HistoryProps> = ({
                                                 {isSelected && <Icon icon={Check} size={11} strokeWidth={2.5} className="text-cos-on-primary" />}
                                             </span>
                                         ) : (
-                                            <div className="mt-[7px] w-1.5 h-1.5 rounded-full shrink-0 bg-[var(--color-m3-outline)] " />
+                                            <Icon
+                                                icon={compoundIcon(ev.ester)}
+                                                size={16}
+                                                className="mt-[3px] shrink-0"
+                                                title={t(`ester.${ev.ester}`)}
+                                            />
                                         )}
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center justify-between gap-2">

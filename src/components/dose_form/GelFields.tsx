@@ -6,8 +6,8 @@ import {
     GEL_COVERAGE_OPTIONS,
     GEL_COAPPLICATION_OPTIONS,
 } from '../../../logic';
-import { useHRTMode } from '../../contexts/HRTModeContext';
-import CustomSelect from '../CustomSelect';
+import { FieldRow, ChipRow } from './FormControls';
+import { FieldIcon } from '../compoundIcons';
 
 /**
  * The gel route's fields.
@@ -20,13 +20,8 @@ import CustomSelect from '../CustomSelect';
  *
  * `showEngineDetail` is therefore about what is *shown*, not what is stored: with the
  * built-in engine selected the four ignored fields are hidden, because a control that
- * changes nothing is worse than no control — it invites someone to set a product and a
- * coverage and then disbelieve the curve for not moving. The values already on the
- * record are untouched by hiding them, and switching engines brings them back.
- *
- * The product list is ids and name keys only — the kinetics for each id stay in the
- * engine chunk, which is what keeps this form from dragging that chunk into a first
- * visit (see `GEL_PRODUCT_OPTIONS`).
+ * changes nothing is worse than no control. The values already on the record are
+ * untouched by hiding them, and switching engines brings them back.
  */
 interface GelFieldsProps {
     /** True when the engine in use reads the four detail fields below. */
@@ -64,117 +59,61 @@ const GelFields: React.FC<GelFieldsProps> = ({
     bioMultiplier
 }) => {
     const { t } = useTranslation();
-    const { isTransmasc } = useHRTMode();
-    const equivLabelKey = isTransmasc ? 'field.dose_t' : 'field.dose_e2';
 
     const appliedVal = parseFloat(e2Dose);
     const hasDose = Number.isFinite(appliedVal) && appliedVal > 0;
     const absorbed = hasDose && bioMultiplier ? appliedVal * bioMultiplier : null;
     const bioPct = bioMultiplier ? (bioMultiplier * 100) : null;
 
-    const labelClass = 'block text-xs font-semibold text-cos-on-surface-variant  pl-1';
-
     return (
-        <div className="space-y-4">
-            {/* Product. Named rather than measured: the strength and the labelled
-                application area belong to the product, and the engine resolves them
-                from the id at simulation time. Only the Transmtf engine resolves
-                anything from it — the built-in one works from dose and site. */}
-            {showEngineDetail && (
-                <div className="space-y-1.5">
-                    <label className={labelClass}>{t('field.gel_product')}</label>
-                    <CustomSelect
-                        value={String(gelProductId)}
-                        onChange={(val) => setGelProductId(parseInt(val, 10))}
-                        options={GEL_PRODUCT_OPTIONS.map(p => ({
-                            value: String(p.id),
-                            label: t(p.nameKey),
-                        }))}
+        <div className="space-y-2.5">
+            <FieldRow icon={FieldIcon.pin} label={t('field.gel_site')}>
+                <ChipRow options={GEL_SITE_ORDER.map((k) => t(`pill.site.${k}`))} value={gelSite} onChange={setGelSite} />
+            </FieldRow>
+
+            {/* Applied dose — a bar like the rest, with the absorbed estimate below. */}
+            <FieldRow icon={FieldIcon.drop} label={t('field.dose_e2')}>
+                <div className="flex items-center gap-2">
+                    <input
+                        type="number" inputMode="decimal" min="0" step="0.001"
+                        value={e2Dose} onChange={(e) => onE2Change(e.target.value)}
+                        placeholder="0.0"
+                        className="w-full bg-transparent text-[15px] font-medium tabular-nums text-[var(--color-m3-on-surface)] outline-none border-b border-[var(--color-m3-outline-variant)] py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        style={{ fontSize: '16px' }}
                     />
+                    <span className="text-xs text-[var(--color-m3-on-surface-variant)] shrink-0">mg</span>
                 </div>
-            )}
-
-            {/* Application site */}
-            <div className="space-y-1.5">
-                <label className={labelClass}>{t('field.gel_site')}</label>
-                <CustomSelect
-                    value={String(gelSite)}
-                    onChange={(val) => setGelSite(parseInt(val, 10))}
-                    options={GEL_SITE_ORDER.map((siteKey, idx) => ({
-                        value: String(idx),
-                        label: t(`gel.site.${siteKey}`)
-                    }))}
-                />
-            </div>
-
-            {/* Applied dose */}
-            <div className="space-y-1.5">
-                <label className={labelClass}>
-                    {t(equivLabelKey)}
-                </label>
-                <input
-                    type="number" inputMode="decimal"
-                    min="0"
-                    step="0.001"
-                    value={e2Dose} onChange={e => onE2Change(e.target.value)}
-                    className="input-base font-medium [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    placeholder="0.0"
-                    style={{ fontSize: '16px' }}
-                />
-                {/* Absorbed estimate from site bioavailability */}
                 {bioPct !== null && (
-                    <p className="text-xs text-[var(--color-m3-on-surface-variant)]  pl-1">
+                    <p className="text-xs text-[var(--color-m3-on-surface-variant)] mt-1">
                         {t('gel.bioavailability')}: {bioPct.toFixed(0)}%
-                        {absorbed !== null && (
-                            <> · {t('gel.absorbed')} ≈ {absorbed.toFixed(3).replace(/\.?0+$/, '')} mg</>
-                        )}
+                        {absorbed !== null && <> · {t('gel.absorbed')} ≈ {absorbed.toFixed(3).replace(/\.?0+$/, '')} mg</>}
                     </p>
                 )}
-            </div>
+            </FieldRow>
 
-            {/* How much skin the dose went over, what else was on that skin, and
-                whether it was washed off on a schedule. All three feed only the
-                Transmtf engine — see `showEngineDetail`. */}
             {showEngineDetail && (
                 <>
-                    <div className="space-y-1.5">
-                        <label className={labelClass}>{t('field.gel_coverage')}</label>
-                        <CustomSelect
-                            value={String(gelCoverage)}
-                            onChange={(val) => setGelCoverage(parseInt(val, 10))}
-                            options={GEL_COVERAGE_OPTIONS.map((key, idx) => ({
-                                value: String(idx),
-                                label: t(`gel.coverage.${key}`)
-                            }))}
-                        />
-                    </div>
-
-                    <div className="space-y-1.5">
-                        <label className={labelClass}>{t('field.gel_coapplied')}</label>
-                        <CustomSelect
-                            value={String(gelCoApplied)}
-                            onChange={(val) => setGelCoApplied(parseInt(val, 10))}
-                            options={GEL_COAPPLICATION_OPTIONS.map((key, idx) => ({
-                                value: String(idx),
-                                label: t(`gel.coapplied.${key}`)
-                            }))}
-                        />
-                    </div>
-
-                    {/* Optional, because most applications are not washed on a
-                        schedule — an empty field means the site was left alone. */}
-                    <div className="space-y-1.5">
-                        <label className={labelClass}>{t('field.gel_wash')}</label>
-                        <input
-                            type="number" inputMode="decimal"
-                            min="0"
-                            step="0.5"
-                            value={gelWashHours} onChange={e => setGelWashHours(e.target.value)}
-                            className="input-base font-medium [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            placeholder={t('field.gel_wash_none')}
-                            style={{ fontSize: '16px' }}
-                        />
-                    </div>
+                    <FieldRow icon={FieldIcon.gel} label={t('field.gel_product')} engineOnly>
+                        <ChipRow options={GEL_PRODUCT_OPTIONS.map((p) => t(p.nameKey))} value={gelProductId - 1} onChange={(i) => setGelProductId(GEL_PRODUCT_OPTIONS[i].id)} />
+                    </FieldRow>
+                    <FieldRow icon={FieldIcon.area} label={t('field.gel_coverage')} engineOnly>
+                        <ChipRow options={GEL_COVERAGE_OPTIONS.map((k) => t(`gel.coverage.${k}`))} value={gelCoverage} onChange={setGelCoverage} />
+                    </FieldRow>
+                    <FieldRow icon={FieldIcon.layers} label={t('field.gel_coapplied')} engineOnly>
+                        <ChipRow options={GEL_COAPPLICATION_OPTIONS.map((k) => t(`gel.coapplied.${k}`))} value={gelCoApplied} onChange={setGelCoApplied} />
+                    </FieldRow>
+                    <FieldRow icon={FieldIcon.drop} label={t('field.gel_wash')} engineOnly>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="number" inputMode="decimal" min="0" step="0.5"
+                                value={gelWashHours} onChange={(e) => setGelWashHours(e.target.value)}
+                                placeholder={t('field.gel_wash_none')}
+                                className="w-full bg-transparent text-[15px] font-medium tabular-nums text-[var(--color-m3-on-surface)] outline-none border-b border-[var(--color-m3-outline-variant)] py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                style={{ fontSize: '16px' }}
+                            />
+                            <span className="text-xs text-[var(--color-m3-on-surface-variant)] shrink-0">{t('unit.hour_short')}</span>
+                        </div>
+                    </FieldRow>
                 </>
             )}
         </div>

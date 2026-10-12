@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Icon from './Icon';
-import CustomSelect from './CustomSelect';
 import Switch from './Switch';
 import { useTranslation } from '../contexts/LanguageContext';
-import { Ester, Route } from '../../logic';
+import { Ester, Route, isAntiandrogen, isTestosteroneEster } from '../../logic';
 import DateTimePicker from './DateTimePicker';
 import { ChevronRight, Clock3 as Clock, Plus, Trash2, Bookmark, Check } from '../icons';
 import type { DoseTemplate } from './DoseForm';
+import { PillRail, type PillItem } from './dose_form/FormControls';
+import { RouteGlyph, compoundIcon } from './compoundIcons';
 import {
     readMedPlans, writeMedPlans, sanitizeMedPlans, isSavedTemplate, type MedPlan, type PlanStatus, type PlanTime,
     planStatuses, migrateOldRemindersToPlans,
@@ -222,6 +223,20 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
 
     const modeLabel = (m: PlanMode): string => m === 'times' ? t('plan.mode.times') : m === 'hours' ? t('plan.mode.hours') : t('plan.mode.days');
 
+    // The same picture-pill rails the record form uses, so a plan's drug and route read
+    // exactly like a logged dose's.
+    const toneOf = (e: Ester): PillItem['tone'] =>
+        isAntiandrogen(e) ? 'A' : isTestosteroneEster(e) ? 'T' : 'E';
+    const esterItems: PillItem[] = useMemo(
+        () => ESTERS.map(e => ({ value: e, label: t(`pill.ester.${e}`), icon: compoundIcon(e), tone: toneOf(e) })),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [t],
+    );
+    const routeItems: PillItem[] = useMemo(
+        () => ROUTES.map(r => ({ value: r, label: t(`pill.route.${r}`), icon: RouteGlyph[r] ?? RouteGlyph.oral })),
+        [t],
+    );
+
     const numField = (label: string, value: number, set: (v: number) => void, min: number, max: number) => (
         <label className="block">
             <span className="block text-xs font-semibold text-[var(--color-m3-on-surface-variant)] mb-1.5">{label}</span>
@@ -378,19 +393,15 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <CustomSelect
-                        label={t('plan.add_drug')}
-                        value={ester}
-                        onChange={v => setEster(v as Ester)}
-                        options={ESTERS.map(e => ({ value: e, label: t(`ester.${e}`) }))}
-                    />
-                    <CustomSelect
-                        label={t('plan.add_route')}
-                        value={route}
-                        onChange={v => setRoute(v as Route)}
-                        options={ROUTES.map(r => ({ value: r, label: t(`route.${r}`) }))}
-                    />
+                <div className="space-y-4">
+                    <div>
+                        <p className={`text-xs ${muted} mb-2`}>{t('pill.sec.drug')}</p>
+                        <PillRail items={esterItems} value={ester} onSelect={(v) => setEster(v as Ester)} dense ariaLabel={t('plan.add_drug')} />
+                    </div>
+                    <div>
+                        <p className={`text-xs ${muted} mb-2`}>{t('pill.sec.route')}</p>
+                        <PillRail items={routeItems} value={route} onSelect={(v) => setRoute(v as Route)} dense animateKey={ester} ariaLabel={t('plan.add_route')} />
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

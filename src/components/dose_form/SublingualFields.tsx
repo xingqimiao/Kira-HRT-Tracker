@@ -1,8 +1,9 @@
 import React from 'react';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { Route, Ester, SL_TIER_ORDER, SublingualTierParams, isAntiandrogen } from '../../../logic';
-import CustomSelect from '../CustomSelect';
-import Collapsible from '../Collapsible';
+import { FieldRow, ChipRow } from './FormControls';
+import { FieldIcon } from '../compoundIcons';
+import DoseAmountInput, { type AmountField } from './DoseAmountInput';
 
 interface SublingualFieldsProps {
     ester: Ester;
@@ -22,138 +23,81 @@ interface SublingualFieldsProps {
     route: Route;
 }
 
+/**
+ * The sublingual route: an absorption-tier chip row (or a custom hold time), then the
+ * dose rows. The tier row is the reference's five chips — four presets plus 自訂, which
+ * reveals the hold-time field.
+ */
 const SublingualFields: React.FC<SublingualFieldsProps> = ({
-    ester,
-    rawDose,
-    e2Dose,
-    onRawChange,
-    onE2Change,
-    slTier,
-    setSlTier,
-    useCustomTheta,
-    setUseCustomTheta,
-    customHoldInput,
-    setCustomHoldInput,
-    customHoldValue,
-    setCustomHoldValue,
-    thetaFromHold,
-    route
+    ester, rawDose, e2Dose, onRawChange, onE2Change,
+    slTier, setSlTier, useCustomTheta, setUseCustomTheta,
+    customHoldInput, setCustomHoldInput, customHoldValue, setCustomHoldValue,
+    thetaFromHold, route
 }) => {
     const { t } = useTranslation();
-    // A sublingual anti-androgen has no E2/T equivalent; `getToE2Factor` is 0 for it.
     const antiandrogen = isAntiandrogen(ester);
 
-    const handleCustomHoldChange = (str: string) => {
-        setCustomHoldInput(str);
-        const val = parseFloat(str);
-        if (Number.isFinite(val) && val >= 1) {
-            setCustomHoldValue(val);
-        }
+    const tiers = SL_TIER_ORDER.map((k) => `${t(`pill.tier.${k}`)} ${SublingualTierParams[k].hold}${t('unit.min_short')}`);
+    const chipValue = useCustomTheta ? tiers.length : slTier;
+    const onTier = (i: number): void => {
+        if (i === tiers.length) { setUseCustomTheta(true); return; }
+        setUseCustomTheta(false);
+        setSlTier(i);
     };
 
-    const tierOptions = SL_TIER_ORDER.map((tierKey, index) => ({
-        value: String(index),
-        label: t(`sl.tier.${tierKey}`),
-        description: `${SublingualTierParams[tierKey].hold} min`
-    }));
+    const fields: AmountField[] = [];
+    if (ester !== Ester.E2) {
+        fields.push({ key: 'raw', label: t('field.dose_raw'), value: rawDose, onChange: onRawChange });
+    }
+    if (ester === Ester.EV && route === Route.sublingual) {
+        fields[0].hint = `${t('field.dose_e2')}: ${e2Dose ? `${e2Dose} mg` : '--'}`;
+    } else if (!antiandrogen) {
+        fields.push({ key: 'e2', label: t('field.dose_e2'), value: e2Dose, onChange: onE2Change });
+    }
 
     return (
-        <div className="space-y-4">
-            <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                    <label className="block text-xs font-semibold text-cos-on-surface-variant  pl-1">{t('field.sl_absorption')}</label>
-                    <button
-                        onClick={() => setUseCustomTheta(!useCustomTheta)}
-                        className="text-xs font-semibold text-[var(--color-m3-primary)]"
-                    >
-                        {useCustomTheta ? t('sl.use_presets') : t('sl.use_custom')}
-                    </button>
-                </div>
+        <div className="space-y-2.5">
+            <FieldRow icon={FieldIcon.glass} label={t('field.sl_absorption')}>
+                <ChipRow options={[...tiers, t('pill.tier.custom')]} value={chipValue} onChange={onTier} />
+            </FieldRow>
 
-                {/* Two panels that swap, not a panel that appears below another: the
-                    preset select and the custom hold-time controls are alternative
-                    answers to one question, so each is collapsed as the other opens.
-                    Both stay mounted through their own 250ms transition, so the
-                    swap is a fill-in rather than a jump in the form's height — the
-                    toggle above used to replace one with the other in a single frame. */}
-                <Collapsible open={!useCustomTheta}>
-                    <CustomSelect
-                        value={String(slTier)}
-                        onChange={(val) => setSlTier(parseInt(val, 10))}
-                        options={tierOptions}
-                    />
-                </Collapsible>
-                <Collapsible open={useCustomTheta}>
-                    <div className="pt-2 pb-1 space-y-2">
-                        <label className="text-xs font-medium text-[var(--color-m3-on-surface-variant)] ">{t('sl.hold_time_min')}</label>
-                        <div className="flex items-center gap-2">
-                            <input
-                                type="number" inputMode="decimal"
-                                min="1" max="60"
-                                value={customHoldInput}
-                                onChange={e => handleCustomHoldChange(e.target.value)}
-                                className="input-num w-16 h-9 font-medium text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                style={{ fontSize: '16px' }}
-                            />
-                            <span className="text-xs text-cos-on-surface-variant ">{t('unit.min_short')}</span>
-                            <input
-                                type="range"
-                                min="1" max="60"
-                                value={customHoldValue}
-                                onChange={e => {
-                                    const v = parseInt(e.target.value);
-                                    setCustomHoldValue(v);
-                                    setCustomHoldInput(v.toString());
-                                }}
-                                className="flex-1 h-1 accent-[var(--color-m3-primary)]"
-                            />
-                        </div>
-                        <p className="m3-text-2xs text-[var(--color-m3-on-surface-variant)] ">{t('sl.theta_approx')}: {thetaFromHold(customHoldValue).toFixed(3)} (Keep E2)</p>
-                    </div>
-                </Collapsible>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {(ester !== Ester.E2) && (
-                    <div className={`space-y-2 ${(ester === Ester.EV && route === Route.sublingual) ? 'col-span-2' : ''}`}>
-                        <label className="block text-xs font-semibold text-cos-on-surface-variant  pl-1">{t('field.dose_raw')}</label>
+            {useCustomTheta && (
+                <FieldRow icon={FieldIcon.clock} label={t('sl.hold_time_min')}>
+                    <div className="flex items-center gap-3">
                         <input
                             type="number" inputMode="decimal"
-                            min="0"
-                            step="0.001"
-                            value={rawDose} onChange={e => onRawChange(e.target.value)}
-                            className="input-base font-medium text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            placeholder="0.0"
+                            min="1" max="60"
+                            value={customHoldInput}
+                            onChange={(e) => {
+                                setCustomHoldInput(e.target.value);
+                                const v = parseFloat(e.target.value);
+                                if (Number.isFinite(v) && v >= 1) setCustomHoldValue(v);
+                            }}
+                            className="w-16 bg-transparent text-[15px] font-medium tabular-nums text-[var(--color-m3-on-surface)] outline-none border-b border-[var(--color-m3-outline-variant)] py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             style={{ fontSize: '16px' }}
                         />
-                    </div>
-                )}
-
-                {!(ester === Ester.EV && route === Route.sublingual) && !antiandrogen && (
-                    <div className={`space-y-2 ${(ester === Ester.E2) ? "col-span-2" : ""}`}>
-                        <label className="block text-xs font-semibold text-cos-on-surface-variant  pl-1">
-                            {t('field.dose_e2')}
-                        </label>
                         <input
-                            type="number" inputMode="decimal"
-                            min="0"
-                            step="0.001"
-                            value={e2Dose} onChange={e => onE2Change(e.target.value)}
-                            className="input-base font-medium text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            placeholder="0.0"
-                            style={{ fontSize: '16px' }}
+                            type="range" min="1" max="60"
+                            value={customHoldValue}
+                            onChange={(e) => {
+                                const v = parseInt(e.target.value);
+                                setCustomHoldValue(v);
+                                setCustomHoldInput(v.toString());
+                            }}
+                            className="flex-1 h-1 accent-[var(--color-m3-primary)]"
                         />
+                        <span className="text-xs text-[var(--color-m3-on-surface-variant)] shrink-0">
+                            θ {thetaFromHold(customHoldValue).toFixed(3)}
+                        </span>
                     </div>
-                )}
+                </FieldRow>
+            )}
 
-                {(ester === Ester.EV && route === Route.sublingual) && (
-                    <div className="col-span-2">
-                        <p className="text-xs text-cos-on-surface-variant  mt-1 pl-1">
-                            {t('field.dose_e2')}: {e2Dose ? `${e2Dose} mg` : '--'}
-                        </p>
-                    </div>
-                )}
-            </div>
+            {fields.map((fld, i) => (
+                <FieldRow key={fld.key} icon={fld.key === 'e2' ? FieldIcon.drop : FieldIcon.weight} label={fld.label} delay={i + (useCustomTheta ? 2 : 1)}>
+                    <DoseAmountInput field={fld} />
+                </FieldRow>
+            ))}
         </div>
     );
 };

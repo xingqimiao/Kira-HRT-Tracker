@@ -3,9 +3,8 @@ import Icon from './Icon';
 import { v4 as uuidv4 } from 'uuid';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
-import CustomSelect from './CustomSelect';
 import DateTimePicker from './DateTimePicker';
-import { Route, Ester, ExtraKey, DoseEvent, SL_TIER_ORDER, SublingualTierParams, getBioavailabilityMultiplier, getToE2Factor, getDoseAdvisory, isAntiandrogen, isUnmodelledCompound, SPIRO_MG_MAX_PER_DAY, GEL_DEFAULT_PRODUCT_ID, GEL_COVERAGE_DEFAULT_INDEX, GEL_COAPPLICATION_DEFAULT_INDEX, type PkEngineId } from '../../logic';
+import { Route, Ester, ExtraKey, DoseEvent, SL_TIER_ORDER, SublingualTierParams, getBioavailabilityMultiplier, getToE2Factor, getDoseAdvisory, isAntiandrogen, isTestosteroneEster, isUnmodelledCompound, SPIRO_MG_MAX_PER_DAY, GEL_DEFAULT_PRODUCT_ID, GEL_COVERAGE_DEFAULT_INDEX, GEL_COAPPLICATION_DEFAULT_INDEX, type PkEngineId } from '../../logic';
 import { Save, Trash2, Info, Bookmark, BookmarkPlus, X, ChevronDown, Check, AlertTriangle, ExternalLink } from '../icons';
 import { DoseAdvisoryLine } from './DoseAdvisory';
 import { LOCALE_MAP } from '../utils/helpers';
@@ -16,6 +15,8 @@ import SublingualFields from './dose_form/SublingualFields';
 import GelFields from './dose_form/GelFields';
 import PatchFields from './dose_form/PatchFields';
 import QuickDoseButtons, { QuickDose } from './dose_form/QuickDoseButtons';
+import { PillRail, FieldRow, LevelSegments, type PillItem } from './dose_form/FormControls';
+import { RouteGlyph, FieldIcon, compoundIcon } from './compoundIcons';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { usePresence } from '../hooks/usePresence';
 
@@ -842,6 +843,26 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
         }
     }, [availableEsters, ester]);
 
+    // The two picture-pill rails. Groups carry the reference's tone: estradiol
+    // primary, testosterone the cool accent, the anti-androgens the warning amber —
+    // so a compound's class reads before its name does.
+    const routeItems: PillItem[] = useMemo(
+        () => availableRoutes.map(r => ({ value: r, label: t(`pill.route.${r}`), icon: RouteGlyph[r] ?? RouteGlyph.oral })),
+        [availableRoutes, t],
+    );
+    const toneOf = (e: Ester): PillItem['tone'] =>
+        isAntiandrogen(e) ? 'A' : isTestosteroneEster(e) ? 'T' : 'E';
+    const esterItems: PillItem[] = useMemo(
+        () => availableEsters.map(e => ({
+            value: e,
+            label: t(`pill.ester.${e}`),
+            icon: compoundIcon(e),
+            tone: toneOf(e),
+        })),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [availableEsters, t],
+    );
+
     const doseGuide = useMemo(() => {
         // DOSE_GUIDE_CONFIG's thresholds are estradiol's. They are meaningless for
         // an anti-androgen, whose own range is shown as the dose hint below instead.
@@ -998,24 +1019,19 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
             )}
 
             <div className={`space-y-4 flex-1 overflow-y-auto ${!isInline ? 'px-6 pb-4' : hideHeader ? 'pb-2' : 'pb-4'}`}>
-                {/* Time */}
+                {/* Time — a bar, like everything below it. */}
                 {!hideTime && (
-                <div>
+                <FieldRow icon={FieldIcon.clock} label={t('field.time')}>
                     <button
                         type="button"
                         onClick={() => setIsDatePickerOpen(v => !v)}
-                        className="w-full flex items-center justify-between py-[18px] border-b border-[var(--color-m3-outline-variant)]  text-start"
+                        className="w-full flex items-center justify-between text-start"
                     >
-                        <span className="text-m3-body-medium text-[var(--color-m3-on-surface)] ">{t('field.time')}</span>
-                        <div className="flex items-center gap-1.5 text-[var(--color-m3-on-surface-variant)] ">
-                            <span className="text-sm tabular-nums">
-                                {dateStr ? new Date(dateStr).toLocaleString(LOCALE_MAP[lang] || 'en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
-                            </span>
-                            <Icon icon={ChevronDown} size={14} className={`chev ${isDatePickerOpen ? 'rotate-180' : ''}`} />
-                        </div>
+                        <span className="text-sm tabular-nums text-[var(--color-m3-on-surface)]">
+                            {dateStr ? new Date(dateStr).toLocaleString(LOCALE_MAP[lang] || 'en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                        </span>
+                        <Icon icon={ChevronDown} size={14} className={`chev text-[var(--color-m3-on-surface-variant)] ${isDatePickerOpen ? 'rotate-180' : ''}`} />
                     </button>
-                    {/* The picker unfolds in place — DateTimePicker owns the
-                        disclosure motion, so the call site just passes the flag. */}
                     <DateTimePicker
                         isOpen={isDatePickerOpen}
                         inline
@@ -1028,39 +1044,31 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                         mode="datetime"
                         title={t('field.time')}
                     />
-                </div>
+                </FieldRow>
                 )}
 
-                {/* Route */}
-                <CustomSelect
-                    label={t('field.route')}
-                    value={route}
-                    onChange={(val) => setRoute(val as Route)}
-                    options={availableRoutes.map(r => ({
-                        value: r,
-                        label: t(`route.${r}`)
-                    }))}
-                />
+                {/* Route — a rail of picture-pills. */}
+                <div>
+                    <p className="text-xs text-[var(--color-m3-on-surface-variant)] mb-2">{t('pill.sec.route')}</p>
+                    <PillRail items={routeItems} value={route} onSelect={(v) => setRoute(v as Route)} ariaLabel={t('field.route')} />
+                </div>
 
                 {route === Route.patchRemove && (
-                    <div className="text-xs text-[var(--color-m3-on-surface-variant)]  bg-[var(--color-m3-surface-container)]  p-3 rounded-[var(--radius-md)]">
-                        {t('patch.remove_hint')}
-                    </div>
+                    <FieldRow icon={FieldIcon.info} label={t('route.patchRemove')}>
+                        <p className="text-[13px] text-[var(--color-m3-on-surface-variant)]">{t('patch.remove_hint')}</p>
+                    </FieldRow>
                 )}
 
                 {route !== Route.patchRemove && (
                     <>
-                        {/* Ester Selection */}
+                        {/* Compound — its own rail, re-dealt when the route changes (the
+                            available set differs), which is the reveal the route pick
+                            should trigger rather than the rail replaying on itself. */}
                         {availableEsters.length > 1 && (
-                            <CustomSelect
-                                label={t('field.ester')}
-                                value={ester}
-                                onChange={(val) => setEster(val as Ester)}
-                                options={availableEsters.map(e => ({
-                                    value: e,
-                                    label: t(`ester.${e}`)
-                                }))}
-                            />
+                            <div>
+                                <p className="text-xs text-[var(--color-m3-on-surface-variant)] mb-2">{t('pill.sec.drug')}</p>
+                                <PillRail items={esterItems} value={ester} onSelect={(v) => setEster(v as Ester)} dense animateKey={route} ariaLabel={t('field.ester')} />
+                            </div>
                         )}
 
                         {!hideTemplates && quickDoses && onAddQuickDose && onDeleteQuickDose && (
@@ -1077,7 +1085,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                             </div>
                         )}
 
-                        <div className="mt-2">
+                        <div className="mt-2 hrt-fields" key={route}>
                             {route === Route.injection && (
                                 <InjectionFields
                                     ester={ester}
@@ -1250,70 +1258,61 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                             the dose without drawing anything for it. CPA's three bullets
                             predate it and are kept as they were. */}
                         {ester === Ester.CPA && (
-                            <div className="mt-3 p-3 rounded-[var(--radius-lg)] border border-[var(--color-m3-outline-variant)]  bg-[var(--color-m3-surface-container-low)]  flex gap-3">
-                                <Icon icon={Info} className="w-5 h-5 text-[var(--color-m3-on-surface-variant)]  shrink-0 mt-0.5" />
-                                <div className="space-y-1.5">
-                                    <span className="text-m3-title-small text-[var(--color-m3-on-surface)] ">{t('dose.guide.title')}</span>
-                                    <ul className="space-y-1 mt-1">
-                                        {(['rec', 'combo', 'ultralow'] as const).map(key => (
-                                            <li key={key} className="flex items-start gap-1.5 text-xs text-[var(--color-m3-on-surface-variant)]  leading-relaxed">
-                                                <span className="mt-1.5 w-1 h-1 rounded-full bg-[var(--color-m3-on-surface-variant)]  shrink-0" />
-                                                {t(`dose.guide.cpa_hint.${key}`)}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            </div>
+                            <FieldRow icon={FieldIcon.info} label={t('dose.guide.title')}>
+                                <ul className="space-y-1 mt-1">
+                                    {(['rec', 'combo', 'ultralow'] as const).map(key => (
+                                        <li key={key} className="flex items-start gap-1.5 text-xs text-[var(--color-m3-on-surface-variant)]  leading-relaxed">
+                                            <span className="mt-1.5 w-1 h-1 rounded-full bg-[var(--color-m3-on-surface-variant)]  shrink-0" />
+                                            {t(`dose.guide.cpa_hint.${key}`)}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </FieldRow>
                         )}
 
                         {ester === Ester.SPIRO && (
-                            <div className="mt-3 p-3 rounded-[var(--radius-lg)] border border-[var(--color-m3-outline-variant)]  bg-[var(--color-m3-surface-container-low)]  flex gap-3">
-                                <Icon icon={Info} className="w-5 h-5 text-[var(--color-m3-on-surface-variant)]  shrink-0 mt-0.5" />
-                                <div className="space-y-1.5">
-                                    <span className="text-m3-title-small text-[var(--color-m3-on-surface)] ">{t('dose.guide.title')}</span>
-                                    <ul className="space-y-1 mt-1">
-                                        {(['rec', 'titrate'] as const).map(key => (
-                                            <li key={key} className="flex items-start gap-1.5 text-xs text-[var(--color-m3-on-surface-variant)]  leading-relaxed">
-                                                <span className="mt-1.5 w-1 h-1 rounded-full bg-[var(--color-m3-on-surface-variant)]  shrink-0" />
-                                                {t(`dose.guide.spiro_hint.${key}`)}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                    <p className="text-xs text-[var(--color-m3-on-surface-variant)] leading-relaxed pt-0.5">
-                                        {t('dose.guide.spiro_not_modelled')}
-                                    </p>
-                                </div>
-                            </div>
+                            <FieldRow icon={FieldIcon.info} label={t('dose.guide.title')}>
+                                <ul className="space-y-1 mt-1">
+                                    {(['rec', 'titrate'] as const).map(key => (
+                                        <li key={key} className="flex items-start gap-1.5 text-xs text-[var(--color-m3-on-surface-variant)]  leading-relaxed">
+                                            <span className="mt-1.5 w-1 h-1 rounded-full bg-[var(--color-m3-on-surface-variant)]  shrink-0" />
+                                            {t(`dose.guide.spiro_hint.${key}`)}
+                                        </li>
+                                    ))}
+                                </ul>
+                                <p className="text-xs text-[var(--color-m3-on-surface-variant)] leading-relaxed pt-0.5">
+                                    {t('dose.guide.spiro_not_modelled')}
+                                </p>
+                            </FieldRow>
                         )}
 
-                        {/* Dose guide for non-injection routes */}
+                        {/* Dose guide for non-injection routes — the segmented meter. */}
                         {doseGuide && (
-                            <div className="mt-2 pt-2 border-t border-[var(--color-m3-outline-variant)]  flex gap-2">
-                                <Icon icon={Info} className="w-3.5 h-3.5 text-[var(--color-m3-on-surface-variant)]  shrink-0 mt-0.5" />
-                                <div className="space-y-0.5 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs font-semibold text-[var(--color-m3-on-surface)] ">{t('dose.guide.title')}</span>
+                            <FieldRow icon={FieldIcon.gauge} label={t('dose.guide.title')}>
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="text-xs text-[var(--color-m3-on-surface-variant)] truncate">
+                                            {doseGuide.value !== null ? `${formatGuideNumber(doseGuide.value)} ${guideUnitLabel}` : t('dose.guide.current_blank')}
+                                        </span>
                                         {doseGuide.level && (
-                                            <span className={`text-xs font-medium ${guideBadgeClass}`}>
+                                            <span className={`text-xs font-medium shrink-0 ${guideBadgeClass}`}>
                                                 {t(`dose.guide.level.${doseGuide.level}`)}
                                             </span>
                                         )}
                                     </div>
-                                    <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">
-                                        {t('dose.guide.current')}: {doseGuide.value !== null ? `${formatGuideNumber(doseGuide.value)} ${guideUnitLabel}` : t('dose.guide.current_blank')}
-                                    </p>
+                                    <LevelSegments level={doseGuide.level ? ['low', 'medium', 'high', 'very_high', 'above'].indexOf(doseGuide.level) : -1} />
                                     {guideRangeText && (
-                                        <p className="m3-text-note leading-snug">
+                                        <p className="m3-text-2xs text-[var(--color-m3-on-surface-variant)] leading-snug">
                                             {t('dose.guide.reference')}: {guideRangeText}
                                         </p>
                                     )}
                                     {doseGuide.showRateHint && (
-                                        <p className="m3-text-2xs text-cos-warning  leading-snug">
+                                        <p className="m3-text-2xs text-cos-warning leading-snug">
                                             {t('dose.guide.patch_rate_hint')}
                                         </p>
                                     )}
                                 </div>
-                            </div>
+                            </FieldRow>
                         )}
 
                         {/* Recent-use heads-up — logged doses already running high */}
