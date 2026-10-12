@@ -3,19 +3,17 @@ import type { CalibrationHistoryMode, CalibrationMethod } from '../../logic';
 import { drawHistoryFrame, drawPreview, readColors, HISTORY_SWEEP_DAYS, type PreviewData, type Pt } from '../utils/modelPreview';
 
 /**
- * One little canvas inside a calibration card. Two jobs:
+ * One little canvas inside a calibration card.
  *
- *  - **Model cards** (no `history`): a *static* picture of that model's finished fit, so
- *    the four curves compare side by side and each reads exactly like the reference table.
- *    No animation — the page is how you switch models, and a still frame is what a glance
- *    should give you.
- *  - **History cards** (`history` set): the retrospective/forward demo, which only makes
- *    sense as motion — a day pointer sweeps forward and each lab shows what it does to the
- *    curve already drawn. That is the whole point of the card, so it plays.
+ * Every card plays its reveal **once** when the page opens — all of them together, since
+ * they share the ticker below and start on the same frame — and then holds the finished
+ * picture. Tapping a card replays just that one (the page bumps its `replay` counter), so
+ * the animation stays a deliberate thing you ask for rather than a loop running forever
+ * beside the text.
  *
- * All animated cards share one `requestAnimationFrame` loop (below), so the cost is one
- * ticker no matter how many are open. A card off-screen pauses itself; a
- * `prefers-reduced-motion` user gets the final frame instead of a loop.
+ * Model cards reveal the fitted curve left-to-right; history cards run the
+ * retrospective/forward sweep. A card off-screen pauses itself, and a
+ * `prefers-reduced-motion` user gets the finished frame with no animation at all.
  */
 
 type Sub = (nowMs: number) => void;
@@ -34,8 +32,9 @@ function subscribe(s: Sub): () => void {
     };
 }
 
-/** How long one sweep of the history demo takes. */
-const SWEEP_MS = 7000;
+/** How long one play-through takes: the history sweep is given longer to read. */
+const REVEAL_MS = 3200;
+const SWEEP_MS = 6000;
 
 interface Props {
     method: CalibrationMethod;
@@ -43,17 +42,22 @@ interface Props {
     data?: PreviewData;
     /** The calibrated curve for `method` (model cards). */
     model?: Pt[] | null;
-    /** When set, animate the history-mode demo instead of a static model curve. */
+    /** When set, play the history-mode sweep instead of a model reveal. */
     history?: CalibrationHistoryMode;
+    /** Bump to replay. The first value (0) is the play-on-mount. */
+    replay?: number;
     height?: number;
 }
 
-const ModelPreviewCanvas: React.FC<Props> = ({ method, data, model = null, history, height = 90 }) => {
+const ModelPreviewCanvas: React.FC<Props> = ({ method, data, model = null, history, replay = 0, height = 90 }) => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const propsRef = useRef({ method, data, model, history });
     propsRef.current = { method, data, model, history };
-    const drawAtRef = useRef<(day: number) => void>(() => {});
-    // The history demo reads better a little taller than the model strip.
+    // The shared frame-drawing handle and the progress it last drew at, so a redraw from a
+    // size/theme/fit change resumes where the reveal is rather than jumping to the end.
+    const drawRef = useRef<(progress: number) => void>(() => {});
+    const progressRef = useRef(0);
+    const visibleRef = useRef(true);
     const h = history ? Math.max(height, 108) : height;
 
     useEffect(() => {
@@ -62,10 +66,8 @@ const ModelPreviewCanvas: React.FC<Props> = ({ method, data, model = null, histo
         const ctx = canvas?.getContext('2d');
         if (!canvas || !parent || !ctx) return;
 
-        const reduced = typeof window.matchMedia === 'function'
-            && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-        const draw = (day: number): void => {
+        const draw = (progress: number): void => {
+            progressRef.current = progress;
             const dpr = window.devicePixelRatio || 1;
             const w = Math.max(1, Math.round(parent.clientWidth));
             canvas.style.width = `${w}px`;
@@ -76,38 +78,52 @@ const ModelPreviewCanvas: React.FC<Props> = ({ method, data, model = null, histo
             ctx.clearRect(0, 0, w, h);
             const p = propsRef.current;
             const colors = readColors(canvas, p.method);
-            if (p.history) drawHistoryFrame(ctx, w, h, day, p.history, colors, 0);
-            else if (p.data) drawPreview(ctx, w, h, 1, p.method, p.data, p.model, colors, 0);
+            if (p.history) drawHistoryFrame(ctx, w, h, progress * HISTORY_SWEEP_DAYS, p.history, colors, 0);
+            else if (p.data) drawPreview(ctx, w, h, progress, p.method, p.data, p.model, colors, 0);
         };
-        drawAtRef.current = draw;
+        drawRef.current = draw;
 
-        // Redraw on size and on theme change (the model hues are CSS variables that
-        // flip with the light/dark class on <html>, which does not pass through React).
-        const redraw = (): void => draw(propsRef.current.history ? 0 : 1);
+        // Redraw on size and theme change (the model hues are CSS variables that flip with
+        // the light/dark class on <html>, which does not pass through React).
+        const redraw = (): void => draw(progressRef.current);
         const ro = new ResizeObserver(redraw);
         ro.observe(parent);
         const mo = new MutationObserver(redraw);
         mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 
-        draw(1);
-        if (!history || reduced) return () => { ro.disconnect(); mo.disconnect(); };
+        draw(progressRef.current);
+        return () => { ro.disconnect(); mo.disconnect(); };
+    }, [h, method, data, model, history]);
 
-        // Animate only while on screen.
-        let visible = true;
-        const io = new IntersectionObserver((entries) => {
-            visible = entries[entries.length - 1]?.isIntersecting ?? true;
-        }, { rootMargin: '80px' });
-        io.observe(canvas);
+    // Play once on mount, and again whenever `replay` changes. Keyed on `replay` alone so a
+    // fit arriving (a `model` change) does not restart a reveal already in flight.
+    useEffect(() => {
+        const reduced = typeof window.matchMedia === 'function'
+            && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (reduced) { drawRef.current(1); return; }
+
+        const canvas = canvasRef.current;
+        const io = canvas ? new IntersectionObserver((entries) => {
+            visibleRef.current = entries[entries.length - 1]?.isIntersecting ?? true;
+        }, { rootMargin: '80px' }) : null;
+        if (canvas) io?.observe(canvas);
 
         let started = 0;
-        const unsub = subscribe((now) => {
-            if (!visible) return;
+        let stop: (() => void) | null = null;
+        let done = false;
+        const dur = propsRef.current.history ? SWEEP_MS : REVEAL_MS;
+        const frame = (now: number): void => {
+            if (done) return;
+            if (!visibleRef.current) { started = 0; return; }
             if (!started) started = now;
-            const phase = ((now - started) % SWEEP_MS) / SWEEP_MS;
-            draw(phase * HISTORY_SWEEP_DAYS);
-        });
-        return () => { unsub(); ro.disconnect(); mo.disconnect(); io.disconnect(); };
-    }, [height, method, data, model, history]);
+            const p = Math.min(1, (now - started) / dur);
+            drawRef.current(p);
+            if (p >= 1) { done = true; stop?.(); }
+        };
+        stop = subscribe(frame);
+        return () => { stop?.(); io?.disconnect(); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [replay]);
 
     return <canvas ref={canvasRef} className="mt-3 w-full" style={{ height: h }} aria-hidden />;
 };

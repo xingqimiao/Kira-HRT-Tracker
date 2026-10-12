@@ -181,6 +181,11 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({
     /** A model's identity hue as a CSS value, for the card name and border. */
     const accentOf = (m: CalibrationMethod): string => `var(${MODEL_COLOR_VAR[m]})`;
 
+    // Replay counters. Cards play once on mount (value 0); tapping bumps the tapped card's
+    // counter, which replays only that one.
+    const [playTick, setPlayTick] = useState<Record<string, number>>({});
+    const replay = (k: string): void => setPlayTick((p) => ({ ...p, [k]: (p[k] ?? 0) + 1 }));
+
     const stats: { label: string; value: string }[] = showFit
         ? [
             { label: t('cal.amplitude'), value: `×${calibration.scale.toFixed(2)}` },
@@ -218,7 +223,7 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({
                             accent={accentOf(value)}
                             title={t(`cal.${value}`)}
                             badge={recommended ? t('cal.recommended') : undefined}
-                            onClick={() => setMethod(value)}
+                            onClick={() => { setMethod(value); replay(value); }}
                         >
                             <p className={`text-m3-body-compact leading-snug ${muted} mt-1`}>
                                 {t(`cal.short.${value}`)}
@@ -227,6 +232,7 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({
                                 method={value}
                                 data={data}
                                 model={curveFor(value, historyMode)}
+                                replay={playTick[value] ?? 0}
                             />
                         </OptionCard>
                     ))}
@@ -246,12 +252,16 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({
                                     selected={historyMode === hm}
                                     accent={accentOf(method)}
                                     title={t(`cal.${hm}`)}
-                                    onClick={() => setHistoryMode(hm)}
+                                    onClick={() => { setHistoryMode(hm); replay(`h:${hm}`); }}
                                 >
                                     <p className={`text-m3-body-compact leading-snug ${muted} mt-1`}>
                                         {t(`cal.short.${hm}`)}
                                     </p>
-                                    <ModelPreviewCanvas method={method} history={hm} />
+                                    <ModelPreviewCanvas
+                                        method={method}
+                                        history={hm}
+                                        replay={playTick[`h:${hm}`] ?? 0}
+                                    />
                                 </OptionCard>
                             ))}
                         </div>
