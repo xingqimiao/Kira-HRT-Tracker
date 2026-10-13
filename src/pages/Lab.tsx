@@ -16,6 +16,11 @@ import Collapsible from '../components/Collapsible';
 import MonitoringNoticeLine, { RecheckReminderGroup, RecheckReminderLine, SpironolactonePrecautions } from '../components/MonitoringNotice';
 import JournalCheckIn from '../components/JournalCheckIn';
 import { JournalEntry } from '../utils/bodyJournal';
+import { Virtuoso } from 'react-virtuoso';
+import { useScrollParent } from '../hooks/useScrollParent';
+
+const muted = 'text-[var(--color-m3-on-surface-variant)] ';
+const on = 'text-[var(--color-m3-on-surface)] ';
 
 const MONITORING_ICON: Record<MonitoringAnalyte, IconComponent> = {
     PRL: Atom,
@@ -51,6 +56,106 @@ interface LabProps {
     ocrModelTier: OcrModelTier;
 }
 
+/**
+ * One lab-result row — memoised, like `HistoryRow`.
+ *
+ * The list is virtualised (`Virtuoso`), so only the window renders anyway; the memo
+ * additionally keeps an unrelated parent render (opening a different row, a scan
+ * state change) from rebuilding every visible row. Props are the row's own data plus
+ * stable callbacks, so the memo holds.
+ */
+interface LabRowProps {
+    res: LabResult;
+    isEditing: boolean;
+    pt?: CalibrationPoint;
+    t: (key: string) => string;
+    lang: Lang;
+    onToggle: (id: string) => void;
+    onSave: (res: LabResult) => void;
+    onDelete: (id: string) => void;
+    onCloseEdit: () => void;
+}
+
+const LabRow: React.FC<LabRowProps> = ({ res, isEditing, pt, t, lang, onToggle, onSave, onDelete, onCloseEdit }) => {
+    const d = new Date(res.timeH * 3600000);
+    return (
+        <div className="border-b border-[var(--color-m3-outline-variant)]  last:border-b-0">
+            <div
+                className={`py-3.5 flex items-start gap-3 cursor-pointer -mx-2 px-2 rounded-md hover:bg-[var(--color-m3-surface-container)]  ${isEditing ? 'bg-[var(--color-m3-surface-container)] ' : ''}`}
+                onClick={() => onToggle(res.id)}
+            >
+                <Icon
+                    icon={isMonitoringOnlyLab(res)
+                        ? FieldIcon.info
+                        : FieldIcon.drop}
+                    size={18}
+                    className={`mt-[3px] shrink-0 ${isMonitoringOnlyLab(res)
+                        ? 'text-[var(--color-m3-on-surface-variant)]'
+                        : isT_LabUnit(res.unit)
+                            ? 'text-[var(--color-m3-accent)]'
+                            : 'text-[var(--color-m3-primary)]'}`}
+                    title={isMonitoringOnlyLab(res)
+                        ? t('monitor.section')
+                        : isT_LabUnit(res.unit) ? t('scan.analyte_t') : t('scan.analyte_e2')}
+                />
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className={`font-medium ${on} text-sm`}>
+                            {isMonitoringOnlyLab(res)
+                                ? t('monitor.section')
+                                : `${res.concValue} ${res.unit}`}
+                        </span>
+                        <span className={`text-xs tabular-nums ${muted} shrink-0`}>
+                            {formatTime(d)}
+                        </span>
+                    </div>
+                    {monitoringValues(res).length > 0 && (
+                        // Monitoring bloods travel on the lab result, so they
+                        // are listed here rather than in a parallel section.
+                        <div className={`mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs ${muted} tabular-nums`}>
+                            {monitoringValues(res).map(mv => (
+                                <span key={mv.analyte} className="inline-flex items-center gap-1">
+                                    <Icon icon={MONITORING_ICON[mv.analyte]} size={14} className="text-[var(--color-m3-on-surface-variant)]" />
+                                    <span>{t(`monitor.${mv.analyte.toLowerCase()}`)} {mv.value} {MONITORING_UNIT[mv.analyte]}{mv.uln !== undefined ? ` (${t('monitor.uln')} ${mv.uln})` : ''}</span>
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                    <div className="flex items-center justify-between gap-2">
+                        <span className={`text-xs ${muted}`}>{formatDate(d, lang)}</span>
+                        {pt && (
+                            <span className="flex items-center gap-1.5 text-xs tabular-nums shrink-0">
+                                <span className={muted}>{t('cal.model')} {Math.round(pt.pred)}</span>
+                                <span
+                                    className="px-1.5 py-0.5 rounded font-medium"
+                                    style={{
+                                        color: 'var(--color-m3-primary)',
+                                        background: 'var(--color-m3-primary-container)',
+                                    }}
+                                >
+                                    ×{pt.ratio.toFixed(2)}
+                                </span>
+                            </span>
+                        )}
+                    </div>
+                </div>
+            </div>
+            <Collapsible open={isEditing}>
+                <div className="pb-4 pt-1">
+                    <LabResultForm
+                        resultToEdit={res}
+                        onSave={(updated) => { onSave(updated); onCloseEdit(); }}
+                        onCancel={onCloseEdit}
+                        onDelete={(id) => { onDelete(id); onCloseEdit(); }}
+                    />
+                </div>
+            </Collapsible>
+        </div>
+    );
+};
+
+const MemoLabRow = React.memo(LabRow);
+
 const Lab: React.FC<LabProps> = ({
     t,
     isQuickAddLabOpen,
@@ -74,6 +179,13 @@ const Lab: React.FC<LabProps> = ({
 }) => {
     const { isTransmasc } = useHRTMode();
     const [editingLabId, setEditingLabId] = useState<string | null>(null);
+    const rootRef = React.useRef<HTMLDivElement>(null);
+    const scrollParent = useScrollParent(rootRef);
+    const sortedResults = useMemo(() => labResults.slice().sort((a, b) => b.timeH - a.timeH), [labResults]);
+    const closeLabEdit = React.useCallback(() => setEditingLabId(null), []);
+    const toggleLabRow = React.useCallback((id: string) => {
+        setEditingLabId(prev => (prev === id ? null : id));
+    }, []);
     // Whether the scan panel is open, and what it read. Both live here rather than in
     // the scanner so the panel can close and leave the prefilled form behind.
     const [isScanOpen, setIsScanOpen] = useState(false);
@@ -94,9 +206,6 @@ const Lab: React.FC<LabProps> = ({
         if (suggestion.T) out.T = { value: suggestion.T.value, unit: suggestion.T.unit };
         return Object.keys(out).length > 0 ? out : null;
     }, [scanned]);
-
-    const muted = 'text-[var(--color-m3-on-surface-variant)] ';
-    const on = 'text-[var(--color-m3-on-surface)] ';
 
     const pointById = useMemo(() => {
         const m = new Map<string, CalibrationPoint>();
@@ -157,9 +266,10 @@ const Lab: React.FC<LabProps> = ({
             ].filter(Boolean).join(' · ');
 
     return (
-        <div className="relative pb-32">
+        <div className="relative pb-32" ref={rootRef}>
             {/* Header */}
-            <div className="mx-auto w-full sticky top-0 z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-4 flex items-center justify-between max-w-2xl">
+            <div className="sticky top-0 z-20 w-full bg-[var(--color-m3-surface-dim)]">
+              <div className="mx-auto w-full max-w-2xl px-6 md:px-8 pt-8 pb-4 flex items-center justify-between">
                 <h1 className={`text-m3-title-xl ${on}`}>
                     {t('lab.title')}
                 </h1>
@@ -183,6 +293,7 @@ const Lab: React.FC<LabProps> = ({
                         <span>{isQuickAddLabOpen ? t('btn.cancel') : t('lab.add_title')}</span>
                     </button>
                 </div>
+              </div>
             </div>
 
             {/* Scan panel. Collapsed by default — it is a 22 MB download the first
@@ -294,94 +405,24 @@ const Lab: React.FC<LabProps> = ({
                     </div>
                 ) : (
                     <div>
-                        {labResults
-                            .slice()
-                            .sort((a, b) => b.timeH - a.timeH)
-                            .map(res => {
-                                const d = new Date(res.timeH * 3600000);
-                                const isEditing = editingLabId === res.id;
-                                const pt = pointById.get(res.id);
-                                return (
-                                    <div key={res.id} className="border-b border-[var(--color-m3-outline-variant)]  last:border-b-0">
-                                        <div
-                                            className={`py-3.5 flex items-start gap-3 cursor-pointer -mx-2 px-2 rounded-md hover:bg-[var(--color-m3-surface-container)]  ${isEditing ? 'bg-[var(--color-m3-surface-container)] ' : ''}`}
-                                            onClick={() => setEditingLabId(isEditing ? null : res.id)}
-                                        >
-                                            <Icon
-                                                icon={isMonitoringOnlyLab(res)
-                                                    ? FieldIcon.info
-                                                    : FieldIcon.drop}
-                                                size={18}
-                                                className={`mt-[3px] shrink-0 ${isMonitoringOnlyLab(res)
-                                                    ? 'text-[var(--color-m3-on-surface-variant)]'
-                                                    : isT_LabUnit(res.unit)
-                                                        ? 'text-[var(--color-m3-accent)]'
-                                                        : 'text-[var(--color-m3-primary)]'}`}
-                                                title={isMonitoringOnlyLab(res)
-                                                    ? t('monitor.section')
-                                                    : isT_LabUnit(res.unit) ? t('scan.analyte_t') : t('scan.analyte_e2')}
-                                            />
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <span className={`font-medium ${on} text-sm`}>
-                                                        {isMonitoringOnlyLab(res)
-                                                            ? t('monitor.section')
-                                                            : `${res.concValue} ${res.unit}`}
-                                                    </span>
-                                                    <span className={`text-xs tabular-nums ${muted} shrink-0`}>
-                                                        {formatTime(d)}
-                                                    </span>
-                                                </div>
-                                                {monitoringValues(res).length > 0 && (
-                                                    // Monitoring bloods travel on the lab result, so they
-                                                    // are listed here rather than in a parallel section.
-                                                    <div className={`mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs ${muted} tabular-nums`}>
-                                                        {monitoringValues(res).map(mv => (
-                                                            <span key={mv.analyte} className="inline-flex items-center gap-1">
-                                                                <Icon icon={MONITORING_ICON[mv.analyte]} size={14} className="text-[var(--color-m3-on-surface-variant)]" />
-                                                                <span>{t(`monitor.${mv.analyte.toLowerCase()}`)} {mv.value} {MONITORING_UNIT[mv.analyte]}{mv.uln !== undefined ? ` (${t('monitor.uln')} ${mv.uln})` : ''}</span>
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <span className={`text-xs ${muted}`}>{formatDate(d, lang)}</span>
-                                                    {pt && (
-                                                        <span className="flex items-center gap-1.5 text-xs tabular-nums shrink-0">
-                                                            <span className={muted}>{t('cal.model')} {Math.round(pt.pred)}</span>
-                                                            <span
-                                                                className="px-1.5 py-0.5 rounded font-medium"
-                                                                style={{
-                                                                    color: 'var(--color-m3-primary)',
-                                                                    background: 'var(--color-m3-primary-container)',
-                                                                }}
-                                                            >
-                                                                ×{pt.ratio.toFixed(2)}
-                                                            </span>
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <Collapsible open={isEditing}>
-                                            <div className="pb-4 pt-1">
-                                                <LabResultForm
-                                                    resultToEdit={res}
-                                                    onSave={(updated) => {
-                                                        onSaveLabResult(updated);
-                                                        setEditingLabId(null);
-                                                    }}
-                                                    onCancel={() => setEditingLabId(null)}
-                                                    onDelete={(id) => {
-                                                        onDeleteLabResult(id);
-                                                        setEditingLabId(null);
-                                                    }}
-                                                />
-                                            </div>
-                                        </Collapsible>
-                                    </div>
-                                );
-                            })}
+                        <Virtuoso
+                            customScrollParent={scrollParent ?? undefined}
+                            data={sortedResults}
+                            itemContent={(_index, res) => (
+                                <MemoLabRow
+                                    res={res}
+                                    isEditing={editingLabId === res.id}
+                                    pt={pointById.get(res.id)}
+                                    t={t}
+                                    lang={lang}
+                                    onToggle={toggleLabRow}
+                                    onSave={onSaveLabResult}
+                                    onDelete={onDeleteLabResult}
+                                    onCloseEdit={closeLabEdit}
+                                />
+                            )}
+                            computeItemKey={(_index, res) => res.id}
+                        />
 
                         {/* Clear all — the last result row's border-b is the divider above this */}
                         <div className="flex items-center justify-end py-4">
