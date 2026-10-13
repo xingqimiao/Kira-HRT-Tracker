@@ -45,8 +45,17 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ mode, onDone }) => {
         return () => window.clearTimeout(timer);
     }, [fillDone, onDone]);
 
+    // The overlay must be the app's own surface, not a fixed dark colour: on a light
+    // theme a hardcoded #0D0D12 painted a black panel over the already-light page, so a
+    // light-mode launch read as black (native window) -> white (html paint) -> black
+    // (this overlay) -> animation. The vial art and the surface both follow the theme
+    // class the inline <head> script sets before first paint, so `var(--color-m3-surface)`
+    // is correct here and keeps the dark case byte-identical.
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0D0D12]">
+        <div
+            className="fixed inset-0 z-[100] flex items-center justify-center"
+            style={{ backgroundColor: 'var(--color-m3-surface)' }}
+        >
             <BloodVial level={level} mode={mode} size={140} onFillDone={handleFillDone} />
         </div>
     );

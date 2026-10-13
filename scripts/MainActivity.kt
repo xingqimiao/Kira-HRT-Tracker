@@ -1,6 +1,7 @@
 package com.kiramyao.hrt
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
@@ -238,7 +239,12 @@ class MainActivity : TauriActivity() {
 
   override fun onWebViewCreate(webView: WebView) {
     appWebView = webView
-    webView.setBackgroundColor(Color.rgb(13, 13, 18))
+    // The WebView's own background shows before the page paints. Match the system's
+    // light/dark setting so a light-mode launch does not flash a black rectangle
+    // between the (now light) native window and the page's first paint. The light
+    // value is the app's `--color-m3-surface`; the dark value is unchanged.
+    val nightMode = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+    webView.setBackgroundColor(if (nightMode) Color.rgb(13, 13, 18) else Color.rgb(251, 251, 252))
     super.onWebViewCreate(webView)
     webView.addJavascriptInterface(SafeArea(), "HrtSafeArea")
     webView.addJavascriptInterface(BackBridge(), "HrtBack")

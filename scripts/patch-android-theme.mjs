@@ -22,12 +22,24 @@ for (const [density, size] of Object.entries(mipmapSizes)) {
 }
 rmSync(resolve(root, 'mipmap-anydpi-v26', 'ic_launcher.xml'), { force: true });
 
-const colors = `<resources>\n    <color name="window_surface">#0D0D12</color>\n</resources>\n`;
-const theme = `<resources>\n    <style name="Theme.kira_hrt" parent="Theme.MaterialComponents.DayNight.NoActionBar">\n        <item name="android:windowActionModeOverlay">true</item>\n        <item name="android:windowSplashScreenBackground">@color/window_surface</item>\n        <item name="android:windowSplashScreenAnimatedIcon">@drawable/launch_splash_transparent</item>\n        <item name="android:windowSplashScreenIconBackgroundColor">@color/window_surface</item>\n        <item name="android:windowLightStatusBar">false</item>\n        <item name="android:statusBarColor">@color/window_surface</item>\n        <item name="android:navigationBarColor">@color/window_surface</item>\n        <item name="android:windowBackground">@color/window_surface</item>\n        <item name="android:fontFamily">sans</item>\n    </style>\n</resources>\n`;
+// The launch surface must follow the system's light/dark setting, not be pinned dark.
+// The theme is `DayNight`, so Android resolves `@color/window_surface` from `values/`
+// (light) or `values-night/` (dark). Pinning #0D0D12 in both meant a light-mode launch
+// showed a black system splash and a black window behind the WebView before the page
+// (correctly light) painted — reported as "先黑再闪白再黑". These two values match the
+// app's own `--color-m3-surface` for each theme.
+const colorsLight = `<resources>\n    <color name="window_surface">#FBFBFC</color>\n</resources>\n`;
+const colorsDark = `<resources>\n    <color name="window_surface">#0D0D12</color>\n</resources>\n`;
+// `windowLightStatusBar` flips the status-bar icon tint: dark icons for the light
+// surface, light icons for the dark one. `enableEdgeToEdge(SystemBarStyle.auto(...))`
+// also derives the tint from the system setting at runtime, so this is the
+// pre-edge-to-edge frame's value and the two agree by construction.
+const theme = (lightStatusBar) => `<resources>\n    <style name="Theme.kira_hrt" parent="Theme.MaterialComponents.DayNight.NoActionBar">\n        <item name="android:windowActionModeOverlay">true</item>\n        <item name="android:windowSplashScreenBackground">@color/window_surface</item>\n        <item name="android:windowSplashScreenAnimatedIcon">@drawable/launch_splash_transparent</item>\n        <item name="android:windowSplashScreenIconBackgroundColor">@color/window_surface</item>\n        <item name="android:windowLightStatusBar">${lightStatusBar}</item>\n        <item name="android:statusBarColor">@color/window_surface</item>\n        <item name="android:navigationBarColor">@color/window_surface</item>\n        <item name="android:windowBackground">@color/window_surface</item>\n        <item name="android:fontFamily">sans</item>\n    </style>\n</resources>\n`;
 writeFileSync(resolve(drawable, 'launch_splash_transparent.xml'), '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="1dp" android:height="1dp" android:viewportWidth="1" android:viewportHeight="1"><path android:fillColor="@android:color/transparent" android:pathData="M0,0h1v1h-1z" /></vector>\n');
-writeFileSync(resolve(values, 'colors.xml'), colors);
-writeFileSync(resolve(values, 'themes.xml'), theme);
-writeFileSync(resolve(night, 'themes.xml'), theme);
+writeFileSync(resolve(values, 'colors.xml'), colorsLight);
+writeFileSync(resolve(night, 'colors.xml'), colorsDark);
+writeFileSync(resolve(values, 'themes.xml'), theme(true));
+writeFileSync(resolve(night, 'themes.xml'), theme(false));
 const gradleProperties = resolve(root, '..', '..', '..', '..', 'gradle.properties');
 if (!readFileSync(gradleProperties, 'utf8').includes('kotlin.incremental=false')) {
     appendFileSync(gradleProperties, '\nkotlin.incremental=false\n');
