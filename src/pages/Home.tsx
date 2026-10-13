@@ -1,16 +1,14 @@
 import React from 'react';
 import Icon from '../components/Icon';
 import { Info, Share2, AlertTriangle, TriangleWarning, X } from '../icons';
-import { DoseEvent, SimulationResult, LabResult, AntiandrogenChartMode, getDoseAdvisory, getHormoneLevelAdvisory, isT_LabUnit, isMonitoringOnlyLab, modelledEvents, antiandrogenReading, type PkEngineId } from '../../logic';
+import { DoseEvent, SimulationResult, LabResult, AntiandrogenChartMode, getDoseAdvisory, getHormoneLevelAdvisory, isT_LabUnit, isMonitoringOnlyLab, modelledEvents, antiandrogenReading } from '../../logic';
 import ResultChart from '../components/ResultChart';
 import DoseOrderBook from '../components/DoseOrderBook';
 import EstimateInfoModal from '../components/EstimateInfoModal';
 import NoticeModal from '../components/NoticeModal';
 import DoseAdvisoryNotice from '../components/DoseAdvisory';
 import HomeQuickAdd from '../components/HomeQuickAdd';
-import DoseForm from '../components/DoseForm';
 import { DoseTemplate } from '../components/DoseFormModal';
-import { QuickDose } from '../components/dose_form/QuickDoseButtons';
 import { createPortal } from 'react-dom';
 import { useEscape } from '../hooks/useEscape';
 import { useHRTMode } from '../contexts/HRTModeContext';
@@ -55,13 +53,6 @@ interface HomeProps {
     readingDecimals: boolean;
     /** Whether the overview hides the anti-androgen reading entirely. */
     hideAA: boolean;
-    /** Passthroughs for the inline dose form the terminal embeds. */
-    onSaveTemplate: (t: DoseTemplate) => void;
-    onDeleteTemplate: (id: string) => void;
-    quickDoses: QuickDose[];
-    onAddQuickDose: (d: QuickDose) => void;
-    onDeleteQuickDose: (id: string) => void;
-    activeEngine: PkEngineId;
 }
 
 /**
@@ -101,22 +92,10 @@ const Home: React.FC<HomeProps> = ({
     chartStyle,
     readingDecimals,
     hideAA,
-    onSaveTemplate,
-    onDeleteTemplate,
-    quickDoses,
-    onAddQuickDose,
-    onDeleteQuickDose,
-    activeEngine,
 }) => {
     const isDarkMode = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     const [isEstimateInfoOpen, setIsEstimateInfoOpen] = React.useState(false);
     const [isAbsurdOpen, setIsAbsurdOpen] = React.useState(false);
-    // The record the inline form is pre-filled from, when a dose row was clicked
-    // in the order book ("record this again"). Null leaves the form at its defaults
-    // for a plain new dose. Bumped key remounts the form so its fields take the
-    // prefill (its state initialises once, at mount).
-    const [repeatFrom, setRepeatFrom] = React.useState<DoseEvent | null>(null);
-    const [formSeq, setFormSeq] = React.useState(0);
     const { isTransmasc } = useHRTMode();
     const { lang } = useTranslation();
     const shareCopy = getShareCopy(lang);
@@ -348,10 +327,12 @@ const Home: React.FC<HomeProps> = ({
                 )}
             </header>
 
-            {/* The three-pane terminal: chart | order book | record. Stretch so the
-                three panes end together; stacked below `lg`, where the form is gone
-                (recording happens on the History page on a phone). Only widened once
-                there's data — the empty state centres itself in the narrow column. */}
+            {/* The terminal: chart | order book, in the 4:2 ratio the chart and the
+                list always had. The record form that used to sit as a third pane
+                (added in the redesign) was an unclear extra, so it is gone; a dose
+                row click now opens the dose dialog prefilled. Stretch so the two
+                panes end together; stacked below `lg`. Only widened once there's
+                data — the empty state centres itself in the narrow column. */}
             <main className="w-full pb-24">
                 {events.length === 0 ? (
                     <div className="m3-card flex flex-col items-center justify-center text-center !py-20">
@@ -384,33 +365,11 @@ const Home: React.FC<HomeProps> = ({
                         <DoseOrderBook
                             events={events}
                             dosePeaks={dosePeaks}
-                            onRepeat={(e) => { setRepeatFrom(e); setFormSeq(s => s + 1); }}
-                            // Shrinks first when the row is tight, so a desktop
-                            // stays a row instead of collapsing.
+                            // "Record this again" opens the dose dialog, prefilled —
+                            // the desktop no longer has an inline form to fill.
+                            onRepeat={onEditEvent}
                             className="min-w-0 lg:flex-[2] lg:min-w-[9rem]"
                         />
-                        <div className="m3-card hidden min-w-0 p-4 lg:flex lg:flex-[2] lg:min-w-[17rem] lg:flex-col">
-                            <DoseForm
-                                key={`${repeatFrom?.id ?? 'new'}-${formSeq}`}
-                                eventToEdit={repeatFrom}
-                                addMode={!!repeatFrom}
-                                hideTime
-                                hideTemplates
-                                onSave={(e) => onAddEvent(e as DoseEvent)}
-                                onCancel={() => { setRepeatFrom(null); setFormSeq(s => s + 1); }}
-                                onDelete={() => {}}
-                                templates={doseTemplates}
-                                onSaveTemplate={onSaveTemplate}
-                                onDeleteTemplate={onDeleteTemplate}
-                                quickDoses={quickDoses}
-                                onAddQuickDose={onAddQuickDose}
-                                onDeleteQuickDose={onDeleteQuickDose}
-                                isInline
-                                accentSubmit
-                                events={events}
-                                activeEngine={activeEngine}
-                            />
-                        </div>
                     </div>
                 )}
             </main>

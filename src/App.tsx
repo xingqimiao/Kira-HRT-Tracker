@@ -781,12 +781,6 @@ const AppContent = () => {
                             chartStyle={chartStyle}
                             readingDecimals={readingDecimals}
                             hideAA={hideAA}
-                            onSaveTemplate={addTemplate}
-                            onDeleteTemplate={deleteTemplate}
-                            quickDoses={quickDoses}
-                            onAddQuickDose={addQuickDose}
-                            onDeleteQuickDose={deleteQuickDose}
-                            activeEngine={engineInUse}
                         />
                     )}
 
