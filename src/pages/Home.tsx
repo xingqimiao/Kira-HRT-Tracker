@@ -1,6 +1,6 @@
 import React from 'react';
 import Icon from '../components/Icon';
-import { Info, Share2, AlertTriangle, TriangleWarning } from '../icons';
+import { Info, Share2, AlertTriangle, TriangleWarning, X } from '../icons';
 import { DoseEvent, SimulationResult, LabResult, AntiandrogenChartMode, getDoseAdvisory, getHormoneLevelAdvisory, isT_LabUnit, isMonitoringOnlyLab, modelledEvents, antiandrogenReading, type PkEngineId } from '../../logic';
 import ResultChart from '../components/ResultChart';
 import DoseOrderBook from '../components/DoseOrderBook';
@@ -19,7 +19,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { getShareCopy } from '../i18n/share';
 import { Tooltip } from '../components/ui';
 import { formatRelativeParts } from '../utils/helpers';
-import { readMedPlans, planStatuses, planQuickEntries, type PlanStatus } from '../utils/medPlan';
+import { readMedPlans, planStatuses, planQuickEntries, plansForMode, activePatches, patchRemovalEvent, type PlanStatus } from '../utils/medPlan';
 import { usePresence } from '../hooks/usePresence';
 
 interface HomeProps {
@@ -178,7 +178,7 @@ const Home: React.FC<HomeProps> = ({
     // the log or the clock moves; a plan edited in settings re-reads on the next visit.
     const [showOverdue, setShowOverdue] = React.useState(false);
     const planState = React.useMemo(() => {
-        const plans = readMedPlans();
+        const plans = plansForMode(readMedPlans(), isTransmasc ? 'transmasc' : 'transfem');
         if (plans.length === 0) return { overdue: false, statuses: [] as PlanStatus[], entries: [] };
         const tz = new Date().getTimezoneOffset();
         const refs = events.map(e => ({ ester: e.ester, route: e.route, timeH: e.timeH }));
@@ -189,7 +189,18 @@ const Home: React.FC<HomeProps> = ({
             statuses,
             entries: planQuickEntries(plans, covered, t('plan.quick_suffix')),
         };
-    }, [events, nowMs, doseTemplates, t]);
+    }, [events, nowMs, doseTemplates, t, isTransmasc]);
+
+    const patches = React.useMemo(() => activePatches(events, nowMs / 3_600_000), [events, nowMs]);
+    const removePatch = (patch: DoseEvent): void => {
+        onAddEvent(patchRemovalEvent(patch, crypto.randomUUID(), nowMs / 3_600_000));
+    };
+    const elapsedPatch = (patch: DoseEvent): string => {
+        const elapsedHours = Math.max(0, Math.floor(nowMs / 3_600_000 - patch.timeH));
+        return elapsedHours >= 24
+            ? t('home.patch.elapsed_days').replace('{n}', String(Math.floor(elapsedHours / 24)))
+            : t('home.patch.elapsed_hours').replace('{n}', String(elapsedHours));
+    };
 
     // E2 and the transmasc testosterone reading show a decimal place only when the
     // setting asks (whole numbers by default).
@@ -248,7 +259,7 @@ const Home: React.FC<HomeProps> = ({
                         <div className="min-w-0">
                             <p className={`text-xs font-semibold ${muted}`}>{pricePair.label}</p>
                             <p className="flex items-baseline gap-1.5 leading-none">
-                                <span className="text-[5rem] font-semibold tabular-nums text-[var(--color-m3-primary)]">{pricePair.value}</span>
+                                <span className="text-[3rem] sm:text-[5rem] font-semibold tabular-nums text-[var(--color-m3-primary)]">{pricePair.value}</span>
                                 <span className={`text-sm lowercase ${muted}`}>{pricePair.unit}</span>
                             </p>
                         </div>
@@ -262,7 +273,7 @@ const Home: React.FC<HomeProps> = ({
                         <div className="min-w-0">
                             <p className={`text-xs font-semibold ${muted}`}>{aaPair.label}</p>
                             <p className="flex items-baseline gap-1.5 leading-none">
-                                {aaPair.value && <span className={`font-semibold tabular-nums ${on} ${aaPair.value.length > 6 ? 'text-[3rem]' : 'text-[5rem]'}`}>{aaPair.value}</span>}
+                                {aaPair.value && <span className={`font-semibold tabular-nums ${on} ${aaPair.value.length > 6 ? 'text-[1.8rem] sm:text-[3rem]' : 'text-[3rem] sm:text-[5rem]'}`}>{aaPair.value}</span>}
                                 {aaPair.unit && <span className={`text-sm lowercase ${muted}`}>{aaPair.unit}</span>}
                             </p>
                         </div>
@@ -313,6 +324,28 @@ const Home: React.FC<HomeProps> = ({
                         <DoseAdvisoryNotice advisory={doseAdvisory} hormoneAdvisory={hormoneAdvisory} showCalibrate={showCalibrate} onCalibrate={onNavigateToLab} t={t} />
                     </div>
                 </div>
+                {patches.length > 0 && (
+                    <div className="mt-3 space-y-1" aria-label={t('home.patch.section')}>
+                        {patches.map(patch => (
+                            <div key={patch.id} className="flex min-h-10 items-center justify-between gap-3 text-sm text-[var(--color-m3-on-surface-variant)]">
+                                <span className="min-w-0 truncate">
+                                    {t('home.patch.wearing').replace('{drug}', t(`ester.${patch.ester}`).replace(/[（(]\s*E2\s*[）)]/i, ''))}
+                                    <span className="ml-1 tabular-nums">{elapsedPatch(patch)}</span>
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => removePatch(patch)}
+                                    className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-full px-2 text-[var(--color-m3-primary)] hover:bg-[var(--color-m3-surface-container)]"
+                                    aria-label={t('home.patch.remove').replace('{drug}', t(`ester.${patch.ester}`))}
+                                    title={t('home.patch.remove').replace('{drug}', t(`ester.${patch.ester}`))}
+                                >
+                                    <Icon icon={X} size={16} />
+                                    <span>{t('home.patch.remove_action')}</span>
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </header>
 
             {/* The three-pane terminal: chart | order book | record. Stretch so the

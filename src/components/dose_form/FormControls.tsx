@@ -89,10 +89,12 @@ export const FieldRow: React.FC<{
     children: React.ReactNode;
     /** Dashed border — a field only the Transmtf engine reads. */
     engineOnly?: boolean;
+    /** A row without the standard bar border and surface. */
+    plain?: boolean;
     delay?: number;
-}> = ({ icon, label, children, engineOnly = false, delay = 0 }) => (
+}> = ({ icon, label, children, engineOnly = false, plain = false, delay = 0 }) => (
     <div
-        className={`hrt-bar ${engineOnly ? 'hrt-bar--engine' : ''}`}
+        className={`hrt-bar ${engineOnly ? 'hrt-bar--engine' : ''} ${plain ? 'hrt-bar--plain' : ''}`}
         style={{ '--i': delay } as React.CSSProperties}
     >
         <span className="hrt-bar__ic"><Icon icon={icon} size={18} /></span>

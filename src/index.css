@@ -1015,9 +1015,9 @@ html.app-viewport body {
     inset: 0;
     z-index: 50;
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: center;
-    padding: 0;
+    padding: max(1rem, env(safe-area-inset-top, 0px), var(--app-safe-top, 0px)) 1rem max(1rem, env(safe-area-inset-bottom, 0px), var(--app-safe-bottom, 0px));
     /* M3 scrim is a 32% black over the content beneath. Added `backdrop-filter` so
        the surface behind reads as recessed rather than merely dimmed — the tonal
        equivalent of the elevation M3 uses instead of shadows. */
@@ -1033,17 +1033,11 @@ html.app-viewport body {
     animation: m3-fade-exit var(--md-sys-motion-transition-exit) both;
     pointer-events: none;
 }
-@media (min-width: 768px) {
-    .modal-overlay {
-        align-items: center;
-        padding: 1rem;
-    }
-}
-
 .modal-shell {
     width: 100%;
     max-width: 24rem;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    max-height: 100%;
+    padding: 0;
     /* One entrance at every width — a drop from the top, not a slide up from a
        bottom edge the surface is not anchored to. */
     animation: m3-dialog-enter var(--md-sys-motion-transition-enter) both;
@@ -3579,6 +3573,14 @@ select,
     animation-delay: calc(var(--i, 0) * 45ms);
 }
 .hrt-bar--engine { border-style: dashed; }
+.hrt-bar--plain {
+    border-color: transparent;
+    background: transparent;
+    padding-inline: 0;
+}
+.hrt-bar--plain .hrt-bar__ic {
+    background: transparent;
+}
 .hrt-bar__ic {
     display: grid;
     place-items: center;

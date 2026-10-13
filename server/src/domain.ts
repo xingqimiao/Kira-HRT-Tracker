@@ -109,11 +109,15 @@ const ESTERS = Object.values(Ester) as readonly string[];
  * two keys whose range the engine depends on are checked: a sublingual tier or gel
  * site off the end of its lookup table is a caller error, not a preference.
  */
-function parseExtras(raw: unknown, route: string): Result<Partial<Record<string, number>>> {
-  const extras: Partial<Record<string, number>> = {};
+function parseExtras(raw: unknown, route: string, allowPatchRemovalFor = false): Result<Partial<Record<string, number | string>>> {
+  const extras: Partial<Record<string, number | string>> = {};
   if (raw !== undefined) {
     if (!raw || typeof raw !== 'object') return fail('extras: must be an object of numbers');
     for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (allowPatchRemovalFor && key === 'patchRemovalFor' && route === Route.patchRemove && typeof value === 'string' && /^[A-Za-z0-9_.:-]{1,200}$/.test(value)) {
+        extras[key] = value;
+        continue;
+      }
       if (typeof value !== 'number' || !Number.isFinite(value)) {
         return fail(`extras.${key}: must be a finite number`);
       }
@@ -123,13 +127,13 @@ function parseExtras(raw: unknown, route: string): Result<Partial<Record<string,
 
   if (route === Route.sublingual && extras.sublingualTier !== undefined) {
     const tier = extras.sublingualTier;
-    if (!Number.isInteger(tier) || tier < 0 || tier >= SL_TIER_ORDER.length) {
+    if (typeof tier !== 'number' || !Number.isInteger(tier) || tier < 0 || tier >= SL_TIER_ORDER.length) {
       return fail(`extras.sublingualTier: must be an integer 0–${SL_TIER_ORDER.length - 1} (${SL_TIER_ORDER.join(', ')})`);
     }
   }
   if (route === Route.gel && extras.gelSite !== undefined) {
     const site = extras.gelSite;
-    if (!Number.isInteger(site) || site < 0 || site >= GEL_SITE_ORDER.length) {
+    if (typeof site !== 'number' || !Number.isInteger(site) || site < 0 || site >= GEL_SITE_ORDER.length) {
       return fail(`extras.gelSite: must be an integer 0–${GEL_SITE_ORDER.length - 1} (${GEL_SITE_ORDER.join(', ')})`);
     }
   }
@@ -142,7 +146,7 @@ export interface MedicationInput {
   ester: string;
   dose_mg: number;
   at: unknown;
-  extras?: Record<string, number>;
+  extras?: Record<string, number | string>;
   /**
    * Caller-supplied id. Optional: the API generates one when absent. Must be
    * accepted rather than forced to a UUID because the domain treats ids as opaque
@@ -202,7 +206,7 @@ export function parseMedicationInput(input: unknown, id: string): Result<DoseEve
     doseMG = dose.value;
   }
 
-  const extras: Result<Partial<Record<string, number>>> = parseExtras(raw.extras, route.value);
+  const extras: Result<Partial<Record<string, number | string>>> = parseExtras(raw.extras, route.value, true);
   if (!extras.ok) return extras;
 
   return pass({
@@ -384,8 +388,12 @@ export function parseTemplateInput(input: unknown, id: string): Result<Omit<Temp
   if (raw.dose_mg < 0) return fail('dose_mg: must not be negative');
   if (raw.dose_mg > DOSE_MG_MAX) return fail(`dose_mg: must not exceed ${DOSE_MG_MAX}`);
 
-  const extras: Result<Partial<Record<string, number>>> = parseExtras(raw.extras, route.value);
-  if (!extras.ok) return extras;
+  const parsedExtras = parseExtras(raw.extras, route.value);
+  if (!parsedExtras.ok) return parsedExtras;
+  if (Object.values(parsedExtras.value).some(value => typeof value === 'string')) {
+    return fail('extras: must be an object of numbers');
+  }
+  const extras = parsedExtras.value as Partial<Record<string, number>>;
 
   return pass({
     id: recordId.value,
@@ -393,7 +401,7 @@ export function parseTemplateInput(input: unknown, id: string): Result<Omit<Temp
     route: route.value,
     ester: ester.value,
     doseMG: raw.dose_mg,
-    extras: extras.value as Record<string, number>,
+    extras: extras as Record<string, number>,
   });
 }
 

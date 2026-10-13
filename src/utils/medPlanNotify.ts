@@ -15,7 +15,8 @@
  */
 import { Ester, Route, DoseEvent } from '../../logic';
 import {
-    cancelAll,
+    pending,
+    cancel,
     createChannel,
     Importance,
     isPermissionGranted,
@@ -24,37 +25,55 @@ import {
     sendNotification,
 } from '@choochmeque/tauri-plugin-notifications-api';
 import { isNativeApp } from './platform';
-import { readMedPlans, writeMedPlans, sanitizeMedPlans, dueTimesToday, matchesPlan, planStatuses, isSavedTemplate, type MedPlan, type PlanStatus, type PlanTime, MED_PLAN_KEY } from './medPlan';
+import { readMedPlans, writeMedPlans, sanitizeMedPlans, dueTimesToday, matchesPlan, planStatuses, plansForMode, localDateKey, isSavedTemplate, type MedPlan, type PlanStatus, type PlanTime, MED_PLAN_KEY } from './medPlan';
+import { HRTMode } from '../../logic';
 import { get, set } from './secureStore';
 
 // --- Migration: the old name+time reminders become plans ---------------------
 
 const MIGRATED_KEY = 'hrt-med-plan-migrated';
+const PLAN_METADATA_MIGRATED_KEY = 'hrt-med-plan-metadata-migrated';
+const OWNED_NOTIFICATION_IDS_KEY = 'hrt-med-plan-notification-ids';
+const NATIVE_QUEUE_SIZE = 5;
+
+function currentMode(): HRTMode {
+    return get('hrt-mode') === 'transmasc' ? 'transmasc' : 'transfem';
+}
 
 /** Old reminders carry a free-text name and no compound; the migration defaults
  *  the compound to estradiol (the dominant reminder target) and keeps the name as
  *  the alias, so nothing fires twice and nothing disappears. Editable in the UI. */
 export function migrateOldRemindersToPlans(): void {
-    if (get(MIGRATED_KEY) === '1') return;
     try {
-        const old = sanitizeOldReminders(JSON.parse(get('hrt-med-reminders') ?? '[]'));
-        if (old.length > 0 && readMedPlans().length === 0) {
-            const plans: MedPlan[] = old.map(r => ({
-                id: r.id,
-                ester: Ester.E2,
-                alias: r.name,
-                dose: '',
-                mode: 'times',
-                doseTimes: [],
-                firstHour: r.hour,
-                firstMinute: r.minute,
-                enabled: r.enabled,
+        let plans = readMedPlans();
+        if (get(PLAN_METADATA_MIGRATED_KEY) !== '1') {
+            plans = plans.filter(plan => plan.route !== Route.patchRemove).map(plan => ({
+                ...plan,
+                hrtMode: plan.hrtMode ?? currentMode(),
+                anchorDate: plan.mode === 'days' ? plan.anchorDate ?? localDateKey(new Date()) : plan.anchorDate,
             }));
             writeMedPlans(plans);
+            set(PLAN_METADATA_MIGRATED_KEY, '1');
         }
+        if (get(MIGRATED_KEY) === '1') return;
+        const old = sanitizeOldReminders(JSON.parse(get('hrt-med-reminders') ?? '[]'));
+        const existingIds = new Set(plans.map(plan => plan.id));
+        const additions: MedPlan[] = old.filter(reminder => !existingIds.has(reminder.id)).map(reminder => ({
+            id: reminder.id,
+            ester: Ester.E2,
+            hrtMode: currentMode(),
+            alias: reminder.name,
+            dose: '',
+            mode: 'times',
+            doseTimes: [],
+            firstHour: reminder.hour,
+            firstMinute: reminder.minute,
+            enabled: reminder.enabled,
+        }));
+        if (additions.length) writeMedPlans([...plans, ...additions]);
         set(MIGRATED_KEY, '1');
     } catch {
-        set(MIGRATED_KEY, '1');
+        // Leave migration markers unset so transient storage errors can retry.
     }
 }
 
@@ -70,7 +89,7 @@ function sanitizeOldReminders(value: unknown): { id: string; name: string; hour:
     });
 }
 
-// --- Native: one repeating system notification per due time -------------------
+// --- Native: only this module's scheduled notifications are replaced ------------
 
 function stableIntId(id: string): number {
     let hash = 2166136261;
@@ -82,38 +101,63 @@ export async function reschedulePlanNotifications(request = false): Promise<bool
     if (!isNativeApp()) return false;
     let granted = await isPermissionGranted();
     if (!granted && request) granted = (await requestPermission()) === 'granted';
-    if (!granted) return false;
     await createChannel({ id: 'hrt-med', name: 'HRT medication', importance: Importance.Default, vibration: true });
-    await cancelAll();
-    for (const plan of readMedPlans()) {
-        if (!plan.enabled) continue;
-        // One daily repeating notification per due time of an average day. The
-        // every-N-days cycle cannot be expressed as a daily interval; the plan UI
-        // carries the cycle, and the notification fires daily as a nudge.
-        const dayTimes: { hour: number; minute: number }[] = [];
-        if (plan.mode === 'times') {
-            dayTimes.push({ hour: plan.firstHour, minute: plan.firstMinute });
-            for (const t of plan.doseTimes ?? []) dayTimes.push(t);
+
+    const pendingIds = new Set((await pending().catch(() => [])).map(item => item.id));
+    const storedIds = (() => {
+        try { return JSON.parse(get(OWNED_NOTIFICATION_IDS_KEY) ?? '[]') as number[]; } catch { return []; }
+    })();
+    const ownedIds = new Set<number>(storedIds.filter((id): id is number => Number.isInteger(id) && pendingIds.has(id)));
+    if (ownedIds.size) await cancel([...ownedIds]).catch(() => undefined);
+    const nextIds: number[] = [];
+    if (!granted) {
+        set(OWNED_NOTIFICATION_IDS_KEY, '[]');
+        return false;
+    }
+    const now = new Date();
+    const mode = currentMode();
+    for (const plan of plansForMode(readMedPlans(), mode)) {
+        if (!plan.enabled || plan.route === Route.patchRemove) continue;
+        const schedules: Date[] = [];
+        if (plan.mode === 'days') {
+            const anchor = plan.anchorDate ?? localDateKey(now);
+            const [y, m, d] = anchor.split('-').map(Number);
+            const anchorDate = new Date(y, m - 1, d, plan.firstHour, plan.firstMinute, 0, 0);
+            const cycleDays = plan.everyDays ?? 1;
+            let due = new Date(anchorDate);
+            while (due <= now) due.setDate(due.getDate() + cycleDays);
+            for (let i = 0; i < NATIVE_QUEUE_SIZE; i++) {
+                const candidate = new Date(due);
+                candidate.setDate(candidate.getDate() + i * cycleDays);
+                schedules.push(candidate);
+            }
         } else {
-            const gapHours = plan.intervalHours ?? 24;
-            const count = Math.ceil(24 / gapHours);
-            for (let i = 0; i < count; i++) {
-                const total = plan.firstHour * 60 + plan.firstMinute + i * gapHours * 60;
-                dayTimes.push({ hour: Math.floor(total / 60) % 24, minute: total % 60 });
+            const localTimes = plan.mode === 'times'
+                ? [{ dayOffset: 0, hour: plan.firstHour, minute: plan.firstMinute }, ...(plan.doseTimes ?? []).map(t => ({ ...t, dayOffset: 0 }))]
+                : Array.from({ length: Math.ceil(24 / (plan.intervalHours ?? 24)) }, (_, i) => {
+                    const total = plan.firstHour * 60 + plan.firstMinute + i * (plan.intervalHours ?? 24) * 60;
+                    return { dayOffset: Math.floor(total / 1440), hour: Math.floor(total / 60) % 24, minute: total % 60 };
+                });
+            for (let day = 0; day < 5; day++) for (let i = 0; i < localTimes.length; i++) {
+                const t = localTimes[i];
+                const dayOffset = 'dayOffset' in t ? t.dayOffset : 0;
+                const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + day + dayOffset, t.hour, t.minute, 0, 0);
+                if (date > now) schedules.push(date);
             }
         }
-        const label = plan.alias || String(plan.ester);
-        for (let i = 0; i < dayTimes.length; i++) {
-            const t = dayTimes[i];
+        for (const time of schedules) {
+            const id = stableIntId(`med-plan:${plan.id}:${time.getTime()}`);
+            nextIds.push(id);
             await sendNotification({
-                id: stableIntId(`${plan.id}:${i}`),
-                title: label,
+                id,
+                title: plan.alias || String(plan.ester),
                 body: plan.dose || 'Medication reminder',
                 channelId: 'hrt-med',
-                schedule: Schedule.interval({ hour: t.hour, minute: t.minute }, true),
+                schedule: Schedule.at(time, false, true),
             });
         }
     }
+    set(OWNED_NOTIFICATION_IDS_KEY, JSON.stringify(nextIds));
     return true;
 }
 
@@ -168,7 +212,7 @@ export function startPlanWebNotifications(): void {
     setInterval(() => {
         try {
             if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-            const plans = readMedPlans();
+            const plans = plansForMode(readMedPlans(), currentMode());
             if (plans.length === 0) return;
             const nowMs = Date.now();
             const tz = new Date().getTimezoneOffset();

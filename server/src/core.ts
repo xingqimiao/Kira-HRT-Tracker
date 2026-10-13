@@ -51,6 +51,7 @@ import { AccountService } from './accounts.ts';
 import type { AuthContext } from './types.ts';
 import {
   sanitizeMedPlans,
+  plansForMode,
   planStatuses,
   type MedPlan,
   type PlanDoseRef,
@@ -80,7 +81,7 @@ export interface DoseRecord {
   doseMG: number;
   ester: string;
   route: string;
-  extras?: Record<string, number>;
+  extras?: Record<string, number | string>;
   updatedAt?: number;
 }
 
@@ -593,7 +594,8 @@ export const MedPlanService = {
    * server sits).
    */
   async status(ctx: AuthContext, nowMs: number): Promise<MedPlanStatus[]> {
-    const plans = await MedPlanService.read(ctx);
+    const { hrtMode } = await AccountService.getSettings(ctx);
+    const plans = plansForMode(await MedPlanService.read(ctx), hrtMode);
     if (plans.length === 0) return [];
     const { records } = await MedicationService.list(ctx, { limit: 500 });
     const doses: PlanDoseRef[] = records.map((r) => ({

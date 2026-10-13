@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import Icon from '../components/Icon';
-import { Plus, ChevronRight, Scan } from '../icons';
+import { Plus, ChevronRight, Scan, Activity, FlaskConical, TestTube2, Atom } from '../icons';
+import type { IconComponent } from '../icons';
 import { FieldIcon } from '../components/compoundIcons';
-import { LabResult, DoseEvent, MONITORING_UNIT, getMonitoringNotices, getRecheckReminders, visibleRecheckReminders, recheckDueKey, isMonitoringOnlyLab, monitoringValues, CalibrationMethod, CalibrationResult, CalibrationPoint, getHormoneLevelAdvisory, Ester, RecheckIntervals, OcrModelTier } from '../../logic';
+import { LabResult, DoseEvent, MONITORING_UNIT, getMonitoringNotices, getRecheckReminders, visibleRecheckReminders, recheckDueKey, isMonitoringOnlyLab, isT_LabUnit, monitoringValues, CalibrationMethod, CalibrationResult, CalibrationPoint, getHormoneLevelAdvisory, Ester, RecheckIntervals, OcrModelTier, MonitoringAnalyte } from '../../logic';
 import type { Lang } from '../i18n/types';
 import { formatDate, formatTime, LOCALE_MAP } from '../utils/helpers';
 import LabResultForm from '../components/LabResultForm';
@@ -15,6 +16,13 @@ import Collapsible from '../components/Collapsible';
 import MonitoringNoticeLine, { RecheckReminderGroup, RecheckReminderLine, SpironolactonePrecautions } from '../components/MonitoringNotice';
 import JournalCheckIn from '../components/JournalCheckIn';
 import { JournalEntry } from '../utils/bodyJournal';
+
+const MONITORING_ICON: Record<MonitoringAnalyte, IconComponent> = {
+    PRL: Atom,
+    ALT: Activity,
+    AST: FlaskConical,
+    K: TestTube2,
+};
 
 interface LabProps {
     t: (key: string) => string;
@@ -299,7 +307,20 @@ const Lab: React.FC<LabProps> = ({
                                             className={`py-3.5 flex items-start gap-3 cursor-pointer -mx-2 px-2 rounded-md hover:bg-[var(--color-m3-surface-container)]  ${isEditing ? 'bg-[var(--color-m3-surface-container)] ' : ''}`}
                                             onClick={() => setEditingLabId(isEditing ? null : res.id)}
                                         >
-                                            <Icon icon={FieldIcon.drop} size={16} className="mt-[4px] shrink-0 text-[var(--color-m3-primary)]" />
+                                            <Icon
+                                                icon={isMonitoringOnlyLab(res)
+                                                    ? FieldIcon.info
+                                                    : FieldIcon.drop}
+                                                size={18}
+                                                className={`mt-[3px] shrink-0 ${isMonitoringOnlyLab(res)
+                                                    ? 'text-[var(--color-m3-on-surface-variant)]'
+                                                    : isT_LabUnit(res.unit)
+                                                        ? 'text-[var(--color-m3-accent)]'
+                                                        : 'text-[var(--color-m3-primary)]'}`}
+                                                title={isMonitoringOnlyLab(res)
+                                                    ? t('monitor.section')
+                                                    : isT_LabUnit(res.unit) ? t('scan.analyte_t') : t('scan.analyte_e2')}
+                                            />
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center justify-between mb-1">
                                                     <span className={`font-medium ${on} text-sm`}>
@@ -314,11 +335,14 @@ const Lab: React.FC<LabProps> = ({
                                                 {monitoringValues(res).length > 0 && (
                                                     // Monitoring bloods travel on the lab result, so they
                                                     // are listed here rather than in a parallel section.
-                                                    <p className={`text-xs ${muted} tabular-nums mt-0.5`}>
-                                                        {monitoringValues(res)
-                                                            .map(mv => `${t(`monitor.${mv.analyte.toLowerCase()}`)} ${mv.value} ${MONITORING_UNIT[mv.analyte]}${mv.uln !== undefined ? ` (${t('monitor.uln')} ${mv.uln})` : ''}`)
-                                                            .join(' · ')}
-                                                    </p>
+                                                    <div className={`mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs ${muted} tabular-nums`}>
+                                                        {monitoringValues(res).map(mv => (
+                                                            <span key={mv.analyte} className="inline-flex items-center gap-1">
+                                                                <Icon icon={MONITORING_ICON[mv.analyte]} size={14} className="text-[var(--color-m3-on-surface-variant)]" />
+                                                                <span>{t(`monitor.${mv.analyte.toLowerCase()}`)} {mv.value} {MONITORING_UNIT[mv.analyte]}{mv.uln !== undefined ? ` (${t('monitor.uln')} ${mv.uln})` : ''}</span>
+                                                            </span>
+                                                        ))}
+                                                    </div>
                                                 )}
                                                 <div className="flex items-center justify-between gap-2">
                                                     <span className={`text-xs ${muted}`}>{formatDate(d, lang)}</span>

@@ -166,7 +166,14 @@ const PartSelect: React.FC<PartSelectProps> = ({ label, value, options, onChange
                         onBlur={endEdit}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter') { e.preventDefault(); commitDraft(); }
-                            if (e.key === 'ArrowDown') { e.preventDefault(); setIsOpen(true); }
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                e.preventDefault();
+                                const current = Number.parseInt(editing ? draft : pad(value), 10);
+                                const base = Number.isNaN(current) ? value : current;
+                                const next = Math.min(max, Math.max(min, base + (e.key === 'ArrowUp' ? 1 : -1)));
+                                setDraft(pad(next));
+                                if (next !== value) onChange(next);
+                            }
                         }}
                         // `m3-inline-field` (index.css, unlayered) suppresses the
                         // global focus-visible outline: the trigger this input sits

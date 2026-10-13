@@ -1,4 +1,4 @@
-import { Ester, Route } from '../../logic';
+import { Ester, Route, ExtraKey, type DoseEvent } from '../../logic';
 
 /**
  * The medication plan (用药方案): what to take, how much, how often — and whether
@@ -25,6 +25,12 @@ export interface PlanTime {
 export interface MedPlan {
     id: string;
     ester: Ester;
+    /** HRT mode that owns this plan; absent only on legacy records awaiting migration. */
+    hrtMode?: 'transfem' | 'transmasc';
+    /** Route-specific numeric settings, matching DoseEvent extras. */
+    extras?: Record<string, number>;
+    /** Stable local-calendar anchor for an every-N-days cadence. */
+    anchorDate?: string;
     /** The device's UTC offset at save time (getTimezoneOffset(), minutes — CST is
      *  -480). The server uses it to place the day boundary where the user's is. */
     tzOffsetMinutes?: number;
@@ -71,6 +77,7 @@ export function sanitizeMedPlans(value: unknown): MedPlan[] {
         if (!item || typeof item !== 'object') return [];
         const p = item as Partial<MedPlan>;
         if (typeof p.id !== 'string' || !isEster(p.ester)) return [];
+        if (p.route === Route.patchRemove) return [];
         if (p.mode !== 'times' && p.mode !== 'hours' && p.mode !== 'days') return [];
         const hour = Number(p.firstHour), minute = Number(p.firstMinute);
         if (!Number.isInteger(hour) || hour < 0 || hour > 23 || !Number.isInteger(minute) || minute < 0 || minute > 59) return [];
@@ -82,6 +89,11 @@ export function sanitizeMedPlans(value: unknown): MedPlan[] {
         return [{
             id: p.id,
             ester: p.ester,
+            hrtMode: p.hrtMode === 'transfem' || p.hrtMode === 'transmasc' ? p.hrtMode : undefined,
+            extras: p.extras && typeof p.extras === 'object'
+                ? Object.fromEntries(Object.entries(p.extras).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1])))
+                : undefined,
+            anchorDate: typeof p.anchorDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.anchorDate) ? p.anchorDate : undefined,
             route: isRoute(p.route) ? p.route : undefined,
             alias: typeof p.alias === 'string' ? p.alias.trim().slice(0, 40) : undefined,
             dose: typeof p.dose === 'string' ? p.dose.trim().slice(0, 40) : '',
@@ -131,6 +143,10 @@ export function writeMedPlans(plans: MedPlan[], at: number = Date.now()): void {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+export function localDateKey(date: Date): string {
+    return `${String(date.getFullYear()).padStart(4, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 /** The day's due times as true epoch ms, in the user's own day.
  *
  *  `tzOffsetMinutes` is the device offset (getTimezoneOffset(): JS's inverted sign
@@ -152,9 +168,9 @@ export function dueTimesToday(plan: MedPlan, nowMs: number, tzOffsetMinutes: num
     const localFirst = localMidnight + plan.firstHour * 3_600_000 + plan.firstMinute * 60_000;
     if (plan.mode === 'days') {
         const cycle = plan.everyDays ?? 1;
-        // The anchor is the plan's own day in the same local space; the cycle then
-        // counts local days from that anchor to today.
-        const anchor = Math.floor(localFirst / DAY_MS) * DAY_MS;
+        const anchorDate = plan.anchorDate ?? new Date(localFirst).toISOString().slice(0, 10);
+        const [year, month, day] = anchorDate.split('-').map(Number);
+        const anchor = Date.UTC(year, month - 1, day);
         const offset = Math.floor((localMidnight - anchor) / DAY_MS);
         if (offset < 0 || offset % cycle !== 0) return [];
         const due = localFirst + off;
@@ -247,6 +263,87 @@ export function parseDoseMG(dose: string): number {
  * whose drug and route a template already offers is not duplicated. The name carries
  * the caller's suffix ("·方案") so the entry reads as a plan, not a hand-saved dose.
  */
+export function plansForMode(plans: MedPlan[], mode: 'transfem' | 'transmasc'): MedPlan[] {
+    return plans.filter(plan => (plan.hrtMode ?? mode) === mode);
+}
+
+export function availablePlanRoutes(mode: 'transfem' | 'transmasc'): Route[] {
+    return Object.values(Route).filter(route => route !== Route.patchRemove && (mode !== 'transmasc' || (
+        route !== Route.oral && route !== Route.sublingual && route !== Route.patchApply
+    )));
+}
+
+export function reconcilePlanSelection(mode: 'transfem' | 'transmasc', route: Route, ester: Ester): { route: Route; ester: Ester } {
+    const routes = availablePlanRoutes(mode);
+    const nextRoute = routes.includes(route) ? route : routes[0];
+    const esters = availablePlanEsters(mode, nextRoute);
+    return { route: nextRoute, ester: esters.includes(ester) ? ester : esters[0] };
+}
+
+export function availablePlanRoutesForEster(mode: 'transfem' | 'transmasc', ester: Ester): Route[] {
+    return availablePlanRoutes(mode).filter(route => availablePlanEsters(mode, route).includes(ester));
+}
+
+export function availablePlanEsters(mode: 'transfem' | 'transmasc', route: Route): Ester[] {
+    if (mode === 'transmasc') {
+        if (route === Route.injection) return [Ester.TC, Ester.TE, Ester.TU];
+        if (route === Route.gel) return [Ester.T];
+        return [Ester.T];
+    }
+    switch (route) {
+        case Route.injection: return [Ester.EB, Ester.EV, Ester.EC, Ester.EN, Ester.EU];
+        case Route.oral: return [Ester.E2, Ester.EV, Ester.CPA, Ester.SPIRO, Ester.BICAL];
+        case Route.sublingual: return [Ester.E2, Ester.EV];
+        default: return [Ester.E2];
+    }
+}
+
+export function activePatches(events: DoseEvent[], nowH: number): DoseEvent[] {
+    const ordered = [...events].sort((a, b) => a.timeH - b.timeH);
+    const applies = ordered.filter(event => event.route === Route.patchApply && event.timeH <= nowH);
+    const removals = ordered.filter(event => event.route === Route.patchRemove && event.timeH <= nowH);
+    const removedInstances = new Set<string>();
+    const legacyRemovals = removals.filter(event => event.extras?.patchRemovalFor === undefined);
+    const claimedRemovals = new Set<string>();
+    for (const apply of applies) {
+        const instanceId = String(apply.extras?.patchInstanceId ?? apply.id);
+        if (removedInstances.has(instanceId)) continue;
+        const targeted = removals.some(remove =>
+            remove.timeH >= apply.timeH && String(remove.extras?.patchRemovalFor) === instanceId
+        );
+        if (targeted) {
+            removedInstances.add(instanceId);
+            for (const removal of removals) {
+                if (removal.timeH >= apply.timeH && String(removal.extras?.patchRemovalFor) === instanceId) {
+                    claimedRemovals.add(String(removal.id));
+                }
+            }
+            continue;
+        }
+        const legacy = legacyRemovals.find(remove => remove.timeH > apply.timeH && !claimedRemovals.has(String(remove.id)));
+        if (legacy) {
+            removedInstances.add(instanceId);
+            claimedRemovals.add(String(legacy.id));
+        }
+    }
+    return applies.filter(apply => {
+        const instanceId = String(apply.extras?.patchInstanceId ?? apply.id);
+        const wearH = apply.extras?.patchWearH;
+        return !removedInstances.has(instanceId) && !(typeof wearH === 'number' && wearH > 0 && apply.timeH + wearH <= nowH);
+    });
+}
+
+export function patchRemovalEvent(apply: DoseEvent, id: string, timeH: number): DoseEvent {
+    return {
+        id,
+        route: Route.patchRemove,
+        timeH,
+        doseMG: 0,
+        ester: apply.ester,
+        extras: { patchRemovalFor: String(apply.extras?.patchInstanceId ?? apply.id) },
+    };
+}
+
 export function planQuickEntries(plans: MedPlan[], covered: ReadonlySet<string>, suffix: string): PlanQuickEntry[] {
     return plans
         .filter(p => p.enabled && p.route && !covered.has(`${p.ester}:${p.route}`))
@@ -255,8 +352,8 @@ export function planQuickEntries(plans: MedPlan[], covered: ReadonlySet<string>,
             name: `${p.alias || String(p.ester)}${suffix}`,
             route: p.route as Route,
             ester: p.ester,
-            doseMG: parseDoseMG(p.dose),
-            extras: {},
+            doseMG: p.route === Route.patchApply && typeof p.extras?.[ExtraKey.releaseRateUGPerDay] === 'number' ? 0 : parseDoseMG(p.dose),
+            extras: { ...(p.extras ?? {}) },
             createdAt: 0,
         }));
 }

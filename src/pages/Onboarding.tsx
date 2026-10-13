@@ -9,7 +9,7 @@ import type { Lang } from '../i18n/types';
 import CopyRow from '../components/CopyRow';
 import IntroCard from '../components/IntroCard';
 import FitText from '../components/FitText';
-import { LabScanDemo, JournalPreview, RecheckPreview, SignInPreview, QuickAddDemo, BigLockAnimation, ImportSmashDemo } from '../components/OnboardingFeatures';
+import { LabScanDemo, JournalPreview, RecheckPreview, QuickAddDemo, BigLockAnimation, ImportSmashDemo } from '../components/OnboardingFeatures';
 import Icon from '../components/Icon';
 import DateTimePicker from '../components/DateTimePicker';
 import { Check, Plus, ChevronDown, AlertTriangle } from '../icons';
@@ -937,20 +937,8 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
             visual={<RecheckPreview />}
         />,
 
-        /* Sign-in sits immediately before the account step, so the method and
-           the payoff — one tap here, sync there — read as one thought. */
-        <IntroCard
-            key="signin"
-            title={t('onboarding.signin_title')}
-            description={t('onboarding.signin_subtitle')}
-            visual={<SignInPreview />}
-        />,
-
-        /* Where your history can come from. Placed after "我们从何处来?" because
-           that step is about who you are to the server and this one is the natural
-           follow-up question — what about the records I already have somewhere
-           else. The picture is the answer: three other trackers landing in this
-           one, which is what the import actually does. */
+        /* Where your history can come from: the picture shows three other
+           trackers landing here, which is what the import actually does. */
         <IntroCard
             key="import"
             framed={false}
@@ -1007,7 +995,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, 
                 wiring the client up by hand — one selectable block, not a field per
                 value. Same text as the AI-assistant settings page. */}
             <p className="mt-5 text-m3-body-large">{t('onboarding.mcp_prompt')}</p>
-            <CopyRow value={INSTALL_PROMPT} hint={t('onboarding.mcp_prompt_hint')} />
+            <CopyRow variant="single" value={INSTALL_PROMPT} hint={t('onboarding.mcp_prompt_hint')} />
             <p className="mt-2 text-m3-body-large intro-muted">{t('onboarding.mcp_more')}</p>
         </div>,
 

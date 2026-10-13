@@ -13,6 +13,7 @@ import type { Server } from 'node:http';
 import { bootPostgres, useDatabase, startApiServer, teardown, type PostgresHandle } from './pg.ts';
 import { registerAccount , TEST_KMS_CONFIG} from './helpers.ts';
 import { setConfigForTesting } from '../src/config.ts';
+import { parseMedicationInput, parseTemplateInput } from '../src/domain.ts';
 import {
   ExtraKey,
   PK_ENGINES,
@@ -57,6 +58,27 @@ before(async () => {
 
 after(async () => {
   await teardown(server, pg);
+});
+
+test('patch removal association is accepted only on medication events', () => {
+  const event = parseMedicationInput({
+    route: 'patchRemove', ester: 'E2', at: '2026-10-12T08:00:00Z',
+    extras: { patchRemovalFor: 'patch-apply-1' },
+  }, 'generated');
+  assert.ok(event.ok, 'a patch removal event accepts its opaque apply id');
+  if (event.ok) assert.equal(event.value.extras.patchRemovalFor, 'patch-apply-1');
+
+  const badDoseExtra = parseMedicationInput({
+    route: 'patchRemove', ester: 'E2', at: '2026-10-12T08:00:00Z',
+    extras: { patchRemovalFor: '../other' },
+  }, 'generated');
+  assert.equal(badDoseExtra.ok, false, 'removal association ids reject unsafe characters');
+
+  const template = parseTemplateInput({
+    name: 'Patch', route: 'patchRemove', ester: 'E2', dose_mg: 0,
+    extras: { patchRemovalFor: 'patch-apply-1' },
+  }, 'generated');
+  assert.equal(template.ok, false, 'templates do not accept event-only removal associations');
 });
 
 function connect(token?: string) {
@@ -324,6 +346,39 @@ test('a validation failure is returned as a correctable message', async () => {
   const text = (bad.content as any)[0].text as string;
   assert.match(text, /dose_mg/, `the message should name the field, got: ${text}`);
 
+  await client.close();
+});
+
+test('hrt_med_plan_status filters plans to the account HRT mode, including legacy plans', async () => {
+  const account = await registerAccount(base, { password: 'mcp-plan-mode-filter' });
+  const stamp = Date.now();
+  const plan = (id: string, hrtMode?: 'transfem' | 'transmasc') => ({
+    id, ester: 'E2', hrtMode, alias: id, dose: '2mg', route: 'sublingual', mode: 'hours',
+    intervalHours: 8, firstHour: 0, firstMinute: 0, tzOffsetMinutes: 0, enabled: true,
+  });
+  const saved = await fetch(`${base}/api/records/batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` },
+    body: JSON.stringify({ records: [{
+      id: 'scalar:medPlan', takenAt: stamp, category: 'setting',
+      data: { value: [plan('fem-plan', 'transfem'), plan('masc-plan', 'transmasc'), plan('legacy-plan')], stamp },
+    }] }),
+  });
+  assert.ok(saved.ok, `plan push accepted, got ${saved.status}`);
+
+  const settings = await fetch(`${base}/api/settings`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` },
+    body: JSON.stringify({ hrt_mode: 'transmasc' }),
+  });
+  assert.equal(settings.status, 200, 'the account mode is saved');
+
+  const { client, transport } = connect(account.token);
+  await client.connect(transport);
+  const result = await client.callTool({ name: 'hrt_med_plan_status', arguments: {} });
+  assert.ok(!result.isError, 'the plan-status tool succeeds');
+  const statuses = JSON.parse((result.content as any)[0].text) as { esters: { alias: string | null } }[];
+  assert.deepEqual(statuses.map((item) => item.esters.alias).sort(), ['legacy-plan', 'masc-plan']);
   await client.close();
 });
 

@@ -2,17 +2,19 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Icon from './Icon';
 import Switch from './Switch';
 import { useTranslation } from '../contexts/LanguageContext';
-import { Ester, Route, isAntiandrogen, isTestosteroneEster } from '../../logic';
+import { Ester, Route, isAntiandrogen, isTestosteroneEster, ExtraKey } from '../../logic';
 import DateTimePicker from './DateTimePicker';
 import { ChevronRight, Clock3 as Clock, Plus, Trash2, Bookmark, Check } from '../icons';
 import type { DoseTemplate } from './DoseForm';
 import { PillRail, type PillItem } from './dose_form/FormControls';
 import { RouteGlyph, compoundIcon } from './compoundIcons';
+import PatchFields from './dose_form/PatchFields';
 import {
     readMedPlans, writeMedPlans, sanitizeMedPlans, isSavedTemplate, type MedPlan, type PlanStatus, type PlanTime,
     planStatuses, migrateOldRemindersToPlans,
     isPlanNotificationGranted, requestPlanNotificationPermission,
 } from '../utils/medPlanNotify';
+import { plansForMode, availablePlanRoutes, availablePlanEsters, availablePlanRoutesForEster, localDateKey } from '../utils/medPlan';
 import { reschedulePlanNotifications } from '../utils/medPlanNotify';
 import { syncPushRegistration } from '../utils/pushRegister';
 import { isNativeApp } from '../utils/platform';
@@ -21,8 +23,6 @@ import { useHRTMode } from '../contexts/HRTModeContext';
 
 type PlanMode = 'times' | 'hours' | 'days';
 
-const ESTERS = Object.values(Ester);
-const ROUTES = Object.values(Route);
 const MODES: readonly PlanMode[] = ['times', 'hours', 'days'];
 
 const fieldLabel = 'block text-xs font-semibold text-[var(--color-m3-on-surface-variant)] pl-1 mb-1.5';
@@ -41,7 +41,7 @@ const hhmmOf = (t: PlanTime) => `${String(t.hour).padStart(2, '0')}:${String(t.m
 const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: DoseTemplate[] }> = ({ muted, on, doseTemplates = [] }) => {
     const { t } = useTranslation();
     const session = useCoreSession();
-    const { isTransmasc } = useHRTMode();
+    const { isTransmasc, mode: hrtMode } = useHRTMode();
     // Only the user's own saved templates — never a plan's auto-generated entry.
     const importable = useMemo(() => doseTemplates.filter(t => isSavedTemplate(t.id)), [doseTemplates]);
     const [plans, setPlans] = useState<MedPlan[]>(() => {
@@ -49,10 +49,16 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
         return readMedPlans();
     });
     const [webPermission, setWebPermission] = useState(false);
+    const visiblePlans = useMemo(() => plansForMode(plans, hrtMode), [plans, hrtMode]);
 
     // Add-form state.
     const [ester, setEster] = useState<Ester>(Ester.E2);
     const [route, setRoute] = useState<Route>(() => (isTransmasc ? Route.injection : Route.sublingual));
+    const routeChoices = useMemo(() => availablePlanRoutesForEster(hrtMode, ester), [hrtMode, ester]);
+    const esterChoices = useMemo(() => availablePlanEsters(hrtMode, route), [hrtMode, route]);
+    const [patchMode, setPatchMode] = useState<'dose' | 'rate'>('rate');
+    const [patchRate, setPatchRate] = useState('50');
+    const [patchWearDays, setPatchWearDays] = useState('');
     const [alias, setAlias] = useState('');
     const [dose, setDose] = useState('');
     const [mode, setMode] = useState<PlanMode>('times');
@@ -96,10 +102,10 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
     const status = useMemo<{ plan: MedPlan; overdue: boolean }[]>(() => {
         // The badge state shown here is a local read: the overdue badge lives on the
         // quick-record button, this row just marks the plan red when it is behind.
-        return planStatuses(readMedPlans(), [], Date.now(), new Date().getTimezoneOffset()).map(st => ({ plan: st.plan, overdue: st.overdue }));
+        return planStatuses(plansForMode(readMedPlans(), hrtMode), [], Date.now(), new Date().getTimezoneOffset()).map(st => ({ plan: st.plan, overdue: st.overdue }));
         // Recomputed when the plan list changes; a stale "overdue" here corrects
         // itself on the next visit or the next edit.
-    }, [plans]);
+    }, [plans, hrtMode]);
 
     const overdueOf = (id: string): boolean => status.find(s => s.plan.id === id)?.overdue ?? false;
 
@@ -108,6 +114,9 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
         setRoute(isTransmasc ? Route.injection : Route.sublingual);
         setAlias('');
         setDose('');
+        setPatchMode('rate');
+        setPatchRate('50');
+        setPatchWearDays('');
         setMode('times');
         setIntervalHours(8);
         setEveryDays(2);
@@ -125,6 +134,9 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
         setRoute(p.route ?? (isTransmasc ? Route.injection : Route.sublingual));
         setAlias(p.alias ?? '');
         setDose(p.dose ?? '');
+        setPatchMode(typeof p.extras?.[ExtraKey.releaseRateUGPerDay] === 'number' ? 'rate' : 'dose');
+        setPatchRate(String(p.extras?.[ExtraKey.releaseRateUGPerDay] ?? 50));
+        setPatchWearDays(typeof p.extras?.[ExtraKey.patchWearH] === 'number' ? String(p.extras[ExtraKey.patchWearH]! / 24) : '');
         setMode(p.mode);
         setIntervalHours(p.intervalHours ?? 8);
         setEveryDays(p.everyDays ?? 2);
@@ -147,12 +159,34 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
     };
 
     const submitPlan = (): void => {
+        const selected = routeChoices.includes(route) && esterChoices.includes(ester)
+            ? { route, ester }
+            : (() => {
+                const fallbackRoute = availablePlanRoutes(hrtMode)[0];
+                const fallbackEster = availablePlanEsters(hrtMode, fallbackRoute)[0];
+                return { route: fallbackRoute, ester: fallbackEster };
+            })();
+        const selectedRoute = selected.route;
+        const selectedEster = selected.ester;
+        const extras: Record<string, number> = {};
+        if (selectedRoute === Route.patchApply) {
+            if (patchMode === 'rate') {
+                const rate = Number(patchRate);
+                if (!Number.isFinite(rate) || rate <= 0) return;
+                extras[ExtraKey.releaseRateUGPerDay] = rate;
+            }
+            const wearDays = Number(patchWearDays);
+            if (patchWearDays.trim() && Number.isFinite(wearDays) && wearDays > 0) extras[ExtraKey.patchWearH] = wearDays * 24;
+        }
         const plan: MedPlan = {
             id: editingId ?? crypto.randomUUID(),
-            ester,
-            route,
+            ester: selectedEster,
+            hrtMode,
+            route: selectedRoute,
             alias: alias.trim() || undefined,
-            dose: dose.trim(),
+            dose: selectedRoute === Route.patchApply && patchMode === 'rate' ? '' : dose.trim(),
+            extras: Object.keys(extras).length ? extras : undefined,
+            anchorDate: mode === 'days' ? (editingId ? readMedPlans().find(p => p.id === editingId)?.anchorDate : undefined) ?? localDateKey(new Date()) : undefined,
             mode,
             doseTimes: mode === 'times'
                 ? extraTimes.map(e => ({ hour: e.date.getHours(), minute: e.date.getMinutes() }))
@@ -179,9 +213,15 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
 
     /** Fill the form from a saved quick-template (its drug, route and dose). */
     const importTemplate = (tpl: DoseTemplate): void => {
-        setEster(tpl.ester);
-        setRoute(tpl.route);
-        setDose(`${tpl.doseMG}mg`);
+            const templateSelection = availablePlanRoutes(hrtMode).includes(tpl.route)
+                ? { route: tpl.route, ester: availablePlanEsters(hrtMode, tpl.route).includes(tpl.ester) ? tpl.ester : availablePlanEsters(hrtMode, tpl.route)[0] }
+                : null;
+            if (templateSelection) {
+                setRoute(templateSelection.route);
+                setEster(templateSelection.ester);
+            }
+            setDose(`${tpl.doseMG}mg`);
+
         setAlias(tpl.name);
     };
 
@@ -223,18 +263,25 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
 
     const modeLabel = (m: PlanMode): string => m === 'times' ? t('plan.mode.times') : m === 'hours' ? t('plan.mode.hours') : t('plan.mode.days');
 
+    useEffect(() => {
+        if (!routeChoices.includes(route)) setRoute(routeChoices[0]);
+    }, [routeChoices, route]);
+    useEffect(() => {
+        if (!esterChoices.includes(ester)) setEster(esterChoices[0]);
+    }, [esterChoices, ester]);
+
     // The same picture-pill rails the record form uses, so a plan's drug and route read
     // exactly like a logged dose's.
     const toneOf = (e: Ester): PillItem['tone'] =>
         isAntiandrogen(e) ? 'A' : isTestosteroneEster(e) ? 'T' : 'E';
     const esterItems: PillItem[] = useMemo(
-        () => ESTERS.map(e => ({ value: e, label: t(`pill.ester.${e}`), icon: compoundIcon(e), tone: toneOf(e) })),
+        () => esterChoices.map(e => ({ value: e, label: t(`pill.ester.${e}`), icon: compoundIcon(e), tone: toneOf(e) })),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [t],
+        [esterChoices, t],
     );
     const routeItems: PillItem[] = useMemo(
-        () => ROUTES.map(r => ({ value: r, label: t(`pill.route.${r}`), icon: RouteGlyph[r] ?? RouteGlyph.oral })),
-        [t],
+        () => routeChoices.map(r => ({ value: r, label: t(`pill.route.${r}`), icon: RouteGlyph[r] ?? RouteGlyph.oral })),
+        [routeChoices, t],
     );
 
     const numField = (label: string, value: number, set: (v: number) => void, min: number, max: number) => (
@@ -310,9 +357,9 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
             )}
 
             {/* ── Existing plans ───────────────────────────────────────────── */}
-            {plans.length === 0
+            {visiblePlans.length === 0
                 ? <p className={`text-xs ${muted} mb-2`}>{t('plan.empty')}</p>
-                : plans.map(p => {
+                : visiblePlans.map(p => {
                     const overdue = overdueOf(p.id);
                     const editing = editingId === p.id;
                     return (
@@ -330,7 +377,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                                     {overdue && p.enabled && <span className="text-[var(--color-m3-warning)]"> ⚠</span>}
                                 </span>
                                 <span className={`text-xs block truncate ${muted} mt-0.5`}>
-                                    {t(`ester.${p.ester}`)}{p.route ? ` · ${t(`route.${p.route}`)}` : ''} · {p.dose || '—'}{` · ${scheduleSummary(p)}`}
+                                    {t(`ester.${p.ester}`)}{p.route ? ` · ${t(`route.${p.route}`)}` : ''}{p.route === Route.patchApply && typeof p.extras?.[ExtraKey.releaseRateUGPerDay] === 'number' ? ` · ${p.extras[ExtraKey.releaseRateUGPerDay]} µg/day` : p.dose ? ` · ${p.dose}` : ''}{` · ${scheduleSummary(p)}`}
                                 </span>
                             </button>
                             {/* The on/off is its own switch now, so the row's tap target
@@ -395,12 +442,12 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
 
                 <div className="space-y-4">
                     <div>
-                        <p className={`text-xs ${muted} mb-2`}>{t('pill.sec.drug')}</p>
-                        <PillRail items={esterItems} value={ester} onSelect={(v) => setEster(v as Ester)} dense ariaLabel={t('plan.add_drug')} />
+                        <p className={`text-xs ${muted} mb-2`}>{t('pill.sec.route')}</p>
+                        <PillRail items={routeItems} value={route} onSelect={(v) => setRoute(v as Route)} dense ariaLabel={t('plan.add_route')} />
                     </div>
                     <div>
-                        <p className={`text-xs ${muted} mb-2`}>{t('pill.sec.route')}</p>
-                        <PillRail items={routeItems} value={route} onSelect={(v) => setRoute(v as Route)} dense animateKey={ester} ariaLabel={t('plan.add_route')} />
+                        <p className={`text-xs ${muted} mb-2`}>{t('pill.sec.drug')}</p>
+                        <PillRail items={esterItems} value={ester} onSelect={(v) => setEster(v as Ester)} dense animateKey={route} ariaLabel={t('plan.add_drug')} />
                     </div>
                 </div>
 
@@ -409,11 +456,26 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                         <span className={fieldLabel}>{t('plan.add_alias')}</span>
                         <input value={alias} onChange={e => setAlias(e.target.value)} placeholder={t('plan.add_alias_ph')} className="input-base" />
                     </label>
-                    <label className="block">
-                        <span className={fieldLabel}>{t('plan.add_dose')}</span>
-                        <input value={dose} onChange={e => setDose(e.target.value)} placeholder="2mg" className="input-base" />
-                    </label>
+                    {route !== Route.patchApply && (
+                        <label className="block">
+                            <span className={fieldLabel}>{t('plan.add_dose')}</span>
+                            <input value={dose} onChange={e => setDose(e.target.value)} placeholder="2mg" className="input-base" />
+                        </label>
+                    )}
                 </div>
+                {route === Route.patchApply && (
+                    <PatchFields
+                        patchMode={patchMode}
+                        setPatchMode={setPatchMode}
+                        patchRate={patchRate}
+                        setPatchRate={setPatchRate}
+                        rawDose={dose}
+                        onRawChange={setDose}
+                        patchWearDays={patchWearDays}
+                        setPatchWearDays={setPatchWearDays}
+                        route={route}
+                    />
+                )}
 
                 <div>
                     <span className={fieldLabel}>{t('plan.add_mode')}</span>
@@ -461,7 +523,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                 <button
                     type="button"
                     onClick={submitPlan}
-                    disabled={!dose.trim()}
+                    disabled={route === Route.patchApply ? (patchMode === 'rate' ? !patchRate.trim() : !dose.trim()) : !dose.trim()}
                     className="m3-btn m3-btn-filled w-full"
                 >
                     <span className="inline-flex items-center gap-1.5"><Icon icon={editingId ? Check : Plus} size={16} />{editingId ? t('plan.save') : t('plan.add_submit')}</span>

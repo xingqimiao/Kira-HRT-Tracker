@@ -165,6 +165,27 @@ test('an overdue dose is pushed once, data-only, and deduped on the next scan', 
   assert.equal(sends.length, 1, 'no second message');
 });
 
+test('FCM pushes only the current mode plan and includes legacy plans', async () => {
+  const account = await registerAccount(base);
+  await seed(account.token, [
+    { ...midnightPlan('fem-plan'), hrtMode: 'transfem', alias: 'fem-plan' },
+    { ...midnightPlan('masc-plan'), hrtMode: 'transmasc', alias: 'masc-plan' },
+    { ...midnightPlan('legacy-plan'), alias: 'legacy-plan' },
+  ]);
+  const settings = await call(base, '/api/settings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` },
+    body: JSON.stringify({ hrt_mode: 'transmasc' }),
+  });
+  assert.equal(settings.status, 200, 'the account mode is saved');
+
+  const sends = installFakeFcm();
+  const result = await scanMissedDoses(noon);
+  assert.equal(result.pushed, 2, 'current-mode and legacy plans are pushed');
+  const aliases = sends.map((send) => (send.message as { data: Record<string, string> }).data.alias).sort();
+  assert.deepEqual(aliases, ['legacy-plan', 'masc-plan'], 'the other mode is not pushed');
+});
+
 test('a dose inside the grace window is not nudged', async () => {
   const account = await registerAccount(base);
   await seed(account.token, [midnightPlan()]);

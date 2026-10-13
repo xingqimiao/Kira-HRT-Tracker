@@ -21,6 +21,13 @@ import {
   parseDoseMG,
   planQuickEntries,
   isSavedTemplate,
+  plansForMode,
+  availablePlanRoutes,
+  availablePlanEsters,
+  reconcilePlanSelection,
+  availablePlanRoutesForEster,
+  activePatches,
+  patchRemovalEvent,
 } from '../src/utils/medPlan.ts';
 import { Ester, Route } from '../logic.ts';
 
@@ -48,6 +55,37 @@ const plan = (over = {}) => ({
   // A malformed extra time is dropped without losing the plan.
   const oneBad = sanitizeMedPlans([{ ...plan(), doseTimes: [{ hour: 99, minute: 0 }, { hour: 20, minute: 30 }] }]);
   assert.deepEqual(oneBad[0].doseTimes, [{ hour: 20, minute: 30 }], 'a bad dose time is dropped, the good one kept');
+
+  const extended = sanitizeMedPlans([plan({
+    hrtMode: 'transmasc',
+    extras: { releaseRateUGPerDay: 50, patchWearH: 168 },
+  })]);
+  assert.equal(extended[0].hrtMode, 'transmasc', 'mode ownership survives sanitizing');
+  assert.deepEqual(extended[0].extras, { releaseRateUGPerDay: 50, patchWearH: 168 }, 'patch settings survive sanitizing');
+  assert.equal(sanitizeMedPlans([plan({ hrtMode: 'invalid' })])[0].hrtMode, undefined, 'invalid mode ownership is dropped');
+  assert.deepEqual(sanitizeMedPlans([plan({ extras: { patchWearH: Infinity, releaseRateUGPerDay: 25 } })])[0].extras,
+    { releaseRateUGPerDay: 25 }, 'invalid patch settings are dropped independently');
+
+  const owned = [plan({ hrtMode: 'transfem' }), plan({ id: 'p2', hrtMode: 'transmasc' }), plan({ id: 'legacy' })];
+  assert.deepEqual(plansForMode(owned, 'transfem').map(p => p.id), ['p1', 'legacy'], 'legacy plans use the supplied current mode');
+  assert.deepEqual(plansForMode(owned, 'transmasc').map(p => p.id), ['p2', 'legacy'], 'other-mode plans stay stored but are filtered');
+  assert.deepEqual(availablePlanRoutes('transmasc'), [Route.injection, Route.gel], 'transmasc routes follow record-form availability');
+  assert.equal(availablePlanRoutes('transfem').includes(Route.patchRemove), false, 'patch removal is never schedulable');
+  assert.deepEqual(reconcilePlanSelection('transfem', Route.injection, Ester.E2), { route: Route.injection, ester: Ester.EB }, 'an unsupported compound moves to one available on the selected route');
+  assert.deepEqual(availablePlanRoutesForEster('transfem', Ester.CPA), [Route.oral], 'choosing an oral-only medication constrains routes');
+  assert.deepEqual(availablePlanEsters('transmasc', Route.injection), [Ester.TC, Ester.TE, Ester.TU]);
+  assert.deepEqual(availablePlanEsters('transfem', Route.oral), [Ester.E2, Ester.EV, Ester.CPA, Ester.SPIRO, Ester.BICAL]);
+
+  const wornA = { id: 'patch-a', route: Route.patchApply, timeH: Date.UTC(2026, 9, 9, 8) / HOUR, doseMG: 0, ester: Ester.E2, extras: { releaseRateUGPerDay: 50 } };
+  const wornB = { id: 'patch-b', route: Route.patchApply, timeH: Date.UTC(2026, 9, 10, 7) / HOUR, doseMG: 0, ester: Ester.E2, extras: { patchInstanceId: 'instance-b', patchWearH: 72 } };
+  const removedA = { id: 'remove-a', route: Route.patchRemove, timeH: Date.UTC(2026, 9, 10, 8) / HOUR, doseMG: 0, ester: Ester.E2, extras: { patchRemovalFor: 'patch-a' } };
+  assert.deepEqual(activePatches([wornA, wornB, removedA], Date.UTC(2026, 9, 11, 12) / HOUR).map(e => e.id), ['patch-b'], 'all and only active patch instances are returned');
+  assert.equal(activePatches([wornA, wornB, removedA], Date.UTC(2026, 9, 11, 12) / HOUR).length, 1, 'multiple applies remain independently trackable');
+  const legacyRemove = { id: 'legacy-remove', route: Route.patchRemove, timeH: Date.UTC(2026, 9, 10, 9) / HOUR, doseMG: 0, ester: Ester.E2, extras: {} };
+  const targetedB = { id: 'targeted-b', route: Route.patchRemove, timeH: Date.UTC(2026, 9, 10, 10) / HOUR, doseMG: 0, ester: Ester.E2, extras: { patchRemovalFor: 'instance-b' } };
+  assert.deepEqual(activePatches([wornA, wornB, legacyRemove, targetedB], Date.UTC(2026, 9, 11, 12) / HOUR), [], 'legacy FIFO removals cannot consume an apply already removed by exact association');
+  assert.equal(patchRemovalEvent(wornB, 'remove-b', Date.UTC(2026, 9, 11, 12) / HOUR).extras.patchRemovalFor, 'instance-b', 'removal targets the exact patch instance');
+  assert.deepEqual(activePatches([removedA], Date.UTC(2026, 9, 11, 12) / HOUR), [], 'no active patch means no banner');
 }
 
 // ── Due times for today, in the user's own day ──────────────────────────────
@@ -65,9 +103,9 @@ const plan = (over = {}) => ({
   assert.equal(dueTimesToday(plan({ enabled: false }), NOW, 0).length, 0, 'disabled plans are silent');
 
   // An every-2-days plan is due only on its cycle day.
-  const everyOther = plan({ mode: 'days', everyDays: 2, doseTimes: undefined });
-  const dueOn = dueTimesToday({ ...everyOther, firstHour: 0, firstMinute: 0 }, NOW, 0);
-  assert.ok(dueOn.length <= 1, 'the every-N-days cycle yields at most one dose a day');
+  const everyOther = plan({ mode: 'days', everyDays: 2, anchorDate: '2026-10-09', doseTimes: undefined, firstHour: 0, firstMinute: 0 });
+  assert.deepEqual(dueTimesToday(everyOther, NOW, 0), [Date.UTC(2026, 9, 11, 0)], 'every-N-days uses the saved stable anchor');
+  assert.deepEqual(dueTimesToday(everyOther, Date.UTC(2026, 9, 10, 12), 0), [], 'off-cycle calendar days are not due');
 
   // Local wall clock: a 08:00 CST (offset -480) dose is due 08:00 local, not 16:00.
   const cst = dueTimesToday({ ...plan({ doseTimes: undefined }), tzOffsetMinutes: -480 }, Date.UTC(2026, 9, 11, 14, 0), -480);

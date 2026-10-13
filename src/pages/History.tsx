@@ -282,8 +282,8 @@ const History: React.FC<HistoryProps> = ({
                                         ) : (
                                             <Icon
                                                 icon={compoundIcon(ev.ester)}
-                                                size={16}
-                                                className="mt-[3px] shrink-0"
+                                                size={25}
+                                                className="mt-0 shrink-0 text-[var(--color-m3-primary)]"
                                                 title={t(`ester.${ev.ester}`)}
                                             />
                                         )}

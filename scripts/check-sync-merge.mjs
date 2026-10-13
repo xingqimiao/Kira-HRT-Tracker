@@ -366,8 +366,9 @@ const SCALAR_SAMPLES = {
   pkParams: { e2_kclear: 0.4 },
   appSettings: { theme: 'dark', lang: 'ja', hrtMode: 'transmasc', calMethod: 'ekf', timezone: 'Asia/Tokyo' },
   medPlan: [{
-    id: 'plan-1', ester: 'E2', dose: '2mg', mode: 'times',
-    doseTimes: [{ hour: 8, minute: 0 }, { hour: 20, minute: 0 }],
+    id: 'plan-1', ester: 'E2', hrtMode: 'transfem', route: 'patchApply',
+    alias: 'weekly patch', dose: '', extras: { releaseRateUGPerDay: 100, patchWearH: 168 },
+    anchorDate: '2026-10-12', mode: 'days', everyDays: 7,
     tzOffsetMinutes: -480, firstHour: 8, firstMinute: 0, enabled: true,
   }],
 };

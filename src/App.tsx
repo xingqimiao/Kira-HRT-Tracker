@@ -161,6 +161,19 @@ const AppContent = () => {
         migrateOldRemindersToPlans();
         void reschedulePlanNotifications().catch(e => console.error('[med-plan] reschedule failed', e));
         startPlanWebNotifications();
+        const refresh = () => {
+            if (document.visibilityState === 'visible') {
+                void reschedulePlanNotifications().catch(e => console.error('[med-plan] reschedule failed', e));
+            }
+        };
+        document.addEventListener('visibilitychange', refresh);
+        window.addEventListener('focus', refresh);
+        window.addEventListener('hrt-mode-changed', refresh);
+        return () => {
+            document.removeEventListener('visibilitychange', refresh);
+            window.removeEventListener('focus', refresh);
+            window.removeEventListener('hrt-mode-changed', refresh);
+        };
     }, []);
 
     // Keep the device's FCM token bound to the signed-in account, so a catch-up

@@ -38,7 +38,7 @@ const CopyRow: React.FC<{ value: string; hint: string; variant?: 'block' | 'sing
                         (not `pre`) so the prompt's own newlines collapse to spaces too,
                         keeping it to one line. */}
                     <code
-                        className="w-full max-w-full flex-1 select-text overflow-x-auto whitespace-nowrap rounded-md
+                        className="w-full max-w-full flex-1 select-text overflow-x-auto scrollbar-hide whitespace-nowrap rounded-md
                             bg-[var(--color-m3-surface-container)] px-3 py-2 font-mono text-xs leading-5
                             text-[var(--color-m3-on-surface)]"
                     >

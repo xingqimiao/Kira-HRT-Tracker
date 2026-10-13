@@ -819,7 +819,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
         }
     }, [route, isTransmasc]);
 
-    const availableRoutes = useMemo(() => {
+    const availableRoutes = useMemo<Route[]>(() => {
         if (isTransmasc) {
             // Transmasc: no oral/sublingual; no patches (T patches are uncommon and
             // not realistically modeled with the current µg/day scheme).
@@ -828,7 +828,7 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
                 r !== Route.patchApply && r !== Route.patchRemove
             );
         }
-        return Object.values(Route);
+        return Object.values(Route).filter(r => r !== Route.patchRemove);
     }, [isTransmasc]);
 
     useEffect(() => {
@@ -1019,9 +1019,8 @@ const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDe
             )}
 
             <div className={`space-y-4 flex-1 overflow-y-auto ${!isInline ? 'px-6 pb-4' : hideHeader ? 'pb-2' : 'pb-4'}`}>
-                {/* Time — a bar, like everything below it. */}
                 {!hideTime && (
-                <FieldRow icon={FieldIcon.clock} label={t('field.time')}>
+                <FieldRow icon={FieldIcon.clock} label={t('field.time')} plain>
                     <button
                         type="button"
                         onClick={() => setIsDatePickerOpen(v => !v)}

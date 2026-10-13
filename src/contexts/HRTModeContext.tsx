@@ -26,6 +26,7 @@ export const HRTModeProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY, mode);
+        window.dispatchEvent(new Event('hrt-mode-changed'));
     }, [mode]);
 
     // Adopt a mode the account says this device should be using.
