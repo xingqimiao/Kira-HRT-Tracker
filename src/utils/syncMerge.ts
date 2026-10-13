@@ -680,7 +680,14 @@ export function mergeSyncStates(local: SyncState, remote: SyncState | null): Mer
         local.appSettings, local.appSettingsUpdatedAt,
         remote.appSettings, remote.appSettingsUpdatedAt,
     );
-    merged.appSettings = appSettings.value;
+    let resolvedSettings = appSettings.value;
+    if (resolvedSettings && !resolvedSettings.hrtStartDate) {
+        const fallbackDate = local.appSettings?.hrtStartDate || remote.appSettings?.hrtStartDate;
+        if (fallbackDate) {
+            resolvedSettings = { ...resolvedSettings, hrtStartDate: fallbackDate };
+        }
+    }
+    merged.appSettings = resolvedSettings;
     merged.appSettingsUpdatedAt = appSettings.at;
 
     const medPlan = resolveScalar(local.medPlan, local.medPlanUpdatedAt, remote.medPlan, remote.medPlanUpdatedAt);

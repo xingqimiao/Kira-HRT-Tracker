@@ -98,7 +98,7 @@ const HistoryRow: React.FC<HistoryRowProps> = ({
                 </div>
                 <div className="mt-1 flex flex-wrap items-baseline gap-x-2 text-xs text-[var(--color-m3-on-surface-variant)] ">
                     <span className="truncate">{t(`route.${ev.route}`)}</span>
-                    {ev.extras[ExtraKey.releaseRateUGPerDay] ? (
+                    {ev.extras?.[ExtraKey.releaseRateUGPerDay] ? (
                         <>
                             <span className="opacity-40">·</span>
                             <span className="text-[var(--color-m3-on-surface)] ">{`${ev.extras[ExtraKey.releaseRateUGPerDay]} µg/d`}</span>
@@ -119,7 +119,7 @@ const HistoryRow: React.FC<HistoryRowProps> = ({
                             )}
                         </>
                     )}
-                    {ev.route === Route.patchApply && typeof ev.extras[ExtraKey.patchWearH] === 'number' && ev.extras[ExtraKey.patchWearH]! > 0 && (
+                    {ev.route === Route.patchApply && typeof ev.extras?.[ExtraKey.patchWearH] === 'number' && ev.extras[ExtraKey.patchWearH]! > 0 && (
                         <>
                             <span className="opacity-40">·</span>
                             <span className="text-[var(--color-m3-on-surface)] ">{`${formatWearDays(ev.extras[ExtraKey.patchWearH]! / 24)} ${t('unit.day_short')}`}</span>
@@ -441,6 +441,7 @@ const History: React.FC<HistoryProps> = ({
                 )}
                 itemContent={(index) => {
                     const ev = allEvents[index];
+                    if (!ev) return null;
                     return (
                         <MemoHistoryRow
                             ev={ev}
@@ -461,7 +462,6 @@ const History: React.FC<HistoryProps> = ({
                         />
                     );
                 }}
-                computeItemKey={(index) => allEvents[index].id}
                 className="relative"
             />
             </div>

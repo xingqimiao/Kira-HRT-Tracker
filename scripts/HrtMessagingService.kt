@@ -45,6 +45,24 @@ class HrtMessagingService : FirebaseMessagingService() {
         private const val CHANNEL_ID = "hrt-med"
         private const val PREFS = "hrt-push"
         private const val SHOWN_KEY = "shown"
+        private const val SHOWN_MAX_AGE_MS = 3L * 24 * 60 * 60 * 1000 // 3 days, matching Web
+        private const val SHOWN_MAX_SIZE = 500
+    }
+
+    private fun keyDueMs(key: String): Long? {
+        val idx = key.lastIndexOf(':')
+        if (idx < 0) return null
+        return key.substring(idx + 1).toLongOrNull()
+    }
+
+    private fun pruneShown(keys: Set<String>, nowMs: Long): Set<String> {
+        val cutoff = nowMs - SHOWN_MAX_AGE_MS
+        val kept = keys.filter { k ->
+            val due = keyDueMs(k)
+            due != null && due >= cutoff
+        }
+        if (kept.size <= SHOWN_MAX_SIZE) return kept.toSet()
+        return kept.sortedByDescending { keyDueMs(it) ?: 0L }.take(SHOWN_MAX_SIZE).toSet()
     }
 
     override fun onNewToken(token: String) {
@@ -66,8 +84,15 @@ class HrtMessagingService : FirebaseMessagingService() {
         // Device-side dedup: the same instance can arrive more than once (token
         // redelivery, a retry, both a data and a collapse path). Shown once, ever.
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val shown = prefs.getStringSet(SHOWN_KEY, emptySet()) ?: emptySet()
-        if (shown.contains(key)) return
+        val rawShown = prefs.getStringSet(SHOWN_KEY, emptySet()) ?: emptySet()
+        val nowMs = System.currentTimeMillis()
+        val shown = pruneShown(rawShown, nowMs)
+        if (shown.contains(key)) {
+            if (shown.size != rawShown.size) {
+                prefs.edit().putStringSet(SHOWN_KEY, shown).apply()
+            }
+            return
+        }
         val updated = HashSet(shown).apply { add(key) }
         prefs.edit().putStringSet(SHOWN_KEY, updated).apply()
 
@@ -109,6 +134,6 @@ class HrtMessagingService : FirebaseMessagingService() {
             .setAutoCancel(true)
             .setContentIntent(pending)
             .build()
-        manager.notify(tag.hashCode(), notification)
+        manager.notify(tag, tag.hashCode(), notification)
     }
 }

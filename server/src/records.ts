@@ -78,12 +78,23 @@ function jsonObject(value: unknown): Record<string, unknown> | null {
  * files a record by its prefix — written down once here so the purge cannot drift
  * from it.
  */
+type Mode = 'transfem' | 'transmasc';
+const MODES: readonly Mode[] = ['transfem', 'transmasc'];
+
 const TOMBSTONE_PREFIX: Readonly<Record<string, string>> = {
     events: 'dose',
     labResults: 'lab',
     doseTemplates: 'tpl',
     journal: 'journal',
     quickDoses: 'quick',
+};
+
+const WIRE_TO_TOMBSTONE_KIND: Readonly<Record<string, string>> = {
+    dose: 'events',
+    lab: 'labResults',
+    tpl: 'doseTemplates',
+    journal: 'journal',
+    quick: 'quickDoses',
 };
 
 /** Whether two tombstone maps say the same thing, so a sweep can be skipped. */
@@ -681,13 +692,41 @@ export const RecordService = {
         return { records, unreadable };
     },
 
-    /** True when a row was removed. Deletion is physical: there is no tombstone here. */
+    /** Record a deletion tombstone so client sync does not resurrect the deleted record. */
+    async noteDeletion(ctx: AuthContext, mode: Mode, kind: string, appId: string): Promise<void> {
+        const mapKey = `del:${mode}:${kind}`;
+        const existing = await RecordService.get(ctx, mapKey).catch(() => null);
+        const map = existing && typeof existing.data === 'object' && existing.data !== null
+            ? { ...(existing.data as Record<string, number>) }
+            : {};
+        map[appId] = Date.now();
+        await RecordService.put(ctx, {
+            id: mapKey,
+            takenAt: Math.max(...Object.values(map)),
+            category: 'setting',
+            data: map,
+        }).catch(() => undefined);
+    },
+
+    /** True when a row was removed. Records a tombstone if it is a deletable item so sync does not resurrect it. */
     async remove(ctx: AuthContext, id: string): Promise<boolean> {
         const { rowCount } = await getPool().query(
             `DELETE FROM records WHERE user_id = $1 AND id = $2`,
             [ctx.userId, id],
         );
-        return (rowCount ?? 0) > 0;
+        const removed = (rowCount ?? 0) > 0;
+        if (removed) {
+            const parts = id.split(':');
+            if (parts.length >= 3) {
+                const [head, mode, ...rest] = parts;
+                const appId = rest.join(':');
+                const kind = WIRE_TO_TOMBSTONE_KIND[head];
+                if (kind && (mode === 'transfem' || mode === 'transmasc')) {
+                    await RecordService.noteDeletion(ctx, mode as Mode, kind, appId).catch(() => undefined);
+                }
+            }
+        }
+        return removed;
     },
 
     /**
@@ -778,9 +817,6 @@ export const RecordService = {
 // Reassembly — the account's records in the app's own export shape
 // ---------------------------------------------------------------------------
 
-type Mode = 'transfem' | 'transmasc';
-const MODES: readonly Mode[] = ['transfem', 'transmasc'];
-
 /**
  * Rebuild the app's own payload from the account's records.
  *
@@ -800,6 +836,8 @@ export async function buildExportPayload(ctx: AuthContext): Promise<{
     /** `null` = explicitly "no overrides", absent = this account never said. */
     pkParams?: unknown;
     pkParamsUpdatedAt?: number;
+    medPlan?: unknown[];
+    medPlanUpdatedAt?: number;
     modes: Record<Mode, {
         events: unknown[];
         labResults: unknown[];
@@ -854,6 +892,8 @@ export async function buildExportPayload(ctx: AuthContext): Promise<{
     let weightUpdatedAt: number | undefined;
     let pkParams: unknown;
     let pkParamsUpdatedAt: number | undefined;
+    let medPlan: unknown[] | undefined;
+    let medPlanUpdatedAt: number | undefined;
     let unknown = 0;
 
     for (const record of all.records) {
@@ -896,6 +936,13 @@ export async function buildExportPayload(ctx: AuthContext): Promise<{
                 if (body?.value !== undefined || body?.stamp !== undefined) {
                     pkParams = body?.value ?? null;
                     pkParamsUpdatedAt = stamp;
+                }
+                continue;
+            }
+            if (parts[1] === 'medPlan') {
+                if (Array.isArray(body?.value)) {
+                    medPlan = body.value;
+                    medPlanUpdatedAt = stamp;
                 }
                 continue;
             }
@@ -942,6 +989,7 @@ export async function buildExportPayload(ctx: AuthContext): Promise<{
         ...(weight != null ? { weight } : {}),
         ...(weightUpdatedAt !== undefined ? { weightUpdatedAt } : {}),
         ...(pkParams !== undefined ? { pkParams, pkParamsUpdatedAt } : {}),
+        ...(medPlan !== undefined ? { medPlan, medPlanUpdatedAt } : {}),
         modes,
         appState,
         unknown,

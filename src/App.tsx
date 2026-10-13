@@ -231,13 +231,14 @@ const AppContent = () => {
         calibrationFn,
     });
 
+    const initialView = landingIntent?.view || (new URLSearchParams(window.location.search).get('view') as ViewKey | null) || 'home';
     const {
         currentView,
         transitionDirection,
         handleViewChange,
         mainScrollRef,
         navItems,
-    } = useAppNavigation(landingIntent?.view);
+    } = useAppNavigation(initialView);
 
 
     // --- Local UI State (Modals & Forms) ---

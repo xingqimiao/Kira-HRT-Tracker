@@ -64,18 +64,25 @@ function pruneShown(keys, nowMs) {
     return kept.sort((a, b) => keyDueMs(b) - keyDueMs(a)).slice(0, SHOWN_MAX_SIZE);
 }
 
-(function hydrateShown() {
-    try {
-        caches.open(SHOWN_CACHE).then((cache) => cache.match(SHOWN_URL)).then(async (res) => {
-            if (!res) return;
-            const arr = await res.json();
-            if (Array.isArray(arr)) shown = new Set(pruneShown(arr.filter(k => typeof k === 'string'), Date.now()));
-        }).catch(() => undefined);
-    } catch {
-        // Cache unavailable — a redelivery may slip through; the tray `tag` still
-        // collapses it into one entry.
+let hydrationPromise = null;
+function ensureHydrated() {
+    if (!hydrationPromise) {
+        hydrationPromise = caches.open(SHOWN_CACHE)
+            .then((cache) => cache.match(SHOWN_URL))
+            .then(async (res) => {
+                if (!res) return;
+                const arr = await res.json();
+                if (Array.isArray(arr)) {
+                    for (const k of pruneShown(arr.filter(k => typeof k === 'string'), Date.now())) {
+                        shown.add(k);
+                    }
+                }
+            })
+            .catch(() => undefined);
     }
-})();
+    return hydrationPromise;
+}
+ensureHydrated();
 
 function persistShown() {
     const body = JSON.stringify(pruneShown([...shown], Date.now()));
@@ -121,19 +128,20 @@ self.addEventListener('message', (event) => {
     );
 });
 
-firebase.messaging().onBackgroundMessage((payload) => {
+firebase.messaging().onBackgroundMessage(async (payload) => {
     const data = payload.data || {};
     if (data.kind !== 'dose_overdue') return;
     const key = data.planId + ':' + data.dueAt;
+    await ensureHydrated();
     if (shown.has(key)) return;
     shown.add(key);
     // Best-effort durable write; the in-memory add already dedups within this worker's
     // life, and the SDK keeps the push event alive long enough for the cache put.
-    persistShown();
+    await persistShown();
 
     const title = data.alias || fallbacks.title;
     const body = data.dose || fallbacks.body;
-    self.registration.showNotification(title, {
+    await self.registration.showNotification(title, {
         body,
         tag: key,
         data: { url: '/' },

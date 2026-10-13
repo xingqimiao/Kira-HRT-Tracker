@@ -72,12 +72,15 @@ function adoptSignedOutData(owner: string): void {
     }
     for (const s of SHARED_SUFFIXES) moves.push([nsFor(LOCAL_OWNER, s), nsFor(owner, s)]);
 
-    if (moves.some(([, to]) => secureGet(to) !== null)) return;
+    const hasTargetData = moves.some(([, to]) => secureGet(to) !== null);
     for (const [from, to] of moves) {
         const value = secureGet(from);
         if (value === null) continue;
-        secureSet(to, value);
-        secureRemove(from);
+        const targetValue = secureGet(to);
+        if (!hasTargetData || (targetValue === null && to.endsWith('-hrt-start'))) {
+            secureSet(to, value);
+            secureRemove(from);
+        }
     }
 }
 
@@ -276,9 +279,19 @@ export const useAppData = (
     // the three above, for the same reason: it is written in the intro, well
     // before there is any record to attach it to, and it has to reach the next
     // device with the account rather than staying in this browser.
-    const [hrtStartDate, setHrtStartDateState] = useState<string>(() =>
-        normalizeHrtStartDate(localStorage.getItem(sharedKey('hrt-start'))) ?? ''
-    );
+    const [hrtStartDate, setHrtStartDateState] = useState<string>(() => {
+        const stored = normalizeHrtStartDate(localStorage.getItem(sharedKey('hrt-start')));
+        if (stored) return stored;
+        if (owner !== LOCAL_OWNER) {
+            const guestVal = normalizeHrtStartDate(localStorage.getItem(nsFor(LOCAL_OWNER, 'hrt-start')));
+            if (guestVal) {
+                localStorage.setItem(sharedKey('hrt-start'), guestVal);
+                localStorage.removeItem(nsFor(LOCAL_OWNER, 'hrt-start'));
+                return guestVal;
+            }
+        }
+        return '';
+    });
     const setHrtStartDate = (value: string) => {
         const normalized = normalizeHrtStartDate(value) ?? '';
         setHrtStartDateState(normalized);
