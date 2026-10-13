@@ -4,14 +4,35 @@
 
 ![Kira HRT Tracker — dose logging, pharmacokinetic estimates, private by default](public/og.png)
 
-Log HRT doses and blood tests, estimate how your hormone levels move over time, and let
-an AI assistant read and write those records over MCP.
+**Log HRT doses and blood tests → estimate a hormone-level curve with a population
+pharmacokinetic model → calibrate it to your own lab results → let an AI assistant read
+and write the same records over MCP.**
+
+One Application Core behind a web app, an Android app and an MCP server, with cloud sync
+and per-account encryption.
 
 Built by **[KiraEqual](https://kiramyao.com)** · Service status <https://status.kiramyao.com>
 
 > ⚠️ The estimates come from a **population pharmacokinetic model**, not from a blood test, and
 > **must not be used to decide a dose**. The only way to know your actual level is to have blood
 > drawn — always go by your clinic's report.
+
+---
+
+## Contents
+
+- [What it is](#what-it-is)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Two pharmacokinetic models and calibration](#two-pharmacokinetic-models-and-calibration)
+- [AI assistants (MCP)](#ai-assistants-mcp)
+- [Import / export](#import--export)
+- [Tech stack](#tech-stack)
+- [Local development](#local-development)
+- [Self-hosting](#self-hosting)
+- [Security and privacy](#security-and-privacy)
+- [Upstream and credits](#upstream-and-credits)
+- [Licence](#licence)
 
 ---
 
@@ -26,43 +47,179 @@ It suits someone who injects or uses gel and wants to know "roughly where is my 
 week", "when should I get the next blood test", "was that dose too high" — and who wants
 those records to be readable by an AI assistant.
 
-## Getting started
-
-1. **The first launch** shows a short introduction to what the app does. Language and HRT
-   mode are chosen once, and can be changed later in Settings.
-2. **Log your first dose**: route, medication, amount, time. Save it as a template and the
-   home screen can log it in one tap from then on.
-3. **Look at the overview**: current estimated level, the curve over time, and a dose calendar.
-4. **After a blood test**, enter the result on the 体检 (Labs) page. With two or more results
-   the model starts **calibrating to your own data**, and the curve fits you better.
-5. **For an AI assistant**, mint a token (below) and let it read your records, do the
-   arithmetic, and remind you about re-checks.
-
 Your data lives in **your own account** and syncs across devices. No third-party analytics,
 no advertising.
 
----
-
 ## Features
 
-- **Records** — injection / oral / sublingual / gel / patch. Gel carries the product, the
-  application area, what else was on the skin, and the wash-off time. Blood tests, a private
-  journal, quick-log buttons, batch add, import and export.
-- **Estimates** — concentration curve, current level, dose-level reference, individual calibration.
+### Records
+
+- **Doses** — injection / oral / sublingual / gel / patch. Gel carries the product, the
+  application area, what else was on the skin, and the wash-off time; sublingual carries an
+  absorption tier.
+- **Patch-wearing tracking** — after applying, the overview shows how long a patch has been
+  worn, with a one-tap "remove" that ties the removal to the matching patch.
+- **Blood tests** — value, unit (pg/mL, pmol/L, ng/dL, nmol/L), and monitoring-only entries
+  (liver function, potassium, …).
+- **Medication plans** — route, first time, extra doses, interval, drug and amount, on one of
+  three cadences ("N times a day", "every x hours", "every x days"); overdue doses highlight on
+  the home screen with one-tap logging.
+- **A private body journal** — subjective notes read alongside the dose timeline.
+- **Quick templates** — save a common dose and log it in one tap from the home screen, with undo.
+- **Batch add**, **import and export**.
+
+### Estimates and calibration
+
+- **Concentration curve** — line or candlestick (OHLC); current level; dose-level reference.
+- **Individual calibration** — four estimators: off / MIPD (MAP fitting) / EKF (extended Kalman
+  filter) / OU-Kalman (Ornstein–Uhlenbeck dynamic calibration), each with a live preview animation.
+- **Two engines**, switchable: the built-in engine and the Transmtf engine draw different curves
+  from the same records.
+
+### Reminders
+
 - **Re-check reminders** — prompts for liver function, potassium and estradiol on the cadence
-  MtF.wiki recommends; anti-androgens get cumulative tracking.
-- **Lab-report scanning** — photograph a report; recognition happens **on-device** and the
-  image never leaves it.
-- **Accounts** — password plus X / Google sign-in, mutually bindable; device session list;
-  data export and deletion.
-- **Sharing** — a read-only link for a doctor or a friend, with an optional expiry and
-  password, containing **only what you chose to share**.
-- **7 languages** — Simplified Chinese, Traditional Chinese, Cantonese, English, Japanese,
-  Korean, Turkish, loaded on demand.
+  MtF.wiki recommends.
+- **Anti-androgen cumulative tracking**.
+- **Medication reminders** — a local, scheduled notification is the on-time ring; a server-side
+  FCM push is the catch-up (with **double deduplication**). Notification language follows the
+  in-app language setting.
+
+### Lab-report scanning
+
+Photograph a report; recognition happens **on-device** (ONNX detection plus text recognition) and
+the image never leaves the device.
+
+### Accounts, sharing and sync
+
+- **Accounts** — username + password; X (Twitter) and Google sign-in that complement and can bind
+  to each other.
+- **Device session list** — see and revoke each signed-in device.
+- **Cloud sync** — records and settings across devices, medication plans included.
+- **Sharing** — a read-only link for a doctor or a friend, with an optional expiry and password,
+  containing **only what you chose to share**.
+- **Data export and deletion** — export everything; delete the account outright.
+
+### Clients
+
+- **7 languages** — Simplified Chinese, Traditional Chinese, Cantonese, English, Japanese, Korean,
+  Turkish, loaded on demand.
+- **Android app** — packaged with Tauri, with **in-app self-update** (it downloads the APK and
+  fires the system installer), system back gesture with predictive back, and external links that
+  open in the system browser.
+- **Themes** — light / dark / follow system, with a themed launch transition.
+- **PWA** — works offline, backed by a service worker.
 
 ---
 
-## Moving in / moving out
+## Architecture
+
+```
+           AI assistant (ChatGPT / Claude)        Web / Android
+                      │                                │
+                      │  MCP over Streamable HTTP      │  REST
+                      └───────────────┬────────────────┘
+                                      ▼
+                          ┌───────────────────────┐
+                          │   Application Core     │   server/src/
+                          │  AccountService        │   accounts.ts
+                          │  MedicationService     │   core.ts
+                          │  LabService            │   core.ts
+                          │  TimelineService       │   core.ts
+                          │  PKSimulationService   │   core.ts
+                          │  MedPlanService        │   core.ts
+                          └────┬─────────────┬─────┘
+                               ▼             ▼
+                       ┌──────────────┐  ┌──────────────┐
+                       │  PostgreSQL  │  │   PK engine  │
+                       │  (ciphertext)│  │   logic.ts   │
+                       └──────────────┘  └──────────────┘
+```
+
+**MCP is not the backend.** It is one adapter over the Application Core, and so is the REST
+API. Both resolve a credential into an `AuthContext` and call the same service functions, so
+there is exactly one implementation of what logging a dose means — a web path and an agent path
+that validate and compute differently would drift until a bug exists on one side only.
+
+- `server/src/http.ts` and `server/src/mcp.ts` contain **no business rules**; anything that
+  knows how a record is validated or how a curve is computed belongs in `core.ts`.
+- The **React SPA** and the **Android app** (Tauri) share the same front-end code and branch only
+  on native capabilities (notifications, updates, back gesture, external links).
+- **Encryption happens at the write layer**: records land as ciphertext, and `user_id` and
+  `occurred_at` are the only cleartext columns — everything clinical is inside the envelope.
+
+The fuller design note is **[`server/ARCHITECTURE.md`](server/ARCHITECTURE.md)**.
+
+---
+
+## Two pharmacokinetic models and calibration
+
+The curve comes from a model, and the models are **other people's work**. Two ship here,
+switchable any time in Settings → General:
+
+| Model | Source | Notes |
+|---|---|---|
+| **Built-in** | [@LaoZhong-Mihari](https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test)'s `PKcore.swift` / `PKparameter.swift`, **ported unmodified** | estradiol + testosterone + anti-androgens |
+| **Transmtf** | [Transmtf Team](https://github.com/TransmtfTeam/Transmtf-HRT-Tracker) (MIT), extending the same algorithm | estradiol and two anti-androgens only — **no testosterone model** |
+
+The two **draw different curves from the same records** — that is not a bug, it is why the
+choice exists. Injections usually agree; gel and sublingual differ noticeably. The Transmtf
+engine models estradiol only, so it is unavailable in transmasc mode.
+
+**Calibration** uses your lab values to adjust the model's parameters, with a separate
+implementation per estimator (MAP fitting, an extended Kalman filter, Ornstein–Uhlenbeck dynamic
+calibration). The engine choice, and the rule that a transmasc account is pinned to the built-in
+engine, live in one place: `src/engine/registry.ts`.
+
+---
+
+## AI assistants (MCP)
+
+The server implements [MCP](https://modelcontextprotocol.io). Mint a token in the app and put
+it in your client's config:
+
+```json
+{
+  "mcpServers": {
+    "hrt": {
+      "type": "http",
+      "url": "https://your-api-host/hrt/mcp",
+      "headers": { "Authorization": "Bearer hrt_..." }
+    }
+  }
+}
+```
+
+**21 tools**, covering both read and write:
+
+| Read | Write / manage |
+|---|---|
+| `hrt_get_timeline` | `hrt_add_medication` |
+| `hrt_list_medications` | `hrt_add_lab_result` |
+| `hrt_list_labs` | `hrt_add_journal_entry` |
+| `hrt_list_journal` | `hrt_add_dose_template` |
+| `hrt_list_dose_templates` | `hrt_update_settings` |
+| `hrt_predict_levels` | `hrt_delete_record` |
+| `hrt_check_advisories` | `hrt_create_share` |
+| `hrt_med_plan_status` | `hrt_list_shares` |
+| `hrt_get_settings` | `hrt_revoke_share` |
+| `hrt_sync_state` / `hrt_reference` | |
+
+The **tool list** is readable anonymously (schemas only); **calling** any tool requires a token.
+Tokens are revocable and expirable, and changing your password ends all of them.
+
+The assistant **can read** which model is active (to explain the curve) but **cannot change it**
+for you — switching re-computes every past estimate, which is a decision to make while looking at
+the curve.
+
+**One boundary**: a token is a full credential *for records*, but it **cannot change the
+account's identity** — password changes, session revocation, provider link/unlink, account
+deletion and token management are web-only and have no MCP tool. The full tool table is in
+**[`server/MCP.md`](server/MCP.md)**.
+
+---
+
+## Import / export
 
 **Importing from another tracker**: Settings → Data management → Import data, pick a file. Supported:
 
@@ -86,72 +243,81 @@ definitions are in the English
 **[spec](docs/hrt-import-export-protocol.md)**: the minimum required fields, the full tables,
 the `route`/`Ester` enumerations, the unit conventions (`timeH` is hours since 1970; `doseMG` is
 the mass of the substance, not its estradiol equivalent), the optional encryption envelope, and
-a minimal example. Write to it and your users can move across in one step.
+a minimal example.
 
 ---
 
-## Two pharmacokinetic models
+## Tech stack
 
-The curve comes from a model, and the models are **other people's work**. Two ship here,
-switchable any time in Settings → General:
-
-| Model | Source |
+| Layer | Technology |
 |---|---|
-| **Built-in** | [@LaoZhong-Mihari](https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test)'s `PKcore.swift` / `PKparameter.swift`, ported directly |
-| **Transmtf** | [Transmtf Team](https://github.com/TransmtfTeam/Transmtf-HRT-Tracker) (MIT), extending the same algorithm |
+| Front end | React 19 · TypeScript 7 · Vite 8 · Tailwind CSS (Material Design 3 tokens and components) |
+| Native | Tauri 2 (Android) · Kotlin bridges (updates, back gesture, push, safe areas) |
+| Back end | Node.js · PostgreSQL · plain `pg` (no ORM) |
+| Protocols | REST + [MCP](https://modelcontextprotocol.io) (Streamable HTTP) |
+| Crypto | per-account DEK; wrapped by a password KEK and an OCI KMS master key (HSM) |
+| PK engines | upstream `logic.ts` (unmodified) · the Transmtf engine in `src/pk/` (lazy-loaded) |
+| Recognition | onnxruntime-web (detection) + tesseract.js (text), **entirely on-device** |
+| Push | local scheduled notifications (Tauri plugin) + FCM catch-up (HTTP v1, JWT signed with `node:crypto`) |
+| PWA | vite-plugin-pwa (Workbox) |
+| i18n | a homegrown 7-pack system, lazily loaded |
 
-The two **draw different curves from the same records** — that is not a bug, it is why the
-choice exists. Injections usually agree; gel and sublingual differ noticeably. The Transmtf
-engine models estradiol only, so it is unavailable in transmasc mode.
+## Local development
 
-**Individual calibration** has a separate implementation for each (MAP fitting, an extended
-Kalman filter, Ornstein–Uhlenbeck dynamic calibration); all of them use your lab values to
-adjust the model's parameters.
+```bash
+npm install
 
----
+# Front-end dev server (needs an API origin)
+VITE_API_ORIGIN=http://localhost:8788/hrt npm run dev
 
-## Connecting an AI assistant
+# Type-check
+npx tsc --noEmit
 
-The server implements [MCP](https://modelcontextprotocol.io). Mint a token in the app and put
-it in your client's config:
-
-```json
-{
-  "mcpServers": {
-    "hrt": {
-      "type": "http",
-      "url": "https://your-api-host/hrt/mcp",
-      "headers": { "Authorization": "Bearer hrt_..." }
-    }
-  }
-}
+# Front-end build (VITE_API_ORIGIN is mandatory — the build script enforces it)
+VITE_API_ORIGIN=https://your-api-host/hrt npm run build
 ```
 
-19 tools: read the timeline, log a dose, log a lab, estimate levels, check advisories, create a
-share. The **tool list** is readable anonymously (schemas only); **calling** any tool requires a
-token. Tokens are revocable and expirable, and changing your password ends all of them.
+Server: see "Running it" in **[`server/ARCHITECTURE.md`](server/ARCHITECTURE.md)**; tests are
+`cd server && npm test` (embedded Postgres).
 
-The assistant **can read** which model is active (to explain the curve) but **cannot change
-it** for you — switching re-computes every past estimate, which is a decision to make while
-looking at the curve.
+Android build (arm64 only):
 
----
+```bash
+export ANDROID_HOME="$LOCALAPPDATA/Android/Sdk"
+export NDK_HOME="$ANDROID_HOME/ndk/<version>"
+export JAVA_HOME="/path/to/jdk-17"
+export VITE_API_ORIGIN=https://your-api-host/hrt
+node_modules/.bin/tauri android build --apk --target aarch64
+```
 
 ## Self-hosting
 
 The front end is a static build; the back end is the Node service in `server/`, which needs a
 Postgres.
 
-```bash
-VITE_API_ORIGIN=https://your-api-host/hrt npm run build
-```
-
-The full manual is **[`server/DEPLOY.md`](server/DEPLOY.md)** (database, systemd, Caddy,
-pre-deployment checks).
+The full manual is **[`server/DEPLOY.md`](server/DEPLOY.md)** (database, systemd, Caddy reverse
+proxy, KMS setup, cloud keys, pre-deployment checks, and the Android release flow).
 
 ---
 
-## Upstream / Credits
+## Security and privacy
+
+- **Per-account encryption**: every record is sealed under its account's own data key (DEK);
+  the DEK is wrapped both by a KEK derived from the password and by the deployment's OCI KMS
+  master key (held in an HSM — no key material lives on the box).
+- **A stolen dump is unreadable**: without the deployment's key material, a database dump is
+  just ciphertext.
+- **An honest boundary**: this is not a "the server never sees the data" zero-knowledge design.
+  Once an AI assistant is in the data path, plaintext enters the model provider's context, and
+  strict end-to-end encryption cannot survive through an agent — this project does not claim it.
+- **No SQL-level reporting**: the server cannot aggregate doses or labs from ciphertext; the only
+  public aggregate is `/stats` (counts only, no identifiers).
+- **Revocation**: tokens are revocable; changing the password rewraps the DEK (a one-row change
+  that cannot half-fail) and ends every token.
+
+How to report a vulnerability: **[`SECURITY.md`](SECURITY.md)**.
+
+## Upstream and credits
 
 The interface and the thinking **fork from [Oyama's HRT Tracker](https://github.com/xunxunProjects/Oyama-s-HRT-Tracker)**,
 with thanks. That is a complete piece of work — accounts, a backend, share links, multiple
@@ -168,11 +334,8 @@ algorithmic extensions, and to [MtF.wiki](https://mtf.wiki/) (CC BY-SA 4.0) and
 **their published conclusions and figures are cited; their content is not reproduced**.
 
 The full licence list is in **[`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md)**, and is
-also itemised in the app under Settings → About → Open-source licences.
-
-Runtime dependency licences are generated by `scripts/gen-licences.mjs`, not maintained by hand.
-
----
+also itemised in the app under Settings → About → Open-source licences. Runtime dependency
+licences are generated by `scripts/gen-licences.mjs`, not maintained by hand.
 
 ## Licence
 
