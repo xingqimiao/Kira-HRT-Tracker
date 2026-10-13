@@ -424,6 +424,7 @@ const History: React.FC<HistoryProps> = ({
             )}
 
             {groupedEvents.length > 0 && (
+            <div className="mx-auto w-full px-6 md:px-8 max-w-2xl">
             <GroupedVirtuoso
                 // The app's own scroll surface, so the window is sized from its
                 // viewport — without it Virtuoso measures against `window` and renders
@@ -461,8 +462,9 @@ const History: React.FC<HistoryProps> = ({
                     );
                 }}
                 computeItemKey={(index) => allEvents[index].id}
-                className="mx-auto w-full px-6 md:px-8 max-w-2xl"
+                className="relative"
             />
+            </div>
             )}
 
         </div>
