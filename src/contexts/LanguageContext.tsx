@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { LANG_ORDER } from '../i18n/types';
 import type { Lang } from '../i18n/types';
 import type { LangPack } from '../i18n/types';
@@ -147,7 +147,10 @@ export const LanguageProvider = ({ children }: { children: React.ReactNode }) =>
     // render. The render that shows a newly-selected language is the one caused by
     // `setLang`, and by then the pack is in the map.
     const loaded = useRef<Partial<Record<Lang, LangPack>>>({ 'zh': zhPack });
-    const [, forceRepaint] = useState(0);
+    // Bumped whenever a pack lands, so `t`'s identity (and thus any memoised child)
+    // changes exactly when a translated string can. The value is not read directly —
+    // `t`'s useCallback depends on it.
+    const [i18nVersion, forceRepaint] = useState(0);
 
     // Load the selected pack, then its fallback chain, in the background. The
     // chain is fetched too because `t()` consults it for any key the selected pack
@@ -208,7 +211,11 @@ export const LanguageProvider = ({ children }: { children: React.ReactNode }) =>
      * Text in the wrong language for one frame beats `settings.title` on screen,
      * and beats blocking the first paint on a network round trip.
      */
-    const t = (key: string) => {
+    // `useCallback` so its identity is stable across unrelated re-renders and only
+    // changes when the answer can: a new language, or a pack arriving. Without this a
+    // memoised list row (History/Lab) lost its memo on every parent render, because a
+    // fresh `t` is a changed prop. `i18nVersion` is the "a pack landed" signal.
+    const t = useCallback((key: string) => {
         const own = loaded.current[lang]?.[key];
         if (own !== undefined) return own;
         for (const alt of FALLBACK[lang] ?? FALLBACK.zh) {
@@ -216,10 +223,10 @@ export const LanguageProvider = ({ children }: { children: React.ReactNode }) =>
             if (value !== undefined) return value;
         }
         return loaded.current.zh?.[key] ?? key;
-    };
+    }, [lang, i18nVersion]);
 
-    const tIn = (target: Lang, key: string): string | undefined =>
-        loaded.current[target]?.[key];
+    const tIn = useCallback((target: Lang, key: string): string | undefined =>
+        loaded.current[target]?.[key], [i18nVersion]);
 
     const ensureAll = useCallback(() => {
         let cancelled = false;
@@ -242,8 +249,13 @@ export const LanguageProvider = ({ children }: { children: React.ReactNode }) =>
         return () => { cancelled = true; };
     }, []);
 
+    // A fresh object literal each render would change the context value's identity and
+    // re-render every consumer on every provider render; all four fields are now
+    // stable, so the value only changes when the language does.
+    const value = useMemo(() => ({ lang, setLang, t, tIn, ensureAll }), [lang, t, tIn, ensureAll]);
+
     return (
-        <LanguageContext.Provider value={{ lang, setLang, t, tIn, ensureAll }}>
+        <LanguageContext.Provider value={value}>
             {children}
         </LanguageContext.Provider>
     );

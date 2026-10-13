@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { GroupedVirtuoso } from 'react-virtuoso';
 import Icon from '../components/Icon';
 import { Plus, Check, Trash2, ListChecks } from '../icons';
 import { v4 as uuidv4 } from 'uuid';
@@ -12,6 +13,7 @@ import BloodVial from '../components/BloodVial';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { DoseTemplate } from '../components/DoseFormModal';
 import { DoseDayGroup } from '../hooks/useAppData';
+import { useScrollParent } from '../hooks/useScrollParent';
 import Switch from '../components/Switch';
 
 // Trim trailing zeros so wear durations read "3.5" / "7" rather than "3.50".
@@ -24,6 +26,154 @@ const muted = 'text-[var(--color-m3-on-surface-variant)] ';
 const on = 'text-[var(--color-m3-on-surface)] ';
 const headerBtn = 'flex items-center gap-1.5 text-sm font-medium px-2 py-1 rounded-md hover:bg-[var(--color-m3-surface-container)] ';
 const numInput = 'input-num w-16 h-8 text-sm font-medium [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
+
+/**
+ * One dose row — memoised.
+ *
+ * Opening a row flips one id in the parent's state, which re-renders the whole list.
+ * Without this, every row (and, collapsed, its `Collapsible` wrapper) rebuilt on that
+ * flip: at 1000 records a single open cost ~76ms of script and ~560ms of main thread
+ * (measured), which is the reported "记录一多，点开就卡". With `React.memo` only the
+ * row that opened and the one that closed actually render. `isEditing` and
+ * `isSelected` are the row's own flags, so a change to either is exactly a change to
+ * that row. Props are all stable across an unrelated parent render (`t` is now
+ * `useCallback`ed, `doseTemplates`/`activeEngine` come from App, the handlers are
+ * `useCallback`ed below), so the memo holds.
+ */
+interface HistoryRowProps {
+    ev: DoseEvent;
+    isEditing: boolean;
+    isSelected: boolean;
+    isFuture: boolean;
+    selectMode: boolean;
+    t: (key: string) => string;
+    onToggle: (id: string) => void;
+    onSaveEvent: (e: DoseEvent) => void;
+    onDeleteEvent: (id: string) => void;
+    onCloseEdit: () => void;
+    doseTemplates: DoseTemplate[];
+    onSaveTemplate: (tpl: DoseTemplate) => void;
+    onDeleteTemplate: (id: string) => void;
+    allEvents: DoseEvent[];
+    activeEngine?: PkEngineId;
+}
+
+const HistoryRow: React.FC<HistoryRowProps> = ({
+    ev, isEditing, isSelected, isFuture, selectMode, t,
+    onToggle, onSaveEvent, onDeleteEvent, onCloseEdit,
+    doseTemplates, onSaveTemplate, onDeleteTemplate, allEvents, activeEngine,
+}) => (
+    <div className="border-b border-[var(--color-m3-outline-variant)]  last:border-b-0">
+        <div
+            onClick={() => onToggle(ev.id)}
+            className={`py-3.5 flex items-start gap-3 cursor-pointer -mx-2 px-2 rounded-md hover:bg-[var(--color-m3-surface-container)]  ${(isEditing || (selectMode && isSelected)) ? 'bg-[var(--color-m3-surface-container)] ' : ''}`}
+        >
+            {selectMode ? (
+                <span className={`mt-[3px] w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? 'bg-[var(--color-m3-primary)] border-[var(--color-m3-primary)]' : 'border-[var(--color-m3-outline)] '}`}>
+                    {isSelected && <Icon icon={Check} size={11} strokeWidth={2.5} className="text-cos-on-primary" />}
+                </span>
+            ) : (
+                <Icon
+                    icon={compoundIcon(ev.ester)}
+                    size={25}
+                    className="mt-0 shrink-0 text-[var(--color-m3-primary)]"
+                    title={t(`ester.${ev.ester}`)}
+                />
+            )}
+            <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-medium text-[var(--color-m3-on-surface)]  truncate text-sm">
+                            {ev.route === Route.patchRemove ? t('route.patchRemove') : t(`ester.${ev.ester}`)}
+                        </span>
+                        {isFuture && (
+                            <span className={`shrink-0 m3-text-2xs ${muted} px-1.5 py-0.5 rounded bg-[var(--color-m3-surface-container)] `}>
+                                {t('timeline.future')}
+                            </span>
+                        )}
+                    </div>
+                    <span className="text-xs tabular-nums text-[var(--color-m3-on-surface-variant)]  shrink-0">
+                        {formatTime(new Date(ev.timeH * 3600000))}
+                    </span>
+                </div>
+                <div className="mt-1 flex flex-wrap items-baseline gap-x-2 text-xs text-[var(--color-m3-on-surface-variant)] ">
+                    <span className="truncate">{t(`route.${ev.route}`)}</span>
+                    {ev.extras[ExtraKey.releaseRateUGPerDay] ? (
+                        <>
+                            <span className="opacity-40">·</span>
+                            <span className="text-[var(--color-m3-on-surface)] ">{`${ev.extras[ExtraKey.releaseRateUGPerDay]} µg/d`}</span>
+                        </>
+                    ) : ev.route !== Route.patchRemove && (
+                        <>
+                            <span className="opacity-40">·</span>
+                            <span className="text-[var(--color-m3-on-surface)]  font-medium">{`${ev.doseMG.toFixed(2)} mg`}</span>
+                            {ev.ester !== Ester.E2 && !isAntiandrogen(ev.ester) && !isTestosteroneEster(ev.ester) && (
+                                <span className="opacity-70">
+                                    {`(${t('label.e2')} eq: ${(ev.doseMG * getToE2Factor(ev.ester)).toFixed(2)} mg)`}
+                                </span>
+                            )}
+                            {isTestosteroneEster(ev.ester) && ev.ester !== Ester.T && (
+                                <span className="opacity-70">
+                                    {`(${t('label.t')} eq: ${(ev.doseMG * getToE2Factor(ev.ester)).toFixed(2)} mg)`}
+                                </span>
+                            )}
+                        </>
+                    )}
+                    {ev.route === Route.patchApply && typeof ev.extras[ExtraKey.patchWearH] === 'number' && ev.extras[ExtraKey.patchWearH]! > 0 && (
+                        <>
+                            <span className="opacity-40">·</span>
+                            <span className="text-[var(--color-m3-on-surface)] ">{`${formatWearDays(ev.extras[ExtraKey.patchWearH]! / 24)} ${t('unit.day_short')}`}</span>
+                        </>
+                    )}
+                </div>
+            </div>
+        </div>
+
+        <Collapsible open={isEditing && !selectMode}>
+            {/* Mounted only for the row being edited — with hundreds of
+                records, keeping every row's form mounted (even collapsed
+                to zero height) made every dose add/edit re-render all of
+                them at once. `Collapsible` holds it just long enough to
+                collapse. */}
+            <div className="pb-4 pt-1">
+                <DoseForm
+                    eventToEdit={ev}
+                    onSave={(e) => { onSaveEvent(e); onCloseEdit(); }}
+                    onCancel={onCloseEdit}
+                    onDelete={(id) => { onDeleteEvent(id); onCloseEdit(); }}
+                    templates={doseTemplates}
+                    onSaveTemplate={onSaveTemplate}
+                    onDeleteTemplate={onDeleteTemplate}
+                    isInline={true}
+                    hideHeader={true}
+                    events={allEvents}
+                    activeEngine={activeEngine}
+                />
+            </div>
+        </Collapsible>
+    </div>
+);
+
+const MemoHistoryRow = React.memo(HistoryRow);
+
+/**
+ * Virtuoso's pinned group-header container.
+ *
+ * It parks the current day's header at the top of the scroll surface by default
+ * (`top: 0`). This page's own header is sticky at `top: 0` too (z-20), so at the
+ * default offset the day label vanished behind it — measured, the label landed at
+ * y≈13 with the page header bottom at 102. Moving the container down to the header's
+ * own height (6.375rem = 102px) restores the pre-virtualisation look, where the label
+ * rides just under the header. Overriding the component is the supported way to
+ * change this; a CSS rule against Virtuoso's inline styles would be version-brittle.
+ */
+const DayHeaderContainer = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+    (props, ref) => <div {...props} ref={ref} style={{ ...props.style, top: '6.375rem' }} />,
+);
+DayHeaderContainer.displayName = 'DayHeaderContainer';
+const VIRTUOSO_COMPONENTS = { TopItemList: DayHeaderContainer };
+
+
 
 interface HistoryProps {
     t: (key: string) => string;
@@ -57,6 +207,10 @@ const History: React.FC<HistoryProps> = ({
 }) => {
     const { isTransmasc } = useHRTMode();
     const { showDialog } = useDialog();
+    // The shell's scroll element, found by walking up from this page's root — the one
+    // ancestor that actually scrolls (see `useScrollParent`).
+    const rootRef = React.useRef<HTMLDivElement>(null);
+    const scrollParent = useScrollParent(rootRef);
     const [editingId, setEditingId] = useState<string | null>(null);
 
     // Batch add: repeat the quick-add dose at a fixed interval.
@@ -68,9 +222,24 @@ const History: React.FC<HistoryProps> = ({
     const [selectMode, setSelectMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-    const allEvents = groupedEvents.flatMap(g => g.events);
+    const allEvents = React.useMemo(() => groupedEvents.flatMap(g => g.events), [groupedEvents]);
     const totalRecords = allEvents.length;
     const nowH = Date.now() / 3600000;
+
+    // Stable row handlers, so a memoised row does not re-render on every parent render.
+    const closeEdit = React.useCallback(() => setEditingId(null), []);
+    const toggleRow = React.useCallback((id: string) => {
+        if (selectMode) {
+            setSelectedIds(prev => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+            });
+        } else {
+            setEditingId(prev => (prev === id ? null : id));
+        }
+    }, [selectMode]);
 
     const handleQuickSave = (e: DoseEvent) => {
         const interval = parseFloat(batchIntervalDays);
@@ -133,8 +302,9 @@ const History: React.FC<HistoryProps> = ({
         .replace('{n}', batchCount || '?');
 
     return (
-        <div className="relative pb-32">
-            <div className="mx-auto w-full sticky top-0 z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3 flex items-center justify-between max-w-2xl">
+        <div className="relative pb-32" ref={rootRef}>
+            <div className="sticky top-0 z-20 w-full bg-[var(--color-m3-surface-dim)]">
+              <div className="mx-auto w-full max-w-2xl px-6 md:px-8 pt-8 pb-3 flex items-center justify-between">
                 <div>
                     <h1 className={`text-m3-title-xl ${on}`}>
                         {t('timeline.title')}
@@ -178,6 +348,7 @@ const History: React.FC<HistoryProps> = ({
                         </button>
                     </div>
                 )}
+              </div>
             </div>
 
             {/* The dose form is always mounted here, so this pair animates both ways
@@ -254,122 +425,45 @@ const History: React.FC<HistoryProps> = ({
 
             {groupedEvents.length > 0 && (
             <div className="mx-auto w-full px-6 md:px-8 max-w-2xl">
-                {groupedEvents.map(({ key, label, events: dayEvents }) => (
-                    <div key={key} className="mb-6 last:mb-0">
-                        {/* Parks under the page header, at exactly the header's own height:
-                            2 (pt-8) + 2.25 (the title's line box) + 0.125 (the count's margin)
-                            + 1.25 (its line box) + 0.75 (pb-3) = 6.375rem, which is 102px now
-                            that the root font size is fixed. It used to be a flat 94px, which sat
-                            inside the header even before this pass. */}
-                        <div className="sticky top-[6.375rem] z-10 bg-[var(--color-m3-surface-dim)]  py-2">
-              <span className="text-xs font-semibold text-[var(--color-m3-on-surface-variant)] ">{label}</span>
-                        </div>
-                        <div>
-                            {dayEvents.map(ev => {
-                                const isEditing = editingId === ev.id;
-                                const isSelected = selectedIds.has(ev.id);
-                                const isFuture = ev.timeH > nowH;
-                                return (
-                                <div key={ev.id} className="border-b border-[var(--color-m3-outline-variant)]  last:border-b-0">
-                                    <div
-                                        onClick={() => selectMode ? toggleSelected(ev.id) : setEditingId(isEditing ? null : ev.id)}
-                                        className={`py-3.5 flex items-start gap-3 cursor-pointer -mx-2 px-2 rounded-md hover:bg-[var(--color-m3-surface-container)]  ${(isEditing || (selectMode && isSelected)) ? 'bg-[var(--color-m3-surface-container)] ' : ''}`}
-                                    >
-                                        {selectMode ? (
-                                            <span className={`mt-[3px] w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? 'bg-[var(--color-m3-primary)] border-[var(--color-m3-primary)]' : 'border-[var(--color-m3-outline)] '}`}>
-                                                {isSelected && <Icon icon={Check} size={11} strokeWidth={2.5} className="text-cos-on-primary" />}
-                                            </span>
-                                        ) : (
-                                            <Icon
-                                                icon={compoundIcon(ev.ester)}
-                                                size={25}
-                                                className="mt-0 shrink-0 text-[var(--color-m3-primary)]"
-                                                title={t(`ester.${ev.ester}`)}
-                                            />
-                                        )}
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center justify-between gap-2">
-                                                <div className="flex items-center gap-2 min-w-0">
-                                                    <span className="font-medium text-[var(--color-m3-on-surface)]  truncate text-sm">
-                                                        {ev.route === Route.patchRemove ? t('route.patchRemove') : t(`ester.${ev.ester}`)}
-                                                    </span>
-                                                    {isFuture && (
-                                                        <span className={`shrink-0 m3-text-2xs ${muted} px-1.5 py-0.5 rounded bg-[var(--color-m3-surface-container)] `}>
-                                                            {t('timeline.future')}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <span className="text-xs tabular-nums text-[var(--color-m3-on-surface-variant)]  shrink-0">
-                                                    {formatTime(new Date(ev.timeH * 3600000))}
-                                                </span>
-                                            </div>
-                                            <div className="mt-1 flex flex-wrap items-baseline gap-x-2 text-xs text-[var(--color-m3-on-surface-variant)] ">
-                                                <span className="truncate">{t(`route.${ev.route}`)}</span>
-                                                {ev.extras[ExtraKey.releaseRateUGPerDay] ? (
-                                                    <>
-                                                        <span className="opacity-40">·</span>
-                                                        <span className="text-[var(--color-m3-on-surface)] ">{`${ev.extras[ExtraKey.releaseRateUGPerDay]} µg/d`}</span>
-                                                    </>
-                                                ) : ev.route !== Route.patchRemove && (
-                                                    <>
-                                                        <span className="opacity-40">·</span>
-                                                        <span className="text-[var(--color-m3-on-surface)]  font-medium">{`${ev.doseMG.toFixed(2)} mg`}</span>
-                                                        {ev.ester !== Ester.E2 && !isAntiandrogen(ev.ester) && !isTestosteroneEster(ev.ester) && (
-                                                            <span className="opacity-70">
-                                                                {`(${t('label.e2')} eq: ${(ev.doseMG * getToE2Factor(ev.ester)).toFixed(2)} mg)`}
-                                                            </span>
-                                                        )}
-                                                        {isTestosteroneEster(ev.ester) && ev.ester !== Ester.T && (
-                                                            <span className="opacity-70">
-                                                                {`(${t('label.t')} eq: ${(ev.doseMG * getToE2Factor(ev.ester)).toFixed(2)} mg)`}
-                                                            </span>
-                                                        )}
-                                                    </>
-                                                )}
-                                                {ev.route === Route.patchApply && typeof ev.extras[ExtraKey.patchWearH] === 'number' && ev.extras[ExtraKey.patchWearH]! > 0 && (
-                                                    <>
-                                                        <span className="opacity-40">·</span>
-                                                        <span className="text-[var(--color-m3-on-surface)] ">{`${formatWearDays(ev.extras[ExtraKey.patchWearH]! / 24)} ${t('unit.day_short')}`}</span>
-                                                    </>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <Collapsible open={isEditing && !selectMode}>
-                                        {/* Mounted only for the row being edited — with hundreds of
-                                            records, keeping every row's form mounted (even collapsed
-                                            to zero height) made every dose add/edit re-render all of
-                                            them at once. `Collapsible` holds it just long enough to
-                                            collapse. */}
-                                        <div className="pb-4 pt-1">
-                                            <DoseForm
-                                                eventToEdit={ev}
-                                                onSave={(e) => {
-                                                    onSaveEvent(e);
-                                                    setEditingId(null);
-                                                }}
-                                                onCancel={() => setEditingId(null)}
-                                                onDelete={(id) => {
-                                                    onDeleteEvent(id);
-                                                    setEditingId(null);
-                                                }}
-                                                templates={doseTemplates}
-                                                onSaveTemplate={onSaveTemplate}
-                                                onDeleteTemplate={onDeleteTemplate}
-                                                isInline={true}
-                                                hideHeader={true}
-                                                events={allEvents}
-                                                activeEngine={activeEngine}
-                                            />
-                                        </div>
-                                    </Collapsible>
-                                </div>
-                                );
-                            })}
-                        </div>
+            <GroupedVirtuoso
+                // The app's own scroll surface, so the window is sized from its
+                // viewport — without it Virtuoso measures against `window` and renders
+                // every row (the 1000-row jank this exists to fix).
+                customScrollParent={scrollParent ?? undefined}
+                components={VIRTUOSO_COMPONENTS}
+                groupCounts={groupedEvents.map(g => g.events.length)}
+                groupContent={(index) => (
+                    // The pinning is Virtuoso's (see `DayHeaderContainer`); this is just
+                    // the label's own box. The header is opaque so rows scroll under it.
+                    <div className="bg-[var(--color-m3-surface-dim)] py-2">
+                        <span className="text-xs font-semibold text-[var(--color-m3-on-surface-variant)] ">{groupedEvents[index].label}</span>
                     </div>
-                ))}
+                )}
+                itemContent={(index) => {
+                    const ev = allEvents[index];
+                    return (
+                        <MemoHistoryRow
+                            ev={ev}
+                            isEditing={editingId === ev.id}
+                            isSelected={selectedIds.has(ev.id)}
+                            isFuture={ev.timeH > nowH}
+                            selectMode={selectMode}
+                            t={t}
+                            onToggle={toggleRow}
+                            onSaveEvent={onSaveEvent}
+                            onDeleteEvent={onDeleteEvent}
+                            onCloseEdit={closeEdit}
+                            doseTemplates={doseTemplates}
+                            onSaveTemplate={onSaveTemplate}
+                            onDeleteTemplate={onDeleteTemplate}
+                            allEvents={allEvents}
+                            activeEngine={activeEngine}
+                        />
+                    );
+                }}
+                computeItemKey={(index) => allEvents[index].id}
+                className="relative"
+            />
             </div>
             )}
 
