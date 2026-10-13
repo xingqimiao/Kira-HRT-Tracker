@@ -109,6 +109,24 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
 
     const overdueOf = (id: string): boolean => status.find(s => s.plan.id === id)?.overdue ?? false;
 
+    /**
+     * The plan's dose is a milligram amount — the unit is fixed, not typed.
+     *
+     * It used to be free text (placeholder `2mg`) on the reasoning that a plan's dose
+     * is the user's own note. But every consumer already treats the leading number as
+     * milligrams (`parseDoseMG`, and the logged record's `doseMG`), so the unit was
+     * never optional — it was just something the user had to remember to type, and a
+     * unit-free "2" silently read as 2 mg anyway.
+     *
+     * The input therefore holds the bare number the user types (so a trailing "." is
+     * not eaten mid-keystroke), and `submitPlan` appends `mg` — the `"<n>mg"` form is
+     * what already round-trips through every plan, the import path and the displays.
+     */
+    const stripMG = (s: string): string => {
+        const m = /(\d+(?:\.\d+)?)/.exec(s);
+        return m ? m[1] : '';
+    };
+
     const emptyForm = (): void => {
         setEster(Ester.E2);
         setRoute(isTransmasc ? Route.injection : Route.sublingual);
@@ -133,7 +151,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
         setEster(p.ester);
         setRoute(p.route ?? (isTransmasc ? Route.injection : Route.sublingual));
         setAlias(p.alias ?? '');
-        setDose(p.dose ?? '');
+        setDose(stripMG(p.dose ?? ''));
         setPatchMode(typeof p.extras?.[ExtraKey.releaseRateUGPerDay] === 'number' ? 'rate' : 'dose');
         setPatchRate(String(p.extras?.[ExtraKey.releaseRateUGPerDay] ?? 50));
         setPatchWearDays(typeof p.extras?.[ExtraKey.patchWearH] === 'number' ? String(p.extras[ExtraKey.patchWearH]! / 24) : '');
@@ -184,7 +202,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
             hrtMode,
             route: selectedRoute,
             alias: alias.trim() || undefined,
-            dose: selectedRoute === Route.patchApply && patchMode === 'rate' ? '' : dose.trim(),
+            dose: selectedRoute === Route.patchApply && patchMode === 'rate' ? '' : (dose.trim() ? `${dose.trim()}mg` : ''),
             extras: Object.keys(extras).length ? extras : undefined,
             anchorDate: mode === 'days' ? (editingId ? readMedPlans().find(p => p.id === editingId)?.anchorDate : undefined) ?? localDateKey(new Date()) : undefined,
             mode,
@@ -220,7 +238,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                 setRoute(templateSelection.route);
                 setEster(templateSelection.ester);
             }
-            setDose(`${tpl.doseMG}mg`);
+            setDose(String(tpl.doseMG));
 
         setAlias(tpl.name);
     };
@@ -442,8 +460,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
 
                 <div className="space-y-4">
                     <div>
-                        <p className={`text-xs ${muted} mb-2`}>{t('pill.sec.route')}</p>
-                        <PillRail items={routeItems} value={route} onSelect={(v) => setRoute(v as Route)} dense ariaLabel={t('plan.add_route')} />
+                        <p className={`text-xs ${muted} mb-2`}>{t('pill.sec.route')}</p>                        <PillRail items={routeItems} value={route} onSelect={(v) => setRoute(v as Route)} dense ariaLabel={t('plan.add_route')} />
                     </div>
                     <div>
                         <p className={`text-xs ${muted} mb-2`}>{t('pill.sec.drug')}</p>
@@ -459,7 +476,19 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                     {route !== Route.patchApply && (
                         <label className="block">
                             <span className={fieldLabel}>{t('plan.add_dose')}</span>
-                            <input value={dose} onChange={e => setDose(e.target.value)} placeholder="2mg" className="input-base" />
+                            <span className="flex items-center gap-2">
+                                <input
+                                    type="number"
+                                    inputMode="decimal"
+                                    min="0"
+                                    step="0.001"
+                                    value={dose}
+                                    onChange={e => setDose(e.target.value)}
+                                    placeholder="2"
+                                    className="hrt-num tabular-nums"
+                                />
+                                <span className="shrink-0 text-xs text-[var(--color-m3-on-surface-variant)]">mg</span>
+                            </span>
                         </label>
                     )}
                 </div>

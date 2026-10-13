@@ -1247,6 +1247,56 @@ html.app-viewport body {
     appearance: none;
     margin: 0;
 }
+/* The dose form's number fields (route amount/rate/wear/hold). These were bare
+   underline inputs, so the global `:where(input):focus-visible` outline drew a hard
+   SQUARE around them and they read as a different control from every `.input-base`
+   beside them. This is the same rounded rectangle the rest of the app uses, kept a
+   touch larger and heavier because the number is the row's primary value. */
+.hrt-num {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    font-size: 1rem;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-m3-on-surface);
+    background-color: var(--color-m3-surface-container-lowest);
+    border: 1px solid var(--color-m3-outline-variant);
+    border-radius: var(--radius-md);
+    outline: none;
+    appearance: textfield;
+    -webkit-appearance: textfield;
+    -moz-appearance: textfield;
+    transition: border-color var(--duration-quick) var(--ease-standard),
+                box-shadow var(--duration-quick) var(--ease-standard),
+                background-color var(--duration-quick) var(--ease-standard);
+}
+.hrt-num::-webkit-outer-spin-button,
+.hrt-num::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
+}
+.hrt-num::placeholder {
+    color: var(--color-m3-on-surface-variant);
+}
+.hrt-num:focus,
+.hrt-num:focus-visible {
+    outline: none;
+    border-color: var(--color-m3-primary);
+    box-shadow: inset 0 0 0 1px var(--color-m3-primary);
+    background-color: var(--color-m3-surface-container);
+}
+.dark .hrt-num {
+    color: var(--color-m3-dark-on-surface);
+    background-color: var(--color-m3-dark-surface-container-low);
+    border-color: var(--color-m3-line);
+}
+.dark .hrt-num:focus,
+.dark .hrt-num:focus-visible {
+    border-color: var(--color-m3-dark-primary);
+    box-shadow: inset 0 0 0 1px var(--color-m3-dark-primary);
+    background-color: var(--color-m3-dark-surface-container);
+}
 .dark .input-base,
 .dark .input-num {
     color: var(--color-m3-dark-on-surface);

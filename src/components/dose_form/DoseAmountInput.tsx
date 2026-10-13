@@ -27,7 +27,7 @@ const DoseAmountInput: React.FC<{ field: AmountField }> = ({ field }) => (
                 value={field.value}
                 onChange={(e) => field.onChange(e.target.value)}
                 placeholder="0.0"
-                className="w-full bg-transparent text-[15px] font-medium tabular-nums text-[var(--color-m3-on-surface)] outline-none border-b border-[var(--color-m3-outline-variant)] py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="hrt-num"
                 style={{ fontSize: '16px' }}
             />
             <span className="text-xs text-[var(--color-m3-on-surface-variant)] shrink-0">{field.unit ?? 'mg'}</span>

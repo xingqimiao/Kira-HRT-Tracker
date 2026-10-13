@@ -42,7 +42,7 @@ const PatchFields: React.FC<PatchFieldsProps> = ({
                             type="number" inputMode="decimal" min="0" step="1"
                             value={patchRate} onChange={(e) => setPatchRate(e.target.value)}
                             placeholder={t('patch.rate_placeholder')}
-                            className="w-full bg-transparent text-[15px] font-medium tabular-nums text-[var(--color-m3-on-surface)] outline-none border-b border-[var(--color-m3-outline-variant)] py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            className="hrt-num"
                             style={{ fontSize: '16px' }}
                         />
                         <span className="text-xs text-[var(--color-m3-on-surface-variant)] shrink-0">µg/d</span>
@@ -56,7 +56,7 @@ const PatchFields: React.FC<PatchFieldsProps> = ({
                             type="number" inputMode="decimal" min="0" step="0.001"
                             value={rawDose} onChange={(e) => onRawChange(e.target.value)}
                             placeholder="0.0"
-                            className="w-full bg-transparent text-[15px] font-medium tabular-nums text-[var(--color-m3-on-surface)] outline-none border-b border-[var(--color-m3-outline-variant)] py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            className="hrt-num"
                             style={{ fontSize: '16px' }}
                         />
                         <span className="text-xs text-[var(--color-m3-on-surface-variant)] shrink-0">mg</span>
@@ -72,7 +72,7 @@ const PatchFields: React.FC<PatchFieldsProps> = ({
                         type="number" inputMode="decimal" min="0" step="0.5"
                         value={patchWearDays} onChange={(e) => setPatchWearDays(e.target.value)}
                         placeholder={t('field.patch_wear_placeholder')}
-                        className="w-full bg-transparent text-[15px] font-medium tabular-nums text-[var(--color-m3-on-surface)] outline-none border-b border-[var(--color-m3-outline-variant)] py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        className="hrt-num"
                         style={{ fontSize: '16px' }}
                     />
                     <span className="text-xs text-[var(--color-m3-on-surface-variant)] shrink-0">{t('unit.day_short')}</span>

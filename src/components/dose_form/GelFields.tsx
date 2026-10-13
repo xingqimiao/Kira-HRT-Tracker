@@ -78,7 +78,7 @@ const GelFields: React.FC<GelFieldsProps> = ({
                         type="number" inputMode="decimal" min="0" step="0.001"
                         value={e2Dose} onChange={(e) => onE2Change(e.target.value)}
                         placeholder="0.0"
-                        className="w-full bg-transparent text-[15px] font-medium tabular-nums text-[var(--color-m3-on-surface)] outline-none border-b border-[var(--color-m3-outline-variant)] py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        className="hrt-num"
                         style={{ fontSize: '16px' }}
                     />
                     <span className="text-xs text-[var(--color-m3-on-surface-variant)] shrink-0">mg</span>
@@ -108,7 +108,7 @@ const GelFields: React.FC<GelFieldsProps> = ({
                                 type="number" inputMode="decimal" min="0" step="0.5"
                                 value={gelWashHours} onChange={(e) => setGelWashHours(e.target.value)}
                                 placeholder={t('field.gel_wash_none')}
-                                className="w-full bg-transparent text-[15px] font-medium tabular-nums text-[var(--color-m3-on-surface)] outline-none border-b border-[var(--color-m3-outline-variant)] py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="hrt-num"
                                 style={{ fontSize: '16px' }}
                             />
                             <span className="text-xs text-[var(--color-m3-on-surface-variant)] shrink-0">{t('unit.hour_short')}</span>

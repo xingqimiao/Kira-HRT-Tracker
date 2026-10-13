@@ -73,7 +73,7 @@ const SublingualFields: React.FC<SublingualFieldsProps> = ({
                                 const v = parseFloat(e.target.value);
                                 if (Number.isFinite(v) && v >= 1) setCustomHoldValue(v);
                             }}
-                            className="w-16 bg-transparent text-[15px] font-medium tabular-nums text-[var(--color-m3-on-surface)] outline-none border-b border-[var(--color-m3-outline-variant)] py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            className="hrt-num w-20"
                             style={{ fontSize: '16px' }}
                         />
                         <input
