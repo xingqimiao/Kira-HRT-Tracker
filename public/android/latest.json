@@ -2,7 +2,7 @@
   "version": "1.1.0",
   "versionCode": 1001000,
   "apk": "https://hrt.kiramyao.com/android/KiraHRT-1.1.0-release.apk",
-  "sha256": "C7BC7ACA04CE24D5E14DCC1E43A9E144B45662B694B4CD70C32C1A4FD52F34E4",
+  "sha256": "CCC88B7210D20F1AA5285310F01D256602475FF0E28763A4EAC586A41A5D2023",
   "notes": [
     "贴片佩戴追踪：记录贴上后，总览显示已佩戴多久，并可一键摘下（摘下只在有对应贴片时出现）。",
     "用药方案按 HRT 模式区分：跨性别女性/男性各自只看到属于自己的方案，首页与提醒不会串台。",
