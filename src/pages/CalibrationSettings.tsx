@@ -1,13 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Icon from '../components/Icon';
 import { ArrowLeft, Check, Minus } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
-import { CalibrationMethod, CalibrationHistoryMode, CalibrationResult, type DoseEvent, type LabResult, type SimulationResult } from '../../logic';
+import { CalibrationMethod, CalibrationHistoryMode, CalibrationResult } from '../../logic';
 import ModelPreviewCanvas from '../components/ModelPreviewCanvas';
-import {
-    applyFactor, buildRealData, buildSampleData, sampleModelCurve, MODEL_COLOR_VAR,
-    type PreviewData, type Pt,
-} from '../utils/modelPreview';
+import { buildSampleData, sampleModelCurve, MODEL_COLOR_VAR } from '../utils/modelPreview';
 
 interface CalibrationSettingsProps {
     method: CalibrationMethod;
@@ -15,13 +12,6 @@ interface CalibrationSettingsProps {
     historyMode: CalibrationHistoryMode;
     setHistoryMode: (m: CalibrationHistoryMode) => void;
     calibration: CalibrationResult;
-    /** The user's data, for the card previews. */
-    events: DoseEvent[];
-    labResults: LabResult[];
-    simulation: SimulationResult | null;
-    /** Fit one (method, historyMode) with the engine in use — same call the page's own
-     *  `calibration` came from, so a preview cannot disagree with the real fit. */
-    calibrateFor: (m: CalibrationMethod, hm: CalibrationHistoryMode) => CalibrationResult;
     onBack: () => void;
 }
 
@@ -99,84 +89,17 @@ const OptionCard: React.FC<{
     </button>
 );
 
-/**
- * Every card's own curve.
- *
- * Each card shows *its own model's* fitted line even when it is not selected, so the
- * four curves can be compared side by side. That means every card's curve is computed,
- * not just the selected one — so the fits run one per tick in an effect (the EKF fit is
- * about a second), letting the page paint before the work lands. Results are cached;
- * the cache is dropped when the underlying data changes.
- */
-function useCardCurves(
-    data: PreviewData,
-    keys: readonly string[],
-    calibrateFor: CalibrationSettingsProps['calibrateFor'],
-): Record<string, Pt[]> {
-    const [curves, setCurves] = useState<Record<string, Pt[]>>({});
-    const cacheKey = data.source + '|' + data.base.length + '|' + data.labs.length;
-
-    // Reset the cache when the data changes (new account / new labs).
-    const keyRef = useRef(cacheKey);
-    if (keyRef.current !== cacheKey) { keyRef.current = cacheKey; if (Object.keys(curves).length) setCurves({}); }
-
-    useEffect(() => {
-        // The sample fallback draws pure-maths curves in `curveFor`; nothing to fit.
-        if (data.source !== 'real') return;
-        const missing = keys.filter((k) => !(k in curves));
-        if (missing.length === 0) return;
-        let cancelled = false;
-        const key = missing[0];
-        const [m, hm] = key.split('|') as [CalibrationMethod, CalibrationHistoryMode];
-        const id = window.setTimeout(() => {
-            if (cancelled) return;
-            try {
-                setCurves((prev) => ({ ...prev, [key]: applyFactor(data.base, calibrateFor(m, hm).factorFn) }));
-            } catch {
-                // A fit that throws simply leaves the card on the population curve.
-                setCurves((prev) => ({ ...prev, [key]: [] }));
-            }
-        }, 0);
-        return () => { cancelled = true; window.clearTimeout(id); };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [keys, curves, cacheKey, calibrateFor]);
-
-    return curves;
-}
-
 const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({
-    method, setMethod, historyMode, setHistoryMode, calibration,
-    events, labResults, simulation, calibrateFor, onBack,
+    method, setMethod, historyMode, setHistoryMode, calibration, onBack,
 }) => {
     const { t } = useTranslation();
 
     const showFit = method !== 'off' && calibration.points.length > 0;
     const signedPct = (p: number) => `${p >= 0 ? '+' : ''}${p.toFixed(0)}%`;
 
-    // The shared preview data: the user's own curve + labs, or the built-in fallback
-    // when there is too little to draw.
-    const data = useMemo<PreviewData>(
-        () => buildRealData(events, labResults, simulation, calibration.points) ?? buildSampleData(),
-        [events, labResults, simulation, calibration.points],
-    );
-
-    // Every card shows its own model's curve, so ask for all of them: the four methods
-    // at the current history mode, plus the selected method at both history modes.
-    // Deduped so the selected combination is only fitted once.
-    const keys = useMemo(() => {
-        const set = new Set<string>();
-        for (const m of METHODS) set.add(`${m.value}|${historyMode}`);
-        for (const h of HISTORY_MODES) set.add(`${method}|${h.value}`);
-        return [...set];
-    }, [method, historyMode]);
-
-    const curves = useCardCurves(data, keys, calibrateFor);
-
-    /** A model card's curve: instant for the fallback, computed/cached for real data. */
-    const curveFor = (m: CalibrationMethod, hm: CalibrationHistoryMode): Pt[] | null => {
-        if (data.source === 'sample') return sampleModelCurve(m);
-        return curves[`${m}|${hm}`] ?? null;
-    };
+    // Keep the reference illustration fixed; account data belongs in the actual fit below,
+    // not in these explanatory model previews.
+    const preview = useMemo(buildSampleData, []);
 
     /** A model's identity hue as a CSS value, for the card name and border. */
     const accentOf = (m: CalibrationMethod): string => `var(${MODEL_COLOR_VAR[m]})`;
@@ -230,8 +153,8 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({
                             </p>
                             <ModelPreviewCanvas
                                 method={value}
-                                data={data}
-                                model={curveFor(value, historyMode)}
+                                data={preview}
+                                model={sampleModelCurve(value)}
                                 replay={playTick[value] ?? 0}
                             />
                         </OptionCard>

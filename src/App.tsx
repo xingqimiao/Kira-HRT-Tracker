@@ -874,10 +874,6 @@ const AppContent = () => {
                             historyMode={calibrationHistoryMode}
                             setHistoryMode={setCalibrationHistoryMode}
                             calibration={calibration}
-                            events={events}
-                            labResults={labResults}
-                            simulation={simulation}
-                            calibrateFor={calibrateFor}
                             onBack={() => handleViewChange('lab')}
                         />
                     )}
