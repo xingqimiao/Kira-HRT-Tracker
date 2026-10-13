@@ -12,7 +12,7 @@ import PatchFields from './dose_form/PatchFields';
 import {
     readMedPlans, writeMedPlans, sanitizeMedPlans, isSavedTemplate, type MedPlan, type PlanStatus, type PlanTime,
     planStatuses, migrateOldRemindersToPlans,
-    isPlanNotificationGranted, requestPlanNotificationPermission,
+    isPlanNotificationGranted, requestPlanNotificationPermission, openNativeNotificationSettings,
 } from '../utils/medPlanNotify';
 import { plansForMode, availablePlanRoutes, availablePlanEsters, availablePlanRoutesForEster, localDateKey } from '../utils/medPlan';
 import { reschedulePlanNotifications } from '../utils/medPlanNotify';
@@ -86,6 +86,23 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
         let cancelled = false;
         void isPlanNotificationGranted().then(v => { if (!cancelled) setWebPermission(v); }).catch(() => undefined);
         return () => { cancelled = true; };
+    }, []);
+
+    // The permission can change while this section is open — most of all when the
+    // native "enable" button sent the user to the system notification settings. Re-read
+    // it on return (a read, not a request, so nothing prompts on every focus) and flip
+    // the button. Native reminders are rescheduled by App's own focus handler.
+    useEffect(() => {
+        const recheck = (): void => {
+            if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+            void isPlanNotificationGranted().then(setWebPermission).catch(() => undefined);
+        };
+        document.addEventListener('visibilitychange', recheck);
+        window.addEventListener('focus', recheck);
+        return () => {
+            document.removeEventListener('visibilitychange', recheck);
+            window.removeEventListener('focus', recheck);
+        };
     }, []);
 
     const commit = (next: MedPlan[]): void => {
@@ -266,6 +283,12 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
             // Bind this device's FCM token so the server can send a catch-up nudge
             // for a dose that was never logged. Both transports; no-op until signed in.
             if (session.token) void syncPushRegistration(session.token).catch(() => undefined);
+        } else if (isNativeApp()) {
+            // The plugin cannot re-ask once notifications are off in system settings, so
+            // the in-app button would appear inert. Send the user to the one screen that
+            // can turn them back on; the focus/visibility recheck above flips this state
+            // when they return.
+            openNativeNotificationSettings();
         }
     };
 

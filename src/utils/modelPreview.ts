@@ -1,15 +1,9 @@
 /**
  * The little model-preview animations inside the calibration cards.
  *
- * Each of the four estimator cards (off / MIPD / EKF / OU-Kalman) and the two
- * history-mode cards draws a ~90px canvas that plays while that card is selected. The
- * picture is meant to answer one question — "what would this model do with my data?" —
- * so it is driven by the user's **real** doses and blood tests, not a fixed cartoon.
- *
- * When there is not enough real data to say anything (fewer than two E2 labs, or no
- * doses), it falls back to a small built-in scenario so the cards still read. The
- * fallback is the one from the hand-drawn reference animation this feature was asked
- * to follow.
+ * The model and history cards use the fixed scenarios from the hand-drawn reference
+ * animations, so their comparisons stay consistent and explanatory. The actual fit
+ * and the user's data are shown separately in the calibration details below the cards.
  *
  * Everything here is a pure function of its arguments — no globals, no DOM, no canvas
  * state kept between calls — so the sampling can be unit-checked and the drawing can be
@@ -47,6 +41,8 @@ export interface Colors {
     muted: string;
     accent: string;
     drop: string;
+    warning?: string;
+    bad?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -213,7 +209,7 @@ export const HISTORY_SWEEP_DAYS = H_DAYS;
 const H_P = 7;
 const H_KA = 1.5;
 const H_YMAX = 2.2;
-const H = { l: 10, r: 8, t: 24, b: 14 };
+const H = { l: 10, r: 8, t: 16, b: 10 };
 
 const hNormCache: Record<string, number> = {};
 function hNorm(k: number): number {
@@ -282,6 +278,12 @@ export function drawHistoryFrame(
     stroke(ctx, curve(hTruth), colors.ink, 1.8, 0.4, 0.5, [6, 5], seed);
 
     const alpha = (v: number, a: number) => Math.max(0, Math.min(1, v)) * a;
+    const drawBlood = (o: { t: number; y: number }): void => {
+        const age = dayClamped - o.t;
+        const p = Math.max(0, Math.min(1, age / 0.8));
+        const y = Y(o.y);
+        bloodDrop(ctx, X(o.t), y - 60 + (y - (y - 60)) * p * p, 5 * (age < 0.8 ? 1 : 1 + 0.45 * Math.max(0, 1 - (age - 0.8))), colors.drop, colors.ink, alpha(p * 2 + 0.2, 1));
+    };
 
     if (mode === 'retrospective') {
         let n = 0;
@@ -305,7 +307,7 @@ export function drawHistoryFrame(
         if (n && df > 0 && df < td) {
             stroke(ctx, [{ x: X(df) + 5, y: Y(f(df)) - 16 - 5 }, { x: X(df) - 5, y: Y(f(df)) - 16 }, { x: X(df) + 5, y: Y(f(df)) - 16 + 5 }, { x: X(df) + 5, y: Y(f(df)) - 16 - 5 }], colors.accent, 2.2, 0.9, 0.4, undefined, seed);
         }
-        H_DOTS.forEach((o) => { if (o.t <= dayClamped) bloodDrop(ctx, X(o.t), Y(o.y), 5, colors.drop, colors.ink); });
+        H_DOTS.forEach((o) => { if (o.t <= dayClamped) drawBlood(o); });
     } else {
         const trail = (d: number): number => { const s = hStateAt(d); return hConc(d, s.A, s.k); };
         const sn = hStateAt(dayClamped);
@@ -313,7 +315,7 @@ export function drawHistoryFrame(
         stroke(ctx, curve((d) => hConc(d, sn.A, sn.k), dayClamped, H_DAYS), colors.accent, 2, 0.45, 0.8, [5, 6], seed);
         H_DOTS.forEach((o) => {
             if (o.t <= dayClamped) {
-                bloodDrop(ctx, X(o.t), Y(o.y), 5, colors.drop, colors.ink);
+                drawBlood(o);
                 // A settled point: the past is decided and will not be rewritten.
                 if (dayClamped - o.t > 1.6) padlock(ctx, X(o.t), Y(trail(o.t)) - 12, colors.accent, 0.85);
             }
@@ -326,12 +328,12 @@ export function drawHistoryFrame(
 }
 
 /** Blood-drop marker drawn directly in pixel space. */
-function bloodDrop(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, col: string, ink: string, alpha = 1): void {
+function bloodDrop(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, col: string, ink: string, alpha = 1, lineWidth = 1.6): void {
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.fillStyle = col;
     ctx.strokeStyle = ink;
-    ctx.lineWidth = 1.6;
+    ctx.lineWidth = lineWidth;
     ctx.beginPath();
     ctx.moveTo(x, y - s * 1.7);
     ctx.bezierCurveTo(x + s * .3, y - s * .8, x + s, y - s * .5, x + s, y + s * .2);
@@ -352,6 +354,137 @@ function padlock(ctx: CanvasRenderingContext2D, x: number, y: number, col: strin
     const arc: Pt[] = [];
     for (let i = 0; i <= 6; i++) { const t = Math.PI * i / 6; arc.push({ x: x - 3 * Math.cos(t), y: y - 1 - 4 * Math.sin(t) }); }
     stroke(ctx, arc, col, 1.8, alpha, 0.2);
+}
+
+// ---------------------------------------------------------------------------
+// Model-card reference animation
+// ---------------------------------------------------------------------------
+
+const MODEL_P = 7;
+const MODEL_DAYS = 42;
+const MODEL_YMAX = 2.2;
+const MODEL_H = { l: 16, r: 12, t: 14, b: 12 };
+export const MODEL_SWEEP_DAYS = MODEL_DAYS;
+const OU_DAYS = [3, 8, 13, 18, 23, 28, 33, 38];
+const OU_NOISE = [0.03, -0.04, 0.05, -0.03, 0.04, -0.05, 0.03, -0.02];
+const ouTruth = (d: number) => sampleConc(d, 1 + 0.28 * Math.sin(d / 8), 0.3);
+const OU_DOTS = OU_DAYS.map((d, i) => ({ x: d, y: ouTruth(d) * (1 + OU_NOISE[i]) }));
+
+/** Draw one model-card frame from the hand-drawn reference scenario. */
+export function drawModelFrame(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    day: number,
+    method: CalibrationMethod,
+    colors: Colors,
+    seed = 0,
+): void {
+    const iw = Math.max(1, w - MODEL_H.l - MODEL_H.r - 6);
+    const ih = Math.max(1, h - MODEL_H.t - MODEL_H.b);
+    const X = (d: number) => MODEL_H.l + d / MODEL_DAYS * iw;
+    const Y = (v: number) => MODEL_H.t + ih * (1 - Math.max(0, Math.min(v, MODEL_YMAX)) / MODEL_YMAX);
+    const d = Math.max(0, Math.min(MODEL_DAYS, day));
+    const curve = (f: (x: number) => number, d0 = 0, d1 = MODEL_DAYS): Pt[] => {
+        const points: Pt[] = [];
+        for (let x = d0; x < d1; x += 0.6) points.push({ x: X(x), y: Y(f(x)) });
+        points.push({ x: X(d1), y: Y(f(d1)) });
+        return points;
+    };
+    const truth = (x: number) => sampleConc(x, 1, 0.22);
+    const dropAt = (o: Pt, color: string, alpha = 1): void => {
+        const age = d - o.x;
+        if (age < 0) return;
+        const p = Math.max(0, Math.min(1, age / 0.8));
+        const x = X(o.x), y = Y(o.y);
+        const yy = lerp(y - 70, y, p * p);
+        const size = 5.5 * (age < 0.8 ? 1 : 1 + 0.45 * Math.max(0, 1 - (age - 0.8)));
+        drop(ctx, x, yy, size, color, alpha * Math.max(0, Math.min(1, p * 2 + 0.2)), colors.ink, 1.8);
+    };
+    const frame = (truthCurve: (x: number) => number): void => {
+        stroke(ctx, [{ x: MODEL_H.l, y: MODEL_H.t - 8 }, { x: MODEL_H.l, y: MODEL_H.t + ih }, { x: MODEL_H.l + iw + 6, y: MODEL_H.t + ih }], colors.ink, 2.4, 1, 1, undefined, seed);
+        for (let x = 0; x <= MODEL_DAYS; x += MODEL_P) {
+            stroke(ctx, [{ x: X(x), y: MODEL_H.t + ih }, { x: X(x), y: MODEL_H.t + ih - 7 }], colors.muted, 2, 1, 0.6, undefined, seed);
+        }
+        const px = X(d);
+        stroke(ctx, [{ x: px, y: MODEL_H.t }, { x: px, y: MODEL_H.t + ih }], colors.muted, 1.6, 0.9, 0.8, [4, 6], seed);
+        stroke(ctx, curve(truthCurve), colors.ink, 2, 0.5, 0.6, [6, 5], seed);
+    };
+
+    if (method === 'off') {
+        const model = (x: number) => sampleConc(x, 0.65, 0.42);
+        frame(truth);
+        stroke(ctx, curve(model), colors.accent, 3.6, 1, 1.1, undefined, seed);
+        S_LABS.forEach((o, i) => {
+            if (o.x > d) return;
+            if (d - o.x > 0.8) stroke(ctx, [{ x: X(o.x), y: Y(o.y) }, { x: X(o.x), y: Y(model(o.x)) }], colors.bad ?? colors.drop, 2, 0.6, 0.7, [3, 4], seed + i);
+            dropAt(o, i === 2 ? colors.ink : (colors.bad ?? colors.drop));
+        });
+        return;
+    }
+
+    if (method === 'mipd') {
+        const state = sampleState(S_HS, S_LABS, d);
+        const model = (x: number) => sampleConc(x, state.A, state.k);
+        frame(truth);
+        stroke(ctx, curve(x => sampleConc(x, 0.6, 0.42)), colors.muted, 1.8, 0.9, 0.8, [5, 6], seed);
+        stroke(ctx, curve(x => sampleConc(x, 1.4, 0.42)), colors.muted, 1.8, 0.9, 0.8, [5, 6], seed);
+        stroke(ctx, curve(model), colors.accent, 3.6, 1, 1.1, undefined, seed);
+        S_LABS.forEach((o, i) => {
+            if (o.x > d) return;
+            const age = d - o.x, x = X(o.x), y = Y(o.y);
+            if (i === 2) {
+                dropAt(o, colors.ink, age > 2.5 ? 0.45 : 1);
+                if (age > 0.6) {
+                    cross(ctx, x, y, 7, (colors.bad ?? colors.drop), age > 2.5 ? 0.45 : 1, seed + i);
+                    if (age < 3) {
+                        const arc: Pt[] = [];
+                        for (let j = 0; j <= 8; j++) { const t = Math.PI * j / 8; arc.push({ x: x + Math.cos(t) * 15, y: y + 16 - Math.sin(t) * 9 }); }
+                        stroke(ctx, arc, colors.accent, 3.4, 1 - age / 3, 0.8, undefined, seed);
+                    }
+                }
+            } else { dropAt(o, colors.bad ?? colors.drop); }
+        });
+        return;
+    }
+
+    if (method === 'ekf') {
+        const state = sampleState(S_ES, S_LABS, d);
+        const model = (x: number) => sampleConc(x, state.A, state.k);
+        frame(truth);
+        const up = curve(x => sampleConc(x, state.A * (1 + state.u), state.k));
+        const lo = curve(x => sampleConc(x, state.A * (1 - state.u), state.k));
+        ctx.save(); ctx.globalAlpha = 0.17; ctx.fillStyle = colors.accent; ctx.beginPath();
+        up.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+        for (let i = lo.length - 1; i >= 0; i--) ctx.lineTo(lo[i].x, lo[i].y);
+        ctx.closePath(); ctx.fill(); ctx.restore();
+        stroke(ctx, up, colors.accent, 1.4, 0.7, 0.8, undefined, seed);
+        stroke(ctx, lo, colors.accent, 1.4, 0.7, 0.8, undefined, seed);
+        stroke(ctx, curve(model), colors.accent, 3.6, 1, 1.1, undefined, seed);
+        S_LABS.forEach((o, i) => {
+            if (o.x > d) return;
+            if (d - o.x > 0.8) stroke(ctx, [{ x: X(o.x), y: Y(o.y) }, { x: X(o.x), y: Y(model(o.x)) }], colors.warning ?? colors.accent, 2.6, 0.85, 0.7, undefined, seed + i);
+            dropAt(o, i === 2 ? colors.ink : (colors.bad ?? colors.drop));
+        });
+        return;
+    }
+
+    const LT = (x: number) => 1 + 0.28 * Math.sin(x / 8);
+    const model = (x: number) => sampleConc(x, LT(x) * 0.85, 0.3);
+    frame(x => LT(x) * sampleConc(x, 1, 0.3));
+    let num = 0.4 * 0.85, den = 0.4;
+    OU_DOTS.forEach(o => {
+        if (o.x > d) return;
+        const weight = Math.pow(0.5, (d - o.x) / 14) * sm(Math.min(1, (d - o.x) / 1.5));
+        num += weight * o.y / sampleConc(o.x, 1, 0.3); den += weight;
+    });
+    const L = num / den;
+    const fitted = (x: number) => sampleConc(x, L, 0.3);
+    const x0 = X(Math.max(0, d - 14)), x1 = X(d);
+    ctx.save(); ctx.globalAlpha = 0.1; ctx.fillStyle = colors.accent; ctx.fillRect(x0, MODEL_H.t, x1 - x0, ih); ctx.restore();
+    stroke(ctx, [{ x: x0, y: MODEL_H.t }, { x: x0, y: MODEL_H.t + ih }], colors.accent, 1.6, 0.6, 0.8, [3, 5], seed);
+    stroke(ctx, curve(fitted), colors.accent, 3.6, 1, 1.1, undefined, seed);
+    OU_DOTS.forEach(o => { if (o.x <= d) dropAt(o, colors.bad ?? colors.drop, Math.max(0.15, Math.pow(0.5, (d - o.x) / 14))); });
 }
 
 // ---------------------------------------------------------------------------
@@ -389,12 +522,12 @@ function stroke(ctx: CanvasRenderingContext2D, pts: Pt[], col: string, lw: numbe
 }
 
 /** Small blood-drop marker. */
-function drop(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, col: string, alpha = 1, ink = '#000'): void {
+function drop(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, col: string, alpha = 1, ink = '#000', lineWidth = 1.8): void {
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.fillStyle = col;
     ctx.strokeStyle = ink;
-    ctx.lineWidth = 1.4;
+    ctx.lineWidth = lineWidth;
     ctx.beginPath();
     ctx.moveTo(x, y - s * 1.7);
     ctx.bezierCurveTo(x + s * .3, y - s * .8, x + s, y - s * .5, x + s, y + s * .2);
@@ -409,6 +542,18 @@ function drop(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, co
 function cross(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, col: string, alpha = 1, seed = 0): void {
     stroke(ctx, [{ x: x - r, y: y - r }, { x: x + r, y: y + r }], col, 2.4, alpha, 0.8, undefined, seed);
     stroke(ctx, [{ x: x + r, y: y - r }, { x: x - r, y: y + r }], col, 2.4, alpha, 0.8, undefined, seed + 7);
+}
+
+function circ(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, col: string, fill: boolean, alpha = 1, seed = 0): void {
+    const points: Pt[] = [];
+    for (let i = 0; i <= 16; i++) {
+        const t = i / 16 * Math.PI * 2 * 1.07;
+        points.push({ x: x + Math.cos(t) * r, y: y + Math.sin(t) * r });
+    }
+    if (fill) {
+        ctx.save(); ctx.globalAlpha = alpha * 0.9; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); ctx.restore();
+    }
+    stroke(ctx, points, col, 2, alpha, 0.8, undefined, seed);
 }
 
 /**
@@ -510,5 +655,7 @@ export function readColors(el: HTMLElement, method: CalibrationMethod): Colors {
         muted: css('--color-m3-on-surface-variant', '#9a9aa6'),
         accent: css(MODEL_COLOR_VAR[method], css('--color-m3-primary', '#c25570')),
         drop: css('--color-m3-error', '#e5484d'),
+        warning: css('--color-m3-model-ou', '#d9902f'),
+        bad: css('--color-m3-error', '#d23b3b'),
     };
 }

@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict';
 
 const {
-    buildRealData, buildSampleData, sampleModelCurve, drawHistoryFrame, applyFactor,
+    buildRealData, buildSampleData, sampleModelCurve, drawHistoryFrame, drawModelFrame, applyFactor,
 } = await import('../src/utils/modelPreview.ts');
 
 let failed = 0;
@@ -72,6 +72,48 @@ check('each model gives a distinct, finite curve', () => {
     // They are meant to differ — that is the point of drawing one per card.
     const diff = (a, b) => a.some((p, i) => Math.abs(p.y - b[i].y) > 1e-6);
     assert.ok(diff(mipd, ekf) || diff(mipd, ou), 'not all four curves identical');
+});
+
+check('model cards draw every reference curve and blood drop', () => {
+    const calls = [];
+    const ctx = {
+        path: [], color: '', fillColor: '',
+        save() {}, restore() {}, beginPath() { this.path = []; }, closePath() {},
+        moveTo(x, y) { this.path.push([x, y]); }, lineTo(x, y) { this.path.push([x, y]); },
+        arc(...args) { this.path.push(['arc', ...args]); },
+        bezierCurveTo(...args) { this.path.push(['bezier', ...args]); },
+        fill() { calls.push({ type: 'fill', color: this.fillColor, path: [...this.path] }); },
+        fillRect() {}, setLineDash() {},
+        stroke() { calls.push({ type: 'stroke', color: this.color, path: [...this.path] }); },
+        measureText(text) { return { width: text.length * 8 }; },
+        fillText() {},
+        set strokeStyle(value) { this.color = value; },
+        set fillStyle(value) { this.fillColor = value; },
+        set lineWidth(value) {}, set lineCap(value) {}, set lineJoin(value) {}, set globalAlpha(value) {},
+    };
+    const colors = { ink: '#333', muted: '#999', accent: '#c45', drop: '#d23', warning: '#d90' };
+    drawModelFrame(ctx, 400, 180, 42, 'off', colors);
+    const longLines = calls.filter(c => c.type === 'stroke' && c.path.length > 20);
+    assert.equal(longLines.length, 4, 'population and model curves are both rendered in two hand-drawn passes');
+    const drops = calls.filter(c => c.type === 'fill' && c.color === colors.drop && c.path.some(p => Array.isArray(p) && p[0] === 'bezier'));
+    assert.equal(drops.length, 5, 'the five accepted blood drops use the reference drop marker');
+
+    const dropPath = drops[0].path;
+    const top = dropPath[0];
+    const firstLab = buildSampleData().labs[0];
+    const expectedX = 16 + firstLab.x / 42 * (400 - 16 - 12 - 6);
+    const expectedY = 14 + (180 - 14 - 12) * (1 - firstLab.y / 2.2) - 5.5 * 1.7;
+    assert.ok(Math.abs(top[0] - expectedX) < 1e-6, 'blood drop remains centered on its reference lab day');
+    assert.ok(Math.abs(top[1] - expectedY) < 1e-6, 'blood drop begins 70px above its reference lab point');
+    assert.ok(dropPath.some(p => Array.isArray(p) && p[0] === 'bezier'), 'blood marker keeps the reference bezier-drop shape');
+});
+
+check('all four model reference animations draw without dropping paths', () => {
+    const colors = { ink: '#333', muted: '#999', accent: '#c45', drop: '#d23', warning: '#d90' };
+    for (const method of ['off', 'mipd', 'ekf', 'ou_kalman']) {
+        const ctx = { save() {}, restore() {}, beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, arc() {}, bezierCurveTo() {}, fill() {}, fillRect() {}, setLineDash() {}, stroke() {}, measureText: () => ({ width: 20 }), fillText() {}, font: '', fillStyle: '', strokeStyle: '', lineWidth: 1, lineCap: '', lineJoin: '', globalAlpha: 1 };
+        assert.doesNotThrow(() => drawModelFrame(ctx, 400, 180, 42, method, colors), `${method} draws the complete reference frame`);
+    }
 });
 
 check('applyFactor multiplies the base curve by the model factor', () => {

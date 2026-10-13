@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import type { CalibrationHistoryMode, CalibrationMethod } from '../../logic';
-import { drawHistoryFrame, drawPreview, readColors, HISTORY_SWEEP_DAYS, type PreviewData, type Pt } from '../utils/modelPreview';
+import { drawHistoryFrame, drawModelFrame, readColors, HISTORY_SWEEP_DAYS, MODEL_SWEEP_DAYS } from '../utils/modelPreview';
 
 /**
  * One little canvas inside a calibration card.
@@ -32,33 +32,31 @@ function subscribe(s: Sub): () => void {
     };
 }
 
-/** How long one play-through takes: the history sweep is given longer to read. */
-const REVEAL_MS = 3200;
-const SWEEP_MS = 6000;
+/** 42 days in 14 seconds: 3 days/second, 1.5× the reference's 2 days/second. */
+const REVEAL_MS = 14000;
+const SWEEP_MS = 14000;
+
+/** Height as a fraction of width — kept in one place so the reserved box and the drawn
+ *  frame agree and the card does not jump on first paint. */
+const RATIO = (history?: CalibrationHistoryMode): number => (history ? 0.36 : 0.444);
+const MIN_H = (history?: CalibrationHistoryMode): number => (history ? 90 : 0);
 
 interface Props {
     method: CalibrationMethod;
-    /** The shared preview data (model cards). */
-    data?: PreviewData;
-    /** The calibrated curve for `method` (model cards). */
-    model?: Pt[] | null;
     /** When set, play the history-mode sweep instead of a model reveal. */
     history?: CalibrationHistoryMode;
     /** Bump to replay. The first value (0) is the play-on-mount. */
     replay?: number;
-    height?: number;
 }
 
-const ModelPreviewCanvas: React.FC<Props> = ({ method, data, model = null, history, replay = 0, height = 90 }) => {
+const ModelPreviewCanvas: React.FC<Props> = ({ method, history, replay = 0 }) => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
-    const propsRef = useRef({ method, data, model, history });
-    propsRef.current = { method, data, model, history };
-    // The shared frame-drawing handle and the progress it last drew at, so a redraw from a
-    // size/theme/fit change resumes where the reveal is rather than jumping to the end.
+    const propsRef = useRef({ method, history });
+    propsRef.current = { method, history };
+    // The shared frame-drawing handle and progress, so redraws preserve the current sweep position.
     const drawRef = useRef<(progress: number) => void>(() => {});
     const progressRef = useRef(0);
     const visibleRef = useRef(true);
-    const h = history ? Math.max(height, 108) : height;
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -69,17 +67,17 @@ const ModelPreviewCanvas: React.FC<Props> = ({ method, data, model = null, histo
         const draw = (progress: number): void => {
             progressRef.current = progress;
             const dpr = window.devicePixelRatio || 1;
-            const w = Math.max(1, Math.round(parent.clientWidth));
-            canvas.style.width = `${w}px`;
-            canvas.style.height = `${h}px`;
-            canvas.width = Math.round(w * dpr);
-            canvas.height = Math.round(h * dpr);
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            ctx.clearRect(0, 0, w, h);
+            const w = Math.max(1, Math.round(canvas.getBoundingClientRect().width));
             const p = propsRef.current;
+            const canvasHeight = Math.max(MIN_H(p.history), Math.round(w * RATIO(p.history)));
+            canvas.style.height = `${canvasHeight}px`;
+            canvas.width = Math.round(w * dpr);
+            canvas.height = Math.round(canvasHeight * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, w, canvasHeight);
             const colors = readColors(canvas, p.method);
-            if (p.history) drawHistoryFrame(ctx, w, h, progress * HISTORY_SWEEP_DAYS, p.history, colors, 0);
-            else if (p.data) drawPreview(ctx, w, h, progress, p.method, p.data, p.model, colors, 0);
+            if (p.history) drawHistoryFrame(ctx, w, canvasHeight, progress * HISTORY_SWEEP_DAYS, p.history, colors, 0);
+            else drawModelFrame(ctx, w, canvasHeight, progress * MODEL_SWEEP_DAYS, p.method, colors, 0);
         };
         drawRef.current = draw;
 
@@ -93,10 +91,9 @@ const ModelPreviewCanvas: React.FC<Props> = ({ method, data, model = null, histo
 
         draw(progressRef.current);
         return () => { ro.disconnect(); mo.disconnect(); };
-    }, [h, method, data, model, history]);
+    }, [method, history]);
 
-    // Play once on mount, and again whenever `replay` changes. Keyed on `replay` alone so a
-    // fit arriving (a `model` change) does not restart a reveal already in flight.
+    // Play once on mount, and again whenever `replay` changes.
     useEffect(() => {
         const reduced = typeof window.matchMedia === 'function'
             && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -125,7 +122,7 @@ const ModelPreviewCanvas: React.FC<Props> = ({ method, data, model = null, histo
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [replay]);
 
-    return <canvas ref={canvasRef} className="mt-3 w-full" style={{ height: h }} aria-hidden />;
+    return <canvas ref={canvasRef} className="mt-3 w-full" style={{ aspectRatio: 1 / RATIO(history), minHeight: MIN_H(history) }} aria-hidden />;
 };
 
 export default ModelPreviewCanvas;

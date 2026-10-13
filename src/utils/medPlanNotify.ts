@@ -29,6 +29,7 @@ import { applyNotifFallbacks, notifFallbacks, type NotifFallbacks } from './noti
 import { readMedPlans, writeMedPlans, sanitizeMedPlans, dueTimesToday, matchesPlan, planStatuses, plansForMode, localDateKey, isSavedTemplate, type MedPlan, type PlanStatus, type PlanTime, MED_PLAN_KEY } from './medPlan';
 import { HRTMode } from '../../logic';
 import { get, set } from './secureStore';
+import { occurrenceKey, readLedger, serializeLedger, pruneLedger } from './medPlanNotifyLedger';
 
 // --- Migration: the old name+time reminders become plans ---------------------
 
@@ -193,8 +194,9 @@ export async function reschedulePlanNotifications(request = false): Promise<bool
 
 let webTimerStarted = false;
 let doseSource: (() => DoseEvent[]) | null = null;
-const notifiedToday = new Set<string>();
-let notifiedDay = '';
+/** What this browser has already shown. Persisted, so a reload does not re-fire a
+ *  reminder that already appeared. Keyed by plan id + due instant (see the ledger). */
+const WEB_LEDGER_KEY = 'hrt-med-plan-notified-v1';
 
 export function registerDoseSource(getter: () => DoseEvent[]): void {
     doseSource = getter;
@@ -232,6 +234,21 @@ export async function requestPlanNotificationPermission(): Promise<boolean> {
     } catch { return false; }
 }
 
+/**
+ * Open the APK's system notification settings.
+ *
+ * When notifications are off in Android settings, the runtime dialog never appears
+ * again, so `requestPlanNotificationPermission` returns denied instantly and an
+ * in-app "enable" button reads as dead. This sends the user to the one screen that
+ * can turn it back on; on return the settings UI re-reads the permission. No-op off
+ * the native app.
+ */
+export function openNativeNotificationSettings(): void {
+    if (!isNativeApp()) return;
+    const bridge = (window as unknown as { HrtNotif?: { openSettings?: () => void } }).HrtNotif;
+    try { bridge?.openSettings?.(); } catch { /* best effort — the plugin path may still work */ }
+}
+
 /** Start the web check. The permission must already be granted (asked in settings). */
 export function startPlanWebNotifications(): void {
     if (webTimerStarted || isNativeApp()) return;
@@ -244,13 +261,20 @@ export function startPlanWebNotifications(): void {
             if (plans.length === 0) return;
             const nowMs = Date.now();
             const tz = new Date().getTimezoneOffset();
-            const today = new Date(nowMs).toISOString().slice(0, 10);
-            if (notifiedDay !== today) { notifiedDay = today; notifiedToday.clear(); }
+            // Prune on every tick, and persist the pruned set when it shrank, so
+            // expired occurrences do not linger in storage.
+            const stored = readLedger(get(WEB_LEDGER_KEY));
+            const ledger = pruneLedger(stored, nowMs);
+            if (ledger.length !== stored.length) set(WEB_LEDGER_KEY, serializeLedger(ledger));
+            const seen = new Set(ledger);
             for (const st of planStatuses(plans, doseSource?.() ?? [], nowMs, tz)) {
                 for (const missed of st.missed) {
-                    const key = `${st.plan.id}:${missed}`;
-                    if (notifiedToday.has(key)) continue;
-                    notifiedToday.add(key);
+                    const key = occurrenceKey(st.plan.id, missed);
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    // Persist before dispatch: at-most-once beats a duplicate ring on
+                    // every reload, so a failed post must not leave the key unrecorded.
+                    set(WEB_LEDGER_KEY, serializeLedger([...seen]));
                     const label = reminderTitle(st.plan);
                     const body = reminderBody(st.plan);
                     try {

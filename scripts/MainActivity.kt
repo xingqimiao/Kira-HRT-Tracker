@@ -149,6 +149,42 @@ class MainActivity : TauriActivity() {
   }
 
   /**
+   * Medication-reminder permission repair.
+   *
+   * Once this app's notifications are turned OFF in system settings, Android will not
+   * show the runtime permission dialog again — `requestPermission()` returns denied at
+   * once — so an in-app "enable reminders" button looks dead. The platform's own
+   * remedy is to send the user to this app's notification settings, where they can
+   * switch it back on; on return, the JS layer re-reads the permission and updates the
+   * button (see MedPlanSettings). API 26+ has the dedicated notification page;
+   * older releases fall back to the app details page, which also links there.
+   */
+  inner class NotificationBridge {
+    @JavascriptInterface fun openSettings() {
+      runOnUiThread {
+        try {
+          val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+              .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+          } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+          }
+          intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          startActivity(intent)
+        } catch (e: Exception) {
+          try {
+            val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(fallback)
+          } catch (e2: Exception) {
+            // Nothing else to try.
+          }
+        }
+      }
+    }
+  }
+
+  /**
    * In-app APK update (src/utils/nativeUpdate.ts).
    *
    * Handing the .apk URL to the system browser (what `openUrl` does) only makes
@@ -281,6 +317,7 @@ class MainActivity : TauriActivity() {
     webView.addJavascriptInterface(BackBridge(), "HrtBack")
     webView.addJavascriptInterface(UpdateBridge(), "HrtUpdate")
     webView.addJavascriptInterface(PushBridge(), "HrtPush")
+    webView.addJavascriptInterface(NotificationBridge(), "HrtNotif")
     ViewCompat.setOnApplyWindowInsetsListener(webView) { _, insets ->
       val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
       val density = resources.displayMetrics.density

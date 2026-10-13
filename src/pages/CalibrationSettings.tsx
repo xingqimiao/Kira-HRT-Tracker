@@ -4,7 +4,7 @@ import { ArrowLeft, Check, Minus } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { CalibrationMethod, CalibrationHistoryMode, CalibrationResult } from '../../logic';
 import ModelPreviewCanvas from '../components/ModelPreviewCanvas';
-import { buildSampleData, sampleModelCurve, MODEL_COLOR_VAR } from '../utils/modelPreview';
+import { MODEL_COLOR_VAR } from '../utils/modelPreview';
 
 interface CalibrationSettingsProps {
     method: CalibrationMethod;
@@ -97,10 +97,6 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({
     const showFit = method !== 'off' && calibration.points.length > 0;
     const signedPct = (p: number) => `${p >= 0 ? '+' : ''}${p.toFixed(0)}%`;
 
-    // Keep the reference illustration fixed; account data belongs in the actual fit below,
-    // not in these explanatory model previews.
-    const preview = useMemo(buildSampleData, []);
-
     /** A model's identity hue as a CSS value, for the card name and border. */
     const accentOf = (m: CalibrationMethod): string => `var(${MODEL_COLOR_VAR[m]})`;
 
@@ -153,8 +149,6 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({
                             </p>
                             <ModelPreviewCanvas
                                 method={value}
-                                data={preview}
-                                model={sampleModelCurve(value)}
                                 replay={playTick[value] ?? 0}
                             />
                         </OptionCard>
