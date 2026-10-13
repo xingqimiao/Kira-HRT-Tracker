@@ -77,6 +77,8 @@ const PACK: LangPack = {
     "plan.enable": "Enable notifications",
 
     "plan.on": "Notifications are on",
+    "plan.notify_title": "Medication reminder",
+    "plan.notify_body": "Time to take your medication.",
 
     "plan.empty": "No plans yet — add one below.",
 

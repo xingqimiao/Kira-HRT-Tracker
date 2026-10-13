@@ -36,6 +36,43 @@ firebase.initializeApp({
 // the Set swallows them before they are even built.
 const shown = new Set();
 
+/**
+ * Localized fallback title/body, following the app's language setting.
+ *
+ * A plan with no alias and no dose would otherwise show a hardcoded default in one
+ * language. The app resolves the two strings from its own packs and posts them here
+ * (`hrt-notif-fallbacks`) whenever the language changes or the packs load. The worker
+ * can be killed between messages, so a module variable would be lost — the Cache API
+ * is the durable slot both the page and the worker can reach.
+ */
+const FALLBACKS_CACHE = 'hrt-notif-v1';
+const FALLBACKS_URL = '/__hrt-notif-fallbacks';
+let fallbacks = { title: 'Medication reminder', body: '' };
+
+(async () => {
+    try {
+        const cache = await caches.open(FALLBACKS_CACHE);
+        const res = await cache.match(FALLBACKS_URL);
+        if (res) fallbacks = await res.json();
+    } catch {
+        // Cache unavailable (private mode) — keep the default; the page's own
+        // in-app reminder is unaffected.
+    }
+})();
+
+self.addEventListener('message', (event) => {
+    const data = event.data;
+    if (!data || data.type !== 'hrt-notif-fallbacks' || !data.fallbacks) return;
+    fallbacks = data.fallbacks;
+    event.waitUntil(
+        caches.open(FALLBACKS_CACHE)
+            .then((cache) => cache.put(FALLBACKS_URL, new Response(JSON.stringify(fallbacks), {
+                headers: { 'Content-Type': 'application/json' },
+            })))
+            .catch(() => undefined),
+    );
+});
+
 firebase.messaging().onBackgroundMessage((payload) => {
     const data = payload.data || {};
     if (data.kind !== 'dose_overdue') return;
@@ -43,8 +80,8 @@ firebase.messaging().onBackgroundMessage((payload) => {
     if (shown.has(key)) return;
     shown.add(key);
 
-    const title = data.alias || '用药提醒';
-    const body = data.dose || '';
+    const title = data.alias || fallbacks.title;
+    const body = data.dose || fallbacks.body;
     self.registration.showNotification(title, {
         body,
         tag: key,

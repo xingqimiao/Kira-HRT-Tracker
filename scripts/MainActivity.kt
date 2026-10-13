@@ -1,5 +1,6 @@
 package com.kiramyao.hrt
 
+import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
@@ -24,6 +25,14 @@ class MainActivity : TauriActivity() {
   private var bottomInset = 0f
   private var appWebView: WebView? = null
   private var pendingOAuthUrl: String? = null
+
+  companion object {
+    /** SharedPreferences store for the notification-language fallbacks, read by
+     *  HrtMessagingService when FCM draws a catch-up notification natively. */
+    const val NOTIF_PREFS = "hrt-push"
+    const val NOTIF_TITLE_KEY = "notif-title"
+    const val NOTIF_BODY_KEY = "notif-body"
+  }
 
   /** True while the SPA still has state for system back to pop (a dialog, a
    *  modal, a sub-page). Written from the WebView's JS thread via the
@@ -107,6 +116,28 @@ class MainActivity : TauriActivity() {
         com.google.firebase.messaging.FirebaseMessaging.getInstance().deleteToken()
       } catch (e: Exception) {
         // Best-effort.
+      }
+    }
+
+    /**
+     * The app's own language, for the FCM catch-up notification the OS draws while
+     * the WebView is not running (see HrtMessagingService). The app resolves the
+     * fallback title/body strings from its own packs and pushes them here on every
+     * language change, so the notification follows the in-app language setting
+     * rather than a hardcoded default. Shared with HrtMessagingService through
+     * SharedPreferences, the one store both processes can read.
+     */
+    @JavascriptInterface fun setNotificationFallbacks(json: String) {
+      try {
+        val obj = org.json.JSONObject(json)
+        val title = obj.optString("title")
+        val body = obj.optString("body")
+        getSharedPreferences(NOTIF_PREFS, Context.MODE_PRIVATE).edit()
+          .putString(NOTIF_TITLE_KEY, title)
+          .putString(NOTIF_BODY_KEY, body)
+          .apply()
+      } catch (e: Exception) {
+        // A malformed payload leaves the last known language in place.
       }
     }
   }

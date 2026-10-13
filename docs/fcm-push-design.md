@@ -87,6 +87,20 @@ Web 端也接了 FCM，作为**附加**通道（浏览器没有"本地到点提�
   排除），避免给每个访客的首装 +~80KB。
 - **载荷**：同一套 data-only；web token 不带 `android.priority`，改用 `webpush` 的 TTL。
 
+### 5. 实现补充：通知语言跟随应用内语言设置
+
+本地到点通知走 JS（`medPlanNotify.ts`），文案由 `t()` 给出，本来就是本地化的。但**在
+React 之外绘制的两条路径**——`HrtMessagingService` 收到 FCM 补推时、以及 web 的
+`firebase-messaging-sw.js`——曾经各自硬编码一句中文兜底（"用药提醒"），于是没有别名和
+剂量的方案在任何语言下都会弹中文。
+
+现在：应用从自己的语言包解析出两个兜底串（`plan.notify_title` / `plan.notify_body`），经
+`src/utils/notifLocale.ts` 推给两条路径——原生走 `HrtPush.setNotificationFallbacks(json)`
+存进 SharedPreferences，web 走 `postMessage` 存进 Cache API（worker 可能被杀，内存变量会丢，
+缓存是唯一durable的槽）。App 在语言变化或语言包加载完成时推送（用解析后的字符串做去重键，
+因为冷启动时目标语言包可能还没下载完，第一次渲染 `t()` 会答复中文兜底）。**用户的方案别名与
+剂量仍然优先**，只有它们为空时才用本地化兜底。
+
 ## 阻塞
 
 **缺服务端发送凭据**：`google-services.json` 只是客户端配置，能拿 token 但**不能发送**。发送需要**服务账号私钥** JSON（Firebase 控制台 → 项目设置 → 服务账号 → 生成新的私钥，文件含 `"type": "service_account"`）。拿到后放在服务器上（建议走现有的 systemd 凭据 / KMS 机制，不落明文），发送器才能工作。

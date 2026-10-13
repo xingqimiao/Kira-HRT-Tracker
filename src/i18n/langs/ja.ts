@@ -132,6 +132,8 @@ const PACK: LangPack = {
     "plan.enable": "通知を有効にする",
 
     "plan.on": "通知は有効です",
+    "plan.notify_title": "服薬リマインダー",
+    "plan.notify_body": "服薬の時間です。",
 
     "plan.empty": "スケジュールはまだありません。下から追加してください。",
 

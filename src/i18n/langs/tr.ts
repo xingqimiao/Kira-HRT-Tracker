@@ -77,6 +77,8 @@ const PACK: LangPack = {
     "plan.enable": "Bildirimleri aç",
 
     "plan.on": "Bildirimler açık",
+    "plan.notify_title": "İlaç hatırlatıcısı",
+    "plan.notify_body": "İlacınızı alma zamanı.",
 
     "plan.empty": "Henüz plan yok — aşağıdan ekleyin.",
 

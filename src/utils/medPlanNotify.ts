@@ -25,6 +25,7 @@ import {
     sendNotification,
 } from '@choochmeque/tauri-plugin-notifications-api';
 import { isNativeApp } from './platform';
+import { applyNotifFallbacks, notifFallbacks, type NotifFallbacks } from './notifLocale';
 import { readMedPlans, writeMedPlans, sanitizeMedPlans, dueTimesToday, matchesPlan, planStatuses, plansForMode, localDateKey, isSavedTemplate, type MedPlan, type PlanStatus, type PlanTime, MED_PLAN_KEY } from './medPlan';
 import { HRTMode } from '../../logic';
 import { get, set } from './secureStore';
@@ -38,6 +39,33 @@ const NATIVE_QUEUE_SIZE = 5;
 
 function currentMode(): HRTMode {
     return get('hrt-mode') === 'transmasc' ? 'transmasc' : 'transfem';
+}
+
+// --- Notification language ------------------------------------------------------
+//
+// Both transports that draw outside React (a scheduled native ring, an FCM nudge the
+// OS hands to the native service or the worker) need the app's own language, which is
+// a device setting this module cannot read on its own. App binds the translator and
+// pushes the resolved fallbacks to the remote transports whenever the language changes
+// or the packs finish loading — see `setPlanNotificationLanguage`.
+let notifTranslate: (key: string) => string = (key) => key;
+let notifFallback: NotifFallbacks = { title: 'Medication reminder', body: '' };
+
+/** The app's translator, bound once from App. */
+export function setPlanNotificationLanguage(t: (key: string) => string): void {
+    notifTranslate = t;
+    notifFallback = notifFallbacks(t);
+    applyNotifFallbacks(notifFallback);
+}
+
+/** The title a reminder shows: the user's alias, else the localized drug name. */
+function reminderTitle(plan: { alias?: string; ester: string }): string {
+    return plan.alias || notifTranslate(`ester.${plan.ester}`) || String(plan.ester);
+}
+
+/** The body: the plan's own dose string, else the localized generic line. */
+function reminderBody(plan: { dose?: string }): string {
+    return plan.dose || notifFallback.body;
 }
 
 /** Old reminders carry a free-text name and no compound; the migration defaults
@@ -150,8 +178,8 @@ export async function reschedulePlanNotifications(request = false): Promise<bool
             nextIds.push(id);
             await sendNotification({
                 id,
-                title: plan.alias || String(plan.ester),
-                body: plan.dose || 'Medication reminder',
+                title: reminderTitle(plan),
+                body: reminderBody(plan),
                 channelId: 'hrt-med',
                 schedule: Schedule.at(time, false, true),
             });
@@ -223,8 +251,8 @@ export function startPlanWebNotifications(): void {
                     const key = `${st.plan.id}:${missed}`;
                     if (notifiedToday.has(key)) continue;
                     notifiedToday.add(key);
-                    const label = st.plan.alias || String(st.plan.ester);
-                    const body = st.plan.dose || 'Medication reminder';
+                    const label = reminderTitle(st.plan);
+                    const body = reminderBody(st.plan);
                     try {
                         new Notification(label, { body, tag: key });
                     } catch {

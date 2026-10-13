@@ -71,8 +71,15 @@ class HrtMessagingService : FirebaseMessagingService() {
         val updated = HashSet(shown).apply { add(key) }
         prefs.edit().putStringSet(SHOWN_KEY, updated).apply()
 
-        val title = data["alias"] ?: "用药提醒"
-        val body = data["dose"] ?: getString(R.string.app_name)
+        val alias = data["alias"]
+        val dose = data["dose"]
+        // Fallbacks follow the app's own language setting: the app resolves them
+        // from its packs and stores them via HrtPush.setNotificationFallbacks, so a
+        // plan with no alias/dose still reads in the chosen language rather than a
+        // hardcoded one. The user's alias/dose still win when the server sends them.
+        // Same prefs store as the shown-key set above (both "hrt-push").
+        val title = alias ?: prefs.getString(MainActivity.NOTIF_TITLE_KEY, null) ?: getString(R.string.app_name)
+        val body = dose ?: prefs.getString(MainActivity.NOTIF_BODY_KEY, null) ?: getString(R.string.app_name)
         show(title, body, key)
     }
 

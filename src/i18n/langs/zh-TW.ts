@@ -860,6 +860,8 @@ const PACK: LangPack = {
     "plan.enable": "啟用通知",
 
     "plan.on": "通知已啟用",
+    "plan.notify_title": "用藥提醒",
+    "plan.notify_body": "到點用藥，記得記錄。",
 
     "plan.empty": "還沒有用藥方案,在下面新增。",
 

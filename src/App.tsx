@@ -55,6 +55,7 @@ import {
     reschedulePlanNotifications,
     startPlanWebNotifications,
     registerDoseSource,
+    setPlanNotificationLanguage,
 } from './utils/medPlanNotify';
 import { installNativeBack, useBackHandler } from './utils/nativeBack';
 import { installNativeLinkInterceptor } from './utils/externalLinks';
@@ -188,6 +189,26 @@ const AppContent = () => {
             .then(granted => (granted ? syncPushRegistration(coreSession.token as string) : undefined))
             .catch(() => undefined);
     }, [coreSession.token]);
+
+    // Notifications that draw outside React (a scheduled native ring, an FCM nudge
+    // the OS hands to the native service or the worker) must follow the app's
+    // language setting. Bind the translator and push the resolved fallbacks to each
+    // transport, then re-schedule the native reminders so any already-queued ones
+    // pick up the new language rather than firing in the old one.
+    //
+    // Keyed on the resolved strings, not on `lang`: on a cold start in a
+    // non-Chinese language the pack is still downloading, so the first render's `t`
+    // answers from the `zh` fallback — a `[lang]` effect would push Chinese and never
+    // correct itself, because `lang` does not change when the pack lands (the context
+    // repaints instead). Watching the values re-pushes when the real pack arrives.
+    const notifFallbackSig = useRef('');
+    useEffect(() => {
+        const sig = `${t('plan.notify_title')}\u0000${t('plan.notify_body')}`;
+        if (sig === notifFallbackSig.current) return;
+        notifFallbackSig.current = sig;
+        setPlanNotificationLanguage(t);
+        void reschedulePlanNotifications().catch(() => undefined);
+    });
 
     // A confirmed bind belongs to the account that made it. Reset when the signed-in
     // user changes (or is signed out), so the next account is not waved past a gate it

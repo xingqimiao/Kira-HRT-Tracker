@@ -132,6 +132,8 @@ const PACK: LangPack = {
     "plan.enable": "알림 켜기",
 
     "plan.on": "알림이 켜져 있습니다",
+    "plan.notify_title": "복약 알림",
+    "plan.notify_body": "복약할 시간입니다.",
 
     "plan.empty": "아직 계획이 없습니다. 아래에서 추가하세요.",
 
