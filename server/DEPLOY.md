@@ -398,7 +398,15 @@ hrt.kiramyao.com {
         # through to the SPA branch and went out with no Cache-Control at all —
         # found live on 2026-09-24 by curling the header per path. Use
         # `sw(-[\w]+)?\.js`.
-        @worker path_regexp worker ^/(sw(-[\w]+)?\.js|workbox-[\w]+\.js|registerSW\.js)$
+        #
+        # ALSO list `firebase-messaging-sw.js`, which the Workbox worker pulls in via
+        # `importScripts` (it is a FIXED filename, not content-hashed, and NOT part of
+        # the precache). It matched neither this regex nor the `@static_assets` one, so
+        # it went out at Cloudflare's default 2h TTL — a change to FCM background
+        # handling (e.g. the dedup set) sat at the edge and looked undeployed. Added
+        # 2026-10-13; add it to BOTH the `@static_assets` regex (so it is served) and
+        # this one (so `no-cache` applies).
+        @worker path_regexp worker ^/(firebase-messaging-sw\.js|sw(-[\w]+)?\.js|workbox-[\w]+\.js|registerSW\.js)$
         header @worker Cache-Control "no-cache, no-store, must-revalidate"
         header @worker Pragma "no-cache"
         header @worker Expires "0"
@@ -592,8 +600,8 @@ web root holds, plus the bare `/sw.js`. Checking only the name `index.html` curr
 references misses exactly the old names a stranded client is registered against:
 
 ```bash
-for u in sw.js sw-*.js workbox-*.js; do
-  printf '%-22s ' "$u"
+for u in sw.js sw-*.js workbox-*.js firebase-messaging-sw.js; do
+  printf '%-26s ' "$u"
   curl -sI "https://hrt.kiramyao.com/$u" | grep -iE 'cache-control|cf-cache-status' | tr -d '\r' | paste -sd' | '
 done
 ```
