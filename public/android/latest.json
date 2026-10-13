@@ -1,9 +1,10 @@
 {
-  "version": "1.1.0",
-  "versionCode": 1001000,
-  "apk": "https://hrt.kiramyao.com/android/KiraHRT-1.1.0-release.apk",
-  "sha256": "CCC88B7210D20F1AA5285310F01D256602475FF0E28763A4EAC586A41A5D2023",
+  "version": "1.1.1",
+  "versionCode": 1001001,
+  "apk": "https://hrt.kiramyao.com/android/KiraHRT-1.1.1-release.apk",
+  "sha256": "1333DC04842E83596CFB3651CD3C93492A2C73FD29A932A89B9A61AEE34A268E",
   "notes": [
+    "修复浅色模式下的启动闪烁：此前会先黑、再闪白、再变黑后才开始播放动画；现在启动背景与应用主题一致。",
     "贴片佩戴追踪：记录贴上后，总览显示已佩戴多久，并可一键摘下（摘下只在有对应贴片时出现）。",
     "用药方案按 HRT 模式区分：跨性别女性/男性各自只看到属于自己的方案，首页与提醒不会串台。",
     "方案编辑器重做：药物与用药方式改为图形化选择，新增「每 N 天」周期（以固定日期为锚，跨月也准确）。",
