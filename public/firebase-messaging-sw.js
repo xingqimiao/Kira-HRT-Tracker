@@ -34,7 +34,55 @@ firebase.initializeApp({
 // The same dose instance the Android handler keys on, so one event is one
 // notification regardless of transport. `tag` collapses redeliveries in the tray;
 // the Set swallows them before they are even built.
-const shown = new Set();
+//
+// The set is PERSISTED in the Cache API, not held in memory: a service worker is
+// evicted when idle, so an in-memory set forgets on the next wake and a redelivered
+// instance would ring again. The native Android handler keeps the same list in
+// SharedPreferences for the same reason — this mirrors it so both transports dedup
+// identically across restarts. Keys are `planId:dueAt`; old ones are pruned so the
+// list cannot grow without bound.
+const SHOWN_CACHE = 'hrt-notif-v1';
+const SHOWN_URL = '/__hrt-notif-shown';
+/** Same retention shape as the page's ledger: forget after 3 days, cap at 500. */
+const SHOWN_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
+const SHOWN_MAX_SIZE = 500;
+let shown = new Set();
+
+/** The due instant encoded in a `planId:dueAt` key, or null when it is not one. */
+function keyDueMs(key) {
+    const i = key.lastIndexOf(':');
+    if (i < 0) return null;
+    const n = Number(key.slice(i + 1));
+    return Number.isFinite(n) ? n : null;
+}
+
+/** Drop occurrences outside the window and cap to the newest. */
+function pruneShown(keys, nowMs) {
+    const cutoff = nowMs - SHOWN_MAX_AGE_MS;
+    const kept = keys.filter((k) => { const due = keyDueMs(k); return due !== null && due >= cutoff; });
+    if (kept.length <= SHOWN_MAX_SIZE) return kept;
+    return kept.sort((a, b) => keyDueMs(b) - keyDueMs(a)).slice(0, SHOWN_MAX_SIZE);
+}
+
+(function hydrateShown() {
+    try {
+        caches.open(SHOWN_CACHE).then((cache) => cache.match(SHOWN_URL)).then(async (res) => {
+            if (!res) return;
+            const arr = await res.json();
+            if (Array.isArray(arr)) shown = new Set(pruneShown(arr.filter(k => typeof k === 'string'), Date.now()));
+        }).catch(() => undefined);
+    } catch {
+        // Cache unavailable — a redelivery may slip through; the tray `tag` still
+        // collapses it into one entry.
+    }
+})();
+
+function persistShown() {
+    const body = JSON.stringify(pruneShown([...shown], Date.now()));
+    return caches.open(SHOWN_CACHE)
+        .then((cache) => cache.put(SHOWN_URL, new Response(body, { headers: { 'Content-Type': 'application/json' } })))
+        .catch(() => undefined);
+}
 
 /**
  * Localized fallback title/body, following the app's language setting.
@@ -79,6 +127,9 @@ firebase.messaging().onBackgroundMessage((payload) => {
     const key = data.planId + ':' + data.dueAt;
     if (shown.has(key)) return;
     shown.add(key);
+    // Best-effort durable write; the in-memory add already dedups within this worker's
+    // life, and the SDK keeps the push event alive long enough for the cache put.
+    persistShown();
 
     const title = data.alias || fallbacks.title;
     const body = data.dose || fallbacks.body;
