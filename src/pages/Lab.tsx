@@ -1,14 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Icon from '../components/Icon';
-import { Plus, ChevronRight, Scan, Activity, FlaskConical, TestTube2, Atom } from '../icons';
+import { Plus, ChevronRight, Activity, FlaskConical, TestTube2, Atom } from '../icons';
 import type { IconComponent } from '../icons';
 import { FieldIcon } from '../components/compoundIcons';
 import { LabResult, DoseEvent, MONITORING_UNIT, getMonitoringNotices, getRecheckReminders, visibleRecheckReminders, recheckDueKey, isMonitoringOnlyLab, isT_LabUnit, monitoringValues, CalibrationMethod, CalibrationResult, CalibrationPoint, getHormoneLevelAdvisory, Ester, RecheckIntervals, OcrModelTier, MonitoringAnalyte } from '../../logic';
 import type { Lang } from '../i18n/types';
 import { formatDate, formatTime, LOCALE_MAP } from '../utils/helpers';
 import LabResultForm from '../components/LabResultForm';
-import LabScan from '../components/LabScan';
-import { suggestSelection, type HormoneCandidate, type LabUnit } from '../utils/ocrParse';
 import BloodVial from '../components/BloodVial';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { HormoneLevelAdvisoryLine } from '../components/DoseAdvisory';
@@ -181,31 +179,35 @@ const Lab: React.FC<LabProps> = ({
     const [editingLabId, setEditingLabId] = useState<string | null>(null);
     const rootRef = React.useRef<HTMLDivElement>(null);
     const scrollParent = useScrollParent(rootRef);
+    const quickAddLabRef = React.useRef<HTMLDivElement>(null);
     const sortedResults = useMemo(() => labResults.slice().sort((a, b) => b.timeH - a.timeH), [labResults]);
+
+    useEffect(() => {
+        if (!scrollParent) return;
+        let animId: number;
+        const start = performance.now();
+        const tick = () => {
+            scrollParent.dispatchEvent(new Event('scroll'));
+            if (performance.now() - start < 350) {
+                animId = requestAnimationFrame(tick);
+            }
+        };
+        animId = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(animId);
+    }, [isQuickAddLabOpen, scrollParent]);
+
+    useEffect(() => {
+        if (!quickAddLabRef.current || !scrollParent) return;
+        const ro = new ResizeObserver(() => {
+            scrollParent.dispatchEvent(new Event('scroll'));
+        });
+        ro.observe(quickAddLabRef.current);
+        return () => ro.disconnect();
+    }, [scrollParent]);
     const closeLabEdit = React.useCallback(() => setEditingLabId(null), []);
     const toggleLabRow = React.useCallback((id: string) => {
         setEditingLabId(prev => (prev === id ? null : id));
     }, []);
-    // Whether the scan panel is open, and what it read. Both live here rather than in
-    // the scanner so the panel can close and leave the prefilled form behind.
-    const [isScanOpen, setIsScanOpen] = useState(false);
-    const [scanned, setScanned] = useState<HormoneCandidate[] | null>(null);
-
-    /**
-     * Turn scan candidates into the form's prefill shape.
-     *
-     * `suggestSelection` decides what is unambiguous; anything it declines to pick is
-     * left for the user rather than guessed at. That asymmetry is the point — see the
-     * note on it in `ocrParse`.
-     */
-    const scannedInitialValues = useMemo(() => {
-        if (!scanned || scanned.length === 0) return null;
-        const suggestion = suggestSelection(scanned);
-        const out: { E2?: { value: number; unit: LabUnit }; T?: { value: number; unit: LabUnit } } = {};
-        if (suggestion.E2) out.E2 = { value: suggestion.E2.value, unit: suggestion.E2.unit };
-        if (suggestion.T) out.T = { value: suggestion.T.value, unit: suggestion.T.unit };
-        return Object.keys(out).length > 0 ? out : null;
-    }, [scanned]);
 
     const pointById = useMemo(() => {
         const m = new Map<string, CalibrationPoint>();
@@ -274,17 +276,6 @@ const Lab: React.FC<LabProps> = ({
                     {t('lab.title')}
                 </h1>
                 <div className="flex items-center gap-1">
-                    {/* Scan sits beside Add rather than inside it: it is a different
-                        way in, and burying it in the form would hide it from anyone
-                        who does not already know it exists. */}
-                    <button
-                        onClick={() => setIsScanOpen(!isScanOpen)}
-                        aria-pressed={isScanOpen}
-                        className="flex items-center gap-1.5 text-sm font-medium text-[var(--color-m3-on-surface-variant)]  px-2 py-1 rounded-md hover:bg-[var(--color-m3-surface-container)] "
-                    >
-                        <Icon icon={Scan} size={15} />
-                        <span>{t('scan.title')}</span>
-                    </button>
                     <button
                         onClick={() => setIsQuickAddLabOpen(!isQuickAddLabOpen)}
                         className="flex items-center gap-1.5 text-sm font-medium text-[var(--color-m3-primary)]  px-2 py-1 -mr-2 rounded-md hover:bg-[var(--color-m3-surface-container)] "
@@ -296,42 +287,26 @@ const Lab: React.FC<LabProps> = ({
               </div>
             </div>
 
-            {/* Scan panel. Collapsed by default — it is a 22 MB download the first
-                time it runs, so it must never be on the path of a user who just wants
-                to type a number in. */}
-            <Collapsible open={isScanOpen}>
-                <div className="mx-auto w-full px-6 md:px-8 mb-6 max-w-2xl">
-                    <LabScan
-                        onCancel={() => setIsScanOpen(false)}
-                        onExtracted={(candidates) => {
-                            setScanned(candidates);
-                            setIsScanOpen(false);
-                            // Open the form so the user lands on the prefilled
-                            // values — the confirmation IS the form.
-                            setIsQuickAddLabOpen(true);
-                        }}
-                    />
-                </div>
-            </Collapsible>
-
             {/* Expandable add form. Always mounted, so this pair animates both ways
                 on its own — see Collapsible for the row editors below. */}
-            <div className={`grid transition-[grid-template-rows] duration-[250ms] ease-out ${isQuickAddLabOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+            <div
+                ref={quickAddLabRef}
+                onTransitionEnd={() => scrollParent?.dispatchEvent(new Event('scroll'))}
+                className={`grid transition-[grid-template-rows] duration-[250ms] ease-out ${isQuickAddLabOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
+            >
                 <div className={`overflow-hidden transition-opacity duration-[250ms] ease-out ${isQuickAddLabOpen ? 'opacity-100' : 'opacity-0'}`}>
                     <div className="mx-auto w-full px-6 md:px-8 mb-6 max-w-2xl">
                         <LabResultForm
                             resultToEdit={null}
-                            initialValues={scannedInitialValues}
                             onSave={(res) => {
                                 onSaveLabResult(res);
                                 setIsQuickAddLabOpen(false);
-                                // Clear the scan so the next open starts fresh rather
-                                // than silently refilling from the previous report.
-                                setScanned(null);
+                                if (scrollParent && scrollParent.scrollTop > 0) {
+                                    scrollParent.scrollTo({ top: 0, behavior: 'smooth' });
+                                }
                             }}
                             onCancel={() => {
                                 setIsQuickAddLabOpen(false);
-                                setScanned(null);
                             }}
                             onDelete={() => {}}
                         />

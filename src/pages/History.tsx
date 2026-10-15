@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GroupedVirtuoso } from 'react-virtuoso';
 import Icon from '../components/Icon';
 import { Plus, Check, Trash2, ListChecks } from '../icons';
@@ -211,12 +211,40 @@ const History: React.FC<HistoryProps> = ({
     // ancestor that actually scrolls (see `useScrollParent`).
     const rootRef = React.useRef<HTMLDivElement>(null);
     const scrollParent = useScrollParent(rootRef);
+    const quickAddRef = React.useRef<HTMLDivElement>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
 
     // Batch add: repeat the quick-add dose at a fixed interval.
     const [batchOn, setBatchOn] = useState(false);
     const [batchIntervalDays, setBatchIntervalDays] = useState('1');
     const [batchCount, setBatchCount] = useState('7');
+
+    // Keep Virtuoso's viewport offsetTop in sync whenever the quick-add form opens or collapses.
+    // Virtuoso sizes its window against `scrollParent`, but only listens to scroll events or parent resizes.
+    // Sibling height changes above Virtuoso do not resize the parent or trigger a scroll event, leaving
+    // offsetTop stale until the user manually touches the screen.
+    useEffect(() => {
+        if (!scrollParent) return;
+        let animId: number;
+        const start = performance.now();
+        const tick = () => {
+            scrollParent.dispatchEvent(new Event('scroll'));
+            if (performance.now() - start < 350) {
+                animId = requestAnimationFrame(tick);
+            }
+        };
+        animId = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(animId);
+    }, [isQuickAddOpen, batchOn, scrollParent]);
+
+    useEffect(() => {
+        if (!quickAddRef.current || !scrollParent) return;
+        const ro = new ResizeObserver(() => {
+            scrollParent.dispatchEvent(new Event('scroll'));
+        });
+        ro.observe(quickAddRef.current);
+        return () => ro.disconnect();
+    }, [scrollParent]);
 
     // Batch delete: selection mode over the list.
     const [selectMode, setSelectMode] = useState(false);
@@ -259,6 +287,9 @@ const History: React.FC<HistoryProps> = ({
             onSaveEvent(e);
         }
         setIsQuickAddOpen(false);
+        if (scrollParent && scrollParent.scrollTop > 0) {
+            scrollParent.scrollTo({ top: 0, behavior: 'smooth' });
+        }
     };
 
     const enterSelectMode = () => {
@@ -353,7 +384,11 @@ const History: React.FC<HistoryProps> = ({
 
             {/* The dose form is always mounted here, so this pair animates both ways
                 on its own — see Collapsible for why the row editors below cannot. */}
-            <div className={`mt-4 grid transition-[grid-template-rows] duration-[250ms] ease-out ${isQuickAddOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+            <div
+                ref={quickAddRef}
+                onTransitionEnd={() => scrollParent?.dispatchEvent(new Event('scroll'))}
+                className={`mt-4 grid transition-[grid-template-rows] duration-[250ms] ease-out ${isQuickAddOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
+            >
                 <div className={`overflow-hidden transition-opacity duration-[250ms] ease-out ${isQuickAddOpen ? 'opacity-100' : 'opacity-0'}`}>
                     <div className="mx-auto w-full px-4 md:px-8 mb-6 max-w-2xl">
                         <div className="flex items-center justify-between py-3">

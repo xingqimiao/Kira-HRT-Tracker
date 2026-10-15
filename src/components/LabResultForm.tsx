@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import Icon from './Icon';
 import { useTranslation } from '../contexts/LanguageContext';
 import { LabResult, MONITORING_UNIT, isT_LabUnit } from '../../logic';
-import { Check, Trash2, X, ChevronDown } from '../icons';
+import { Check, Trash2, X, ChevronDown, Scan } from '../icons';
+import LabScan from './LabScan';
+import { suggestSelection } from '../utils/ocrParse';
 import { v4 as uuidv4 } from 'uuid';
 import DateTimePicker from './DateTimePicker';
 import { LOCALE_MAP } from '../utils/helpers';
@@ -136,6 +138,14 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
     const [astValue, setAstValue] = useState("");
     const [kValue, setKValue] = useState("");
 
+    // Monitoring bloods default collapsed, unless editing a record that has monitoring bloods.
+    const [isMonitoringOpen, setIsMonitoringOpen] = useState(
+        Boolean(resultToEdit?.monitoringOnly || resultToEdit?.prolactin || resultToEdit?.alt || resultToEdit?.ast || resultToEdit?.potassium)
+    );
+
+    // Scan lab sheet panel state within this form
+    const [isScanOpen, setIsScanOpen] = useState(false);
+
     useEffect(() => {
         if (resultToEdit) {
             const d = new Date(resultToEdit.timeH * 3600000);
@@ -153,6 +163,8 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
             setAltUln(str(resultToEdit.altUln));
             setAstValue(str(resultToEdit.ast));
             setKValue(str(resultToEdit.potassium));
+            setIsMonitoringOpen(Boolean(resultToEdit.monitoringOnly || resultToEdit.prolactin || resultToEdit.alt || resultToEdit.ast || resultToEdit.potassium));
+            setIsScanOpen(false);
         } else {
             const now = new Date();
             const iso = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
@@ -167,10 +179,14 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
             setPrlValue(""); setPrlUln("");
             setAltValue(""); setAltUln("");
             setAstValue(""); setKValue("");
+            setIsMonitoringOpen(false);
+            setIsScanOpen(false);
         }
         // `initialValues` is in the dependency list so a scan handed to an already-open
         // form applies, rather than being silently dropped until the next reopen.
     }, [resultToEdit, initialValues]);
+
+    const filledMonitoringCount = [prlValue, altValue, astValue, kValue].filter(v => v.trim() !== '').length;
 
     // Monitoring bloods are optional fields of the lab result being saved. The ULN
     // is carried only when the report printed one; without it the ratio rule cannot
@@ -244,6 +260,7 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
         setPrlValue(""); setPrlUln("");
         setAltValue(""); setAltUln("");
         setAstValue(""); setKValue("");
+        setIsScanOpen(false);
     };
 
     const canSave = resultToEdit
@@ -333,25 +350,70 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
                     offered (prolactin, ALT, AST, potassium), and everything the
                     sources leave "not stated" stays off the form rather than being
                     guessed at. */}
+                {/* Monitoring bloods. Collapsed by default. */}
                 <div className={`py-[18px] ${divider}`}>
-                    <span className="text-m3-body-medium text-[var(--color-m3-on-surface)] ">
-                        {t('monitor.section')}
-                    </span>
-                    <p className="text-xs text-[var(--color-m3-on-surface-variant)]  mt-1">
-                        {t('monitor.hint')}
-                    </p>
-                    <p className="text-xs text-[var(--color-m3-on-surface-variant)]  mt-1">
-                        {t('monitor.uln_hint')}
-                    </p>
-                    <div className="grid grid-cols-2 gap-4 mt-3">
-                        <MonitorField label={t('monitor.prl')} unit={MONITORING_UNIT.PRL} value={prlValue} onChange={setPrlValue} />
-                        <MonitorField label={t('monitor.prl_uln')} unit={MONITORING_UNIT.PRL} value={prlUln} onChange={setPrlUln} />
-                        <MonitorField label={t('monitor.alt')} unit={MONITORING_UNIT.ALT} value={altValue} onChange={setAltValue} />
-                        <MonitorField label={t('monitor.alt_uln')} unit={MONITORING_UNIT.ALT} value={altUln} onChange={setAltUln} />
-                        <MonitorField label={t('monitor.ast')} unit={MONITORING_UNIT.AST} value={astValue} onChange={setAstValue} />
-                        <MonitorField label={t('monitor.k')} unit={MONITORING_UNIT.K} value={kValue} onChange={setKValue} />
+                    <button
+                        type="button"
+                        onClick={() => setIsMonitoringOpen(v => !v)}
+                        aria-expanded={isMonitoringOpen}
+                        className="w-full flex items-center justify-between text-start cursor-pointer group"
+                    >
+                        <span className="text-m3-body-medium text-[var(--color-m3-on-surface)] group-hover:text-[var(--color-m3-primary)] transition-colors">
+                            {t('monitor.section')}
+                        </span>
+                        <div className="flex items-center gap-1.5 text-[var(--color-m3-on-surface-variant)]">
+                            {filledMonitoringCount > 0 && !isMonitoringOpen && (
+                                <span className="text-xs text-[var(--color-m3-primary)] font-medium tabular-nums">
+                                    {filledMonitoringCount}
+                                </span>
+                            )}
+                            <Icon icon={ChevronDown} size={14} className={`chev ${isMonitoringOpen ? 'rotate-180' : ''}`} />
+                        </div>
+                    </button>
+                    <div className="disclosure" data-open={isMonitoringOpen}>
+                        <div className="disclosure-inner">
+                            <p className="text-xs text-[var(--color-m3-on-surface-variant)]  mt-2">
+                                {t('monitor.hint')}
+                            </p>
+                            <p className="text-xs text-[var(--color-m3-on-surface-variant)]  mt-1">
+                                {t('monitor.uln_hint')}
+                            </p>
+                            <div className="grid grid-cols-2 gap-4 mt-3 pb-1">
+                                <MonitorField label={t('monitor.prl')} unit={MONITORING_UNIT.PRL} value={prlValue} onChange={setPrlValue} />
+                                <MonitorField label={t('monitor.prl_uln')} unit={MONITORING_UNIT.PRL} value={prlUln} onChange={setPrlUln} />
+                                <MonitorField label={t('monitor.alt')} unit={MONITORING_UNIT.ALT} value={altValue} onChange={setAltValue} />
+                                <MonitorField label={t('monitor.alt_uln')} unit={MONITORING_UNIT.ALT} value={altUln} onChange={setAltUln} />
+                                <MonitorField label={t('monitor.ast')} unit={MONITORING_UNIT.AST} value={astValue} onChange={setAstValue} />
+                                <MonitorField label={t('monitor.k')} unit={MONITORING_UNIT.K} value={kValue} onChange={setKValue} />
+                            </div>
+                        </div>
                     </div>
                 </div>
+
+                {/* Scan panel (位于检测项下面，保存按钮上面) */}
+                {!resultToEdit && (
+                    <div className="disclosure" data-open={isScanOpen}>
+                        <div className="disclosure-inner">
+                            <div className={`py-4 ${divider}`}>
+                                <LabScan
+                                    onCancel={() => setIsScanOpen(false)}
+                                    onExtracted={(candidates) => {
+                                        const suggestion = suggestSelection(candidates);
+                                        if (suggestion.E2) {
+                                            setE2Value(String(suggestion.E2.value));
+                                            setE2Unit(suggestion.E2.unit as LabUnit);
+                                        }
+                                        if (suggestion.T) {
+                                            setTValue(String(suggestion.T.value));
+                                            setTUnit(suggestion.T.unit as LabUnit);
+                                        }
+                                        setIsScanOpen(false);
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Footer */}
@@ -363,12 +425,14 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
                                 <div className="flex items-center gap-1 bg-cos-error-container  border border-red-100  rounded px-2 py-1">
                                     <span className="text-xs text-cos-error  font-medium whitespace-nowrap">{t('dialog.confirm_title')}?</span>
                                     <button
+                                        type="button"
                                         onClick={() => { onDelete(resultToEdit.id); onCancel(); }}
                                         className="p-1 text-cos-error  hover:bg-cos-error-container  rounded"
                                     >
                                         <Icon icon={Check} size={14} />
                                     </button>
                                     <button
+                                        type="button"
                                         onClick={() => setShowDeleteConfirm(false)}
                                         className="p-1 text-[var(--color-m3-on-surface-variant)] hover:bg-cos-error-container  rounded"
                                     >
@@ -377,6 +441,7 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
                                 </div>
                             ) : (
                                 <button
+                                    type="button"
                                     onClick={() => setShowDeleteConfirm(true)}
                                     className="p-2 text-[var(--color-m3-on-surface-variant)] hover:text-cos-error rounded"
                                 >
@@ -385,16 +450,36 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
                             )}
                         </>
                     )}
+                    {!resultToEdit && (
+                        <button
+                            type="button"
+                            onClick={() => setIsScanOpen(v => !v)}
+                            aria-pressed={isScanOpen}
+                            className={`flex items-center gap-1.5 text-sm font-medium px-2 py-1.5 -ml-2 rounded-md transition-colors ${
+                                isScanOpen
+                                    ? 'text-[var(--color-m3-primary)] bg-[var(--color-m3-primary-container)]'
+                                    : 'text-[var(--color-m3-on-surface-variant)] hover:text-[var(--color-m3-on-surface)] hover:bg-[var(--color-m3-surface-container)]'
+                            }`}
+                        >
+                            <Icon icon={Scan} size={15} />
+                            <span>{t('scan.title')}</span>
+                        </button>
+                    )}
                 </div>
 
                 <div className="flex gap-2 ml-auto">
                     <button
-                        onClick={onCancel}
+                        type="button"
+                        onClick={() => {
+                            setIsScanOpen(false);
+                            onCancel();
+                        }}
                         className="min-w-[88px] px-4 py-2 text-sm text-[var(--color-m3-on-surface-variant)]  hover:bg-[var(--color-m3-surface-container)]  rounded-md flex items-center justify-center"
                     >
                         {t('btn.cancel')}
                     </button>
                     <button
+                        type="button"
                         onClick={handleSave}
                         disabled={!canSave || !dateStr}
                         className="min-w-[88px] px-4 py-2 text-sm font-medium bg-[var(--color-m3-primary)] text-cos-on-primary rounded-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"

@@ -160,90 +160,84 @@ export const RecheckReminderLine: React.FC<{
     dismissed: boolean;
     /** Persist the dismissal for this due date. */
     onDismiss: () => void;
-}> = ({ reminder, t, formatDate, dismissed, onDismiss }) => {
-    // A re-open is local, not a change of the stored dismissal: reading the
-    // sources again is not the same as asking for the reminder to return, so a
-    // reload puts the row back in the shape the user left it.
-    const [reopened, setReopened] = useState(false);
+    /** Whether initially expanded (defaults to false for compact presentation). */
+    defaultExpanded?: boolean;
+}> = ({ reminder, t, formatDate, dismissed, onDismiss, defaultExpanded = false }) => {
+    const [expanded, setExpanded] = useState(defaultExpanded);
 
-    if (dismissed && !reopened) {
-        return (
-            <button
-                type="button"
-                onClick={() => setReopened(true)}
-                className="flex items-start gap-1.5 text-start text-m3-body-compact leading-snug text-[var(--color-m3-on-surface-variant)] hover:text-[var(--color-m3-on-surface)]"
-            >
-                <Icon icon={AlertTriangle} size={14} strokeWidth={1.75} className="mt-[3px] shrink-0" />
-                <span>
-                    <span className="font-semibold text-[var(--color-m3-on-surface)] underline decoration-[var(--color-m3-outline-variant)] underline-offset-2">
-                        {t('monitor.recheck.title')}
-                    </span>{' '}
-                    <span className="opacity-70">{t('monitor.recheck.show')}</span>
-                </span>
-            </button>
-        );
+    if (dismissed && !expanded) {
+        return null;
     }
 
+    const drugName = t(`ester.${reminder.ester}`);
+
     return (
-        <div className="flex items-start gap-1.5 text-m3-body-compact leading-snug text-[var(--color-m3-on-surface-variant)]">
-            <Icon icon={AlertTriangle} size={14} strokeWidth={1.75} className="mt-[3px] shrink-0" />
-            <div className="min-w-0 flex-1">
-                <p className="font-semibold text-[var(--color-m3-on-surface)]">
-                    {t('monitor.recheck.title')}
-                </p>
-                <p className="mt-0.5">
-                    {t(reminder.kind === 'estradiol' && reminder.basis === 'last_check'
-                        ? 'monitor.recheck.estradiol_check'
-                        : RECHECK_BODY[reminder.kind])
-                        .replace('{drug}', t(`ester.${reminder.ester}`))
-                        .replace('{months}', String(reminder.intervalMonths))}{' '}
-                    <span className="opacity-70">{t('monitor.sources')}</span>{' '}
-                    <SourceLinks sources={RECHECK_SOURCES[reminder.kind]} />
-                </p>
-                {/* Estradiol carries two things the other reminders do not: when to
-                    take the draw, and the clinician line. Both are shown in the body
-                    rather than a footnote — the safety line first, because low
-                    estradiol and mood are why someone opens this, and the answer is a
-                    doctor rather than a number. */}
-                {reminder.kind === 'estradiol' && (
-                    <>
-                        <p className="mt-1 flex items-start gap-1.5 font-medium text-cos-warning">
-                            <Icon icon={AlertCircle} size={13} strokeWidth={2} className="mt-[3px] shrink-0" />
-                            <span>{t('monitor.recheck.e2_safety')}</span>
-                        </p>
-                        {/* The documents are named by the links on the line above, so
-                            their sentences are not repeated here. A link and the quoted
-                            text beside it say the same thing twice, and the panel is
-                            already the longest thing on this page. */}
-                        <p className="mt-0.5">
-                            {t('monitor.recheck.e2_trough')}{' '}
-                            <span className="opacity-70">{t('monitor.sources')}</span>{' '}
-                            <SourceLinks sources={E2_TROUGH_SOURCES} />
-                        </p>
-                        {reminder.customized && (
-                            <p className="mt-0.5 opacity-70">{t('monitor.recheck.custom')}</p>
-                        )}
-                    </>
-                )}
-                <p className="mt-0.5 opacity-80">
-                    {t(reminder.basis === 'last_check' ? 'monitor.recheck.basis_check' : 'monitor.recheck.basis')
-                        .replace('{drug}', t(`ester.${reminder.ester}`))
-                        .replace('{date}', formatDate(reminder.startH))}
-                </p>
-                <p className="mt-0.5 opacity-70">
-                    {t(reminder.basis === 'last_check' ? 'monitor.recheck.weakness_check' : 'monitor.recheck.weakness')}
-                </p>
+        <div className="rounded-[var(--md-sys-shape-corner-medium)] bg-[var(--color-m3-surface-container)] text-[var(--color-m3-on-surface)] transition-all">
+            <div className="flex items-center justify-between gap-2 px-3 py-2">
+                <button
+                    type="button"
+                    onClick={() => setExpanded(e => !e)}
+                    className="flex-1 flex items-center gap-2 text-start min-w-0 outline-none hover:opacity-90"
+                >
+                    <Icon icon={AlertTriangle} size={14} strokeWidth={1.75} className="shrink-0 text-cos-warning" />
+                    <span className="text-xs font-medium truncate flex-1">
+                        {t('monitor.recheck.title')}
+                        <span className="opacity-70 font-normal ml-1.5">
+                            · {drugName}
+                        </span>
+                    </span>
+                    <Icon
+                        icon={ChevronDown}
+                        size={14}
+                        className={`shrink-0 text-[var(--color-m3-on-surface-variant)] transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+                    />
+                </button>
+                <button
+                    type="button"
+                    onClick={onDismiss}
+                    aria-label={t('monitor.recheck.dismiss')}
+                    className="shrink-0 -mr-1 rounded-full p-1 text-[var(--color-m3-on-surface-variant)] hover:bg-[var(--color-m3-surface-container-high)] hover:text-[var(--color-m3-on-surface)]"
+                >
+                    <Icon icon={X} size={13} strokeWidth={2} />
+                </button>
             </div>
-            {/* Always writes the dismissal (a no-op when it is already stored),
-                then collapses a re-opened row. */}
-            <button
-                type="button"
-                onClick={() => { onDismiss(); setReopened(false); }}
-                aria-label={t('monitor.recheck.dismiss')}
-                className="-mr-1 mt-0.5 shrink-0 rounded-full p-1 text-[var(--color-m3-on-surface-variant)] hover:bg-[var(--color-m3-surface-container)] hover:text-[var(--color-m3-on-surface)]"
-            >
-                <Icon icon={X} size={14} strokeWidth={2} />
-            </button>
+            {expanded && (
+                <div className="px-3 pb-3 pt-1 border-t border-[var(--color-m3-outline-variant)] text-xs text-[var(--color-m3-on-surface-variant)] space-y-1.5 leading-snug">
+                    <p className="mt-1">
+                        {t(reminder.kind === 'estradiol' && reminder.basis === 'last_check'
+                            ? 'monitor.recheck.estradiol_check'
+                            : RECHECK_BODY[reminder.kind])
+                            .replace('{drug}', drugName)
+                            .replace('{months}', String(reminder.intervalMonths))}{' '}
+                        <span className="opacity-70">{t('monitor.sources')}</span>{' '}
+                        <SourceLinks sources={RECHECK_SOURCES[reminder.kind]} />
+                    </p>
+                    {reminder.kind === 'estradiol' && (
+                        <>
+                            <p className="flex items-start gap-1.5 font-medium text-cos-warning">
+                                <Icon icon={AlertCircle} size={13} strokeWidth={2} className="mt-[2px] shrink-0" />
+                                <span>{t('monitor.recheck.e2_safety')}</span>
+                            </p>
+                            <p>
+                                {t('monitor.recheck.e2_trough')}{' '}
+                                <span className="opacity-70">{t('monitor.sources')}</span>{' '}
+                                <SourceLinks sources={E2_TROUGH_SOURCES} />
+                            </p>
+                            {reminder.customized && (
+                                <p className="opacity-70">{t('monitor.recheck.custom')}</p>
+                            )}
+                        </>
+                    )}
+                    <p className="opacity-80">
+                        {t(reminder.basis === 'last_check' ? 'monitor.recheck.basis_check' : 'monitor.recheck.basis')
+                            .replace('{drug}', drugName)
+                            .replace('{date}', formatDate(reminder.startH))}
+                    </p>
+                    <p className="opacity-70">
+                        {t(reminder.basis === 'last_check' ? 'monitor.recheck.weakness_check' : 'monitor.recheck.weakness')}
+                    </p>
+                </div>
+            )}
         </div>
     );
 };
@@ -286,52 +280,41 @@ export const RecheckReminderGroup: React.FC<{
 }> = ({ reminders, t, formatDate, onDismiss }) => {
     const [open, setOpen] = useState(false);
     const panelId = useId();
-    // The safety line rides on the summary because it must survive being closed —
-    // see the note above. It is present whenever any child would show it.
-    const showSafety = reminders.some(r => r.kind === 'estradiol');
     const count = reminders.length;
 
     return (
-        <div className="rounded-[var(--md-sys-shape-corner-medium)] bg-[var(--color-m3-surface-container)] text-[var(--color-m3-on-surface)]">
+        <div className="rounded-[var(--md-sys-shape-corner-medium)] bg-[var(--color-m3-surface-container)] text-[var(--color-m3-on-surface)] transition-all">
             <button
                 type="button"
                 onClick={() => setOpen(o => !o)}
                 aria-expanded={open}
                 aria-controls={panelId}
-                className="w-full flex items-start gap-2 px-3 py-2.5 text-start rounded-[var(--md-sys-shape-corner-medium)] outline-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-m3-primary)] hover:bg-[var(--color-m3-surface-container-high)]"
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-start rounded-[var(--md-sys-shape-corner-medium)] outline-none hover:bg-[var(--color-m3-surface-container-high)]"
             >
-                <Icon icon={AlertTriangle} size={15} strokeWidth={1.75} className="mt-[3px] shrink-0 text-cos-warning" />
-                <span className="min-w-0 flex-1">
-                    <span className="block text-m3-title-small">
+                <div className="flex items-center gap-2 min-w-0">
+                    <Icon icon={AlertTriangle} size={14} strokeWidth={1.75} className="mt-[1px] shrink-0 text-cos-warning" />
+                    <span className="text-xs font-medium truncate">
                         {count === 1 ? t('monitor.recheck.summary_one') : t('monitor.recheck.summary').replace('{n}', String(count))}
                     </span>
-                    {showSafety && (
-                        <span className="mt-0.5 flex items-start gap-1.5 font-medium text-cos-warning">
-                            <Icon icon={AlertCircle} size={13} strokeWidth={2} className="mt-[2px] shrink-0" />
-                            <span className="text-m3-body-compact leading-snug">{t('monitor.recheck.e2_safety')}</span>
-                        </span>
-                    )}
-                </span>
+                </div>
                 <Icon
                     icon={ChevronDown}
-                    size={16}
-                    className={`chev mt-0.5 shrink-0 text-[var(--color-m3-on-surface-variant)] ${open ? 'rotate-180' : ''}`}
+                    size={14}
+                    className={`shrink-0 text-[var(--color-m3-on-surface-variant)] transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
                 />
             </button>
             <div id={panelId} className="disclosure" data-open={open}>
                 <div className="disclosure-inner">
-                    <div className="px-3 pb-3 space-y-2.5">
+                    <div className="px-3 pb-3 pt-1 border-t border-[var(--color-m3-outline-variant)] space-y-2">
                         {reminders.map(reminder => (
                             <RecheckReminderLine
                                 key={reminder.kind}
                                 reminder={reminder}
                                 t={t}
                                 formatDate={formatDate}
-                                // Always false: a dismissed reminder never
-                                // reaches this list, which is why the count above
-                                // and the blocks below cannot disagree.
                                 dismissed={false}
                                 onDismiss={() => onDismiss(reminder)}
+                                defaultExpanded={false}
                             />
                         ))}
                     </div>
@@ -359,27 +342,48 @@ const PRECAUTIONS: { key: string; icon: typeof Info }[] = [
     { key: 'monitor.precaution.contraindication', icon: AlertCircle },
 ];
 
-export const SpironolactonePrecautions: React.FC<{ t: (k: string) => string }> = ({ t }) => (
-    <div className="text-m3-body-compact leading-snug text-[var(--color-m3-on-surface-variant)]">
-        <p className="font-semibold text-[var(--color-m3-on-surface)]">{t('monitor.precaution.title')}</p>
-        <ul className="mt-1 space-y-1">
-            {PRECAUTIONS.map(({ key, icon }) => (
-                <li key={key} className="flex items-start gap-1.5">
-                    <Icon icon={icon} size={13} strokeWidth={1.75} className="mt-[3px] shrink-0 opacity-70" />
-                    <span>{t(key)}</span>
-                </li>
-            ))}
-        </ul>
-        <p className="mt-1">
-            <span className="opacity-70">{t('monitor.sources')}</span>{' '}
-            <SourceLinks
-                sources={[
-                    { label: 'MtF.wiki', url: 'https://mtf.wiki/zh-cn/docs/medicine/antiandrogen/spironolactone' },
-                    { label: 'Endocrine Society', url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC9562816/' },
-                ]}
-            />
-        </p>
-    </div>
-);
+export const SpironolactonePrecautions: React.FC<{ t: (k: string) => string }> = ({ t }) => {
+    const [open, setOpen] = useState(false);
+    return (
+        <div className="rounded-[var(--md-sys-shape-corner-medium)] bg-[var(--color-m3-surface-container)] text-[var(--color-m3-on-surface)] transition-all">
+            <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-start rounded-[var(--md-sys-shape-corner-medium)] outline-none hover:bg-[var(--color-m3-surface-container-high)]"
+            >
+                <div className="flex items-center gap-2 min-w-0">
+                    <Icon icon={AlertCircle} size={14} strokeWidth={1.75} className="shrink-0 text-cos-warning" />
+                    <span className="text-xs font-medium truncate">{t('monitor.precaution.title')}</span>
+                </div>
+                <Icon
+                    icon={ChevronDown}
+                    size={14}
+                    className={`shrink-0 text-[var(--color-m3-on-surface-variant)] transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+                />
+            </button>
+            {open && (
+                <div className="px-3 pb-3 pt-1 border-t border-[var(--color-m3-outline-variant)] text-xs text-[var(--color-m3-on-surface-variant)] space-y-1.5 leading-snug">
+                    <ul className="mt-1 space-y-1">
+                        {PRECAUTIONS.map(({ key, icon }) => (
+                            <li key={key} className="flex items-start gap-1.5">
+                                <Icon icon={icon} size={13} strokeWidth={1.75} className="mt-[3px] shrink-0 opacity-70" />
+                                <span>{t(key)}</span>
+                            </li>
+                        ))}
+                    </ul>
+                    <p className="mt-1">
+                        <span className="opacity-70">{t('monitor.sources')}</span>{' '}
+                        <SourceLinks
+                            sources={[
+                                { label: 'MtF.wiki', url: 'https://mtf.wiki/zh-cn/docs/medicine/antiandrogen/spironolactone' },
+                                { label: 'Endocrine Society', url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC9562816/' },
+                            ]}
+                        />
+                    </p>
+                </div>
+            )}
+        </div>
+    );
+};
 
 export default MonitoringNoticeLine;
