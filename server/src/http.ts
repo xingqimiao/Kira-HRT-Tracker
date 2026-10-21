@@ -33,7 +33,7 @@ import {
 import { AccountService } from './accounts.ts';
 import { avatarEtag, avatarForUser } from './avatars.ts';
 import { isGoogleConfigured } from './oauth.ts';
-import { RecordService, buildExportPayload, buildSettingsScalars, publicStats } from './records.ts';
+import { RecordService, buildExportPayload, buildSettingsScalars, currentSyncVersion, publicStats } from './records.ts';
 import { getPool } from './db.ts';
 import { ShareService } from './shares.ts';
 import {
@@ -965,6 +965,47 @@ export function createRequestHandler() {
         // date when it is not numeric, and drop it only when it is neither.
         const before = beforeRaw === null ? undefined
           : (Number.isFinite(Number(beforeRaw)) ? Number(beforeRaw) : Date.parse(beforeRaw));
+
+        // The change cursor: `since` is the watermark the client last acknowledged,
+        // `after_version`/`after_id` resume a delta that took more than one page.
+        // Capture the version *before* reading — see `currentSyncVersion` — so the
+        // watermark this response hands back cannot outrun the rows it contains.
+        const sinceRaw = url.searchParams.get('since');
+        const since = sinceRaw !== null && Number.isFinite(Number(sinceRaw)) ? Number(sinceRaw) : undefined;
+        const afterRaw = url.searchParams.get('after_version');
+        const afterVersion = afterRaw !== null && Number.isFinite(Number(afterRaw)) ? Number(afterRaw) : undefined;
+        const afterId = url.searchParams.get('after_id') || undefined;
+        const syncVersion = await currentSyncVersion(ctx);
+
+        if (since !== undefined) {
+          const { records, unreadable } = await RecordService.list(ctx, {
+            limit: Number(url.searchParams.get('limit') ?? 1000),
+            byVersion: true,
+            sinceVersion: since,
+            upToVersion: syncVersion,
+            afterVersion,
+            afterId,
+          });
+          // Settings ride with the first delta page of each sync, for the same reason
+          // they ride with the first page of a full read: a settings route or an agent
+          // writes the settings table, which is not a record and so has no change row.
+          const settings = afterVersion === undefined ? await buildSettingsScalars(ctx) : undefined;
+          return send(res, 200, {
+            records: records.map((r) => ({
+              id: r.id,
+              taken_at: new Date(r.takenAt).toISOString(),
+              category: r.category,
+              data: r.data,
+              updated_at: new Date(r.updatedAt).toISOString(),
+              // The page cursor for a delta longer than one response.
+              sync_version: r.syncVersion,
+            })),
+            unreadable,
+            syncVersion,
+            ...(settings ? { settings } : {}),
+          });
+        }
+
         const { records, unreadable } = await RecordService.list(ctx, {
           limit: Number(url.searchParams.get('limit') ?? 200),
           category: url.searchParams.get('category') ?? undefined,
@@ -990,6 +1031,7 @@ export function createRequestHandler() {
           // Surfaced rather than swallowed: a client that ignores this is at least not
           // being told its history is complete when it is not.
           unreadable,
+          syncVersion,
           ...(settings ? { settings } : {}),
         });
       }

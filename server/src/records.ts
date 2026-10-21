@@ -237,6 +237,13 @@ export interface StoredRecord {
     /** The decrypted business payload. */
     data: unknown;
     updatedAt: number;
+    /**
+     * The change version this row was stamped with.
+     *
+     * Only present on a version-ordered page: it is the cursor a delta pages with, and
+     * a caller reading newest-first has no use for it.
+     */
+    syncVersion?: number;
 }
 
 export interface ListOptions {
@@ -270,6 +277,29 @@ export interface ListOptions {
      * "rows returned" instead of "rows considered".
      */
     idPrefix?: string;
+    /**
+     * Incremental sync: rows stamped with a change version greater than this.
+     *
+     * Set together with `byVersion`. The caller supplies the watermark it last
+     * acknowledged; rows are returned in ascending `(sync_version, id)` order so that
+     * the watermark advances monotonically and a page boundary can resume inside a
+     * group of rows written by one request.
+     */
+    sinceVersion?: number;
+    /**
+     * Exclusive upper bound for a version-ordered page.
+     *
+     * Captured *before* the read. Without it, a write that lands mid-read could be
+     * counted in `syncVersion` while its row fell on a page already passed — and the
+     * client would then store a watermark past a row it never received.
+     */
+    upToVersion?: number;
+    /** Ascending cursor within the delta: the last row's version. */
+    afterVersion?: number;
+    /** The last row's id within the delta; the tiebreaker for `afterVersion`. */
+    afterId?: string;
+    /** Order by the change cursor instead of newest-first by `taken_at`. */
+    byVersion?: boolean;
 }
 
 /**
@@ -417,6 +447,89 @@ async function reflectSettings(ctx: AuthContext, synced: SyncedScalar[]): Promis
     }
 }
 
+/**
+ * The account's current change version.
+ *
+ * Read before a page rather than after, so a write that lands mid-read cannot be
+ * counted here while its row falls on a page already passed: the client would store a
+ * watermark past a row it never received. Rows written during the read carry a higher
+ * version and arrive on the next delta.
+ */
+export async function currentSyncVersion(ctx: AuthContext): Promise<number> {
+    const { rows } = await getPool().query<{ sync_version: string }>(
+        'SELECT sync_version FROM users WHERE id = $1',
+        [ctx.userId],
+    );
+    const raw = rows[0]?.sync_version;
+    return raw === undefined ? 0 : Number(raw);
+}
+
+/**
+ * One page of the change log, oldest change first.
+ *
+ * Ascending by `(sync_version, id)` so the client's watermark only ever moves forward.
+ * `upToVersion` bounds the page to the version captured before the read; `afterVersion`
+ * + `afterId` resume inside a group of rows written by one request.
+ */
+async function listByVersion(
+    ctx: AuthContext,
+    opts: ListOptions,
+    limit: number,
+): Promise<{ records: StoredRecord[]; unreadable: number }> {
+    const params: unknown[] = [ctx.userId, limit];
+    let where = 'user_id = $1';
+
+    if (typeof opts.sinceVersion === 'number' && Number.isFinite(opts.sinceVersion)) {
+        params.push(opts.sinceVersion);
+        where += ` AND sync_version > $${params.length}`;
+    }
+    if (typeof opts.upToVersion === 'number' && Number.isFinite(opts.upToVersion)) {
+        params.push(opts.upToVersion);
+        where += ` AND sync_version <= $${params.length}`;
+    }
+    if (typeof opts.afterVersion === 'number' && Number.isFinite(opts.afterVersion)) {
+        if (typeof opts.afterId === 'string' && opts.afterId !== '') {
+            params.push(opts.afterVersion);
+            const versionIdx = params.length;
+            params.push(opts.afterId);
+            where += ` AND (sync_version, id) > ($${versionIdx}::bigint, $${params.length})`;
+        } else {
+            params.push(opts.afterVersion);
+            where += ` AND sync_version > $${params.length}`;
+        }
+    }
+
+    const { rows } = await getPool().query<{
+        id: string; taken_at: Date; category: string; payload_encrypted: string;
+        updated_at: Date; sync_version: string;
+    }>(
+        `SELECT id, taken_at, category, payload_encrypted, updated_at, sync_version
+           FROM records
+          WHERE ${where}
+          ORDER BY sync_version ASC, id ASC
+          LIMIT $2`,
+        params,
+    );
+
+    const records: StoredRecord[] = [];
+    let unreadable = 0;
+    for (const row of rows) {
+        try {
+            records.push({
+                id: row.id,
+                takenAt: row.taken_at.getTime(),
+                category: isCategory(row.category) ? row.category : 'dose',
+                data: open(row.payload_encrypted, ctx),
+                updatedAt: row.updated_at.getTime(),
+                syncVersion: Number(row.sync_version),
+            });
+        } catch {
+            unreadable += 1;
+        }
+    }
+    return { records, unreadable };
+}
+
 export const RecordService = {
     /**
      * Re-seal every record under a fresh DEK, in one transaction.
@@ -492,13 +605,20 @@ export const RecordService = {
         // account's own row, so no `WHERE` guard is needed to keep one account from
         // overwriting another's.
         const { rows } = await getPool().query<{ id: string }>(
-            `INSERT INTO records (user_id, taken_at, category, payload_encrypted, id)
-             VALUES ($1, to_timestamp($2 / 1000.0), $3, $4, $5)
+            `WITH bumped AS (
+                 UPDATE users SET sync_version = sync_version + 1
+                  WHERE id = $1
+              RETURNING sync_version
+             )
+             INSERT INTO records (user_id, taken_at, category, payload_encrypted, id, sync_version)
+             SELECT $1, to_timestamp($2 / 1000.0), $3, $4, $5, bumped.sync_version
+               FROM bumped
              ON CONFLICT (user_id, id) DO UPDATE
                 SET taken_at = EXCLUDED.taken_at,
                     category = EXCLUDED.category,
                     payload_encrypted = EXCLUDED.payload_encrypted,
-                    updated_at = now()
+                    updated_at = now(),
+                    sync_version = EXCLUDED.sync_version
              RETURNING id`,
             [ctx.userId, takenAt, category, sealed, id],
         );
@@ -579,23 +699,32 @@ export const RecordService = {
         if (records.length === 0) return { ok: true, written, rejected };
 
         await withTransaction(async (client) => {
+            // One version for the whole request, taken inside the transaction so it is
+            // the value every row of this batch carries. A concurrent batch bumps it
+            // again after this commits, which is what keeps the cursors ordered.
+            const { rows: bumped } = await client.query<{ sync_version: string }>(
+                'UPDATE users SET sync_version = sync_version + 1 WHERE id = $1 RETURNING sync_version',
+                [ctx.userId],
+            );
+            const syncVersion = bumped[0]?.sync_version ?? '0';
             for (let start = 0; start < records.length; start += INSERT_CHUNK) {
                 const chunk = records.slice(start, start + INSERT_CHUNK);
-                const values: unknown[] = [ctx.userId];
+                const values: unknown[] = [ctx.userId, syncVersion];
                 const tuples = chunk.map((record) => {
                     const at = values.length + 1;
                     values.push(record.takenAt, record.category, record.sealed, record.id);
-                    return `($1, to_timestamp($${at} / 1000.0), $${at + 1}, $${at + 2}, $${at + 3})`;
+                    return `($1, to_timestamp($${at} / 1000.0), $${at + 1}, $${at + 2}, $${at + 3}, $2::bigint)`;
                 });
 
                 const { rows } = await client.query<{ id: string }>(
-                    `INSERT INTO records (user_id, taken_at, category, payload_encrypted, id)
+                    `INSERT INTO records (user_id, taken_at, category, payload_encrypted, id, sync_version)
                      VALUES ${tuples.join(', ')}
                      ON CONFLICT (user_id, id) DO UPDATE
                         SET taken_at = EXCLUDED.taken_at,
                             category = EXCLUDED.category,
                             payload_encrypted = EXCLUDED.payload_encrypted,
-                            updated_at = now()
+                            updated_at = now(),
+                            sync_version = EXCLUDED.sync_version
                      RETURNING id`,
                     values,
                 );
@@ -627,6 +756,8 @@ export const RecordService = {
         opts: ListOptions = {},
     ): Promise<{ records: StoredRecord[]; unreadable: number }> {
         const limit = Math.min(Math.max(Number(opts.limit ?? 200) || 200, 1), 1000);
+        if (opts.byVersion) return listByVersion(ctx, opts, limit);
+
         const params: unknown[] = [ctx.userId, limit];
         let where = 'user_id = $1';
 

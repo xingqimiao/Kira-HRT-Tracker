@@ -15,9 +15,56 @@ import { get as secureGet, set as secureSet, remove as secureRemove } from '../u
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { readCoreState, syncWithCore, CoreSyncError, toLocalPayload } from '../services/coreSync';
+import { identitiesOf } from '../services/recordDocs';
 import { mergeSyncStates, fingerprintState, type SyncState } from '../utils/syncMerge';
 import { normalizeSyncState } from '../utils/syncMerge';
 import { readAppSettings } from '../utils/appSettings';
+
+/**
+ * The incremental-sync cursor: how far this device has read, and what it last pushed.
+ *
+ * `version` is the server's change watermark — the next read asks only for rows after
+ * it, which is what replaces the full read on every poll. `identities` is the content
+ * fingerprint of every record the last successful push acknowledged, and it is what
+ * lets the push decide "what is missing" without holding the server's whole state.
+ *
+ * Stored per account. Losing it is survivable by design: a missing or unusable cursor
+ * just means the next sync does a full read, which is what every device did before.
+ */
+interface SyncCursor {
+  version: number;
+  identities: Record<string, string>;
+}
+
+/**
+ * A cursor is only usable when both halves are present.
+ *
+ * A version without a baseline would let the pull be a delta while the push still
+ * compared against nothing — `{}` is the safe reading of "no baseline", and it makes
+ * the push behave as a first sync.
+ */
+function readSyncCursor(key: string): SyncCursor | null {
+  try {
+    const raw = secureGet(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<SyncCursor>;
+    if (typeof parsed.version !== 'number' || !Number.isFinite(parsed.version)) return null;
+    const identities = parsed.identities;
+    if (!identities || typeof identities !== 'object' || Array.isArray(identities)) return null;
+    return { version: parsed.version, identities: identities as Record<string, string> };
+  } catch {
+    return null;
+  }
+}
+
+function writeSyncCursor(key: string, cursor: SyncCursor): void {
+  try {
+    secureSet(key, JSON.stringify(cursor));
+  } catch {
+    // Storage full or unavailable. The next sync falls back to a full read rather
+    // than pushing blind, because a missing cursor is the same as no baseline.
+  }
+}
 
 export type CoreSyncStatus = 'off' | 'idle' | 'syncing' | 'synced' | 'error';
 
@@ -249,11 +296,29 @@ export const useCoreSync = ({
     try {
       // Read first, always. Pushing without looking would overwrite whatever
       // another device wrote since this one last synced.
-      const remoteState = await readCoreState(authToken);
+      //
+      // With a stored cursor this is a *delta*: the server returns only rows stamped
+      // after the watermark, so a poll that finds nothing costs a few hundred bytes
+      // instead of the whole history. The push then compares against the identities
+      // the last successful push acknowledged, rather than against a full read.
+      const cursorKey = `hrt-sync-cursor-${account}`;
+      let cursor = readSyncCursor(cursorKey);
+      let read = await readCoreState(authToken, cursor ? { since: cursor.version } : {});
       // Checked before building the local half, because that is the other side of the
       // crossover: `buildPayloadRef.current` now belongs to whoever is signed in, so
       // merging it against the old account's remote state is the bug itself.
       if (!stillMine()) return;
+
+      // The server's version went backwards — a restore from backup, or an account
+      // re-created under the same id. The cursor no longer describes this history, so
+      // throw it away and read the account whole; a stale watermark would otherwise
+      // skip every row written before it.
+      if (cursor && read.syncVersion < cursor.version) {
+        cursor = null;
+        read = await readCoreState(authToken);
+        if (!stillMine()) return;
+      }
+      const remoteState = read.payload;
       const remote = normalizeSyncState(remoteState);
       const local = normalizeSyncState(buildPayloadRef.current());
 
@@ -266,6 +331,13 @@ export const useCoreSync = ({
         applyRemoteRef.current(merged.merged);
       }
 
+      // The read's watermark is about reads, not writes: storing it here is safe even
+      // if the push below fails, because the rows it covers have already been merged
+      // into local state. The identity map is only advanced after a push lands.
+      if (cursor) writeSyncCursor(cursorKey, { ...cursor, version: read.syncVersion });
+      else writeSyncCursor(cursorKey, { version: read.syncVersion, identities: {} });
+      const baseline = cursor?.identities;
+
       // Nothing to send when the merged picture is the one the server already
       // acknowledged. The read above runs every time, so a change made on another
       // device is still found; what this skips is the *write*, which every open,
@@ -275,6 +347,13 @@ export const useCoreSync = ({
       const seen = fingerprintState(merged.merged);
       if (seen === lastSeenRef.current) {
         if (!stillMine()) return;
+        // Nothing to send, so this device's picture is already what the server holds —
+        // with no baseline yet, adopt it now. Safe because there was nothing
+        // outstanding: a write that was pending would have changed `seen`.
+        writeSyncCursor(cursorKey, {
+          version: read.syncVersion,
+          identities: baseline ?? identitiesOf(toLocalPayload(merged.merged)),
+        });
         bootstrappedForRef.current = account;
         markSynced();
         setAccountIncomplete(false);
@@ -287,9 +366,16 @@ export const useCoreSync = ({
       // Push the merged result. `updateExisting` is on because the merge has
       // already decided what wins by `updatedAt`; a second, different rule
       // server-side would fight it.
-      const pushed = await syncWithCore(authToken, toLocalPayload(merged.merged), {
+      //
+      // `known` is the identity baseline: with it the client sends only records whose
+      // content it changed, and does not need the server's whole state to work that
+      // out. Without it (first sync on this device) `syncWithCore` falls back to
+      // comparing against `remote`, which is then a full read.
+      const mergedPayload = toLocalPayload(merged.merged);
+      const pushed = await syncWithCore(authToken, mergedPayload, {
         updateExisting: true,
         remote: remoteState,
+        known: baseline,
       });
 
 
@@ -311,6 +397,14 @@ export const useCoreSync = ({
       }
 
       lastSeenRef.current = seen;
+      // The push landed, so this device's picture is what the server now holds: that
+      // is the baseline the next delta compares against. Written only here — a failed
+      // or refused push must leave the old baseline, or the records it never landed
+      // would be considered sent and never retried.
+      writeSyncCursor(cursorKey, {
+        version: read.syncVersion,
+        identities: identitiesOf(mergedPayload),
+      });
       bootstrappedForRef.current = account;
       markSynced();
       setAccountIncomplete(false);

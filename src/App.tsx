@@ -445,6 +445,11 @@ const AppContent = () => {
         const applyTheme = (isDark: boolean) => {
             root.classList.remove('light', 'dark');
             root.classList.add(isDark ? 'dark' : 'light');
+            // The legacy layer switches on the class; `src/m3e.css` switches on
+            // `:root[data-theme="light"]`. Without this the M3E tokens — and every
+            // component styled from them, the snackbars among them — kept the dark
+            // defaults in light mode.
+            root.dataset.theme = isDark ? 'dark' : 'light';
         };
 
         if (theme === 'system') {

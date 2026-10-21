@@ -541,6 +541,22 @@ CREATE INDEX IF NOT EXISTS idx_records_user_category_taken_at
 DROP INDEX IF EXISTS idx_records_user_client_id;
 ALTER TABLE records DROP COLUMN IF EXISTS client_id;
 
+-- Change cursor for incremental sync.
+--
+-- `users.sync_version` is bumped once per write request, and every row that request
+-- touches is stamped with that value. A client that remembers the version it last saw
+-- can then ask for "rows newer than N" instead of reading the whole history on every
+-- poll. Rows that predate this column stay at 0, so a client with no cursor — and every
+-- existing install on upgrade — falls back to the full read.
+--
+-- The index is (user_id, sync_version, id) rather than (user_id, sync_version) alone
+-- because a page boundary must land *inside* a group of rows sharing one version: the
+-- same same-instant tie that `taken_at` paging needed `id` for.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS sync_version bigint NOT NULL DEFAULT 0;
+ALTER TABLE records ADD COLUMN IF NOT EXISTS sync_version bigint NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_records_user_sync_version
+    ON records(user_id, sync_version, id);
+
 -- `records.id` was `uuid` in the revision that introduced the table. The client's ids
 -- are structured strings (`dose:transfem:<id>`), so every write failed with "invalid
 -- input syntax for type uuid" until this widens the column. Existing values were uuids,

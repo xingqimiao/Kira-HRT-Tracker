@@ -44,6 +44,10 @@ export function applyStoredTheme(): void {
     const root = document.documentElement;
     root.classList.remove('light', 'dark');
     root.classList.add(isDark ? 'dark' : 'light');
+    // `src/m3e.css` keys its light tokens off `:root[data-theme="light"]`, not the
+    // class. Setting it here too is what keeps these pre-mount routes from rendering
+    // the M3E layer in its dark defaults until `AppContent` mounts.
+    root.dataset.theme = isDark ? 'dark' : 'light';
 
     root.classList.toggle('key-blue', read('app-key-color') === 'blue');
 }

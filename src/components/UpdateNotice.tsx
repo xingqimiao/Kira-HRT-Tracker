@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Icon from './Icon';
 import { RefreshCw, X } from '../icons';
@@ -36,6 +36,10 @@ const UpdateNotice: React.FC = () => {
     const [ready, setReady] = useState(false);
     const [dismissed, setDismissed] = useState(false);
     const [nativeUpdate, setNativeUpdate] = useState<NativeUpdate | null>(null);
+    // Swipe-down to dismiss on a phone, matching the quick-add snackbar. The close
+    // button stays for the desktop shell, where a drag is not a gesture anyone tries.
+    const [dragOffset, setDragOffset] = useState(0);
+    const drag = useRef<{ startY: number; active: boolean } | null>(null);
 
     useEffect(() => {
         if (isNativeApp()) {
@@ -60,7 +64,43 @@ const UpdateNotice: React.FC = () => {
     // legacy M3 toast shell, which is what made the update prompt look like it came
     // from a different app after the restyle.
     return createPortal(
-        <div className={`snack${ready && !dismissed ? ' show' : ''}`} role="status" aria-live="polite">
+        <div
+            className={`snack${ready && !dismissed ? ' show' : ''}`}
+            role="status"
+            aria-live="polite"
+            onPointerDown={(event) => {
+                // Desktop keeps the button; the drag is a phone gesture.
+                if (document.body.classList.contains('desktop')) return;
+                drag.current = { startY: event.clientY, active: true };
+                event.currentTarget.setPointerCapture?.(event.pointerId);
+            }}
+            onPointerMove={(event) => {
+                if (!drag.current?.active) return;
+                setDragOffset(Math.max(0, event.clientY - drag.current.startY));
+            }}
+            onPointerUp={() => {
+                if (!drag.current?.active) return;
+                drag.current.active = false;
+                const travelled = dragOffset;
+                setDragOffset(0);
+                if (travelled >= 64) setDismissed(true);
+            }}
+            onPointerCancel={() => {
+                drag.current = null;
+                setDragOffset(0);
+            }}
+            style={{
+                // The drag has to win over the page's own vertical scroll.
+                touchAction: 'none',
+                ...(dragOffset > 0
+                    ? {
+                        transform: `translateY(${dragOffset}px)`,
+                        opacity: Math.max(0.2, 1 - dragOffset / 160),
+                        transition: 'none',
+                    }
+                    : {}),
+            }}
+        >
             <span className="min-w-0">{t('update.ready')}</span>
             <span className="flex shrink-0 items-center gap-1">
                 <button type="button" onClick={applyUpdate}>

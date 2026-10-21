@@ -288,7 +288,7 @@ test('an app-only settings change reaches the account and a second device', asyn
 
     // The second device holds only the records, and the app's own reader has to find
     // the settings there — this is the claim the record transport was silently breaking.
-    const asState = normalizeSyncState(await readCoreState(token));
+    const asState = normalizeSyncState((await readCoreState(token)).payload);
     assert.equal(asState.appSettings?.theme, 'dark', 'the second device did not see the theme');
     assert.equal(asState.appSettings?.lang, 'ja');
     assert.equal(asState.appSettings?.calMethod, 'adaptive');
@@ -344,7 +344,7 @@ test('a filtered-out preference still survives the round trip', async () => {
     });
 
     // The account's own reader, which is what the app consumes on boot.
-    const asState = normalizeSyncState(await readCoreState(token));
+    const asState = normalizeSyncState((await readCoreState(token)).payload);
     assert.equal(asState.appSettings?.hrtStartDate, '2024-03-14',
       'the HRT start date did not come back — the read half emitted the filtered column');
     assert.equal(asState.appSettings?.recheckIntervals, 'aggressive');
@@ -427,7 +427,7 @@ test('an agent settings change is visible to the app read', async () => {
     });
     assert.equal(set.status, 200, JSON.stringify(set.body));
 
-    const asState = normalizeSyncState(await readCoreState(token));
+    const asState = normalizeSyncState((await readCoreState(token)).payload);
     assert.equal(asState.appSettings?.hrtMode, 'transmasc', 'the browser read did not see the agent mode');
     assert.equal(asState.appSettings?.calMethod, 'ekf', 'the browser read did not see the agent calibration');
     assert.equal(asState.appSettings?.calHistoryMode, 'forward');

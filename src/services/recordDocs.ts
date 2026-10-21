@@ -402,3 +402,35 @@ export function recordsToPayload(records: RecordDoc[]): { payload: SyncPayload; 
 
     return { payload: payload as SyncPayload, unknown };
 }
+
+/**
+ * The identity of every record in a payload: `id -> contentFingerprint`.
+ *
+ * This is the baseline for an incremental push. Once a sync has been acknowledged, a
+ * device only needs to send the records whose identity *it* has changed since — it no
+ * longer has to hold the server's whole state in hand to work out what is missing.
+ * Bounded and cheap: one short string per record, stored with the account's data.
+ */
+export function identitiesOf(payload: SyncPayload): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const doc of payloadToDocs(payload)) out[doc.id] = doc.identity;
+    return out;
+}
+
+/**
+ * Records whose content differs from the last acknowledged push, or that are new.
+ *
+ * Same identity rule as the merge engine — deliberately, because a stricter notion of
+ * "same" would re-send a record the merge already considers identical on every sync.
+ * A record absent from `known` has never been pushed by this device.
+ */
+export function changedAgainstKnown(local: SyncPayload, known: Record<string, string>): RecordDoc[] {
+    return payloadToDocs(local)
+        .filter((doc) => known[doc.id] !== doc.identity)
+        .map((doc) => ({
+            id: doc.id,
+            category: doc.category,
+            takenAt: doc.takenAt,
+            data: doc.data,
+        }));
+}

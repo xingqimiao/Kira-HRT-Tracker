@@ -33,7 +33,7 @@
  * the data.
  */
 import { apiEndpoint, apiFetch } from './apiClient';
-import { changedRecords, recordsToPayload, type RecordDoc } from './recordDocs';
+import { changedAgainstKnown, changedRecords, recordsToPayload, type RecordDoc } from './recordDocs';
 import { toAppState, RECORD_KINDS, type SyncState } from '../utils/syncMerge';
 
 /** The app's own payload shape, as `normalizeSyncState` reads it. */
@@ -127,17 +127,102 @@ function describe(status: number, what: string, detail?: string): CoreSyncError 
 }
 
 /**
+ * What a read hands back: the state itself, plus the change version that describes it.
+ *
+ * The version is the client's cursor. The server captures it *before* the page is
+ * read, so storing it can never skip a row written during the read.
+ */
+export interface CoreStateRead {
+  payload: SyncPayload;
+  syncVersion: number;
+}
+
+/**
+ * Read the account's state: the whole history, or only what changed since `since`.
+ *
+ * `since` is the watermark a previous sync acknowledged. When it is present the server
+ * answers in change order with just those rows, which is what makes a poll that finds
+ * nothing cost a few hundred bytes instead of the whole history. Omitting it — first
+ * sync, or a cursor the server no longer agrees with — falls back to the full read.
+ */
+export async function readCoreState(
+  token: string,
+  opts: { since?: number } = {},
+): Promise<CoreStateRead> {
+  if (typeof opts.since === 'number' && Number.isFinite(opts.since)) {
+    return readChangedSince(token, opts.since);
+  }
+  return readFullState(token);
+}
+
+/**
+ * The delta: pages of rows stamped after `since`, oldest change first, plus the
+ * version to store as the next watermark.
+ */
+async function readChangedSince(token: string, since: number): Promise<CoreStateRead> {
+  const docs: RecordDoc[] = [];
+  let afterVersion: number | undefined;
+  let afterId: string | undefined;
+  let syncVersion = since;
+  let settings: Record<string, unknown> | undefined;
+
+  for (let page = 0; page < 100; page++) {
+    const query = new URLSearchParams({ since: String(since), limit: String(PAGE_SIZE) });
+    if (afterVersion !== undefined) query.set('after_version', String(afterVersion));
+    if (afterId !== undefined) query.set('after_id', afterId);
+
+    const res = await apiFetch(apiEndpoint(`/api/records?${query}`), {
+      headers: authHeaders(token),
+    });
+    if (!res.ok) throw describe(res.status, 'read', await errorDetail(res));
+
+    const body = (await res.json()) as {
+      records?: (WireRecord & { sync_version?: number })[];
+      unreadable?: number;
+      settings?: Record<string, unknown>;
+      syncVersion?: number;
+    };
+    const batch = body.records ?? [];
+    if (typeof body.syncVersion === 'number') syncVersion = body.syncVersion;
+    settings = body.settings ?? settings;
+
+    for (const row of batch) {
+      docs.push({
+        id: row.id,
+        category: (row.category as RecordDoc['category']) ?? 'dose',
+        takenAt: Date.parse(row.taken_at),
+        data: row.data,
+      });
+    }
+
+    if (batch.length < PAGE_SIZE) break;
+    const last = batch[batch.length - 1];
+    if (!last || typeof last.sync_version !== 'number') break;
+    afterVersion = last.sync_version;
+    afterId = last.id;
+  }
+
+  const { payload, unknown } = recordsToPayload(docs);
+  if (unknown > 0) {
+    console.warn(`[sync] ignored ${unknown} changed record(s) this version does not understand`);
+  }
+  return { payload: settings ? { ...payload, ...settings } : payload, syncVersion };
+}
+
+/**
  * Read every record for the account, paging until the server runs out.
  *
  * Paged because the server caps a response; a history longer than one page would
  * otherwise be silently truncated, which for this data looks exactly like "my records
  * disappeared".
  */
-export async function readCoreState(token: string): Promise<SyncPayload> {
+async function readFullState(token: string): Promise<CoreStateRead> {
   const docs: RecordDoc[] = [];
   let before: number | undefined;
   /** The last row's id on the previous page — the tiebreaker for `before`. */
   let beforeId: string | undefined;
+  /** The account's change version, captured by the server before the first page. */
+  let syncVersion = 0;
   // The settings row rides with the first page (see the records route): it is
   // where a settings screen or an agent writes, and it is not a record, so it
   // would otherwise be invisible to this read — the gap that made an agent's
@@ -161,9 +246,12 @@ export async function readCoreState(token: string): Promise<SyncPayload> {
       records?: WireRecord[];
       unreadable?: number;
       settings?: Record<string, unknown>;
+      syncVersion?: number;
     };
     const batch = body.records ?? [];
     settings = body.settings ?? settings;
+    // Every page of a full read carries the same captured version; the first one wins.
+    if (syncVersion === 0 && typeof body.syncVersion === 'number') syncVersion = body.syncVersion;
 
     for (const row of batch) {
       docs.push({
@@ -196,7 +284,7 @@ export async function readCoreState(token: string): Promise<SyncPayload> {
   // supplied. `appState` carries the model settings too — a settings route merges
   // its columns into the same bag the app reads (see the server's
   // `mergeAppSettings`) — which is how an agent's HRT-mode change reaches the app.
-  return settings ? { ...payload, ...settings } : payload;
+  return { payload: settings ? { ...payload, ...settings } : payload, syncVersion };
 }
 
 /** The server's error text, when it sent one. */
@@ -290,18 +378,25 @@ export function withRemoteTombstones(local: SyncPayload, remote: SyncPayload): S
 export async function syncWithCore(
   token: string,
   payload: SyncPayload,
-  opts: { updateExisting?: boolean; remote?: SyncPayload } = {},
+  opts: { updateExisting?: boolean; remote?: SyncPayload; known?: Record<string, string> } = {},
 ): Promise<SyncResult> {
   // Read first, always. Pushing without looking would drop the account's tombstones
   // (see `withRemoteTombstones`) and, on any record this device has never seen, would
   // be writing blind.
-  const remote = opts.remote ?? await readCoreState(token);
+  const remote = opts.remote ?? (await readCoreState(token)).payload;
   const outgoing = withRemoteTombstones(payload, remote);
 
-  // Only what the server does not already hold. The read above is the reference, so the
-  // delta costs no extra round trip and needs no state carried between syncs — a lost
-  // cache or a failed earlier write is corrected by the next read rather than stranded.
-  const docs = changedRecords(outgoing, remote);
+  // Two ways to decide what the server is missing.
+  //
+  // With a `known` map (the identity of everything the last push acknowledged) this
+  // device compares against its own memory, so the payload does not have to be a full
+  // read of the account — which is what lets the pull be a delta too.
+  //
+  // Without one (first sync on this device, or a cursor that was discarded) it falls
+  // back to comparing against `remote`, which must then be the whole state.
+  const docs = opts.known
+    ? changedAgainstKnown(outgoing, opts.known)
+    : changedRecords(outgoing, remote);
   const rejected: { reason: string; id: string }[] = [];
 
   const summary = () => ({
