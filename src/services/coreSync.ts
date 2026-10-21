@@ -15,14 +15,14 @@
  * transport: it splits a payload into records on the way out and reassembles them on
  * the way in, and the payload that comes back is the same shape `buildPayload` produces.
  *
- * ── The payload still travels whole, minus the round trip ─────────────────────
+ * ── The read is whole, the write is a delta ──────────────────────────────────
  *
  * `syncWithCore` reads first, merges, then writes. That ordering is deliberate and is
  * kept: pushing without looking would overwrite whatever another device wrote since this
- * one last synced. What the record store removes is the *cost* of that read — it is
- * paged, so a large history does not arrive in one response — and each direction is one
- * request that does not grow with the history: the read, and a batched upsert whose
- * response carries the resulting state, so no read follows the write.
+ * one last synced. The read is paged, so a large history does not arrive in one
+ * response — and because the merged result is diffed against exactly that read, the
+ * write carries only the records the server does not already hold. A sync with nothing
+ * to say sends nothing at all.
  *
  * ── Encryption is the server's job here ──────────────────────────────────────
  *
@@ -33,9 +33,8 @@
  * the data.
  */
 import { apiEndpoint, apiFetch } from './apiClient';
-import { payloadToRecords, recordsToPayload, type RecordDoc } from './recordDocs';
+import { changedRecords, recordsToPayload, type RecordDoc } from './recordDocs';
 import { toAppState, RECORD_KINDS, type SyncState } from '../utils/syncMerge';
-import { type MedPlan } from '../utils/medPlan';
 
 /** The app's own payload shape, as `normalizeSyncState` reads it. */
 export interface SyncPayload {
@@ -47,6 +46,15 @@ export interface SyncPayload {
 }
 
 export interface SyncResult {
+  /**
+   * The account's state after this call, as far as this device can tell: the payload
+   * that was pushed when the server accepted all of it, and the read this call made
+   * when it was refused (a partial write is not the account's state).
+   *
+   * The server no longer echoes the state back — reassembling it decrypts every row,
+   * which would make a one-record delta pay for the whole history. Callers that only
+   * care whether the write landed read `summary`.
+   */
   state: SyncPayload;
   /** Present when the push included records the server could not accept. */
   summary?: {
@@ -128,6 +136,8 @@ function describe(status: number, what: string, detail?: string): CoreSyncError 
 export async function readCoreState(token: string): Promise<SyncPayload> {
   const docs: RecordDoc[] = [];
   let before: number | undefined;
+  /** The last row's id on the previous page — the tiebreaker for `before`. */
+  let beforeId: string | undefined;
   // The settings row rides with the first page (see the records route): it is
   // where a settings screen or an agent writes, and it is not a record, so it
   // would otherwise be invisible to this read — the gap that made an agent's
@@ -137,6 +147,10 @@ export async function readCoreState(token: string): Promise<SyncPayload> {
   for (let page = 0; page < 100; page++) {
     const query = new URLSearchParams({ limit: String(PAGE_SIZE) });
     if (before !== undefined) query.set('before', String(before));
+    // Sent together with `before`, because `taken_at` alone is not unique: two doses
+    // logged at the same instant share one timestamp, and a page boundary landing
+    // inside that group skipped the rest of it — the rows were on neither page.
+    if (beforeId !== undefined) query.set('before_id', beforeId);
 
     const res = await apiFetch(apiEndpoint(`/api/records?${query}`), {
       headers: authHeaders(token),
@@ -163,10 +177,11 @@ export async function readCoreState(token: string): Promise<SyncPayload> {
     // Stop on a short page, or when the oldest row in this page has no usable time —
     // paging further with a bad cursor would loop.
     if (batch.length < PAGE_SIZE) break;
-    const oldest = batch[batch.length - 1]?.taken_at;
+    const oldest = batch[batch.length - 1];
     if (!oldest) break;
-    before = Date.parse(oldest);
+    before = Date.parse(oldest.taken_at);
     if (!Number.isFinite(before)) break;
+    beforeId = oldest.id;
   }
 
   const { payload, unknown } = recordsToPayload(docs);
@@ -267,9 +282,10 @@ export function withRemoteTombstones(local: SyncPayload, remote: SyncPayload): S
  * either way — `withRemoteTombstones` only runs on a payload that came from a read.
  *
  * The push is one batched request rather than one POST per record, so the round-trip
- * count does not grow with the number of records. The response carries the account's
- * state, so no read follows the write; `state` therefore comes from the server
- * rather than from a second round trip.
+ * count does not grow with the number of records — and it carries only the records the
+ * server's copy does not already hold (`changedRecords`), so its size does not grow with
+ * the history either. The response's post-write state is optional and this caller opts
+ * out of it: the merge that produced the payload already ran on this side.
  */
 export async function syncWithCore(
   token: string,
@@ -282,7 +298,10 @@ export async function syncWithCore(
   const remote = opts.remote ?? await readCoreState(token);
   const outgoing = withRemoteTombstones(payload, remote);
 
-  const docs = payloadToRecords(outgoing);
+  // Only what the server does not already hold. The read above is the reference, so the
+  // delta costs no extra round trip and needs no state carried between syncs — a lost
+  // cache or a failed earlier write is corrected by the next read rather than stranded.
+  const docs = changedRecords(outgoing, remote);
   const rejected: { reason: string; id: string }[] = [];
 
   const summary = () => ({
@@ -305,17 +324,29 @@ export async function syncWithCore(
 
   if (docs.length === 0) return { state: remote, ...summary() };
 
+  // `keepalive` is capped at 64 KiB by the Fetch spec. A body over that makes
+  // fetch reject with "Failed to fetch" before anything leaves the WebView — a
+  // full sync (353 doses plus labs and settings) crosses it, which is why
+  // uploads stopped while reads kept working. Only small pushes get the flag.
+  const requestBody = JSON.stringify({
+    records: docs.map((doc) => ({
+      id: doc.id,
+      takenAt: doc.takenAt,
+      category: doc.category,
+      data: doc.data,
+    })),
+    // The caller already merged against its own read, and nothing here consumes the
+    // post-write state, so asking for it back would make every push pay to decrypt and
+    // reassemble the whole history — the cost the delta exists to avoid. Opt-out rather
+    // than a server default, because other callers do read it.
+    echoState: false,
+  });
+  const bodyBytes = new TextEncoder().encode(requestBody).length;
   const res = await apiFetch(apiEndpoint('/api/records/batch'), {
     method: 'POST',
     headers: authHeaders(token),
-    body: JSON.stringify({
-      records: docs.map((doc) => ({
-        id: doc.id,
-        takenAt: doc.takenAt,
-        category: doc.category,
-        data: doc.data,
-      })),
-    }),
+    ...(bodyBytes <= 60_000 ? { keepalive: true } : {}),
+    body: requestBody,
   });
 
   if (!res.ok) {
@@ -336,10 +367,13 @@ export async function syncWithCore(
     });
   }
 
-  // The write response carries the post-write state. A response that omitted it
-  // (reassembly failed server-side after the write landed) falls back to the read
-  // this call already has rather than reporting a state it does not hold.
-  return { state: body.state ?? remote, ...summary() };
+  // No echoed state by default, so the answer comes from what this call knows: the
+  // payload it pushed is the account's state once every record was accepted, and a
+  // refusal (or an older server that still echoes) leaves the read as the safe answer.
+  // A server that did echo wins, because it also knows about records this device never
+  // saw — but nothing is asked for it any more.
+  const settled = rejected.length > 0 ? remote : outgoing;
+  return { state: body.state ?? settled, ...summary() };
 }
 
 /**
@@ -371,22 +405,4 @@ export function toLocalPayload(state: SyncState): SyncPayload {
     modes: state.modes,
     appState: toAppState(state),
   };
-}
-
-/**
- * Push the medication plan (用药方案) as its own settings scalar.
- *
- * This is what makes the plan visible to agents: the MCP plan-status tool reads
- * exactly this record back, decrypted under the account's key. The plan also
- * lives on-device, so a failed push costs nothing — the next commit re-uploads.
- */
-export async function pushMedPlan(token: string, plans: MedPlan[]): Promise<void> {
-  const stamp = Date.now();
-  await apiFetch(apiEndpoint('/api/records/batch'), {
-    method: 'POST',
-    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      records: [{ id: 'scalar:medPlan', takenAt: stamp, category: 'setting', data: { value: plans, stamp } }],
-    }),
-  });
 }

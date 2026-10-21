@@ -2,16 +2,14 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useEscape } from '../hooks/useEscape';
 import { usePresence } from '../hooks/usePresence';
+import { AdaptiveSheet, useMediaQuery } from '../ui/proto';
 
 /**
- * A one-paragraph notice with an OK button — the shape most of this app's modals
- * want, so the portal/escape/presence wiring lives here instead of being copied
- * into each one.
+ * A one-paragraph notice with an OK button.
  *
- * Nothing about it is specific to a kind of notice: the caller supplies the
- * translation keys, and `icon` is for the ones whose subject is a reaction rather
- * than a fact. `EstimateInfoModal` stays separate because it is a signed document —
- * several paragraphs and a source link — rather than a notice.
+ * On a phone this is a bottom sheet, not a centred dialog: the notice is a short
+ * acknowledgement, and the thumb already lives at the bottom of the screen. The
+ * desktop card is unchanged.
  */
 const NoticeModal = ({ isOpen, onClose, titleKey, bodyKey, icon }: {
     isOpen: boolean;
@@ -22,9 +20,34 @@ const NoticeModal = ({ isOpen, onClose, titleKey, bodyKey, icon }: {
     icon?: React.ReactNode;
 }) => {
     const { t } = useTranslation();
+    const desktop = useMediaQuery('(min-width: 760px)');
 
     useEscape(onClose, isOpen);
     const { mounted, state } = usePresence(isOpen, 200);
+
+    const body = (
+        <div className="d-col" style={{ gap: 14 }}>
+            {icon && <div style={{ display: 'flex', justifyContent: 'center' }}>{icon}</div>}
+            <b style={{ fontSize: 20, fontWeight: 800 }}>{t(titleKey)}</b>
+            <p className="sub" style={{ margin: 0, fontSize: 13.5, lineHeight: 1.65 }}>{t(bodyKey)}</p>
+            <button type="button" onClick={onClose} className="btn" style={{ width: '100%', height: 50 }}>
+                {t('btn.ok')}
+            </button>
+        </div>
+    );
+
+    if (!desktop) {
+        return (
+            <AdaptiveSheet
+                open={isOpen}
+                onClose={onClose}
+                bare
+                closeLabel={t('btn.ok')}
+            >
+                {body}
+            </AdaptiveSheet>
+        );
+    }
 
     if (!mounted) return null;
 

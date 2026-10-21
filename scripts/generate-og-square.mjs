@@ -199,7 +199,7 @@ ${withPartners ? `  ${linkIconSvg()}\n` : ''}</svg>`;
  */
 const PARTNERS = [
   'C:/Users/fkxw2/Downloads/TransmtfTeam.png',
-  'E:/HRT/public/oyama.png',
+  'scripts/assets/oyama.png',
   'C:/Users/fkxw2/Downloads/Featherline.png',
 ];
 

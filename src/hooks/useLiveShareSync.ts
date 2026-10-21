@@ -11,6 +11,14 @@ interface LiveShareSyncOptions {
     calibrationFn: (timeH: number) => number;
 }
 
+/**
+ * Keep this account's live links for the current mode up to date.
+ *
+ * A live link is sealed with the key it was handed out with, and that key lives only
+ * on the device that created it (`shareCrypto`). So this pushes per link, and a link
+ * whose key is not on this device is simply left alone: another device created it, and
+ * writing plaintext over it would be worse than a stale snapshot.
+ */
 export const useLiveShareSync = ({
     authToken,
     mode,
@@ -18,7 +26,7 @@ export const useLiveShareSync = ({
     simulation,
     calibrationFn,
 }: LiveShareSyncOptions): void => {
-    const [hasLiveShare, setHasLiveShare] = useState(false);
+    const [liveShareIds, setLiveShareIds] = useState<Array<{ id: string; legacy: boolean }>>([]);
     const [refreshTick, setRefreshTick] = useState(0);
     const baselineSnapshotRef = useRef<ReturnType<typeof buildSharedDosageSnapshot> | null>(null);
     const pendingSnapshotRef = useRef<ReturnType<typeof buildSharedDosageSnapshot> | null>(null);
@@ -34,7 +42,7 @@ export const useLiveShareSync = ({
     useEffect(() => {
         baselineSnapshotRef.current = dataReady ? snapshot : null;
         pendingSnapshotRef.current = null;
-        setHasLiveShare(false);
+        setLiveShareIds([]);
         if (!authToken || !dataReady) return;
 
         let cancelled = false;
@@ -42,18 +50,21 @@ export const useLiveShareSync = ({
         const refresh = () => {
             sharingService.list(authToken)
                 .then(shares => {
-                    if (!cancelled) {
-                        const found = shares.some(share => !share.expired && share.live && share.mode === mode);
-                        setHasLiveShare(found);
-                        if (found && !previouslyFound) {
-                            // Refresh an existing live link when the owner opens
-                            // the app, including changes made before this tab
-                            // discovered the link.
-                            pendingSnapshotRef.current ??= latestSnapshotRef.current;
-                            setRefreshTick(value => value + 1);
-                        }
-                        previouslyFound = found;
+                    if (cancelled) return;
+                    const ids = shares
+                        .filter(share => !share.expired && share.live && share.mode === mode)
+                        // A link written before snapshots were sealed has no envelope;
+                        // it is the only kind this device may refresh in the clear.
+                        .map(share => ({ id: share.id, legacy: !share.sealed }));
+                    setLiveShareIds(ids);
+                    if (ids.length > 0 && !previouslyFound) {
+                        // Refresh an existing live link when the owner opens
+                        // the app, including changes made before this tab
+                        // discovered the link.
+                        pendingSnapshotRef.current ??= latestSnapshotRef.current;
+                        setRefreshTick(value => value + 1);
                     }
+                    previouslyFound = ids.length > 0;
                 })
                 .catch(() => undefined);
         };
@@ -83,10 +94,15 @@ export const useLiveShareSync = ({
         if (snapshot !== baselineSnapshotRef.current) pendingSnapshotRef.current = snapshot;
     }, [dataReady, snapshot]);
 
+    // The effect below compares ids by value rather than by array identity, so a list
+    // refresh that finds the same links does not look like a change.
+    const liveIdsKey = liveShareIds.map(share => share.id).join(',');
+
     useEffect(() => {
-        if (!authToken || !hasLiveShare || !dataReady || !pendingSnapshotRef.current) return;
+        if (!authToken || liveShareIds.length === 0 || !dataReady || !pendingSnapshotRef.current) return;
 
         const snapshotToSync = pendingSnapshotRef.current;
+        const ids = liveShareIds;
         const controller = new AbortController();
         let cancelled = false;
         let timer: number | null = null;
@@ -95,12 +111,19 @@ export const useLiveShareSync = ({
 
         const run = async () => {
             try {
-                const result = await sharingService.syncLive(authToken, snapshotToSync, controller.signal);
+                const results = await Promise.all(
+                    ids.map(share => sharingService.syncLive(
+                        authToken,
+                        { id: share.id, snapshot: snapshotToSync, legacy: share.legacy },
+                        controller.signal,
+                    )),
+                );
                 if (cancelled) return;
-                if (result.updated === 0) {
-                    setHasLiveShare(false);
-                    return;
-                }
+                // Zero means no link was written — this device holds no key for any of
+                // them, or the link was revoked server-side. Either way the pending
+                // snapshot is not evidence of a failure to retry, and the next refresh
+                // reconciles the list.
+                if (results.every(result => result.updated === 0)) return;
                 if (pendingSnapshotRef.current === snapshotToSync) {
                     pendingSnapshotRef.current = null;
                     baselineSnapshotRef.current = snapshotToSync;
@@ -122,5 +145,6 @@ export const useLiveShareSync = ({
             if (timer !== null) window.clearTimeout(timer);
             controller.abort();
         };
-    }, [authToken, dataReady, hasLiveShare, mode, refreshTick, snapshot]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [authToken, dataReady, liveIdsKey, mode, refreshTick, snapshot]);
 };

@@ -1,18 +1,24 @@
 import React, { useId, useState } from 'react';
-import Icon from './Icon';
-import { AlertCircle, AlertTriangle, ChevronDown, CircleOff, Droplet, ExternalLink, Info, X } from '../icons';
-import { MonitoringNotice, RecheckReminder, Ester } from '../../logic';
+import { MonitoringNotice, RecheckReminder } from '../../logic';
+import { Icon as SpriteIcon } from '../ui/SvgDefs';
 
 /**
- * One monitoring notice: the measured value, the threshold it crossed, and the
- * source that states that threshold.
+ * The monitoring surfaces of the 体检 page: the evidence notices, the due
+ * re-check reminders, and the spironolactone precautions.
  *
- * The posture is deliberate and the same everywhere — this reports what the
- * sources say, it does not tell anyone what to do. The copy names the source and
- * links to it rather than compressing it into an instruction, which is why the
- * MRI recommendation at 10 g of CPA reads as "MtF.wiki's recommendation is an
- * MRI" and not "get an MRI".
+ * All three are rows of one `SegmentedList` now. The old build gave each of them
+ * its own bordered panel with a hand-rolled header, so three different-looking
+ * boxes sat above the results list and none of them matched the list language the
+ * rest of the app had been rebuilt on. A row that expands in place is both the
+ * smaller thing to write and the one that reads as part of the page.
+ *
+ * The posture is unchanged and deliberate: this reports what the sources say and
+ * links to them, it does not tell anyone what to do. The copy names the source
+ * rather than compressing it into an instruction, which is why the CPA MRI
+ * recommendation reads as "MtF.wiki's recommendation is an MRI" and not "get an
+ * MRI".
  */
+
 const SOURCES: Record<MonitoringNotice['kind'], { label: string; url: string }[]> = {
     prl: [
         { label: 'MtF.wiki', url: 'https://mtf.wiki/zh-cn/docs/medicine/monitoring' },
@@ -37,48 +43,7 @@ const BODY: Record<MonitoringNotice['kind'], string> = {
     cpa_cumulative: 'monitor.notice.cpa_cumulative',
 };
 
-const fmt = (n?: number) => (n === undefined ? '' : String(Math.round(n * 100) / 100));
-
-const fill = (template: string, notice: MonitoringNotice) =>
-    template
-        .replace('{value}', fmt(notice.value))
-        .replace('{uln}', fmt(notice.uln))
-        .replace('{grams}', fmt(notice.grams));
-
-export const MonitoringNoticeLine: React.FC<{ notice: MonitoringNotice; t: (k: string) => string }> = ({ notice, t }) => (
-    <p className="flex items-start gap-1.5 text-m3-body-compact leading-snug text-cos-warning/90">
-        <Icon icon={AlertCircle} size={14} strokeWidth={1.75} className="mt-[3px] shrink-0" />
-        <span>
-            {fill(t(BODY[notice.kind]), notice)}{' '}
-            <span className="opacity-70">{t('monitor.sources')}</span>{' '}
-            {SOURCES[notice.kind].map((source, i) => (
-                <React.Fragment key={source.url}>
-                    {i > 0 && <span className="opacity-70"> · </span>}
-                    <a
-                        href={source.url}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                        className="inline-flex items-center gap-0.5 underline underline-offset-2"
-                    >
-                        {source.label}
-                        <Icon icon={ExternalLink} size={11} strokeWidth={2} />
-                    </a>
-                </React.Fragment>
-            ))}
-        </span>
-    </p>
-);
-
-/**
- * The sources behind each re-check interval, so the reminder can name the row it
- * came from the way the value notices above do.
- *
- * These are the intervals docs/monitoring-reference.md actually states — liver
- * on CPA and bicalutamide (§1.1 row 1, §4 "Liver function"), potassium on
- * spironolactone (§2.1, Endocrine Society). Prolactin has no interval anywhere in
- * that document, so there is no branch for it: a source-less cadence is exactly
- * the thing not to invent.
- */
+/** Every re-check interval and its source, so a reminder can name where it came from. */
 const RECHECK_SOURCES: Record<RecheckReminder['kind'], { label: string; url: string }[]> = {
     liver_cpa: [
         { label: 'MtF.wiki', url: 'https://mtf.wiki/zh-cn/docs/medicine/monitoring' },
@@ -115,41 +80,59 @@ const RECHECK_BODY: Record<RecheckReminder['kind'], string> = {
     estradiol: 'monitor.recheck.estradiol',
 };
 
-const SourceLinks: React.FC<{ sources: { label: string; url: string }[] }> = ({ sources }) => (
-    <>
+const fmt = (n?: number) => (n === undefined ? '' : String(Math.round(n * 100) / 100));
+
+const fill = (template: string, notice: MonitoringNotice) =>
+    template
+        .replace('{value}', fmt(notice.value))
+        .replace('{uln}', fmt(notice.uln))
+        .replace('{grams}', fmt(notice.grams));
+
+/** `出处：MtF.wiki · FDA CASODEX` — one sentence, links inline, as the sources state it. */
+const SourceLinks: React.FC<{ sources: { label: string; url: string }[]; t: (k: string) => string }> = ({ sources, t }) => (
+    <p className="mon-src">
+        {t('monitor.sources')}{' '}
         {sources.map((source, i) => (
             <React.Fragment key={source.url}>
-                {i > 0 && <span className="opacity-70"> · </span>}
-                <a
-                    href={source.url}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="inline-flex items-center gap-0.5 underline underline-offset-2"
-                >
-                    {source.label}
-                    <Icon icon={ExternalLink} size={11} strokeWidth={2} />
-                </a>
+                {i > 0 && <span aria-hidden> · </span>}
+                <a href={source.url} target="_blank" rel="noreferrer noopener">{source.label}</a>
             </React.Fragment>
         ))}
-    </>
+    </p>
 );
 
 /**
- * One re-check reminder: the interval that has elapsed, the recorded dose it was
- * counted from, and the source that states the interval.
- *
- * This is the same posture as `MonitoringNoticeLine` and deliberately so — it
- * says a draw is *due*, never that anything is wrong. The two facts it has to
- * carry for that to be honest are both on screen: which date the schedule was
- * anchored to, and the interval's source. The line that names the anchor's
- * weakness is always shown rather than tucked away, because the anchor is the one
- * part of this the app has to infer. Estradiol can be anchored to the last logged
- * check, and then the copy says so rather than claiming a first dose.
+ * One evidence notice — a static row: the measured value, the threshold it
+ * crossed, and the source that states the threshold.
+ */
+export const MonitoringNoticeLine: React.FC<{ notice: MonitoringNotice; t: (k: string) => string }> = ({ notice, t }) => (
+    <div className="li mon">
+        <div className="mon-body" style={{ paddingTop: 14 }}>
+            <p className="mon-lead">
+                <SpriteIcon id="warn" />
+                <span>{fill(t(BODY[notice.kind]), notice)}</span>
+            </p>
+            <SourceLinks sources={SOURCES[notice.kind]} t={t} />
+        </div>
+    </div>
+);
+
+/**
+ * One due re-check: the interval that has elapsed, the dose it was counted from,
+ * and the source that states the interval.
  *
  * It can be closed, because a reminder that cannot be silenced teaches people to
- * ignore reminders — but closing only collapses it to a row that opens it again,
- * so dismissing never puts the sources out of reach. The dismissal is persisted by
- * the caller per due date; a later interval boundary resurfaces it.
+ * ignore reminders — but closing only collapses it to a row, and the row is still
+ * there until it is dismissed, so the sources never become unreachable. The
+ * dismissal is the small control on the right, persisted by the caller per due
+ * date; a later interval boundary resurfaces it.
+ *
+ * Both facts the row has to be honest about are on screen once it is open: the
+ * date the schedule was anchored to, and the interval's source. The line naming
+ * the anchor's weakness is always shown rather than tucked away, because the
+ * anchor is the one part of this the app has to infer. Estradiol can be anchored
+ * to the last logged check, and then the copy says so instead of claiming a first
+ * dose.
  */
 export const RecheckReminderLine: React.FC<{
     reminder: RecheckReminder;
@@ -163,160 +146,74 @@ export const RecheckReminderLine: React.FC<{
     /** Whether initially expanded (defaults to false for compact presentation). */
     defaultExpanded?: boolean;
 }> = ({ reminder, t, formatDate, dismissed, onDismiss, defaultExpanded = false }) => {
-    const [expanded, setExpanded] = useState(defaultExpanded);
+    const [open, setOpen] = useState(defaultExpanded);
+    const panelId = useId();
 
-    if (dismissed && !expanded) {
-        return null;
-    }
+    if (dismissed && !open) return null;
 
     const drugName = t(`ester.${reminder.ester}`);
+    const bodyKey = reminder.kind === 'estradiol' && reminder.basis === 'last_check'
+        ? 'monitor.recheck.estradiol_check'
+        : RECHECK_BODY[reminder.kind];
 
     return (
-        <div className="rounded-[var(--md-sys-shape-corner-medium)] bg-[var(--color-m3-surface-container)] text-[var(--color-m3-on-surface)] transition-all">
-            <div className="flex items-center justify-between gap-2 px-3 py-2">
+        <div className={`li mon${open ? ' open' : ''}`}>
+            <div className="mon-head">
                 <button
                     type="button"
-                    onClick={() => setExpanded(e => !e)}
-                    className="flex-1 flex items-center gap-2 text-start min-w-0 outline-none hover:opacity-90"
+                    className="mon-btn"
+                    onClick={() => setOpen(value => !value)}
+                    aria-expanded={open}
+                    aria-controls={panelId}
                 >
-                    <Icon icon={AlertTriangle} size={14} strokeWidth={1.75} className="shrink-0 text-cos-warning" />
-                    <span className="text-xs font-medium truncate flex-1">
-                        {t('monitor.recheck.title')}
-                        <span className="opacity-70 font-normal ml-1.5">
-                            · {drugName}
-                        </span>
-                    </span>
-                    <Icon
-                        icon={ChevronDown}
-                        size={14}
-                        className={`shrink-0 text-[var(--color-m3-on-surface-variant)] transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
-                    />
+                    <span className="ic am" aria-hidden="true"><SpriteIcon id="warn" /></span>
+                    <div className="t">
+                        <b>{t('monitor.recheck.title')}</b>
+                        <span className="s">{drugName} · {formatDate(reminder.startH)}</span>
+                    </div>
+                    <SpriteIcon id="chev" />
                 </button>
                 <button
                     type="button"
+                    className="icon-del"
                     onClick={onDismiss}
                     aria-label={t('monitor.recheck.dismiss')}
-                    className="shrink-0 -mr-1 rounded-full p-1 text-[var(--color-m3-on-surface-variant)] hover:bg-[var(--color-m3-surface-container-high)] hover:text-[var(--color-m3-on-surface)]"
                 >
-                    <Icon icon={X} size={13} strokeWidth={2} />
+                    <SpriteIcon id="x" />
                 </button>
             </div>
-            {expanded && (
-                <div className="px-3 pb-3 pt-1 border-t border-[var(--color-m3-outline-variant)] text-xs text-[var(--color-m3-on-surface-variant)] space-y-1.5 leading-snug">
-                    <p className="mt-1">
-                        {t(reminder.kind === 'estradiol' && reminder.basis === 'last_check'
-                            ? 'monitor.recheck.estradiol_check'
-                            : RECHECK_BODY[reminder.kind])
-                            .replace('{drug}', drugName)
-                            .replace('{months}', String(reminder.intervalMonths))}{' '}
-                        <span className="opacity-70">{t('monitor.sources')}</span>{' '}
-                        <SourceLinks sources={RECHECK_SOURCES[reminder.kind]} />
-                    </p>
-                    {reminder.kind === 'estradiol' && (
-                        <>
-                            <p className="flex items-start gap-1.5 font-medium text-cos-warning">
-                                <Icon icon={AlertCircle} size={13} strokeWidth={2} className="mt-[2px] shrink-0" />
-                                <span>{t('monitor.recheck.e2_safety')}</span>
-                            </p>
-                            <p>
-                                {t('monitor.recheck.e2_trough')}{' '}
-                                <span className="opacity-70">{t('monitor.sources')}</span>{' '}
-                                <SourceLinks sources={E2_TROUGH_SOURCES} />
-                            </p>
-                            {reminder.customized && (
-                                <p className="opacity-70">{t('monitor.recheck.custom')}</p>
-                            )}
-                        </>
-                    )}
-                    <p className="opacity-80">
-                        {t(reminder.basis === 'last_check' ? 'monitor.recheck.basis_check' : 'monitor.recheck.basis')
-                            .replace('{drug}', drugName)
-                            .replace('{date}', formatDate(reminder.startH))}
-                    </p>
-                    <p className="opacity-70">
-                        {t(reminder.basis === 'last_check' ? 'monitor.recheck.weakness_check' : 'monitor.recheck.weakness')}
-                    </p>
-                </div>
-            )}
-        </div>
-    );
-};
-
-/**
- * Every due re-check, as one disclosure.
- *
- * One reminder on its own is already a single readable block, so collapsing it
- * behind a click would add a step and hide the sources for no gain — hence the
- * group only forms at **two or more** (`RecheckReminderGroup` is not rendered
- * for one). Past that the stacked panels are a wall: each carries its own body,
- * its own 出处 links and its own dismiss control, so N of them is N walls.
- *
- * The count is derived by the caller from the reminders it is about to render,
- * which is the only definition that cannot drift: a dismissed reminder is not
- * rendered at all (`visibleRechecks`), so it is not counted either. The summary
- * says what is on screen, not what the schedule computed.
- *
- * The collapsed header deliberately carries the `monitor.recheck.e2_safety` line
- * when any expanded reminder would show it. That sentence is the one piece of
- * this feature that is advice rather than evidence — "if you have severe mood or
- * other problems, consult a doctor" — and it is the reason someone opens this at
- * all. A disclosure that keeps the evidence and drops the escalation is hiding
- * the half of the message that matters when it is closed, which is the state it
- * spends most of its life in. The evidence stays inside (it is long and per
- * claim); the warning does not.
- *
- * The container is a real M3 surface: `surface-container` on
- * `shape-corner-medium`, title-medium for the summary, and the header is a
- * full-width button so the whole row is the target. Motion reuses the shared
- * `.disclosure` grid-template-rows technique — see `PKParams` — and inherits
- * its `prefers-reduced-motion` rule, so it opens instantly rather than being
- * unreachable.
- */
-export const RecheckReminderGroup: React.FC<{
-    reminders: RecheckReminder[];
-    t: (k: string) => string;
-    formatDate: (h: number) => string;
-    onDismiss: (reminder: RecheckReminder) => void;
-}> = ({ reminders, t, formatDate, onDismiss }) => {
-    const [open, setOpen] = useState(false);
-    const panelId = useId();
-    const count = reminders.length;
-
-    return (
-        <div className="rounded-[var(--md-sys-shape-corner-medium)] bg-[var(--color-m3-surface-container)] text-[var(--color-m3-on-surface)] transition-all">
-            <button
-                type="button"
-                onClick={() => setOpen(o => !o)}
-                aria-expanded={open}
-                aria-controls={panelId}
-                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-start rounded-[var(--md-sys-shape-corner-medium)] outline-none hover:bg-[var(--color-m3-surface-container-high)]"
-            >
-                <div className="flex items-center gap-2 min-w-0">
-                    <Icon icon={AlertTriangle} size={14} strokeWidth={1.75} className="mt-[1px] shrink-0 text-cos-warning" />
-                    <span className="text-xs font-medium truncate">
-                        {count === 1 ? t('monitor.recheck.summary_one') : t('monitor.recheck.summary').replace('{n}', String(count))}
-                    </span>
-                </div>
-                <Icon
-                    icon={ChevronDown}
-                    size={14}
-                    className={`shrink-0 text-[var(--color-m3-on-surface-variant)] transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
-                />
-            </button>
             <div id={panelId} className="disclosure" data-open={open}>
                 <div className="disclosure-inner">
-                    <div className="px-3 pb-3 pt-1 border-t border-[var(--color-m3-outline-variant)] space-y-2">
-                        {reminders.map(reminder => (
-                            <RecheckReminderLine
-                                key={reminder.kind}
-                                reminder={reminder}
-                                t={t}
-                                formatDate={formatDate}
-                                dismissed={false}
-                                onDismiss={() => onDismiss(reminder)}
-                                defaultExpanded={false}
-                            />
-                        ))}
+                    <div className="mon-body">
+                        <p>
+                            {t(bodyKey)
+                                .replace('{drug}', drugName)
+                                .replace('{months}', String(reminder.intervalMonths))}
+                        </p>
+                        <SourceLinks sources={RECHECK_SOURCES[reminder.kind]} t={t} />
+                        {reminder.kind === 'estradiol' && (
+                            <>
+                                <p className="mon-lead">
+                                    <SpriteIcon id="warn" />
+                                    <span>{t('monitor.recheck.e2_safety')}</span>
+                                </p>
+                                <p>
+                                    {t('monitor.recheck.e2_trough')}
+                                </p>
+                                <SourceLinks sources={E2_TROUGH_SOURCES} t={t} />
+                                {reminder.customized && (
+                                    <p style={{ opacity: .8 }}>{t('monitor.recheck.custom')}</p>
+                                )}
+                            </>
+                        )}
+                        <p style={{ opacity: .9 }}>
+                            {t(reminder.basis === 'last_check' ? 'monitor.recheck.basis_check' : 'monitor.recheck.basis')
+                                .replace('{drug}', drugName)
+                                .replace('{date}', formatDate(reminder.startH))}
+                        </p>
+                        <p style={{ opacity: .75 }}>
+                            {t(reminder.basis === 'last_check' ? 'monitor.recheck.weakness_check' : 'monitor.recheck.weakness')}
+                        </p>
                     </div>
                 </div>
             </div>
@@ -332,56 +229,54 @@ export const RecheckReminderGroup: React.FC<{
  * with food/with a meal — **not stated in the sources I checked**", and §5 gap 12
  * repeats it. "Take with food" appears in no language for that reason.
  *
- * These sit with the compound they concern — the caller renders them on the
- * spironolactone context — rather than as a general wall of advice.
+ * These sit with the compound they concern — the caller renders them when the
+ * person is on spironolactone — rather than as a general wall of advice.
  */
-const PRECAUTIONS: { key: string; icon: typeof Info }[] = [
-    { key: 'monitor.precaution.food', icon: CircleOff },
-    { key: 'monitor.precaution.fluid', icon: Droplet },
-    { key: 'monitor.precaution.combination', icon: CircleOff },
-    { key: 'monitor.precaution.contraindication', icon: AlertCircle },
-];
+const PRECAUTIONS = [
+    'monitor.precaution.food',
+    'monitor.precaution.fluid',
+    'monitor.precaution.combination',
+    'monitor.precaution.contraindication',
+] as const;
 
 export const SpironolactonePrecautions: React.FC<{ t: (k: string) => string }> = ({ t }) => {
     const [open, setOpen] = useState(false);
+    const panelId = useId();
+
     return (
-        <div className="rounded-[var(--md-sys-shape-corner-medium)] bg-[var(--color-m3-surface-container)] text-[var(--color-m3-on-surface)] transition-all">
-            <button
-                type="button"
-                onClick={() => setOpen(o => !o)}
-                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-start rounded-[var(--md-sys-shape-corner-medium)] outline-none hover:bg-[var(--color-m3-surface-container-high)]"
-            >
-                <div className="flex items-center gap-2 min-w-0">
-                    <Icon icon={AlertCircle} size={14} strokeWidth={1.75} className="shrink-0 text-cos-warning" />
-                    <span className="text-xs font-medium truncate">{t('monitor.precaution.title')}</span>
-                </div>
-                <Icon
-                    icon={ChevronDown}
-                    size={14}
-                    className={`shrink-0 text-[var(--color-m3-on-surface-variant)] transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
-                />
-            </button>
-            {open && (
-                <div className="px-3 pb-3 pt-1 border-t border-[var(--color-m3-outline-variant)] text-xs text-[var(--color-m3-on-surface-variant)] space-y-1.5 leading-snug">
-                    <ul className="mt-1 space-y-1">
-                        {PRECAUTIONS.map(({ key, icon }) => (
-                            <li key={key} className="flex items-start gap-1.5">
-                                <Icon icon={icon} size={13} strokeWidth={1.75} className="mt-[3px] shrink-0 opacity-70" />
-                                <span>{t(key)}</span>
-                            </li>
-                        ))}
-                    </ul>
-                    <p className="mt-1">
-                        <span className="opacity-70">{t('monitor.sources')}</span>{' '}
+        <div className={`li mon${open ? ' open' : ''}`}>
+            <div className="mon-head">
+                <button
+                    type="button"
+                    className="mon-btn"
+                    onClick={() => setOpen(value => !value)}
+                    aria-expanded={open}
+                    aria-controls={panelId}
+                >
+                    <span className="ic" aria-hidden="true"><SpriteIcon id="info" /></span>
+                    <div className="t">
+                        <b>{t('monitor.precaution.title')}</b>
+                        <span className="s">{t('monitor.hint')}</span>
+                    </div>
+                    <SpriteIcon id="chev" />
+                </button>
+            </div>
+            <div id={panelId} className="disclosure" data-open={open}>
+                <div className="disclosure-inner">
+                    <div className="mon-body">
+                        <ul className="mon-list">
+                            {PRECAUTIONS.map(key => <li key={key}>{t(key)}</li>)}
+                        </ul>
                         <SourceLinks
+                            t={t}
                             sources={[
                                 { label: 'MtF.wiki', url: 'https://mtf.wiki/zh-cn/docs/medicine/antiandrogen/spironolactone' },
                                 { label: 'Endocrine Society', url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC9562816/' },
                             ]}
                         />
-                    </p>
+                    </div>
                 </div>
-            )}
+            </div>
         </div>
     );
 };

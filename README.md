@@ -80,7 +80,7 @@ Web 应用、Android 应用、MCP 服务端共用一套「应用内核」，云�
 ### 客户端
 
 - **7 种语言**：简中、繁中、粤语、英、日、韩、土，按需加载。
-- **Android 应用**：Tauri 打包，**应用内自更新**（下载并调起系统安装界面）、系统返回手势与预测式返回、外部链接走系统浏览器。
+- **Android 应用**：Tauri 2 壳（`src-tauri/`，构建产物不入库）承载同一份 Web 前端，Kotlin 桥补齐原生能力：**应用锁**（生物识别 + 后台重锁）、**应用内自更新**（下载并调起系统安装界面）、预测式返回手势、系统文件导出、外部链接走系统浏览器。
 - **主题**：浅色 / 深色 / 跟随系统；跟随主题的启动过渡。
 - **PWA**：离线可用，Service Worker 缓存。
 
@@ -113,7 +113,7 @@ Web 应用、Android 应用、MCP 服务端共用一套「应用内核」，云�
 **核心原则：MCP 不是后端，它和 REST 一样，都是应用内核之上的一层适配器。** 两条路径都把凭证解析成 `AuthContext`，再调用同一批服务函数——「记录一次用药」这件事只有一个实现。这样就不会出现 Web 路径和助手路径各自校验、各自计算、慢慢漂移，最后只在一侧有 bug 的情况。
 
 - `server/src/http.ts` 与 `server/src/mcp.ts` **不含业务规则**；任何「记录如何校验」「曲线如何计算」的逻辑都属于 `core.ts`。
-- **前端**（React SPA）与 **Android**（Tauri）共用同一份前端代码，只按平台分叉原生能力（通知、更新、返回手势、外部链接）。
+- **前端**（React SPA）与 **Android**（原生 Compose）各自实现界面，共享同一份业务语义：协议、加密信封与 PK 模型都有双端对齐的测试。
 - **加密在写入层**：记录以密文入库，`user_id` 与 `occurred_at` 是仅有的明文列，其余临床内容都在信封里。
 
 更完整的设计说明见 **[`server/ARCHITECTURE.md`](server/ARCHITECTURE.md)**。
@@ -198,13 +198,13 @@ Web 应用、Android 应用、MCP 服务端共用一套「应用内核」，云�
 | 层 | 技术 |
 |---|---|
 | 前端 | React 19 · TypeScript 7 · Vite 8 · Tailwind CSS（Material Design 3 令牌与组件） |
-| 原生 | Tauri 2（Android）· Kotlin 桥（更新、返回手势、推送、安全区） |
+| 原生 | Tauri 2.12（`src-tauri/`）· Kotlin 桥（应用锁、导出、通知、返回手势、安全区） |
 | 后端 | Node.js · PostgreSQL · 原生 `pg`（无 ORM） |
 | 协议 | REST + [MCP](https://modelcontextprotocol.io)（Streamable HTTP） |
 | 加密 | 逐帐户 DEK；口令 KEK + OCI KMS 主密钥（HSM）双重包裹 |
 | PK 引擎 | 上游 `logic.ts`（原样）· `src/pk/` 内的 Transmtf 引擎（懒加载） |
 | 识别 | onnxruntime-web（检测）+ tesseract.js（文字），**全部在本机** |
-| 推送 | 本地排程通知（Tauri 插件）+ FCM 补推（HTTP v1，`node:crypto` 签 JWT） |
+| 推送 | 本地精准闹钟（`AlarmManager`）+ FCM 补推（HTTP v1，`node:crypto` 签 JWT），两端去重共用一条账本 |
 | PWA | vite-plugin-pwa（Workbox）|
 | i18n | 自建的 7 语言包，按需懒加载 |
 
@@ -225,15 +225,16 @@ VITE_API_ORIGIN=https://your-api-host/hrt npm run build
 
 服务端见 **[`server/ARCHITECTURE.md`](server/ARCHITECTURE.md)** 的「Running it」，测试为 `cd server && npm test`（内置 embedded-postgres）。
 
-Android 构建（仅 arm64）：
+Android 构建（Tauri 2，JDK 21 + Android SDK 35；`src-tauri/` 只在本地存在）：
 
 ```bash
-export ANDROID_HOME="$LOCALAPPDATA/Android/Sdk"
-export NDK_HOME="$ANDROID_HOME/ndk/<version>"
-export JAVA_HOME="/path/to/jdk-17"
-export VITE_API_ORIGIN=https://your-api-host/hrt
+export VITE_API_ORIGIN=https://api.example.com/hrt
+npm run build:android
 node_modules/.bin/tauri android build --apk --target aarch64
+# 未签名产物：src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
 ```
+
+签名与发布流程见 `server/DEPLOY.md` §4b。
 
 ## 自行托管
 

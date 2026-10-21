@@ -1,4 +1,19 @@
 @import "tailwindcss";
+/* The M3 Expressive layer: colour roles, segment radii, and the spring curves
+   every m3e component shares. Imported ahead of the legacy `@theme` block so its
+   `@theme` merges into the same Tailwind token set; the raw custom properties it
+   declares are the ones the prototypes and AGENTS.md §1.1 name, not a second
+   palette. See src/m3e.css. */
+/* The prototype itself, extracted verbatim by scripts/extract-m3e.mjs. It comes
+   last on purpose: `.tile`, `.li`, `.cg` and the rest are the reference design,
+   so on an equal-specificity tie the prototype wins over the legacy layer. */
+@import "./m3e.css";
+/* Compatibility aliases for the last `m3e-*` class names still used inside the
+   settings panels. New markup uses the prototype classes directly. */
+@import "./proto-compat.css";
+/* The add/edit dose panel's own prototype sheet. Scoped to `.dose-panel` so the
+   `.list` / `.li` / `.cg` / `.sheet` rules above keep driving the five pages. */
+@import "./components/dose_form/m3e-add-dose.css";
 
 @variant dark (&:is(.dark *));
 
@@ -431,7 +446,7 @@
        with a gap, and the safe-area term matches the bar's so the two move together on
        a notched device. At `lg` the bar hides itself (see `.m3-navigation-bar`), so the
        toast drops back to the plain 1rem it uses at the edge. — */
-    --floating-toast-bottom: calc(var(--md-sys-space-3) + 70px + var(--md-sys-space-3) + env(safe-area-inset-bottom, 0px));
+    --floating-toast-bottom: calc(var(--md-sys-space-3) + 70px + var(--md-sys-space-3) + max(env(safe-area-inset-bottom, 0px), var(--app-safe-bottom, 0px)));
 
     /* — Easing, strengthened —
        The M3 curves above are the spec's own and stay what the spec's
@@ -587,10 +602,21 @@
    Excludes datetime-local/date/time/month/week which open native pickers
    and do not trigger viewport zoom on iOS. */
 @media screen and (max-width: 768px) {
-    input:not([type="datetime-local"]):not([type="date"]):not([type="time"]):not([type="month"]):not([type="week"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+    input:not([type="datetime-local"]):not([type="date"]):not([type="time"]):not([type="month"]):not([type="week"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.lf-num):not(.wh-input):not(.wt-num):not(.tp-input):not(.tp-date-input):not(.dh-input),
     select,
     textarea {
         font-size: 16px !important;
+    }
+
+    /* Display numbers are the exception the anti-zoom rule cannot see: the lab
+       reading, the weight editor and the intro's weight step are 44px type, not
+       16px form text. Leaving `.wh-input` out of this list shrank the intro's
+       number to 16px on every phone — the one screen where the number is the
+       subject, not a field. */
+    .lf-num,
+    .wt-num,
+    .ob2 .wh-input {
+        font-size: 44px !important;
     }
 }
 
@@ -880,9 +906,18 @@ html {
     --color-m3-accent-container: #3A1F27;
     --color-m3-on-accent: #211016;
     --color-m3-on-accent-container: #FBD9E0;
+
+    /* M3 Expressive tokens: bind key-blue to the M3E role variables (dark) */
+    --pri: #5BCEFA;
+    --onpri: #08202B;
+    --pric: #16333F;
+    --onpric: #C4EAFD;
+    --secc: #23343C;
+    --onsecc: #CFE5F1;
 }
 
-:root:not(.dark).key-blue {
+:root:not(.dark).key-blue,
+:root[data-theme="light"].key-blue {
     --color-m3-primary: #0B6E96;
     --color-m3-primary-light: #1A85AE;
     --color-m3-primary-container: #DDEEF6;
@@ -894,6 +929,14 @@ html {
     --color-m3-accent-container: #FCE4EA;
     --color-m3-on-accent: #FFFFFF;
     --color-m3-on-accent-container: #3A101C;
+
+    /* M3 Expressive tokens: bind key-blue to the M3E role variables (light) */
+    --pri: #0B6E96;
+    --onpri: #FFFFFF;
+    --pric: #DDEEF6;
+    --onpric: #04222E;
+    --secc: #D9E5EC;
+    --onsecc: #16242B;
 }
 
 /* The page is painted from the role tokens in both themes, so there is never a
@@ -912,6 +955,17 @@ body {
     overscroll-behavior-y: contain;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+}
+
+/* The Android system bars. `initAndroidSafeArea()` writes `--android-safe-*` on
+   <html>; these aliases are declared on `:root` as well as on `body.native-app`
+   because custom properties resolve where they are *declared*, and the bottom
+   toast offset below lives on `:root`. Outside the app shell (portals, full-screen
+   surfaces) the value must still resolve, so the default is 0 rather than
+   undefined. */
+:root {
+    --app-safe-top: 0px;
+    --app-safe-bottom: 0px;
 }
 
 body.native-app {
@@ -1368,7 +1422,7 @@ html.app-viewport body {
 .modal-shell-wide {
     width: 100%;
     max-width: 36rem;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--app-safe-bottom, 0px));
     animation: m3-dialog-enter var(--md-sys-motion-transition-enter) both;
     will-change: transform, opacity;
 }
@@ -1612,7 +1666,7 @@ html.app-viewport body {
 @media (min-width: 840px) {
     .m3-navigation-bar { display: none; }
     /* The bar is gone, so the bottom toast no longer has anything to clear. */
-    :root { --floating-toast-bottom: calc(var(--md-sys-space-4) + env(safe-area-inset-bottom, 0px)); }
+    :root { --floating-toast-bottom: calc(var(--md-sys-space-4) + max(env(safe-area-inset-bottom, 0px), var(--app-safe-bottom, 0px))); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1739,6 +1793,11 @@ html.app-viewport body {
 
 .view-enter-backward {
     animation: m3-shared-axis-backward var(--md-sys-motion-transition-persist) both;
+}
+
+body.desktop .view-enter-forward,
+body.desktop .view-enter-backward {
+    animation: none;
 }
 
 /* ── Ambient motion ───────────────────────────────────────────────
@@ -2237,6 +2296,12 @@ select,
     outline-offset: 2px;
 }
 
+/* Text inputs, textareas, and num-pills use single-layer border transitions, avoiding double-ring artifacts */
+:where(input:not([type="checkbox"]):not([type="radio"]), textarea, select, .num-pill):focus-visible,
+:where(input:not([type="checkbox"]):not([type="radio"]), textarea, select, .num-pill):focus {
+    outline: none !important;
+}
+
 /* 48dp is the M3 floor for anything meant to be hit with a finger. The icon
    button already meets it; this is the escape hatch for the small controls. */
 .m3-touch-target {
@@ -2425,6 +2490,44 @@ select,
 .btn-primary:active:not(:disabled)::after,
 .btn-secondary:active:not(:disabled)::after,
 .btn-ghost:active:not(:disabled)::after { opacity: var(--md-sys-state-pressed-opacity); }
+
+/* The sign-in CTA is a full-width bar, so the prototype's `:active` scale slid
+   the label under the finger — the whole 50px pill shrank toward its centre.
+   Its press feedback is the expressive radius morph instead: a radius change
+   never touches layout, so the label stays exactly where it was. The busy
+   spinner is pinned to the left edge for the same reason — in flow it pushed the
+   label right the moment the request began, which is the same jump, one frame
+   later. */
+.btn.auth-cta {
+    position: relative;
+    transition: border-radius .42s cubic-bezier(.3, 1.7, .5, 1), filter .15s, background .2s;
+}
+.btn.auth-cta:active:not(:disabled) {
+    transform: none;
+    border-radius: 14px !important;
+    filter: brightness(.94);
+}
+.btn.auth-cta .cta-spin { position: absolute; left: 16px; }
+
+/* Three text utilities the settings panels need and the prototype does not
+   have: it writes these sizes inline on each element it uses them on. They are
+   the only definition — not aliases of anything. */
+.muted { font-size: 12.5px; color: var(--var); }
+.section-title { margin: 0; font-size: 15px; font-weight: 800; color: var(--on); }
+.stat-label { font-size: 13px; opacity: .88; }
+
+/* Chips on a neutral card. The prototype's `.chip` is transparent on purpose:
+   it is drawn on a coloured tile. `.soft` is the variant for a chip that has to
+   carry its own surface, which is every chip in the calibration card. */
+.chip.soft { background: var(--sch); color: var(--var); }
+.chip.warn { background: var(--warnc); color: var(--warn); }
+.chip.err { background: var(--errc); color: var(--err); }
+.chip.pri { background: var(--pric); color: var(--onpric); }
+
+/* `.btn.t` is the tonal button; `.li .t` is the list row's text block. Inside a
+   row the two collide on the same class name, so the button inherited `flex: 1`
+   and stretched to fill the row instead of hugging its own label. */
+.li button.btn.t { flex: 0 0 auto; }
 
 /* ── Text fields ─────────────────────────────────────────────────────────────
    The spec has two, and they mean different things: *filled* is a field that
@@ -2887,412 +2990,6 @@ select,
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   INTRO — Material 3 Expressive
-
-   The first-run screen only (src/pages/Onboarding.tsx). Each step is one
-   full-bleed colour block under display type; the shared-axis slide defined
-   above carries the content in from the side while the block's colour eases
-   to the arriving step's role.
-
-   Every value here is an existing token. The role pairs are chosen per step
-   in Onboarding.tsx and arrive as --intro-* custom properties, so this block
-   names no colour, shape or type of its own.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/* The screen *is* the colour block. One role pair per step; the colour eases
-   in with the arriving panel instead of snapping. 320ms rides just under the
-   shared-axis move, so the text never waits on the paint. */
-.intro-screen {
-    background-color: var(--intro-surface, var(--md-sys-color-surface-dim));
-    color: var(--intro-on, var(--md-sys-color-on-surface));
-    transition: background-color 320ms var(--ease-out);
-}
-
-/* Supporting copy on a block: the same on-* role at reduced strength, never a
-   second hue. currentColor keeps it correct on every block and both themes. */
-.intro-muted {
-    color: color-mix(in srgb, currentColor 78%, transparent);
-}
-
-/* The hairline between rows, drawn from the block's own ink. */
-.intro-divider {
-    border-color: color-mix(in srgb, currentColor 18%, transparent);
-}
-
-/* Step titles: display-large (57/64) with room to spare. There is no
-   responsive display class, so the one phone size is stated here as
-   display-medium (45/52) — a single rule, not a variant of every step. */
-@media (max-width: 767px) {
-    .intro-title {
-        font-size: var(--md-sys-typescale-display-medium-size);
-        line-height: var(--md-sys-typescale-display-medium-line-height);
-        letter-spacing: var(--md-sys-typescale-display-medium-tracking);
-    }
-}
-
-/* ── Phones: the language picker is two compact columns ───────────────────
-   Measured at 412x732: the single-column list of seven 64dp rows plus the
-   greeting wants ~956px and has ~566px. The outer scroller does make every
-   language reachable, but a picker whose end is a screen and a half down does
-   not read as a picker, and the sentence explaining the choice is carried away
-   with it. Two columns halve the list's height, which is what brings it back on
-   screen. Applies to every phone, not only short ones: no phone has the ~956px
-   the single column needs, so the tall ones would otherwise scroll too.
-
-   Nothing is lost — no label, no control. Only the rows are tighter. */
-@media (max-width: 767px) {
-    .intro-langs {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 0.375rem;
-    }
-    .intro-langs .intro-option {
-        min-height: 2.75rem;
-        padding: 0.375rem var(--md-sys-space-3);
-    }
-}
-
-/* ── Short screens: drop the decoration, tighten the greeting ─────────────
-   A short viewport is where the steps above are not quite enough, so the one
-   purely decorative element goes and the title steps down a size. The vial is
-   an illustration of what the app is for, worth less than the seven languages
-   under it. `max-height` rather than `min-height`, so a tall phone (393x852)
-   keeps it.
-
-   The subtitle above the list is the other saving: its translations are stacked
-   into one grid cell so the list starts at the same y in every language, but
-   that only matters while the reader can see the whole step. On a short screen
-   the inactive copies are dropped and the box is one line. */
-@media (max-height: 760px) and (max-width: 767px) {
-    .intro-welcome-vial {
-        display: none;
-    }
-    .intro-title {
-        font-size: var(--md-sys-typescale-headline-large-size);
-        line-height: var(--md-sys-typescale-headline-large-line-height);
-    }
-    .intro-welcome-subtitle {
-        margin-top: 0.25rem;
-    }
-    .intro-welcome-subtitle > p:not(.intro-welcome-subtitle-active) {
-        display: none;
-    }
-    .intro-langs {
-        margin-top: 0.75rem;
-    }
-}
-
-/* Language and mode options: 64dp blocks, the selected one filled with the
-   block's accent role and the check trailing. The fill is the accent rather
-   than the block's own container role because a container fill on a container
-   block is invisible — the accent is the pair that carries contrast. */
-.intro-option {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--md-sys-space-4);
-    width: 100%;
-    min-height: 64px;
-    padding: var(--md-sys-space-3) var(--md-sys-space-4);
-    color: inherit;
-    text-align: start;
-    background-color: transparent;
-    border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
-    border-radius: var(--md-sys-shape-corner-extra-large);
-    transition: background-color var(--duration-quick) var(--ease-standard),
-                border-color var(--duration-quick) var(--ease-standard);
-}
-.intro-option[aria-pressed='true'] {
-    color: var(--intro-accent-on, var(--md-sys-color-on-primary));
-    background-color: var(--intro-accent, var(--md-sys-color-primary));
-    border-color: transparent;
-}
-
-/* The primary action: a 56dp pill, full-width inside the footer's measure —
-   which is the phone width on a phone. */
-.intro-cta {
-    width: 100%;
-    min-height: 56px;
-    padding-inline: var(--md-sys-space-5);
-    border-radius: var(--md-sys-shape-corner-full);
-    font-size: var(--md-sys-typescale-title-medium-size);
-    line-height: var(--md-sys-typescale-title-medium-line-height);
-    font-weight: var(--md-sys-typescale-title-medium-weight);
-    letter-spacing: var(--md-sys-typescale-title-medium-tracking);
-}
-
-/* The back control reads on the block, not on the page. The descendant
-   selector outranks .dark .btn-secondary, so the ink stays the block's
-   on-role in either theme. */
-.intro-screen .btn-secondary {
-    color: inherit;
-    background-color: transparent;
-    border-color: color-mix(in srgb, currentColor 36%, transparent);
-}
-.intro-screen .btn-secondary:hover:not(:disabled) {
-    background-color: color-mix(in srgb, currentColor 12%, transparent);
-    border-color: color-mix(in srgb, currentColor 48%, transparent);
-}
-
-/* The block colour and the option fill are the only motion this screen adds;
-   both land in the same end state with the transition simply dropped. */
-@media (prefers-reduced-motion: reduce) {
-    .intro-screen,
-    .intro-option {
-        transition: none;
-    }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   INTRO — the lab-report scan (OnboardingFeatures.tsx)
-
-   The scan step draws a report in HTML and asks a bar to travel down it once;
-   the form beside it is where the bar ends up. Every animated node's *resting*
-   CSS is its final frame — the bar rests hidden, the two values rest visible —
-   which is the same convention OnboardingCurve uses, and the reason the
-   reduced-motion rule below is one `animation: none` rather than a second code
-   path. The words are never animated: the title, the description and the
-   caption are ordinary text and read in either mode.
-
-   Timings, all from existing tokens: the sweep is
-   --md-sys-motion-transition-persist (500ms, emphasized — it is a reading
-   gesture, so it decelerates into place); each value is
-   --md-sys-motion-transition-quick (150ms, standard), delayed by a duration
-   token (400ms, 550ms) so it lands under the bar. Nothing repeats: the bar
-   leaves and the timeline is over.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/* The sweep is a full-height plane inside the sheet. Translating it -100% parks
-   its bottom edge — where the line sits — at the sheet's top, so the line
-   travels the whole sheet instead of its own 3px. */
-.onb-scan__sweep {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    opacity: 0;
-    animation: onb-scan-sweep var(--md-sys-motion-transition-persist) both;
-}
-
-.onb-scan__line {
-    position: absolute;
-    inset-inline: 0;
-    bottom: 0;
-    height: 3px;
-    background-color: var(--md-sys-color-primary);
-}
-
-@keyframes onb-scan-sweep {
-    0%   { opacity: 1; transform: translateY(-100%); }
-    82%  { opacity: 1; }
-    100% { opacity: 0; transform: translateY(0); }
-}
-
-/* The form's values. Resting is the finished state; the keyframe's `from` is
-   what hides them until the bar passes. */
-.onb-scan__value {
-    animation: onb-scan-value var(--md-sys-motion-transition-quick) both;
-}
-
-@keyframes onb-scan-value {
-    from { opacity: 0; transform: translateY(4px); }
-    to   { opacity: 1; transform: none; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    /* The bar is the only movement and the values already rest in their final
-       state, so the demo loses the travel and keeps the meaning. */
-    .onb-scan__sweep,
-    .onb-scan__value {
-        animation: none;
-    }
-}
-
-/* ── The import demo: three trackers dropping into this one ───────────────────
-
-   Three rounded-rect marks fly in from three directions and land on this app's
-   own icon, which is always the front layer — so a mark goes *behind* it on the
-   way in and is gone once it is inside. Each landing punches the target out
-   (a scale past 1, then under, then back) so the collision reads as weight
-   rather than as a fade.
-
-   ── Why one cycle, not three staggered animations ───────────────────────────
-   `animation-delay` would stagger three copies of one keyframe, but a delay does
-   not exist before it elapses: the still-pending element sits in its *unfilled*
-   state, which for a hidden mark is a flash of it at its start position. Instead
-   every mark shares one 3.6s cycle and each carries its own keyframe, active only
-   in its own window and hidden elsewhere. 0% and 100% are then identical by
-   construction, so the loop has no seam to spot — which is the requirement: the
-   reader should never see it restart.
-
-   Timings: landings at 15%, 48%, 81% (evenly spaced), target punches on those
-   same frames. Marks travel for ~15% and are absorbed by ~3% later. */
-.onb-smash {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    /* Tall enough for the diagonal approach; the marks use it as their stage. */
-    height: 176px;
-}
-
-/* The incoming marks and the target share this tile treatment, so a transparent
-   PNG still reads as a rounded-rect app icon rather than a floating glyph. */
-.onb-smash__in,
-.onb-smash__target {
-    display: block;
-    border-radius: var(--radius-lg);
-    background-color: var(--color-m3-surface-container-lowest);
-    border: 1px solid var(--color-m3-outline-variant);
-    object-fit: cover;
-}
-
-.onb-smash__in {
-    position: absolute;
-    /* Under the target: a mark is hidden by it as it converges, which is what
-       "went inside" has to look like without any clipping. */
-    z-index: 1;
-    width: 44px;
-    height: 44px;
-    opacity: 0;
-    will-change: transform, opacity;
-}
-
-.onb-smash__target {
-    /* The front layer, always. */
-    position: relative;
-    z-index: 2;
-    width: 76px;
-    height: 76px;
-    box-shadow: var(--md-sys-elevation-level2);
-    animation: onb-smash-target 3600ms linear infinite;
-    will-change: transform;
-}
-
-.onb-smash__in--a { animation: onb-smash-a 3600ms linear infinite; }
-.onb-smash__in--b { animation: onb-smash-b 3600ms linear infinite; }
-.onb-smash__in--c { animation: onb-smash-c 3600ms linear infinite; }
-
-/**
- * The target's three punches, aligned to the three landings at 12% / 45% / 78%.
- *
- * `linear` at the animation level with the overshoot baked into the keyframes rather
- * than an ease with a past-1 control point: an easing curve is per-segment, so a
- * single `cubic-bezier` would have to overshoot *every* frame, not just the three on
- * contact. 1.26 / 0.94 / 1 placed by hand is what makes each hit read as a recoil and
- * the recovery as a settle.
- */
-@keyframes onb-smash-target {
-    0%, 8%    { transform: scale(1); }
-    12%       { transform: scale(1.26); }
-    15%       { transform: scale(0.94); animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
-    18%, 41%  { transform: scale(1); }
-    45%       { transform: scale(1.26); }
-    48%       { transform: scale(0.94); animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
-    51%, 74%  { transform: scale(1); }
-    78%       { transform: scale(1.26); }
-    81%       { transform: scale(0.94); animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
-    85%, 100% { transform: scale(1); }
-}
-
-/**
- * The three approaches, one window each in a shared 3.6s cycle.
- *
- * ── Two independent mechanisms, deliberately not conflated ───────────────────
- *
- * The flight's SPEED SHAPE and the target's OVERSHOOT REBOUND are separate effects
- * and neither is derived from the other:
- *
- *   - the approach eases IN — slow off the mark, fast at the moment of contact —
- *     which is a timing function on the moving mark;
- *   - the target punches past its size and settles back, which is scale values
- *     placed by hand in its own keyframes.
- *
- * So a change to how fast a mark travels is a change to one curve here; it never
- * touches `.onb-smash-target`, and vice versa. Tuning the cycle length, though, does
- * move both — which is why the pace was fixed once and the shapes tuned after.
- *
- * ── The curve ────────────────────────────────────────────────────────────────
- *
- * `cubic-bezier(0.42, 0, 0.9, 0.6)`: a standard ease-in, chosen after an earlier
- * `(0.7, 0, 0.9, 0.3)` turned out far too aggressive — measured, it held the mark
- * almost still for the first 60% of the flight and then threw it the last 42px in a
- * single frame, which reads as a jump, not as acceleration. The curve has to make the
- * acceleration *visible*, so the slow start is a phase you can see, not a stall.
- *
- * The easing sits on the frame that declares `transform`, never on a later frame that
- * sets only `opacity`: an `animation-timing-function` inside a keyframe governs the
- * property segments that *begin* there, and `transform` begins at rest. Written a frame
- * late, the whole approach slid in at the animation level's `linear` — the
- * constant-velocity look this exists to avoid.
- *
- * The return to the rest pose happens at `opacity: 0`, which is how the loop closes
- * with nothing to see.
- */
-@keyframes onb-smash-a {
-    0%, 6% {
-        transform: translate(-124px, 24px) rotate(-10deg) scale(1);
-        opacity: 0;
-        animation-timing-function: cubic-bezier(0.42, 0, 0.9, 0.6);
-    }
-    7.5% { opacity: 1; }
-    12%  { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
-    15%  { transform: translate(0, 0) rotate(0deg) scale(0.45); opacity: 0.8; }
-    18%  { transform: translate(0, 0) rotate(0deg) scale(0.15); opacity: 0; }
-    100% { transform: translate(-124px, 24px) rotate(-10deg) scale(1); opacity: 0; }
-}
-
-@keyframes onb-smash-b {
-    0%, 39% {
-        transform: translate(0, -108px) rotate(8deg) scale(1);
-        opacity: 0;
-        animation-timing-function: cubic-bezier(0.42, 0, 0.9, 0.6);
-    }
-    40.5% { opacity: 1; }
-    45%  { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
-    48%  { transform: translate(0, 0) rotate(0deg) scale(0.45); opacity: 0.8; }
-    51%  { transform: translate(0, 0) rotate(0deg) scale(0.15); opacity: 0; }
-    100% { transform: translate(0, -108px) rotate(8deg) scale(1); opacity: 0; }
-}
-
-@keyframes onb-smash-c {
-    0%, 72% {
-        transform: translate(124px, 24px) rotate(10deg) scale(1);
-        opacity: 0;
-        animation-timing-function: cubic-bezier(0.42, 0, 0.9, 0.6);
-    }
-    73.5% { opacity: 1; }
-    78%  { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
-    81%  { transform: translate(0, 0) rotate(0deg) scale(0.45); opacity: 0.8; }
-    84%  { transform: translate(0, 0) rotate(0deg) scale(0.15); opacity: 0; }
-    100% { transform: translate(124px, 24px) rotate(10deg) scale(1); opacity: 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    /* Nothing animates, so the marks would otherwise all sit at their 0% — which
-       is invisible, because 0% is where a mark waits to be flown in from. The
-       resting pose here is therefore the *meaning*, drawn deliberately: the three
-       marks standing behind the target they feed, which is the whole point of the
-       step. The convention elsewhere (resting state = the animation's last frame)
-       cannot apply to a loop whose last frame is "everything absorbed". */
-    .onb-smash__in,
-    .onb-smash__target {
-        animation: none;
-    }
-    .onb-smash {
-        gap: 10px;
-    }
-    .onb-smash__in {
-        position: static;
-        opacity: 1;
-        transform: none;
-    }
-    .onb-smash__target {
-        transform: none;
-    }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
    HRT MILESTONE — the top bar, and the 100-day burst that falls past it
 
    Rendered by src/components/HrtMilestoneEffect.tsx, above the account page, on
@@ -3381,34 +3078,46 @@ select,
     transition: height var(--md-sys-motion-transition-exit);
 }
 
-/* The bar. Square at the top by construction: it is flush with the top of what
-   it covers, and only the corners that meet the page take a radius —
-   `extra-small`, which is what this sheet gives text fields and menus, and the
-   smallest corner that still reads as deliberate on a 48dp bar.
-
-   No shadow. A tonal container is what separates a surface in this design, which
-   is the same reason the rail draws an edge rather than lifting off the page. */
+/* The bar. Square, full-width and pinned to the top of the window.
+ *
+ * `fixed`, not `absolute` inside the shell: the shell is a spacer inside the
+ * scrolling column, which the prototype pads by 36px, so a bar positioned
+ * against it started 36px down — the gap that made the strip look detached from
+ * the top edge. The shell keeps its measured height (it is what pushes the page
+ * down); the bar itself is pinned to the viewport and spans it edge to edge.
+ *
+ * No shadow. A tonal container is what separates a surface in this design, which
+ * is the same reason the rail draws an edge rather than lifting off the page. */
 .m3-milestone-bar {
-    position: absolute;
-    inset-block-start: 0;
+    position: fixed;
+    inset-block-start: max(env(safe-area-inset-top, 0px), var(--app-safe-top, 0px));
     inset-inline: 0;
     z-index: 50;
     pointer-events: auto;
     display: flex;
-    align-items: flex-start;
-    /* The 8dp system: 8 between glyph and text, 12/16 of padding inside. */
+    /* One centre line for the whole strip: the message and the close button sit
+       on it together. With the text block top-aligned the X floated lower than
+       the word it belongs to. */
+    align-items: center;
+    /* The 8dp system: 8 between glyph and text, 8/14 of padding inside. Kept
+       tight on purpose — this is a one-line strip over the page, not a card. */
     gap: var(--md-sys-space-2);
-    padding: var(--md-sys-space-3) var(--md-sys-space-4);
+    padding: 8px 10px 8px 16px;
     background-color: var(--md-sys-color-primary-container);
     color: var(--md-sys-color-on-primary-container);
-    border-end-start-radius: var(--md-sys-shape-corner-extra-small);
-    border-end-end-radius: var(--md-sys-shape-corner-extra-small);
+    border-radius: 0;
     /* The entrance and the exit, from the sheet's own transition tokens: 400ms
        emphasized-decelerate in, 200ms emphasized-accelerate out. Both are the
        legacy easing set — M3 Expressive's springs are Compose-only and Material
        Web, which is in maintenance, has none. Transform and opacity only, so no
        frame of it touches layout. */
     animation: m3-milestone-bar-in var(--md-sys-motion-transition-enter) both;
+}
+
+/* The navigation rail owns the left 96px on a wide window; a banner that covered
+   it would hide the only way off the page for as long as it is up. */
+body.desktop .m3-milestone-bar {
+    inset-inline-start: 96px;
 }
 
 .m3-milestone-bar[data-state="closed"] {
@@ -3432,17 +3141,16 @@ select,
    than the top of its box, which is where a 24dp glyph against 20px type sits. */
 .m3-milestone-bar__cake {
     flex: none;
-    margin-block-start: -2px;
     color: var(--md-sys-color-on-primary-container);
 }
 
 /* title-small for the line, body-small for the message under it: a banner is a
    label and a sentence, not display type. */
 .m3-milestone-bar__title {
-    font-size: var(--md-sys-typescale-title-small-size);
-    line-height: var(--md-sys-typescale-title-small-line-height);
-    font-weight: var(--md-sys-typescale-title-small-weight);
-    letter-spacing: var(--md-sys-typescale-title-small-tracking);
+    font-size: 14px;
+    line-height: 1.3;
+    font-weight: 700;
+    letter-spacing: -0.1px;
 }
 
 /* The anniversary message, quoted. `pre-line` is the whole reason the two
@@ -3455,6 +3163,35 @@ select,
     line-height: var(--md-sys-typescale-body-small-line-height);
     font-weight: var(--md-sys-typescale-body-small-weight);
     letter-spacing: var(--md-sys-typescale-body-small-tracking);
+}
+
+/* The strip's only control. Centred against the text block rather than the top
+   of the bar, so it sits on the title's line for a one-line notice and on the
+   middle of the block for the two-paragraph anniversary one. */
+.m3-milestone-bar__close {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    margin-inline-start: auto;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    opacity: .8;
+    cursor: pointer;
+    transition: background .18s, opacity .18s;
+}
+
+.m3-milestone-bar__close:hover {
+    background: rgba(255, 255, 255, .18);
+    opacity: 1;
+}
+
+:root[data-theme="light"] .m3-milestone-bar__close:hover {
+    background: rgba(0, 0, 0, .08);
 }
 
 /* The entrance travels the distance the bar itself occupies — it does not come
@@ -3476,8 +3213,12 @@ select,
    own shape and the two cannot disagree about where the top of the world is once
    the bar has been pushed down by the notch inset. */
 .m3-confetti {
-    position: absolute;
+    /* Fixed, like the bar it celebrates with: the shell is only a spacer, so an
+       absolutely-positioned layer inside it would be zero-tall and the burst would
+       start from wherever the scroll happened to be. */
+    position: fixed;
     inset: 0;
+    pointer-events: none;
 }
 
 /* Each piece starts above the top edge so it falls *into* the viewport rather
@@ -3564,139 +3305,94 @@ select,
     .m3-confetti__piece:nth-child(3n+2) { top: 62vh; transform: rotate(66deg); }
 }
 
-/* ── Dose-form vocabulary: picture pills, bars, chips ──────────────────────────
-   The record form and the medication-plan editor share one look: a rail of
-   picture-pills to pick a route or a compound, and full-width bars that lead with a
-   small icon.
 
-   Motion is quiet on purpose. A rail fades and lifts 6px as it appears, with a small
-   per-item delay; the bars do the same a step later. Nothing scales or springs — an
-   earlier pass animated each pill on every tap and read as a slot machine. The rail is
-   remounted (and so replays) only when the *set* it shows changes, which is what makes
-   the compounds below a route re-deal when the route changes. */
-.hrt-rail { }
+/* ═══════════════════════════════════════════════════════════════════════════
+   BUTTONS — the M3E shape of a secondary action
 
-.hrt-pill {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    min-height: 84px;
-    padding: 10px 6px;
-    border-radius: 20px;
-    border: 1.5px solid var(--color-m3-outline-variant);
-    background: var(--color-m3-surface-container-low);
-    color: var(--color-m3-on-surface);
-    cursor: pointer;
-    transition: border-color .18s ease, background .18s ease;
-    animation: hrt-pill-in .26s ease-out both;
-    animation-delay: calc(var(--i, 0) * 40ms);
-}
-.hrt-pill--dense { min-height: 74px; border-radius: 18px; }
-.hrt-pill__pic {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--tone, var(--color-m3-primary));
-    transition: transform .2s ease;
-}
-.hrt-pill--on { border-color: var(--tone, var(--color-m3-primary)); background: color-mix(in srgb, var(--tone, var(--color-m3-primary)) 12%, transparent); }
-.hrt-pill--on .hrt-pill__pic { transform: scale(1.08); }
-.hrt-pill__label { font-size: 13px; font-weight: 600; line-height: 1; white-space: nowrap; }
-.hrt-pill__sub { font-size: 10.5px; line-height: 1; color: var(--color-m3-on-surface-variant); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+   `.ic-btn` was defined only inside `.dose-panel`, so every icon button outside
+   the dose sheet — the close control on each `AdaptiveSheet`, the back arrow in
+   the container transform's bar — rendered with no container at all: a bare
+   glyph floating on the page. It is a global class now, with the same 42dp
+   circle and surface-container fill the dose panel uses. The `.dose-panel`
+   rule still wins inside the sheet (it is more specific), so nothing there
+   changes.
 
-@keyframes hrt-pill-in {
-    from { opacity: 0; transform: translateY(6px); }
-    to   { opacity: 1; transform: none; }
-}
+   `.btn.x` was a bare text button (`background: none`). M3 has no "cancel that
+   is not a button" — a secondary action sits on a tonal container, the same way
+   the intro's skip pill does. Text-only read as a link next to the filled
+   confirm, which is what the screenshots showed.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-.hrt-bar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 11px 14px;
-    border-radius: 18px;
-    border: 1.5px solid var(--color-m3-outline-variant);
-    background: var(--color-m3-surface-container);
-    animation: hrt-bar-in .3s ease-out both;
-    animation-delay: calc(var(--i, 0) * 45ms);
-}
-.hrt-bar--engine { border-style: dashed; }
-.hrt-bar--plain {
-    border-color: transparent;
-    background: transparent;
-    padding-inline: 0;
-}
-.hrt-bar--plain .hrt-bar__ic {
-    background: transparent;
-}
-.hrt-bar__ic {
-    display: grid;
-    place-items: center;
-    flex: none;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background: var(--color-m3-surface-container-high);
-    color: var(--color-m3-primary);
-}
-.hrt-bar__b { flex: 1; min-width: 0; }
-.hrt-bar__b small { display: block; font-size: 11.5px; color: var(--color-m3-on-surface-variant); margin-bottom: 5px; }
-
-@keyframes hrt-bar-in {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: none; }
-}
-
-.m3-chiprow { display: flex; flex-wrap: wrap; gap: 6px; }
-.m3-chip {
-    flex: none;
-    font: inherit;
-    font-size: 13px;
-    color: var(--color-m3-on-surface);
-    background: transparent;
-    border: 1.2px solid var(--color-m3-outline-variant);
-    border-radius: 999px;
-    padding: 5px 12px;
-    cursor: pointer;
-    transition: background .16s ease, border-color .16s ease, color .16s ease;
-}
-.m3-chip--on { background: var(--color-m3-primary); border-color: var(--color-m3-primary); color: var(--color-m3-on-primary); font-weight: 600; }
-
-@media (prefers-reduced-motion: reduce) {
-    .hrt-pill, .hrt-bar { animation: none; }
-}
-
-/* The fields below the route/compound picks, re-dealt when the route changes: the
-   wrapper is keyed on the route, so it remounts and its bars stagger back in. This is
-   the animation a route change should produce — the rail above stays put. */
-.hrt-fields { display: flex; flex-direction: column; gap: 10px; }
-
-/* The PK-engine picker's two cards (原有的 Mihari / Transmtf). A leading circle glyph,
-   a name, a sentence and three ✓/— bullets, so the choice reads as a described model
-   rather than two bare names. */
-.hrt-engine-card {
-    display: flex;
-    gap: 12px;
-    padding: 14px;
-    border-radius: 16px;
-    border: 1.5px solid var(--color-m3-outline-variant);
-    background: var(--color-m3-surface-container-low);
-    cursor: pointer;
-    transition: border-color .18s ease, background .18s ease;
-}
-.hrt-engine-card[aria-pressed="true"] {
-    border-color: var(--color-m3-primary);
-    background: color-mix(in srgb, var(--color-m3-primary) 12%, transparent);
-}
-.hrt-engine-card__ic {
-    display: grid;
-    place-items: center;
-    flex: none;
+.ic-btn {
     width: 42px;
     height: 42px;
-    border-radius: 50%;
-    background: var(--color-m3-surface-container-high);
-    color: var(--color-m3-primary);
+    border: 0;
+    border-radius: 21px;
+    padding: 0;
+    flex: none;
+    display: grid;
+    place-items: center;
+    background: var(--sch);
+    color: var(--on);
+    cursor: pointer;
+    transition: background .2s, color .2s, transform .25s cubic-bezier(.3, 1.7, .5, 1);
+}
+.ic-btn:hover { background: var(--sch-h); }
+.ic-btn:active { transform: scale(.94); }
+.ic-btn:disabled { opacity: .4; cursor: default; }
+.ic-btn svg.i { width: 20px; height: 20px; }
+
+/* A destructive icon button keeps the container and only takes the error ink. */
+.ic-btn.danger { background: var(--errc); color: var(--err); }
+.ic-btn.danger:hover { background: var(--errc); filter: brightness(1.12); }
+
+.btn.x {
+    background: var(--sch);
+    color: var(--var);
+    padding: 0 18px;
+}
+.btn.x:hover { background: var(--sch-h); filter: none; }
+.btn.x svg.i { width: 17px; height: 17px; }
+
+/* The chart's inline "cancel" sits inside a text line, not a dialog bar — it
+   keeps the text-button shape and drops the container it would otherwise
+   inherit from `.btn.x`. */
+.patch-line .btn.x {
+    background: none;
+    color: var(--pri);
+    padding: 0 8px;
+}
+
+/* The weight dialog's number is the subject of the card, not a form field. */
+.wt-num {
+    width: 132px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 44px;
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -1.5px;
+    text-align: center;
+    outline: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Container transform: the exit with nothing to return to ────────────────
+   When the row a surface grew out of has been deleted, clipping back to its
+   old box would land on empty space. `ContainerTransform` drops the snapshot
+   and adds `.fade`, which keeps the surface where it is and simply dissolves
+   it — the same shape as a sheet that was opened without a trigger. */
+.m3e-ct.out.fade {
+    clip-path: inset(0px round 0px);
+    background: var(--bg);
+    opacity: 0;
+    transition: opacity .2s ease, background-color .2s ease;
+}
+.m3e-ct.out.fade .m3e-ct-inner {
+    opacity: 1;
+    transform: none;
+    transition: none;
 }

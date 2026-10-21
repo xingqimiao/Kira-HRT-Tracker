@@ -44,7 +44,7 @@ before(async () => {
     sessionTtlMinutes: 30,
     rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },
   });
-  pg = await bootPostgres({ dir: './.pgdata-keymaterial', port: 55446, database: 'hrt_keymaterial' });
+  pg = await bootPostgres({ dir: './.pgdata-keymaterial', port: 55448, database: 'hrt_keymaterial' });
   await useDatabase(pg);
   ({ server, base } = await startApiServer());
 }, { timeout: 180_000 });

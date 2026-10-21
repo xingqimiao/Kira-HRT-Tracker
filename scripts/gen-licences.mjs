@@ -104,6 +104,15 @@ const UPSTREAM_WORKS = [
         copyright: 'Aly and the other authors of Transfeminine Science',
     },
     {
+        name: 'Featherline',
+        url: 'https://github.com/mkx173/Featherline',
+        roleKey: 'licence.upstream_featherline',
+        // GPL-3.0. The upstream source of the latest pharmacokinetic fixes and
+        // model corrections this app's engine builds on.
+        licence: 'GPL-3.0',
+        noLicence: false,
+    },
+    {
         name: 'Transmtf-HRT-Tracker',
         url: 'https://github.com/TransmtfTeam/Transmtf-HRT-Tracker',
         roleKey: 'licence.upstream_pk_model',

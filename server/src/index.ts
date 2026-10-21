@@ -15,6 +15,7 @@ import { getPool, migrate } from './db.ts';
 import { getConfig } from './config.ts';
 import { startServer } from './http.ts';
 import { startPushScanner } from './push.ts';
+import { startAfdianSync } from './afdianSync.ts';
 import { buildServer } from './mcp.ts';
 import { AccountService } from './accounts.ts';
 
@@ -86,6 +87,13 @@ async function main(): Promise<void> {
     // Supplementary push only runs when a service account is configured; the
     // scanner is a no-op otherwise, so a deployment that opted out spins no timer.
     startPushScanner();
+    // Afdian's webhook client cannot complete a modern TLS handshake, so the sponsor
+    // list is polled instead. Unconfigured credentials mean no timer.
+    if (config.afdian) {
+      const minutes = config.afdianSyncMinutes ?? 30;
+      process.stdout.write(`hrt-server: Afdian sponsor sync on (${minutes}-minute poll)\n`);
+      startAfdianSync(minutes * 60_000);
+    }
     // Drain in-flight queries on shutdown instead of severing connections.
     for (const signal of ['SIGINT', 'SIGTERM'] as const) {
       process.on(signal, () => {

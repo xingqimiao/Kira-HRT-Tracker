@@ -36,7 +36,7 @@ const {
   SYNC_SCALARS,
   RECORD_KINDS,
 } = await import('../src/utils/syncMerge.ts');
-const { payloadToRecords, recordsToPayload } = await import('../src/services/recordDocs.ts');
+const { payloadToRecords, recordsToPayload, changedRecords } = await import('../src/services/recordDocs.ts');
 const { toLocalPayload, withRemoteTombstones } = await import('../src/services/coreSync.ts');
 const { sanitizeMedPlans } = await import('../src/utils/medPlan.ts');
 
@@ -300,6 +300,11 @@ check('every settings key survives the round trip, not just the sampled ones', (
     hrtStartDate: '2024-01-01', recheckIntervals: '{"liverMonths":3,"estradiolMonths":3}',
     ocrModelTier: 'tiny', timezone: 'Asia/Tokyo',
     pkEngine: 'transmtf',
+    // The one non-scalar in the bag: an array, carried whole.
+    gelProducts: [{
+      id: 1000, name: 'DIY', concentrationMGmL: 1, defaultAreaCM2: 400,
+      refDoseMG: 2, kPenBase: 0.112, kLoss: 1.288, kRel: 0.022,
+    }],
   };
   const s = stateWith({ appSettings: everyKey, appSettingsUpdatedAt: 777 });
   const back = normalizeSyncState({ appState: toAppState(s) });
@@ -456,6 +461,158 @@ check('settings alone do not mint an otherwise-empty backup', () => {
 check('a record still counts as content', () => {
   const s = modeWith('transfem', { events: [{ id: 'e1' }] });
   assert.equal(hasContent(s), true);
+});
+
+// --- incremental push -------------------------------------------------------
+//
+// `changedRecords` decides what a sync uploads: the merged payload minus the records
+// the account already holds. Two ways to get this wrong are invisible in the UI and
+// were both live defects in this codebase's history, so they are asserted here:
+//
+//   - too strict (compare whole records): the bookkeeping fields differ between two
+//     devices holding the same record, so both re-upload forever — the quick-dose
+//     `createdAt` ping-pong;
+//   - too lenient (fewer fields than the merge): a real edit never leaves the device,
+//     and the other device silently keeps the old value.
+
+/** A payload in the transport's own shape, as `useCoreSync` would push it. */
+function pushPayload(state) {
+  return toLocalPayload(state);
+}
+
+const ids = (docs) => docs.map(d => d.id).sort();
+
+check('an idle sync uploads nothing', () => {
+  const state = modeWith('transfem', {
+    events: [{ id: 'e1', route: 'injection', ester: 'EV', doseMG: 5, timeH: 100, updatedAt: 9 }],
+  });
+  const payload = pushPayload(state);
+  assert.deepEqual(ids(changedRecords(payload, payload)), [], 'the server already has this state');
+});
+
+check('a new dose is the only record uploaded', () => {
+  const base = modeWith('transfem', {
+    events: [{ id: 'e1', route: 'injection', ester: 'EV', doseMG: 5, timeH: 100, updatedAt: 9 }],
+  });
+  const grown = modeWith('transfem', {
+    events: [
+      ...base.modes.transfem.events,
+      { id: 'e2', route: 'injection', ester: 'EV', doseMG: 6, timeH: 110, updatedAt: 10 },
+    ],
+  });
+  assert.deepEqual(ids(changedRecords(pushPayload(grown), pushPayload(base))), ['dose:transfem:e2']);
+});
+
+check('an edited dose is uploaded, its untouched neighbours are not', () => {
+  const remote = modeWith('transfem', {
+    events: [
+      { id: 'e1', route: 'injection', ester: 'EV', doseMG: 5, timeH: 100, updatedAt: 9 },
+      { id: 'e2', route: 'injection', ester: 'EV', doseMG: 6, timeH: 110, updatedAt: 9 },
+    ],
+  });
+  const local = modeWith('transfem', {
+    events: [
+      { id: 'e1', route: 'injection', ester: 'EV', doseMG: 8, timeH: 100, updatedAt: 12 },
+      ...remote.modes.transfem.events.slice(1),
+    ],
+  });
+  assert.deepEqual(ids(changedRecords(pushPayload(local), pushPayload(remote))), ['dose:transfem:e1']);
+});
+
+check('a stamp-only difference is not an upload', () => {
+  // The merge adopts the later `updatedAt` when the content matches, so the two copies
+  // differ only in bookkeeping. Re-uploading here is how two devices ping-pong.
+  const remote = modeWith('transfem', {
+    events: [{ id: 'e1', route: 'injection', ester: 'EV', doseMG: 5, timeH: 100, updatedAt: 9 }],
+  });
+  const local = modeWith('transfem', {
+    events: [{ id: 'e1', route: 'injection', ester: 'EV', doseMG: 5, timeH: 100, updatedAt: 999 }],
+  });
+  assert.deepEqual(ids(changedRecords(pushPayload(local), pushPayload(remote))), []);
+});
+
+check('a quick dose with a different createdAt is not an upload', () => {
+  // The documented trap: an import restamps `createdAt`, so two devices holding the same
+  // button disagree on it forever. Identity is the button's content, not its metadata.
+  const remote = modeWith('transfem', {
+    quickDoses: [{ id: 'q1', route: 'oral', ester: 'EV', value: 2, createdAt: 1, updatedAt: 1 }],
+  });
+  const local = modeWith('transfem', {
+    quickDoses: [{ id: 'q1', route: 'oral', ester: 'EV', value: 2, createdAt: 2, updatedAt: 1 }],
+  });
+  assert.deepEqual(ids(changedRecords(pushPayload(local), pushPayload(remote))), []);
+});
+
+check('a lab monitoring value edit is uploaded', () => {
+  // The same edit the merge has to notice: `prolactin` is content, not metadata.
+  const remote = modeWith('transfem', {
+    labResults: [{ id: 'l1', concValue: 190, unit: 'pg/ml', timeH: 100, prolactin: 12, updatedAt: 5 }],
+  });
+  const local = modeWith('transfem', {
+    labResults: [{ id: 'l1', concValue: 190, unit: 'pg/ml', timeH: 100, prolactin: 21, updatedAt: 6 }],
+  });
+  assert.deepEqual(ids(changedRecords(pushPayload(local), pushPayload(remote))), ['lab:transfem:l1']);
+});
+
+check('a deletion tombstone still travels', () => {
+  // Deletions merge as a union, so a local map that has gained an entry must be written
+  // or the other device resurrects the record.
+  const local = modeWith('transfem', {
+    deletions: { ...emptySyncState().modes.transfem.deletions, events: { e1: 500 } },
+  });
+  const remote = modeWith('transfem', {});
+  assert.deepEqual(ids(changedRecords(pushPayload(local), pushPayload(remote))), ['del:transfem:events']);
+  assert.deepEqual(
+    ids(changedRecords(pushPayload(local), pushPayload(local))),
+    [],
+    'a tombstone the server already holds is not re-sent',
+  );
+});
+
+check('a settings bag the server already covers is not re-sent', () => {
+  // The server merges the bag per key, so its copy can hold keys this device does not
+  // state (an agent's `timezone`). Re-sending would leave the server's copy unchanged —
+  // a write per sync for nothing. This is the write-amplification loop the delta must not
+  // create.
+  const remote = stateWith({
+    appSettings: { theme: 'dark', timezone: 'Asia/Tokyo' },
+    appSettingsUpdatedAt: 700,
+  });
+  const local = stateWith({ appSettings: { theme: 'dark' }, appSettingsUpdatedAt: 700 });
+  assert.deepEqual(ids(changedRecords(pushPayload(local), pushPayload(remote))), []);
+});
+
+check('a newer settings stamp is uploaded', () => {
+  const remote = stateWith({ appSettings: { theme: 'dark' }, appSettingsUpdatedAt: 700 });
+  const local = stateWith({ appSettings: { theme: 'light' }, appSettingsUpdatedAt: 701 });
+  assert.deepEqual(ids(changedRecords(pushPayload(local), pushPayload(remote))), ['scalar:appSettings']);
+});
+
+check('a settings key this device changes is uploaded even though the bag is a subset', () => {
+  const remote = stateWith({
+    appSettings: { theme: 'dark', timezone: 'Asia/Tokyo' },
+    appSettingsUpdatedAt: 700,
+  });
+  const local = stateWith({ appSettings: { theme: 'light' }, appSettingsUpdatedAt: 700 });
+  assert.deepEqual(ids(changedRecords(pushPayload(local), pushPayload(remote))), ['scalar:appSettings']);
+});
+
+check('the delta keeps every record the merge would call a change', () => {
+  // Cross-check against the merge engine itself: whenever the merged state is stale
+  // against the account, the delta must be non-empty — an empty upload there is the
+  // "edit never left the device" failure.
+  const local = modeWith('transfem', {
+    events: [{ id: 'e1', route: 'injection', ester: 'EV', doseMG: 9, timeH: 100, updatedAt: 20 }],
+  });
+  const remote = modeWith('transfem', {
+    events: [{ id: 'e1', route: 'injection', ester: 'EV', doseMG: 5, timeH: 100, updatedAt: 10 }],
+  });
+  const merged = mergeSyncStates(local, remote);
+  assert.ok(merged.remoteStale, 'the merge says the account is behind');
+  assert.ok(
+    changedRecords(pushPayload(merged.merged), pushPayload(remote)).length > 0,
+    'the delta agrees there is something to send',
+  );
 });
 
 // --- fingerprint ------------------------------------------------------------

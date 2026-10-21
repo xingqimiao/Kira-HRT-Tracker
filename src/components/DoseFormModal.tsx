@@ -2,8 +2,9 @@ import React from 'react';
 import DoseForm, { DoseTemplate } from './DoseForm';
 import { QuickDose } from './dose_form/QuickDoseButtons';
 import { useEscape } from '../hooks/useEscape';
-import { usePresence } from '../hooks/usePresence';
+import { ContainerTransform } from '../ui/ContainerTransform';
 import { DoseEvent, type PkEngineId } from '../../logic';
+import { useTranslation } from '../contexts/LanguageContext';
 
 export type { DoseTemplate, QuickDose };
 
@@ -24,6 +25,11 @@ interface DoseFormModalProps {
     activeEngine?: PkEngineId;
 }
 
+/**
+ * The shell-level dose editor. It is the same container transform as the History
+ * FAB: `#fab` is recorded as the source by `PrototypeShell`, and a chart point
+ * falls back to the centred scale because no button was pressed.
+ */
 const DoseFormModal: React.FC<DoseFormModalProps> = ({
     isOpen,
     onClose,
@@ -39,11 +45,7 @@ const DoseFormModal: React.FC<DoseFormModalProps> = ({
     events = [],
     activeEngine
 }) => {
-    // Held mounted through the close so the dialog has an exit to play — the
-    // `if (!isOpen) return null` this replaced unmounted it on the same frame the
-    // state flipped, which is what made closing it disappear rather than leave.
-    const { mounted, state } = usePresence(isOpen, 200);
-
+    const { t } = useTranslation();
     const handleClose = () => {
         onClose();
     };
@@ -61,31 +63,29 @@ const DoseFormModal: React.FC<DoseFormModalProps> = ({
         handleClose();
     };
 
-    if (!mounted) return null;
-
     return (
-        <div className="modal-overlay" data-state={state}>
-            <div className="modal-shell modal-shell-wide" data-state={state}>
-            <div className="modal-card overflow-hidden p-0 w-full max-w-lg md:max-w-xl h-[92vh] md:max-h-[85vh] flex flex-col">
-
-                <DoseForm
-                    eventToEdit={eventToEdit}
-                    onSave={handleSave}
-                    onDelete={onDelete}
-                    onCancel={handleClose}
-                    templates={templates}
-                    onSaveTemplate={onSaveTemplate}
-                    onDeleteTemplate={onDeleteTemplate}
-                    quickDoses={quickDoses}
-                    onAddQuickDose={onAddQuickDose}
-                    onDeleteQuickDose={onDeleteQuickDose}
-                    isInline={false}
-                    events={events}
-                    activeEngine={activeEngine}
-                />
-            </div>
-            </div>
-        </div>
+        <ContainerTransform
+            open={isOpen}
+            onClose={handleClose}
+            title={eventToEdit ? t('modal.dose.edit_title') : t('timeline.add_title')}
+            bare
+            ghostIcon="plus"
+        >
+            <DoseForm
+                eventToEdit={eventToEdit}
+                onSave={handleSave}
+                onDelete={onDelete}
+                onCancel={handleClose}
+                templates={templates}
+                onSaveTemplate={onSaveTemplate}
+                onDeleteTemplate={onDeleteTemplate}
+                quickDoses={quickDoses}
+                onAddQuickDose={onAddQuickDose}
+                onDeleteQuickDose={onDeleteQuickDose}
+                events={events}
+                activeEngine={activeEngine}
+            />
+        </ContainerTransform>
     );
 };
 

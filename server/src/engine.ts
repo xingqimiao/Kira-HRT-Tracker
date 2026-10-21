@@ -58,6 +58,7 @@ import {
   runSimulation as vendorRunSimulation,
   computeCalibration as vendorComputeCalibration,
   canRunVendor,
+  withGelProductCatalogue,
 } from '../../src/pk/index.ts';
 
 import type {
@@ -113,9 +114,10 @@ export interface CurveContext {
  *   - a **transmasc** account is kept on the built-in engine, because the vendored
  *     model has no testosterone at all and an empty curve reads as "no doses";
  *   - a **testosterone** curve is built-in-only for the same reason;
- *   - an event list naming any compound the engine does not model (a T ester, a
- *     spirolactone) refuses the lot rather than simulating a curve quietly missing a
- *     dose, via the adapter's own `canRunVendor`.
+ *   - an event list naming a compound the engine does not model **and a curve depends
+ *     on** (a T ester) refuses the lot rather than simulating a curve quietly missing a
+ *     dose, via the adapter's own `canRunVendor`; a curveless compound such as
+ *     spironolactone is skipped instead, so it does not veto the engine;
  */
 export function engineForCurve(
   preference: string | null | undefined,
@@ -145,6 +147,20 @@ export function simulateForEngine(
   if (engine === 'transmtf') return vendorRunSimulation(events, bodyWeightKG);
   return simulateWithParams(events, bodyWeightKG, params);
 }
+
+/**
+ * The account's own gel products, as the sealed settings bag carries them.
+ *
+ * Only the Transmtf engine reads them (a gel record's `gelProductId` ≥ 1000 resolves
+ * against this list); the bag may hold anything a client wrote, so the returned value
+ * is `unknown` — the engine's own sanitizer is what decides which entries are usable.
+ */
+export function gelProductsOf(appState: Record<string, unknown> | null | undefined): unknown {
+  const bag = appState as { settings?: { gelProducts?: unknown } } | null | undefined;
+  return bag?.settings?.gelProducts;
+}
+
+export { withGelProductCatalogue };
 
 /** Calibrate under the chosen engine, each with its own estimators. */
 export function calibrateForEngine(

@@ -20,6 +20,13 @@ const exportCompoundName = (ester: Ester): string => {
         case Ester.TE:
         case Ester.TU:
             return 'Testosterone';
+        case Ester.P4: return 'Progesterone';
+        case Ester.MPA: return 'Medroxyprogesterone Acetate';
+        case Ester.NET: return 'Norethisterone';
+        case Ester.RALOX: return 'Raloxifene';
+        case Ester.FIN: return 'Finasteride';
+        case Ester.DUT: return 'Dutasteride';
+        case Ester.GNRH: return 'GnRH Analogue';
         case Ester.E2:
         case Ester.EB:
         case Ester.EV:

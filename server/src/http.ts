@@ -36,6 +36,23 @@ import { isGoogleConfigured } from './oauth.ts';
 import { RecordService, buildExportPayload, buildSettingsScalars, publicStats } from './records.ts';
 import { getPool } from './db.ts';
 import { ShareService } from './shares.ts';
+import {
+  acceptAfdianOrder,
+  acceptBmcDonation,
+  acceptBmcSubscription,
+  adminTokenMatches,
+  afdianSignatureMatches,
+  apply as applySupporter,
+  approve as approveSupporter,
+  bmcSignatureMatches,
+  cleanBmcName,
+  listApproved,
+  listPending,
+  removeBmcRecord,
+  remove as removeSupporter,
+  rename as renameSupporter,
+  resolveAfdianSponsorName,
+} from './supporters.ts';
 import { PushStore, startPushScanner } from './push.ts';
 import type { AuthContext } from './types.ts';
 import {
@@ -72,10 +89,16 @@ function corsHeaders(requestOrigin: string | undefined): Record<string, string> 
   // call the same API. Keep this an exact allowlist; never reflect arbitrary origins.
   const allowedOrigins = new Set([
     publicOrigin,
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
     'http://tauri.localhost',
     'https://tauri.localhost',
   ]);
-  if (!requestOrigin || !allowedOrigins.has(requestOrigin)) return null;
+  // In development, also allow LAN IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x) on dev ports
+  const isDevLan = requestOrigin && /^http:\/\/(?:192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)(?::(?:3000|5173|5175))?$/.test(requestOrigin);
+  if (!requestOrigin || (!allowedOrigins.has(requestOrigin) && !isDevLan)) return null;
   return {
     'Access-Control-Allow-Origin': requestOrigin,
     'Access-Control-Allow-Credentials': 'true',
@@ -172,7 +195,14 @@ function clientIp(req: IncomingMessage): string {
 // Body and response helpers
 // ---------------------------------------------------------------------------
 
-function readBody(req: IncomingMessage, limitBytes = 1_000_000): Promise<unknown> {
+/**
+ * Buffer a request body without parsing it.
+ *
+ * The webhook signature is an HMAC over the *raw* bytes. Re-serialising the parsed
+ * JSON would produce a different string for any client that formatted it
+ * differently, and the comparison would fail for a genuine delivery.
+ */
+function readRawBody(req: IncomingMessage, limitBytes = 1_000_000): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -187,17 +217,19 @@ function readBody(req: IncomingMessage, limitBytes = 1_000_000): Promise<unknown
       }
       chunks.push(chunk);
     });
-    req.on('end', () => {
-      const raw = Buffer.concat(chunks).toString('utf8');
-      if (!raw) return resolve(undefined);
-      try {
-        resolve(JSON.parse(raw));
-      } catch {
-        reject(new Error('request body is not valid JSON'));
-      }
-    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
+}
+
+async function readBody(req: IncomingMessage, limitBytes = 1_000_000): Promise<unknown> {
+  const raw = await readRawBody(req, limitBytes);
+  if (!raw.length) return undefined;
+  try {
+    return JSON.parse(raw.toString('utf8'));
+  } catch {
+    throw new Error('request body is not valid JSON');
+  }
 }
 
 function send(res: ServerResponse, status: number, body: unknown): void {
@@ -972,16 +1004,22 @@ export function createRequestHandler() {
       }
 
       // The batch form of the same write. It exists so a sync costs one round trip
-      // rather than one per record, and it returns the account's state with the
-      // result so the caller does not have to fetch what it just stored. The body
-      // is a whole history, so the route's own cap is well above the default; the
-      // per-record size check still applies inside `putMany`.
+      // rather than one per record. The body is a whole history, so the route's own
+      // cap is well above the default; the per-record size check still applies inside
+      // `putMany`. By default the account's state comes back with the result, so a
+      // caller does not have to fetch what it just stored — unless it says
+      // `echoState: false`, which the incremental sync does because it merged against
+      // its own read and reassembly decrypts every row the account owns.
       if (path === '/api/records/batch' && req.method === 'POST') {
         const ctx = await requireBoundCtx();
         if (!ctx) return;
-        const body = (await readBody(req, 8_000_000)) as { records?: unknown } | undefined;
+        const body = (await readBody(req, 8_000_000)) as
+          { records?: unknown; echoState?: unknown } | undefined;
         const result = await RecordService.putMany(ctx, body?.records);
         if (!result.ok) return send(res, 400, { error: result.error });
+        if (body?.echoState === false) {
+          return send(res, 200, { written: result.written, rejected: result.rejected });
+        }
         // Reassembly reads every row again; if it throws after a write that already
         // committed, the write result is still true, so the state is omitted rather
         // than turning a successful write into a failure.
@@ -1112,16 +1150,27 @@ export function createRequestHandler() {
       // authorization is the token in the body, and the response is `publicView` — no
       // id, no owner, no hash.
       //
-      // It is rate-limited by IP like the other unauthenticated POST routes, because a
-      // token endpoint with no ceiling is an invitation to guess in bulk.
+      // It is rate-limited by IP with headroom for live-polling (60/min), while brute-force
+      // password guessing is prevented by link-scoped exponential lockout on the share row.
       if (path === '/api/shares/access' && req.method === 'POST') {
         const limits = getConfig().rateLimits;
         if (rateLimited(`share:${clientIp(req)}`, limits.login, limits.windowMs)) {
           return send(res, 429, { error: 'too many attempts; try again shortly' });
         }
-        const body = (await readBody(req)) as { token?: unknown; password?: unknown } | undefined;
-        const result = await ShareService.access(body?.token, body?.password);
+        const body = (await readBody(req, 16_384)) as
+          | { token?: unknown; password?: unknown; viewerPass?: unknown }
+          | undefined;
+        const result = await ShareService.access(body?.token, body?.password, body?.viewerPass);
         if (!result.ok) {
+          if (result.error === 'locked') {
+            const retryAfter = (result as { retryAfterSeconds?: number }).retryAfterSeconds ?? 900;
+            res.setHeader('Retry-After', String(retryAfter));
+            return send(res, 429, {
+              code: 'SHARE_LOCKED',
+              message: 'too many wrong passwords; share is temporarily locked',
+              retryAfterSeconds: retryAfter,
+            });
+          }
           // The code, not the status, is what the client switches on — it already has
           // copy for each of these. `SHARE_NOT_FOUND` covers both a token that never
           // existed and one that has expired, which is the pair a prober could otherwise
@@ -1152,10 +1201,12 @@ export function createRequestHandler() {
         const ctx = await requireCtx();
         if (!ctx) return;
         const body = (await readBody(req)) as
-          | { snapshot?: unknown; password?: unknown; expiresAt?: unknown; live?: unknown }
+          | { snapshot?: unknown; sealed?: unknown; mode?: unknown; password?: unknown; expiresAt?: unknown; live?: unknown }
           | undefined;
         const result = await ShareService.create(ctx.userId, {
           snapshot: body?.snapshot,
+          sealed: body?.sealed,
+          mode: body?.mode,
           password: body?.password,
           expiresAt: body?.expiresAt,
           live: body?.live,
@@ -1167,8 +1218,15 @@ export function createRequestHandler() {
       if (path === '/api/shares/live' && req.method === 'PUT') {
         const ctx = await requireCtx();
         if (!ctx) return;
-        const body = (await readBody(req)) as { snapshot?: unknown } | undefined;
-        const result = await ShareService.syncLive(ctx.userId, body?.snapshot);
+        const body = (await readBody(req)) as
+          | { shareId?: unknown; sealed?: unknown; mode?: unknown; snapshot?: unknown }
+          | undefined;
+        const result = await ShareService.syncLive(ctx.userId, {
+          shareId: body?.shareId,
+          sealed: body?.sealed,
+          mode: body?.mode,
+          snapshot: body?.snapshot,
+        });
         if (!result.ok) return send(res, 400, { code: 'SHARE_REJECTED', message: result.error });
         return send(res, 200, result.value);
       }
@@ -1180,6 +1238,233 @@ export function createRequestHandler() {
         const removed = await ShareService.revoke(ctx.userId, shareRevoke[1]);
         if (!removed) return send(res, 404, { error: 'no such share' });
         return send(res, 200, { ok: true });
+      }
+
+      // --- Supporters -------------------------------------------------------
+      //
+      // `/api/supporters` and `/api/supporters/apply` are public on purpose: the
+      // thank-you list sits on the donation page, before anyone has an account.
+      // The webhook is public too, but authenticated by its HMAC rather than by
+      // anything a caller can replay.
+      if (path === '/api/supporters' && req.method === 'GET') {
+        const supporters = await listApproved();
+        // A minute of caching keeps the donation page from hitting the database on
+        // every view without making a new supporter invisible for long.
+        res.setHeader('Cache-Control', 'public, max-age=60');
+        return send(res, 200, { supporters });
+      }
+
+      if (path === '/api/supporters/apply' && req.method === 'POST') {
+        const ip = clientIp(req);
+        // Two gates: a burst limit, then an hourly one. Each attempt can fan out to
+        // four RPC endpoints, so a single script must not be able to spend the shared
+        // chain-verification budget.
+        if (rateLimited(`supporters-burst:${ip}`, 3, 60_000)
+          || rateLimited(`supporters:${ip}`, 10, 3_600_000)) {
+          return send(res, 429, {
+            code: 'RATE_LIMITED',
+            error: 'too many applications; try again later',
+          });
+        }
+        const body = (await readBody(req, 8_192)) as
+          | { txHash?: unknown; name?: unknown; turnstileToken?: unknown }
+          | undefined;
+
+        // Human check before any outbound chain call: Turnstile is configured in
+        // production, and a bot should not be able to spend the RPC budget.
+        const human = await verifyTurnstile(body?.turnstileToken, 'donate', ip);
+        if (!human.ok) {
+          return send(res, 403, { code: 'TURNSTILE', error: human.error });
+        }
+
+        const result = await applySupporter(body?.txHash, body?.name);
+        if (!result.ok) {
+          const status = result.code === 'duplicate_tx'
+            ? 409
+            : result.code === 'verify_unavailable'
+              ? 503
+              : result.code === 'invalid_name' || result.code === 'invalid_tx_hash'
+                ? 400
+                : 422;
+          return send(res, status, {
+            code: result.code.toUpperCase(),
+            error: result.message,
+          });
+        }
+        return send(res, 201, result);
+      }
+
+      // A browser GET on a webhook URL is a common way to "test" it. Answer with the
+      // actual reason instead of the generic 404, which reads like the route is missing.
+      if ((path === '/api/supporters/bmc' || path === '/api/supporters/afdian') && req.method !== 'POST') {
+        return send(res, 405, { error: 'method not allowed; webhooks are POST only' });
+      }
+
+      if (path === '/api/supporters/bmc' && req.method === 'POST') {
+        const secret = getConfig().bmcWebhookSecret ?? null;
+        // No secret means the deployment has not finished setting the webhook up.
+        // Refusing is the only safe answer: accepting unsigned deliveries would let
+        // anyone write a name onto the public list.
+        if (!secret) return send(res, 503, { error: 'webhook not configured' });
+
+        const raw = await readRawBody(req, 64_000);
+        const header = req.headers['x-signature-sha256'];
+        const signature = Array.isArray(header) ? header[0] : header;
+        if (!bmcSignatureMatches(raw, signature, secret)) {
+          return send(res, 401, { error: 'invalid signature' });
+        }
+
+        let event: Record<string, unknown>;
+        try {
+          event = JSON.parse(raw.toString('utf8')) as Record<string, unknown>;
+        } catch {
+          return send(res, 400, { error: 'body is not JSON' });
+        }
+
+        const type = typeof event.type === 'string' ? event.type : '';
+        const data = (event.data ?? {}) as Record<string, unknown>;
+        const paymentId = data.id === undefined || data.id === null ? '' : String(data.id);
+        // Payment ids and subscription ids are separate integer sequences, so the
+        // stored key is prefixed. Without it a payment and a subscription that share
+        // a number would overwrite or delete each other.
+        const paymentKey = paymentId ? `pay:${paymentId}` : '';
+        const subscriptionKey = paymentId ? `sub:${paymentId}` : '';
+
+        // The dashboard labels these "Support created" / "Support refunded", while
+        // the documented wire values (OpenAPI `EventType`) are `donation.*`. Both
+        // spellings are accepted so a label/wire rename on either side cannot make
+        // a real donation silently disappear.
+        const created = type === 'donation.created' || type === 'support.created';
+        const refunded = type === 'donation.refunded' || type === 'support.refunded';
+        const subscriptionStarted = type === 'membership.started' || type === 'recurring_donation.started';
+        const subscriptionUpdated = type === 'membership.updated' || type === 'recurring_donation.updated';
+        const subscriptionCancelled = type === 'membership.cancelled' || type === 'recurring_donation.cancelled';
+
+        // A dashboard test delivery is acknowledged so the dashboard shows success,
+        // but never written: `live_mode: false` means no money moved.
+        if (event.live_mode !== true) return send(res, 200, { ok: true, ignored: 'test' });
+
+        if (created) {
+          if (data.status !== 'succeeded') return send(res, 200, { ok: true, ignored: 'status' });
+          const name = cleanBmcName(data.supporter_name);
+          // An anonymous donation has no name to thank. Skipping it is also the
+          // privacy-preserving default: the provider can supply a name the donor
+          // did not intend to publish.
+          if (!name || !paymentKey) return send(res, 200, { ok: true, ignored: 'anonymous' });
+          await acceptBmcDonation({ name, paymentKey });
+          return send(res, 200, { ok: true });
+        }
+
+        if (refunded) {
+          if (paymentKey) await removeBmcRecord(paymentKey);
+          return send(res, 200, { ok: true });
+        }
+
+        // A monthly support is a subscription, not a one-time payment: it arrives as
+        // `membership.*` or `recurring_donation.*`. Ignoring these was the difference
+        // between a monthly supporter appearing on the list and never appearing.
+        if (subscriptionStarted || subscriptionUpdated) {
+          const name = cleanBmcName(data.supporter_name);
+          if (!name || !subscriptionKey) return send(res, 200, { ok: true, ignored: 'anonymous' });
+          await acceptBmcSubscription({ name, subscriptionKey });
+          return send(res, 200, { ok: true });
+        }
+
+        // Cancelled means the subscription has actually ended. Paused is deliberately
+        // not handled: a paused supporter is still a supporter and may resume.
+        if (subscriptionCancelled) {
+          if (subscriptionKey) await removeBmcRecord(subscriptionKey);
+          return send(res, 200, { ok: true });
+        }
+
+        // Every other event is acknowledged: a non-2xx makes BMC retry, and retrying
+        // an event this service never intended to handle is noise.
+        return send(res, 200, { ok: true, ignored: type || 'unknown' });
+      }
+
+      // Afdian's webhook. It has no shared secret: every delivery is signed with
+      // Afdian's RSA key over the order's four identifying fields. The order object
+      // carries no display name, so a verified order is queued as `pending` for the
+      // maintainer to name and approve.
+      if (path === '/api/supporters/afdian' && req.method === 'POST') {
+        let body: unknown;
+        try {
+          body = await readBody(req, 64_000);
+        } catch {
+          return send(res, 200, { ec: 400003, em: 'params was not valid json string' });
+        }
+        const data = (body as { data?: Record<string, unknown> } | undefined)?.data;
+        // Afdian expects this envelope, not a bare object: a response without
+        // `ec: 200` is treated as a failed callback and retried.
+        if (!data || typeof data !== 'object') return send(res, 200, { ec: 200, em: '' });
+        const order = data.order as Record<string, unknown> | undefined;
+        if (data.type !== 'order' || !order) return send(res, 200, { ec: 200, em: '' });
+        if (Number(order.status) !== 2) return send(res, 200, { ec: 200, em: '' });
+
+        const fields = {
+          outTradeNo: String(order.out_trade_no ?? ''),
+          userId: String(order.user_id ?? ''),
+          planId: String(order.plan_id ?? ''),
+          totalAmount: String(order.total_amount ?? ''),
+        };
+        const publicKey = getConfig().afdianPublicKey ?? undefined;
+        if (!fields.outTradeNo || !afdianSignatureMatches(fields, String(data.sign ?? ''), publicKey)) {
+          return send(res, 200, { ec: 400005, em: 'sign validation failed' });
+        }
+
+        // The order has a user id, not a name. When the Open API is configured this
+        // resolves the nickname and publishes immediately; otherwise the row waits
+        // for the maintainer.
+        const name = await resolveAfdianSponsorName(fields.userId);
+        await acceptAfdianOrder(fields.outTradeNo, name);
+        return send(res, 200, { ec: 200, em: '' });
+      }
+
+      // Maintainer surface. Token-only, no session: it is called from a shell, not
+      // from a browser, and a missing token means the feature is off.
+      if (path.startsWith('/api/supporters/admin')) {
+        const token = getConfig().supportersAdminToken ?? null;
+        if (!token) return send(res, 404, { error: 'not found' });
+        if (!adminTokenMatches(req.headers.authorization, token)) {
+          return send(res, 401, { error: 'unauthorized' });
+        }
+
+        if (path === '/api/supporters/admin/pending' && req.method === 'GET') {
+          return send(res, 200, { pending: await listPending() });
+        }
+
+        const approveMatch = path.match(/^\/api\/supporters\/admin\/([0-9a-f-]{36})\/approve$/);
+        if (approveMatch && req.method === 'POST') {
+          const approved = await approveSupporter(approveMatch[1]);
+          return approved
+            ? send(res, 200, { ok: true })
+            : send(res, 404, { error: 'no such pending supporter' });
+        }
+
+        // Afdian orders arrive without a name and BMC names can be hostile; this is
+        // how a row is given the name that will actually be published.
+        const renameMatch = path.match(/^\/api\/supporters\/admin\/([0-9a-f-]{36})$/);
+        if (renameMatch && req.method === 'PATCH') {
+          const body = (await readBody(req, 4_096)) as { name?: unknown } | undefined;
+          const renamed = await renameSupporter(renameMatch[1], body?.name);
+          if (!renamed.ok) {
+            return send(res, renamed.error === 'not_found' ? 404 : 400, {
+              code: renamed.error.toUpperCase(),
+              error: renamed.message,
+            });
+          }
+          return send(res, 200, { ok: true, name: renamed.name });
+        }
+
+        const removeMatch = path.match(/^\/api\/supporters\/admin\/([0-9a-f-]{36})$/);
+        if (removeMatch && req.method === 'DELETE') {
+          const removed = await removeSupporter(removeMatch[1]);
+          return removed
+            ? send(res, 200, { ok: true })
+            : send(res, 404, { error: 'no such supporter' });
+        }
+
+        return send(res, 404, { error: 'not found' });
       }
 
       send(res, 404, { error: 'not found' });

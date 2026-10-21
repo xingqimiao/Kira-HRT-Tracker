@@ -2,12 +2,11 @@ import React, { useState, useEffect } from 'react';
 import Icon from './Icon';
 import { useTranslation } from '../contexts/LanguageContext';
 import { LabResult, MONITORING_UNIT, isT_LabUnit } from '../../logic';
-import { Check, Trash2, X, ChevronDown, Scan } from '../icons';
-import LabScan from './LabScan';
-import { suggestSelection } from '../utils/ocrParse';
+import { Check, Trash2 } from '../icons';
 import { v4 as uuidv4 } from 'uuid';
-import DateTimePicker from './DateTimePicker';
+import { TimePage } from './TimePage';
 import { LOCALE_MAP } from '../utils/helpers';
+import { Icon as SpriteIcon } from '../ui/SvgDefs';
 
 interface LabResultFormProps {
     resultToEdit?: LabResult | null;
@@ -18,8 +17,7 @@ interface LabResultFormProps {
      * Values to start the add-form with, from a scanned report.
      *
      * Prefills only. The user still edits and presses save — see `LabScan` for why
-     * nothing reaches a record from recognition alone. Applied when the form opens,
-     * so a scan that arrives while the form is already open still lands.
+     * nothing reaches a record from recognition alone.
      */
     initialValues?: { E2?: { value: number; unit: LabUnit }; T?: { value: number; unit: LabUnit } } | null;
 }
@@ -33,8 +31,6 @@ type LabUnit = 'pg/ml' | 'pmol/l' | 'ng/dl' | 'nmol/l';
 const DEFAULT_E2_UNIT: LabUnit = 'pg/ml';
 const DEFAULT_T_UNIT: LabUnit = 'ng/dl';
 
-const divider = "border-b border-[var(--color-m3-outline-variant)] ";
-
 const E2_UNITS: LabUnit[] = [DEFAULT_E2_UNIT, 'pmol/l'];
 const T_UNITS: LabUnit[] = [DEFAULT_T_UNIT, 'nmol/l'];
 const UNIT_LABELS: Record<LabUnit, string> = {
@@ -44,10 +40,8 @@ const UNIT_LABELS: Record<LabUnit, string> = {
     'nmol/l': 'nmol/L',
 };
 
-// One hormone's value + unit toggle. Reused for the estradiol row, the
-// testosterone row, and (in edit mode) the single row matching whichever
-// hormone the record being edited already belongs to.
-const HormoneValueField: React.FC<{
+/** One hormone reading: a large number on the primary container, unit toggle under it. */
+const HormoneHero: React.FC<{
     label: string;
     units: LabUnit[];
     unit: LabUnit;
@@ -55,96 +49,58 @@ const HormoneValueField: React.FC<{
     value: string;
     onValueChange: (v: string) => void;
 }> = ({ label, units, unit, onUnitChange, value, onValueChange }) => (
-    <div>
-        <div className="flex items-center justify-between mb-3">
-            <span className="text-m3-body-medium text-[var(--color-m3-on-surface)] ">
-                {label}
-            </span>
-            <div className="flex gap-4">
-                {units.map(u => (
-                    <button
-                        key={u}
-                        onClick={() => onUnitChange(u)}
-                        className={`text-sm pb-0.5 border-b-2 ${unit === u
-                            ? 'font-semibold text-[var(--color-m3-on-surface)]  border-[var(--color-m3-primary)]'
-                            : 'text-[var(--color-m3-on-surface-variant)]  border-transparent'
-                        }`}
-                    >
-                        {UNIT_LABELS[u]}
-                    </button>
-                ))}
-            </div>
-        </div>
+    <div className="lf-hero">
+        <span className="l">{label}</span>
         <input
             type="number"
             inputMode="decimal"
             placeholder="0.0"
             value={value}
             onChange={e => onValueChange(e.target.value)}
-            className="input-base tabular-nums"
-            style={{ fontSize: '16px' }}
+            className="lf-num"
+            aria-label={label}
         />
-    </div>
-);
-
-// One monitoring analyte, at the unit the sources quote it in. The unit is a
-// label, not a toggle: unlike E2/T these have no second unit the app converts.
-const MonitorField: React.FC<{
-    label: string;
-    unit: string;
-    value: string;
-    onChange: (v: string) => void;
-}> = ({ label, unit, value, onChange }) => (
-    <div>
-        <label className="block text-xs font-semibold text-cos-on-surface-variant pl-1 mb-1.5">
-            {label} <span className="font-normal opacity-70">{unit}</span>
-        </label>
-        <input
-            type="number"
-            inputMode="decimal"
-            placeholder="0.0"
-            value={value}
-            onChange={e => onChange(e.target.value)}
-            className="input-base tabular-nums"
-            style={{ fontSize: '16px' }}
-        />
+        <div className="cg" role="group" aria-label={label}>
+            {units.map(u => (
+                <button key={u} type="button" className={unit === u ? 'on' : ''} onClick={() => onUnitChange(u)}>
+                    {UNIT_LABELS[u]}
+                </button>
+            ))}
+        </div>
     </div>
 );
 
 const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onCancel, onDelete, initialValues }) => {
     const { t, lang } = useTranslation();
-    const [dateStr, setDateStr] = useState("");
+    const [dateStr, setDateStr] = useState('');
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-    const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+    const [isTimePageOpen, setIsTimePageOpen] = useState(false);
 
     // Editing an existing record: single value tied to that record's hormone.
     const [editUnit, setEditUnit] = useState<LabUnit>(DEFAULT_E2_UNIT);
-    const [editValue, setEditValue] = useState("");
+    const [editValue, setEditValue] = useState('');
 
     // Adding new: estradiol and testosterone are independent fields, so one
     // blood draw covering both markers can be logged as a single entry at a
     // single timestamp instead of two separate saves.
     const [e2Unit, setE2Unit] = useState<LabUnit>(DEFAULT_E2_UNIT);
-    const [e2Value, setE2Value] = useState("");
+    const [e2Value, setE2Value] = useState('');
     const [tUnit, setTUnit] = useState<LabUnit>(DEFAULT_T_UNIT);
-    const [tValue, setTValue] = useState("");
+    const [tValue, setTValue] = useState('');
 
     // Monitoring bloods. Optional and independent of the two hormones above: a
     // single draw may carry any subset, and an empty field saves nothing.
-    const [prlValue, setPrlValue] = useState("");
-    const [prlUln, setPrlUln] = useState("");
-    const [altValue, setAltValue] = useState("");
-    const [altUln, setAltUln] = useState("");
-    const [astValue, setAstValue] = useState("");
-    const [kValue, setKValue] = useState("");
+    const [prlValue, setPrlValue] = useState('');
+    const [prlUln, setPrlUln] = useState('');
+    const [altValue, setAltValue] = useState('');
+    const [altUln, setAltUln] = useState('');
+    const [astValue, setAstValue] = useState('');
+    const [kValue, setKValue] = useState('');
 
     // Monitoring bloods default collapsed, unless editing a record that has monitoring bloods.
     const [isMonitoringOpen, setIsMonitoringOpen] = useState(
-        Boolean(resultToEdit?.monitoringOnly || resultToEdit?.prolactin || resultToEdit?.alt || resultToEdit?.ast || resultToEdit?.potassium)
+        Boolean(resultToEdit?.monitoringOnly || resultToEdit?.prolactin || resultToEdit?.alt || resultToEdit?.ast || resultToEdit?.potassium),
     );
-
-    // Scan lab sheet panel state within this form
-    const [isScanOpen, setIsScanOpen] = useState(false);
 
     useEffect(() => {
         if (resultToEdit) {
@@ -154,9 +110,8 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
             setEditValue(resultToEdit.concValue.toString());
             setEditUnit(resultToEdit.unit);
             // Prefill the monitoring fields so editing a record cannot silently drop
-            // the bloods that were saved with it. A monitoring-only record has no
-            // hormone field to show (see below); its placeholder value round-trips.
-            const str = (v: number | undefined) => (typeof v === 'number' && Number.isFinite(v) ? String(v) : "");
+            // the bloods that were saved with it.
+            const str = (v: number | undefined) => (typeof v === 'number' && Number.isFinite(v) ? String(v) : '');
             setPrlValue(str(resultToEdit.prolactin));
             setPrlUln(str(resultToEdit.prolactinUln));
             setAltValue(str(resultToEdit.alt));
@@ -164,53 +119,71 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
             setAstValue(str(resultToEdit.ast));
             setKValue(str(resultToEdit.potassium));
             setIsMonitoringOpen(Boolean(resultToEdit.monitoringOnly || resultToEdit.prolactin || resultToEdit.alt || resultToEdit.ast || resultToEdit.potassium));
-            setIsScanOpen(false);
         } else {
             const now = new Date();
             const iso = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
             setDateStr(iso);
             // A scanned report prefills the two fields; anything it did not read is
-            // left empty rather than defaulted, so the user can see at a glance what
-            // the scan actually produced.
-            setE2Value(initialValues?.E2 ? String(initialValues.E2.value) : "");
-            setTValue(initialValues?.T ? String(initialValues.T.value) : "");
+            // left empty rather than defaulted.
+            setE2Value(initialValues?.E2 ? String(initialValues.E2.value) : '');
+            setTValue(initialValues?.T ? String(initialValues.T.value) : '');
             setE2Unit(initialValues?.E2?.unit ?? DEFAULT_E2_UNIT);
             setTUnit(initialValues?.T?.unit ?? DEFAULT_T_UNIT);
-            setPrlValue(""); setPrlUln("");
-            setAltValue(""); setAltUln("");
-            setAstValue(""); setKValue("");
+            setPrlValue(''); setPrlUln('');
+            setAltValue(''); setAltUln('');
+            setAstValue(''); setKValue('');
             setIsMonitoringOpen(false);
-            setIsScanOpen(false);
         }
-        // `initialValues` is in the dependency list so a scan handed to an already-open
-        // form applies, rather than being silently dropped until the next reopen.
     }, [resultToEdit, initialValues]);
 
     const filledMonitoringCount = [prlValue, altValue, astValue, kValue].filter(v => v.trim() !== '').length;
 
-    // Monitoring bloods are optional fields of the lab result being saved. The ULN
-    // is carried only when the report printed one; without it the ratio rule cannot
-    // be evaluated, and the sources warn that reference values differ by lab,
-    // reagent and method — so a guessed range is exactly the number not to invent.
-    const monitorFields = () => {
+    /**
+     * The monitoring bloods, one record each.
+     *
+     * A draw carries any subset of PRL/ALT/AST/K, and keeping them on one record
+     * made the 体检 list print four analytes as a single run-on line *and* made
+     * deleting one of them delete the rest. Each is stored as its own
+     * `monitoringOnly` record at the same timestamp instead, so every measured
+     * item is a row of its own and edits only touch what they name.
+     *
+     * `concValue`/`unit` stay required by `LabResult` (the frozen chart and
+     * `OnboardingCurve` read them unconditionally), so the neutral zero plus an E2
+     * unit placeholder rides along — every hormone reader skips these records via
+     * `isMonitoringOnlyLab`.
+     */
+    const monitoringRecords = (timeH: number): LabResult[] => {
         const num = (raw: string) => {
             const n = parseFloat(raw);
             return raw.trim() !== '' && Number.isFinite(n) && n >= 0 ? n : undefined;
         };
+        const rows: LabResult[] = [];
+        const push = (fields: Partial<LabResult>) => rows.push({
+            id: uuidv4(), timeH, concValue: 0, unit: DEFAULT_E2_UNIT, monitoringOnly: true, ...fields,
+        });
         const prolactin = num(prlValue);
-        const alt = num(altValue);
-        const ast = num(astValue);
-        const potassium = num(kValue);
         const prolactinUln = num(prlUln);
+        if (prolactin !== undefined) {
+            push({ prolactin, ...(prolactinUln !== undefined && prolactinUln > 0 ? { prolactinUln } : {}) });
+        }
+        const alt = num(altValue);
         const altUlnValue = num(altUln);
-        return {
-            ...(prolactin !== undefined ? { prolactin } : {}),
-            ...(prolactin !== undefined && prolactinUln !== undefined && prolactinUln > 0 ? { prolactinUln } : {}),
-            ...(alt !== undefined ? { alt } : {}),
-            ...(alt !== undefined && altUlnValue !== undefined && altUlnValue > 0 ? { altUln: altUlnValue } : {}),
-            ...(ast !== undefined ? { ast } : {}),
-            ...(potassium !== undefined ? { potassium } : {}),
-        };
+        if (alt !== undefined) {
+            push({ alt, ...(altUlnValue !== undefined && altUlnValue > 0 ? { altUln: altUlnValue } : {}) });
+        }
+        const ast = num(astValue);
+        if (ast !== undefined) push({ ast });
+        const potassium = num(kValue);
+        if (potassium !== undefined) push({ potassium });
+        return rows;
+    };
+
+    /** Clear the add-form's fields (it stays mounted across saves). */
+    const resetFields = () => {
+        setE2Value(''); setTValue('');
+        setPrlValue(''); setPrlUln('');
+        setAltValue(''); setAltUln('');
+        setAstValue(''); setKValue('');
     };
 
     const handleSave = () => {
@@ -218,20 +191,21 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
         const timeH = new Date(dateStr).getTime() / 3600000;
         if (isNaN(timeH)) return;
 
-        const monitoring = monitorFields();
-        const hasMonitoring = Object.keys(monitoring).length > 0;
-
         if (resultToEdit) {
-            // A monitoring-only record keeps its neutral placeholder and just gets its
-            // analytes rewritten.
+            const bloods = monitoringRecords(timeH);
             if (resultToEdit.monitoringOnly) {
-                if (!hasMonitoring) return;
-                onSave({ id: resultToEdit.id, timeH, concValue: 0, unit: resultToEdit.unit, monitoringOnly: true, ...monitoring });
+                if (bloods.length === 0) return;
+                // The edited record keeps its id for the first blood, so an edit
+                // rewrites that one row instead of leaving it behind; the rest of
+                // the draw becomes records of their own.
+                onSave({ ...bloods[0], id: resultToEdit.id });
+                bloods.slice(1).forEach(onSave);
                 return;
             }
             const numValue = parseFloat(editValue);
             if (!editValue || isNaN(numValue) || numValue < 0) return;
-            onSave({ id: resultToEdit.id, timeH, concValue: numValue, unit: editUnit, ...monitoring });
+            onSave({ id: resultToEdit.id, timeH, concValue: numValue, unit: editUnit });
+            bloods.forEach(onSave);
             return;
         }
 
@@ -239,28 +213,19 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
         const tNum = parseFloat(tValue);
         const hasE2 = e2Value.trim() !== '' && Number.isFinite(e2Num) && e2Num >= 0;
         const hasT = tValue.trim() !== '' && Number.isFinite(tNum) && tNum >= 0;
+        const bloods = monitoringRecords(timeH);
 
-        if (!hasE2 && !hasT && !hasMonitoring) return;
+        if (!hasE2 && !hasT && bloods.length === 0) return;
 
-        // One draw can carry E2, T and monitoring bloods. The monitoring values ride
-        // on the estradiol record when there is one, otherwise on the testosterone
-        // record, so one draw stays one row with its analytes attached. Only a draw
-        // with no hormone reading gets a record of its own.
-        if (hasE2) onSave({ id: uuidv4(), timeH, concValue: e2Num, unit: e2Unit, ...monitoring });
-        if (hasT) onSave({ id: uuidv4(), timeH, concValue: tNum, unit: tUnit, ...(hasE2 ? {} : monitoring) });
-        if (!hasE2 && !hasT && hasMonitoring) {
-            onSave({ id: uuidv4(), timeH, concValue: 0, unit: DEFAULT_E2_UNIT, monitoringOnly: true, ...monitoring });
-        }
+        // One draw can carry E2, T and monitoring bloods — as separate records at
+        // one timestamp, never merged into a single row.
+        if (hasE2) onSave({ id: uuidv4(), timeH, concValue: e2Num, unit: e2Unit });
+        if (hasT) onSave({ id: uuidv4(), timeH, concValue: tNum, unit: tUnit });
+        bloods.forEach(onSave);
 
-        // Everything saved, so clear the boxes. The form only collapses on save (it
-        // stays mounted), so without this a second open would still hold the previous
-        // draw's numbers and a second save would silently duplicate the record —
-        // which is worse for a lab result than an empty field.
-        setE2Value(""); setTValue("");
-        setPrlValue(""); setPrlUln("");
-        setAltValue(""); setAltUln("");
-        setAstValue(""); setKValue("");
-        setIsScanOpen(false);
+        // The form stays mounted on save, so without this a second open would still
+        // hold the previous draw's numbers.
+        resetFields();
     };
 
     const canSave = resultToEdit
@@ -270,224 +235,194 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
         : (!!e2Value || !!tValue || !!prlValue || !!altValue || !!astValue || !!kValue);
     const editIsT = isT_LabUnit(editUnit);
 
+    const dateLabel = dateStr
+        ? new Date(dateStr).toLocaleDateString(LOCALE_MAP[lang] || 'en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : '—';
+    const timeLabel = dateStr
+        ? new Date(dateStr).toLocaleTimeString(LOCALE_MAP[lang] || 'en-US', { hour: '2-digit', minute: '2-digit' })
+        : '';
+
+    const timeRow = (
+        <button
+            type="button"
+            onClick={() => setIsTimePageOpen(true)}
+            className="li tap"
+            style={{ width: '100%', border: 0, font: 'inherit', color: 'inherit', textAlign: 'left', borderRadius: 20 }}
+            aria-expanded={isTimePageOpen}
+        >
+            <div className="ic p"><SpriteIcon id="clock" /></div>
+            <div className="tx" style={{ minWidth: 0 }}>
+                <div className="t" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {dateStr ? `${dateLabel} ${timeLabel}` : t('m3e.time.now')}
+                </div>
+            </div>
+            <SpriteIcon id="chev" />
+        </button>
+    );
+
+    const monitoringBlock = (
+        <>
+            <div className="lf-sec">{t('monitor.section')}</div>
+            <button
+                type="button"
+                onClick={() => setIsMonitoringOpen(v => !v)}
+                className="li"
+                style={{
+                    width: '100%',
+                    border: 0,
+                    font: 'inherit',
+                    color: 'inherit',
+                    textAlign: 'left',
+                    alignItems: 'flex-start',
+                    padding: '14px 16px',
+                    borderRadius: isMonitoringOpen ? '20px 20px 6px 6px' : 20,
+                    transition: 'border-radius .2s, background .18s',
+                }}
+                aria-expanded={isMonitoringOpen}
+            >
+                <span className="ic am"><SpriteIcon id="drop" /></span>
+                <div className="t" style={{ minWidth: 0 }}>
+                    <b>{t('monitor.section')}</b>
+                    <span className="s" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{t('monitor.hint')}</span>
+                </div>
+                {filledMonitoringCount > 0 && !isMonitoringOpen ? <span className="chip">{filledMonitoringCount}</span> : null}
+                <SpriteIcon id={isMonitoringOpen ? 'down' : 'chev'} style={{ transform: isMonitoringOpen ? 'none' : 'rotate(90deg)' }} />
+            </button>
+
+            {isMonitoringOpen && (
+                <div className="list" style={{ marginTop: 3, gap: 3 }}>
+                    {[
+                        { key: 'prl', label: t('monitor.prl'), unit: MONITORING_UNIT.PRL, value: prlValue, set: setPrlValue },
+                        { key: 'prl_uln', label: t('monitor.prl_uln'), unit: MONITORING_UNIT.PRL, value: prlUln, set: setPrlUln },
+                        { key: 'alt', label: t('monitor.alt'), unit: MONITORING_UNIT.ALT, value: altValue, set: setAltValue },
+                        { key: 'alt_uln', label: t('monitor.alt_uln'), unit: MONITORING_UNIT.ALT, value: altUln, set: setAltUln },
+                        { key: 'ast', label: t('monitor.ast'), unit: MONITORING_UNIT.AST, value: astValue, set: setAstValue },
+                        { key: 'k', label: t('monitor.k'), unit: MONITORING_UNIT.K, value: kValue, set: setKValue },
+                    ].map((field, idx, arr) => {
+                        const isLast = idx === arr.length - 1;
+                        const radius = isLast ? '6px 6px 20px 20px' : '6px';
+                        return (
+                            <label key={field.key} className="li" style={{ cursor: 'default', borderRadius: radius }}>
+                                <div className="t">
+                                    <b>{field.label}</b>
+                                    <span className="s">{field.unit}</span>
+                                </div>
+                                <input
+                                    type="number"
+                                    inputMode="decimal"
+                                    placeholder="0.0"
+                                    value={field.value}
+                                    onChange={e => field.set(e.target.value)}
+                                    className="lab-num tabular-nums"
+                                    aria-label={field.label}
+                                />
+                            </label>
+                        );
+                    })}
+                </div>
+            )}
+            {isMonitoringOpen && <p className="sub" style={{ margin: '0 6px', fontSize: 12 }}>{t('monitor.uln_hint')}</p>}
+        </>
+    );
+
     return (
-        <div className="flex flex-col h-full">
-            <div className="overflow-y-auto flex-1">
-                {/* Date row */}
-                <button
-                    type="button"
-                    onClick={() => setIsDatePickerOpen(v => !v)}
-                    className={`w-full flex items-center justify-between py-[18px] ${divider} text-start`}
-                >
-                    <span className="text-m3-body-medium text-[var(--color-m3-on-surface)] ">
-                        {t('lab.date')}
-                    </span>
-                    <div className="flex items-center gap-1.5 text-[var(--color-m3-on-surface-variant)] ">
-                        <span className="text-sm tabular-nums">
-                            {dateStr ? new Date(dateStr).toLocaleString(LOCALE_MAP[lang] || 'en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
-                        </span>
-                        <Icon icon={ChevronDown} size={14} className={`chev ${isDatePickerOpen ? 'rotate-180' : ''}`} />
+        <div className="d-col" style={{ gap: 10 }}>
+            {resultToEdit ? (
+                <div className="d-col" style={{ gap: 10 }}>
+                    {timeRow}
+                    {resultToEdit.monitoringOnly ? (
+                        monitoringBlock
+                    ) : (
+                        <HormoneHero
+                            label={editIsT ? t('lab.value_t') : t('lab.value')}
+                            units={editIsT ? T_UNITS : E2_UNITS}
+                            unit={editUnit}
+                            onUnitChange={setEditUnit}
+                            value={editValue}
+                            onValueChange={setEditValue}
+                        />
+                    )}
+                </div>
+            ) : (
+                <div className="lab-form-grid">
+                    <div className="d-col" style={{ gap: 10 }}>
+                        <HormoneHero
+                            label={t('lab.value')}
+                            units={E2_UNITS}
+                            unit={e2Unit}
+                            onUnitChange={setE2Unit}
+                            value={e2Value}
+                            onValueChange={setE2Value}
+                        />
+                        <HormoneHero
+                            label={t('lab.value_t')}
+                            units={T_UNITS}
+                            unit={tUnit}
+                            onUnitChange={setTUnit}
+                            value={tValue}
+                            onValueChange={setTValue}
+                        />
+                        <p className="sub" style={{ margin: '0 6px' }}>{t('lab.dual_hint')}</p>
                     </div>
-                </button>
-                <DateTimePicker
-                    isOpen={isDatePickerOpen}
-                    inline
-                    onClose={() => setIsDatePickerOpen(false)}
-                    onConfirm={(date) => {
-                        const iso = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-                        setDateStr(iso);
-                    }}
-                    initialDate={dateStr ? new Date(dateStr) : new Date()}
-                    mode="datetime"
-                    title={t('lab.date')}
-                />
-
-                {resultToEdit ? (
-                    // A monitoring-only record has no hormone reading; showing the
-                    // E2/T field would invite writing its 0 placeholder back.
-                    resultToEdit.monitoringOnly ? null : (
-                        <div className={`py-[18px] ${divider}`}>
-                            <HormoneValueField
-                                label={editIsT ? t('lab.value_t') : t('lab.value')}
-                                units={editIsT ? T_UNITS : E2_UNITS}
-                                unit={editUnit}
-                                onUnitChange={setEditUnit}
-                                value={editValue}
-                                onValueChange={setEditValue}
-                            />
-                        </div>
-                    )
-                ) : (
-                    <>
-                        <div className={`py-[18px] ${divider}`}>
-                            <HormoneValueField
-                                label={t('lab.value')}
-                                units={E2_UNITS}
-                                unit={e2Unit}
-                                onUnitChange={setE2Unit}
-                                value={e2Value}
-                                onValueChange={setE2Value}
-                            />
-                        </div>
-                        <div className={`py-[18px] ${divider}`}>
-                            <HormoneValueField
-                                label={t('lab.value_t')}
-                                units={T_UNITS}
-                                unit={tUnit}
-                                onUnitChange={setTUnit}
-                                value={tValue}
-                                onValueChange={setTValue}
-                            />
-                        </div>
-                        <p className="text-xs text-[var(--color-m3-on-surface-variant)]  pt-2">
-                            {t('lab.dual_hint')}
-                        </p>
-                    </>
-                )}
-
-                {/* Monitoring bloods. Part of the lab result being saved, not a
-                    parallel store: only the parameters with a sourced threshold are
-                    offered (prolactin, ALT, AST, potassium), and everything the
-                    sources leave "not stated" stays off the form rather than being
-                    guessed at. */}
-                {/* Monitoring bloods. Collapsed by default. */}
-                <div className={`py-[18px] ${divider}`}>
-                    <button
-                        type="button"
-                        onClick={() => setIsMonitoringOpen(v => !v)}
-                        aria-expanded={isMonitoringOpen}
-                        className="w-full flex items-center justify-between text-start cursor-pointer group"
-                    >
-                        <span className="text-m3-body-medium text-[var(--color-m3-on-surface)] group-hover:text-[var(--color-m3-primary)] transition-colors">
-                            {t('monitor.section')}
-                        </span>
-                        <div className="flex items-center gap-1.5 text-[var(--color-m3-on-surface-variant)]">
-                            {filledMonitoringCount > 0 && !isMonitoringOpen && (
-                                <span className="text-xs text-[var(--color-m3-primary)] font-medium tabular-nums">
-                                    {filledMonitoringCount}
-                                </span>
-                            )}
-                            <Icon icon={ChevronDown} size={14} className={`chev ${isMonitoringOpen ? 'rotate-180' : ''}`} />
-                        </div>
-                    </button>
-                    <div className="disclosure" data-open={isMonitoringOpen}>
-                        <div className="disclosure-inner">
-                            <p className="text-xs text-[var(--color-m3-on-surface-variant)]  mt-2">
-                                {t('monitor.hint')}
-                            </p>
-                            <p className="text-xs text-[var(--color-m3-on-surface-variant)]  mt-1">
-                                {t('monitor.uln_hint')}
-                            </p>
-                            <div className="grid grid-cols-2 gap-4 mt-3 pb-1">
-                                <MonitorField label={t('monitor.prl')} unit={MONITORING_UNIT.PRL} value={prlValue} onChange={setPrlValue} />
-                                <MonitorField label={t('monitor.prl_uln')} unit={MONITORING_UNIT.PRL} value={prlUln} onChange={setPrlUln} />
-                                <MonitorField label={t('monitor.alt')} unit={MONITORING_UNIT.ALT} value={altValue} onChange={setAltValue} />
-                                <MonitorField label={t('monitor.alt_uln')} unit={MONITORING_UNIT.ALT} value={altUln} onChange={setAltUln} />
-                                <MonitorField label={t('monitor.ast')} unit={MONITORING_UNIT.AST} value={astValue} onChange={setAstValue} />
-                                <MonitorField label={t('monitor.k')} unit={MONITORING_UNIT.K} value={kValue} onChange={setKValue} />
-                            </div>
-                        </div>
+                    <div className="d-col" style={{ gap: 10 }}>
+                        {timeRow}
+                        {monitoringBlock}
                     </div>
                 </div>
+            )}
 
-                {/* Scan panel (位于检测项下面，保存按钮上面) */}
-                {!resultToEdit && (
-                    <div className="disclosure" data-open={isScanOpen}>
-                        <div className="disclosure-inner">
-                            <div className={`py-4 ${divider}`}>
-                                <LabScan
-                                    onCancel={() => setIsScanOpen(false)}
-                                    onExtracted={(candidates) => {
-                                        const suggestion = suggestSelection(candidates);
-                                        if (suggestion.E2) {
-                                            setE2Value(String(suggestion.E2.value));
-                                            setE2Unit(suggestion.E2.unit as LabUnit);
-                                        }
-                                        if (suggestion.T) {
-                                            setTValue(String(suggestion.T.value));
-                                            setTUnit(suggestion.T.unit as LabUnit);
-                                        }
-                                        setIsScanOpen(false);
-                                    }}
-                                />
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div>
+            <TimePage
+                open={isTimePageOpen}
+                initialDate={dateStr ? new Date(dateStr) : new Date()}
+                onClose={() => setIsTimePageOpen(false)}
+                onConfirm={(date) => {
+                    const iso = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                    setDateStr(iso);
+                    setIsTimePageOpen(false);
+                }}
+            />
 
-            {/* Footer */}
-            <div className="pt-4 flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-2">
-                    {resultToEdit && onDelete && (
-                        <>
-                            {showDeleteConfirm ? (
-                                <div className="flex items-center gap-1 bg-cos-error-container  border border-red-100  rounded px-2 py-1">
-                                    <span className="text-xs text-cos-error  font-medium whitespace-nowrap">{t('dialog.confirm_title')}?</span>
-                                    <button
-                                        type="button"
-                                        onClick={() => { onDelete(resultToEdit.id); onCancel(); }}
-                                        className="p-1 text-cos-error  hover:bg-cos-error-container  rounded"
-                                    >
-                                        <Icon icon={Check} size={14} />
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowDeleteConfirm(false)}
-                                        className="p-1 text-[var(--color-m3-on-surface-variant)] hover:bg-cos-error-container  rounded"
-                                    >
-                                        <Icon icon={X} size={14} />
-                                    </button>
-                                </div>
-                            ) : (
-                                <button
-                                    type="button"
-                                    onClick={() => setShowDeleteConfirm(true)}
-                                    className="p-2 text-[var(--color-m3-on-surface-variant)] hover:text-cos-error rounded"
-                                >
-                                    <Icon icon={Trash2} size={16} />
-                                </button>
-                            )}
-                        </>
-                    )}
-                    {!resultToEdit && (
+            <div className="hrow" style={{ gap: 8, position: 'sticky', bottom: -12, background: 'var(--sc)', paddingTop: 12, paddingBottom: 4, zIndex: 6, marginTop: 4, borderTop: '1px solid rgba(154,141,149,0.14)' }}>
+                {showDeleteConfirm ? (
+                    <>
+                        <span className="sub" style={{ margin: 0, flex: 1 }}>{t('lab.delete_confirm')}</span>
+                        <button type="button" className="btn x" onClick={() => setShowDeleteConfirm(false)}>{t('btn.cancel')}</button>
                         <button
                             type="button"
-                            onClick={() => setIsScanOpen(v => !v)}
-                            aria-pressed={isScanOpen}
-                            className={`flex items-center gap-1.5 text-sm font-medium px-2 py-1.5 -ml-2 rounded-md transition-colors ${
-                                isScanOpen
-                                    ? 'text-[var(--color-m3-primary)] bg-[var(--color-m3-primary-container)]'
-                                    : 'text-[var(--color-m3-on-surface-variant)] hover:text-[var(--color-m3-on-surface)] hover:bg-[var(--color-m3-surface-container)]'
-                            }`}
+                            className="btn"
+                            style={{ background: 'var(--errc)', color: 'var(--err)' }}
+                            onClick={() => { if (resultToEdit && onDelete) { onDelete(resultToEdit.id); onCancel(); } }}
                         >
-                            <Icon icon={Scan} size={15} />
-                            <span>{t('scan.title')}</span>
+                            <Icon icon={Check} size={16} />{t('btn.delete')}
                         </button>
-                    )}
-                </div>
-
-                <div className="flex gap-2 ml-auto">
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setIsScanOpen(false);
-                            onCancel();
-                        }}
-                        className="min-w-[88px] px-4 py-2 text-sm text-[var(--color-m3-on-surface-variant)]  hover:bg-[var(--color-m3-surface-container)]  rounded-md flex items-center justify-center"
-                    >
-                        {t('btn.cancel')}
-                    </button>
-                    <button
-                        type="button"
-                        onClick={handleSave}
-                        disabled={!canSave || !dateStr}
-                        className="min-w-[88px] px-4 py-2 text-sm font-medium bg-[var(--color-m3-primary)] text-cos-on-primary rounded-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                    >
-                        <Icon icon={Check} size={14} />
-                        {t('btn.save')}
-                    </button>
-                </div>
+                    </>
+                ) : (
+                    <>
+                        {resultToEdit && onDelete && (
+                            <button
+                                type="button"
+                                onClick={() => setShowDeleteConfirm(true)}
+                                className="ic-btn danger"
+                                style={{ marginRight: 'auto' }}
+                                aria-label={t('btn.delete')}
+                                title={t('btn.delete')}
+                            >
+                                <Icon icon={Trash2} size={19} />
+                            </button>
+                        )}
+                        <button type="button" onClick={onCancel} className="btn x">{t('btn.cancel')}</button>
+                        <button
+                            type="button"
+                            onClick={handleSave}
+                            disabled={!canSave || !dateStr}
+                            className="btn"
+                            style={{ flex: resultToEdit ? undefined : 1, opacity: canSave && dateStr ? 1 : .4 }}
+                        >
+                            <Icon icon={Check} size={17} />
+                            {t('btn.save')}
+                        </button>
+                    </>
+                )}
             </div>
         </div>
     );

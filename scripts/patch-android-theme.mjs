@@ -1,4 +1,4 @@
-import { appendFileSync, copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import sharp from 'sharp';
 
@@ -34,7 +34,7 @@ const colorsDark = `<resources>\n    <color name="window_surface">#0D0D12</color
 // surface, light icons for the dark one. `enableEdgeToEdge(SystemBarStyle.auto(...))`
 // also derives the tint from the system setting at runtime, so this is the
 // pre-edge-to-edge frame's value and the two agree by construction.
-const theme = (lightStatusBar) => `<resources>\n    <style name="Theme.kira_hrt" parent="Theme.MaterialComponents.DayNight.NoActionBar">\n        <item name="android:windowActionModeOverlay">true</item>\n        <item name="android:windowSplashScreenBackground">@color/window_surface</item>\n        <item name="android:windowSplashScreenAnimatedIcon">@drawable/launch_splash_transparent</item>\n        <item name="android:windowSplashScreenIconBackgroundColor">@color/window_surface</item>\n        <item name="android:windowLightStatusBar">${lightStatusBar}</item>\n        <item name="android:statusBarColor">@color/window_surface</item>\n        <item name="android:navigationBarColor">@color/window_surface</item>\n        <item name="android:windowBackground">@color/window_surface</item>\n        <item name="android:fontFamily">sans</item>\n    </style>\n</resources>\n`;
+const theme = (lightStatusBar) => `<resources>\n    <style name="Theme.kira_hrt" parent="Theme.Material3.DayNight.NoActionBar">\n        <item name="android:windowActionModeOverlay">true</item>\n        <item name="android:windowSplashScreenBackground">@color/window_surface</item>\n        <item name="android:windowSplashScreenAnimatedIcon">@drawable/launch_splash_transparent</item>\n        <item name="android:windowSplashScreenIconBackgroundColor">@color/window_surface</item>\n        <item name="android:windowLightStatusBar">${lightStatusBar}</item>\n        <item name="android:statusBarColor">@color/window_surface</item>\n        <item name="android:navigationBarColor">@color/window_surface</item>\n        <item name="android:windowBackground">@color/window_surface</item>\n        <item name="android:fontFamily">sans</item>\n    </style>\n</resources>\n`;
 writeFileSync(resolve(drawable, 'launch_splash_transparent.xml'), '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="1dp" android:height="1dp" android:viewportWidth="1" android:viewportHeight="1"><path android:fillColor="@android:color/transparent" android:pathData="M0,0h1v1h-1z" /></vector>\n');
 writeFileSync(resolve(values, 'colors.xml'), colorsLight);
 writeFileSync(resolve(night, 'colors.xml'), colorsDark);
@@ -44,14 +44,31 @@ const gradleProperties = resolve(root, '..', '..', '..', '..', 'gradle.propertie
 if (!readFileSync(gradleProperties, 'utf8').includes('kotlin.incremental=false')) {
     appendFileSync(gradleProperties, '\nkotlin.incremental=false\n');
 }
-const gradleBuild = resolve(root, '..', '..', '..', '..', 'build.gradle.kts');
-const gradleSource = readFileSync(gradleBuild, 'utf8');
-writeFileSync(gradleBuild, gradleSource.replace('kotlin-gradle-plugin:1.9.25', 'kotlin-gradle-plugin:2.2.21'));
+// The Kotlin plugin version is whatever `tauri android init` generated — it is the
+// pair the Tauri template was tested with against its AGP/Gradle versions. Do not
+// bump it here; a mismatch surfaces as a Gradle configuration failure, not a
+// compile error, and only at build time.
 
 // Android WebView does not reliably expose CSS safe-area-inset values. Read the
 // system bars from WindowInsets and expose their dp sizes to the local app page.
 const activity = resolve(root, '..', 'java', 'com', 'kiramyao', 'hrt', 'MainActivity.kt');
 writeFileSync(activity, readFileSync(resolve(import.meta.dirname, 'MainActivity.kt'), 'utf8'));
+
+// The generated Gradle task runs `node tauri android android-studio-script` with
+// its working directory set to `src-tauri`. On Windows the CLI fails to resolve
+// its own entry point and writes the bare word "tauri", which Node then looks for
+// as `src-tauri/tauri` — a file that does not exist, so `rustBuild<target>` dies
+// before Cargo is ever reached (tauri-apps/tauri#13892). Point it at the actual
+// CLI entry, relative to that working directory.
+const buildTask = resolve(root, '..', '..', '..', '..', 'buildSrc', 'src', 'main', 'java', 'com', 'kiramyao', 'hrt', 'kotlin', 'BuildTask.kt');
+if (existsSync(buildTask)) {
+    const source = readFileSync(buildTask, 'utf8');
+    const repaired = source.replace(
+        'val args = listOf("tauri", "android", "android-studio-script");',
+        'val args = listOf("../node_modules/@tauri-apps/cli/tauri.js", "android", "android-studio-script");',
+    );
+    if (repaired !== source) writeFileSync(buildTask, repaired);
+}
 
 // Supplementary push (FCM): the canonical Kotlin service, copied into the gitignored
 // gen/ tree on every build (same pattern as MainActivity.kt). It handles the
@@ -63,6 +80,14 @@ writeFileSync(
     readFileSync(resolve(import.meta.dirname, 'HrtMessagingService.kt'), 'utf8'),
 );
 
+// Biometric app lock bridge (docs/android-app-lock-plan.md). Canonical copy lives
+// beside MainActivity.kt for the same reason: gen/ is regenerated by
+// `tauri android init`.
+writeFileSync(
+    resolve(javaDir, 'HrtLockBridge.kt'),
+    readFileSync(resolve(import.meta.dirname, 'HrtLockBridge.kt'), 'utf8'),
+);
+
 // FCM needs the Google Services Gradle plugin to turn google-services.json into
 // resources, plus the messaging SDK. The notifications plugin already pins the
 // Firebase BOM, so no version is needed here; the google-services plugin is the one
@@ -71,9 +96,8 @@ const rootGradle = resolve(root, '..', '..', '..', '..', 'build.gradle.kts');
 let rootGradleSource = readFileSync(rootGradle, 'utf8');
 if (!rootGradleSource.includes('google-services')) {
     rootGradleSource = rootGradleSource.replace(
-        'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.21")',
-        'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.21")\n' +
-        '        classpath("com.google.gms:google-services:4.4.4")',
+        /(classpath\("org\.jetbrains\.kotlin:kotlin-gradle-plugin:[^"]+"\))/,
+        '$1\n        classpath("com.google.gms:google-services:4.5.0")',
     );
     writeFileSync(rootGradle, rootGradleSource);
 }
@@ -94,18 +118,28 @@ if (!appGradleSource.includes('firebase-bom')) {
         // A tree from an earlier revision already has the dep, without its BOM.
         appGradleSource = appGradleSource.replace(
             /(\n\s*implementation\("com\.google\.firebase:firebase-messaging"\))/,
-            '\n    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))$1',
+            '\n    implementation(platform("com.google.firebase:firebase-bom:35.0.2"))$1',
         );
     } else {
         appGradleSource = appGradleSource.replace(
             'rust {',
             'dependencies {\n' +
-            '    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))\n' +
+            '    implementation(platform("com.google.firebase:firebase-bom:35.0.2"))\n' +
             '    implementation("com.google.firebase:firebase-messaging")\n' +
             '}\n\n' +
             'rust {',
         );
     }
+}
+// Android app lock (docs/android-app-lock-plan.md): BiometricPrompt with
+// BIOMETRIC_STRONG only — no device-PIN fallback, by design. The library is added
+// here rather than in the generated build file so `tauri android init` can be
+// re-run without losing it.
+if (!appGradleSource.includes('androidx.biometric:biometric')) {
+    appGradleSource = appGradleSource.replace(
+        /(dependencies \{\n)/,
+        '$1    implementation("androidx.biometric:biometric:1.1.0")\n',
+    );
 }
 writeFileSync(appGradle, appGradleSource);
 
@@ -153,6 +187,42 @@ if (!manifestXml.includes('SCHEDULE_EXACT_ALARM')) {
         '<uses-permission android:name="android.permission.INTERNET" />\n' +
         '    <!-- Exact dose reminders: without this, scheduling silently degrades to inexact. -->\n' +
         '    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />',
+    );
+}
+// App lock: biometric authentication that gates the record key (app lock plan §4).
+// Normal permission, granted at install.
+if (!manifestXml.includes('USE_BIOMETRIC')) {
+    manifestXml = manifestXml.replace(
+        '<uses-permission android:name="android.permission.INTERNET" />',
+        '<uses-permission android:name="android.permission.INTERNET" />\n' +
+        '    <uses-permission android:name="android.permission.USE_BIOMETRIC" />',
+    );
+}
+// Backup must stay off: the Keystore key that unwraps the local record key is
+// never backed up, so restoring WebView data onto another device only produces
+// ciphertext nobody can read (app lock plan §8.3).
+if (!manifestXml.includes('android:allowBackup')) {
+    manifestXml = manifestXml.replace(
+        'android:label="@string/app_name"',
+        'android:label="@string/app_name"\n        android:allowBackup="false"',
+    );
+}
+
+// OAuth returns through `kira-hrt://oauth/callback`. Without this filter the
+// browser cannot bring the app back — the redirect opens the browser's own
+// "unknown scheme" page instead (the 2.0 shell rebuild lost this filter that
+// 1.2.3's manifest carried). The activity is already `singleTask`, so the
+// callback arrives in `onNewIntent`.
+if (!manifestXml.includes('android:scheme="kira-hrt"')) {
+    manifestXml = manifestXml.replace(
+        '</activity>',
+        '    <intent-filter>\n' +
+        '                <action android:name="android.intent.action.VIEW" />\n' +
+        '                <category android:name="android.intent.category.DEFAULT" />\n' +
+        '                <category android:name="android.intent.category.BROWSABLE" />\n' +
+        '                <data android:scheme="kira-hrt" android:host="oauth" />\n' +
+        '            </intent-filter>\n' +
+        '        </activity>',
     );
 }
 

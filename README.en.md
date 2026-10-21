@@ -104,9 +104,10 @@ the image never leaves the device.
 
 - **7 languages** — Simplified Chinese, Traditional Chinese, Cantonese, English, Japanese, Korean,
   Turkish, loaded on demand.
-- **Android app** — packaged with Tauri, with **in-app self-update** (it downloads the APK and
-  fires the system installer), system back gesture with predictive back, and external links that
-  open in the system browser.
+- **Android app** — a Tauri 2 shell (`src-tauri/`, not committed) hosting the same web bundle, with
+  Kotlin bridges for what the web cannot do: **app lock** (biometric gate, re-locks in the
+  background), **in-app self-update** (it downloads the APK and fires the system installer),
+  predictive back, system file export, and external links that open in the system browser.
 - **Themes** — light / dark / follow system, with a themed launch transition.
 - **PWA** — works offline, backed by a service worker.
 
@@ -143,8 +144,9 @@ that validate and compute differently would drift until a bug exists on one side
 
 - `server/src/http.ts` and `server/src/mcp.ts` contain **no business rules**; anything that
   knows how a record is validated or how a curve is computed belongs in `core.ts`.
-- The **React SPA** and the **Android app** (Tauri) share the same front-end code and branch only
-  on native capabilities (notifications, updates, back gesture, external links).
+- The **React SPA** and the **Android app** (native Compose) each implement their own UI against
+  the same business semantics: the protocol, the encryption envelope and the PK models all carry
+  tests that pin the two builds to each other.
 - **Encryption happens at the write layer**: records land as ciphertext, and `user_id` and
   `occurred_at` are the only cleartext columns — everything clinical is inside the envelope.
 
@@ -252,13 +254,13 @@ a minimal example.
 | Layer | Technology |
 |---|---|
 | Front end | React 19 · TypeScript 7 · Vite 8 · Tailwind CSS (Material Design 3 tokens and components) |
-| Native | Tauri 2 (Android) · Kotlin bridges (updates, back gesture, push, safe areas) |
+| Native | Tauri 2.12 (`src-tauri/`) · Kotlin bridges (app lock, export, notifications, back gesture, safe areas) |
 | Back end | Node.js · PostgreSQL · plain `pg` (no ORM) |
 | Protocols | REST + [MCP](https://modelcontextprotocol.io) (Streamable HTTP) |
 | Crypto | per-account DEK; wrapped by a password KEK and an OCI KMS master key (HSM) |
 | PK engines | upstream `logic.ts` (unmodified) · the Transmtf engine in `src/pk/` (lazy-loaded) |
 | Recognition | onnxruntime-web (detection) + tesseract.js (text), **entirely on-device** |
-| Push | local scheduled notifications (Tauri plugin) + FCM catch-up (HTTP v1, JWT signed with `node:crypto`) |
+| Push | exact local alarms (`AlarmManager`) + FCM catch-up (HTTP v1, JWT signed with `node:crypto`), sharing one de-duplication ledger |
 | PWA | vite-plugin-pwa (Workbox) |
 | i18n | a homegrown 7-pack system, lazily loaded |
 
@@ -280,15 +282,16 @@ VITE_API_ORIGIN=https://your-api-host/hrt npm run build
 Server: see "Running it" in **[`server/ARCHITECTURE.md`](server/ARCHITECTURE.md)**; tests are
 `cd server && npm test` (embedded Postgres).
 
-Android build (arm64 only):
+Android build (Tauri 2, JDK 21 + Android SDK 35; `src-tauri/` exists locally only):
 
 ```bash
-export ANDROID_HOME="$LOCALAPPDATA/Android/Sdk"
-export NDK_HOME="$ANDROID_HOME/ndk/<version>"
-export JAVA_HOME="/path/to/jdk-17"
-export VITE_API_ORIGIN=https://your-api-host/hrt
+export VITE_API_ORIGIN=https://api.example.com/hrt
+npm run build:android
 node_modules/.bin/tauri android build --apk --target aarch64
+# unsigned: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
 ```
+
+Signing and publishing: `server/DEPLOY.md` §4b.
 
 ## Self-hosting
 

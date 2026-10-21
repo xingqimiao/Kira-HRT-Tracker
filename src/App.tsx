@@ -1,4 +1,8 @@
 import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
+import { SvgDefs } from './ui/SvgDefs';
+import { PrototypeShell, type ShellFab } from './ui/PrototypeShell';
+import { useViewportMode } from './ui/useViewportMode';
+import { usePressMorph } from './ui/usePressMorph';
 import { useTranslation, LanguageProvider } from './contexts/LanguageContext';
 import { useDialog, DialogProvider } from './contexts/DialogContext';
 import { HRTModeProvider, useHRTMode } from './contexts/HRTModeContext';
@@ -6,6 +10,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { APP_VERSION, AppTheme, ChartStyle, KeyColor, normalizeChartStyle } from './constants';
 import { DoseEvent, decompressData, encryptData, decryptData } from '../logic';
 import { detectForeignFormat, convertForeignPayload, type ForeignSource } from './utils/foreignImport';
+import { importGelProducts } from './utils/gelProducts';
 import { decryptFeatherline, mapFeatherlineSnapshot, FeatherlineError } from './utils/featherlineBackup';
 import type { Lang } from './i18n/types';
 import { useAppData } from './hooks/useAppData';
@@ -13,12 +18,13 @@ import { useAppNavigation, ViewKey } from './hooks/useAppNavigation';
 import { useLiveShareSync } from './hooks/useLiveShareSync';
 import { useCoreSync } from './hooks/useCoreSync';
 import { onAppSettingsApplied } from './utils/appSettings';
+import { saveTextFile } from './utils/saveFile';
+import { get as secureGet, set as secureSet } from './utils/secureStore';
 import { setAuthLandingIntent, takeAuthLandingIntent } from './utils/authLandingIntent';
 
 import WeightEditorModal from './components/WeightEditorModal';
 import DoseFormModal from './components/DoseFormModal';
-import ImportModal from './components/ImportModal';
-import { AppShell } from './components/ui';
+import { Bookmark, Plus, Scan } from './icons';
 import PasswordInputModal from './components/PasswordInputModal';
 import DisclaimerModal from './components/DisclaimerModal';
 import CoreAuthModal from './components/CoreAuthModal';
@@ -42,6 +48,8 @@ import WeightSettings from './pages/WeightSettings';
 import ExportSettings from './pages/ExportSettings';
 import ImportSettings from './pages/ImportSettings';
 import LicenceSettings from './pages/LicenceSettings';
+import DonateSettings from './pages/DonateSettings';
+import SupportersList from './pages/SupportersList';
 import McpSettings from './pages/McpSettings';
 import PublicShare from './pages/PublicShare';
 import ShareSettings from './pages/ShareSettings';
@@ -66,6 +74,12 @@ const AppContent = () => {
     const { t, lang, setLang } = useTranslation();
     const { showDialog } = useDialog();
     const { mode } = useHRTMode();
+
+    // The prototype's two shells (bottom bar / 96px rail) and its press morph are
+    // document-level behaviours, so they are installed once here rather than in
+    // each screen.
+    useViewportMode();
+    usePressMorph();
 
     /**
      * The Application Core session — the only one there is.
@@ -134,7 +148,7 @@ const AppContent = () => {
         dosePeaks,
         currentTime,
         groupedEvents,
-        addEvent, addEvents, updateEvent, deleteEvent, deleteEvents, clearAllEvents,
+        addEvent, updateEvent, deleteEvent, deleteEvents, clearAllEvents,
         addLabResult, updateLabResult, deleteLabResult, clearLabResults,
         journal, addJournalEntry, updateJournalEntry, deleteJournalEntry,
         dismissedRechecks, dismissRecheck,
@@ -150,7 +164,11 @@ const AppContent = () => {
         readyScope,
     } = useAppData(showDialog, coreSession.user?.userId ?? null);
 
-    const [splashDone, setSplashDone] = useState(() => !isNativeApp());
+    // The locked cold start plays the splash in index.tsx, before App may mount;
+    // the flag keeps this overlay from replaying it on top of the unlock hand-over.
+    const [splashDone, setSplashDone] = useState(
+        () => !isNativeApp() || Boolean((window as unknown as { __HRT_SPLASH_DONE__?: boolean }).__HRT_SPLASH_DONE__),
+    );
 
     // The medication-plan notifier reads today's doses through a getter, not a
     // captured array: the interval registered here must see every re-render's
@@ -245,10 +263,21 @@ const AppContent = () => {
     const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingEvent, setEditingEvent] = useState<DoseEvent | null>(null);
-    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isPasswordInputOpen, setIsPasswordInputOpen] = useState(false);
     const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
     const [isQuickAddLabOpen, setIsQuickAddLabOpen] = useState(false);
+    // The overview's FAB opens the saved-dose sheet; the page owns its contents.
+    const [quickRecordOpen, setQuickRecordOpen] = useState(false);
+    // The checkup FAB's scan entry opens a full-screen scanner page. Manual add
+    // and scan are siblings, not one form with a scan panel inside it.
+    const [isLabScanOpen, setIsLabScanOpen] = useState(false);
+    // A form opened from the lab FAB must not survive a tab change: the flag is
+    // shell state, so coming back to 体检 used to pop the add form unasked.
+    useEffect(() => {
+        if (currentView === 'lab') return;
+        setIsQuickAddLabOpen(false);
+        setIsLabScanOpen(false);
+    }, [currentView]);
     const [isDisclaimerOpen, setIsDisclaimerOpen] = useState(false);
     /**
      * A file waiting on a password.
@@ -267,7 +296,7 @@ const AppContent = () => {
     // Storage key kept from when this only ever uploaded, so an existing
     // preference carries over rather than silently resetting to on.
     const [autoSync, setAutoSync] = useState<boolean>(() =>
-        localStorage.getItem('app-auto-backup') !== 'false'
+        secureGet('app-auto-backup') !== 'false'
     );
 
     // --- First run ---
@@ -295,15 +324,15 @@ const AppContent = () => {
     // above — a storage key, an adoption on sync, and a normaliser for a value this
     // build may not know.
     const [chartStyle, setChartStyle] = useState<ChartStyle>(() =>
-        normalizeChartStyle(localStorage.getItem('app-chart-style'))
+        normalizeChartStyle(secureGet('app-chart-style'))
     );
     // Whole numbers by default — "8" not "8.8". Opt in to the decimal place.
     const [readingDecimals, setReadingDecimals] = useState<boolean>(() =>
-        localStorage.getItem('app-reading-decimals') === 'true'
+        secureGet('app-reading-decimals') === 'true'
     );
     // Whether the overview hides the anti-androgen reading. Off by default.
     const [hideAA, setHideAA] = useState<boolean>(() =>
-        localStorage.getItem('app-hide-aa') === 'true'
+        secureGet('app-hide-aa') === 'true'
     );
 
     useEffect(() => {
@@ -314,15 +343,15 @@ const AppContent = () => {
     }, [keyColor]);
 
     useEffect(() => {
-        localStorage.setItem('app-chart-style', chartStyle);
+        secureSet('app-chart-style', chartStyle);
     }, [chartStyle]);
 
     useEffect(() => {
-        localStorage.setItem('app-reading-decimals', String(readingDecimals));
+        secureSet('app-reading-decimals', String(readingDecimals));
     }, [readingDecimals]);
 
     useEffect(() => {
-        localStorage.setItem('app-hide-aa', String(hideAA));
+        secureSet('app-hide-aa', String(hideAA));
     }, [hideAA]);
 
     // Adopt theme and key colour when a sync brings the account's choices in.
@@ -333,13 +362,13 @@ const AppContent = () => {
         const savedTheme = localStorage.getItem('app-theme');
         if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') setTheme(savedTheme);
         setKeyColor(localStorage.getItem('app-key-color') === 'blue' ? 'blue' : 'pink');
-        setChartStyle(normalizeChartStyle(localStorage.getItem('app-chart-style')));
-        setReadingDecimals(localStorage.getItem('app-reading-decimals') === 'true');
-        setHideAA(localStorage.getItem('app-hide-aa') === 'true');
+        setChartStyle(normalizeChartStyle(secureGet('app-chart-style')));
+        setReadingDecimals(secureGet('app-reading-decimals') === 'true');
+        setHideAA(secureGet('app-hide-aa') === 'true');
     }), []);
 
     useEffect(() => {
-        localStorage.setItem('app-auto-backup', String(autoSync));
+        secureSet('app-auto-backup', String(autoSync));
     }, [autoSync]);
 
     // Two-way sync with the Application Core — the path that actually stores the
@@ -447,21 +476,21 @@ const AppContent = () => {
     // --- Modal Logic Wrappers ---
 
     useEffect(() => {
-        const shouldLock = isPasswordInputOpen || isWeightModalOpen || isFormOpen || isImportModalOpen || isDisclaimerOpen;
+        const shouldLock = isPasswordInputOpen || isWeightModalOpen || isFormOpen || isDisclaimerOpen;
         document.body.style.overflow = shouldLock ? 'hidden' : '';
         return () => { document.body.style.overflow = ''; };
-    }, [isPasswordInputOpen, isWeightModalOpen, isFormOpen, isImportModalOpen, isDisclaimerOpen]);
+    }, [isPasswordInputOpen, isWeightModalOpen, isFormOpen, isDisclaimerOpen]);
 
     // Android system back closes the topmost overlay. Registered after the
     // navigation handler (declared later wins the top of the stack), and the
     // dialog provider above this closes dialogs before modals.
     useBackHandler(isQuickAddOpen, () => { setIsQuickAddOpen(false); return true; });
     useBackHandler(isQuickAddLabOpen, () => { setIsQuickAddLabOpen(false); return true; });
+    useBackHandler(quickRecordOpen, () => { setQuickRecordOpen(false); return true; });
     useBackHandler(isPasswordInputOpen, () => { setIsPasswordInputOpen(false); return true; });
     useBackHandler(isWeightModalOpen, () => { setIsWeightModalOpen(false); return true; });
     useBackHandler(isFormOpen, () => { setIsFormOpen(false); return true; });
     useBackHandler(isDisclaimerOpen, () => { setIsDisclaimerOpen(false); return true; });
-    useBackHandler(isImportModalOpen, () => { setIsImportModalOpen(false); return true; });
     useBackHandler(isCoreAuthOpen, () => { setIsCoreAuthOpen(false); setPrefillUsername(''); return true; });
 
     // Native shell wiring: system back dispatch and system-browser links.
@@ -479,14 +508,50 @@ const AppContent = () => {
      * its unsupported `gelProducts` dropped and reported.
      */
     const applyImportedPayload = (parsed: unknown, source: ForeignSource | null): boolean => {
-        const { payload, skipped } = convertForeignPayload(parsed, source ?? 'kira');
+        const { payload, gelProducts } = convertForeignPayload(parsed, source ?? 'kira');
         const ok = processImportedData(payload);
-        // Reported after the merge so it lands beside the success dialog rather than
-        // instead of it — the import did succeed, minus one collection.
-        if (ok && skipped.gelProducts) {
-            showDialog('alert', t('import.skipped_gel_products').replace('{n}', String(skipped.gelProducts)));
+        // The custom gel catalogue is account data in its own right — merged after
+        // the records so a product can never be imported "for" a record that then
+        // failed to land.
+        if (ok && gelProducts) {
+            const merged = importGelProducts(gelProducts);
+            const n = merged.added + merged.updated;
+            if (n > 0) showDialog('alert', t('import.gel_products_imported').replace('{n}', String(n)));
         }
         return ok;
+    };
+
+    /**
+     * Counts an import before it is applied.
+     *
+     * This is the same detection the real import runs, stopping one step short of
+     * `processImportedData`: the payload is converted (so a foreign file is counted
+     * in this app's own terms) but nothing is written. `null` means the count is
+     * not knowable yet — a password-protected or binary backup — and the modal
+     * then imports directly rather than promising a preview it cannot produce.
+     */
+    const previewImport = async (input: string | ArrayBuffer): Promise<{ source: string; doses: number; labs: number } | null> => {
+        try {
+            const detection = detectForeignFormat(input);
+            if (detection.source === 'featherline' || detection.problem === 'unreadable') return null;
+
+            let parsed: any = detection.parsed;
+            if (parsed && typeof parsed === 'object' && typeof parsed.c === 'string') {
+                parsed = JSON.parse(await decompressData(parsed.c));
+            }
+            if (parsed && parsed.encrypted && parsed.iv && parsed.salt && parsed.data) return null;
+
+            const source = detection.source ?? detectForeignFormat(JSON.stringify(parsed)).source;
+            const { payload } = convertForeignPayload(parsed, source ?? 'kira');
+            const counted = payload as { events?: unknown[]; labResults?: unknown[] };
+            return {
+                source: source ?? 'kira',
+                doses: counted.events?.length ?? 0,
+                labs: counted.labResults?.length ?? 0,
+            };
+        } catch {
+            return null;
+        }
     };
 
     const importEventsFromJson = async (input: string | ArrayBuffer): Promise<boolean> => {
@@ -602,13 +667,7 @@ const AppContent = () => {
     };
 
     const downloadFile = (data: string, filename: string) => {
-        const blob = new Blob([data], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        link.click();
-        URL.revokeObjectURL(url);
+        saveTextFile(filename, 'application/json', data);
     };
 
     const handleExportConfirm = async (encrypt: boolean, customPassword?: string): Promise<string | null> => {
@@ -684,6 +743,10 @@ const AppContent = () => {
                 onHrtStartChange={setHrtStartDate}
                 weight={weight}
                 onWeightChange={setWeight}
+                /* The same pipeline the data screen uses, so the intro's import row
+                   reads the same backups — including the password prompt an
+                   encrypted one opens. */
+                onImportJson={importEventsFromJson}
                 /* On a replay the step above goes read-only — see `replayOnboarding`. */
                 replay={replayOnboarding}
                 onDone={() => { markOnboardingSeen(); setShowOnboarding(false); setReplayOnboarding(false); }}
@@ -736,15 +799,55 @@ const AppContent = () => {
         );
     }
 
+    // Which destination has a primary action, and what it does. Settings and
+    // Which destination has a primary action, and what it does. Settings and
+    // account have none — the shell shows the tube logo in the rail slot instead.
+    const shellFab = (view: ViewKey): ShellFab | null => {
+        switch (view) {
+            case 'home':
+                return {
+                    label: t('quickadd.button'),
+                    icon: 'mark',
+                    onClick: () => setQuickRecordOpen(true),
+                };
+            case 'history':
+                return {
+                    label: t('timeline.add_title'),
+                    icon: 'plus',
+                    onClick: () => setIsQuickAddOpen(true),
+                };
+            case 'lab':
+                return {
+                    label: t('lab.add_title'),
+                    icon: 'plus',
+                    menu: [
+                        {
+                            label: t('scan.title'),
+                            icon: 'scan',
+                            onClick: () => setIsLabScanOpen(true),
+                        },
+                        {
+                            label: t('lab.add_title'),
+                            icon: 'plus',
+                            onClick: () => setIsQuickAddLabOpen(true),
+                        },
+                    ],
+                };
+            default:
+                return null;
+        }
+    };
+
     return (
         <>
         {splash}
         <div style={revealStyle}>
-        <AppShell
-            navItems={navItems}
+        <PrototypeShell
+            items={navItems.map(item => ({ id: item.id, label: item.label }))}
             activeId={activeSection}
             onNavigate={(v) => handleViewChange(v as ViewKey)}
-            navLabel="Primary"
+            scrollRef={mainScrollRef}
+            fab={quickRecordOpen ? null : shellFab(currentView)}
         >
                 {/* The milestone notice sits *between* the navigation and the
                     scrolling content, so it is in the shell rather than in a page.
@@ -765,16 +868,15 @@ const AppContent = () => {
                     onDone={onMilestoneDone}
                 />
                 <div
-                    ref={mainScrollRef}
                     key={currentView}
-                    className={`flex-1 flex flex-col overflow-y-auto scrollbar-hide scroll-pb-nav ${transitionDirection === 'backward' ? 'view-enter-backward' : 'view-enter-forward'}`}
+                    className={`flex-1 flex flex-col ${transitionDirection === 'backward' ? 'view-enter-backward' : 'view-enter-forward'}`}
                 >
                     {/* Full-bleed, and each page owns its own measure: most cap at 2xl,
                         and the dashboard widens once there is a chart to show. A shared
                         cap here would fight those per-page decisions, and the sticky
                         headers inside each page need to span the column they stick
                         within. */}
-                    <div className="w-full pb-10">
+                    <div className="w-full flex-1 flex flex-col pb-10">
                     {currentView === 'home' && (
                         <Home
                             t={t}
@@ -803,6 +905,8 @@ const AppContent = () => {
                             chartStyle={chartStyle}
                             readingDecimals={readingDecimals}
                             hideAA={hideAA}
+                            quickRecordOpen={quickRecordOpen}
+                            onQuickRecordClose={() => setQuickRecordOpen(false)}
                         />
                     )}
 
@@ -829,7 +933,6 @@ const AppContent = () => {
                                 else addEvent(e);
                             }}
                             onDeleteEvent={deleteEvent}
-                            onAddEvents={addEvents}
                             onDeleteEvents={deleteEvents}
                             onSaveTemplate={addTemplate}
                             onDeleteTemplate={deleteTemplate}
@@ -865,6 +968,8 @@ const AppContent = () => {
                             onDismissRecheck={dismissRecheck}
                             recheckIntervals={recheckIntervals}
                             ocrModelTier={ocrModelTier}
+                            isScanOpen={isLabScanOpen}
+                            setIsScanOpen={setIsLabScanOpen}
                         />
                     )}
 
@@ -897,6 +1002,7 @@ const AppContent = () => {
                             setIsDisclaimerOpen={setIsDisclaimerOpen}
                             onShowIntro={() => { setReplayOnboarding(true); setShowOnboarding(true); }}
                             onOpenLicences={() => handleViewChange('settings-licences')}
+                            onOpenDonate={() => handleViewChange('settings-donate')}
                             weight={weight}
                             setIsWeightModalOpen={setIsWeightModalOpen}
                             pkParams={pkParams}
@@ -915,11 +1021,18 @@ const AppContent = () => {
                             setHideAA={setHideAA}
                             recheckIntervals={recheckIntervals}
                             setRecheckIntervals={setRecheckIntervals}
+                            dismissedRechecks={dismissedRechecks}
+                            onDismissRecheck={dismissRecheck}
                             ocrModelTier={ocrModelTier}
                             setOcrModelTier={setOcrModelTier}
                             pkEngine={pkEngine}
                             setPkEngine={setPkEngine}
                             engineInUse={engineInUse}
+                            calibrationMethod={calibrationMethod}
+                            setCalibrationMethod={setCalibrationMethod}
+                            calibrationHistoryMode={calibrationHistoryMode}
+                            setCalibrationHistoryMode={setCalibrationHistoryMode}
+                            calibration={calibration}
                             doseTemplates={doseTemplates}
                         />
                     )}
@@ -977,6 +1090,7 @@ const AppContent = () => {
                     {currentView === 'settings-import' && (
                         <ImportSettings
                             onImportJson={importEventsFromJson}
+                            onPreview={previewImport}
                             onBack={() => handleViewChange('settings')}
                         />
                     )}
@@ -1007,6 +1121,17 @@ const AppContent = () => {
                         />
                     )}
 
+                    {currentView === 'settings-donate' && (
+                        <DonateSettings
+                            onBack={() => handleViewChange('settings')}
+                            onOpenSupporters={() => handleViewChange('settings-donate-supporters')}
+                        />
+                    )}
+
+                    {currentView === 'settings-donate-supporters' && (
+                        <SupportersList onBack={() => handleViewChange('settings-donate')} />
+                    )}
+
                     {currentView === 'settings-mcp' && (
                         <McpSettings
                             session={coreSession}
@@ -1026,7 +1151,7 @@ const AppContent = () => {
                     )}
                     </div>
                 </div>
-        </AppShell>
+        </PrototypeShell>
         </div>
 
             <PasswordInputModal
@@ -1066,12 +1191,6 @@ const AppContent = () => {
                 onClose={() => setIsDisclaimerOpen(false)}
             />
 
-            <ImportModal
-                isOpen={isImportModalOpen}
-                onClose={() => setIsImportModalOpen(false)}
-                onImportJson={importEventsFromJson}
-            />
-
             {/* The one sign-in in the app: the Core is what protects the records. */}
             <CoreAuthModal
                 isOpen={isCoreAuthOpen}
@@ -1102,16 +1221,22 @@ const getAuthCallbackProvider = (): 'x' | 'google' | null => {
 };
 
 const getShareRoute = (): { isShareRoute: boolean; token: string | null } => {
-    if (!/^\/share\/?$/.test(window.location.pathname)) {
+    // Two shapes, both live: `/share#<token>` is what older builds handed out, and
+    // `/share/<token>` is what the Core returns today. The path form is the one a
+    // link copied from the app uses, so it has to be recognised here — otherwise
+    // the SPA renders the app shell over a shared record.
+    const match = /^\/share(?:\/([^/?#]+))?\/?$/.exec(window.location.pathname);
+    if (!match) {
         return { isShareRoute: false, token: null };
     }
 
+    const pathToken = match[1] ?? '';
     const fragmentToken = window.location.hash
         .slice(1)
         .replace(/^\/+/, '')
         .split(/[/?]/, 1)[0];
 
-    return { isShareRoute: true, token: fragmentToken || null };
+    return { isShareRoute: true, token: pathToken || fragmentToken || null };
 };
 
 const App = () => {
@@ -1184,6 +1309,9 @@ const App = () => {
     return (
         <LanguageProvider>
             <HRTModeProvider>
+                {/* The prototype sprite, mounted once for the whole tree: every
+                    icon is `<svg class="i"><use href="#id"/></svg>`. */}
+                <SvgDefs />
                 {/* One session for the whole app, including the X landing below:
                     the callback stores a token that AppContent then reads, so two
                     instances would silently be two sessions. */}
@@ -1210,3 +1338,7 @@ const App = () => {
 };
 
 export default App;
+
+
+
+

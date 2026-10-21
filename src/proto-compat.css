@@ -1,0 +1,237 @@
+/*
+ * The bridge between the prototype layer and the browser.
+ *
+ * It used to also carry `m3e-*` aliases for panels that had not been rewritten
+ * yet; those are gone — markup now uses the prototype classes directly, and the
+ * three settings-only text utilities live in index.css. What remains here is the
+ * scaffolding the prototype itself never needed because it was a single static
+ * page: the global button/input reset, the light palette under the app's `.light`
+ * class, the login form fields, and the fixed positioning for portalled sheets,
+ * snackbars and the batch toolbar.
+ */
+
+/* The old primitive layer supplied the global reset; keep it now that the
+   components emit native buttons directly. */
+button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+}
+input, select, textarea { font: inherit; color: inherit; }
+
+/* Long filter labels in a narrow card must not break mid-word. */
+.cg button { white-space: nowrap; }
+
+/* Light palette. m3e.css keys its light block off `[data-theme="light"]`, but the
+   app applies a `.light` class; this is the same 21-role palette under that
+   selector. */
+:root:not(.dark) {
+    --stage: #e9e4ea;
+    --bg: #fff8f8;
+    --sc: #f9ecf0;
+    --sch: #f2e3e9;
+    --sch-h: #ead6de;
+    --pri: #a03d63;
+    --onpri: #ffffff;
+    --pric: #ffd9e3;
+    --onpric: #3f001e;
+    --secc: #f6dbe5;
+    --onsecc: #2b151e;
+    --terc: #ffe3b0;
+    --onterc: #261900;
+    --on: #211a1d;
+    --var: #4f4349;
+    --out: #84757b;
+    --err: #ba1a1a;
+    --errc: #ffdad6;
+    --onerrc: #410002;
+    --ok: #2f8458;
+    --okc: #d6f2e2;
+    --warn: #825500;
+    --warnc: #ffddb3;
+    --ghost-ic: rgba(255, 255, 255, .55);
+}
+
+/* Login form fields: the last native-looking controls in the app. */
+.input-base {
+    width: 100%;
+    height: 56px;
+    border: 0;
+    border-radius: 20px;
+    background: var(--sch);
+    color: var(--on);
+    font: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    padding: 0 16px;
+    outline: 0;
+}
+.input-base:focus {
+    background: var(--sch-h);
+    box-shadow: 0 0 0 2px var(--pri);
+}
+.btn-primary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    height: 50px;
+    border: 0;
+    border-radius: 25px;
+    background: var(--pri);
+    color: var(--onpri);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 800;
+    cursor: pointer;
+}
+.btn-primary:disabled { opacity: .5; }
+.btn-secondary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    height: 44px;
+    border: 1.5px solid color-mix(in srgb, var(--out) 35%, transparent);
+    border-radius: 22px;
+    background: var(--sch);
+    color: var(--on);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+/* The page-scoped copies out-specify the legacy `.input-base` block further
+   down index.css, which still paints a white field. */
+.pg .input-base {
+    height: 56px;
+    border: 0;
+    border-radius: 20px;
+    background: var(--sch);
+    color: var(--on);
+    font-size: 16px;
+    font-weight: 600;
+    padding: 0 16px;
+}
+.pg .input-base:focus {
+    background: var(--sch-h);
+    box-shadow: 0 0 0 2px var(--pri);
+}
+.pg .btn-primary {
+    background: var(--pri);
+    color: var(--onpri);
+    border: 0;
+    border-radius: 25px;
+    height: 50px;
+    width: 100%;
+    font-weight: 800;
+}
+.pg .btn-secondary {
+    background: var(--sch);
+    color: var(--on);
+    border: 1.5px solid color-mix(in srgb, var(--out) 35%, transparent);
+}
+
+/* Sheets and snackbars are portalled to <body>, so they are fixed to the
+   viewport rather than to a transformed page column. */
+.sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 41;
+    height: auto;
+    max-height: 88%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+.sheet.tall { height: 88%; }
+.sheet .sh-handle {
+    flex: none;
+    width: 36px;
+    height: 4px;
+    border: 0;
+    border-radius: 2px;
+    background: var(--out);
+    opacity: .45;
+    margin: 0 auto 12px;
+    padding: 0;
+}
+.scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+}
+@media (min-width: 760px) {
+    .sheet {
+        left: 50%;
+        right: auto;
+        bottom: 50%;
+        width: 460px;
+        height: auto;
+        max-height: 82%;
+        border-radius: 32px;
+        transform: translate(-50%, 60%) scale(.96);
+        opacity: 0;
+        pointer-events: none;
+        transition: transform .28s, opacity .28s;
+    }
+    .sheet.on {
+        transform: translate(-50%, 50%) scale(1);
+        opacity: 1;
+        pointer-events: auto;
+    }
+    .sheet .sh-handle { display: none; }
+}
+
+/* Batch-selection toolbar. */
+.ftool {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: calc(92px + max(env(safe-area-inset-bottom, 0px), var(--app-safe-bottom, 0px)));
+    z-index: 30;
+    display: flex;
+    gap: 4px;
+    padding: 6px;
+    border-radius: 28px;
+    background: var(--pric);
+    color: var(--onpric);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, .3);
+    opacity: 0;
+    transform: translateY(18px) scale(.96);
+    pointer-events: none;
+    transition: opacity .18s ease, transform .28s cubic-bezier(.2, .9, .2, 1);
+}
+.ftool.on {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+}
+.ftool button {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    border: 0;
+    border-radius: 22px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 700;
+    padding: 7px 4px;
+    cursor: pointer;
+}
+.ftool button:disabled { opacity: .4; }
+.ftool button.danger { color: var(--err); }
+body.desktop .ftool { left: 50%; right: auto; width: 460px; bottom: 24px; transform: translateX(-50%) translateY(18px) scale(.96); }
+body.desktop .ftool.on { transform: translateX(-50%); }

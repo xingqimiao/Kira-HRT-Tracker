@@ -184,8 +184,12 @@ check('a spironolactone dose does not move the E2 curve beyond grid resampling',
 
 check('the E2 series itself is identical wherever the two runs share a grid time', () => {
   // The exact statement, free of interpolation: wherever both runs sampled the same
-  // clock time, the estradiol value must be bit-identical. This is the assertion the
-  // bound above is a concession to; it is the one that would catch contamination.
+  // clock time, the estradiol value must be the same number. Compared with a tolerance
+  // rather than bit-for-bit: the two runs carry different event counts, so the
+  // simulator accumulates the same terms in a different order, and floating point
+  // addition is not associative — the observed difference is one unit in the last place
+  // (~4e-15 at 27 pg/mL). Contamination is not subtle: a spironolactone dose mis-read
+  // as estradiol adds two orders of magnitude, so 1e-9 still catches it.
   assert.ok(baseline && withSpiro);
   const index = new Map(withSpiro.timeH.map((t, i) => [t, i]));
   let compared = 0;
@@ -193,8 +197,11 @@ check('the E2 series itself is identical wherever the two runs share a grid time
     const j = index.get(baseline.timeH[i]);
     if (j === undefined) continue;
     compared++;
-    assert.equal(withSpiro.concPGmL_E2[j], baseline.concPGmL_E2[i],
-      `E2 differs at t=${baseline.timeH[i]}`);
+    const mine = baseline.concPGmL_E2[i];
+    const theirs = withSpiro.concPGmL_E2[j];
+    const tolerance = Math.max(1e-9, Math.abs(mine) * 1e-9);
+    assert.ok(Math.abs(theirs - mine) <= tolerance,
+      `E2 differs at t=${baseline.timeH[i]}: ${mine} vs ${theirs}`);
   }
   assert.ok(compared > 0, 'the two runs shared no grid time at all');
 });
@@ -222,7 +229,10 @@ check('the chart still has a real estradiol curve to draw', () => {
   // wrong. What must hold is that the E2 curve is the same curve, not that the two
   // runs happen to sample its apex at the same instant.
   const peak = (sim) => Math.max(...sim.concPGmL_E2);
-  assert.ok(peak(baseline) > 100, `baseline peak ${peak(baseline)}`);
+  // 30 pg/mL, not the 100 this used to assert: the 2026 literature parameters put a
+  // steady 2 mg/day oral regimen's peak at ~57 pg/mL, and the number here only has to
+  // separate "a real curve" from "zeros" — the contamination case would add ~1000.
+  assert.ok(peak(baseline) > 30, `baseline peak ${peak(baseline)}`);
   assert.ok(Math.abs(peak(withSpiro) - peak(baseline)) / peak(baseline) < 0.01,
     `peak moved by more than 1%: ${peak(baseline)} -> ${peak(withSpiro)}`);
 });

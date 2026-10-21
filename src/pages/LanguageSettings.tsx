@@ -1,8 +1,9 @@
 import React from 'react';
+import { Check } from '../icons';
 import Icon from '../components/Icon';
-import { ArrowLeft, Check } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import type { Lang } from '../i18n/types';
+import { HeaderBack, SegmentedList, SegmentedListItem } from '../ui/proto';
 
 interface LanguageSettingsProps {
     lang: Lang;
@@ -15,38 +16,24 @@ const LanguageSettings: React.FC<LanguageSettingsProps> = ({ lang, setLang, lang
     const { t } = useTranslation();
 
     return (
-        <div className="relative space-y-4 pb-32">
-            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3">
-                <button
-                    onClick={onBack}
-                    className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] "
-                >
-                    <Icon icon={ArrowLeft} size={18} className="text-[var(--color-m3-on-surface-variant)]  shrink-0" />
-                    <span className="text-xl font-semibold text-[var(--color-m3-on-surface)] ">
-                        {t('drawer.lang')}
-                    </span>
-                </button>
-            </div>
-
-            <div className="mx-auto w-full px-6 md:px-8 max-w-2xl">
-                {languageOptions.map(({ value, label }) => (
-                    <button
-                        key={value}
-                        onClick={() => setLang(value as Lang)}
-                        className="w-full flex items-center justify-between py-4 border-b border-[var(--color-m3-outline-variant)]  last:border-b-0 text-start"
-                    >
-                        <span className={`text-m3-body-medium ${lang === value
-                            ? 'font-semibold text-[var(--color-m3-on-surface)] '
-                            : 'text-[var(--color-m3-on-surface)] '
-                        }`}>
-                            {label}
-                        </span>
-                        {lang === value && (
-                            <Icon icon={Check} size={16} className="text-[var(--color-m3-primary)]  shrink-0" />
-                        )}
-                    </button>
-                ))}
-            </div>
+        <div className="pg on long" style={{ maxWidth: 720, marginInline: 'auto', width: '100%' }}>
+            <HeaderBack title={t('drawer.lang')} onBack={onBack} backLabel={t('core.back')} />
+            <SegmentedList label={t('drawer.lang')}>
+                {languageOptions.map(({ value, label }) => {
+                    const active = lang === value;
+                    return (
+                        <SegmentedListItem
+                            key={value}
+                            title={label}
+                            active={active}
+                            leadingTone={active ? 'primary' : 'default'}
+                            trailing={active ? <Icon icon={Check} size={20} /> : undefined}
+                            aria-pressed={active}
+                            onClick={() => setLang(value as Lang)}
+                        />
+                    );
+                })}
+            </SegmentedList>
         </div>
     );
 };

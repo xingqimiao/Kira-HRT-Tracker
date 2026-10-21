@@ -26,7 +26,9 @@ import { randomUUID } from 'node:crypto';
 import {
   calibrateForEngine,
   engineForCurve,
+  gelProductsOf,
   simulateForEngine,
+  withGelProductCatalogue,
   doseAdvisory,
   hormoneLevelAdvisory,
   DEFAULT_PK_PARAMS,
@@ -750,7 +752,14 @@ export const PKSimulationService = {
         const bag = userSettings.appState as { settings?: { pkEngine?: string } } | null;
         const engine = engineForCurve(bag?.settings?.pkEngine, isTransmasc, { analyte, events });
 
-        const sim = simulateForEngine(engine, events, weight, params);
+        // The account's own gel products. A record naming id ≥ 1000 resolves against
+        // this list *at simulation time*; without it every custom product would be
+        // drawn with Oestrogel's kinetics. Scoped, not installed globally: the
+        // registry is module state, so it is set, used synchronously and restored
+        // (see `withGelProductCatalogue`).
+        const gelProducts = gelProductsOf(userSettings.appState);
+
+        const sim = withGelProductCatalogue(gelProducts, () => simulateForEngine(engine, events, weight, params));
         if (!sim) return { ok: false, error: 'simulation failed — check dose values and body weight' };
 
         // Build one full-length series, applying calibration to E2 only — lab results
@@ -768,7 +777,7 @@ export const PKSimulationService = {
             const labValues = labRecords.map((r) => toLabResult(r.data));
             const e2Labs = labValues.filter((l) => !isT_LabUnit(l.unit));
             if (e2Labs.length > 0) {
-                const cal = calibrateForEngine(
+                const cal = withGelProductCatalogue(gelProducts, () => calibrateForEngine(
                     engine,
                     sim,
                     events,
@@ -776,7 +785,7 @@ export const PKSimulationService = {
                     labValues,
                     (userSettings.calibrationMethod as never) ?? 'mipd',
                     (userSettings.calibrationHistory as never) ?? 'retrospective',
-                );
+                ));
                 calibrationInfo = { method: cal.method, scale: cal.scale, labs: cal.n, fitErrorPct: cal.fitErrPct };
                 series = sim.concPGmL_E2.map((v, i) => v * cal.factorFn(sim.timeH[i]));
             } else {

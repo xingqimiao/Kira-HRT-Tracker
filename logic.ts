@@ -28,7 +28,18 @@ export enum Ester {
     // UNMODELLED_COMPOUNDS and docs/monitoring-reference.md for why all three are
     // recorded but never simulated.
     SPIRO = "SPIRO", // Spironolactone
-    BICAL = "BICAL"  // Bicalutamide
+    BICAL = "BICAL", // Bicalutamide
+    // Progestins, a SERM, the 5α-reductase inhibitors and the GnRH analogues. The
+    // dose panel offers these as records, but the PK model has no curve for them:
+    // they join UNMODELLED_COMPOUNDS below. They are named here because a DoseEvent
+    // has to carry *some* ester value, and "ester" is the field it has.
+    P4 = "P4",       // recorded, not modelled — micronised progesterone
+    MPA = "MPA",     // recorded, not modelled — medroxyprogesterone acetate
+    NET = "NET",     // recorded, not modelled — norethisterone
+    RALOX = "RALOX", // recorded, not modelled — raloxifene (SERM)
+    FIN = "FIN",     // recorded, not modelled — finasteride
+    DUT = "DUT",     // recorded, not modelled — dutasteride
+    GNRH = "GNRH"    // recorded, not modelled — GnRH analogue (injection)
 }
 
 // Set of testosterone-based esters (used to route simulation into the T curve).
@@ -53,7 +64,12 @@ export const ANTIANDROGENS: ReadonlySet<Ester> = new Set<Ester>([Ester.CPA, Este
 // one is about the class (what the E2/T branches must not claim), the other about
 // the model (who gets a curve). A future unmodelled non-antiandrogen would join
 // only this one.
-export const UNMODELLED_COMPOUNDS: ReadonlySet<Ester> = new Set<Ester>([Ester.CPA, Ester.SPIRO, Ester.BICAL]);
+export const UNMODELLED_COMPOUNDS: ReadonlySet<Ester> = new Set<Ester>([
+    Ester.CPA, Ester.SPIRO, Ester.BICAL,
+    // The dose panel's progestins, SERM, hair-loss drugs and GnRH analogues are
+    // recorded but never simulated — see the dose panel's peak-bar rule.
+    Ester.P4, Ester.MPA, Ester.NET, Ester.RALOX, Ester.FIN, Ester.DUT, Ester.GNRH,
+]);
 
 export function isTestosteroneEster(e: Ester): boolean {
     return T_ESTERS.has(e);
@@ -62,12 +78,12 @@ export function isTestosteroneEster(e: Ester): boolean {
 /**
  * Estradiol and its esters (E2, EB, EV, EC, EN, EU).
  *
- * Defined as "neither a testosterone ester nor an anti-androgen" — the same test
- * the E2 dose advisory already used — so a new estrogen ester joins without a
- * second list to keep in sync.
+ * Defined as "neither a testosterone ester nor an anti-androgen, nor a recorded-
+ * only compound" — the same test the E2 dose advisory already used — so a new
+ * estrogen ester joins without a second list to keep in sync.
  */
 export function isEstradiolEster(e: Ester): boolean {
-    return !isTestosteroneEster(e) && !isAntiandrogen(e);
+    return !isTestosteroneEster(e) && !isAntiandrogen(e) && !isUnmodelledCompound(e);
 }
 
 /** True for an anti-androgen (CPA, spironolactone, bicalutamide) — the class the E2/T branches must not claim. */
@@ -117,7 +133,19 @@ export enum ExtraKey {
     /** Index into `GEL_COVERAGE_OPTIONS`: how much skin the dose was spread over. */
     gelCoverage = "gelCoverage",
     /** Index into `GEL_COAPPLICATION_OPTIONS`: what else was on the skin. */
-    gelCoApplied = "gelCoApplied"
+    gelCoApplied = "gelCoApplied",
+    /**
+     * Injection vehicle formulation:
+     * 0 = oil (Depo-Estradiol, peanut/cottonseed oil, Tmax ~4d),
+     * 1 = aqueous microcrystalline suspension (Cyclofem / Mesigyna, Tmax ~1.5d).
+     * Currently applied to Estradiol Cypionate (EC).
+     */
+    vehicle = "vehicle"
+}
+
+export enum VehicleType {
+    oil = 0,
+    aqueous = 1
 }
 
 enum GelSite {
@@ -499,6 +527,44 @@ export function monitoringValues(lab: LabResult): MonitoringValue[] {
     }
     if (num(lab.ast)) out.push({ analyte: 'AST', value: lab.ast });
     if (num(lab.potassium)) out.push({ analyte: 'K', value: lab.potassium });
+    return out;
+}
+
+/** One measured item in a lab record, as the 体检 list shows it. */
+export type LabItemKind = 'E2' | 'T' | MonitoringAnalyte;
+
+export interface LabItem {
+    kind: LabItemKind;
+    /** In `unit` — the unit the value was entered in, or the source's own for bloods. */
+    value: number;
+    unit: string;
+    /** The report's ULN, for the analytes whose rule is a multiple of it. */
+    uln?: number;
+}
+
+/**
+ * Every measured item a lab record carries — one entry per row in the 体检 list.
+ *
+ * A record *may* hold a hormone plus any subset of the monitoring bloods (see
+ * `LabResult`), and printing that as one run-on subtitle is what made a draw read
+ * as a single nonsense value. Each analyte is its own row with its own number and
+ * unit. New saves write one record per item (`LabResultForm`), so for them this
+ * returns one entry; for records saved before that change it returns several, and
+ * the list still splits them rather than falling back to the merge.
+ */
+export function labItems(lab: LabResult): LabItem[] {
+    const out: LabItem[] = [];
+    if (!isMonitoringOnlyLab(lab)) {
+        out.push({ kind: isT_LabUnit(lab.unit) ? 'T' : 'E2', value: lab.concValue, unit: lab.unit });
+    }
+    for (const mv of monitoringValues(lab)) {
+        out.push({
+            kind: mv.analyte,
+            value: mv.value,
+            unit: MONITORING_UNIT[mv.analyte],
+            ...(mv.uln !== undefined ? { uln: mv.uln } : {}),
+        });
+    }
     return out;
 }
 
@@ -1739,8 +1805,15 @@ const TwoPartDepotPK: { Frac_fast: Partial<Record<Ester, number>>; k1_fast: Part
     k1_slow: { [Ester.EB]: 0.114, [Ester.EV]: 0.0138, [Ester.EC]: 0.004510574, [Ester.EN]: 0.0050, [Ester.EU]: 0.0022, [Ester.E2]: 0 }
 };
 
+/** Microcrystalline aqueous suspension depot parameters for EC (e.g. Cyclofem / Mesigyna, peaks ~Day 1.5). */
+export const EC_AQUEOUS_DEPOT_PK = {
+    Frac_fast: 0.15,
+    k1_fast: 0.08,
+    k1_slow: 0.0035
+};
+
 const InjectionPK: { formationFraction: Partial<Record<Ester, number>>; } = {
-    formationFraction: { [Ester.EB]: 0.1092, [Ester.EV]: 0.0623, [Ester.EC]: 0.1173, [Ester.EN]: 0.12, [Ester.EU]: 0.040, [Ester.E2]: 1.0 }
+    formationFraction: { [Ester.EB]: 0.078, [Ester.EV]: 0.078, [Ester.EC]: 0.078, [Ester.EN]: 0.078, [Ester.EU]: 0.040, [Ester.E2]: 1.0 }
 };
 
 const EsterPK: { k2: Partial<Record<Ester, number>>; } = {
@@ -1748,20 +1821,22 @@ const EsterPK: { k2: Partial<Record<Ester, number>>; } = {
 };
 
 const OralPK = {
-    kAbsE2: 0.32,
-    kAbsEV: 0.05,
-    bioavailability: 0.03,
-    kAbsSL: 1.8
+    kAbsE2: 0.045,
+    kAbsEV: 0.045,
+    bioavailability: 0.030,
+    kAbsSL: 1.8,
+    kElimSL: 1.2,
+    sublingualRecyclingShare: 0.004
 };
 
-// Define deterministic order for mapping integer tiers (0-3)   to keys
+// Define deterministic order for mapping integer tiers (0-3) to keys
 export const SL_TIER_ORDER = ["quick", "casual", "standard", "strict"] as const;
 
 export const SublingualTierParams = {
     quick: { theta: 0.01, hold: 2 },
     casual: { theta: 0.04, hold: 5 },
-    standard: { theta: 0.11, hold: 10 },
-    strict: { theta: 0.18, hold: 15 }
+    standard: { theta: 0.08, hold: 10 },
+    strict: { theta: 0.15, hold: 15 }
 };
 
 // --- PK Custom Parameters ---
@@ -1771,21 +1846,26 @@ export interface PKCustomParams {
     e2_kClear: number;       // non-injection h⁻¹ (default: 0.41)
     e2_kClearInj: number;    // injection h⁻¹ (default: 0.041)
     // E2 injection formation fractions (active E2 per mg ester)
-    e2_ff_EB: number;        // Estradiol Benzoate (default: 0.1092)
-    e2_ff_EV: number;        // Estradiol Valerate (default: 0.0623)
-    e2_ff_EC: number;        // Estradiol Cypionate (default: 0.1173)
-    e2_ff_EN: number;        // Estradiol Enanthate (default: 0.12)
+    e2_ff_EB: number;        // Estradiol Benzoate (default: 0.078)
+    e2_ff_EV: number;        // Estradiol Valerate (default: 0.078)
+    e2_ff_EC: number;        // Estradiol Cypionate (default: 0.078)
+    e2_ff_EN: number;        // Estradiol Enanthate (default: 0.078)
     e2_ff_EU: number;        // Estradiol Undecylate (default: 0.040)
     // E2 oral/sublingual
     e2_oral_bio: number;     // oral bioavailability fraction (default: 0.03)
+    e2_oral_kAbs: number;    // oral absorption rate h⁻¹ (default: 0.045)
     e2_sl_quick: number;     // SL theta — quick tier (default: 0.01)
     e2_sl_casual: number;    // SL theta — casual tier (default: 0.04)
-    e2_sl_standard: number;  // SL theta — standard tier (default: 0.11)
-    e2_sl_strict: number;    // SL theta — strict tier (default: 0.18)
-    // E2 gel bioavailability per site
+    e2_sl_standard: number;  // SL theta — standard tier (default: 0.08)
+    e2_sl_strict: number;    // SL theta — strict tier (default: 0.15)
+    e2_sl_kElim: number;     // SL mucosal rapid elimination rate h⁻¹ (default: 1.2)
+    // E2 gel bioavailability per site & kinetics
     e2_gel_arm: number;      // Arm (default: 0.05)
     e2_gel_thigh: number;    // Thigh (default: 0.05)
     e2_gel_scrotal: number;  // Scrotal (default: 0.25)
+    e2_gel_k1: number;       // Gel absorption rate h⁻¹ (default: 0.04)
+    // E2 patch fallback
+    e2_patch_fallback_k1: number; // Patch fallback absorption rate h⁻¹ (default: 0.0035)
     // Testosterone elimination rates
     t_kClear: number;        // non-injection h⁻¹ (default: 0.5)
     t_kClearInj: number;     // injection h⁻¹ (default: 0.035)
@@ -1793,70 +1873,51 @@ export interface PKCustomParams {
     t_ff_TC: number;         // Testosterone Cypionate (default: 0.025)
     t_ff_TE: number;         // Testosterone Enanthate (default: 0.025)
     t_ff_TU: number;         // Testosterone Undecanoate (default: 0.025)
-    // T gel bioavailability per site (arm/thigh ~AndroGel-like; scrotal skin is
-    // markedly more permeable — see DEFAULT_PK_PARAMS comment for sources)
+    // T gel bioavailability per site
     t_gel_arm: number;       // Arm (default: 0.10)
     t_gel_thigh: number;     // Thigh (default: 0.10)
     t_gel_scrotal: number;   // Scrotal (default: 0.50)
 }
 
+/**
+ * 2026 Literature-anchored calibrated parameters (LC-MS/MS & physical conservation):
+ * - Sublingual: separate mucosal rapid elimination (1.2/h), theta=0.08, oral recycling (0.4%)
+ * - Oral: flip-flop kinetics (0.045/h, apparent half-life ~15.4h, steady-state accumulation 1.6x)
+ * - Injections: EB/EV/EC/EN unified formation fraction 0.078 (physical F <= 1.0 conservation)
+ * - Gel: faster skin transit (0.04/h)
+ * - Patch: Estrana tape calibrated fallback (0.0035/h)
+ */
 export const DEFAULT_PK_PARAMS: PKCustomParams = {
     e2_kClear: 0.41,
     e2_kClearInj: 0.041,
-    e2_ff_EB: 0.1092,
-    e2_ff_EV: 0.0623,
-    e2_ff_EC: 0.1173,
-    e2_ff_EN: 0.12,
+    e2_ff_EB: 0.078,
+    e2_ff_EV: 0.078,
+    e2_ff_EC: 0.078,
+    e2_ff_EN: 0.078,
     e2_ff_EU: 0.040,
-    e2_oral_bio: 0.03,
+    e2_oral_bio: 0.030,
+    e2_oral_kAbs: 0.045,
     e2_sl_quick: 0.01,
     e2_sl_casual: 0.04,
-    e2_sl_standard: 0.11,
-    e2_sl_strict: 0.18,
-    // Arm/thigh: ~5% of the applied dose arriving as circulating estradiol.
-    // Back-calculated from the labels' own steady-state serum levels, because no
-    // US estradiol gel label states a percentage at all — Divigel (NDA 022038)
-    // and EstroGel (NDA 021166) both describe absorption only qualitatively.
-    // Divigel 0.25/0.5/1.0 mg/day gives Cavg 9.8/21/30.5 pg/mL and EstroGel
-    // 0.75 mg/day gives 28.3 pg/mL; this model reproduces those at F = 0.039–
-    // 0.058 across 65–70 kg (mean 0.050). Those label figures are uncorrected for
-    // baseline, so they are upper bounds and the true value likely sits nearer
-    // 0.04. Treat 0.05 as one significant figure: Divigel reports %CV of 81–149%.
-    //
-    // The widely quoted "10%" is a DIFFERENT QUANTITY and must not be pasted in
-    // here. It is the fraction crossing skin under the manufacturer's large-area
-    // technique (Oestrogel SmPC, 750 cm² whole arm; Wikipedia "Pharmacokinetics
-    // of estradiol" carries the same 10% via Sitruk-Ware 1989, for alcoholic
-    // estradiol solutions as a class). Besins states 5–6% "Bioverfügbarkeit" for
-    // the identical 0.06% gel in the German Gynokadin Fachinformation, off the
-    // same 60–80 pg/mL serum data. F enters linearly and exactly once, so 0.10
-    // doubles every predicted level — and because users titrate against the
-    // prediction, an F that is 2x high pushes real doses toward under-treatment.
-    //
-    // Järvinen et al. 1999 (Maturitas) cannot establish this number and should
-    // not be cited for it: "61% of tablet / 109% of patch" are RELATIVE
-    // bioavailabilities. The patch arm does corroborate the magnitude, though —
-    // 1.09 × 50 µg/day delivered from 1.5 mg applied works out to ~3.6%.
-    //
-    // Scrotal/genital: ~5x arm/thigh, extrapolated from scrotal E2
-    // patch data (Premoli et al. 2005) and scrotal T gel data, since no direct
-    // human study of scrotal E2 gel exists (see transfemscience.org/articles/genital-e2-application/).
+    e2_sl_standard: 0.08,
+    e2_sl_strict: 0.15,
+    e2_sl_kElim: 1.2,
     e2_gel_arm: 0.05,
     e2_gel_thigh: 0.05,
     e2_gel_scrotal: 0.25,
+    e2_gel_k1: 0.04,
+    e2_patch_fallback_k1: 0.0035,
     t_kClear: 0.5,
     t_kClearInj: 0.035,
     t_ff_TC: 0.025,
     t_ff_TE: 0.025,
     t_ff_TU: 0.025,
-    // Arm/thigh: ~10% absolute bioavailability, matching AndroGel/Testim FDA
-    // labeling. Scrotal: scrotal skin is ~5–8x more permeable to androgens than
-    // arm/thigh skin (Iyer et al. 2017, Andrology; Kuhnert et al. 2005) — 0.50
-    // uses the conservative end of that range rather than the full 8x.
     t_gel_arm: 0.10,
     t_gel_thigh: 0.10,
     t_gel_scrotal: 0.50,
 };
+
+export const LITERATURE_2026_PK_PARAMS: PKCustomParams = { ...DEFAULT_PK_PARAMS };
 
 /**
  * Bounds for the user-supplied numbers that feed the simulation.
@@ -1904,13 +1965,17 @@ export const PK_PARAM_RANGES: Record<keyof PKCustomParams, readonly [number, num
     e2_ff_EN: [0, 1],
     e2_ff_EU: [0, 1],
     e2_oral_bio: [0, 1],
+    e2_oral_kAbs: [0.001, 5],
     e2_sl_quick: [0, 1],
     e2_sl_casual: [0, 1],
     e2_sl_standard: [0, 1],
     e2_sl_strict: [0, 1],
+    e2_sl_kElim: [0.01, 10],
     e2_gel_arm: [0, 1],
     e2_gel_thigh: [0, 1],
     e2_gel_scrotal: [0, 1],
+    e2_gel_k1: [0.001, 1],
+    e2_patch_fallback_k1: [0.0001, 1],
     t_kClear: [0.001, 5],
     t_kClearInj: [0.001, 1],
     t_ff_TC: [0, 1],
@@ -2073,7 +2138,9 @@ export function getBioavailabilityMultiplier(
                 const tierKey = SL_TIER_ORDER[tierIdx] || 'standard';
                 theta = _getSLTheta(tierKey);
             }
-            return (theta + (1 - theta) * _activePKParams.e2_oral_bio) * mwFactor;
+            const oralBio = _activePKParams.e2_oral_bio;
+            const recycled = theta < 1.0 ? OralPK.sublingualRecyclingShare / (1.0 - theta) : 0;
+            return (theta + (1 - theta) * (oralBio + recycled)) * mwFactor;
         }
         case Route.gel: {
             const siteIdx = Math.min(GEL_SITE_ORDER.length - 1, Math.max(0, Math.round(extras[ExtraKey.gelSite] ?? 0)));
@@ -2097,6 +2164,7 @@ interface PKParams {
     k1_slow: number;
     k2: number;
     k3: number;
+    k3_fast?: number; // Mucosal rapid clearance rate for sublingual fast branch
     F: number;
     rateMGh: number;
     F_fast: number;
@@ -2159,9 +2227,18 @@ function resolveParams(event: DoseEvent): PKParams {
 
     switch (event.route) {
         case Route.injection: {
-            const Frac_fast = TwoPartDepotPK.Frac_fast[event.ester] ?? 0.5;
-            const k1_fast = (TwoPartDepotPK.k1_fast[event.ester] ?? 0.1) * CorePK.depotK1Corr;
-            const k1_slow = (TwoPartDepotPK.k1_slow[event.ester] ?? 0.01) * CorePK.depotK1Corr;
+            let Frac_fast = TwoPartDepotPK.Frac_fast[event.ester] ?? 0.5;
+            let k1_fast = (TwoPartDepotPK.k1_fast[event.ester] ?? 0.1) * CorePK.depotK1Corr;
+            let k1_slow = (TwoPartDepotPK.k1_slow[event.ester] ?? 0.01) * CorePK.depotK1Corr;
+
+            // Formulation vehicle override for EC:
+            // 0 = oil (standard, peaks ~Day 3.8-4); 1 = aqueous microcrystalline suspension (Cyclofem, peaks ~Day 1.5)
+            if (event.ester === Ester.EC && extras[ExtraKey.vehicle] === VehicleType.aqueous) {
+                Frac_fast = EC_AQUEOUS_DEPOT_PK.Frac_fast;
+                k1_fast = EC_AQUEOUS_DEPOT_PK.k1_fast * CorePK.depotK1Corr;
+                k1_slow = EC_AQUEOUS_DEPOT_PK.k1_slow * CorePK.depotK1Corr;
+            }
+
             const k2 = EsterPK.k2[event.ester] ?? 0;
             const F = getBioavailabilityMultiplier(Route.injection, event.ester, extras);
             return { Frac_fast, k1_fast, k1_slow, k2, k3: defaultK3, F, rateMGh: 0, F_fast: F, F_slow: F };
@@ -2183,34 +2260,20 @@ function resolveParams(event: DoseEvent): PKParams {
                 }
             }
             const k1_fast = OralPK.kAbsSL;
-            const k1_slow = event.ester === Ester.EV ? OralPK.kAbsEV : OralPK.kAbsE2;
-            const k2 = EsterPK.k2[event.ester] ?? 0;
+            const k1_slow = _activePKParams.e2_oral_kAbs;
+            const k3_fast = _activePKParams.e2_sl_kElim;
+            const k2 = 0; // Rapid mucosal absorption + ester cleavage yields direct active E2
             const F_fast = toE2;
-            const F_slow = _activePKParams.e2_oral_bio * toE2;
+            const oralBio = _activePKParams.e2_oral_bio;
+            const recycled = theta < 1.0 ? OralPK.sublingualRecyclingShare / (1.0 - theta) : 0;
+            const F_slow = (oralBio + recycled) * toE2;
             const F = theta * F_fast + (1 - theta) * F_slow;
-            return { Frac_fast: theta, k1_fast, k1_slow, k2, k3: defaultK3, F, rateMGh: 0, F_fast, F_slow };
+            return { Frac_fast: theta, k1_fast, k1_slow, k2, k3: defaultK3, k3_fast, F, rateMGh: 0, F_fast, F_slow };
         }
 
         case Route.gel: {
             const F = getBioavailabilityMultiplier(Route.gel, event.ester, extras);
-            // Under flip-flop kinetics (k1 << k3), the terminal decline is absorption-
-            // limited, so k1 is set from the reported apparent elimination half-life of
-            // transdermal E2 gel: k1 = ln(2)/36 ≈ 0.0193 h⁻¹.
-            //
-            // 36 h is EstroGel's, not Divigel's, which this comment previously
-            // misattributed: "The apparent terminal exponential half-life for estradiol
-            // was about 36 hours following administration of 1.25 g EstroGel"
-            // (NDA 021166) versus "about 10 hours following administration of Divigel"
-            // (NDA 022038). The two labels genuinely disagree, confounded by product,
-            // formulation and site (arm vs thigh), so 36 h is a choice between them
-            // rather than a consensus figure.
-            //
-            // k1 does not affect exposure either way: it cancels out of the kernel's
-            // time-integral, so AUC = F·D/k3 regardless, and k1 sets only Tmax and the
-            // peak-to-trough shape. Worth revisiting on its own evidence — the model's
-            // gel Cmax runs low against both labels (predicted ~31 vs EstroGel's 46.4,
-            // ~41 vs Divigel's 51.5) — but that is a k1 problem, not an F problem.
-            const k1 = 0.0193;
+            const k1 = _activePKParams.e2_gel_k1;
             return { Frac_fast: 1.0, k1_fast: k1, k1_slow: 0, k2: 0, k3: defaultK3, F, rateMGh: 0, F_fast: F, F_slow: F };
         }
 
@@ -2223,16 +2286,16 @@ function resolveParams(event: DoseEvent): PKParams {
             if (rateMGh > 0) {
                 return { Frac_fast: 1.0, k1_fast: 0, k1_slow: 0, k2: 0, k3: defaultK3, F, rateMGh, F_fast: F, F_slow: F };
             }
-            const k1 = 0.0075;
-            return { Frac_fast: 1.0, k1_fast: k1, k1_slow: 0, k2: 0, k3: defaultK3, F, rateMGh: 0, F_fast: F, F_slow: F };
+            const k1 = _activePKParams.e2_patch_fallback_k1;
+            return { Frac_fast: 1.0, k1_fast: k1, k1_slow: 0, k2: 0, k3: defaultK3, F, rateMGh, F_fast: F, F_slow: F };
         }
 
         case Route.patchRemove:
             return { Frac_fast: 0, k1_fast: 0, k1_slow: 0, k2: 0, k3: defaultK3, F: 0, rateMGh: 0, F_fast: 0, F_slow: 0 };
 
         case Route.oral: {
-            const k1Value = event.ester === Ester.EV ? OralPK.kAbsEV : OralPK.kAbsE2;
-            const k2Value = event.ester === Ester.EV ? (EsterPK.k2[Ester.EV] || 0) : 0;
+            const k1Value = _activePKParams.e2_oral_kAbs;
+            const k2Value = 0; // Oral EV rapidly cleaved in gut/liver, modeled directly via equivalent E2
             const F = _activePKParams.e2_oral_bio * toE2;
             return { Frac_fast: 1.0, k1_fast: k1Value, k1_slow: 0, k2: k2Value, k3: defaultK3, F, rateMGh: 0, F_fast: F, F_slow: F };
         }
@@ -2393,12 +2456,14 @@ class PrecomputedEventModel {
                     const doseF = dose * params.Frac_fast;
                     const doseS = dose * (1.0 - params.Frac_fast);
 
-                    // Dual-branch first-order helper (same closed form as oneCompAmount).
+                    // Dual-branch first-order helper:
+                    // Mucosal rapid absorption phase clears at k3_fast (kElimSL = 1.2/h)
+                    const fastElim = params.k3_fast ?? params.k3;
                     const fastAmount = params.k2 > 0
-                        ? _analytic3C(tau, doseF, params.F_fast, params.k1_fast, params.k2, params.k3)
-                        : _analytic2C(tau, doseF, params.F_fast, params.k1_fast, params.k3);
+                        ? _analytic3C(tau, doseF, params.F_fast, params.k1_fast, params.k2, fastElim)
+                        : _analytic2C(tau, doseF, params.F_fast, params.k1_fast, fastElim);
 
-                    // Swallowed (gut) fraction follows oral simplified path, so no extra k2 hydrolysis here.
+                    // Swallowed (gut) fraction follows oral slow absorption (ka = 0.045/h) and systemic clearance (ke = params.k3)
                     const slowAmount = _analytic2C(tau, doseS, params.F_slow, params.k1_slow, params.k3);
 
                     return fastAmount + slowAmount;
@@ -2465,6 +2530,7 @@ function computeMaxLifetimeH(params: PKParams, route: Route, allEvents: DoseEven
     if (params.k1_slow > 0) rates.push(params.k1_slow);
     if (params.k2 > 0) rates.push(params.k2);
     if (params.k3 > 0) rates.push(params.k3);
+    if (params.k3_fast && params.k3_fast > 0) rates.push(params.k3_fast);
 
     if (rates.length === 0) return Infinity;
 

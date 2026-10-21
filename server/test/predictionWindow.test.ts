@@ -32,7 +32,7 @@ before(async () => {
     fcm: null,
     sessionTtlMinutes: 30, rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },
   });
-  pg = await bootPostgres({ dir: './.pgdata-window', port: 55446, database: 'hrt_window' });
+  pg = await bootPostgres({ dir: './.pgdata-window', port: 55450, database: 'hrt_window' });
   await useDatabase(pg);
   ({ server, base } = await startApiServer());
 }, { timeout: 180_000 });

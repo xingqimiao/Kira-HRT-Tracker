@@ -1016,17 +1016,6 @@ export async function buildSettingsScalars(ctx: AuthContext): Promise<Record<str
     return out;
 }
 
-/** Counts by kind for an account, for verifying a write landed. */
-export async function accountRecordCounts(userId: string): Promise<{ doses: number; labs: number }> {
-    const { rows } = await getPool().query<{ doses: string; labs: string }>(
-        `SELECT
-           (SELECT count(*) FROM records WHERE user_id = $1 AND category = 'dose') AS doses,
-           (SELECT count(*) FROM records WHERE user_id = $1 AND category = 'lab')  AS labs`,
-        [userId],
-    );
-    return { doses: Number(rows[0].doses), labs: Number(rows[0].labs) };
-}
-
 /**
  * The public aggregate the status page publishes.
  *

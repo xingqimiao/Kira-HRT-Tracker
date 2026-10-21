@@ -136,13 +136,19 @@ export function detectForeignFormat(input: string | ArrayBuffer | Uint8Array): F
 
 /** What a conversion had to drop, so the user can be told rather than surprised. */
 export interface Skipped {
-    /** Custom gel products in a Transmtf export (§8 of the protocol). */
+    /** Kept for callers of older builds; custom gel products are now imported. */
     gelProducts?: number;
 }
 
 export interface ConvertResult {
     /** The payload to hand to `processImportedData`. */
     payload: unknown;
+    /**
+     * The custom gel catalogue from a Transmtf export, to merge into the account's
+     * own (`importGelProducts`). Kept out of `payload` so the record merge never
+     * has to know about it.
+     */
+    gelProducts?: unknown[];
     skipped: Skipped;
 }
 
@@ -152,7 +158,9 @@ export interface ConvertResult {
  * Returns the payload unchanged for `kira` and `oyama`: an Oyama export is a subset
  * of ours (this app was forked from it, and `processImportedData` already reads its
  * `modes`/flat forms), so any transformation here would be the place a divergence
- * crept in. Only Transmtf needs work, and only to *drop* what we cannot represent.
+ * crept in. Transmtf is split in two: its records are handed on untouched, and its
+ * `gelProducts[]` catalogue is returned beside them so the caller can merge it into
+ * the account's own products instead of discarding what the records point at.
  *
  * Featherline is not handled here — its payload is binary and is decrypted and
  * mapped by `featherlineBackup.ts` before it reaches this function.
@@ -160,16 +168,15 @@ export interface ConvertResult {
 export function convertForeignPayload(parsed: unknown, source: ForeignSource): ConvertResult {
     if (source === 'transmtf' && isObject(parsed)) {
         const { gelProducts, ...rest } = parsed;
-        const skipped: Skipped = {};
-        // A catalogue of custom products cannot be represented (§8): the app stores
-        // a numeric `gelProductId` and nothing else. Dropping it is honest — the
-        // records keep their dose, route and site, and only the product's name and
-        // concentration are lost — where passing it through would import an array
-        // the reader ignores and never tell the user.
-        if (Array.isArray(gelProducts) && gelProducts.length > 0) {
-            skipped.gelProducts = gelProducts.length;
-        }
-        return { payload: rest, skipped };
+        // The catalogue is no longer dropped: it is handed back beside the payload,
+        // for the caller to merge into the account's own (`importGelProducts`). The
+        // records keep their `gelProductId`, so keeping the products is what makes
+        // those ids resolve to the right kinetics instead of to Oestrogel.
+        return {
+            payload: rest,
+            ...(Array.isArray(gelProducts) && gelProducts.length > 0 ? { gelProducts } : {}),
+            skipped: {},
+        };
     }
 
     // kira, oyama, and anything already native: pass through. Transmtf without

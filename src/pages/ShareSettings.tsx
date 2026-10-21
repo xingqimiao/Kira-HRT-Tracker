@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Icon from '../components/Icon';
-import { ArrowLeft, Check, ChevronDown, Copy, Eye, EyeOff, Link2, LockKeyhole, Trash2 } from '../icons';
+import { Check, Copy, Eye, EyeOff, LockKeyhole, Trash2 } from '../icons';
 import { Progress } from '../components/ui';
 import { DoseEvent, HRTMode, SimulationResult } from '../../logic';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -8,9 +8,11 @@ import { getShareCopy } from '../i18n/share';
 import { CreatedShare, notifyLiveSharesChanged, ShareApiError, ShareSummary, sharingService } from '../services/sharing';
 import { useDialog } from '../contexts/DialogContext';
 import { LOCALE_MAP } from '../utils/helpers';
-import DateTimePicker from '../components/DateTimePicker';
+import { TimePage } from '../components/TimePage';
 import { buildSharedDosageSnapshot } from '../services/shareSnapshot';
 import Switch from '../components/Switch';
+import { estimatePasswordBits, passwordStrength, WEAK_BITS } from '../utils/passwordStrength';
+import { Icon as SpriteIcon } from '../ui/SvgDefs';
 
 interface ShareSettingsProps {
     onBack: () => void;
@@ -37,10 +39,33 @@ const formatStamp = (timestamp: number, lang: string): string =>
         minute: '2-digit',
     });
 
-const badgeBase = 'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium leading-none';
-const liveBadgeClass = `${badgeBase} bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-primary-container)]  `;
-const metaBadgeClass = `${badgeBase} bg-[var(--color-m3-surface-container)] text-muted `;
+/** A chip in the prototype's shape, tinted by the role it names. */
+const Chip: React.FC<{ tone?: 'primary' | 'meta'; children: React.ReactNode }> = ({ tone = 'primary', children }) => (
+    <span
+        className="chip"
+        style={tone === 'meta'
+            ? { background: 'var(--sch-h)', color: 'var(--var)' }
+            : { background: 'var(--pric)', color: 'var(--onpric)' }}
+    >
+        {children}
+    </span>
+);
 
+/**
+ * 分享用药详情 — a read-only snapshot of the chart and history.
+ *
+ * Rebuilt on the M3E surfaces the rest of the app now uses (`SegmentedList`
+ * rows, `.cg`-free switches inside a row's trailing slot, `.fld` for the one
+ * text field, `.chip` for state) rather than the Tailwind role utilities this
+ * page shipped with. It is a *page*, not a sheet: the link is something people
+ * come back to manage, so revoking lives here beside creating.
+ *
+ * Two facts drive the layout. The snapshot note is a caveat, so it is a plain
+ * paragraph on `surface-container` rather than a bordered callout — nothing here
+ * is an error. And the created link is a *result*, not a form: once the Core
+ * returns it, the form is replaced (the link cannot be read again) instead of
+ * sitting under a still-submittable button.
+ */
 const ShareSettings: React.FC<ShareSettingsProps> = ({
     onBack,
     authToken,
@@ -66,6 +91,18 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
     const [sharesLoading, setSharesLoading] = useState(false);
     const [revokingId, setRevokingId] = useState<string | null>(null);
     const linkInputRef = useRef<HTMLInputElement>(null);
+
+    // Share passwords are gated on estimated entropy, not on length alone: an
+    // 8-character birthday passes `minLength` and is still trivial to guess.
+    const passwordBits = passwordEnabled ? estimatePasswordBits(password) : 0;
+    const passwordLevel = passwordStrength(password);
+    const passwordMeterPct = Math.min(100, (passwordBits / 80) * 100);
+    const passwordMeterColor = passwordLevel === 'strong' ? 'var(--pri)' : passwordLevel === 'fair' ? 'var(--var)' : 'var(--err)';
+    const passwordMessage = passwordLevel === 'strong'
+        ? t('share.passwordStrong')
+        : passwordLevel === 'fair'
+            ? t('share.passwordFair')
+            : t('share.passwordTooWeak');
 
     useEffect(() => {
         setPasswordEnabled(false);
@@ -129,6 +166,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
                 if (requestError.code === 'SNAPSHOT_TOO_LARGE') setError(copy.tooLarge);
                 else if (requestError.code === 'SHARE_LIMIT_REACHED') setError(copy.limitReached);
                 else if (requestError.code === 'INVALID_EXPIRATION') setError(copy.invalidExpiry);
+                else if (requestError.code === 'SHARE_REJECTED') setError(t('share.passwordTooWeak'));
                 else setError(copy.createError);
             } else {
                 setError(copy.createError);
@@ -166,224 +204,248 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
         });
     };
 
+    const expiryLabel = expiresAtInput ? formatStamp(new Date(expiresAtInput).getTime(), lang) : '—';
+
     return (
-        <div className="relative space-y-4 pb-32">
-            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)] px-6 pb-3 pt-8  md:px-8">
-                <button
-                    type="button"
-                    onClick={onBack}
-                    className="-ml-2 flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-[var(--color-m3-surface-container)] "
-                >
-                    <Icon icon={ArrowLeft} size={18} className="shrink-0 text-[var(--color-m3-on-surface-variant)] " />
-                    <span className="text-xl font-semibold text-[var(--color-m3-on-surface)] ">
-                        {copy.modalTitle}
-                    </span>
-                </button>
-            </div>
+        <div className="pg on long" style={{ maxWidth: 720, width: '100%', margin: '0 auto' }}>
+            <button type="button" className="hback" onClick={onBack}>
+                <SpriteIcon id="chev" />
+                <span className="ht">{copy.modalTitle}</span>
+            </button>
 
-            <div className="mx-auto w-full max-w-2xl px-6 md:px-8">
-                <p className="pb-5 text-sm leading-relaxed text-muted">{copy.modalDescription}</p>
-                    {createdShare ? (
-                        <div className="pb-0 pt-5">
-                            <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-2 text-body">
-                                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-primary-container)]">
-                                    <Icon icon={Check} size={14} strokeWidth={2.25} />
-                                </span>
-                                <p className="text-m3-body-medium font-medium">{copy.created}</p>
-                                {createdShare.live && (
-                                    <span className={liveBadgeClass}>{copy.liveBadge}</span>
-                                )}
-                                {createdShare.passwordRequired && (
-                                    <span className={metaBadgeClass}>
-                                        <Icon icon={LockKeyhole} size={12} />
-                                        {copy.protected}
-                                    </span>
-                                )}
-                            </div>
+            <p className="sub" style={{ margin: '0 6px 4px' }}>{copy.modalDescription}</p>
 
-                            <label className="sr-only" htmlFor="created-share-link">
-                                {copy.copy}
-                            </label>
-                            <div className="flex flex-col gap-1 border-b border-[var(--color-m3-outline-variant)] py-1  sm:flex-row sm:items-center sm:gap-3">
+            {createdShare ? (
+                <div className="list m3e-rise" key={createdShare.id}>
+                    <div className="li" style={{ cursor: 'default', alignItems: 'flex-start', padding: '16px' }}>
+                        <span className="ic p"><SpriteIcon id="check" /></span>
+                        <div className="t" style={{ minWidth: 0 }}>
+                            <b>{copy.created}</b>
+                            <span className="s" style={{ marginTop: 6 }}>
+                                {`${copy.expiresOn} ${createdShare.expiresAt ? formatStamp(createdShare.expiresAt, lang) : copy.neverExpires}`}
+                            </span>
+                            <div className="fld" style={{ marginTop: 10 }}>
                                 <input
                                     ref={linkInputRef}
-                                    id="created-share-link"
                                     readOnly
                                     value={createdShare.url}
-                                    className="min-w-0 flex-1 select-all truncate border-0 bg-transparent py-2.5 font-mono text-m3-body-compact text-body outline-none"
-                                    onFocus={(event) => event.currentTarget.select()}
+                                    aria-label={copy.copy}
+                                    onFocus={event => event.currentTarget.select()}
+                                    style={{ fontSize: 14, fontWeight: 600, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
                                 />
-                                {/* Both labels share one grid cell so the button keeps a single
-                                    width across the copy → copied swap, in every locale. */}
-                                <button
-                                    type="button"
-                                    onClick={handleCopy}
-                                    className="-mr-2 grid shrink-0 place-items-center self-end rounded-md px-2.5 py-2 text-m3-body-medium font-medium text-[var(--color-m3-primary)] transition-colors hover:bg-[var(--color-m3-surface-container)]  sm:self-auto"
-                                >
-                                    <span className={`col-start-1 row-start-1 inline-flex items-center gap-1.5 ${copied ? 'invisible' : ''}`}>
-                                        <Icon icon={Copy} size={14} />
-                                        {copy.copy}
-                                    </span>
-                                    <span className={`col-start-1 row-start-1 inline-flex items-center gap-1.5 ${copied ? '' : 'invisible'}`}>
-                                        <Icon icon={Check} size={14} />
-                                        {copy.copied}
-                                    </span>
-                                </button>
                             </div>
-
-                            {createdShare.passwordRequired && (
-                                <p className="mt-3 text-sm leading-relaxed text-muted">{copy.passwordHint}</p>
+                            {/* The part after `#` is the key. It never reaches the
+                                server, so a link without it is unopenable — hence the
+                                warning. A link created against a server that predates
+                                sealing has no key, and saying otherwise would be false. */}
+                            {createdShare.url.includes('#k=') && (
+                                <p className="sub" style={{ margin: '8px 2px 0', fontSize: 12.5 }}>
+                                    {copy.linkKeyNote}
+                                </p>
                             )}
-                        </div>
-                    ) : (
-                        <form onSubmit={handleSubmit} className="border-b border-[var(--color-m3-outline-variant)] pb-6 ">
-                            <div className="callout mb-5">
-                                {liveEnabled ? copy.liveSnapshotNote : copy.snapshotNote}
-                            </div>
-
-                            <div className="mb-5 flex items-center justify-between gap-4 border-b border-[var(--color-m3-outline-variant)] py-[18px] ">
-                                <label htmlFor="share-live-toggle" className="cursor-pointer text-m3-body-medium font-medium text-body">
-                                    {copy.liveToggle}
-                                </label>
-                                <Switch id="share-live-toggle" checked={liveEnabled} onChange={setLiveEnabled} />
-                            </div>
-
-                            <div className="mb-5">
-                                <div className="flex items-center justify-between gap-4">
-                                    <div>
-                                        <label htmlFor="share-password-toggle" className="text-sm font-medium text-body cursor-pointer">
-                                            {copy.passwordToggle}
-                                        </label>
-                                    </div>
-                                    <Switch id="share-password-toggle" checked={passwordEnabled} onChange={(next) => { setPasswordEnabled(next); setError(null); }} />
-                                </div>
-
-                                {passwordEnabled && (
-                                    <div className="mt-3">
-                                        <label htmlFor="share-password" className="block mb-1.5 text-xs font-medium text-muted">
-                                            {copy.passwordLabel}
-                                        </label>
-                                        <div className="relative">
-                                            <input
-                                                id="share-password"
-                                                type={showPassword ? 'text' : 'password'}
-                                                value={password}
-                                                onChange={(event) => setPassword(event.target.value)}
-                                                className="input-base pr-11"
-                                                placeholder={copy.passwordPlaceholder}
-                                                minLength={8}
-                                                maxLength={128}
-                                                autoComplete="new-password"
-                                                required
-                                                autoFocus
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowPassword(value => !value)}
-                                                className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted hover:text-body"
-                                                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                                            >
-                                                {showPassword ? <Icon icon={EyeOff} size={16} /> : <Icon icon={Eye} size={16} />}
-                                            </button>
-                                        </div>
-                                    </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                                <button type="button" className="btn" onClick={handleCopy} style={{ height: 40, minWidth: 0, padding: '0 16px', fontSize: 13.5 }}>
+                                    <Icon icon={copied ? Check : Copy} size={16} />
+                                    {copied ? copy.copied : copy.copy}
+                                </button>
+                                {createdShare.live && <Chip>{copy.liveBadge}</Chip>}
+                                {createdShare.passwordRequired && (
+                                    <Chip tone="meta">
+                                        <Icon icon={LockKeyhole} size={12} />
+                                        {copy.protected}
+                                    </Chip>
                                 )}
                             </div>
+                            {createdShare.passwordRequired && (
+                                <span className="s" style={{ marginTop: 8 }}>{copy.passwordHint}</span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div className="card" style={{ background: 'var(--sch)', padding: '16px 18px', borderRadius: 24 }}>
+                        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: 'var(--var)' }}>
+                            {liveEnabled ? copy.liveSnapshotNote : copy.snapshotNote}
+                        </p>
+                    </div>
 
-                            <div className="mb-5">
+                    <div className="list">
+                        <div className="li" style={{ cursor: 'default' }}>
+                            <span className="ic p"><SpriteIcon id="sync" /></span>
+                            <div className="t">
+                                <b>{copy.liveToggle}</b>
+                                <span className="s">{liveEnabled ? copy.liveBadge : copy.updatedOn}</span>
+                            </div>
+                            <Switch id="share-live-toggle" checked={liveEnabled} onChange={setLiveEnabled} label={copy.liveToggle} />
+                        </div>
+
+                        <div className="li" style={{ cursor: 'default' }}>
+                            <span className="ic am"><Icon icon={LockKeyhole} size={20} /></span>
+                            <div className="t">
+                                <b>{copy.passwordToggle}</b>
+                                <span className="s">{copy.passwordHint}</span>
+                            </div>
+                            <Switch
+                                id="share-password-toggle"
+                                checked={passwordEnabled}
+                                onChange={(next) => { setPasswordEnabled(next); setError(null); }}
+                                label={copy.passwordToggle}
+                            />
+                        </div>
+
+                        <button
+                            type="button"
+                            className="li"
+                            onClick={() => setIsExpiryPickerOpen(value => !value)}
+                            aria-expanded={isExpiryPickerOpen}
+                            style={{ width: '100%', border: 0, font: 'inherit', color: 'inherit', textAlign: 'left' }}
+                        >
+                            <span className="ic"><SpriteIcon id="cal" /></span>
+                            <div className="t">
+                                <b>{copy.expiryLabel}</b>
+                                <span className="s">{expiryLabel}</span>
+                            </div>
+                            <SpriteIcon id="chev" style={{ transform: isExpiryPickerOpen ? 'rotate(90deg)' : 'none' }} />
+                        </button>
+                    </div>
+                    <p className="sub" style={{ margin: '0 6px' }}>{copy.expiryHint}</p>
+
+                    {passwordEnabled && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <p className="sub" style={{ margin: '2px 6px 0' }}>{copy.passwordLabel}</p>
+                            <div className="fld" style={{ marginTop: 0 }}>
+                                <input
+                                    id="share-password"
+                                    type={showPassword ? 'text' : 'password'}
+                                    value={password}
+                                    onChange={event => setPassword(event.target.value)}
+                                    placeholder={copy.passwordPlaceholder}
+                                    aria-label={copy.passwordLabel}
+                                    minLength={8}
+                                    maxLength={128}
+                                    autoComplete="new-password"
+                                    required
+                                    autoFocus
+                                    style={{ fontSize: 17, fontWeight: 600 }}
+                                />
                                 <button
                                     type="button"
-                                    onClick={() => setIsExpiryPickerOpen(value => !value)}
-                                    aria-expanded={isExpiryPickerOpen}
-                                    className="flex w-full items-center justify-between border-b border-[var(--color-m3-outline-variant)] py-[18px] text-start "
+                                    onClick={() => setShowPassword(value => !value)}
+                                    aria-label={copy.passwordLabel}
+                                    className="btn x"
+                                    style={{ minWidth: 0, padding: '0 4px' }}
                                 >
-                                    <span className="text-m3-body-medium text-body">{copy.expiryLabel}</span>
-                                    <span className="flex items-center gap-1.5 text-muted">
-                                        <span className="text-sm tabular-nums">
-                                            {expiresAtInput ? formatStamp(new Date(expiresAtInput).getTime(), lang) : '—'}
-                                        </span>
-                                        <Icon icon={ChevronDown} size={14} className={`chev ${isExpiryPickerOpen ? 'rotate-180' : ''}`} />
-                                    </span>
+                                    <Icon icon={showPassword ? EyeOff : Eye} size={18} />
                                 </button>
-                                <DateTimePicker
-                                    isOpen={isExpiryPickerOpen}
-                                    inline
-                                    onClose={() => setIsExpiryPickerOpen(false)}
-                                    onConfirm={(date) => setExpiresAtInput(toLocalDateTimeValue(date.getTime()))}
-                                    initialDate={expiresAtInput ? new Date(expiresAtInput) : new Date(Date.now() + 7 * 24 * 60 * 60_000)}
-                                    mode="datetime"
-                                    title={copy.expiryLabel}
+                            </div>
+
+                            {/* Entropy meter: width and colour both track the estimate,
+                                and the text says what to do next. */}
+                            <div
+                                style={{ height: 6, borderRadius: 3, background: 'var(--sch-h)', overflow: 'hidden' }}
+                                role="progressbar"
+                                aria-valuemin={0}
+                                aria-valuemax={80}
+                                aria-valuenow={Math.round(passwordBits)}
+                                aria-label={copy.passwordLabel}
+                            >
+                                <div
+                                    style={{
+                                        width: `${passwordMeterPct}%`,
+                                        height: '100%',
+                                        borderRadius: 3,
+                                        background: passwordMeterColor,
+                                        transition: 'width .3s cubic-bezier(.2,.9,.3,1), background .2s',
+                                    }}
                                 />
-                                <p className="mt-1.5 text-xs text-muted">{copy.expiryHint}</p>
                             </div>
-
-                            {error && (
-                                <p className="mb-4 text-sm text-cos-error " role="alert">{error}</p>
-                            )}
-
-                            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                                <button type="button" onClick={onBack} className="btn-secondary">
-                                    {t('btn.cancel')}
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={submitting || !events.length || (passwordEnabled && password.length < 8)}
-                                    className="btn-primary min-w-[8.5rem]"
+                            {password.length > 0 && (
+                                <p
+                                    className="sub"
+                                    style={{ margin: 0, color: passwordLevel === 'weak' ? 'var(--err)' : 'var(--var)' }}
                                 >
-                                    {submitting ? <Progress size={15} /> : <Icon icon={Link2} size={15} />}
-                                    {submitting ? copy.creating : copy.create}
-                                </button>
-                            </div>
-                        </form>
+                                    {passwordMessage} · {Math.round(passwordBits)} bits
+                                </p>
+                            )}
+                        </div>
                     )}
 
-                    <div className="pb-6 pt-5">
-                        <h3 className="text-m3-body-medium font-medium text-body">{copy.manageTitle}</h3>
-                        <p className="mt-1 text-sm leading-relaxed text-muted">{copy.manageDescription}</p>
-                        {sharesLoading ? (
-                            <div className="flex items-center gap-2 py-4 text-sm text-muted">
-                                <Progress size={14} /> {copy.loading}
-                            </div>
-                        ) : shares.length === 0 ? (
-                            <p className="py-4 text-sm text-muted">{copy.noneActive}</p>
-                        ) : (
-                            <div className="mt-3 border-t border-[var(--color-m3-outline-variant)] ">
-                                {shares.map(share => (
-                                    <div key={share.id} className="flex items-center gap-3 border-b border-[var(--color-m3-outline-variant)] py-3.5 last:border-b-0 ">
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                                                <p className="text-sm font-medium text-body">
-                                                    {copy.sharedOn} {formatStamp(share.createdAt, lang)}
-                                                </p>
-                                                {share.live && (
-                                                    <span className={liveBadgeClass}>{copy.liveBadge}</span>
-                                                )}
-                                                {share.passwordRequired && (
-                                                    <span className={metaBadgeClass}>
-                                                        <Icon icon={LockKeyhole} size={12} />
-                                                        {copy.protected}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <p className="mt-1 truncate text-xs text-muted">
-                                                {copy.expiresOn} {share.expiresAt ? formatStamp(share.expiresAt, lang) : copy.neverExpires}
-                                            </p>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleRevoke(share)}
-                                            disabled={revokingId === share.id}
-                                            className="-mr-2 inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-2 text-sm font-medium text-cos-error hover:bg-cos-error-container disabled:opacity-50  "
-                                        >
-                                            {revokingId === share.id ? <Progress size={14} /> : <Icon icon={Trash2} size={14} />}
-                                            {copy.revoke}
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                    {error && (
+                        <p className="sub" style={{ margin: 0, color: 'var(--err)' }} role="alert">{error}</p>
+                    )}
+
+                    <div className="hrow" style={{ gap: 10, marginTop: 2 }}>
+                        <button type="button" onClick={onBack} className="btn x" style={{ minWidth: 80 }}>
+                            {t('btn.cancel')}
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={submitting || !events.length || (passwordEnabled && estimatePasswordBits(password) < WEAK_BITS)}
+                            className="btn"
+                            style={{ flex: 1, opacity: submitting || !events.length ? 0.5 : 1 }}
+                        >
+                            {submitting ? <Progress size={15} /> : <SpriteIcon id="link" />}
+                            {submitting ? copy.creating : copy.create}
+                        </button>
                     </div>
-            </div>
+                </form>
+            )}
+
+            <div className="lab" style={{ marginTop: 18 }}>{copy.manageTitle}</div>
+            <p className="sub" style={{ margin: '0 6px 2px' }}>{copy.manageDescription}</p>
+
+            {sharesLoading ? (
+                <div className="empty" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                    <Progress size={14} /> {copy.loading}
+                </div>
+            ) : shares.length === 0 ? (
+                <div className="empty">{copy.noneActive}</div>
+            ) : (
+                <div className="list">
+                    {shares.map(share => (
+                        <div className="li" key={share.id} style={{ cursor: 'default' }}>
+                            <span className="ic"><SpriteIcon id="link" /></span>
+                            <div className="t">
+                                <b>{`${copy.sharedOn} ${formatStamp(share.createdAt, lang)}`}</b>
+                                <span className="s">
+                                    {`${copy.expiresOn} ${share.expiresAt ? formatStamp(share.expiresAt, lang) : copy.neverExpires}`}
+                                </span>
+                            </div>
+                            {share.live && <Chip>{copy.liveBadge}</Chip>}
+                            {share.passwordRequired && (
+                                <span
+                                    aria-label={copy.protected}
+                                    style={{ display: 'inline-flex', color: 'var(--var)', flex: 'none' }}
+                                >
+                                    <Icon icon={LockKeyhole} size={16} />
+                                </span>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => handleRevoke(share)}
+                                disabled={revokingId === share.id}
+                                aria-label={copy.revoke}
+                                className="icon-del"
+                            >
+                                {revokingId === share.id ? <Progress size={15} /> : <Icon icon={Trash2} size={17} />}
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            <TimePage
+                open={isExpiryPickerOpen}
+                onClose={() => setIsExpiryPickerOpen(false)}
+                onConfirm={(date) => {
+                    setExpiresAtInput(toLocalDateTimeValue(date.getTime()));
+                    setIsExpiryPickerOpen(false);
+                }}
+                initialDate={expiresAtInput ? new Date(expiresAtInput) : new Date(Date.now() + 7 * 24 * 60 * 60_000)}
+                mode="datetime"
+                title={copy.expiryLabel}
+            />
         </div>
     );
 };

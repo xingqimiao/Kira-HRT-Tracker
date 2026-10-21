@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from './LanguageContext';
-import { usePresence } from '../hooks/usePresence';
 import { useBackHandler } from '../utils/nativeBack';
+import { AdaptiveSheet } from '../ui/proto';
 
 type DialogType = 'alert' | 'confirm';
 
@@ -17,6 +17,19 @@ export const useDialog = () => {
     return ctx;
 };
 
+/**
+ * The app's one alert/confirm window.
+ *
+ * Built on `AdaptiveSheet`, so it is the same surface as every other transient
+ * panel: a bottom sheet on a phone, a 460px centred dialog on a wide window, with
+ * the prototype's 32px corners, the drag handle, and the `.btn` pair. It used to
+ * carry its own `modal-overlay`/`modal-card` shell and its own two button classes,
+ * which is why a confirmation opened from an M3E page looked like it came from the
+ * previous build.
+ *
+ * `message` is plain text and keeps its line breaks: the update prompt passes a
+ * changelog with `\n\n` between the sentence and the bullet list.
+ */
 export const DialogProvider = ({ children }: { children: React.ReactNode }) => {
     const { t } = useTranslation();
     const [isOpen, setIsOpen] = useState(false);
@@ -35,8 +48,6 @@ export const DialogProvider = ({ children }: { children: React.ReactNode }) => {
     // consumer of useDialog() across the app (showDialog itself never changes).
     const contextValue = useMemo(() => ({ showDialog }), [showDialog]);
 
-    const { mounted, state } = usePresence(isOpen, 200);
-
     // System back dismisses the dialog instead of leaving the page beneath it.
     // The provider mounts above AppContent, so this registers after the page
     // handler and takes the top of the back stack while a dialog is open.
@@ -53,28 +64,28 @@ export const DialogProvider = ({ children }: { children: React.ReactNode }) => {
     return (
         <DialogContext.Provider value={contextValue}>
             {children}
-            {mounted && (
-                <div className="modal-overlay z-[100]" data-state={state}>
-                    <div className="modal-shell">
-                        <div className="modal-card">
-                            <h3 className="modal-title">
-                                {type === 'confirm' ? t('dialog.confirm_title') : t('dialog.alert_title')}
-                            </h3>
-                            <p className="text-sm text-muted mb-5 leading-relaxed">{message}</p>
-                            <div className="flex gap-2">
-                                {type === 'confirm' && (
-                                    <button onClick={() => setIsOpen(false)} className="btn-secondary flex-1">
-                                        {t('btn.cancel')}
-                                    </button>
-                                )}
-                                <button onClick={handleConfirm} className="btn-primary flex-1">
-                                    {t('btn.ok')}
-                                </button>
-                            </div>
-                        </div>
+            <AdaptiveSheet
+                open={isOpen}
+                onClose={() => setIsOpen(false)}
+                title={type === 'confirm' ? t('dialog.confirm_title') : t('dialog.alert_title')}
+                closeLabel={t('btn.cancel')}
+                footer={
+                    <div className="hrow" style={{ gap: 8, justifyContent: 'flex-end' }}>
+                        {type === 'confirm' && (
+                            <button type="button" onClick={() => setIsOpen(false)} className="btn x">
+                                {t('btn.cancel')}
+                            </button>
+                        )}
+                        <button type="button" onClick={handleConfirm} className="btn" style={{ minWidth: 104 }}>
+                            {t('btn.ok')}
+                        </button>
                     </div>
-                </div>
-            )}
+                }
+            >
+                <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: 'var(--var)', whiteSpace: 'pre-line' }}>
+                    {message}
+                </p>
+            </AdaptiveSheet>
         </DialogContext.Provider>
     );
 };

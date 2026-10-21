@@ -170,7 +170,10 @@ test('FCM pushes only the current mode plan and includes legacy plans', async ()
   await seed(account.token, [
     { ...midnightPlan('fem-plan'), hrtMode: 'transfem', alias: 'fem-plan' },
     { ...midnightPlan('masc-plan'), hrtMode: 'transmasc', alias: 'masc-plan' },
-    { ...midnightPlan('legacy-plan'), alias: 'legacy-plan' },
+    // A different drug from the one above: two plans for the *same* compound at the
+    // same instant are deliberately one reminder (the next test pins that), and this
+    // test is about the mode filter, not the dedup.
+    { ...midnightPlan('legacy-plan'), ester: 'EV', alias: 'legacy-plan' },
   ]);
   const settings = await call(base, '/api/settings', {
     method: 'PATCH',
@@ -184,6 +187,21 @@ test('FCM pushes only the current mode plan and includes legacy plans', async ()
   assert.equal(result.pushed, 2, 'current-mode and legacy plans are pushed');
   const aliases = sends.map((send) => (send.message as { data: Record<string, string> }).data.alias).sort();
   assert.deepEqual(aliases, ['legacy-plan', 'masc-plan'], 'the other mode is not pushed');
+});
+
+test('two plans for the same drug at the same instant are one reminder', async () => {
+  // Two plans can describe the same tablet twice — a duplicate the user created, or a
+  // legacy plan carried alongside the current one. The phone gets one notification for
+  // one thing to do; the device dedups on the same identity, so the server has to agree.
+  const account = await registerAccount(base);
+  await seed(account.token, [
+    { ...midnightPlan('plan-a'), alias: 'plan-a' },
+    { ...midnightPlan('plan-b'), alias: 'plan-b' },
+  ]);
+  const sends = installFakeFcm();
+  const result = await scanMissedDoses(noon);
+  assert.equal(result.pushed, 1, 'one drug, one instant, one push');
+  assert.equal(sends.length, 1);
 });
 
 test('a dose inside the grace window is not nudged', async () => {

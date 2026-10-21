@@ -1,5 +1,12 @@
 import { DoseEvent, HRTMode, SimulationResult } from '../../logic';
 import { apiEndpoint, apiFetch } from './apiClient';
+import {
+    createShareKey,
+    sealShareSnapshot,
+    withShareKey,
+    type SealedSnapshot,
+} from '../utils/shareCrypto';
+import { forgetShareKey, recallShareKey, rememberShareKey } from '../utils/shareKeyStore';
 
 export interface SharedDosageSnapshot {
     version: 1;
@@ -16,7 +23,18 @@ export interface ShareDetails {
     createdAt: number;
     updatedAt: number;
     expiresAt: number | null;
-    snapshot: SharedDosageSnapshot;
+    /**
+     * The snapshot, present only for a link written before snapshots were sealed (and
+     * for one an agent created server-side, which is plaintext by construction). A
+     * sealed link carries `sealed` instead — see `src/utils/shareCrypto.ts`.
+     */
+    snapshot: SharedDosageSnapshot | null;
+    /** The opaque envelope a client-sealed link carries. Opened in the browser. */
+    sealed?: SealedSnapshot;
+    /** The link's mode, without opening anything. */
+    mode: HRTMode | null;
+    /** Short-lived signed pass returned after a successful password unlock. */
+    viewerPass?: string;
 }
 
 export interface CreatedShare {
@@ -48,6 +66,8 @@ export interface ShareSummary {
     mode: HRTMode | null;
     updatedAt: number;
     expired: boolean;
+    /** Present when the link is sealed; absent for a pre-sealing (plaintext) one. */
+    sealed?: SealedSnapshot;
 }
 
 export class ShareApiError extends Error {
@@ -62,48 +82,114 @@ export class ShareApiError extends Error {
     }
 }
 
-const readError = async (response: Response): Promise<ShareApiError> => {
-    let body: { code?: string; message?: string } | null = null;
+/**
+ * The share link as a person can use it.
+ *
+ * The Core answers with a path (`/share/<token>`) because it does not know which
+ * origin the app is served from — but a path copied into a chat is a dead link.
+ * Resolve it against the deployment's public origin: `VITE_PUBLIC_ORIGIN` where
+ * the build sets one (the Android/webview build does), the current origin
+ * otherwise (same-origin web builds and the dev server).
+ */
+const PUBLIC_ORIGIN = (() => {
+    // Same cast as apiClient: `import.meta.env` is Vite-only, and this module is
+    // also loaded by plain-Node scripts.
+    const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+    const configured = env?.VITE_PUBLIC_ORIGIN?.trim();
+    if (configured) return configured.replace(/\/+$/, '');
+    return typeof window !== 'undefined' ? window.location.origin : '';
+})();
+
+export const absoluteShareUrl = (url: string): string => {
+    if (!PUBLIC_ORIGIN) return url;
     try {
-        body = await response.json() as { code?: string; message?: string };
+        return new URL(url, PUBLIC_ORIGIN).href;
+    } catch {
+        return url;
+    }
+};
+
+const readError = async (response: Response): Promise<ShareApiError> => {
+    let body: { code?: string; message?: string; retryAfterSeconds?: number } | null = null;
+    try {
+        body = await response.json() as { code?: string; message?: string; retryAfterSeconds?: number };
     } catch {
         // The worker also has plain-text error responses outside share routes.
     }
-    const retryAfterSeconds = Number(response.headers.get('Retry-After'));
+    const headerSeconds = Number(response.headers.get('Retry-After'));
+    const seconds = Number.isFinite(headerSeconds) && headerSeconds > 0
+        ? headerSeconds
+        : body?.retryAfterSeconds;
     return new ShareApiError(
         response.status,
         body?.code ?? 'SHARE_REQUEST_FAILED',
         body?.message ?? `Share request failed (${response.status})`,
-        Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
-            ? retryAfterSeconds * 1_000
+        typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0
+            ? seconds * 1_000
             : null,
     );
 };
 
 export const sharingService = {
+    /**
+     * Create a link from a snapshot the browser seals itself.
+     *
+     * The key is generated here, never sent, and returned only inside the URL — so the
+     * server stores an envelope it cannot open. `mode` is the one field that travels in
+     * the clear beside it: the owner's own list needs it without a key, and the live
+     * sync uses it to find the right link.
+     *
+     * ── The rollout fallback ─────────────────────────────────────────────────
+     *
+     * A server that predates sealed shares does not know `sealed`: its validator sees
+     * no snapshot and the insert fails, which comes back as a 5xx. During the window
+     * where a new client talks to an old deployment, retrying once with the older
+     * plaintext shape keeps the feature working instead of turning it into a 500.
+     * The retry is deliberately narrow — a 4xx is our own request being wrong, and
+     * retrying it in the clear would be a silent downgrade rather than a compatibility
+     * measure. The returned URL simply carries no key, and the page handles a plaintext
+     * link exactly as it always did.
+     */
     async create(
         authToken: string,
         snapshot: SharedDosageSnapshot,
         options: { password?: string; expiresAt: number; live?: boolean },
     ): Promise<CreatedShare> {
-        const response = await apiFetch(apiEndpoint('/api/shares'), {
+        const key = createShareKey();
+        const sealed = await sealShareSnapshot(snapshot, key);
+        const live = options.live ?? false;
+        const post = (body: Record<string, unknown>) => apiFetch(apiEndpoint('/api/shares'), {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${authToken}`,
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                snapshot,
-                password: options.password || undefined,
-                expiresAt: options.expiresAt,
-                live: options.live ?? false,
-            }),
+            body: JSON.stringify(body),
         });
+        const common = {
+            password: options.password || undefined,
+            expiresAt: options.expiresAt,
+            live,
+        };
+
+        let response = await post({ sealed, mode: snapshot.mode, ...common });
+        const unsealed = response.status >= 500;
+        if (unsealed) {
+            response = await post({ snapshot, ...common });
+        }
         if (!response.ok) throw await readError(response);
-        return await response.json() as CreatedShare;
+        const created = await response.json() as CreatedShare;
+        if (unsealed) {
+            // The link this created is a plaintext one, so there is no key to keep.
+            return { ...created, url: absoluteShareUrl(created.url) };
+        }
+        // A live link is rewritten by this device later, so its key has to survive a
+        // reload. A frozen one is written once and never needs it again.
+        if (live) await rememberShareKey(created.id, key);
+        return { ...created, url: withShareKey(absoluteShareUrl(created.url), key) };
     },
 
-    async open(token: string): Promise<ShareDetails | LockedShare> {
+    async open(token: string, viewerPass?: string): Promise<ShareDetails | LockedShare> {
         const response = await fetch(apiEndpoint('/api/shares/access'), {
             method: 'POST',
             headers: {
@@ -111,7 +197,7 @@ export const sharingService = {
                 'Content-Type': 'application/json',
             },
             cache: 'no-store',
-            body: JSON.stringify({ token }),
+            body: JSON.stringify({ token, viewerPass }),
         });
         if (response.status === 401) {
             const body = await response.json() as LockedShare & { code?: string };
@@ -121,7 +207,7 @@ export const sharingService = {
         return await response.json() as ShareDetails;
     },
 
-    async unlock(token: string, password: string): Promise<ShareDetails> {
+    async unlock(token: string, password?: string, viewerPass?: string): Promise<ShareDetails> {
         const response = await fetch(apiEndpoint('/api/shares/access'), {
             method: 'POST',
             headers: {
@@ -129,7 +215,7 @@ export const sharingService = {
                 'Content-Type': 'application/json',
             },
             cache: 'no-store',
-            body: JSON.stringify({ token, password }),
+            body: JSON.stringify({ token, password, viewerPass }),
         });
         if (!response.ok) throw await readError(response);
         return await response.json() as ShareDetails;
@@ -148,18 +234,40 @@ export const sharingService = {
         return body.shares;
     },
 
+    /**
+     * Refresh one live link's snapshot.
+     *
+     * Per link, not for all of them at once: each link has its own key, so one snapshot
+     * becomes one envelope per link.
+     *
+     * Two fallbacks, both deliberate:
+     *
+     *   - **No key on this device** (another device created the link, or storage was
+     *     cleared): send nothing. Sealing is impossible and plaintext would defeat it.
+     *   - **A link written before sealing** has no envelope and no remembered key. It
+     *     falls back to the older plaintext refresh, which the server restricts to rows
+     *     that are *not* sealed — so a live link from 1.2.3 keeps updating instead of
+     *     silently freezing, and nothing sealed is ever overwritten.
+     */
     async syncLive(
         authToken: string,
-        snapshot: SharedDosageSnapshot,
+        share: { id: string; snapshot: SharedDosageSnapshot; legacy?: boolean },
         signal?: AbortSignal,
     ): Promise<{ updated: number; updatedAt: number }> {
+        const key = await recallShareKey(share.id);
+        // No key and a sealed link: send nothing. Only a link written before sealing
+        // can be refreshed in the clear — the server refuses to put plaintext over an
+        // envelope, and this client should not send it in the first place.
+        if (!key && !share.legacy) return { updated: 0, updatedAt: Date.now() };
         const response = await apiFetch(apiEndpoint('/api/shares/live'), {
             method: 'PUT',
             headers: {
                 'Authorization': `Bearer ${authToken}`,
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ snapshot }),
+            body: JSON.stringify(key
+                ? { shareId: share.id, sealed: await sealShareSnapshot(share.snapshot, key), mode: share.snapshot.mode }
+                : { snapshot: share.snapshot }),
             signal,
         });
         if (!response.ok) throw await readError(response);
@@ -172,6 +280,7 @@ export const sharingService = {
             headers: { 'Authorization': `Bearer ${authToken}` },
         });
         if (!response.ok) throw await readError(response);
+        await forgetShareKey(shareId);
     },
 };
 

@@ -1,113 +1,199 @@
 import React, { useState, useRef } from 'react';
 import Icon from './Icon';
 import { useTranslation } from '../contexts/LanguageContext';
-import { ChevronDown, ChevronUp } from '../icons';
+import { ChevronDown, ChevronUp, Check, Copy } from '../icons';
+import { SegmentedList, SegmentedListItem } from '../ui/proto';
+import { Icon as SpriteIcon } from '../ui/SvgDefs';
+
+/** What an import would bring in, counted before anything is written. */
+export interface ImportPreview {
+    source: string;
+    doses: number;
+    labs: number;
+}
 
 interface ImportSectionProps {
     /**
      * Imports a file's contents. Accepts bytes as well as text because one supported
-     * source (Featherline) exports a binary container rather than JSON, so the file
-     * has to be read without assuming it is UTF-8 — decoding a gzip/AES envelope as
-     * text would corrupt it before detection could see the magic bytes.
+     * source (Featherline) exports a binary container rather than JSON.
      */
     onImportJson: (data: string | ArrayBuffer) => boolean | Promise<boolean>;
+    /** Counts the payload without applying it. */
+    onPreview?: (data: string | ArrayBuffer) => Promise<ImportPreview | null>;
 }
 
-const rowBase = "flex items-start justify-between py-[18px] border-b border-[var(--color-m3-outline-variant)] ";
-const rowLabel = "text-m3-body-medium text-[var(--color-m3-on-surface)] ";
-const rowDesc = "text-xs text-[var(--color-m3-on-surface-variant)]  mt-0.5";
-const actionBtn = "text-sm font-medium text-[var(--color-m3-primary)]  shrink-0 ml-6 mt-0.5";
-
-const ImportSection: React.FC<ImportSectionProps> = ({ onImportJson }) => {
+/**
+ * Import, in two steps: read/count, then confirm. The file is never merged on
+ * the same tap that chose it.
+ */
+const ImportSection: React.FC<ImportSectionProps> = ({ onImportJson, onPreview }) => {
     const { t } = useTranslation();
     const [showPaste, setShowPaste] = useState(false);
     const [text, setText] = useState('');
+    const [preview, setPreview] = useState<ImportPreview | null>(null);
+    const [pending, setPending] = useState<string | ArrayBuffer | null>(null);
+    const [busy, setBusy] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const begin = async (data: string | ArrayBuffer) => {
+        if (!onPreview) {
+            await onImportJson(data);
+            return;
+        }
+        setBusy(true);
+        const counted = await onPreview(data).catch(() => null);
+        setBusy(false);
+        if (!counted) {
+            await onImportJson(data);
+            return;
+        }
+        setPreview(counted);
+        setPending(data);
+    };
+
+    const confirm = async () => {
+        if (pending === null) return;
+        const data = pending;
+        setPreview(null);
+        setPending(null);
+        await onImportJson(data);
+        setText('');
+        setShowPaste(false);
+    };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
         const reader = new FileReader();
         reader.onload = async () => {
-            // The reader hands back whatever it was asked for; both branches reach
-            // the same importer, which decides text-vs-binary from the bytes.
-            await onImportJson(reader.result as string | ArrayBuffer);
+            await begin(reader.result as string | ArrayBuffer);
         };
         reader.readAsArrayBuffer(file);
         e.target.value = '';
     };
 
-    const handleTextImport = async () => {
-        await onImportJson(text);
-        setText('');
-        setShowPaste(false);
-    };
+    if (preview) {
+        return (
+            <div className="d-col" style={{ gap: 12 }}>
+                <SegmentedList label={t('import.title')}>
+                    <SegmentedListItem icon={undefined} sprite="code" title={preview.source} subtitle={t('import.title')} />
+                    <SegmentedListItem sprite="db" title={`${preview.doses}`} subtitle={t('timeline.records')} />
+                    <SegmentedListItem sprite="tube" title={`${preview.labs}`} subtitle={t('lab.title')} />
+                </SegmentedList>
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                        type="button"
+                        onClick={() => { setPreview(null); setPending(null); }}
+                        className="btn t"
+                        style={{ flex: 1 }}
+                    >
+                        {t('btn.cancel')}
+                    </button>
+                    <button type="button" onClick={() => void confirm()} className="btn" style={{ flex: 1 }}>
+                        <Icon icon={Check} size={16} />
+                        {t('btn.confirm')}
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
-        <div>
-            {/* File import */}
-            <div className={rowBase}>
-                <div>
-                    <p className={rowLabel}>{t('import.file')}</p>
-                    <p className={rowDesc}>{t('import.file_desc')}</p>
+        <div className="d-col" style={{ gap: 12 }}>
+            <SegmentedList>
+                <div className="li" style={{ cursor: 'default' }}>
+                    <span className="ic p"><SpriteIcon id="upload" /></span>
+                    <div className="t">
+                        <b>{t('import.file')}</b>
+                        <span className="s" style={{ whiteSpace: 'normal' }}>{t('import.file_desc')}</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={busy}
+                        className="btn t"
+                        style={{ minWidth: 72, opacity: busy ? .45 : 1 }}
+                    >
+                        {t('import.file_btn')}
+                    </button>
                 </div>
-                <button onClick={() => fileInputRef.current?.click()} className={actionBtn}>
-                    {t('import.file_btn')}
-                </button>
-                <input
-                    ref={fileInputRef}
-                    type="file"
-                    // Both by extension, not just by MIME: a Featherline backup has no
-                    // registered type and arrives as application/octet-stream, so an
-                    // `application/json`-only filter hides it from the picker entirely
-                    // — the file could not be chosen, though the reader below could
-                    // already open it.
-                    accept=".json,.hrtbackup,application/json,application/octet-stream"
-                    className="hidden"
-                    onChange={handleFileChange}
-                />
-            </div>
-
-            {/* Paste JSON */}
-            <div className="border-b border-[var(--color-m3-outline-variant)]  last:border-b-0">
-                <button
-                    onClick={() => { setShowPaste(v => !v); setText(''); }}
-                    className="w-full flex items-start justify-between py-[18px] text-start"
+                <div
+                    className="li tap"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => setShowPaste(v => !v)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowPaste(v => !v); } }}
                 >
-                    <div>
-                        <p className={rowLabel}>{t('import.text')}</p>
-                        <p className={rowDesc}>{t('import.paste_hint')}</p>
+                    <span className="ic"><SpriteIcon id="code" /></span>
+                    <div className="t">
+                        <b>{t('import.text')}</b>
+                        <span className="s" style={{ whiteSpace: 'normal' }}>{t('import.paste_hint')}</span>
                     </div>
-                    <span className="shrink-0 ml-6 mt-0.5 p-1 text-[var(--color-m3-on-surface-variant)] ">
-                        {showPaste ? <Icon icon={ChevronUp} size={16} /> : <Icon icon={ChevronDown} size={16} />}
-                    </span>
-                </button>
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setShowPaste(v => !v); }}
+                        aria-expanded={showPaste}
+                        aria-label={t('import.text')}
+                        className="btn x"
+                        style={{ minWidth: 0 }}
+                    >
+                        <Icon icon={showPaste ? ChevronUp : ChevronDown} size={18} />
+                    </button>
+                </div>
+            </SegmentedList>
 
-                {showPaste && (
-                    <div className="pb-4 space-y-3">
-                        <textarea
-                            className="input-base h-28 font-mono resize-none"
-                            style={{ fontSize: '16px' }}
-                            placeholder={t('import.paste_hint')}
-                            value={text}
-                            onChange={e => setText(e.target.value)}
-                            autoComplete="off"
-                            autoCorrect="off"
-                            autoCapitalize="off"
-                            spellCheck={false}
-                        />
-                        <div className="flex justify-end">
-                            <button
-                                onClick={handleTextImport}
-                                disabled={!text.trim()}
-                                className="px-4 py-2 text-sm font-medium bg-[var(--color-m3-primary)] text-cos-on-primary rounded-md disabled:opacity-40 disabled:cursor-not-allowed"
-                            >
-                                {t('drawer.import')}
-                            </button>
-                        </div>
+            <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json,.hrtbackup,application/json,application/octet-stream"
+                style={{ display: 'none' }}
+                onChange={handleFileChange}
+            />
+
+            {showPaste && (
+                <div className="card anim-in" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <textarea
+                        className="fld"
+                        style={{ height: 128, padding: 14, fontFamily: 'ui-monospace, monospace', resize: 'none' }}
+                        placeholder={t('import.paste_hint')}
+                        value={text}
+                        onChange={e => setText(e.target.value)}
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                    />
+                    <div className="hrow" style={{ gap: 8, justifyContent: 'flex-end' }}>
+                        <button
+                            type="button"
+                            onClick={async () => {
+                                try {
+                                    const clip = await navigator.clipboard.readText();
+                                    if (clip) setText(clip);
+                                } catch {
+                                    // clipboard unavailable
+                                }
+                            }}
+                            className="btn t"
+                            style={{ minWidth: 90 }}
+                        >
+                            <Icon icon={Copy} size={15} />
+                            <span>{t('import.btn_paste')}</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => void begin(text)}
+                            disabled={!text.trim() || busy}
+                            className="btn"
+                            style={{ minWidth: 80, opacity: text.trim() && !busy ? 1 : .4 }}
+                        >
+                            <Icon icon={Check} size={16} />
+                            <span>{t('drawer.import')}</span>
+                        </button>
                     </div>
-                )}
-            </div>
+                </div>
+            )}
         </div>
     );
 };

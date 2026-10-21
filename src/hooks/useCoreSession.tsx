@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 
 import { coreAuth, CoreAuthError } from '../services/coreAuth';
 import { unregisterPush } from '../utils/pushRegister';
+import { flushSecureStore, get as secureGet, remove as secureRemove, set as secureSet } from '../utils/secureStore';
 
 /**
  * The Application Core session.
@@ -75,8 +76,8 @@ function readStored(): {
   user: CoreUser | null;
 } {
   try {
-    const token = localStorage.getItem(TOKEN_KEY);
-    const rawUser = localStorage.getItem(USER_KEY);
+    const token = secureGet(TOKEN_KEY);
+    const rawUser = secureGet(USER_KEY);
     const user = rawUser ? (JSON.parse(rawUser) as CoreUser) : null;
     if (token && user?.userId) return { token, user };
   } catch {
@@ -125,14 +126,17 @@ function useCoreSessionState() {
     return { token, user, restoring: !!token && !user };
   });
 
-  const persist = useCallback((token: string | null, user: CoreUser | null) => {
+  const persist = useCallback(async (token: string | null, user: CoreUser | null) => {
     setState(s => ({ ...s, token, user, restoring: false }));
     if (token && user) {
-      localStorage.setItem(TOKEN_KEY, token);
-      localStorage.setItem(USER_KEY, JSON.stringify(user));
+      secureSet(TOKEN_KEY, token);
+      secureSet(USER_KEY, JSON.stringify(user));
+      // The stored token is what a reload restores the session from; land its
+      // ciphertext before the sign-in call reports success.
+      await flushSecureStore();
     } else {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(USER_KEY);
+      secureRemove(TOKEN_KEY);
+      secureRemove(USER_KEY);
     }
   }, []);
 
@@ -158,7 +162,7 @@ function useCoreSessionState() {
         // means we cannot tell, so the token is kept and the app stays signed in
         // until a request actually says otherwise.
         const network = error instanceof CoreAuthError && error.kind === 'network';
-        if (!cancelled && !network) persist(null, null);
+        if (!cancelled && !network) void persist(null, null);
         else if (!cancelled) setState(s => ({ ...s, restoring: false }));
       }
     })();
@@ -179,7 +183,7 @@ function useCoreSessionState() {
       opts: { persistent?: boolean } = {},
     ): Promise<void> => {
       const session = await coreAuth.login(username, password, opts);
-      persist(session.token, { userId: session.userId, username: session.username });
+      await persist(session.token, { userId: session.userId, username: session.username });
     },
     [persist],
   );
@@ -192,7 +196,7 @@ function useCoreSessionState() {
       opts: { turnstileToken?: string; persistent?: boolean } = {},
     ): Promise<void> => {
       const session = await coreAuth.register(username, password, opts);
-      persist(session.token, { userId: session.userId, username: session.username });
+      await persist(session.token, { userId: session.userId, username: session.username });
     },
     [persist],
   );
@@ -200,14 +204,16 @@ function useCoreSessionState() {
   /** Adopt a session issued somewhere else — the X flow, or an X setup completion. */
   const adoptSession = useCallback(
     (token: string, userId: string, username: string) => {
-      persist(token, { userId, username });
+      // Interface is void; the synchronous cache is set immediately and the
+      // ciphertext lands on the microtask queue.
+      void persist(token, { userId, username });
     },
     [persist],
   );
 
   const signOut = useCallback(async () => {
     const token = state.token;
-    persist(null, null);
+    void persist(null, null);
     // Stop this device receiving the account's push nudges — told while the token
     // is still valid, then FCM's own token is deleted. Fire-and-forget: the local
     // session is already gone, and a failure must not leave the user stuck.

@@ -33,10 +33,8 @@ import {
   PK_PARAM_RANGES,
   SL_TIER_ORDER,
   GEL_SITE_ORDER,
-  CALIBRATION_METHODS,
-  CALIBRATION_HISTORY_MODES,
 } from './engine.ts';
-import type { DoseEvent, LabResult, PKCustomParams, CalibrationMethod, CalibrationHistoryMode } from './engine.ts';
+import type { DoseEvent, LabResult, PKCustomParams } from './engine.ts';
 
 const HOUR_MS = 3_600_000;
 
@@ -438,16 +436,6 @@ export function parsePKParams(raw: unknown): Result<PKCustomParams | null> {
     out[key] = value;
   }
   return pass(out as unknown as PKCustomParams);
-}
-
-export function parseCalibrationMethod(raw: unknown): Result<CalibrationMethod | undefined> {
-  if (raw === undefined) return pass(undefined);
-  return requireEnum(raw, CALIBRATION_METHODS, 'method');
-}
-
-export function parseHistoryMode(raw: unknown): Result<CalibrationHistoryMode | undefined> {
-  if (raw === undefined) return pass(undefined);
-  return requireEnum(raw, CALIBRATION_HISTORY_MODES, 'history_mode');
 }
 
 export { isTestosteroneEster, timeHToIso as toIso };

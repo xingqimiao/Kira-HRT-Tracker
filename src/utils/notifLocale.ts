@@ -28,11 +28,13 @@ import { isNativeApp } from './platform';
 export interface NotifFallbacks {
     title: string;
     body: string;
+    /** The device-locked line: "You have a reminder", never the dose. */
+    hidden: string;
 }
 
 /** The resolved fallbacks for the current language. */
 export function notifFallbacks(t: (key: string) => string): NotifFallbacks {
-    return { title: t('plan.notify_title'), body: t('plan.notify_body') };
+    return { title: t('plan.notify_title'), body: t('plan.notify_body'), hidden: t('notif.hidden_line') };
 }
 
 interface HrtPushBridge {

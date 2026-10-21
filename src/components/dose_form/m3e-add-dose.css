@@ -1,0 +1,645 @@
+/*
+ * M3E "add / edit dose" panel.
+ *
+ * The geometry, radii, springs and contrast pairs are copied from
+ * docs/m3e-add-dose-prototype.html. They are scoped to `.dose-panel` because the
+ * app's global M3E layer already owns `.list`, `.li`, `.cg`, `.sheet` and `.fld`
+ * for the five main pages — an unscoped copy would repaint those pages too.
+ */
+
+/* No native number spinners anywhere in the app. The panel's own steppers are
+   `.m3e-num` / `.step-btn`; the few remaining number fields (batch intervals in
+   History) had their arrows showing through on Windows. */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+input[type=number] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+@keyframes m3eSpringIn {
+    0% { opacity: 0; transform: translateY(10px) scale(.96); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes m3ePop {
+    0% { transform: scale(.92); opacity: .65; }
+    60% { transform: scale(1.03); }
+    100% { transform: scale(1); opacity: 1; }
+}
+.dose-panel .anim-in { animation: m3eSpringIn .36s cubic-bezier(.22, 1.25, .36, 1) both; }
+.dose-panel .anim-pop { animation: m3ePop .32s cubic-bezier(.22, 1.3, .36, 1) both; }
+
+/* Shared record-row tone: progestins and hair-loss drugs sit on the secondary
+   container, matching their dose-hero card. */
+.li .ic.sec { background: var(--secc); color: var(--onsecc); }
+
+.dose-panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--bg);
+    color: var(--on);
+    overflow: hidden;
+}
+
+/* 1. Header */
+.dose-panel .hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 18px 18px 8px;
+    flex-shrink: 0;
+}
+.dose-panel .hdr-l { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.dose-panel .ic-btn {
+    width: 42px; height: 42px; border-radius: 21px;
+    background: var(--sch); color: var(--on);
+    display: grid; place-items: center; flex: none;
+}
+.dose-panel .ic-btn:hover { background: var(--sch-h); }
+.dose-panel .hdr-title {
+    font-size: 22px; font-weight: 800; letter-spacing: -.4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dose-panel .hdr-r { display: flex; align-items: center; gap: 6px; flex: none; }
+.dose-panel .tpl-cnt {
+    font-size: 11px; font-weight: 700; color: var(--var);
+    background: var(--sch); padding: 4px 10px; border-radius: 99px;
+    white-space: nowrap;
+}
+
+/* 2. Template strip */
+.dose-panel .tpl-strip {
+    display: flex; gap: 6px; overflow-x: auto;
+    padding: 4px 18px 10px; scrollbar-width: none;
+    flex-shrink: 0; cursor: grab; scroll-behavior: smooth;
+    user-select: none; -webkit-user-select: none;
+}
+.dose-panel .tpl-strip::-webkit-scrollbar { display: none; }
+.dose-panel .tpl-strip.dragging { cursor: grabbing; scroll-behavior: auto; }
+.dose-panel .tpl-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 14px; border-radius: 16px;
+    background: var(--sch); color: var(--on);
+    font-size: 12.5px; font-weight: 600; white-space: nowrap;
+    flex-shrink: 0;
+    transition: border-radius .35s cubic-bezier(.3, 1.7, .5, 1), background .25s, color .25s, transform .25s;
+}
+.dose-panel .tpl-chip .i { width: 15px; height: 15px; color: var(--pri); }
+.dose-panel .tpl-chip.on {
+    background: var(--pric); color: var(--onpric);
+    font-weight: 700; border-radius: 22px;
+}
+.dose-panel .tpl-chip.on .i { color: var(--onpric); }
+.dose-panel .tpl-empty {
+    font-size: 12px; font-weight: 600; color: var(--var);
+    padding: 7px 4px; white-space: nowrap;
+}
+
+/* 3. Scroll body */
+.dose-panel .dose-body {
+    flex: 1; min-height: 0; overflow-y: auto;
+    padding: 2px 18px 116px;
+    scrollbar-width: none;
+    overscroll-behavior: contain;
+}
+.dose-panel .dose-body::-webkit-scrollbar { display: none; }
+
+/* Category connected button group */
+.dose-panel .cg { display: flex; gap: 3px; margin-bottom: 8px; }
+.dose-panel .cg button {
+    flex: 1; padding: 9px 8px;
+    background: var(--sch); color: var(--var);
+    font-size: 12px; font-weight: 700; border-radius: 6px;
+    white-space: nowrap;
+    transition: border-radius .4s cubic-bezier(.3, 1.8, .5, 1), background .25s, color .25s, transform .25s;
+}
+.dose-panel .cg button:first-child { border-radius: 20px 6px 6px 20px; }
+.dose-panel .cg button:last-child { border-radius: 6px 20px 20px 6px; }
+.dose-panel .cg button.on {
+    background: var(--pric); color: var(--onpric);
+    border-radius: 20px !important; transform: scale(1.02);
+}
+
+/* Route + drug picker */
+.dose-panel .route-box {
+    background: var(--sc); border-radius: 26px; padding: 6px;
+    margin: 8px 0 10px;
+}
+.dose-panel .rg-strip {
+    display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+    gap: 3px; margin-bottom: 6px;
+}
+.dose-panel .route-box.single .rg-strip { display: none; margin-bottom: 0; }
+.dose-panel .rt-item {
+    padding: 10px 2px 8px; background: var(--sch); color: var(--var);
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    font-size: 11.5px; font-weight: 700; border-radius: 8px;
+    transition: border-radius .4s cubic-bezier(.3, 1.8, .5, 1), background .25s, color .25s, transform .25s;
+}
+.dose-panel .rt-item:first-child { border-radius: 20px 8px 8px 20px; }
+.dose-panel .rt-item:last-child { border-radius: 8px 20px 20px 8px; }
+.dose-panel .rt-item:only-child { border-radius: 20px; }
+.dose-panel .rt-item .i { width: 20px; height: 20px; transition: transform .3s cubic-bezier(.3, 1.8, .5, 1); }
+.dose-panel .rt-item.on { background: var(--pric); color: var(--onpric); border-radius: 20px !important; }
+.dose-panel .rt-item.on .i { transform: scale(1.12); }
+
+.dose-panel .drug-sub { padding: 2px 4px 4px; display: flex; flex-wrap: wrap; gap: 6px; }
+.dose-panel .drug-pill {
+    padding: 8px 14px; border-radius: 14px;
+    background: var(--sch); color: var(--var);
+    font-size: 12.5px; font-weight: 600;
+    transition: border-radius .35s cubic-bezier(.3, 1.7, .5, 1), background .22s, color .22s, transform .22s;
+}
+.dose-panel .drug-pill.on {
+    background: var(--pri); color: var(--onpri);
+    border-radius: 20px; font-weight: 700; transform: scale(1.02);
+}
+
+/* 4. Dose hero */
+.dose-panel .dose-hero {
+    position: relative; overflow: hidden;
+    border-radius: 30px; padding: 18px;
+    background: var(--pric); color: var(--onpric);
+    transition: background .35s, color .35s, transform .35s cubic-bezier(.22, 1.25, .36, 1);
+    margin-bottom: 10px;
+}
+.dose-panel .dose-hero.aux-mode { background: var(--terc); color: var(--onterc); }
+.dose-panel .dose-hero.progest-mode { background: var(--secc); color: var(--onsecc); }
+.dose-panel .hero-cookie {
+    position: absolute; right: -36px; top: -42px;
+    width: 136px; height: 136px; opacity: .13;
+    pointer-events: none;
+    transition: transform .65s cubic-bezier(.2, 1.1, .3, 1);
+}
+.dose-panel .dh-top { display: flex; justify-content: space-between; align-items: center; position: relative; z-index: 1; }
+.dose-panel .dh-drug { font-size: 14px; font-weight: 800; }
+.dose-panel .dh-main {
+    display: flex; align-items: center; justify-content: space-between;
+    margin: 14px 0 16px; position: relative; z-index: 1;
+}
+.dose-panel .step-btn {
+    width: 52px; height: 52px; border-radius: 20px;
+    background: rgba(255, 255, 255, .18); color: currentColor;
+    display: grid; place-items: center; font-size: 24px; font-weight: 700;
+    flex: none;
+}
+:root:not(.dark) .dose-panel .step-btn { background: rgba(0, 0, 0, .08); }
+.dose-panel .dh-val-wrap { text-align: center; flex: 1; min-width: 0; }
+.dose-panel .dh-num-row { display: inline-flex; align-items: baseline; justify-content: center; gap: 6px; }
+.dose-panel .dh-input {
+    width: 136px; flex: 0 0 136px; min-width: 136px;
+    text-align: center;
+    font-size: 44px; font-weight: 800; letter-spacing: -1.5px; line-height: 1;
+    color: currentColor; background: transparent;
+    border-bottom: 2px dashed currentColor; padding-bottom: 2px;
+    outline: 0; font-variant-numeric: tabular-nums;
+    appearance: none;
+}
+.dose-panel .dh-unit { flex: none; font-size: 16px; font-weight: 800; opacity: .85; white-space: nowrap; }
+
+/* The app-wide anti-zoom rule forces every mobile input to 16px with
+   `!important`; the hero number is the one input that must stay at the
+   prototype's 44px. Everything else in the panel keeps the 16px rule. */
+@media screen and (max-width: 768px) {
+    .dose-panel .dh-input { font-size: 44px !important; }
+    /* The app-wide rule's ten :not([type=…]) clauses out-specify any two-class
+       selector, so the hero id is the one thing that can beat it. */
+    #doseInput { font-size: 44px !important; }
+}
+
+.dose-panel .preset-row { display: flex; flex-wrap: wrap; gap: 6px; position: relative; z-index: 1; }
+.dose-panel .preset-pill {
+    flex: 1; min-width: 64px; padding: 8px 8px;
+    border-radius: 14px; background: rgba(0, 0, 0, .2); color: currentColor;
+    font-size: 12.5px; font-weight: 700; text-align: center; white-space: nowrap;
+    transition: border-radius .35s cubic-bezier(.3, 1.7, .5, 1), background .2s, color .2s, transform .2s;
+}
+:root:not(.dark) .dose-panel .preset-pill { background: rgba(255, 255, 255, .55); color: var(--onpric); }
+:root:not(.dark) .dose-panel .dose-hero.aux-mode .preset-pill { color: var(--onterc); }
+:root:not(.dark) .dose-panel .dose-hero.progest-mode .preset-pill { color: var(--onsecc); }
+.dose-panel .preset-pill.on {
+    background: var(--onpric); color: var(--pric);
+    border-radius: 99px; font-weight: 800; transform: scale(1.03);
+}
+.dose-panel .dose-hero.aux-mode .preset-pill.on { background: var(--onterc); color: var(--terc); }
+.dose-panel .dose-hero.progest-mode .preset-pill.on { background: var(--onsecc); color: var(--secc); }
+/* The light-mode colour overrides above are more specific than the base `.on`
+   rule, so the selected fill needs an explicit light rule of its own — otherwise
+   the label lands dark-on-dark in the amber and secondary heroes. */
+:root:not(.dark) .dose-panel .dose-hero .preset-pill.on { background: var(--onpric); color: var(--pric); }
+:root:not(.dark) .dose-panel .dose-hero.aux-mode .preset-pill.on { background: var(--onterc); color: var(--terc); }
+:root:not(.dark) .dose-panel .dose-hero.progest-mode .preset-pill.on { background: var(--onsecc); color: var(--secc); }
+
+/* GnRH no-dose card */
+.dose-panel .gnrh-card {
+    border-radius: 28px; padding: 18px;
+    background: var(--secc); color: var(--onsecc);
+    display: flex; align-items: center; gap: 14px;
+    margin-bottom: 10px;
+}
+.dose-panel .gnrh-card .ic {
+    width: 42px; height: 42px; border-radius: 21px;
+    background: rgba(255, 255, 255, .18); color: currentColor;
+    display: grid; place-items: center; flex: none;
+}
+:root:not(.dark) .dose-panel .gnrh-card .ic { background: rgba(0, 0, 0, .08); }
+
+/* 48 h peak */
+.dose-panel .peak-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 12px 16px; border-radius: 20px;
+    background: var(--okc); color: var(--ok);
+    font-size: 13px; font-weight: 700; margin-bottom: 10px;
+}
+.dose-panel .peak-bar.warn-only { background: var(--warnc); color: var(--warn); }
+.dose-panel .peak-bar b { font-weight: 800; white-space: nowrap; }
+
+/* 5. Segmented list. Only visible `.li` may be a direct child of `.list`. */
+.dose-panel .list { display: flex; flex-direction: column; gap: 3px; }
+.dose-panel .li {
+    background: var(--sch); padding: 14px 16px;
+    display: flex; align-items: center; gap: 13px;
+    min-height: 68px; border-radius: 8px;
+    transition: background .15s, border-radius .3s;
+}
+.dose-panel .list > .li:first-child { border-radius: 26px 26px 8px 8px; }
+.dose-panel .list > .li:last-child { border-radius: 8px 8px 26px 26px; }
+.dose-panel .list > .li:only-child { border-radius: 26px; }
+.dose-panel .li.tap { cursor: pointer; }
+.dose-panel .li.tap:hover { background: var(--sch-h); }
+.dose-panel .li.tap:active { background: var(--secc); }
+.dose-panel .li.col-li { flex-direction: column; align-items: stretch; gap: 11px; }
+.dose-panel .li-row { display: flex; align-items: center; gap: 13px; width: 100%; }
+.dose-panel .ic {
+    width: 42px; height: 42px; border-radius: 21px;
+    background: var(--secc); color: var(--onsecc);
+    display: grid; place-items: center; flex-shrink: 0;
+}
+.dose-panel .ic.p { background: var(--pric); color: var(--onpric); }
+.dose-panel .ic.am { background: var(--terc); color: var(--onterc); }
+.dose-panel .ic.err { background: var(--errc); color: var(--err); }
+.dose-panel .tx { flex: 1; min-width: 0; }
+.dose-panel .t { font-size: 14.5px; font-weight: 700; color: var(--on); }
+.dose-panel .s { font-size: 12px; color: var(--var); margin-top: 2px; line-height: 1.4; }
+.dose-panel .plan-input {
+    flex: 1; min-width: 0;
+    border: 0; outline: 0; background: transparent;
+    color: var(--on); font: inherit; font-size: 15px; font-weight: 600;
+    text-align: right;
+}
+.dose-panel .plan-input::placeholder { color: var(--out); font-weight: 500; }
+.dose-panel .ro-val {
+    font-size: 14.5px; font-weight: 800; color: var(--onpric);
+    background: var(--pric); padding: 6px 13px; border-radius: 14px;
+    white-space: nowrap;
+}
+.dose-panel .li > svg.i:last-child { color: var(--var); }
+
+/* Inner connected chips, and the 3px-tall variant used inside a list row. */
+.dose-panel .cg-inner { display: flex; flex-wrap: wrap; gap: 4px; width: 100%; }
+.dose-panel .cg-inner button {
+    flex: 1; min-width: calc(25% - 4px); padding: 8px;
+    background: var(--sc); color: var(--var);
+    font-size: 12px; font-weight: 700; border-radius: 8px;
+    white-space: nowrap; text-align: center;
+    transition: border-radius .38s cubic-bezier(.3, 1.7, .5, 1), background .2s, color .2s, transform .2s;
+}
+.dose-panel .cg-inner button:first-child { border-top-left-radius: 18px; border-bottom-left-radius: 18px; }
+.dose-panel .cg-inner button:last-child { border-top-right-radius: 18px; border-bottom-right-radius: 18px; }
+.dose-panel .cg-inner button.on {
+    background: var(--pric); color: var(--onpric);
+    border-radius: 18px !important; transform: scale(1.02);
+}
+.dose-panel .cg-inner.col { flex-direction: column; }
+.dose-panel .cg-inner.col button { text-align: left; padding: 12px 14px; }
+.dose-panel .cg-inner.col button.on { border-radius: 18px !important; }
+
+.dose-panel .gel-tip {
+    padding: 8px 12px; border-radius: 14px;
+    background: var(--terc); color: var(--onterc);
+    font-size: 12px; font-weight: 600; line-height: 1.4;
+}
+
+.dose-panel .injection-guide {
+    font-size: 12px; line-height: 1.55; color: var(--var);
+}
+.dose-panel .injection-guide .ig-title {
+    font-size: 12.5px; font-weight: 800; color: var(--on);
+    margin: 6px 0 3px;
+}
+.dose-panel .injection-guide ul { margin: 0; padding-left: 18px; }
+.dose-panel .injection-guide li { margin: 2px 0; }
+.dose-panel .injection-guide .ig-danger { color: var(--err); font-weight: 700; }
+.dose-panel .injection-guide .ig-warn { color: var(--warn); font-weight: 700; }
+
+/* 6. Custom numeric stepper */
+.dose-panel .m3e-num {
+    display: inline-flex; align-items: center; gap: 2px;
+    background: var(--sc); padding: 3px; border-radius: 18px; flex: none;
+}
+.dose-panel .m3e-num-btn {
+    width: 34px; height: 34px; background: var(--sch-h); color: var(--on);
+    font-size: 18px; font-weight: 800;
+    display: grid; place-items: center; transition: .2s;
+}
+.dose-panel .m3e-num-btn.minus { border-radius: 15px 5px 5px 15px; }
+.dose-panel .m3e-num-btn.plus { border-radius: 5px 15px 15px 5px; }
+.dose-panel .m3e-num-btn:active { background: var(--pric); color: var(--onpric); border-radius: 15px; }
+.dose-panel .m3e-num-val {
+    width: 54px; text-align: center; font-size: 14px; font-weight: 800; color: var(--on);
+    font-variant-numeric: tabular-nums;
+}
+
+/* 7. Bottom action bar */
+.dose-panel .bot-bar {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 12px 18px calc(20px + max(env(safe-area-inset-bottom, 0px), var(--app-safe-bottom, 0px)));
+    background: linear-gradient(to top, var(--bg) 80%, transparent);
+    display: flex; gap: 10px; align-items: center; z-index: 10;
+}
+.dose-panel .tpl-toggle {
+    height: 54px; padding: 0 18px; border-radius: 22px;
+    background: var(--sch); color: var(--on);
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 13.5px; font-weight: 700; flex-shrink: 0;
+}
+.dose-panel .save-btn {
+    flex: 1; height: 54px; border-radius: 27px;
+    background: var(--pri); color: var(--onpri);
+    font-size: 15px; font-weight: 800;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, .28);
+}
+.dose-panel .save-btn:disabled { opacity: .55; }
+.dose-panel .del-btn {
+    width: 42px; height: 42px; border-radius: 21px;
+    background: var(--errc); color: var(--err);
+    display: grid; place-items: center; flex: none;
+}
+
+/* 8. Secondary time page */
+.dose-panel .sub-page {
+    position: absolute; inset: 0; background: var(--bg); z-index: 40;
+    display: flex; flex-direction: column; padding: 18px;
+    transform: translateX(100%);
+    transition: transform .38s cubic-bezier(.2, .9, .2, 1);
+    overflow-y: auto; scrollbar-width: none;
+}
+.dose-panel .sub-page::-webkit-scrollbar { display: none; }
+.dose-panel .sub-page.open { transform: none; }
+.dose-panel .sub-page .hdr { padding: 0 0 8px; }
+.dose-panel .sub-page .hdr-title { font-size: 22px; }
+
+.dose-panel .m3e-cal-card { background: var(--sc); border-radius: 28px; padding: 16px; margin-top: 8px; }
+.dose-panel .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; padding: 0 4px; }
+.dose-panel .cal-title { font-size: 15px; font-weight: 800; color: var(--on); }
+.dose-panel .cal-nav { display: flex; gap: 4px; }
+.dose-panel .cal-nav-btn {
+    width: 36px; height: 36px; border-radius: 14px;
+    background: var(--sch); color: var(--on);
+    display: grid; place-items: center;
+    transition: background .2s, transform .28s cubic-bezier(.3,1.7,.5,1);
+}
+.dose-panel .cal-nav-btn:hover { background: var(--sch-h); }
+.dose-panel .cal-nav-btn:active { transform: scale(.9); }
+.dose-panel .cal-week {
+    display: grid; grid-template-columns: repeat(7, 1fr);
+    text-align: center; font-size: 11px; font-weight: 700;
+    color: var(--var); margin-bottom: 6px;
+}
+.dose-panel .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+@keyframes tpGridNext {
+    from { opacity: .25; transform: translateX(10px); }
+    to { opacity: 1; transform: none; }
+}
+@keyframes tpGridPrev {
+    from { opacity: .25; transform: translateX(-10px); }
+    to { opacity: 1; transform: none; }
+}
+.dose-panel .cal-grid.next { animation: tpGridNext .3s cubic-bezier(.2,1,.3,1) both; }
+.dose-panel .cal-grid.prev { animation: tpGridPrev .3s cubic-bezier(.2,1,.3,1) both; }
+@keyframes tpDayPop {
+    0% { transform: scale(.82); }
+    65% { transform: scale(1.1); }
+    100% { transform: scale(1.06); }
+}
+.dose-panel .cal-day.on { animation: tpDayPop .34s cubic-bezier(.3,1.7,.5,1) both; }
+.dose-panel .cal-day:active { transform: scale(.88); }
+.dose-panel .cal-day {
+    height: 38px; border-radius: 12px;
+    font-size: 13px; font-weight: 700; color: var(--on);
+    display: grid; place-items: center;
+    transition: border-radius .35s cubic-bezier(.3, 1.8, .5, 1), background .2s, color .2s, transform .2s;
+}
+.dose-panel .cal-day.empty { pointer-events: none; }
+.dose-panel .cal-day.today { border: 1.5px solid var(--pri); color: var(--pri); }
+.dose-panel .cal-day.on {
+    background: var(--pri); color: var(--onpri);
+    border-radius: 19px !important; transform: scale(1.06); font-weight: 800;
+}
+
+@keyframes tpCardIn {
+    from { opacity: 0; transform: translateY(12px) scale(.985); }
+    to { opacity: 1; transform: none; }
+}
+@keyframes tpClockPop {
+    0% { opacity: .65; transform: scale(.96); }
+    65% { transform: scale(1.02); }
+    100% { opacity: 1; transform: none; }
+}
+.lab-time.open .m3e-cal-card,
+.lab-time.open .tp-card { animation: tpCardIn .4s cubic-bezier(.2,1,.3,1) both; }
+.lab-time.open .tp-card { animation-delay: .06s; }
+.dose-panel .tp-display { animation: tpClockPop .28s cubic-bezier(.3,1.7,.5,1) both; }
+.dose-panel .tp-step {
+    transition: background .2s, color .2s, transform .26s cubic-bezier(.3,1.7,.5,1);
+}
+.dose-panel .tp-step:active { transform: scale(.9); }
+.dose-panel .tp-card {
+    background: var(--sc); border-radius: 28px; padding: 18px;
+    margin-top: 10px; display: flex; flex-direction: column;
+    align-items: center; gap: 14px; justify-content: space-between;
+}
+.dose-panel .tp-caption { font-size: 13px; font-weight: 700; color: var(--var); align-self: flex-start; }
+.dose-panel .tp-display { display: flex; align-items: center; gap: 12px; }
+.dose-panel .tp-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.dose-panel .tp-step {
+    width: 84px; height: 32px; border-radius: 12px;
+    background: var(--sch); color: var(--var);
+    font-size: 16px; font-weight: 800;
+    display: grid; place-items: center;
+}
+.dose-panel .tp-step:active { background: var(--pric); color: var(--onpric); }
+.dose-panel .tp-box {
+    width: 92px; height: 70px; border-radius: 22px;
+    background: var(--pric); color: var(--onpric);
+    font-size: 36px; font-weight: 800; line-height: 70px; text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+/* The hero card's number is an input; the clock boxes should behave the same.
+   Typing is the fast path, the +/− buttons stay for nudging. */
+.dose-panel .tp-input {
+    display: block;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    font-family: inherit;
+    font-size: 36px;
+    line-height: 70px;
+    caret-color: var(--onpric);
+    transition: transform .28s cubic-bezier(.3,1.7,.5,1), box-shadow .2s ease, background .2s ease;
+}
+.dose-panel .tp-input:focus {
+    transform: scale(1.04);
+    box-shadow: inset 0 0 0 2px var(--onpric);
+}
+.dose-panel .tp-input:focus,
+.dose-panel .tp-input:focus-visible { outline: none; border: 0; box-shadow: none; }
+@media screen and (max-width: 768px) {
+    .dose-panel .tp-input { font-size: 36px; line-height: 70px; }
+}
+/* Date parts are typeable as well as pickable. The boxes keep the page's type
+   scale — the anti-zoom rule no longer shrinks them to 16px. */
+.dose-panel .tp-date-row {
+    display: grid;
+    grid-template-columns: 1.35fr 1fr 1fr;
+    gap: 8px;
+    margin: 0 2px 12px;
+}
+.dose-panel .tp-date-part { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dose-panel .tp-date-part > span {
+    padding-left: 4px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--var);
+}
+.dose-panel .tp-date-input {
+    width: 100%;
+    height: 46px;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    border-radius: 14px;
+    background: var(--bg);
+    color: var(--on);
+    font: inherit;
+    font-size: 21px;
+    font-weight: 800;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    transition: transform .28s cubic-bezier(.3,1.7,.5,1), box-shadow .2s ease;
+}
+.dose-panel .tp-date-input:focus { transform: scale(1.04); }
+.dose-panel .tp-date-input:focus,
+.dose-panel .tp-date-input:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--pri);
+}
+.dose-panel .tp-colon { font-size: 34px; font-weight: 800; color: var(--var); }
+.dose-panel .tp-confirm { width: 100%; flex: none; height: 54px; margin-top: 8px; }
+@media (prefers-reduced-motion: reduce) {
+    .lab-time.open .m3e-cal-card,
+    .lab-time.open .tp-card,
+    .dose-panel .cal-grid.next,
+    .dose-panel .cal-grid.prev,
+    .dose-panel .cal-day.on,
+    .dose-panel .tp-display { animation: none; }
+    .dose-panel .tp-input:focus,
+    .dose-panel .tp-date-input:focus { transform: none; }
+}
+
+/* 9. Save-as-template sheet */
+.dose-panel .scrim {
+    position: absolute; inset: 0; background: rgba(0, 0, 0, .55);
+    opacity: 0; pointer-events: none; transition: .25s; z-index: 30;
+}
+.dose-panel .scrim.open { opacity: 1; pointer-events: auto; }
+.dose-panel .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    height: auto; max-height: 88%;
+    background: var(--sc); border-radius: 32px 32px 0 0;
+    padding: 12px 20px calc(24px + max(env(safe-area-inset-bottom, 0px), var(--app-safe-bottom, 0px)));
+    transform: translateY(102%);
+    transition: transform .38s cubic-bezier(.2, .9, .2, 1);
+    z-index: 35;
+}
+.dose-panel .sheet.open { transform: none; }
+.dose-panel .sh-handle {
+    width: 36px; height: 4px; border-radius: 2px;
+    background: var(--out); opacity: .45; margin: 0 auto 14px;
+}
+.dose-panel .sh-title { font-size: 18px; font-weight: 800; }
+.dose-panel .sh-sub { font-size: 12px; color: var(--var); margin-top: 4px; }
+.dose-panel .fld {
+    display: block; width: 100%; height: 52px; border-radius: 18px;
+    background: var(--sch); color: var(--on); padding: 0 16px;
+    font-size: 16px; font-weight: 600; margin: 12px 0 16px;
+    border: 0; outline: 0;
+}
+.dose-panel .fld::placeholder { color: var(--out); font-weight: 500; }
+.dose-panel .sh-actions { display: flex; gap: 10px; }
+.dose-panel .sh-btn { flex: 1; height: 48px; border-radius: 24px; font-weight: 700; font-size: 14px; }
+.dose-panel .sh-btn.cancel { background: var(--sch); color: var(--var); }
+.dose-panel .sh-btn.ok { background: var(--pri); color: var(--onpri); }
+
+/* Snackbar */
+.dose-panel .dose-snack {
+    position: absolute; left: 18px; right: 18px; bottom: 84px;
+    background: var(--on); color: var(--bg);
+    padding: 12px 16px; border-radius: 16px;
+    font-size: 13px; font-weight: 700;
+    transform: translateY(30px); opacity: 0; pointer-events: none;
+    transition: .28s; z-index: 40;
+}
+.dose-panel .dose-snack.on { transform: none; opacity: 1; }
+
+/* Mobile is one column: the route/dose half and the detail half need a real
+   gap, otherwise the last PatchFields row and the first detail row touch. */
+@media (max-width: 759px) {
+    .dose-panel .desk-grid { display: flex; flex-direction: column; gap: 12px; }
+}
+
+/* 10. Desktop two-column layout */
+@media (min-width: 760px) {
+    .dose-panel .desk-grid {
+        display: grid; grid-template-columns: 1.02fr 1fr;
+        gap: 22px; align-items: start;
+        max-width: 1040px; margin: 0 auto;
+    }
+    .dose-panel .hdr,
+    .dose-panel .tpl-strip { padding-left: 28px; padding-right: 28px; }
+    .dose-panel .dose-body { padding: 4px 28px 104px; }
+    .dose-panel .dose-body > .cg { max-width: 1040px; margin-left: auto; margin-right: auto; }
+    .dose-panel .bot-bar {
+        left: 50%; right: auto; transform: translateX(-50%);
+        width: min(100%, 1040px);
+        padding: 14px 0 calc(22px + max(env(safe-area-inset-bottom, 0px), var(--app-safe-bottom, 0px)));
+        background: linear-gradient(to top, var(--bg) 80%, transparent);
+    }
+    .dose-panel .bot-bar > * { max-width: none; }
+    .dose-panel .bot-bar { justify-content: center; }
+    .dose-panel .sub-page { padding: 24px 36px; }
+    .dose-panel .tp-layout {
+        display: grid; grid-template-columns: 1.1fr 1fr;
+        gap: 20px; align-items: stretch;
+        max-width: 900px; margin-inline: auto; width: 100%;
+    }
+    .dose-panel .sheet {
+        width: 420px; left: 50%; right: auto; bottom: 50%;
+        transform: translate(-50%, 60%) scale(.92);
+        opacity: 0; pointer-events: none;
+        border-radius: 32px;
+        transition: .28s;
+    }
+    .dose-panel .sheet.open {
+        transform: translate(-50%, 50%) scale(1);
+        opacity: 1; pointer-events: auto;
+    }
+}

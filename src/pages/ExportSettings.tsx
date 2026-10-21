@@ -1,9 +1,8 @@
 import React from 'react';
-import Icon from '../components/Icon';
-import { ArrowLeft } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import ExportSection from '../components/ExportSection';
 import { DoseEvent, LabResult } from '../../logic';
+import { HeaderBack } from '../ui/proto';
 
 interface ExportSettingsProps {
     events: DoseEvent[];
@@ -18,28 +17,15 @@ const ExportSettings: React.FC<ExportSettingsProps> = ({ events, labResults, wei
     const { t } = useTranslation();
 
     return (
-        <div className="relative space-y-4 pb-32">
-            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3">
-                <button
-                    onClick={onBack}
-                    className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] "
-                >
-                    <Icon icon={ArrowLeft} size={18} className="text-[var(--color-m3-on-surface-variant)]  shrink-0" />
-                    <span className="text-xl font-semibold text-[var(--color-m3-on-surface)] ">
-                        {t('export.title')}
-                    </span>
-                </button>
-            </div>
-
-            <div className="mx-auto w-full px-6 md:px-8 max-w-2xl">
-                <ExportSection
-                    events={events}
-                    labResults={labResults}
-                    weight={weight}
-                    onExport={onExport}
-                    onQuickExport={onQuickExport}
-                />
-            </div>
+        <div className="pg on long" style={{ maxWidth: 720, marginInline: 'auto', width: '100%' }}>
+            <HeaderBack title={t('export.title')} onBack={onBack} backLabel={t('core.back')} />
+            <ExportSection
+                events={events}
+                labResults={labResults}
+                weight={weight}
+                onExport={onExport}
+                onQuickExport={onQuickExport}
+            />
         </div>
     );
 };

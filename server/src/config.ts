@@ -112,6 +112,27 @@ export interface Config {
   turnstile: TurnstileConfig | null;
   /** FCM supplementary push. Absent = no push is sent (local notifications still run). */
   fcm: FcmConfig | null;
+  /**
+   * Buy Me a Coffee webhook signing secret, from the BMC webhook details page.
+   * Absent = the webhook route refuses every delivery (nothing is trusted unsigned).
+   */
+  bmcWebhookSecret?: string | null;
+  /** Bearer token for the maintainer's supporter approval/removal routes. Absent = off. */
+  supportersAdminToken?: string | null;
+  /**
+   * Test seam for the Afdian webhook. Production leaves it unset and the service
+   * uses Afdian's published key; a test supplies its own public half so it can sign
+   * deliveries with the matching private key.
+   */
+  afdianPublicKey?: string | null;
+  /**
+   * Afdian Open API credentials, used to resolve a donor's nickname after a
+   * webhook (the order itself carries only a user id). Optional: without them an
+   * order is queued as pending and the maintainer names it.
+   */
+  afdian?: { userId: string; token: string } | null;
+  /** How often the Afdian sponsor poll runs, in minutes. Default 30. */
+  afdianSyncMinutes?: number;
   /** Tokens live this long without use. */
   sessionTtlMinutes: number;
   /**
@@ -328,6 +349,44 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     windowMs: positiveInt(env.RATE_LIMIT_WINDOW_MS, 60_000, 'RATE_LIMIT_WINDOW_MS'),
   };
 
+  // The thank-you list's two secrets. Both optional; each is length-checked when
+  // present, because a short HMAC key is guessable and a short admin token is a
+  // password. A deployment that sets neither simply has no webhook and no admin API.
+  const bmcWebhookSecret = env.BMC_WEBHOOK_SECRET?.trim() || null;
+  if (bmcWebhookSecret && bmcWebhookSecret.length < 16) {
+    throw new ConfigError('BMC_WEBHOOK_SECRET must be at least 16 characters');
+  }
+  const supportersAdminToken = env.SUPPORTERS_ADMIN_TOKEN?.trim() || null;
+  if (supportersAdminToken && supportersAdminToken.length < 24) {
+    throw new ConfigError('SUPPORTERS_ADMIN_TOKEN must be at least 24 characters');
+  }
+
+  // Afdian's Open API needs the creator's user_id and a token to query a donor's
+  // nickname. Both or neither; half-configured would fail at the first order.
+  const afdianUserId = env.AFDIAN_USER_ID?.trim() || null;
+  const afdianToken = env.AFDIAN_API_TOKEN?.trim() || null;
+  let afdian: { userId: string; token: string } | null = null;
+  if (!!afdianUserId !== !!afdianToken) {
+    throw new ConfigError('AFDIAN_USER_ID and AFDIAN_API_TOKEN must be set together');
+  }
+  if (afdianUserId && afdianToken) {
+    if (afdianToken.length < 16) {
+      throw new ConfigError('AFDIAN_API_TOKEN looks too short to be a token');
+    }
+    afdian = { userId: afdianUserId, token: afdianToken };
+  }
+
+  // The poll is incremental and cheap; 30 minutes is the default. A value of 1
+  // minutes is allowed for testing, 1440 (a day) is the ceiling.
+  const afdianSyncMinutes = positiveInt(
+    env.AFDIAN_SYNC_INTERVAL_MINUTES,
+    30,
+    'AFDIAN_SYNC_INTERVAL_MINUTES',
+  );
+  if (afdianSyncMinutes > 1440) {
+    throw new ConfigError('AFDIAN_SYNC_INTERVAL_MINUTES must be at most 1440 (one day)');
+  }
+
   // FCM is optional and whole: the service-account JSON (inline or a path to it) is
   // the one thing required. A malformed/missing file is refused at boot rather than
   // at the first push, so a deployment either has working push or reports none.
@@ -345,6 +404,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     kms,
     turnstile,
     fcm,
+    bmcWebhookSecret,
+    supportersAdminToken,
+    afdian,
+    afdianSyncMinutes,
     sessionTtlMinutes,
     rateLimits,
   };

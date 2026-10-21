@@ -461,9 +461,15 @@ CREATE TABLE IF NOT EXISTS shares (
     snapshot         jsonb NOT NULL,
     created_at       timestamptz NOT NULL DEFAULT now(),
     updated_at       timestamptz NOT NULL DEFAULT now(),
-    expires_at       timestamptz NOT NULL
+    expires_at       timestamptz NOT NULL,
+    failed_attempts  integer NOT NULL DEFAULT 0,
+    locked_until     timestamptz
 );
 CREATE INDEX IF NOT EXISTS idx_shares_user ON shares(user_id);
+-- Per-share password guessing backoff. Defends against distributed/rotating IP
+-- attacks by enforcing lockouts at the individual share level.
+ALTER TABLE shares ADD COLUMN IF NOT EXISTS failed_attempts integer NOT NULL DEFAULT 0;
+ALTER TABLE shares ADD COLUMN IF NOT EXISTS locked_until timestamptz;
 -- Expiry is per-row and short, so the token hash is the only lookup that needs help.
 -- The unique constraint above already serves it.
 
@@ -604,3 +610,48 @@ CREATE TABLE IF NOT EXISTS push_log (
     PRIMARY KEY (user_id, plan_id, due_at)
 );
 CREATE INDEX IF NOT EXISTS idx_push_log_sent ON push_log(sent_at);
+
+-- The public thank-you list.
+--
+-- Two sources with different trust levels. A BMC row is written only by a webhook
+-- whose HMAC has been checked, so it is approved on arrival. A crypto row is a
+-- claim — a transaction hash and a nickname — and stays `pending` until the
+-- maintainer has looked the hash up on an explorer and approved it. Only
+-- `approved` rows are ever served publicly.
+--
+-- `bmc_payment_id` is the provider's payment id, not the event id: webhook retries
+-- carry a new event id but the same payment, so the payment is what makes the
+-- insert idempotent. `tx_hash` is unique for the same reason — one transaction
+-- cannot buy two places on the list.
+CREATE TABLE IF NOT EXISTS supporters (
+    id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    display_name   text NOT NULL,
+    source         text NOT NULL CHECK (source IN ('bmc', 'crypto', 'afdian')),
+    status         text NOT NULL DEFAULT 'approved' CHECK (status IN ('pending', 'approved')),
+    tx_hash        text,
+    bmc_payment_id text,
+    afdian_order_no text,
+    created_at     timestamptz NOT NULL DEFAULT now(),
+    approved_at    timestamptz
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_supporters_tx ON supporters (tx_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_supporters_bmc ON supporters (bmc_payment_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_supporters_afdian ON supporters (afdian_order_no);
+
+-- Added after the table's first release. The API poll identifies a sponsor by the
+-- Afdian user id (the sponsor list has no order number), and one sponsor must map to
+-- one row no matter how many times the poll sees them.
+ALTER TABLE supporters ADD COLUMN IF NOT EXISTS afdian_user_id text;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_supporters_afdian_user ON supporters (afdian_user_id);
+
+-- When the Afdian API poll first ran. The first pass records "now" and imports
+-- nothing, so supporters from before this feature existed are never retroactively
+-- published. A later payment updates last_pay_time and does get imported.
+CREATE TABLE IF NOT EXISTS supporter_sync_state (
+    source     text PRIMARY KEY,
+    since      timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_supporters_public
+    ON supporters (status, approved_at DESC NULLS LAST, created_at DESC);
+

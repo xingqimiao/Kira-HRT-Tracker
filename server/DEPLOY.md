@@ -699,6 +699,10 @@ export ANDROID_HOME="$LOCALAPPDATA/Android/Sdk"
 export NDK_HOME="$LOCALAPPDATA/Android/Sdk/ndk/27.0.12077973"
 export JAVA_HOME="/c/Program Files/Java/jdk-17"
 export VITE_API_ORIGIN=https://api.kiramyao.com/hrt
+# Share links copied from the app are built against this origin. Unset, the WebView
+# resolves them against window.location.origin — https://tauri.localhost — and every
+# link a phone hands out is dead.
+export VITE_PUBLIC_ORIGIN=https://hrt.kiramyao.com
 export PATH="$JAVA_HOME/bin:$PATH"
 node_modules/.bin/tauri android build --apk --target aarch64   # ~5 min
 ```
@@ -706,6 +710,13 @@ node_modules/.bin/tauri android build --apk --target aarch64   # ~5 min
 The frontend is embedded at `beforeBuildCommand` time. **Edits made after the build
 starts are silently absent** — finish all source changes, then build, then sign. Build the
 universal target and the APK is 4× the size; ships arm64.
+
+`src-tauri/` and `src-tauri/gen/` are gitignored, so a fresh checkout or a re-run of
+`tauri android init` has no Firebase config. Copy the Android app's
+`google-services.json` (project `hrt-kiramyao`, package `com.kiramyao.hrt`) to
+`src-tauri/gen/android/app/google-services.json` before building — the
+`com.google.gms.google-services` plugin that `scripts/patch-android-theme.mjs` adds fails
+the build without it. It is not committed.
 
 Output (unsigned): `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk`.
 

@@ -50,6 +50,7 @@ import {
   DOSE_MG_MAX,
   BODY_WEIGHT_KG_MIN,
   BODY_WEIGHT_KG_MAX,
+  Ester,
 } from './engine.ts';
 
 /** How an adapter obtains the caller's identity and key. */
@@ -121,13 +122,16 @@ function pagingCursor(
  * second thing to forget when an ester is added upstream.
  */
 const ROUTE_VALUES = ['injection', 'oral', 'sublingual', 'gel', 'patchApply', 'patchRemove'] as const;
-const ESTER_VALUES = [
-  'E2', 'EB', 'EV', 'EC', 'EN', 'EU', 'CPA', 'SPIRO', 'BICAL', 'T', 'TC', 'TE', 'TU',
-] as const;
+// Derived from the engine's own enum rather than retyped. The hand-written list
+// was the second thing to forget when the app added P4/MPA/NET/RALOX/FIN/DUT/GNRH.
+const ESTER_VALUES = Object.values(Ester) as [string, ...string[]];
 
 const ESTER_DESCRIPTION =
   'Estradiol esters: EB/EV/EC/EN/EU; E2 = unesterified; anti-androgens: CPA = cyproterone ' +
-  'acetate, SPIRO = spironolactone, BICAL = bicalutamide; T esters: TC/TE/TU';
+  'acetate, SPIRO = spironolactone, BICAL = bicalutamide; T esters: TC/TE/TU; recorded-only ' +
+  'compounds: P4 = progesterone, MPA = medroxyprogesterone acetate, NET = norethisterone, ' +
+  'RALOX = raloxifene, FIN = finasteride, DUT = dutasteride, GNRH = GnRH analogue. ' +
+  'The recorded-only compounds are stored but not simulated.';
 
 /**
  * Route-specific numbers both a dose and a template accept.
@@ -147,6 +151,7 @@ const EXTRAS_DESCRIPTION =
   `gelCoApplied 0–${GEL_COAPPLICATION_OPTIONS.length - 1} (${GEL_COAPPLICATION_OPTIONS.join('/')}), ` +
   `gelWashAfterH for wash-off, plus concentrationMGmL and areaCM2 as direct values. ` +
   `patch: releaseRateUGPerDay, and patchWearH for planned wear hours. ` +
+  `injection: vehicle 0 = oil, 1 = aqueous (EC only). ` +
   `The gel detail beyond gelSite is read only by the Transmtf model — see the pkEngine ` +
   `field in hrt_get_settings — and is stored either way, so it survives a model switch.`;
 
@@ -528,6 +533,14 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         'choice is the account owner\'s to make in the app, not a side effect of a request. An ' +
         `absent or unrecognised value means '${DEFAULT_PK_ENGINE}', which is also the default.\n` +
         '\n' +
+        '`appState.settings.gelProducts` is the account\'s own gel catalogue: ids ≥ 1000, ' +
+        'each with a name, concentration, application area and its own absorption rate ' +
+        'constants. A gel dose\'s `gelProductId` resolves against this list when the ' +
+        'Transmtf engine draws the curve, so read it when a user asks why two of their ' +
+        'own products curve differently — or why a product they expected is not there. ' +
+        'A `gelProductId` with no matching entry falls back to the first preset ' +
+        '(Oestrogel) rather than failing, which is a deliberate, silent behaviour.\n' +
+        '\n' +
         'Other read-only fields in appState (language, theme, HRT start date, re-check reminders) ' +
         'cannot be written through MCP either; use hrt_update_settings for the rest.',
       inputSchema: {},
@@ -807,6 +820,17 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
             BICAL: 'bicalutamide',
           },
           testosterone: { T: 'unesterified', TC: 'cypionate', TE: 'enanthate', TU: 'undecanoate' },
+          progestin: {
+            P4: 'micronised progesterone (recorded, not modelled)',
+            MPA: 'medroxyprogesterone acetate (recorded, not modelled)',
+            NET: 'norethisterone (recorded, not modelled)',
+          },
+          serm_and_hair: {
+            RALOX: 'raloxifene (recorded, not modelled)',
+            FIN: 'finasteride (recorded, not modelled)',
+            DUT: 'dutasteride (recorded, not modelled)',
+          },
+          gnrh: { GNRH: 'GnRH analogue (recorded, not modelled)' },
         },
         sublingual_tiers: SL_TIER_ORDER,
         gel_sites: GEL_SITE_ORDER,

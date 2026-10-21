@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { flushSync } from 'react-dom';
 import Icon from './Icon';
 import { GoogleBrand, XBrand } from '../icons/brand';
 import { AlertTriangle, X } from '../icons';
@@ -153,6 +154,29 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
     function finish() {
         onSignedIn?.();
         onDone?.();
+    }
+
+    /**
+     * The sign-in / register switch is a whole-form content change. A view
+     * transition cross-fades the two states instead of swapping the heading and
+     * the password hint on one frame.
+     */
+    function switchAuthMode() {
+        const go = () => {
+            flushSync(() => {
+                setIsLogin(v => !v);
+                setError(null);
+            });
+        };
+        const isDesktop = typeof document !== 'undefined' && (document.body.classList.contains('desktop') || window.innerWidth >= 760);
+        const transition = (document as Document & {
+            startViewTransition?: (cb: () => void) => unknown;
+        }).startViewTransition;
+        if (transition && !isDesktop && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            transition.call(document, go);
+        } else {
+            go();
+        }
     }
 
     async function handleCredentials(e: React.FormEvent) {
@@ -322,10 +346,22 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                     <button
                         type="submit"
                         disabled={busy || (!isLogin && !verified)}
-                        className="btn-primary w-full"
+                        className="btn auth-cta"
+                        style={{
+                            width: '100%',
+                            height: 50,
+                            borderRadius: 25,
+                            fontSize: 16,
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 8,
+                            opacity: busy || (!isLogin && !verified) ? 0.45 : 1,
+                        }}
                     >
-                        {busy && <Progress size={16} />}
-                        {isLogin ? t('core.sign_in') : t('core.create_account')}
+                        {busy && <Progress size={16} className="cta-spin" />}
+                        <span>{isLogin ? t('core.sign_in') : t('core.create_account')}</span>
                     </button>
 
                     {providers === null ? (
@@ -394,10 +430,7 @@ const CoreAuthForm: React.FC<CoreAuthFormProps> = ({
                             {isLogin ? t('core.signin.no_account') : t('core.signin.has_account')}{' '}
                             <button
                                 type="button"
-                                onClick={() => {
-                                    setIsLogin(v => !v);
-                                    setError(null);
-                                }}
+                                onClick={switchAuthMode}
                                 className="text-[var(--color-m3-primary)]  hover:underline"
                             >
                                 {isLogin ? t('core.signin.go_register') : t('core.signin.go_login')}

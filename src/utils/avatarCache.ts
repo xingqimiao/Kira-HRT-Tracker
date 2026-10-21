@@ -1,3 +1,4 @@
+import { get as secureGet, set as secureSet, remove as secureRemove } from './secureStore';
 /**
  * The account avatar, cached on the device as a data URL.
  *
@@ -22,7 +23,7 @@ export interface CachedAvatar {
 
 export function getCachedAvatar(username: string): CachedAvatar | null {
   try {
-    const raw = localStorage.getItem(keyFor(username));
+    const raw = secureGet(keyFor(username));
     return raw ? (JSON.parse(raw) as CachedAvatar) : null;
   } catch {
     return null;
@@ -31,7 +32,7 @@ export function getCachedAvatar(username: string): CachedAvatar | null {
 
 function store(username: string, avatar: CachedAvatar): void {
   try {
-    localStorage.setItem(keyFor(username), JSON.stringify(avatar));
+    secureSet(keyFor(username), JSON.stringify(avatar));
   } catch {
     // Quota is best-effort: an uncached avatar paints the old way.
   }
@@ -39,7 +40,7 @@ function store(username: string, avatar: CachedAvatar): void {
 
 export function clearCachedAvatar(username: string): void {
   try {
-    localStorage.removeItem(keyFor(username));
+    secureRemove(keyFor(username));
   } catch {
     // Nothing to clear is fine.
   }

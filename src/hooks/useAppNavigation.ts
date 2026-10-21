@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import { Home, ListTodo, Settings as SettingsIcon, UserCircle, CalibrationCurve } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useBackHandler } from '../utils/nativeBack';
 
-export type ViewKey = 'home' | 'share' | 'history' | 'lab' | 'lab-calibration' | 'settings' | 'account' | 'pk-params' | 'settings-language' | 'settings-appearance' | 'settings-weight' | 'settings-export' | 'settings-import' | 'settings-security' | 'settings-mcp' | 'settings-licences';
+export type ViewKey = 'home' | 'share' | 'history' | 'lab' | 'lab-calibration' | 'settings' | 'account' | 'pk-params' | 'settings-language' | 'settings-appearance' | 'settings-weight' | 'settings-export' | 'settings-import' | 'settings-security' | 'settings-mcp' | 'settings-licences' | 'settings-donate' | 'settings-donate-supporters';
 
 /** Where system back lands from each view. Sub-pages return to their parent
  *  tab; a tab returns home; home returns false so the gesture falls through to
@@ -18,8 +19,12 @@ const BACK_PARENT: Partial<Record<ViewKey, ViewKey>> = {
     'settings-export': 'settings',
     'settings-import': 'settings',
     'settings-security': 'account',
-    'settings-mcp': 'settings',
+    // Opened from the Account page's AI-assistant row, so back belongs there —
+    // not on Settings, which is a different tab.
+    'settings-mcp': 'account',
     'settings-licences': 'settings',
+    'settings-donate': 'settings',
+    'settings-donate-supporters': 'settings-donate',
 };
 
 /**
@@ -36,15 +41,31 @@ export const useAppNavigation = (initialView: ViewKey = 'home') => {
     const [transitionDirection, setTransitionDirection] = useState<'forward' | 'backward'>('forward');
     const mainScrollRef = useRef<HTMLDivElement>(null);
 
-    const viewOrder: ViewKey[] = ['home', 'share', 'history', 'lab', 'lab-calibration', 'settings', 'account', 'pk-params', 'settings-language', 'settings-appearance', 'settings-weight', 'settings-export', 'settings-import', 'settings-security', 'settings-mcp', 'settings-licences'];
+    const viewOrder: ViewKey[] = ['home', 'share', 'history', 'lab', 'lab-calibration', 'settings', 'account', 'pk-params', 'settings-language', 'settings-appearance', 'settings-weight', 'settings-export', 'settings-import', 'settings-security', 'settings-mcp', 'settings-licences', 'settings-donate', 'settings-donate-supporters'];
 
     // --- Actions ---
     const handleViewChange = (view: ViewKey) => {
         if (view === currentView) return;
-        const currentIndex = viewOrder.indexOf(currentView);
-        const nextIndex = viewOrder.indexOf(view);
-        setTransitionDirection(nextIndex >= currentIndex ? 'forward' : 'backward');
-        setCurrentView(view);
+        const go = () => {
+            const currentIndex = viewOrder.indexOf(currentView);
+            const nextIndex = viewOrder.indexOf(view);
+            flushSync(() => {
+                setTransitionDirection(nextIndex >= currentIndex ? 'forward' : 'backward');
+                setCurrentView(view);
+            });
+        };
+        // Native cross-fade for the outgoing *and* incoming route on mobile devices.
+        // Desktop uses simple instantaneous swap with subtle page fade, avoiding
+        // viewport-wide scale/translation jitter.
+        const isDesktop = typeof document !== 'undefined' && (document.body.classList.contains('desktop') || window.innerWidth >= 760);
+        const transition = (document as Document & {
+            startViewTransition?: (cb: () => void) => unknown;
+        }).startViewTransition;
+        if (transition && !isDesktop && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            transition.call(document, go);
+        } else {
+            go();
+        }
     };
 
     // --- Effects ---

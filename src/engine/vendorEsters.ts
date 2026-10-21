@@ -4,7 +4,8 @@
  * This is the one thing about the vendor that more than one side has to know:
  *
  *   - `src/pk` builds its app-ester → vendor-ester map from this list, and refuses a
- *     simulation whose events name anything else;
+ *     simulation whose events name anything else (except a curveless compound — see
+ *     `isCurveless`);
  *   - `registry.ts` reads the same list to keep such an account on the built-in engine
  *     — see `chooseEngine`.
  *
@@ -45,15 +46,34 @@ export function isModelledByVendor(ester: Ester): boolean {
 }
 
 /**
+ * Compounds that carry a record but a curve in neither engine: spironolactone.
+ *
+ * This distinction is the whole point of the veto. A **testosterone ester** changes a
+ * curve (the T one), and the vendored engine has no T model at all — so its presence
+ * must send the account back to the built-in engine rather than produce a curve with a
+ * dose silently missing. **Spironolactone** is simulated by neither engine, so leaving
+ * it out of the simulation costs no series anything; it must therefore not drag an
+ * otherwise-modellable list off Transmtf.
+ *
+ * Plain strings, like the list above, so this module stays importable from the
+ * lazily-loaded chunk without a runtime dependency on `logic.ts`.
+ */
+const CURVELESS_ESTERS: ReadonlySet<string> = new Set(['SPIRO']);
+
+/** True for a compound both engines only record: it contributes to no curve. */
+export function isCurveless(ester: Ester): boolean {
+    return CURVELESS_ESTERS.has(ester);
+}
+
+/**
  * Whether the engine can model a whole event list.
  *
- * The engine has no testosterone model and does not model spironolactone, and it
- * refuses the *entire* list when any event names a compound it cannot model — it does
- * not drop that record. So this is all-or-nothing on purpose: a single unsupported
- * ester means the caller has to keep the list on the built-in engine, because the
- * alternative is not a slightly-wrong curve but no curve at all, which reads as
- * "no doses recorded".
+ * All-or-nothing on purpose: the adapter refuses the *entire* list when an event names
+ * a compound the engine cannot model (it does not silently drop the record), because
+ * the alternative is not a slightly-wrong curve but no curve at all — which reads as
+ * "no doses recorded". Curveless compounds are the exception: nothing is lost by
+ * omitting them, so they are skipped instead of vetoing.
  */
 export function canRunVendor(events: readonly { ester: Ester }[]): boolean {
-    return events.every((event) => isModelledByVendor(event.ester));
+    return events.every((event) => isModelledByVendor(event.ester) || isCurveless(event.ester));
 }

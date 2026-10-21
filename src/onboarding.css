@@ -1,0 +1,682 @@
+/*
+ * The activation flow, ported from `docs/m3e-onboarding-prototype.html`.
+ *
+ * Every selector is scoped under `.ob2` because the prototype reuses very short
+ * names (`.li`, `.t`, `.s`, `.ic`) that already exist in `m3e.css` for the five
+ * main pages — unscoped, the two would fight over every list row in the app.
+ * Inside the scope the names are the prototype's own, so a rule can still be
+ * found by searching the HTML for it.
+ *
+ * Geometry, easing and timing are copied verbatim: the asymmetric leaf radius on
+ * a selected HRT tile, the 22px → 99px morph on a chosen language, the 260ms
+ * release on a press. The colours are the app's tokens (`--bg`, `--sch`, `--pri`
+ * …), which are the same 21 roles the prototype declares, so this reads as the
+ * app rather than as a screenshot of it.
+ */
+
+.ob2 {
+    --ob2-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+    position: relative;
+    display: flex;
+    height: 100dvh;
+    width: 100%;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--on);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+}
+
+/* The prototype's shadow is tuned for a dark stage; on the light palette it
+   reads as a smudge, so it is softened rather than reused. */
+:root:not(.dark) .ob2 {
+    --ob2-shadow: 0 20px 50px rgba(80, 30, 50, .15);
+}
+
+/* ── Page transitions and the floating pixel vial ────────────────────────── */
+
+@keyframes ob2-page-fade {
+    0% { opacity: 0; transform: translateX(14px); }
+    100% { opacity: 1; transform: translateX(0); }
+}
+@keyframes ob2-tube-float {
+    0%, 100% { transform: translateY(0) rotate(-6deg); }
+    50% { transform: translateY(-4px) rotate(-2deg); }
+}
+@keyframes ob2-bubble {
+    0%, 100% { transform: translateY(0); opacity: .95; }
+    50% { transform: translateY(-3px); opacity: .55; }
+}
+
+/* Applied only to the panel, and only re-keyed when the step changes — see the
+   `key` on the panel wrapper in `Onboarding.tsx`. Re-keying on a selection
+   would replay this on every tap inside a step, which is the flicker it is
+   here to avoid. */
+.ob2 .page-anim {
+    animation: ob2-page-fade .32s cubic-bezier(.2, .9, .2, 1) both;
+}
+.ob2 .tube-float { animation: ob2-tube-float 3.8s ease-in-out infinite; }
+.ob2 .px-bub1 { animation: ob2-bubble 2.2s ease-in-out infinite; }
+.ob2 .px-bub2 { animation: ob2-bubble 2.8s ease-in-out .7s infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+    .ob2 .page-anim,
+    .ob2 .tube-float,
+    .ob2 .px-bub1,
+    .ob2 .px-bub2 {
+        animation: none;
+    }
+}
+
+/* ── The press: radius morph + rebound scale ─────────────────────────────── */
+
+.ob2 [data-m] {
+    transition:
+        border-radius .5s cubic-bezier(.3, 1.8, .5, 1),
+        transform .35s cubic-bezier(.3, 1.7, .5, 1),
+        background .25s, color .25s, border-color .25s;
+}
+/* Declared after every `.on` rule below so the press wins the tie on
+   `transform`, and `!important` on the radius because `.lang-card.on` sets a
+   radius of its own that is more specific than this selector. */
+.ob2 [data-m].mo {
+    border-radius: var(--mo, 14px) !important;
+    transform: scale(.95);
+}
+
+/* ── Top bar: back, progress, counter ────────────────────────────────────── */
+
+.ob2 .ob2-top {
+    flex-shrink: 0;
+    padding: 18px 20px 10px;
+    padding-top: calc(18px + max(env(safe-area-inset-top, 0px), var(--app-safe-top, 0px)));
+    z-index: 5;
+}
+.ob2 .ob2-top-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+}
+.ob2 .back-pill {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    flex-shrink: 0;
+    border: 0;
+    border-radius: 21px;
+    background: var(--sch);
+    color: var(--on);
+    transition: opacity .25s, transform .35s cubic-bezier(.3, 1.7, .5, 1), border-radius .5s cubic-bezier(.3, 1.8, .5, 1);
+}
+.ob2 .back-pill.hide {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(.8);
+}
+.ob2 .prog-bar {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 0;
+}
+.ob2 .prog-seg {
+    height: 7px;
+    width: 12px;
+    border-radius: 99px;
+    background: var(--sch);
+    transition: width .45s cubic-bezier(.3, 1.8, .5, 1), background .3s;
+}
+.ob2 .prog-seg.done { background: var(--pric); width: 14px; }
+.ob2 .prog-seg.on { background: var(--pri); width: 32px; }
+.ob2 .step-tag {
+    min-width: 44px;
+    flex-shrink: 0;
+    text-align: right;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--var);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Scroll area and the two-column split ────────────────────────────────── */
+
+.ob2 .ob2-scroll {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 8px 20px 118px;
+    scrollbar-width: none;
+}
+.ob2 .ob2-scroll::-webkit-scrollbar { display: none; }
+.ob2 .ob2-split {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 20px;
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+}
+
+/* ── Hero: morphing polygon badge, pixel vial, title ─────────────────────── */
+
+.ob2 .hero-pane {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 4px 2px 0;
+}
+.ob2 .morph-stage {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 84px;
+    height: 84px;
+    margin-bottom: 14px;
+}
+.ob2 .morph-bg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    color: var(--pric);
+    transition: transform .7s cubic-bezier(.22, 1.2, .36, 1), color .4s;
+}
+.ob2 .morph-bg.terc { color: var(--terc); }
+.ob2 .morph-bg.secc { color: var(--secc); }
+.ob2 .morph-bg.okc { color: var(--okc); }
+.ob2 .pixel-logo {
+    position: relative;
+    z-index: 2;
+    width: 52px;
+    height: 52px;
+    filter: drop-shadow(0 6px 12px rgba(90, 20, 140, .35));
+}
+.ob2 .ob-title {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -.6px;
+    line-height: 1.2;
+    color: var(--on);
+    word-break: break-word;
+}
+.ob2 .ob-sub {
+    margin-top: 8px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--var);
+}
+
+/* The seven greetings stacked into one grid cell, so switching language never
+   changes the height of the block above the language grid — otherwise picking
+   Türkçe after 简体中文 grows the sentence a line and slides the grid down under
+   the finger that just tapped it. */
+.ob2 .stack-cell { display: grid; }
+.ob2 .stack-cell > * { grid-area: 1 / 1; }
+
+/* ── Step 1: language ────────────────────────────────────────────────────── */
+
+.ob2 .lang-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+.ob2 .lang-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 15px 18px;
+    border: 1.5px solid rgba(255, 255, 255, .07);
+    border-radius: 22px;
+    background: var(--sch);
+    color: var(--on);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    text-align: start;
+    transition:
+        border-radius .45s cubic-bezier(.3, 1.8, .5, 1),
+        transform .35s cubic-bezier(.3, 1.7, .5, 1),
+        background .25s, color .25s, border-color .25s;
+}
+:root:not(.dark) .ob2 .lang-card { border-color: rgba(160, 61, 99, .14); }
+/* The row matching the device's own language, on its own full-width line. It
+   carries no label saying so — the position is the message. */
+.ob2 .lang-card.sys-top {
+    grid-column: span 2;
+    padding: 17px 20px;
+    border-radius: 24px;
+}
+.ob2 .lang-card.on {
+    border-color: transparent;
+    border-radius: 99px;
+    background: var(--pri);
+    color: var(--onpri);
+}
+.ob2 .px-check {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    opacity: 0;
+    transform: scale(.5);
+    transition: opacity .22s, transform .35s cubic-bezier(.3, 1.8, .5, 1);
+}
+.ob2 .lang-card.on .px-check { opacity: 1; transform: scale(1); }
+
+/* ── Step 2: HRT type ────────────────────────────────────────────────────── */
+
+.ob2 .hrt-grid { display: flex; flex-direction: column; gap: 10px; }
+.ob2 .hrt-tile {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px;
+    border: 0;
+    border-radius: 26px;
+    background: var(--sch);
+    color: var(--on);
+    font: inherit;
+    text-align: start;
+    transition:
+        border-radius .5s cubic-bezier(.3, 1.8, .5, 1),
+        transform .35s cubic-bezier(.3, 1.7, .5, 1),
+        background .25s, color .25s;
+}
+/* The selected tile turns into a leaf — one pair of corners round, the opposite
+   pair tight. Mirrored between the two so the pair reads as a set rather than
+   as two copies of the same shape. */
+.ob2 .hrt-tile.mtf.on {
+    background: var(--pric);
+    color: var(--onpric);
+    border-radius: 42px 16px 42px 16px;
+}
+.ob2 .hrt-tile.ftm.on {
+    background: var(--terc);
+    color: var(--onterc);
+    border-radius: 16px 42px 16px 42px;
+}
+.ob2 .hrt-tile .ht-ic {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+    border-radius: 24px;
+    background: rgba(255, 255, 255, .14);
+    transition: transform .35s cubic-bezier(.3, 1.8, .5, 1);
+}
+:root:not(.dark) .ob2 .hrt-tile .ht-ic { background: rgba(0, 0, 0, .07); }
+.ob2 .hrt-tile.on .ht-ic { transform: scale(1.08); }
+.ob2 .hrt-tile .ht-t { font-size: 17px; font-weight: 800; }
+.ob2 .hrt-tile .ht-s {
+    margin-top: 3px;
+    font-size: 12.5px;
+    line-height: 1.4;
+    opacity: .82;
+}
+
+/* ── The segmented list ──────────────────────────────────────────────────── */
+
+.ob2 .list { display: flex; flex-direction: column; gap: 3px; }
+.ob2 .li {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    width: 100%;
+    min-height: 70px;
+    padding: 15px 16px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--sch);
+    color: var(--on);
+    font: inherit;
+    text-align: start;
+    transition:
+        border-radius .45s cubic-bezier(.3, 1.8, .5, 1),
+        transform .35s cubic-bezier(.3, 1.7, .5, 1),
+        background .2s;
+}
+.ob2 .list > .li:first-child { border-radius: 26px 26px 8px 8px; }
+.ob2 .list > .li:last-child { border-radius: 8px 8px 26px 26px; }
+.ob2 .list > .li:only-child { border-radius: 26px; }
+.ob2 .li.is-static { cursor: default; }
+.ob2 .ic {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border-radius: 22px;
+    background: var(--secc);
+    color: var(--onsecc);
+}
+.ob2 .ic.p { background: var(--pric); color: var(--onpric); }
+.ob2 .ic.am { background: var(--terc); color: var(--onterc); }
+.ob2 .ic.ok { background: var(--okc); color: var(--ok); }
+.ob2 .tx { flex: 1; min-width: 0; }
+/* A row is a <button> or an <a>, both of which may only hold phrasing content,
+   so the two text lines are spans that are told to behave like blocks. */
+.ob2 .t,
+.ob2 .s,
+.ob2 .ht-t,
+.ob2 .ht-s { display: block; }
+.ob2 .t { font-size: 14.5px; font-weight: 700; line-height: 1.35; color: var(--on); }
+.ob2 .s { margin-top: 3px; font-size: 12px; line-height: 1.42; color: var(--var); }
+
+/* The APK row is an anchor — it downloads, it does not navigate. */
+.ob2 a.li { color: var(--on); text-decoration: none; }
+/* A row that only states something, or a control disabled on a replay. */
+.ob2 .li[disabled],
+.ob2 .li[aria-disabled="true"] { cursor: default; }
+.ob2 .step-btn[disabled],
+.ob2 .preset-pill[disabled] { opacity: .55; cursor: default; }
+.ob2 .chev { flex-shrink: 0; color: var(--var); }
+
+.ob2 .day-badge {
+    flex-shrink: 0;
+    padding: 5px 12px;
+    border-radius: 99px;
+    background: var(--okc);
+    color: var(--ok);
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+    transition: opacity .25s, transform .3s cubic-bezier(.3, 1.8, .5, 1);
+}
+.ob2 .day-badge.hide {
+    opacity: 0;
+    transform: scale(.8);
+    pointer-events: none;
+}
+
+/* ── Switch ──────────────────────────────────────────────────────────────── */
+
+.ob2 .sw {
+    position: relative;
+    width: 50px;
+    height: 30px;
+    flex-shrink: 0;
+    border: 2px solid var(--out);
+    border-radius: 15px;
+    background: var(--sc);
+    transition: .25s;
+}
+.ob2 .sw::after {
+    content: "";
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--out);
+    transition: .28s cubic-bezier(.3, 1.7, .5, 1);
+}
+.ob2 .sw.on { border-color: var(--pri); background: var(--pri); }
+.ob2 .sw.on::after {
+    top: 3px;
+    left: 23px;
+    width: 20px;
+    height: 20px;
+    background: var(--onpri);
+}
+
+/* ── Step 4: the weight tile ─────────────────────────────────────────────── */
+
+.ob2 .weight-hero {
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 10px;
+    padding: 20px 18px;
+    border-radius: 30px;
+    background: var(--pric);
+    color: var(--onpric);
+}
+.ob2 .wh-label { font-size: 13px; font-weight: 800; opacity: .9; }
+.ob2 .wh-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 10px 0 18px;
+}
+.ob2 .step-btn {
+    display: grid;
+    place-items: center;
+    width: 54px;
+    height: 54px;
+    flex-shrink: 0;
+    border: 0;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, .18);
+    color: currentColor;
+    font-size: 24px;
+    font-weight: 700;
+}
+:root:not(.dark) .ob2 .step-btn { background: rgba(0, 0, 0, .08); }
+.ob2 .wh-value { text-align: center; }
+.ob2 .wh-input {
+    width: 136px;
+    padding: 0 0 2px;
+    border: 0;
+    border-bottom: 2px dashed currentColor;
+    border-radius: 0;
+    background: none;
+    color: currentColor;
+    font: inherit;
+    font-size: 44px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -1.5px;
+    text-align: center;
+    outline: 0;
+    transition: transform .25s cubic-bezier(.3, 1.8, .5, 1);
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+.ob2 .wh-input::-webkit-inner-spin-button,
+.ob2 .wh-input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.ob2 .wh-unit { margin-left: 4px; font-size: 16px; font-weight: 800; }
+.ob2 .preset-row { display: flex; gap: 6px; }
+.ob2 .preset-pill {
+    flex: 1;
+    padding: 8px 6px;
+    border: 0;
+    border-radius: 14px;
+    background: rgba(0, 0, 0, .2);
+    color: currentColor;
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 700;
+    text-align: center;
+    transition:
+        border-radius .4s cubic-bezier(.3, 1.8, .5, 1),
+        transform .3s cubic-bezier(.3, 1.7, .5, 1),
+        background .2s, color .2s;
+}
+:root:not(.dark) .ob2 .preset-pill { background: rgba(255, 255, 255, .55); color: var(--onpric); }
+.ob2 .preset-pill.on {
+    border-radius: 99px;
+    background: var(--onpric);
+    color: var(--pric);
+    font-weight: 800;
+    transform: scale(1.04);
+}
+
+/* ── Step 8: the blessing ────────────────────────────────────────────────── */
+
+.ob2 .blessing-stage {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+    min-height: 230px;
+    padding: 28px 24px;
+    border-radius: 34px;
+    background: linear-gradient(145deg, var(--pric), var(--secc));
+    color: var(--onpric);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, .28);
+}
+.ob2 .blessing-cookie {
+    position: absolute;
+    right: -40px;
+    bottom: -44px;
+    width: 170px;
+    height: 170px;
+    opacity: .15;
+    pointer-events: none;
+}
+.ob2 .trans-flag-wrap {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    margin-bottom: 18px;
+}
+/* Stripes are drawn edge to edge inside the SVG with a 0.4-unit overlap and
+   `preserveAspectRatio="none"`, so scaling can never open a hairline between
+   two bands; the radius and the ring live on the element itself. */
+.ob2 .trans-flag {
+    display: block;
+    width: 54px;
+    height: 34px;
+    border-radius: 9px;
+    overflow: hidden;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .22), 0 0 0 1.5px rgba(255, 255, 255, .38);
+}
+.ob2 .blessing-quote {
+    position: relative;
+    z-index: 1;
+    font-size: 21px;
+    font-weight: 800;
+    line-height: 1.52;
+    letter-spacing: -.3px;
+}
+.ob2 .blessing-sub {
+    position: relative;
+    z-index: 1;
+    margin-top: 18px;
+    font-size: 12.5px;
+    font-weight: 600;
+    opacity: .85;
+}
+
+/* ── Bottom bar ──────────────────────────────────────────────────────────── */
+
+.ob2 .ob2-bot {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 10;
+    padding: 12px 20px 22px;
+    padding-bottom: calc(22px + max(env(safe-area-inset-bottom, 0px), var(--app-safe-bottom, 0px)));
+    background: linear-gradient(to top, var(--bg) 80%, transparent);
+}
+.ob2 .ob2-bot-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+}
+.ob2 .skip-btn {
+    height: 52px;
+    padding: 0 18px;
+    flex-shrink: 0;
+    border: 0;
+    border-radius: 26px;
+    background: var(--sch);
+    color: var(--var);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+}
+.ob2 .next-btn {
+    display: inline-flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 54px;
+    border: 0;
+    border-radius: 27px;
+    background: var(--pri);
+    color: var(--onpri);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 800;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, .28);
+}
+
+/* ── Snackbar ────────────────────────────────────────────────────────────── */
+
+.ob2 .ob2-snack {
+    position: absolute;
+    right: 20px;
+    bottom: 96px;
+    left: 20px;
+    z-index: 40;
+    padding: 12px 16px;
+    border-radius: 16px;
+    background: var(--on);
+    color: var(--bg);
+    font-size: 13px;
+    font-weight: 700;
+    opacity: 0;
+    transform: translateY(30px);
+    pointer-events: none;
+    /* `visibility` is part of the transition on purpose: it flips to hidden only
+       after the fade has had its .28s, and it is a hard gate — a transition that
+       never ran (hidden tab, suspended WebView) can leave `opacity` at its start
+       value, which is how an empty dark bar stayed on screen under the buttons. */
+    visibility: hidden;
+    transition: opacity .28s, transform .28s, visibility 0s .28s;
+}
+.ob2 .ob2-snack.on {
+    opacity: 1;
+    transform: none;
+    visibility: visible;
+    transition: opacity .28s, transform .28s, visibility 0s;
+}
+.ob2 .ob2-snack-inner { width: 100%; max-width: 440px; margin: 0 auto; }
+
+/* ── Wide viewports: the prototype's Pixel-tablet split ──────────────────── */
+
+@media (min-width: 900px) {
+    .ob2 .ob2-top { padding-left: 34px; padding-right: 34px; padding-top: calc(22px + max(env(safe-area-inset-top, 0px), var(--app-safe-top, 0px))); }
+    .ob2 .ob2-top-inner { max-width: 880px; }
+    .ob2 .ob2-scroll { padding: 12px 34px 112px; justify-content: center; }
+    .ob2 .ob2-split {
+        display: grid;
+        grid-template-columns: .88fr 1.18fr;
+        gap: 36px;
+        align-items: center;
+        max-width: 880px;
+    }
+    .ob2 .hero-pane { padding-right: 10px; }
+    .ob2 .morph-stage { width: 108px; height: 108px; margin-bottom: 20px; }
+    .ob2 .pixel-logo { width: 66px; height: 66px; }
+    .ob2 .ob-title { font-size: 32px; }
+    .ob2 .ob2-bot { padding-left: 34px; padding-right: 34px; padding-bottom: calc(26px + max(env(safe-area-inset-bottom, 0px), var(--app-safe-bottom, 0px))); }
+    .ob2 .ob2-bot-inner { max-width: 880px; }
+    .ob2 .ob2-snack { right: auto; left: 50%; width: 440px; transform: translate(-50%, 30px); }
+    .ob2 .ob2-snack.on { transform: translate(-50%, 0); }
+}

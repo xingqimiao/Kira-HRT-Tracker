@@ -23,7 +23,7 @@
  * and that file exists only to regenerate the packs. A directory listing cannot
  * go stale against the packs it is listing.
  */
-import { readdirSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 const langsDir = path.resolve(import.meta.dirname, '..', 'src', 'i18n', 'langs')
@@ -72,4 +72,48 @@ for (const row of rows) {
 const gaps = rows.filter((r) => r.lang !== BASE && (r.missing.length > 0 || r.unused.length > 0))
 console.log(`\n${rows.length} languages, ${gaps.length} with gaps, ${base.size} keys in ${BASE}`)
 
-if (strict && gaps.length > 0) process.exit(1)
+/**
+ * The other direction: keys the code asks for that no pack defines.
+ *
+ * A missing key is not a gap in a translation — `t()` returns the key itself, so the
+ * screen renders `core.del.action` where a button label should be. That is a broken
+ * page, not a wrong language, and every comparison above is blind to it: the key is
+ * in no pack at all, so there is nothing to compare.
+ *
+ * Only `t('literal')` calls whose key contains a dot are read. Template keys
+ * (``t(`theme.${theme}`)``) cannot be resolved statically and are counted, not judged.
+ */
+const srcRoot = path.resolve(import.meta.dirname, '..', 'src')
+const sourceFiles = []
+const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name)
+        if (entry.isDirectory()) walk(full)
+        else if (entry.name.endsWith('.tsx') || entry.name.endsWith('.ts')) sourceFiles.push(full)
+    }
+}
+walk(srcRoot)
+
+const keyPattern = /(?<![.\w$])t\(\s*['"]([A-Za-z0-9_.]+)['"]/g
+const templatePattern = /(?<![.\w$])t\(\s*`/g
+const asked = new Map()
+let dynamic = 0
+for (const file of sourceFiles) {
+    const text = readFileSync(file, 'utf8')
+    dynamic += (text.match(templatePattern) ?? []).length
+    for (const match of text.matchAll(keyPattern)) {
+        const key = match[1]
+        if (!key.includes('.')) continue
+        if (!asked.has(key)) asked.set(key, path.relative(srcRoot, file).split(path.sep).join('/'))
+    }
+}
+const absent = [...asked.keys()].filter((key) => !base.has(key)).sort()
+if (absent.length > 0) {
+    console.log(`\nkeys the code asks for that no pack defines (${absent.length}):`)
+    for (const key of absent) console.log(`    ${key}   (${asked.get(key)})`)
+} else {
+    console.log(`every key the code names exists in ${BASE}`)
+}
+console.log(`(${asked.size} literal keys checked, ${dynamic} template key(s) skipped)`)
+
+if (strict && (gaps.length > 0 || absent.length > 0)) process.exit(1)

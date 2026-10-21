@@ -1,181 +1,68 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import Icon from './Icon';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
-import DateTimePicker from './DateTimePicker';
-import { Route, Ester, ExtraKey, DoseEvent, SL_TIER_ORDER, SublingualTierParams, getBioavailabilityMultiplier, getToE2Factor, getDoseAdvisory, isAntiandrogen, isTestosteroneEster, isUnmodelledCompound, SPIRO_MG_MAX_PER_DAY, GEL_DEFAULT_PRODUCT_ID, GEL_COVERAGE_DEFAULT_INDEX, GEL_COAPPLICATION_DEFAULT_INDEX, type PkEngineId } from '../../logic';
-import { Save, Trash2, Info, Bookmark, BookmarkPlus, X, ChevronDown, Check, AlertTriangle, ExternalLink } from '../icons';
-import { DoseAdvisoryLine } from './DoseAdvisory';
-import { LOCALE_MAP } from '../utils/helpers';
-import { openExternalUrl } from '../utils/externalLinks';
-import InjectionFields from './dose_form/InjectionFields';
-import OralFields from './dose_form/OralFields';
-import SublingualFields from './dose_form/SublingualFields';
-import GelFields from './dose_form/GelFields';
-import PatchFields from './dose_form/PatchFields';
-import QuickDoseButtons, { QuickDose } from './dose_form/QuickDoseButtons';
-import { PillRail, FieldRow, LevelSegments, type PillItem } from './dose_form/FormControls';
-import { RouteGlyph, FieldIcon, compoundIcon } from './compoundIcons';
 import { useHRTMode } from '../contexts/HRTModeContext';
-import { usePresence } from '../hooks/usePresence';
+import {
+    DoseEvent,
+    Ester,
+    ExtraKey,
+    GEL_COAPPLICATION_DEFAULT_INDEX,
+    GEL_COAPPLICATION_OPTIONS,
+    GEL_COVERAGE_DEFAULT_INDEX,
+    GEL_COVERAGE_OPTIONS,
+    GEL_DEFAULT_PRODUCT_ID,
+    GEL_PRODUCT_OPTIONS,
+    GEL_SITE_ORDER,
+    Route,
+    SL_TIER_ORDER,
+    SublingualTierParams,
+    VehicleType,
+    getDoseAdvisory,
+    getToE2Factor,
+    isTestosteroneEster,
+    type PkEngineId,
+} from '../../logic';
+import { GEL_PRODUCTS_EVENT, readGelProducts, type GelProduct } from '../utils/gelProducts';
+import { activePatches } from '../utils/medPlan';
+import { LOCALE_MAP } from '../utils/helpers';
+import { Icon } from '../ui/SvgDefs';
+import { cookie } from '../ui/cookie';
+import type { QuickDose } from './dose_form/QuickDoseButtons';
+import {
+    CATEGORIES,
+    DRUGS,
+    categoriesOf,
+    categoryForEster,
+    drugShortName,
+    drugTitle,
+    drugsFor,
+    findDrug,
+    firstDrugOf,
+    matchDrug,
+    modeOf,
+    routesFor,
+    type CatId,
+    type DoseMode,
+    type DrugDef,
+} from './dose_form/catalog';
+import './dose_form/m3e-add-dose.css';
 
 export interface DoseTemplate {
     id: string;
     name: string;
+    /** Full capsule label. Older templates have no label and are recomputed. */
+    label?: string;
+    /** The UI drug this template was saved from, when known. */
+    drugId?: string;
+    /** Which panel mode owns the template. Legacy templates have no field. */
+    mode?: DoseMode;
     route: Route;
     ester: Ester;
     doseMG: number;
     extras: Partial<Record<ExtraKey, number>>;
     createdAt: number;
 }
-
-type DoseLevelKey = 'low' | 'medium' | 'high' | 'very_high' | 'above';
-
-/**
- * Does this compound have an estradiol-equivalent dose that is worth asking the
- * user for, at all?
- *
- * False for the anti-androgens — CPA included. `getToE2Factor` still returns a
- * molar ratio for CPA (the timeline prints it as an informational "E2 eq"), but it
- * is not a *dose of estradiol*, so the form does not offer the two-way input it
- * offers for EV: there is nothing to type into it that means anything. The rule is
- * the antiandrogen set, not `getToE2Factor(e) === 0`, precisely because CPA's
- * factor is non-zero and must stay that way.
- */
-const hasE2Equivalent = (e: Ester) => !isAntiandrogen(e);
-
-/**
- * The dose ceilings the *form* refuses, keyed by compound. `DOSE_MG_MAX` is the
- * per-value bound the importer applies; the anti-androgens are dosed in the
- * hundreds of mg, so E2's 10 g ceiling says nothing about them.
- *
- * CPA's 100 mg is its own ceiling and predates this change — a regular CPA dose is
- * 10–12.5 mg, so the old bound was already ~8× the real one.
- *
- * Bicalutamide's 50 mg is the top of the 25–50 mg/day range the wiki gives
- * (docs/monitoring-reference.md §3.2, W — 抗雄药物/比卡鲁胺 §使用方式与用量), which
- * is a usual-dose range rather than a stated maximum; it is used the same way as
- * spironolactone's, as the highest dose the form will accept in one record.
- */
-const DOSE_CEILING_MG: Partial<Record<Ester, number>> = {
-    [Ester.CPA]: 100,
-    [Ester.SPIRO]: SPIRO_MG_MAX_PER_DAY,
-    [Ester.BICAL]: 50,
-};
-
-/**
- * The dose a form must never put in the box on the user's behalf.
- *
- * Empty for the anti-androgens. E2-defaulting is a real convenience (a blank E2 box
- * pre-filled with 2 mg is what most people were going to type), but the
- * anti-androgens are taken across a range a person titrates within — 25–200 mg for
- * spironolactone and 25–50 mg for bicalutamide (docs/monitoring-reference.md §2.2,
- * §3.2) — so any single pre-filled value would look like the app's recommendation
- * and be saved unread. For them the honest default is "you tell me".
- */
-const DEFAULT_DOSE_MG: Partial<Record<Ester, string>> = {
-    [Ester.SPIRO]: '',
-    [Ester.BICAL]: '',
-};
-
-/**
- * What an empty `rawDose` box is seeded with, keyed on route then ester.
- *
- * Returns `undefined` rather than falling back to `'0'` where the compound has no
- * default: seeding a zero would leave a plausible-looking value in the box, which
- * is the same failure as seeding a wrong one.
- */
-const defaultDoseString = (r: Route, e: Ester): string | undefined => {
-    const explicit = DEFAULT_DOSE_MG[e];
-    if (explicit !== undefined) return explicit;
-    if (r === Route.sublingual) return '1';
-    if (r === Route.oral) return '2';
-    return undefined;
-};
-
-type DoseGuideConfig = {
-    unitKey: 'mg_day' | 'ug_day' | 'mg_week';
-    thresholds: [number, number, number, number];
-    requiresRate?: boolean;
-};
-
-const DOSE_GUIDE_CONFIG: Partial<Record<Route, DoseGuideConfig>> = {
-    [Route.oral]: { unitKey: 'mg_day', thresholds: [2, 4, 8, 12] },
-    [Route.sublingual]: { unitKey: 'mg_day', thresholds: [1, 2, 4, 6] },
-    [Route.patchApply]: { unitKey: 'ug_day', thresholds: [100, 200, 400, 600], requiresRate: true },
-    [Route.gel]: { unitKey: 'mg_day', thresholds: [1.5, 3, 6, 9] },
-};
-
-const LEVEL_BADGE_STYLES: Record<DoseLevelKey, string> = {
-    low: 'text-cos-success ',
-    medium: 'text-cos-accent ',
-    high: 'text-cos-warning ',
-    very_high: 'text-cos-error ',
-    above: 'text-cos-error '
-};
-
-const formatGuideNumber = (val: number) => {
-    if (Number.isInteger(val)) return val.toString();
-    const rounded = val < 1 ? val.toFixed(2) : val.toFixed(1);
-    return rounded.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
-};
-
-const SL_POINTS = SL_TIER_ORDER
-    .map((k, idx) => ({ idx, key: k, hold: SublingualTierParams[k].hold, theta: SublingualTierParams[k].theta }))
-    .sort((a, b) => a.hold - b.hold);
-
-const thetaFromHold = (holdMin: number): number => {
-    if (holdMin <= 0) return 0;
-    if (SL_POINTS.length === 0) return 0.11;
-    const h = Math.max(1, holdMin);
-    // Linear interpolation with endpoint extrapolation
-    for (let i = 0; i < SL_POINTS.length - 1; i++) {
-        const p1 = SL_POINTS[i];
-        const p2 = SL_POINTS[i + 1];
-        if (h >= p1.hold && h <= p2.hold) {
-            const t = (h - p1.hold) / (p2.hold - p1.hold || 1);
-            return Math.min(1, Math.max(0, p1.theta + (p2.theta - p1.theta) * t));
-        }
-    }
-    // Extrapolate below first or above last segment
-    if (h < SL_POINTS[0].hold) {
-        const p1 = SL_POINTS[0];
-        const p2 = SL_POINTS[1];
-        const slope = (p2.theta - p1.theta) / (p2.hold - p1.hold || 1);
-        return Math.min(1, Math.max(0, p1.theta + (h - p1.hold) * slope));
-    }
-    const pLast = SL_POINTS[SL_POINTS.length - 1];
-    const pPrev = SL_POINTS[SL_POINTS.length - 2];
-    const slope = (pLast.theta - pPrev.theta) / (pLast.hold - pPrev.hold || 1);
-    return Math.min(1, Math.max(0, pLast.theta + (h - pLast.hold) * slope));
-};
-
-const holdFromTheta = (thetaVal: number): number => {
-    if (SL_POINTS.length === 0) return 10;
-    const th = thetaVal;
-    for (let i = 0; i < SL_POINTS.length - 1; i++) {
-        const p1 = SL_POINTS[i];
-        const p2 = SL_POINTS[i + 1];
-        const minTh = Math.min(p1.theta, p2.theta);
-        const maxTh = Math.max(p1.theta, p2.theta);
-        if (th >= minTh && th <= maxTh) {
-            const t = (th - p1.theta) / (p2.theta - p1.theta || 1);
-            return p1.hold + (p2.hold - p1.hold) * t;
-        }
-    }
-    // Extrapolate
-    if (th < SL_POINTS[0].theta) {
-        const p1 = SL_POINTS[0];
-        const p2 = SL_POINTS[1];
-        const slope = (p2.hold - p1.hold) / (p2.theta - p1.theta || 1);
-        return Math.max(1, p1.hold + (th - p1.theta) * slope);
-    }
-    const pLast = SL_POINTS[SL_POINTS.length - 1];
-    const pPrev = SL_POINTS[SL_POINTS.length - 2];
-    const slope = (pLast.hold - pPrev.hold) / (pLast.theta - pPrev.theta || 1);
-    return Math.max(1, pLast.hold + (th - pLast.theta) * slope);
-};
 
 interface DoseFormProps {
     eventToEdit: DoseEvent | null;
@@ -185,1269 +72,1531 @@ interface DoseFormProps {
     templates: DoseTemplate[];
     onSaveTemplate: (template: DoseTemplate) => void;
     onDeleteTemplate: (id: string) => void;
-    isInline?: boolean;
     hideHeader?: boolean;
-    /**
-     * Render the submit as the panel's one big action — full width, green, and
-     * labelled "add" rather than "save". The overview's candle terminal uses this:
-     * its right pane is a "place the order" column (the dose being logged), so the
-     * submit is the green call-to-action, not a quiet confirm.
-     */
     accentSubmit?: boolean;
-    /**
-     * Hide the time field and log at "now". The overview's candle terminal uses
-     * this: its form is "place the dose you are taking", which is happening now —
-     * the time picker is a step with no purpose there. Times stay editable on the
-     * History page's forms, which is where a past dose is entered.
-     */
     hideTime?: boolean;
-    /**
-     * Hide the load-template control, the quick-dose buttons and the save-as-
-     * template button. The candle terminal's pane is a straight "record this
-     * dose" form; templates are a History-page affordance.
-     */
     hideTemplates?: boolean;
-    /**
-     * Treat `eventToEdit` as a *source to copy*, not a record to edit: the form is
-     * pre-filled from it, but saving adds a new dose (fresh id, time defaults to
-     * now) and no delete control appears. The overview's "record this again" sets
-     * this — the record it copies is a real one, so `events` cannot tell the two
-     * intentions apart on its own.
-     */
     addMode?: boolean;
     quickDoses?: QuickDose[];
     onAddQuickDose?: (dose: QuickDose) => void;
     onDeleteQuickDose?: (id: string) => void;
-    /** Existing doses, used only to show whether recent use is already running high. */
     events?: DoseEvent[];
-    /**
-     * The engine drawing the curve, so a field only one engine reads can be hidden.
-     *
-     * Not the stored preference: a transmasc account is always on the built-in engine
-     * whatever the setting says (see `chooseEngine`), so this is the engine actually in
-     * use. It defaults to the built-in one, which is both the default engine and the one
-     * whose form is the smaller.
-     */
     activeEngine?: PkEngineId;
 }
 
-const DoseForm: React.FC<DoseFormProps> = ({ eventToEdit, onSave, onCancel, onDelete, templates = [], onSaveTemplate, onDeleteTemplate, isInline = false, hideHeader = false, addMode = false, accentSubmit = false, hideTime = false, hideTemplates = false, quickDoses, onAddQuickDose, onDeleteQuickDose, events = [], activeEngine = 'builtin' }) => {
-    // A record that exists *and* is being edited — not one being copied into a new
-    // dose. `addMode` is the explicit signal for the copy case: an `eventToEdit`
-    // that is a real record looks identical to an edit otherwise (its id is in
-    // `events`), and keying off `events` alone showed the delete control and the
-    // edit title for what was meant to be a fresh entry.
-    const isEditingExisting = !!eventToEdit && !addMode;
+type PatchMode = 'rate' | 'total';
+
+const COOKIE_D = cookie(0, 0, 72, 9, 0.09).d;
+const WEEKDAYS_ZH = ['日', '一', '二', '三', '四', '五', '六'];
+
+const trimNumber = (value: number): string => {
+    if (!Number.isFinite(value)) return '0';
+    const fixed = value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+    return fixed === '' || fixed === '-' ? '0' : fixed;
+};
+
+const decimalsOf = (step: number): number => {
+    const text = String(step);
+    const dot = text.indexOf('.');
+    return dot < 0 ? 0 : text.length - dot - 1;
+};
+
+const roundToStep = (value: number, step: number): number => {
+    if (!Number.isFinite(value)) return 0;
+    const decimals = Math.max(decimalsOf(step), 3);
+    return Number(value.toFixed(decimals));
+};
+
+const sameDay = (a: Date, b: Date): boolean =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+const thetaFromHold = (holdMin: number): number => {
+    const points = SL_TIER_ORDER.map(key => ({ hold: SublingualTierParams[key].hold, theta: SublingualTierParams[key].theta }));
+    const h = Math.max(1, holdMin);
+    for (let i = 0; i < points.length - 1; i += 1) {
+        const a = points[i];
+        const b = points[i + 1];
+        if (h >= a.hold && h <= b.hold) {
+            const t = (h - a.hold) / (b.hold - a.hold || 1);
+            return Math.min(1, Math.max(0, a.theta + (b.theta - a.theta) * t));
+        }
+    }
+    const first = points[0];
+    const last = points[points.length - 1];
+    if (h < first.hold) return Math.max(0, first.theta);
+    return Math.min(1, last.theta + (h - last.hold) * 0.014);
+};
+
+const holdFromTheta = (theta: number): number => {
+    const points = SL_TIER_ORDER.map(key => ({ hold: SublingualTierParams[key].hold, theta: SublingualTierParams[key].theta }));
+    for (let i = 0; i < points.length - 1; i += 1) {
+        const a = points[i];
+        const b = points[i + 1];
+        const min = Math.min(a.theta, b.theta);
+        const max = Math.max(a.theta, b.theta);
+        if (theta >= min && theta <= max) {
+            const t = (theta - a.theta) / (b.theta - a.theta || 1);
+            return Math.max(1, Math.min(60, a.hold + (b.hold - a.hold) * t));
+        }
+    }
+    const last = points[points.length - 1];
+    return Math.max(1, Math.min(60, last.hold + (theta - last.theta) / 0.014));
+};
+
+/**
+ * The add/edit dose panel.
+ *
+ * Geometry and motion come from docs/m3e-add-dose-prototype.html. The catalogue
+ * lives in `catalog.ts`, and every value written back is still a `DoseEvent`:
+ * the panel is a recorder, not a second data model.
+ *
+ * Two things the prototype does not show but the app must keep: editing an
+ * existing record (prefill + delete), and the safety advisory / injection guide.
+ * They are rendered as ordinary `.li` rows so the segmented list's first/last
+ * radii stay intact.
+ */
+const DoseForm: React.FC<DoseFormProps> = ({
+    eventToEdit,
+    onSave,
+    onCancel,
+    onDelete,
+    templates,
+    onSaveTemplate,
+    onDeleteTemplate,
+    hideHeader = false,
+    accentSubmit = false,
+    hideTime = false,
+    hideTemplates = false,
+    addMode = false,
+    quickDoses,
+    onAddQuickDose,
+    onDeleteQuickDose,
+    events = [],
+    activeEngine = 'builtin',
+}) => {
     const { t, lang } = useTranslation();
     const { showDialog } = useDialog();
-    const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
-    const isInitializingRef = useRef(false);
-    const [showTemplateMenu, setShowTemplateMenu] = useState(false);
-    // Held mounted through its close so the `m3-menu` exit can play — the menu
-    // otherwise vanished on the same frame the flag flipped.
-    const { mounted: templateMenuMounted, state: templateMenuState } = usePresence(showTemplateMenu, 150);
-    const [showSaveTemplateInput, setShowSaveTemplateInput] = useState(false);
-    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-    const [templateToDelete, setTemplateToDelete] = useState<string | null>(null);
-    const [templateName, setTemplateName] = useState('');
-
-    // Form State
     const { isTransmasc } = useHRTMode();
-    /**
-     * The moment the fresh add defaults to, as a local `YYYY-MM-DDTHH:mm`.
-     *
-     * Used by both the initialisers below and the mount effect, so a fresh form
-     * opens already on "now" rather than on an empty field that fills in a beat
-     * later — which is what the initialisers used to disagree with the effect
-     * about, along with the route and the patch mode.
-     */
-    const nowLocal = () => {
-        const now = new Date();
-        return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    };
-    const editLocal = (timeH: number) => {
-        const d = new Date(timeH * 3600000);
-        return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    };
-    const [dateStr, setDateStr] = useState(() =>
-        eventToEdit && !addMode ? editLocal(eventToEdit.timeH) : nowLocal()
-    );
-    // Fresh add opens on the same (route, ester) the mount effect seeds, so the
-    // form does not repaint out of the injection guide and into another route's
-    // fields on its first frame — the sub-second flash of warnings that was
-    // really just the wrong route for one paint.
-    const [route, setRoute] = useState<Route>(() => eventToEdit?.route ?? (isTransmasc ? Route.injection : Route.sublingual));
-    const [ester, setEster] = useState<Ester>(() => eventToEdit?.ester ?? (isTransmasc ? Ester.TC : Ester.EV));
+    const mode: DoseMode = modeOf(isTransmasc);
+    const locale = LOCALE_MAP[lang] || 'en-US';
+    const isEditingExisting = !!eventToEdit && !addMode;
+    const effectiveEngine: PkEngineId = mode === 'ftm' ? 'builtin' : activeEngine;
 
-    const [rawDose, setRawDose] = useState(() => eventToEdit ? eventToEdit.doseMG.toFixed(3) : "");
-    const [e2Dose, setE2Dose] = useState(() => {
-        if (eventToEdit && hasE2Equivalent(eventToEdit.ester)) {
-            const factor = getToE2Factor(eventToEdit.ester);
-            return (eventToEdit.doseMG * factor).toFixed(3);
+    // ——— Initial state, derived from the record being edited (if any) ———
+    const initialDrug = useMemo<DrugDef>(() => {
+        if (eventToEdit) {
+            return matchDrug(mode, eventToEdit.route, eventToEdit.ester) ?? DRUGS[mode][0];
         }
-        return "";
-    });
+        return firstDrugOf(mode, 'hrt', routesFor(mode, 'hrt')[0].id);
+        // Only the first mount is described here; a later record is hydrated by the effect.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
-    const [patchMode, setPatchMode] = useState<"dose" | "rate">(() => {
-        // A fresh patch form has no dose to show until one is typed, so it opens
-        // on the rate box the effect also picks.
-        if (!eventToEdit) return "rate";
-        if (eventToEdit.route === Route.patchApply && eventToEdit.extras[ExtraKey.releaseRateUGPerDay]) {
-            return "rate";
-        }
-        return "dose";
-    });
-    const [patchRate, setPatchRate] = useState(() => {
-        if (eventToEdit?.route === Route.patchApply && eventToEdit.extras[ExtraKey.releaseRateUGPerDay]) {
-            return eventToEdit.extras[ExtraKey.releaseRateUGPerDay].toString();
-        }
-        return "";
-    });
-    const [patchWearDays, setPatchWearDays] = useState(() => {
-        const wearH = eventToEdit?.extras?.[ExtraKey.patchWearH];
-        if (eventToEdit?.route === Route.patchApply && typeof wearH === 'number' && Number.isFinite(wearH) && wearH > 0) {
-            return (wearH / 24).toString();
-        }
-        return "";
-    });
+    const initialPatchMode: PatchMode = (() => {
+        if (eventToEdit?.route !== Route.patchApply) return 'rate';
+        const rate = eventToEdit.extras?.[ExtraKey.releaseRateUGPerDay];
+        return typeof rate === 'number' ? 'rate' : 'total';
+    })();
 
-    // The injection guide is reference material, collapsed until asked for — see the
-    // note where it renders. Deliberately not persisted: a reader who wants it open
-    // once does not want it open on every later dose.
-    const [showInjectionGuide, setShowInjectionGuide] = useState(false);
+    const initialDose = (() => {
+        if (!eventToEdit) return initialDrug.def;
+        if (eventToEdit.route === Route.patchApply && initialPatchMode === 'rate') {
+            return eventToEdit.extras?.[ExtraKey.releaseRateUGPerDay] ?? initialDrug.def;
+        }
+        return eventToEdit.doseMG;
+    })();
+
+    const initialTime = eventToEdit ? new Date(eventToEdit.timeH * 3600_000) : new Date();
+
+    const [cat, setCat] = useState<CatId>(initialDrug.cat);
+    const [route, setRoute] = useState<Route>(initialDrug.route);
+    const [drugId, setDrugId] = useState<string>(initialDrug.id);
+    const [patchMode, setPatchMode] = useState<PatchMode>(initialPatchMode);
+    const [dose, setDose] = useState<number>(initialDose);
+    const [doseText, setDoseText] = useState<string>(() => trimNumber(initialDose));
+
+    const [time, setTime] = useState<Date>(initialTime);
+    const [timeIsNow, setTimeIsNow] = useState<boolean>(!eventToEdit || addMode);
+    const [showTimePage, setShowTimePage] = useState(false);
+    const [draftTime, setDraftTime] = useState<Date>(initialTime);
+    const [calYear, setCalYear] = useState(initialTime.getFullYear());
+    const [calMonth, setCalMonth] = useState(initialTime.getMonth() + 1);
+
     const [gelSite, setGelSite] = useState(() => eventToEdit?.extras?.[ExtraKey.gelSite] ?? 0);
-    // Gel detail beyond site and dose: written for both engines, read only by the
-    // Transmtf one. See the note on ExtraKey — a record must not mean different
-    // things depending on a setting that can change later.
     const [gelProductId, setGelProductId] = useState(() => eventToEdit?.extras?.[ExtraKey.gelProductId] ?? GEL_DEFAULT_PRODUCT_ID);
     const [gelCoverage, setGelCoverage] = useState(() => eventToEdit?.extras?.[ExtraKey.gelCoverage] ?? GEL_COVERAGE_DEFAULT_INDEX);
     const [gelCoApplied, setGelCoApplied] = useState(() => eventToEdit?.extras?.[ExtraKey.gelCoApplied] ?? GEL_COAPPLICATION_DEFAULT_INDEX);
     const [gelWashHours, setGelWashHours] = useState(() => {
         const h = eventToEdit?.extras?.[ExtraKey.gelWashAfterH];
-        return typeof h === 'number' && h > 0 ? String(h) : '';
+        return typeof h === 'number' && h > 0 ? Math.round(h) : 0;
     });
 
-    const [slTier, setSlTier] = useState(() => eventToEdit?.extras?.[ExtraKey.sublingualTier] ?? 2);
+    const [slTier, setSlTier] = useState(() => {
+        const idx = eventToEdit?.extras?.[ExtraKey.sublingualTier];
+        return typeof idx === 'number' ? idx : 2;
+    });
     const [useCustomTheta, setUseCustomTheta] = useState(() => eventToEdit?.extras?.[ExtraKey.sublingualTheta] !== undefined);
-    const [customHoldInput, setCustomHoldInput] = useState<string>(() => {
-        const thetaVal = eventToEdit?.extras?.[ExtraKey.sublingualTheta];
-        if (typeof thetaVal === 'number' && Number.isFinite(thetaVal)) {
-            return Math.max(1, Math.min(60, holdFromTheta(thetaVal))).toString();
-        }
-        return "10";
-    });
-    const [customHoldValue, setCustomHoldValue] = useState<number>(() => {
-        const thetaVal = eventToEdit?.extras?.[ExtraKey.sublingualTheta];
-        if (typeof thetaVal === 'number' && Number.isFinite(thetaVal)) {
-            return Math.max(1, Math.min(60, holdFromTheta(thetaVal)));
-        }
-        return 10;
-    });
-    const [lastEditedField, setLastEditedField] = useState<'raw' | 'bio'>(() => {
-        if (eventToEdit) {
-            return hasE2Equivalent(eventToEdit.ester) && eventToEdit.ester === Ester.E2 ? 'bio' : 'raw';
-        }
-        return 'bio';
+    const [customHold, setCustomHold] = useState(() => {
+        const theta = eventToEdit?.extras?.[ExtraKey.sublingualTheta];
+        return typeof theta === 'number' ? Math.round(holdFromTheta(theta)) : 10;
     });
 
-    const slExtras = useMemo(() => {
-        if (route !== Route.sublingual) return null;
-        if (useCustomTheta) {
-            const theta = thetaFromHold(customHoldValue);
-            return { [ExtraKey.sublingualTheta]: theta };
-        }
-        return { [ExtraKey.sublingualTier]: slTier };
-    }, [route, useCustomTheta, customHoldValue, slTier]);
+    const [patchWearDays, setPatchWearDays] = useState(() => {
+        const wearH = eventToEdit?.extras?.[ExtraKey.patchWearH];
+        return typeof wearH === 'number' && wearH > 0 ? trimNumber(wearH / 24) : '';
+    });
+    const [selectedPatchId, setSelectedPatchId] = useState<string | null>(null);
+    // EC injection vehicle: oil (default) or aqueous microcrystal. Persisted in
+    // `extras[ExtraKey.vehicle]`; the PK engine reads it to pick the peak day.
+    const [vehicle, setVehicle] = useState<VehicleType>(() =>
+        eventToEdit?.extras?.[ExtraKey.vehicle] === VehicleType.aqueous ? VehicleType.aqueous : VehicleType.oil);
 
-    const bioMultiplier = useMemo(() => {
-        const extrasForCalc: Record<string, unknown> = slExtras ?? {};
-        if (route === Route.gel) {
-            extrasForCalc[ExtraKey.gelSite] = gelSite;
-        }
-        return getBioavailabilityMultiplier(route, ester, extrasForCalc);
-    }, [route, ester, slExtras, gelSite]);
+    const [animTick, setAnimTick] = useState(0);
+    const [popKey, setPopKey] = useState(0);
+    const [cookieDeg, setCookieDeg] = useState(0);
+    const [activeTplId, setActiveTplId] = useState<string | null>(null);
+    const [showTplSheet, setShowTplSheet] = useState(false);
+    const [templateName, setTemplateName] = useState('');
+    const [snack, setSnack] = useState('');
+    const [showInjectionGuide, setShowInjectionGuide] = useState(false);
+    const [customGels, setCustomGels] = useState<GelProduct[]>(() => readGelProducts());
 
-    useEffect(() => {
-        isInitializingRef.current = true;
-        if (eventToEdit) {
-            const d = new Date(eventToEdit.timeH * 3600000);
-            const iso = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
-            // In add mode the drug/route/amount are copied but the time is "now" —
-            // recording this dose again means taking it now, not re-logging it at
-            // the old moment.
-            setDateStr(addMode ? nowLocal() : iso);
-            setRoute(eventToEdit.route);
-            setEster(eventToEdit.ester);
-
-            if (eventToEdit.route === Route.patchApply && eventToEdit.extras[ExtraKey.releaseRateUGPerDay]) {
-                setPatchMode("rate");
-                setPatchRate(eventToEdit.extras[ExtraKey.releaseRateUGPerDay].toString());
-                setE2Dose("");
-                setRawDose("");
-            } else {
-                setPatchMode("dose");
-                const factor = getToE2Factor(eventToEdit.ester);
-                const e2Val = eventToEdit.doseMG * factor;
-                // An unmodelled compound gets an empty equivalent, not `0.000`: the
-                // field is hidden for it, and a stale "0.000" would still be what
-                // handleSave reads back if the user switches ester without retyping.
-                setE2Dose(hasE2Equivalent(eventToEdit.ester) ? e2Val.toFixed(3) : "");
-                setRawDose(eventToEdit.doseMG.toFixed(3));
-                // The raw box is the source of truth whenever there is no usable
-                // equivalent to round-trip through.
-                setLastEditedField(hasE2Equivalent(eventToEdit.ester) && eventToEdit.ester === Ester.E2 ? 'bio' : 'raw');
-            }
-
-            if (eventToEdit.route === Route.sublingual) {
-                if (eventToEdit.extras[ExtraKey.sublingualTier] !== undefined) {
-                    setSlTier(eventToEdit.extras[ExtraKey.sublingualTier]);
-                    setUseCustomTheta(false);
-                    const tierKey = SL_TIER_ORDER[eventToEdit.extras[ExtraKey.sublingualTier]] || 'standard';
-                    const hold = SublingualTierParams[tierKey]?.hold ?? 10;
-                    setCustomHoldValue(hold);
-                    setCustomHoldInput(hold.toString());
-                } else if (eventToEdit.extras[ExtraKey.sublingualTheta] !== undefined) {
-                    const thetaVal = eventToEdit.extras[ExtraKey.sublingualTheta];
-                    setUseCustomTheta(true);
-                    const safeTheta = (typeof thetaVal === 'number' && Number.isFinite(thetaVal)) ? thetaVal : 0.11;
-                    const hold = Math.max(1, Math.min(60, holdFromTheta(safeTheta)));
-                    setCustomHoldValue(hold);
-                    setCustomHoldInput(hold.toString());
-                } else {
-                    setUseCustomTheta(false);
-                    setCustomHoldValue(10);
-                    setCustomHoldInput("10");
-                }
-            } else {
-                setUseCustomTheta(false);
-                setCustomHoldValue(10);
-                setCustomHoldInput("10");
-            }
-
-            if (eventToEdit.route === Route.gel) {
-                setGelSite(eventToEdit.extras[ExtraKey.gelSite] ?? 0);
-                setGelProductId(eventToEdit.extras[ExtraKey.gelProductId] ?? GEL_DEFAULT_PRODUCT_ID);
-                setGelCoverage(eventToEdit.extras[ExtraKey.gelCoverage] ?? GEL_COVERAGE_DEFAULT_INDEX);
-                setGelCoApplied(eventToEdit.extras[ExtraKey.gelCoApplied] ?? GEL_COAPPLICATION_DEFAULT_INDEX);
-                const wh = eventToEdit.extras[ExtraKey.gelWashAfterH];
-                setGelWashHours(typeof wh === 'number' && wh > 0 ? String(wh) : '');
-            } else {
-                setGelSite(0);
-            setGelProductId(GEL_DEFAULT_PRODUCT_ID);
-            setGelCoverage(GEL_COVERAGE_DEFAULT_INDEX);
-            setGelCoApplied(GEL_COAPPLICATION_DEFAULT_INDEX);
-            setGelWashHours('');
-                setGelProductId(GEL_DEFAULT_PRODUCT_ID);
-                setGelCoverage(GEL_COVERAGE_DEFAULT_INDEX);
-                setGelCoApplied(GEL_COAPPLICATION_DEFAULT_INDEX);
-                setGelWashHours('');
-            }
-
-            const wearH = eventToEdit.extras[ExtraKey.patchWearH];
-            if (eventToEdit.route === Route.patchApply && typeof wearH === 'number' && Number.isFinite(wearH) && wearH > 0) {
-                setPatchWearDays((wearH / 24).toString());
-            } else {
-                setPatchWearDays("");
-            }
-
-        } else {
-            const now = new Date();
-            const iso = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
-            setDateStr(iso);
-            const initialRoute = isTransmasc ? Route.injection : Route.sublingual;
-            const initialEster = isTransmasc ? Ester.TC : Ester.EV;
-            setRoute(initialRoute);
-            setEster(initialEster);
-            // Empty, never a number: the user has not entered a dose yet, and a
-            // pre-filled one is indistinguishable from a typed one at save time.
-            setRawDose("");
-            setE2Dose("");
-            setPatchMode("rate");
-            setPatchRate("");
-            setPatchWearDays("");
-            setSlTier(2);
-            setGelSite(0);
-            setUseCustomTheta(false);
-            setCustomHoldValue(10);
-            setCustomHoldInput("10");
-            setLastEditedField('bio');
-        }
-
-        // Use timeout to allow state to settle
-        const timer = setTimeout(() => {
-            isInitializingRef.current = false;
-        }, 0);
-        return () => clearTimeout(timer);
-    }, [eventToEdit]); // Removed isOpen dependency as component mounts only when needed
-
-    const handleRawChange = (val: string) => {
-        setRawDose(val);
-        setLastEditedField('raw');
-        // No estradiol equivalent exists for an anti-androgen, and `getToE2Factor`
-        // returns 0 for it — so `v * 0` would print "0.000 mg" beside a 100 mg
-        // spironolactone dose. The field is hidden for these compounds; this keeps
-        // the state behind it empty too, so saving can never fall back to it.
-        if (!hasE2Equivalent(ester)) {
-            setE2Dose("");
-            return;
-        }
-        const v = parseFloat(val);
-        if (!isNaN(v)) {
-            const factor = getToE2Factor(ester) || 1;
-            const e2Equivalent = v * factor;
-            setE2Dose(e2Equivalent.toFixed(3));
-        } else {
-            setE2Dose("");
-        }
-    };
-
-    const handleE2Change = (val: string) => {
-        setE2Dose(val);
-        setLastEditedField('bio');
-        // Unreachable through the UI (the equivalent input is hidden for these
-        // compounds) but not through the code path: `v / 0` is Infinity, which
-        // `Number.isFinite` at save time would then reject with "enter a positive
-        // dose" while the user stares at a filled-in box.
-        if (!hasE2Equivalent(ester)) {
-            setRawDose(val);
-            return;
-        }
-        const v = parseFloat(val);
-        if (!isNaN(v)) {
-            const factor = getToE2Factor(ester) || 1;
-            if (ester === Ester.E2) {
-                setRawDose(v.toFixed(3));
-            } else {
-                setRawDose((v / factor).toFixed(3));
-            }
-        } else {
-            setRawDose("");
-        }
-    };
-
-    useEffect(() => {
-        if (isInitializingRef.current || lastEditedField !== 'raw' || !rawDose) return;
-        handleRawChange(rawDose);
-    }, [bioMultiplier, ester, route]);
-
-    useEffect(() => {
-        if (isInitializingRef.current || lastEditedField !== 'bio' || !e2Dose) return;
-        handleE2Change(e2Dose);
-    }, [bioMultiplier, ester, route]);
-
-    // The last (route, ester) pair the form seeded, and the exact string it wrote.
-    // The value is kept so a later switch can tell "still holds what we seeded" from
-    // "the user typed something" — `lastEditedField` cannot, because seeding goes
-    // through the same handler a keystroke does and marks itself 'raw' either way.
-    const seededForRef = useRef<{ key: string; value: string } | null>(null);
-
-    /**
-     * Carries the dose box to the value the newly-picked (route, ester) is taken at.
-     *
-     * Three cases, and the third is the one that bit:
-     *
-     *   1. The box is empty and the compound has a default → fill it in. A blank
-     *      estradiol box pre-filled with 2 mg is what most people were going to type.
-     *   2. The box holds something the user typed → leave it alone.
-     *   3. The compound has *no* default (spironolactone) → clear the box.
-     *
-     * Case 3 exists because `rawDose` survives an ester change. Picking EV seeds 1.5,
-     * then picking spironolactone would otherwise leave that 1.5 sitting in the box —
-     * a real-looking dose, an order of magnitude below anything anyone takes, that the
-     * user can save without touching. A blank box with a "0.0" placeholder reads as
-     * "not yet entered"; a pre-filled number inside spironolactone's range would read
-     * as advice, and this app does not give dosing advice it cannot model.
-     *
-     * Whether the box may be overwritten is decided by comparing it to the string this
-     * effect last wrote. If they match (or it is empty) nothing has been typed since,
-     * and the box is ours to set; otherwise the user is mid-edit and we leave it alone.
-     */
-    useEffect(() => {
-        if (isInitializingRef.current) return;
-        const key = `${route}:${ester}`;
-        if (seededForRef.current?.key === key) return;
-        const untouched = rawDose === '' || rawDose === seededForRef.current?.value;
-        const seeded = defaultDoseString(route, ester) ?? '';
-        if (!untouched) {
-            // The user typed a dose; remember the pair so we stop reconsidering it, but
-            // do not touch what they wrote.
-            seededForRef.current = { key, value: seededForRef.current?.value ?? '' };
-            return;
-        }
-        seededForRef.current = { key, value: seeded };
-        if (rawDose !== seeded) handleRawChange(seeded);
-    }, [route, ester]);
-
-    const [isSaving, setIsSaving] = useState(false);
+    const snackTimer = useRef<number | null>(null);
     const isSavingRef = useRef(false);
+    const stripRef = useRef<HTMLDivElement>(null);
+    const dragRef = useRef({ down: false, startX: 0, scrollLeft: 0 });
+    const longPressTimer = useRef<number | null>(null);
+    const suppressClick = useRef(false);
 
-    const handleSaveAsTemplate = () => {
-        if (!templateName.trim()) {
-            showDialog('alert', t('template.name_required'));
-            return;
+    const drug = findDrug(mode, drugId) ?? firstDrugOf(mode, cat, route);
+    const catDef = CATEGORIES[mode].find(c => c.id === cat) ?? CATEGORIES[mode][0];
+    const categoryRoutes = routesFor(mode, cat);
+    const routeDrugs = drugsFor(mode, cat).filter(d => d.route === route);
+    const isGnrh = !!drug.isGnrh;
+    const isNoDose = isGnrh || !!drug.noDose;
+
+    const toast = useCallback((message: string) => {
+        setSnack(message);
+        if (snackTimer.current) window.clearTimeout(snackTimer.current);
+        snackTimer.current = window.setTimeout(() => setSnack(''), 2400);
+    }, []);
+
+    useEffect(() => () => {
+        if (snackTimer.current) window.clearTimeout(snackTimer.current);
+        if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+    }, []);
+
+    // Gel catalogue can change while the panel is open (another tab, sync).
+    useEffect(() => {
+        const refresh = () => setCustomGels(readGelProducts());
+        window.addEventListener(GEL_PRODUCTS_EVENT, refresh);
+        return () => window.removeEventListener(GEL_PRODUCTS_EVENT, refresh);
+    }, []);
+
+    useEffect(() => {
+        setCookieDeg(degrees => degrees + 40);
+    }, [drugId]);
+
+    const currentStep = (): number => {
+        if (route === Route.patchApply) return patchMode === 'rate' ? 25 : 0.5;
+        return drug.step || 1;
+    };
+    const currentPresets = (): number[] => {
+        if (route === Route.patchApply) return patchMode === 'rate' ? [50, 100, 150, 200] : [1.5, 3, 5, 6];
+        return drug.presets;
+    };
+    const currentUnit = (): string => {
+        if (route === Route.patchApply) return patchMode === 'rate' ? t('m3e.unit.patch_rate') : 'mg';
+        return 'mg';
+    };
+
+    const clampWith = useCallback((value: number, step: number, max?: number): number => {
+        const ceiling = max ?? Number.POSITIVE_INFINITY;
+        if (!Number.isFinite(value)) return step;
+        return Math.min(ceiling, Math.max(step, roundToStep(value, step)));
+    }, []);
+
+    /** Write a dose using the step/max of the *next* selection, not the old one. */
+    const setDoseValue = useCallback((value: number, step: number, max?: number, pop = false) => {
+        const next = clampWith(value, step, max);
+        setDose(next);
+        setDoseText(trimNumber(next));
+        setActiveTplId(null);
+        if (pop) setPopKey(k => k + 1);
+    }, [clampWith]);
+
+    const applyDose = useCallback((value: number, pop = false) => {
+        const step = route === Route.patchApply ? (patchMode === 'rate' ? 25 : 0.5) : (drug.step || 1);
+        setDoseValue(value, step, drug.max, pop);
+    }, [drug.max, drug.step, patchMode, route, setDoseValue]);
+
+    const stepFor = (d: DrugDef, nextRoute: Route, pm: PatchMode): number => {
+        if (nextRoute === Route.patchApply) return pm === 'rate' ? 25 : 0.5;
+        return d.step || 1;
+    };
+
+    const defaultDoseFor = (d: DrugDef, pm: PatchMode): number => {
+        if (d.isGnrh || d.noDose) return 0;
+        if (d.route === Route.patchApply) return pm === 'rate' ? 100 : 3;
+        return d.def;
+    };
+
+    const selectCategory = (nextCat: CatId) => {
+        const nextRoutes = routesFor(mode, nextCat);
+        const nextRoute = nextRoutes[0].id;
+        const nextDrug = firstDrugOf(mode, nextCat, nextRoute);
+        setCat(nextCat);
+        setRoute(nextRoute);
+        setDrugId(nextDrug.id);
+        setPatchMode('rate');
+        setDoseValue(defaultDoseFor(nextDrug, 'rate'), stepFor(nextDrug, nextRoute, 'rate'), nextDrug.max, true);
+        setAnimTick(k => k + 1);
+    };
+
+    const selectRoute = (nextRoute: Route) => {
+        const nextDrug = firstDrugOf(mode, cat, nextRoute);
+        const pm: PatchMode = 'rate';
+        setRoute(nextRoute);
+        setDrugId(nextDrug.id);
+        if (nextRoute === Route.patchApply) setPatchMode('rate');
+        setDoseValue(defaultDoseFor(nextDrug, pm), stepFor(nextDrug, nextRoute, pm), nextDrug.max, true);
+        setAnimTick(k => k + 1);
+    };
+
+    const selectDrug = (nextDrug: DrugDef) => {
+        const pm: PatchMode = nextDrug.route === Route.patchApply ? patchMode : 'rate';
+        setDrugId(nextDrug.id);
+        setDoseValue(defaultDoseFor(nextDrug, pm), stepFor(nextDrug, nextDrug.route, pm), nextDrug.max, true);
+        setAnimTick(k => k + 1);
+    };
+
+    const selectPatchMode = (next: PatchMode) => {
+        setPatchMode(next);
+        const nextDose = next === 'rate' ? 100 : 3;
+        setDoseValue(nextDose, next === 'rate' ? 25 : 0.5, drug.max, true);
+        setAnimTick(k => k + 1);
+    };
+
+    const stepDose = (direction: number) => {
+        applyDose((dose || 0) + direction * currentStep(), true);
+    };
+
+    const handleDoseText = (raw: string) => {
+        if (!/^\d*[.,]?\d*$/.test(raw)) return;
+        const clean = raw.replace(',', '.');
+        setDoseText(clean);
+        setActiveTplId(null);
+        const parsed = parseFloat(clean);
+        if (Number.isFinite(parsed)) setDose(parsed);
+    };
+
+    const handleDoseBlur = () => {
+        if (isNoDose) return;
+        const parsed = parseFloat(doseText);
+        applyDose(Number.isFinite(parsed) ? parsed : currentStep());
+    };
+
+    // ——— Hydrate when the record being edited changes ———
+    const hydrate = useCallback((record: DoseEvent | null, asCopy: boolean) => {
+        const d = record
+            ? (matchDrug(mode, record.route, record.ester) ?? DRUGS[mode][0])
+            : firstDrugOf(mode, 'hrt', routesFor(mode, 'hrt')[0].id);
+        const pm: PatchMode = record?.route === Route.patchApply
+            ? (typeof record.extras?.[ExtraKey.releaseRateUGPerDay] === 'number' ? 'rate' : 'total')
+            : 'rate';
+        const value = record
+            ? (record.route === Route.patchApply && pm === 'rate'
+                ? (record.extras?.[ExtraKey.releaseRateUGPerDay] ?? 100)
+                : record.doseMG)
+            : defaultDoseFor(d, pm);
+
+        setCat(d.cat);
+        setRoute(d.route);
+        setDrugId(d.id);
+        setPatchMode(pm);
+        setDose(value);
+        setDoseText(trimNumber(value));
+        setTime(record ? new Date(record.timeH * 3600_000) : new Date());
+        setTimeIsNow(!record || asCopy);
+        setDraftTime(record ? new Date(record.timeH * 3600_000) : new Date());
+        setCalYear((record ? new Date(record.timeH * 3600_000) : new Date()).getFullYear());
+        setCalMonth((record ? new Date(record.timeH * 3600_000) : new Date()).getMonth() + 1);
+
+        setGelSite(record?.extras?.[ExtraKey.gelSite] ?? 0);
+        setGelProductId(record?.extras?.[ExtraKey.gelProductId] ?? GEL_DEFAULT_PRODUCT_ID);
+        setGelCoverage(record?.extras?.[ExtraKey.gelCoverage] ?? GEL_COVERAGE_DEFAULT_INDEX);
+        setGelCoApplied(record?.extras?.[ExtraKey.gelCoApplied] ?? GEL_COAPPLICATION_DEFAULT_INDEX);
+        const wash = record?.extras?.[ExtraKey.gelWashAfterH];
+        setGelWashHours(typeof wash === 'number' && wash > 0 ? Math.round(wash) : 0);
+
+        const tier = record?.extras?.[ExtraKey.sublingualTier];
+        setSlTier(typeof tier === 'number' ? tier : 2);
+        const theta = record?.extras?.[ExtraKey.sublingualTheta];
+        setUseCustomTheta(typeof theta === 'number');
+        setCustomHold(typeof theta === 'number' ? Math.round(holdFromTheta(theta)) : 10);
+
+        const wearH = record?.extras?.[ExtraKey.patchWearH];
+        setPatchWearDays(typeof wearH === 'number' && wearH > 0 ? trimNumber(wearH / 24) : '');
+        setVehicle(record?.extras?.[ExtraKey.vehicle] === VehicleType.aqueous ? VehicleType.aqueous : VehicleType.oil);
+        setSelectedPatchId(null);
+        setActiveTplId(null);
+        setShowTimePage(false);
+        setShowTplSheet(false);
+        setTemplateName('');
+        setAnimTick(k => k + 1);
+        setPopKey(k => k + 1);
+    }, [mode]);
+
+    // First render already holds the right values; this catches a different row
+    // being opened while the History page keeps the form mounted.
+    const hydratedFor = useRef<string | null>(null);
+    useEffect(() => {
+        const key = `${mode}:${eventToEdit?.id ?? 'new'}:${addMode ? 'copy' : 'edit'}`;
+        if (hydratedFor.current === key) return;
+        hydratedFor.current = key;
+        hydrate(eventToEdit, addMode);
+    }, [addMode, eventToEdit, hydrate, mode]);
+
+    // ——— Dates ———
+    const formatDateTime = useCallback((date: Date): string => {
+        try {
+            return new Intl.DateTimeFormat(locale, {
+                year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+            }).format(date);
+        } catch {
+            return date.toLocaleString();
         }
+    }, [locale]);
 
-        const template: DoseTemplate = {
-            id: uuidv4(),
-            name: templateName.trim(),
-            route,
-            ester,
-            doseMG: parseFloat(rawDose) || 0,
-            extras: {},
-            createdAt: Date.now()
-        };
+    const weekdays = useMemo(() => {
+        if (lang === 'zh' || lang === 'zh-TW' || lang === 'yue') return WEEKDAYS_ZH;
+        try {
+            const fmt = new Intl.DateTimeFormat(locale, { weekday: 'narrow' });
+            const sunday = new Date(2024, 0, 7);
+            return Array.from({ length: 7 }, (_, i) => fmt.format(new Date(sunday.getTime() + i * 86_400_000)));
+        } catch {
+            return ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+        }
+    }, [lang, locale]);
 
-        if (route === Route.sublingual && slExtras) {
-            Object.assign(template.extras, slExtras);
+    const openTimePage = () => {
+        const next = timeIsNow ? new Date() : time;
+        setDraftTime(next);
+        setCalYear(next.getFullYear());
+        setCalMonth(next.getMonth() + 1);
+        // The template sheet sits above the page; leaving it open covered the
+        // time page's confirm button so only a pink strip was visible.
+        setShowTplSheet(false);
+        setShowTimePage(true);
+    };
+
+    const confirmTime = () => {
+        setTime(draftTime);
+        setTimeIsNow(false);
+        setShowTimePage(false);
+        setPopKey(k => k + 1);
+    };
+
+    const restoreNow = () => {
+        const now = new Date();
+        setTime(now);
+        setTimeIsNow(true);
+        setShowTimePage(false);
+        setPopKey(k => k + 1);
+    };
+
+    const changeMonth = (delta: number) => {
+        const next = new Date(calYear, calMonth - 1 + delta, 1);
+        setCalYear(next.getFullYear());
+        setCalMonth(next.getMonth() + 1);
+    };
+
+    const pickDay = (day: number) => {
+        const next = new Date(calYear, calMonth - 1, day, draftTime.getHours(), draftTime.getMinutes());
+        setDraftTime(next);
+    };
+
+    const stepClock = (kind: 'h' | 'm', delta: number) => {
+        const next = new Date(draftTime);
+        if (kind === 'h') next.setHours((next.getHours() + delta + 24) % 24);
+        else next.setMinutes((next.getMinutes() + delta + 60) % 60);
+        setDraftTime(next);
+    };
+
+    // ——— Templates ———
+    const modeTemplates = useMemo(() => {
+        const list = (templates ?? []).filter(tpl => {
+            if (!tpl || !tpl.ester) return false;
+            if (tpl.mode) return tpl.mode === mode;
+            // Templates written before the mode field existed fall back to the
+            // compound family, which was the only signal available then.
+            if (tpl.ester === Ester.GNRH) return true;
+            if (mode === 'ftm') {
+                return isTestosteroneEster(tpl.ester) || tpl.ester === Ester.MPA || tpl.ester === Ester.NET;
+            }
+            return !isTestosteroneEster(tpl.ester) && tpl.ester !== Ester.MPA && tpl.ester !== Ester.NET;
+        });
+        return list.slice(0, 10);
+    }, [mode, templates]);
+
+    const templateAmount = (tpl: DoseTemplate): { value: number; unit: string } => {
+        const rate = tpl.extras?.[ExtraKey.releaseRateUGPerDay];
+        if (typeof rate === 'number') return { value: rate, unit: t('m3e.unit.patch_rate') };
+        return { value: tpl.doseMG, unit: 'mg' };
+    };
+
+    const templateCaption = (tpl: DoseTemplate): string => {
+        if (tpl.label) return tpl.label;
+        if (tpl.ester === Ester.GNRH) return tpl.name || t('m3e.tpl.gnrh');
+        if (tpl.route === Route.patchRemove) return tpl.name || t('m3e.drug.E2_PEEL');
+        const amount = templateAmount(tpl);
+        const matched = (tpl.drugId ? findDrug(mode, tpl.drugId) : undefined) ?? matchDrug(mode, tpl.route, tpl.ester);
+        const name = (tpl.name || (matched ? drugShortName(matched, t) : String(tpl.ester))).trim();
+        return `${name} · ${trimNumber(amount.value)} ${amount.unit}`;
+    };
+
+    const applyTemplate = (tpl: DoseTemplate) => {
+        const d = (tpl.drugId ? findDrug(mode, tpl.drugId) : undefined)
+            ?? matchDrug(mode, tpl.route, tpl.ester)
+            ?? DRUGS[mode][0];
+        setCat(d.cat);
+        setRoute(d.route);
+        setDrugId(d.id);
+
+        const rate = tpl.extras?.[ExtraKey.releaseRateUGPerDay];
+        const pm: PatchMode = tpl.route === Route.patchApply
+            ? (typeof rate === 'number' ? 'rate' : 'total')
+            : 'rate';
+        setPatchMode(pm);
+        const value = d.isGnrh || d.noDose ? 0 : (pm === 'rate' && typeof rate === 'number' ? rate : tpl.doseMG);
+        setDose(value);
+        setDoseText(trimNumber(value));
+
+        if (tpl.route === Route.gel) {
+            setGelSite(tpl.extras?.[ExtraKey.gelSite] ?? 0);
+            setGelProductId(tpl.extras?.[ExtraKey.gelProductId] ?? GEL_DEFAULT_PRODUCT_ID);
+            setGelCoverage(tpl.extras?.[ExtraKey.gelCoverage] ?? GEL_COVERAGE_DEFAULT_INDEX);
+            setGelCoApplied(tpl.extras?.[ExtraKey.gelCoApplied] ?? GEL_COAPPLICATION_DEFAULT_INDEX);
+            const wash = tpl.extras?.[ExtraKey.gelWashAfterH];
+            setGelWashHours(typeof wash === 'number' && wash > 0 ? Math.round(wash) : 0);
+        }
+        if (tpl.route === Route.sublingual) {
+            const tier = tpl.extras?.[ExtraKey.sublingualTier];
+            const theta = tpl.extras?.[ExtraKey.sublingualTheta];
+            setSlTier(typeof tier === 'number' ? tier : 2);
+            setUseCustomTheta(typeof theta === 'number');
+            setCustomHold(typeof theta === 'number' ? Math.round(holdFromTheta(theta)) : 10);
+        }
+        const wearH = tpl.extras?.[ExtraKey.patchWearH];
+        setPatchWearDays(typeof wearH === 'number' && wearH > 0 ? trimNumber(wearH / 24) : '');
+
+        setActiveTplId(tpl.id);
+        setAnimTick(k => k + 1);
+        setPopKey(k => k + 1);
+        toast(t('template.loaded'));
+    };
+
+    // ——— Values written back ———
+    const buildExtras = (): Partial<Record<ExtraKey, number>> => {
+        const extras: Partial<Record<ExtraKey, number>> = {};
+        if (route === Route.sublingual) {
+            if (useCustomTheta) extras[ExtraKey.sublingualTheta] = thetaFromHold(customHold);
+            else extras[ExtraKey.sublingualTier] = slTier;
         }
         if (route === Route.gel) {
-            template.extras[ExtraKey.gelSite] = gelSite;
-            template.extras[ExtraKey.gelProductId] = gelProductId;
-            template.extras[ExtraKey.gelCoverage] = gelCoverage;
-            template.extras[ExtraKey.gelCoApplied] = gelCoApplied;
-        }
-        if (route === Route.patchApply && patchMode === 'rate') {
-            template.extras[ExtraKey.releaseRateUGPerDay] = parseFloat(patchRate) || 0;
+            extras[ExtraKey.gelSite] = gelSite;
+            if (mode === 'mtf') {
+                extras[ExtraKey.gelProductId] = gelProductId;
+                extras[ExtraKey.gelCoverage] = gelCoverage;
+                extras[ExtraKey.gelCoApplied] = gelCoApplied;
+                if (gelWashHours > 0) extras[ExtraKey.gelWashAfterH] = gelWashHours;
+            }
         }
         if (route === Route.patchApply) {
-            const wearDays = parseFloat(patchWearDays);
-            if (Number.isFinite(wearDays) && wearDays > 0) {
-                template.extras[ExtraKey.patchWearH] = wearDays * 24;
+            if (patchMode === 'rate') {
+                extras[ExtraKey.releaseRateUGPerDay] = dose;
             }
+            const wearDays = parseFloat(patchWearDays);
+            if (Number.isFinite(wearDays) && wearDays > 0) extras[ExtraKey.patchWearH] = wearDays * 24;
         }
-
-        onSaveTemplate(template);
-        setShowSaveTemplateInput(false);
-        setTemplateName('');
-        showDialog('alert', t('template.saved'));
+        if (route === Route.injection && drug.ester === Ester.EC) {
+            extras[ExtraKey.vehicle] = vehicle;
+        }
+        return extras;
     };
 
-    const handleLoadTemplate = (template: DoseTemplate) => {
-        setRoute(template.route);
-        setEster(template.ester);
-        setRawDose(template.doseMG.toFixed(3));
-        // Templates store the raw-ester dose, so mark the raw field as the
-        // source of truth — otherwise handleSave would re-derive the dose from
-        // the rounded E2-equivalent string and drift it (12.5 → 12.499934).
-        setLastEditedField(template.ester === Ester.E2 ? 'bio' : 'raw');
+    const saveRoute = (): Route => {
+        if (route === Route.patchRemove) return Route.patchRemove;
+        if (isGnrh) return Route.injection;
+        return drug.route;
+    };
 
-        const factor = getToE2Factor(template.ester) || 1;
-        const e2Val = template.doseMG * factor;
-        setE2Dose(e2Val.toFixed(3));
+    const selectedPatch = useMemo(
+        () => activePatches(events, time.getTime() / 3600_000).find(p => p.id === selectedPatchId) ?? null,
+        [events, selectedPatchId, time],
+    );
 
-        if (template.route === Route.patchApply && template.extras[ExtraKey.releaseRateUGPerDay]) {
-            setPatchMode('rate');
-            setPatchRate(template.extras[ExtraKey.releaseRateUGPerDay].toString());
-        }
-        if (template.route === Route.patchApply) {
-            const wearH = template.extras[ExtraKey.patchWearH];
-            setPatchWearDays(typeof wearH === 'number' && Number.isFinite(wearH) && wearH > 0 ? (wearH / 24).toString() : "");
-        }
+    const saveEster = (): Ester => {
+        if (route === Route.patchRemove) return selectedPatch?.ester ?? eventToEdit?.ester ?? Ester.E2;
+        if (isGnrh) return Ester.GNRH;
+        return drug.ester;
+    };
 
-        if (template.route === Route.sublingual) {
-            if (template.extras[ExtraKey.sublingualTier] !== undefined) {
-                setSlTier(template.extras[ExtraKey.sublingualTier]);
-                setUseCustomTheta(false);
-            } else if (template.extras[ExtraKey.sublingualTheta] !== undefined) {
-                const theta = template.extras[ExtraKey.sublingualTheta];
-                const hold = Math.max(1, Math.min(60, holdFromTheta(typeof theta === 'number' ? theta : 0.11)));
-                setCustomHoldValue(hold);
-                setCustomHoldInput(hold.toString());
-                setUseCustomTheta(true);
-            }
-        }
-
-        if (template.route === Route.gel && template.extras[ExtraKey.gelSite] !== undefined) {
-            setGelSite(template.extras[ExtraKey.gelSite]);
-            setGelProductId(template.extras[ExtraKey.gelProductId] ?? GEL_DEFAULT_PRODUCT_ID);
-            setGelCoverage(template.extras[ExtraKey.gelCoverage] ?? GEL_COVERAGE_DEFAULT_INDEX);
-            setGelCoApplied(template.extras[ExtraKey.gelCoApplied] ?? GEL_COAPPLICATION_DEFAULT_INDEX);
-        }
-
-        setShowTemplateMenu(false);
-        showDialog('alert', t('template.loaded'));
+    const saveDoseMG = (): number => {
+        if (isNoDose) return 0;
+        if (route === Route.patchApply && patchMode === 'rate') return 0;
+        return dose;
     };
 
     const handleSave = () => {
-        // Ref latch, not state: setIsSaving(true/false) within one synchronous
-        // handler nets out to no visible change, so the disabled prop never
-        // engaged and a double-click/double-tap could add the dose twice
-        // (each click mints a fresh uuid in add mode).
         if (isSavingRef.current) return;
         isSavingRef.current = true;
-        setIsSaving(true);
-        const failSave = (msg: string) => {
-            showDialog('alert', msg);
+        const fail = (message: string) => {
+            showDialog('alert', message);
             isSavingRef.current = false;
-            setIsSaving(false);
         };
-        // With the time field hidden the dose is logged at the moment it is saved,
-        // not at the moment the form mounted — "taking it now" means now, even if
-        // the form sat open for a while. Otherwise the field's value is used.
-        let timeH = hideTime ? Date.now() / 3600000 : new Date(dateStr).getTime() / 3600000;
-        if (isNaN(timeH)) {
-            timeH = new Date().getTime() / 3600000;
+
+        if (!isNoDose && !(dose > 0)) {
+            fail(t('error.nonPositive'));
+            return;
+        }
+        if (route === Route.patchRemove && !selectedPatch && !isEditingExisting) {
+            toast(t('m3e.field.peel_empty'));
+            isSavingRef.current = false;
+            return;
+        }
+        const effectiveTime = timeIsNow && !hideTime ? new Date() : time;
+        const timeH = hideTime ? Date.now() / 3600_000 : effectiveTime.getTime() / 3600_000;
+        if (!Number.isFinite(timeH)) {
+            fail(t('error.nonPositive'));
+            return;
         }
 
-        let e2Equivalent = parseFloat(e2Dose);
-        if (isNaN(e2Equivalent)) e2Equivalent = 0;
-        let finalDose = 0;
-
-        const extras: any = {};
-        const nonPositiveMsg = t('error.nonPositive');
-
-        if (route === Route.sublingual && useCustomTheta) {
-            if (!Number.isFinite(customHoldValue) || customHoldValue < 1) {
-                failSave(t('error.slHoldMinOne'));
-                return;
+        const extras: DoseEvent['extras'] = buildExtras();
+        if (route === Route.patchRemove) {
+            if (selectedPatch) {
+                extras.patchRemovalFor = String(selectedPatch.extras?.patchInstanceId ?? selectedPatch.id);
+            } else if (isEditingExisting && eventToEdit?.extras?.patchRemovalFor !== undefined) {
+                // Editing a historical removal: keep the patch it was linked to.
+                extras.patchRemovalFor = String(eventToEdit.extras.patchRemovalFor);
             }
         }
 
-        if (route === Route.patchApply && patchMode === "rate") {
-            const rateVal = parseFloat(patchRate);
-            if (!Number.isFinite(rateVal) || rateVal <= 0) {
-                failSave(nonPositiveMsg);
-                return;
-            }
-            finalDose = 0;
-            extras[ExtraKey.releaseRateUGPerDay] = rateVal;
-        } else if (route === Route.patchApply && patchMode === "dose") {
-            const raw = parseFloat(rawDose);
-            if (!rawDose || rawDose.trim() === '' || !Number.isFinite(raw) || raw <= 0) {
-                failSave(nonPositiveMsg);
-                return;
-            }
-            finalDose = raw;
-        } else if (route !== Route.patchRemove) {
-            const rawVal = parseFloat(rawDose);
-            // E2's per-dose bound is not every compound's bound: an anti-androgen is
-            // dosed in the hundreds of mg. Checked before either branch below, so it
-            // covers the raw path and the equivalent path alike.
-            const ceiling = DOSE_CEILING_MG[ester];
-            if (ceiling !== undefined && Number.isFinite(rawVal) && rawVal > ceiling) {
-                failSave(t('error.doseTooHigh'));
-                return;
-            }
-            if (ester !== Ester.E2 && lastEditedField === 'raw') {
-                // doseMG is stored in raw-ester mg, and the raw field is what the
-                // user typed (or a template/quick-dose filled). Use it directly:
-                // round-tripping through the E2-equivalent string loses precision
-                // to its toFixed(3) — e.g. 12.5 mg CPA saved as 12.499934.
-                if (!rawDose || rawDose.trim() === '' || !Number.isFinite(rawVal) || rawVal <= 0) {
-                    failSave(nonPositiveMsg);
-                    return;
-                }
-                finalDose = rawVal;
-            } else {
-                if (!e2Dose || e2Dose.trim() === '' || !Number.isFinite(e2Equivalent) || e2Equivalent <= 0) {
-                    failSave(nonPositiveMsg);
-                    return;
-                }
-                const factor = getToE2Factor(ester) || 1;
-                finalDose = (ester === Ester.E2) ? e2Equivalent : e2Equivalent / factor;
-            }
-        }
-
-        if (route === Route.sublingual && slExtras) {
-            Object.assign(extras, slExtras);
-        }
-
-        if (route === Route.gel) {
-            extras[ExtraKey.gelSite] = gelSite;
-            extras[ExtraKey.gelProductId] = gelProductId;
-            extras[ExtraKey.gelCoverage] = gelCoverage;
-            extras[ExtraKey.gelCoApplied] = gelCoApplied;
-            const washH = parseFloat(gelWashHours);
-            if (Number.isFinite(washH) && washH > 0) extras[ExtraKey.gelWashAfterH] = washH;
-        }
-
-        if (route === Route.patchApply) {
-            const wearDays = parseFloat(patchWearDays);
-            if (Number.isFinite(wearDays) && wearDays > 0) {
-                extras[ExtraKey.patchWearH] = wearDays * 24;
-            }
-        }
-
-        const newEvent: DoseEvent = {
-            // Reuse the id only when updating a record that exists. A pre-filled
-            // *new* dose (`eventToEdit` set but not in `events`) gets a fresh id,
-            // so saving adds it rather than overwriting the dose it copied.
+        const event: DoseEvent = {
             id: isEditingExisting ? eventToEdit!.id : uuidv4(),
-            route,
-            ester: (route === Route.patchRemove || route === Route.patchApply || route === Route.gel)
-                ? (isTransmasc ? Ester.T : Ester.E2)
-                : ester,
+            route: saveRoute(),
+            ester: saveEster(),
             timeH,
-            doseMG: finalDose,
-            extras
+            doseMG: saveDoseMG(),
+            extras,
         };
 
-        onSave(newEvent);
-        // Every current mount point unmounts this form after a successful save;
-        // the delayed re-arm is a safety net for any future persistent mount,
-        // while still swallowing the double-click window.
-        window.setTimeout(() => {
-            isSavingRef.current = false;
-            setIsSaving(false);
-        }, 800);
+        onSave(event);
+        window.setTimeout(() => { isSavingRef.current = false; }, 800);
     };
 
-    const availableEsters = useMemo(() => {
-        if (isTransmasc) {
-            switch (route) {
-                case Route.injection:
-                    return [Ester.TC, Ester.TE, Ester.TU];
-                case Route.gel:
-                    return [Ester.T];
-                default:
-                    return [Ester.T];
-            }
+    // ——— Save-as-template sheet ———
+    const openTplSheet = () => {
+        if (modeTemplates.length >= 10) {
+            toast(t('m3e.tpl.limit'));
+            return;
         }
-        // The oral anti-androgens sit together because the list is where a user looks
-        // for them. None offers an estradiol-equivalent field, and none draws a curve;
-        // see `isUnmodelledCompound` in logic.ts for what they do instead. All three
-        // are oral-only in practice, which is why they appear only on this route.
-        switch (route) {
-            case Route.injection:
-                return [Ester.EB, Ester.EV, Ester.EC, Ester.EN, Ester.EU];
-            case Route.oral:
-                return [Ester.E2, Ester.EV, Ester.CPA, Ester.SPIRO, Ester.BICAL];
-            case Route.sublingual:
-                return [Ester.E2, Ester.EV];
-            default:
-                return [Ester.E2];
+        setTemplateName('');
+        setShowTplSheet(true);
+    };
+
+    const closeTplSheet = () => setShowTplSheet(false);
+
+    const confirmAddTemplate = () => {
+        if (modeTemplates.length >= 10) {
+            toast(t('m3e.tpl.limit'));
+            return;
         }
-    }, [route, isTransmasc]);
+        const custom = templateName.trim();
+        const unit = currentUnit();
+        let label: string;
+        if (isGnrh) label = custom || t('m3e.tpl.gnrh');
+        else if (drug.noDose) label = custom || t('m3e.drug.E2_PEEL');
+        else label = `${custom || drugShortName(drug, t)} · ${trimNumber(dose)} ${unit}`;
 
-    const availableRoutes = useMemo<Route[]>(() => {
-        if (isTransmasc) {
-            // Transmasc: no oral/sublingual; no patches (T patches are uncommon and
-            // not realistically modeled with the current µg/day scheme).
-            return Object.values(Route).filter(r =>
-                r !== Route.oral && r !== Route.sublingual &&
-                r !== Route.patchApply && r !== Route.patchRemove
-            );
+        const template: DoseTemplate = {
+            id: uuidv4(),
+            name: custom || drugShortName(drug, t),
+            label,
+            drugId: drug.id,
+            mode,
+            route: isGnrh ? Route.injection : drug.route,
+            ester: isGnrh ? Ester.GNRH : drug.ester,
+            doseMG: isNoDose || (drug.route === Route.patchApply && patchMode === 'rate') ? 0 : dose,
+            extras: buildExtras(),
+            createdAt: Date.now(),
+        };
+
+        onSaveTemplate(template);
+        setActiveTplId(template.id);
+        setShowTplSheet(false);
+        setTemplateName('');
+        toast(t('m3e.tpl.added'));
+    };
+
+    // ——— Long press (delete a template / a quick dose) ———
+    const beginLongPress = (action: () => void) => {
+        suppressClick.current = false;
+        if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+        longPressTimer.current = window.setTimeout(() => {
+            suppressClick.current = true;
+            action();
+        }, 620);
+    };
+    const endLongPress = () => {
+        if (longPressTimer.current) {
+            window.clearTimeout(longPressTimer.current);
+            longPressTimer.current = null;
         }
-        return Object.values(Route).filter(r => r !== Route.patchRemove);
-    }, [isTransmasc]);
+    };
+    const consumeSuppressedClick = (): boolean => {
+        if (!suppressClick.current) return false;
+        suppressClick.current = false;
+        return true;
+    };
 
-    useEffect(() => {
-        if (!availableRoutes.includes(route)) {
-            setRoute(availableRoutes[0]);
-        }
-    }, [availableRoutes, route]);
-
-    useEffect(() => {
-        if (!availableEsters.includes(ester)) {
-            setEster(availableEsters[0]);
-        }
-    }, [availableEsters, ester]);
-
-    // The two picture-pill rails. Groups carry the reference's tone: estradiol
-    // primary, testosterone the cool accent, the anti-androgens the warning amber —
-    // so a compound's class reads before its name does.
-    const routeItems: PillItem[] = useMemo(
-        () => availableRoutes.map(r => ({ value: r, label: t(`pill.route.${r}`), icon: RouteGlyph[r] ?? RouteGlyph.oral })),
-        [availableRoutes, t],
-    );
-    const toneOf = (e: Ester): PillItem['tone'] =>
-        isAntiandrogen(e) ? 'A' : isTestosteroneEster(e) ? 'T' : 'E';
-    const esterItems: PillItem[] = useMemo(
-        () => availableEsters.map(e => ({
-            value: e,
-            label: t(`pill.ester.${e}`),
-            icon: compoundIcon(e),
-            tone: toneOf(e),
-        })),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [availableEsters, t],
-    );
-
-    const doseGuide = useMemo(() => {
-        // DOSE_GUIDE_CONFIG's thresholds are estradiol's. They are meaningless for
-        // an anti-androgen, whose own range is shown as the dose hint below instead.
-        if (isAntiandrogen(ester)) return null;
-        // The built-in dose thresholds (DOSE_GUIDE_CONFIG) are calibrated for
-        // feminizing HRT (E2). They would be misleading for testosterone dosing,
-        // so skip the guide entirely in transmasc mode.
-        if (isTransmasc) return null;
-        const cfg = DOSE_GUIDE_CONFIG[route];
-        if (!cfg) return null;
-        if (route === Route.patchApply && patchMode === "dose" && cfg.requiresRate) {
-            return { config: cfg, level: null, value: null, showRateHint: true as const };
-        }
-        const rawVal = route === Route.patchApply ? parseFloat(patchRate) : parseFloat(e2Dose);
-        const value = Number.isFinite(rawVal) && rawVal > 0 ? rawVal : null;
-        let level: DoseLevelKey | null = null;
-        if (value !== null) {
-            const [low, medium, high, veryHigh] = cfg.thresholds;
-            if (value <= low) level = 'low';
-            else if (value <= medium) level = 'medium';
-            else if (value <= high) level = 'high';
-            else if (value <= veryHigh) level = 'very_high';
-            else level = 'above';
-        }
-        return { config: cfg, level, value, showRateHint: false as const };
-    }, [route, patchMode, patchRate, e2Dose, ester, isTransmasc]);
-
-    // Recent-use heads-up, based on doses already logged (not the still-unsaved
-    // value being typed here). Covers CPA and injections too, which the static
-    // per-dose guide above doesn't — see getDoseAdvisory in logic.ts.
-    const doseAdvisory = useMemo(() => getDoseAdvisory(events), [events]);
-
-    const guideUnitLabel = doseGuide?.config ? t(`dose.guide.unit.${doseGuide.config.unitKey}`) : "";
-    const guideRangeText = doseGuide?.config
-        ? `${doseGuide.config.thresholds.map((threshold) => `≤ ${formatGuideNumber(threshold)}`).join(' · ')} ${guideUnitLabel}`
-        : "";
-    const guideBadgeClass = doseGuide?.level ? LEVEL_BADGE_STYLES[doseGuide.level] : "";
-    const confirmAndOpenExternal = (url: string) => {
-        const host = (() => {
-            try {
-                return new URL(url).hostname.replace(/^www\./, '');
-            } catch {
-                return url;
-            }
-        })();
-        const confirmText = t('drawer.model_confirm').replace('mahiro.uk', host);
-        showDialog('confirm', confirmText, () => {
-            void openExternalUrl(url);
+    const deleteTemplate = (tpl: DoseTemplate) => {
+        showDialog('confirm', t('template.delete_confirm'), () => {
+            onDeleteTemplate(tpl.id);
+            if (activeTplId === tpl.id) setActiveTplId(null);
         });
     };
-    const renderLoadTemplateControl = () => {
-        if (eventToEdit) return null;
 
-        return (
-            <div className="relative">
-                <button
-                    onClick={() => {
-                        if (templates.length === 0) return;
-                        setShowTemplateMenu(!showTemplateMenu);
-                    }}
-                    disabled={templates.length === 0}
-                    className={`px-2 py-1 text-xs font-medium rounded flex items-center gap-1 ${
-                        templates.length === 0
-                            ? 'text-[var(--color-m3-on-surface-variant)]  opacity-40 cursor-not-allowed'
-                            : 'text-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-container)] '
-                    }`}
-                    title={t('template.load_title')}
-                >
-                    <Icon icon={Bookmark} size={14} />
-                    <span>{t('template.load_title')}</span>
-                </button>
-                {templates.length > 0 && (
-                    <div
-                        data-state={templateMenuState}
-                        className={`absolute right-0 top-full mt-1 bg-[var(--color-m3-surface-container-lowest)] rounded-xl border border-[var(--color-m3-outline-variant)] w-64 max-h-64 overflow-y-auto z-50 m3-menu m3-menu--top-right m3-menu--flush shadow-lg ${
-                            templateMenuMounted ? '' : 'hidden'
-                        }`}
-                    >
-                        {templates.map((template: DoseTemplate) => (
-                            <div key={template.id} className="flex items-center justify-between px-3 py-2.5 transition-colors hover:bg-[var(--color-m3-surface-container)] active:bg-[var(--color-m3-primary-container)] border-b border-[var(--color-m3-outline-variant)] last:border-b-0">
-                                <button
-                                    onClick={() => { handleLoadTemplate(template); setShowTemplateMenu(false); }}
-                                    className="flex-1 text-left"
-                                >
-                                    <div className="text-sm font-medium text-[var(--color-m3-on-surface)] ">{template.name}</div>
-                                    <div className="text-xs text-[var(--color-m3-on-surface-variant)]  mt-0.5">
-                                        {t(`route.${template.route}`)} · {template.doseMG.toFixed(2)} mg
-                                    </div>
-                                </button>
-                                {templateToDelete === template.id ? (
-                                    <div className="flex items-center gap-0.5 pl-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                        <button onClick={() => { setTemplateToDelete(null); setShowTemplateMenu(false); onDeleteTemplate(template.id); }} className="p-1 text-cos-error hover:bg-cos-error-container  rounded flex items-center justify-center" title={t('btn.confirm')}>
-                                            <Icon icon={Check} size={13} />
-                                        </button>
-                                        <button onClick={() => setTemplateToDelete(null)} className="p-1 text-[var(--color-m3-on-surface-variant)]  hover:bg-[var(--color-m3-surface-container)]  rounded flex items-center justify-center" title={t('btn.cancel')}>
-                                            <Icon icon={X} size={13} />
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setTemplateToDelete(template.id);
-                                        }}
-                                        // Always visible. It used to be `opacity-0
-                                        // group-hover:opacity-100`, which on a phone
-                                        // meant the control never appeared at all —
-                                        // there is no hover to reveal it, so a saved
-                                        // template could not be deleted from the one
-                                        // screen that lists them.
-                                        className="p-1.5 text-[var(--color-m3-on-surface-variant)] hover:text-cos-error rounded shrink-0"
-                                        title={t('btn.delete')}
-                                    >
-                                        <Icon icon={Trash2} size={13} />
-                                    </button>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-        );
+    // ——— Template strip drag (mouse; touch scrolls natively) ———
+    const onStripPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+        if (e.pointerType !== 'mouse' || !stripRef.current) return;
+        dragRef.current = { down: true, startX: e.clientX, scrollLeft: stripRef.current.scrollLeft };
+        stripRef.current.classList.add('dragging');
+    };
+    const onStripPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+        if (!dragRef.current.down || !stripRef.current) return;
+        e.preventDefault();
+        stripRef.current.scrollLeft = dragRef.current.scrollLeft - (e.clientX - dragRef.current.startX);
+    };
+    const stopStripDrag = () => {
+        dragRef.current.down = false;
+        stripRef.current?.classList.remove('dragging');
     };
 
-    return (
-        <div className="flex flex-col h-full">
+    // ——— Derived display values ———
+    const heroClass = `dose-hero${cat === 'aa' || cat === 'cycle' ? ' aux-mode' : cat === 'progest' || cat === 'hair' ? ' progest-mode' : ''}`;
+    const equivalent = drug.equiv === 't'
+        ? dose * getToE2Factor(drug.ester)
+        : drug.equiv === 'e2'
+            ? dose * getToE2Factor(drug.ester)
+            : null;
+    const equivalentDecimals = drug.equiv === 't' ? 1 : 2;
+    const equivalentFactor = getToE2Factor(drug.ester);
 
-            {/* Save Template Dialog Overlay */}
-            {/* Save Template Dialog Overlay (Removed) */}
+    const peak = useMemo(() => {
+        if (!drug.curve || cat !== 'hrt' || isNoDose) return null;
+        if (mode === 'ftm') return Math.round(dose * 3.8);
+        if (route === Route.patchApply) {
+            return Math.round(patchMode === 'rate' ? dose * 0.75 : dose * 30);
+        }
+        const perMG = route === Route.sublingual ? 82 : route === Route.injection ? 38 : 45;
+        return Math.round(dose * perMG);
+    }, [cat, dose, drug.curve, isNoDose, mode, patchMode, route]);
 
-            {/* Header */}
-            {!isInline && !hideHeader && (
-                <div className="px-6 py-4 border-b border-[var(--color-m3-outline-variant)]  flex justify-between items-center shrink-0">
-                    <h3 className="text-m3-title-medium text-[var(--color-m3-on-surface)] ">
-                        {isEditingExisting ? t('modal.dose.edit_title') : t('modal.dose.add_title')}
-                    </h3>
-                    <div className="flex gap-2 items-center">
-                        {!hideTemplates && renderLoadTemplateControl()}
-                        <button onClick={onCancel} className="p-1.5 hover:bg-[var(--color-m3-surface-container)]  rounded-lg">
-                            <Icon icon={X} size={18} className="text-[var(--color-m3-on-surface-variant)] " />
+    const advisory = useMemo(() => getDoseAdvisory(events), [events]);
+    const gelProductName = (id: number): string => {
+        const preset = GEL_PRODUCT_OPTIONS.find(p => p.id === id);
+        if (preset) return t(preset.nameKey);
+        return customGels.find(p => p.id === id)?.name ?? `#${id}`;
+    };
+    const gelSiteOptions = mode === 'mtf' ? [0, 1, 2, 3] : [0, 1, 3];
+    const activeGelProducts = [
+        ...GEL_PRODUCT_OPTIONS.map(p => ({ id: p.id, name: t(p.nameKey) })),
+        ...customGels.map(p => ({ id: p.id, name: p.name })),
+    ];
+    const quickForDrug = (quickDoses ?? []).filter(q => q.route === route && q.ester === drug.ester);
+    const applicablePatches = useMemo(
+        () => activePatches(events, time.getTime() / 3600_000),
+        [events, time],
+    );
+
+    const timeLabel = timeIsNow ? t('m3e.time.now') : formatDateTime(time);
+    const timeSubLabel = timeIsNow ? t('m3e.time.now_sub') : t('m3e.time.custom_sub');
+
+    const currentTplCount = Math.min(modeTemplates.length, 10);
+
+    // Calendar cells for the month being shown.
+    const calendarCells = useMemo(() => {
+        const firstWeekday = new Date(calYear, calMonth - 1, 1).getDay();
+        const daysInMonth = new Date(calYear, calMonth, 0).getDate();
+        const cells: Array<{ day: number | null; key: string }> = [];
+        for (let i = 0; i < firstWeekday; i += 1) cells.push({ day: null, key: `e${i}` });
+        for (let day = 1; day <= daysInMonth; day += 1) cells.push({ day, key: `d${day}` });
+        while (cells.length % 7 !== 0) cells.push({ day: null, key: `t${cells.length}` });
+        return cells;
+    }, [calMonth, calYear]);
+
+    const monthTitle = useMemo(() => {
+        try {
+            return new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long' })
+                .format(new Date(calYear, calMonth - 1, 1));
+        } catch {
+            return `${calYear}-${calMonth}`;
+        }
+    }, [calMonth, calYear, locale]);
+
+    // ——— Segmented list. Every entry is a visible `.li` directly inside `.list`. ———
+    type ListEntry = { key: string; node: React.ReactNode };
+    const listEntries: ListEntry[] = [];
+
+    if (!hideTime) {
+        listEntries.push({
+            key: 'time',
+            node: (
+                <div className="li tap" onClick={openTimePage} role="button" tabIndex={0}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') openTimePage(); }}>
+                    <div className="ic p"><Icon id="clock" /></div>
+                    <div className="tx">
+                        <div className="t">{timeLabel}</div>
+                        <div className="s">{timeSubLabel}</div>
+                    </div>
+                    <Icon id="chev" />
+                </div>
+            ),
+        });
+    }
+
+    if (equivalent !== null) {
+        listEntries.push({
+            key: 'equiv',
+            node: (
+                <div className="li">
+                    <div className="ic"><Icon id="spark" /></div>
+                    <div className="tx">
+                        <div className="t">{drug.equiv === 't' ? t('m3e.equiv.t') : t('m3e.equiv.e2')}</div>
+                        <div className="s">{t('m3e.equiv.readonly').replace('{x}', equivalentFactor.toFixed(2))}</div>
+                    </div>
+                    <span className="ro-val">{equivalent.toFixed(equivalentDecimals)} mg</span>
+                </div>
+            ),
+        });
+    }
+
+    if (route === Route.sublingual && cat === 'hrt') {
+        const theta = thetaFromHold(customHold).toFixed(2);
+        listEntries.push({
+            key: 'sublingual',
+            node: (
+                <div className="li col-li">
+                    <div className="li-row">
+                        <div className="ic p"><Icon id="tongue" /></div>
+                        <div className="tx">
+                            <div className="t">{t('m3e.field.sub_tier')}</div>
+                            <div className="s">{t('m3e.field.sub_tier_desc')}</div>
+                        </div>
+                    </div>
+                    <div className="cg-inner">
+                        {SL_TIER_ORDER.map((key, idx) => (
+                            <button
+                                type="button"
+                                key={key}
+                                className={!useCustomTheta && slTier === idx ? 'on' : ''}
+                                onClick={() => { setUseCustomTheta(false); setSlTier(idx); }}
+                            >
+                                {t(`pill.tier.${key}`)} · {SublingualTierParams[key].hold}m
+                            </button>
+                        ))}
+                        <button
+                            type="button"
+                            className={useCustomTheta ? 'on' : ''}
+                            onClick={() => setUseCustomTheta(true)}
+                        >
+                            {t('pill.tier.custom')}
                         </button>
                     </div>
-                </div>
-            )}
-
-            {/* Inline Header (Simpler) */}
-            {isInline && !hideHeader && (
-                <div className="pb-4 border-b border-[var(--color-m3-outline-variant)]  flex justify-between items-center">
-          <span className="text-m3-title-small text-[var(--color-m3-on-surface-variant)] ">
-                        {t('timeline.add_title')}
-                    </span>
-                    {!hideTemplates && renderLoadTemplateControl()}
-                </div>
-            )}
-
-            <div className={`space-y-4 flex-1 overflow-y-auto ${!isInline ? 'px-6 pb-4' : hideHeader ? 'pb-2' : 'pb-4'}`}>
-                {!hideTime && (
-                <FieldRow icon={FieldIcon.clock} label={t('field.time')} plain>
-                    <button
-                        type="button"
-                        onClick={() => setIsDatePickerOpen(v => !v)}
-                        className="w-full flex items-center justify-between text-start"
-                    >
-                        <span className="text-sm tabular-nums text-[var(--color-m3-on-surface)]">
-                            {dateStr ? new Date(dateStr).toLocaleString(LOCALE_MAP[lang] || 'en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
-                        </span>
-                        <Icon icon={ChevronDown} size={14} className={`chev text-[var(--color-m3-on-surface-variant)] ${isDatePickerOpen ? 'rotate-180' : ''}`} />
-                    </button>
-                    <DateTimePicker
-                        isOpen={isDatePickerOpen}
-                        inline
-                        onClose={() => setIsDatePickerOpen(false)}
-                        onConfirm={(date) => {
-                            const iso = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-                            setDateStr(iso);
-                        }}
-                        initialDate={dateStr ? new Date(dateStr) : new Date()}
-                        mode="datetime"
-                        title={t('field.time')}
-                    />
-                </FieldRow>
-                )}
-
-                {/* Route — a rail of picture-pills. */}
-                <div>
-                    <p className="text-xs text-[var(--color-m3-on-surface-variant)] mb-2">{t('pill.sec.route')}</p>
-                    <PillRail items={routeItems} value={route} onSelect={(v) => setRoute(v as Route)} ariaLabel={t('field.route')} />
-                </div>
-
-                {route === Route.patchRemove && (
-                    <FieldRow icon={FieldIcon.info} label={t('route.patchRemove')}>
-                        <p className="text-[13px] text-[var(--color-m3-on-surface-variant)]">{t('patch.remove_hint')}</p>
-                    </FieldRow>
-                )}
-
-                {route !== Route.patchRemove && (
-                    <>
-                        {/* Compound — its own rail, re-dealt when the route changes (the
-                            available set differs), which is the reveal the route pick
-                            should trigger rather than the rail replaying on itself. */}
-                        {availableEsters.length > 1 && (
-                            <div>
-                                <p className="text-xs text-[var(--color-m3-on-surface-variant)] mb-2">{t('pill.sec.drug')}</p>
-                                <PillRail items={esterItems} value={ester} onSelect={(v) => setEster(v as Ester)} dense animateKey={route} ariaLabel={t('field.ester')} />
+                    {useCustomTheta && (
+                        <div className="li-row">
+                            <div className="tx">
+                                <div className="t" style={{ fontSize: 13.5 }}>{t('m3e.field.sub_custom')}</div>
+                                <div className="s">{t('m3e.field.sub_theta').replace('{x}', theta)}</div>
                             </div>
-                        )}
-
-                        {!hideTemplates && quickDoses && onAddQuickDose && onDeleteQuickDose && (
-                            <div className="mt-2">
-                                <QuickDoseButtons
-                                    route={route}
-                                    ester={ester}
-                                    quickDoses={quickDoses}
-                                    currentDose={rawDose}
-                                    onSelectDose={(val) => handleRawChange(val.toString())}
-                                    onAddQuickDose={onAddQuickDose}
-                                    onDeleteQuickDose={onDeleteQuickDose}
-                                />
+                            <div className="m3e-num">
+                                <button type="button" className="m3e-num-btn minus" onClick={() => setCustomHold(v => Math.max(1, v - 1))}>−</button>
+                                <span className="m3e-num-val">{customHold} m</span>
+                                <button type="button" className="m3e-num-btn plus" onClick={() => setCustomHold(v => Math.min(60, v + 1))}>+</button>
                             </div>
-                        )}
-
-                        <div className="mt-2 hrt-fields" key={route}>
-                            {route === Route.injection && (
-                                <InjectionFields
-                                    ester={ester}
-                                    rawDose={rawDose}
-                                    e2Dose={e2Dose}
-                                    onRawChange={handleRawChange}
-                                    onE2Change={handleE2Change}
-                                    route={route}
-                                />
-                            )}
-
-                            {route === Route.oral && (
-                                <OralFields
-                                    ester={ester}
-                                    rawDose={rawDose}
-                                    e2Dose={e2Dose}
-                                    onRawChange={handleRawChange}
-                                    onE2Change={handleE2Change}
-                                    route={route}
-                                />
-                            )}
-
-                            {route === Route.sublingual && (
-                                <SublingualFields
-                                    ester={ester}
-                                    rawDose={rawDose}
-                                    e2Dose={e2Dose}
-                                    onRawChange={handleRawChange}
-                                    onE2Change={handleE2Change}
-                                    slTier={slTier}
-                                    setSlTier={setSlTier}
-                                    useCustomTheta={useCustomTheta}
-                                    setUseCustomTheta={setUseCustomTheta}
-                                    customHoldInput={customHoldInput}
-                                    setCustomHoldInput={setCustomHoldInput}
-                                    customHoldValue={customHoldValue}
-                                    setCustomHoldValue={setCustomHoldValue}
-                                    thetaFromHold={thetaFromHold}
-                                    route={route}
-                                />
-                            )}
-
-                            {route === Route.gel && (
-                                <GelFields
-                                    showEngineDetail={activeEngine === 'transmtf'}
-                                    gelSite={gelSite}
-                                    setGelSite={setGelSite}
-                                    gelProductId={gelProductId}
-                                    setGelProductId={setGelProductId}
-                                    gelCoverage={gelCoverage}
-                                    setGelCoverage={setGelCoverage}
-                                    gelCoApplied={gelCoApplied}
-                                    setGelCoApplied={setGelCoApplied}
-                                    gelWashHours={gelWashHours}
-                                    setGelWashHours={setGelWashHours}
-                                    e2Dose={e2Dose}
-                                    onE2Change={handleE2Change}
-                                    bioMultiplier={bioMultiplier}
-                                />
-                            )}
-
-                            {route === Route.patchApply && (
-                                <PatchFields
-                                    patchMode={patchMode}
-                                    setPatchMode={setPatchMode}
-                                    patchRate={patchRate}
-                                    setPatchRate={setPatchRate}
-                                    rawDose={rawDose}
-                                    onRawChange={handleRawChange}
-                                    patchWearDays={patchWearDays}
-                                    setPatchWearDays={setPatchWearDays}
-                                    route={route}
-                                />
-                            )}
                         </div>
+                    )}
+                </div>
+            ),
+        });
+    }
 
-                        {/* Injection guide, from mtf.wiki.
-                            Collapsed by default: expanded it is ~900px, most of a phone
-                            screen and more than the rest of the form, so every dose
-                            meant scrolling past a wall of prose to reach Save.
-                            The warning line stays outside the fold — it is the one
-                            sentence here that is about not hurting yourself, and it
-                            belongs in front of someone mid-form rather than one tap
-                            away. The rest is reference material you read once. */}
-                        {route === Route.injection && !isTransmasc && (
-                            <div className="mt-3 border-t border-[var(--color-m3-outline-variant)]  pt-3">
-                                <div className="flex gap-2">
-                                    <Icon icon={AlertTriangle} className="w-4 h-4 text-cos-warning shrink-0 mt-0.5" />
-                                    <p className="text-sm text-cos-warning ">{t('inj.guide.safety')}</p>
-                                </div>
+    if (route === Route.gel) {
+        listEntries.push({
+            key: 'gel-site',
+            node: (
+                <div className="li col-li">
+                    <div className="li-row">
+                        <div className="ic p"><Icon id="gel" /></div>
+                        <div className="tx">
+                            <div className="t">{t('field.gel_site')}</div>
+                            <div className="s">{t('m3e.field.gel_site_desc')}</div>
+                        </div>
+                    </div>
+                    <div className="cg-inner">
+                        {gelSiteOptions.map(idx => (
+                            <button
+                                type="button"
+                                key={GEL_SITE_ORDER[idx]}
+                                className={gelSite === idx ? 'on' : ''}
+                                onClick={() => setGelSite(idx)}
+                            >
+                                {t(`pill.site.${GEL_SITE_ORDER[idx]}`)}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            ),
+        });
 
+        if (mode === 'mtf' && effectiveEngine === 'transmtf') {
+            listEntries.push({
+                key: 'gel-product',
+                node: (
+                    <div className="li col-li">
+                        <div className="li-row">
+                            <div className="ic"><Icon id="tune" /></div>
+                            <div className="tx">
+                                <div className="t">{t('field.gel_product')}</div>
+                                <div className="s">{t('m3e.field.gel_product_desc')}</div>
+                            </div>
+                        </div>
+                        <div className="cg-inner">
+                            {activeGelProducts.map(product => (
                                 <button
                                     type="button"
-                                    onClick={() => setShowInjectionGuide(v => !v)}
-                                    aria-expanded={showInjectionGuide}
-                                    className="mt-2 w-full flex items-center justify-between gap-2 py-1.5 text-start text-m3-title-small text-[var(--color-m3-on-surface)] "
+                                    key={product.id}
+                                    className={gelProductId === product.id ? 'on' : ''}
+                                    onClick={() => setGelProductId(product.id)}
                                 >
-                                    {t('inj.guide.title')}
-                                    <Icon
-                                        icon={ChevronDown}
-                                        size={16}
-                                        className={`chev shrink-0 text-[var(--color-m3-on-surface-variant)]  ${showInjectionGuide ? 'rotate-180' : ''}`}
-                                    />
+                                    {product.name}
                                 </button>
-
-                                {showInjectionGuide && (
-                                    <div className="space-y-3 pt-1">
-                                        {/* Usage & Dosage */}
-                                        <div className="space-y-1.5">
-                                            <p className="text-sm text-[var(--color-m3-on-surface-variant)] ">{t('inj.guide.route_methods')}</p>
-                                            <p className="text-xs font-medium text-cos-error ">{t('inj.guide.route_warn')}</p>
-                                            <p className="text-m3-title-small text-[var(--color-m3-on-surface)]  mt-1">{t('inj.guide.dosage_title')}</p>
-                                            <ul className="text-sm text-[var(--color-m3-on-surface-variant)]  space-y-0.5 list-disc list-inside">
-                                                <li>{t('inj.guide.dosage_ev')}</li>
-                                                <li>{t('inj.guide.dosage_ec')}</li>
-                                            </ul>
-                                            <a
-                                                href="https://transfemscience.org/misc/injectable-e2-simulator/"
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    confirmAndOpenExternal('https://transfemscience.org/misc/injectable-e2-simulator/');
-                                                }}
-                                                className="inline-flex items-center gap-1 text-sm text-[var(--color-m3-primary)] hover:underline mt-0.5"
-                                            >
-                                                {t('inj.guide.sim_link')}
-                                                <Icon icon={ExternalLink} size={13} />
-                                            </a>
-                                        </div>
-
-                                        {/* Precautions */}
-                                        <div className="space-y-1">
-                                            <p className="text-m3-title-small text-[var(--color-m3-on-surface)] ">{t('inj.guide.notes_title')}</p>
-                                            <ul className="text-xs text-[var(--color-m3-on-surface-variant)]  space-y-1.5 list-disc list-inside leading-relaxed">
-                                                <li>{t('inj.guide.note_1')}</li>
-                                                <li>{t('inj.guide.note_2')}</li>
-                                                <li className="font-semibold text-cos-error ">{t('inj.guide.note_3')}</li>
-                                                <li><span className="font-semibold text-cos-warning ">{t('inj.guide.note_4')}</span></li>
-                                                <li>{t('inj.guide.note_5')}</li>
-                                                <li>{t('inj.guide.note_6')}</li>
-                                                <li>{t('inj.guide.note_7')}</li>
-                                                <li>{t('inj.guide.note_8')}</li>
-                                                <li>{t('inj.guide.note_9')}</li>
-                                            </ul>
-                                        </div>
-
-                                        {/* Source */}
-                                        <a
-                                            href="https://mtf.wiki/zh-cn/docs/medicine/estrogen/injection"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            onClick={(e) => {
-                                                e.preventDefault();
-                                                confirmAndOpenExternal('https://mtf.wiki/zh-cn/docs/medicine/estrogen/injection');
-                                            }}
-                                            className="inline-flex items-center gap-1 text-xs text-[var(--color-m3-on-surface-variant)]  hover:text-[var(--color-m3-primary)]"
-                                        >
-                                            {t('inj.guide.source')}
-                                            <Icon icon={ExternalLink} size={12} />
-                                        </a>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Dosage hint for the anti-androgens: they have no modelled curve,
-                            so this card is where their range lives — and, for
-                            spironolactone, where the app says out loud that it is recording
-                            the dose without drawing anything for it. CPA's three bullets
-                            predate it and are kept as they were. */}
-                        {ester === Ester.CPA && (
-                            <FieldRow icon={FieldIcon.info} label={t('dose.guide.title')}>
-                                <ul className="space-y-1 mt-1">
-                                    {(['rec', 'combo', 'ultralow'] as const).map(key => (
-                                        <li key={key} className="flex items-start gap-1.5 text-xs text-[var(--color-m3-on-surface-variant)]  leading-relaxed">
-                                            <span className="mt-1.5 w-1 h-1 rounded-full bg-[var(--color-m3-on-surface-variant)]  shrink-0" />
-                                            {t(`dose.guide.cpa_hint.${key}`)}
-                                        </li>
-                                    ))}
-                                </ul>
-                            </FieldRow>
-                        )}
-
-                        {ester === Ester.SPIRO && (
-                            <FieldRow icon={FieldIcon.info} label={t('dose.guide.title')}>
-                                <ul className="space-y-1 mt-1">
-                                    {(['rec', 'titrate'] as const).map(key => (
-                                        <li key={key} className="flex items-start gap-1.5 text-xs text-[var(--color-m3-on-surface-variant)]  leading-relaxed">
-                                            <span className="mt-1.5 w-1 h-1 rounded-full bg-[var(--color-m3-on-surface-variant)]  shrink-0" />
-                                            {t(`dose.guide.spiro_hint.${key}`)}
-                                        </li>
-                                    ))}
-                                </ul>
-                                <p className="text-xs text-[var(--color-m3-on-surface-variant)] leading-relaxed pt-0.5">
-                                    {t('dose.guide.spiro_not_modelled')}
-                                </p>
-                            </FieldRow>
-                        )}
-
-                        {/* Dose guide for non-injection routes — the segmented meter. */}
-                        {doseGuide && (
-                            <FieldRow icon={FieldIcon.gauge} label={t('dose.guide.title')}>
-                                <div className="space-y-1.5">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className="text-xs text-[var(--color-m3-on-surface-variant)] truncate">
-                                            {doseGuide.value !== null ? `${formatGuideNumber(doseGuide.value)} ${guideUnitLabel}` : t('dose.guide.current_blank')}
-                                        </span>
-                                        {doseGuide.level && (
-                                            <span className={`text-xs font-medium shrink-0 ${guideBadgeClass}`}>
-                                                {t(`dose.guide.level.${doseGuide.level}`)}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <LevelSegments level={doseGuide.level ? ['low', 'medium', 'high', 'very_high', 'above'].indexOf(doseGuide.level) : -1} />
-                                    {guideRangeText && (
-                                        <p className="m3-text-2xs text-[var(--color-m3-on-surface-variant)] leading-snug">
-                                            {t('dose.guide.reference')}: {guideRangeText}
-                                        </p>
-                                    )}
-                                    {doseGuide.showRateHint && (
-                                        <p className="m3-text-2xs text-cos-warning leading-snug">
-                                            {t('dose.guide.patch_rate_hint')}
-                                        </p>
-                                    )}
-                                </div>
-                            </FieldRow>
-                        )}
-
-                        {/* Recent-use heads-up — logged doses already running high */}
-                        {doseAdvisory && (
-                            <div className="mt-2 pt-2 border-t border-[var(--color-m3-outline-variant)] ">
-                                <DoseAdvisoryLine advisory={doseAdvisory} t={t} />
-                            </div>
-                        )}
-                    </>
-                )}
-            </div>
-
-            {/* Footer Buttons */}
-            <div className={`flex flex-wrap gap-y-2 justify-between items-center shrink-0 ${accentSubmit ? '' : 'border-t border-[var(--color-m3-outline-variant)]  '}${!isInline ? 'px-6 py-3' : hideHeader ? 'py-2' : 'py-3'}`}>
-                <div className="flex gap-2 items-center flex-wrap min-h-10 w-full sm:w-auto">
-
-                    {/* Template Save Section (hidden on the candle terminal's pane,
-                        which is a straight "record this dose" form) */}
-                    {!hideTemplates && (
-                    <div className="flex items-center">
-                        <div className={`overflow-hidden flex items-center transition-all duration-200 ease-out ${
-                            showSaveTemplateInput ? 'w-[14rem] sm:w-[13.5rem] opacity-100' : 'w-0 opacity-0 pointer-events-none'
-                        }`}>
-                            <input
-                                type="text"
-                                value={templateName}
-                                onChange={(e) => setTemplateName(e.target.value)}
-                                placeholder={t('template.name_placeholder')}
-                                className="input-base m3-inline-field flex-1 min-w-0 py-1.5 text-sm"
-                                style={{ fontSize: '16px' }}
-                            />
-                            <button
-                                onClick={handleSaveAsTemplate}
-                                className="p-1.5 ml-1 text-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-container)] rounded shrink-0 flex items-center justify-center"
-                            >
-                                <Icon icon={Check} size={18} />
-                            </button>
-                            <button
-                                onClick={() => { setShowSaveTemplateInput(false); setTemplateName(''); }}
-                                className="p-1.5 text-[var(--color-m3-on-surface-variant)] hover:bg-[var(--color-m3-surface-container)] rounded shrink-0 flex items-center justify-center"
-                            >
-                                <Icon icon={X} size={18} />
-                            </button>
+                            ))}
                         </div>
-                        
-                        <div className={`overflow-hidden transition-all duration-200 ease-out ${
-                            showSaveTemplateInput ? 'w-0 opacity-0 pointer-events-none' : 'w-[2.35rem] opacity-100'
-                        }`}>
-                            <button
-                                onClick={() => {
-                                    setShowSaveTemplateInput(true);
-                                    setShowDeleteConfirm(false);
-                                    setShowTemplateMenu(false);
-                                }}
-                                className="p-2 text-[var(--color-m3-on-surface-variant)] hover:text-[var(--color-m3-primary)] rounded flex items-center justify-center"
-                                title={t('template.save_title')}
-                            >
-                                <Icon icon={BookmarkPlus} size={18} />
-                            </button>
+                        {gelProductId === 5 ? (
+                            <div className="gel-tip anim-in">{t('m3e.gel.tip')}</div>
+                        ) : null}
+                    </div>
+                ),
+            });
+
+            listEntries.push({
+                key: 'gel-area',
+                node: (
+                    <div className="li col-li">
+                        <div className="li-row">
+                            <div className="ic"><Icon id="patch" /></div>
+                            <div className="tx">
+                                <div className="t">{t('field.gel_coverage')}</div>
+                                <div className="s">{t('m3e.field.gel_area_desc')}</div>
+                            </div>
+                        </div>
+                        <div className="cg-inner">
+                            {GEL_COVERAGE_OPTIONS.map((key, idx) => (
+                                <button
+                                    type="button"
+                                    key={key}
+                                    className={gelCoverage === idx ? 'on' : ''}
+                                    onClick={() => setGelCoverage(idx)}
+                                >
+                                    {t(`gel.coverage.${key}`)}
+                                </button>
+                            ))}
                         </div>
                     </div>
-                    )}
+                ),
+            });
 
-                    {/* Delete Event Section (only for a record that exists) */}
-                    {isEditingExisting && (
-                        <div className="flex items-center">
-                            <div className={`overflow-hidden flex items-center ${
-                                showDeleteConfirm ? 'w-[8.75rem] sm:w-40 bg-cos-error-container  border border-red-100  rounded opacity-100 pl-3 pr-1 py-1' : 'w-0 opacity-0 border border-transparent'
-                            }`}>
-                                <span className="text-xs text-cos-error  font-medium whitespace-nowrap grow">{t('dialog.confirm_title')}?</span>
-                                <div className="flex items-center shrink-0 ml-2">
-                                    <button
-                                        onClick={() => {
-                                            onDelete(eventToEdit.id);
-                                            onCancel();
-                                        }}
-                                        className="p-1 text-cos-error  hover:bg-cos-error-container  rounded flex items-center justify-center"
-                                        title={t('btn.ok')}
-                                    >
-                                        <Icon icon={Check} size={16} />
-                                    </button>
-                                    <button
-                                        onClick={() => setShowDeleteConfirm(false)}
-                                        className="p-1 text-cos-on-surface-variant hover:bg-cos-error-container  rounded flex items-center justify-center"
-                                        title={t('btn.cancel')}
-                                    >
-                                        <Icon icon={X} size={16} />
-                                    </button>
-                                </div>
+            listEntries.push({
+                key: 'gel-co',
+                node: (
+                    <div className="li col-li">
+                        <div className="li-row">
+                            <div className="ic"><Icon id="spark" /></div>
+                            <div className="tx">
+                                <div className="t">{t('field.gel_coapplied')}</div>
+                                <div className="s">{t('m3e.field.gel_co_desc')}</div>
                             </div>
-
-                            <div className={`overflow-hidden ${
-                                showDeleteConfirm ? 'w-0 opacity-0' : 'w-[2.35rem] opacity-100'
-                            }`}>
+                        </div>
+                        <div className="cg-inner">
+                            {GEL_COAPPLICATION_OPTIONS.map((key, idx) => (
                                 <button
-                                    onClick={() => {
-                                        setShowDeleteConfirm(true);
-                                        setShowSaveTemplateInput(false);
-                                        setShowTemplateMenu(false);
-                                    }}
-                                    className="p-2 text-[var(--color-m3-on-surface-variant)]  hover:text-cos-error rounded flex items-center justify-center"
+                                    type="button"
+                                    key={key}
+                                    className={gelCoApplied === idx ? 'on' : ''}
+                                    onClick={() => setGelCoApplied(idx)}
                                 >
-                                    <Icon icon={Trash2} size={18} />
+                                    {t(`gel.coapplied.${key}`)}
                                 </button>
-                            </div>
+                            ))}
+                        </div>
+                    </div>
+                ),
+            });
+
+            listEntries.push({
+                key: 'gel-wash',
+                node: (
+                    <div className="li">
+                        <div className="ic"><Icon id="clock" /></div>
+                        <div className="tx">
+                            <div className="t">{t('m3e.field.gel_wash')}</div>
+                            <div className="s">{gelWashHours === 0 ? t('m3e.field.gel_wash_none') : t('m3e.field.gel_wash_after').replace('{n}', String(gelWashHours))}</div>
+                        </div>
+                        <div className="m3e-num">
+                            <button type="button" className="m3e-num-btn minus" onClick={() => setGelWashHours(v => Math.max(0, v - 1))}>−</button>
+                            <span className="m3e-num-val">{gelWashHours === 0 ? '—' : `${gelWashHours}h`}</span>
+                            <button type="button" className="m3e-num-btn plus" onClick={() => setGelWashHours(v => Math.min(24, v + 1))}>+</button>
+                        </div>
+                    </div>
+                ),
+            });
+        }
+    }
+
+    if (route === Route.patchApply) {
+        listEntries.push({
+            key: 'patch-mode',
+            node: (
+                <div className="li col-li">
+                    <div className="li-row">
+                        <div className="ic p"><Icon id="patch" /></div>
+                        <div className="tx">
+                            <div className="t">{t('m3e.field.patch_mode')}</div>
+                            <div className="s">{t('m3e.field.patch_mode_desc')}</div>
+                        </div>
+                    </div>
+                    <div className="cg-inner">
+                        <button type="button" className={patchMode === 'rate' ? 'on' : ''} onClick={() => selectPatchMode('rate')}>
+                            {t('m3e.field.patch_rate')}
+                        </button>
+                        <button type="button" className={patchMode === 'total' ? 'on' : ''} onClick={() => selectPatchMode('total')}>
+                            {t('m3e.field.patch_total')}
+                        </button>
+                    </div>
+                </div>
+            ),
+        });
+
+        listEntries.push({
+            key: 'patch-wear',
+            node: (
+                <div className="li col-li">
+                    <div className="li-row">
+                        <div className="ic"><Icon id="clock" /></div>
+                        <div className="tx">
+                            <div className="t">{t('m3e.field.patch_wear')}</div>
+                            <div className="s">{t('m3e.field.patch_wear_desc')}</div>
+                        </div>
+                    </div>
+                    <div className="cg-inner">
+                        {['3.5', '7', ''].map(value => (
+                            <button
+                                type="button"
+                                key={value || 'until'}
+                                className={patchWearDays === value ? 'on' : ''}
+                                onClick={() => setPatchWearDays(value)}
+                            >
+                                {value ? `${value} d` : t('m3e.field.patch_until')}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            ),
+        });
+    }
+
+    if (route === Route.patchRemove) {
+        listEntries.push({
+            key: 'peel',
+            node: (
+                <div className="li col-li">
+                    <div className="li-row">
+                        <div className="ic p"><Icon id="peel" /></div>
+                        <div className="tx">
+                            <div className="t">{t('m3e.field.peel')}</div>
+                            <div className="s">{t('m3e.field.peel_desc')}</div>
+                        </div>
+                    </div>
+                    <div className="cg-inner col">
+                        {applicablePatches.length === 0 ? (
+                            <button type="button" disabled>{t('m3e.field.peel_empty')}</button>
+                        ) : applicablePatches.map(patch => {
+                            const rate = patch.extras?.[ExtraKey.releaseRateUGPerDay];
+                            const worn = Math.max(0, Math.floor(time.getTime() / 3600_000 - patch.timeH));
+                            const what = typeof rate === 'number' ? `${trimNumber(rate)} µg/d` : `${trimNumber(patch.doseMG)} mg`;
+                            return (
+                                <button
+                                    type="button"
+                                    key={patch.id}
+                                    className={selectedPatchId === patch.id ? 'on' : ''}
+                                    onClick={() => setSelectedPatchId(patch.id)}
+                                >
+                                    {formatDateTime(new Date(patch.timeH * 3600_000))} · {what} · {worn}h
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            ),
+        });
+    }
+
+    if (advisory) {
+        listEntries.push({
+            key: 'advisory',
+            node: (
+                <div className="li">
+                    <div className="ic am"><Icon id="warn" /></div>
+                    <div className="tx">
+                        <div className="t">{t('dose.guide.title')}</div>
+                        <div className="s">{t(`advisory.${advisory.kind}.body`)}</div>
+                    </div>
+                </div>
+            ),
+        });
+    }
+
+    if (route === Route.injection && drug.ester === Ester.EC) {
+        const hint = vehicle === VehicleType.aqueous ? t('m3e.vehicle.aqueous_hint') : t('m3e.vehicle.oil_hint');
+        listEntries.push({
+            key: 'vehicle',
+            node: (
+                <div className="li col-li">
+                    <div className="tx">
+                        <div className="t">{t('m3e.vehicle.title')}</div>
+                        <div className="s">{hint}</div>
+                    </div>
+                    <div className="cg" role="radiogroup" aria-label={t('m3e.vehicle.title')} style={{ flexWrap: 'wrap', marginTop: 6 }}>
+                        <button
+                            type="button"
+                            role="radio"
+                            aria-checked={vehicle === VehicleType.oil}
+                            className={vehicle === VehicleType.oil ? 'on' : ''}
+                            onClick={() => setVehicle(VehicleType.oil)}
+                        >
+                            {t('m3e.vehicle.oil')}
+                        </button>
+                        <button
+                            type="button"
+                            role="radio"
+                            aria-checked={vehicle === VehicleType.aqueous}
+                            className={vehicle === VehicleType.aqueous ? 'on' : ''}
+                            onClick={() => setVehicle(VehicleType.aqueous)}
+                        >
+                            {t('m3e.vehicle.aqueous')}
+                        </button>
+                    </div>
+                </div>
+            ),
+        });
+    }
+
+    if (route === Route.injection && mode === 'mtf') {
+        listEntries.push({
+            key: 'injection-guide',
+            node: (
+                <div className="li col-li">
+                    <button
+                        type="button"
+                        className="li-row"
+                        style={{ background: 'none', textAlign: 'left' }}
+                        aria-expanded={showInjectionGuide}
+                        onClick={() => setShowInjectionGuide(v => !v)}
+                    >
+                        <div className="ic am"><Icon id="syr" /></div>
+                        <div className="tx">
+                            <div className="t">{t('inj.guide.title')}</div>
+                            <div className="s">{t('inj.guide.safety')}</div>
+                        </div>
+                        <Icon id="down" style={{ transform: showInjectionGuide ? 'rotate(180deg)' : undefined }} />
+                    </button>
+                    {showInjectionGuide && (
+                        <div className="injection-guide">
+                            <p className="ig-title">{t('inj.guide.dosage_title')}</p>
+                            <ul>
+                                <li>{t('inj.guide.dosage_ev')}</li>
+                                <li>{t('inj.guide.dosage_ec')}</li>
+                            </ul>
+                            <p className="ig-title">{t('inj.guide.notes_title')}</p>
+                            <ul>
+                                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
+                                    <li key={n} className={n === 3 ? 'ig-danger' : n === 4 ? 'ig-warn' : ''}>
+                                        {t(`inj.guide.note_${n}`)}
+                                    </li>
+                                ))}
+                            </ul>
                         </div>
                     )}
                 </div>
+            ),
+        });
+    }
 
-                <div className={`flex gap-2 shrink-0 ${accentSubmit ? 'w-full' : 'ml-auto w-full sm:w-auto justify-end'}`}>
-                    {hideHeader && !accentSubmit && (
-                        <button
-                            onClick={onCancel}
-                            className="flex-1 sm:flex-none sm:min-w-[88px] flex items-center justify-center px-4 py-2 text-cos-on-surface-variant  hover:bg-cos-surface-container  rounded-md text-sm"
-                        >
-                            {t('btn.cancel')}
+    // Quick doses are the older per-drug shortcuts; they live in the preset row so
+    // the hero still has exactly one row of weight chips.
+    const quickPills = quickForDrug.map(quick => (
+        <button
+            type="button"
+            key={quick.id}
+            className={`preset-pill${Math.abs(quick.value - dose) < 0.001 ? ' on' : ''}`}
+            title={onDeleteQuickDose ? t('m3e.quick.remove') : undefined}
+            onPointerDown={() => beginLongPress(() => {
+                if (!onDeleteQuickDose) return;
+                showDialog('confirm', t('m3e.quick.remove'), () => onDeleteQuickDose(quick.id));
+            })}
+            onPointerUp={endLongPress}
+            onPointerLeave={endLongPress}
+            onPointerCancel={endLongPress}
+            onClick={() => {
+                if (consumeSuppressedClick()) return;
+                applyDose(quick.value, true);
+            }}
+        >
+            {trimNumber(quick.value)} {currentUnit()}
+        </button>
+    ));
+
+    return (
+        <div className="dose-panel">
+            {!hideHeader && (
+                <div className="hdr">
+                    <div className="hdr-l">
+                        <button type="button" className="ic-btn" data-m style={{ ['--mo' as string]: '12px' }} onClick={onCancel} aria-label={t('btn.cancel')}>
+                            <Icon id="x" />
                         </button>
-                    )}
-                    <button
-                        onClick={handleSave}
-                        disabled={isSaving}
-                        className={accentSubmit
-                            ? 'flex-1 px-4 py-3 bg-[var(--color-m3-success)] hover:brightness-105 text-[var(--color-m3-on-success)] rounded-lg font-semibold text-base disabled:opacity-70 flex items-center justify-center gap-2'
-                            : 'flex-1 sm:flex-none sm:min-w-[88px] px-4 py-2 bg-[var(--color-m3-primary)] hover:bg-[var(--color-m3-primary-light)] text-cos-on-primary rounded-md font-medium text-sm disabled:opacity-70 flex items-center justify-center gap-1.5'}
-                    >
-                        {isSaving ? (
-                            <div className={`w-4 h-4 border-2 rounded-full animate-spin ${accentSubmit ? 'border-current border-t-transparent opacity-70' : 'border-white/30 border-t-white'}`} />
-                        ) : (
-                            <>
-                                {accentSubmit ? <span className="text-xl leading-none">＋</span> : <Icon icon={Save} size={16} />}
-                                <span>{accentSubmit ? t('dose.add_submit') : t('btn.save')}</span>
-                            </>
+                        <span className="hdr-title">{isEditingExisting ? t('modal.dose.edit_title') : t('modal.dose.add_title')}</span>
+                    </div>
+                    <div className="hdr-r">
+                        <span className="tpl-cnt">{t('m3e.tpl.count').replace('{n}', String(currentTplCount))}</span>
+                        {isEditingExisting && (
+                            <button
+                                type="button"
+                                className="del-btn"
+                                aria-label={t('m3e.delete')}
+                                title={t('m3e.delete')}
+                                onClick={() => showDialog('confirm', t('m3e.delete_confirm'), () => { onDelete(eventToEdit!.id); onCancel(); })}
+                            >
+                                <Icon id="trash" />
+                            </button>
                         )}
-                    </button>
+                    </div>
+                </div>
+            )}
+
+            {!hideTemplates && (
+                <div
+                    className="tpl-strip"
+                    id="tplStrip"
+                    ref={stripRef}
+                    onPointerDown={onStripPointerDown}
+                    onPointerMove={onStripPointerMove}
+                    onPointerUp={stopStripDrag}
+                    onPointerLeave={stopStripDrag}
+                    onPointerCancel={stopStripDrag}
+                >
+                    {modeTemplates.length === 0 ? (
+                        <span className="tpl-empty">{t('m3e.tpl.empty')}</span>
+                    ) : modeTemplates.map((tpl, idx) => (
+                        <button
+                            type="button"
+                            key={tpl.id}
+                            className={`tpl-chip${activeTplId === tpl.id ? ' on' : ''} anim-in`}
+                            style={{ animationDelay: `${idx * 35}ms`, ['--mo' as string]: '10px' }}
+                            data-m
+                            title={t('m3e.tpl.remove_hint')}
+                            onPointerDown={() => beginLongPress(() => deleteTemplate(tpl))}
+                            onPointerUp={endLongPress}
+                            onPointerLeave={endLongPress}
+                            onPointerCancel={endLongPress}
+                            onClick={() => {
+                                if (consumeSuppressedClick()) return;
+                                applyTemplate(tpl);
+                            }}
+                        >
+                            <Icon id="bolt" />
+                            {templateCaption(tpl)}
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            <div className="dose-body">
+                <div className="cg" id="catStrip">
+                    {categoriesOf(mode).map(category => (
+                        <button
+                            type="button"
+                            key={category.id}
+                            className={cat === category.id ? 'on' : ''}
+                            data-m
+                            style={{ ['--mo' as string]: '12px' }}
+                            onClick={() => selectCategory(category.id)}
+                        >
+                            {t(category.nameKey)}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="desk-grid">
+                    <div>
+                        <div className={`route-box${categoryRoutes.length <= 1 ? ' single' : ''}`} id="routeBox">
+                            <div className="rg-strip" id="routeStrip">
+                                {categoryRoutes.map(r => (
+                                    <button
+                                        type="button"
+                                        key={r.id}
+                                        className={`rt-item${route === r.id ? ' on' : ''}`}
+                                        data-m
+                                        style={{ ['--mo' as string]: '14px' }}
+                                        onClick={() => selectRoute(r.id)}
+                                    >
+                                        <Icon id={r.icon} />
+                                        {t(r.nameKey)}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="drug-sub" id="drugPills" key={`drugs-${animTick}`}>
+                                {routeDrugs.map((d, idx) => (
+                                    <button
+                                        type="button"
+                                        key={d.id}
+                                        className={`drug-pill anim-in${drug.id === d.id ? ' on' : ''}`}
+                                        style={{ animationDelay: `${idx * 35}ms`, ['--mo' as string]: '10px' }}
+                                        data-m
+                                        onClick={() => selectDrug(d)}
+                                    >
+                                        {drugTitle(d, t)}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {!isNoDose && (
+                            <div className={heroClass} id="doseHero">
+                                <svg className="hero-cookie" id="heroCookie" viewBox="-80 -80 160 160" style={{ transform: `rotate(${cookieDeg}deg)` }} aria-hidden="true">
+                                    <path d={COOKIE_D} fill="currentColor" />
+                                </svg>
+                                <div className="dh-top">
+                                    <div className="dh-drug" id="heroDrugName">{drugTitle(drug, t)}</div>
+                                </div>
+                                <div className="dh-main" id="heroMainBox" key={`pop-${popKey}`}>
+                                    <button
+                                        type="button"
+                                        className="step-btn"
+                                        data-m
+                                        style={{ ['--mo' as string]: '26px 10px 26px 10px' }}
+                                        onClick={() => stepDose(-1)}
+                                        aria-label="-"
+                                    >
+                                        −
+                                    </button>
+                                    <div className="dh-val-wrap">
+                                        <div className="dh-num-row">
+                                            <input
+                                                id="doseInput"
+                                                className="dh-input"
+                                                type="text"
+                                                inputMode="decimal"
+                                                value={doseText}
+                                                aria-label={t('m3e.field.dose')}
+                                                onChange={e => handleDoseText(e.target.value)}
+                                                onBlur={handleDoseBlur}
+                                            />
+                                            <span className="dh-unit" id="doseUnit">{currentUnit()}</span>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="step-btn"
+                                        data-m
+                                        style={{ ['--mo' as string]: '10px 26px 10px 26px' }}
+                                        onClick={() => stepDose(1)}
+                                        aria-label="+"
+                                    >
+                                        +
+                                    </button>
+                                </div>
+                                <div className="preset-row" id="presetRow" key={`presets-${animTick}-${patchMode}`}>
+                                    {currentPresets().map((value, idx) => (
+                                        <button
+                                            type="button"
+                                            key={`${value}-${idx}`}
+                                            className={`preset-pill anim-in${Math.abs(value - dose) < 0.001 ? ' on' : ''}`}
+                                            style={{ animationDelay: `${idx * 30}ms`, ['--mo' as string]: '10px' }}
+                                            data-m
+                                            onClick={() => applyDose(value, true)}
+                                        >
+                                            {trimNumber(value)} {currentUnit()}
+                                        </button>
+                                    ))}
+                                    {quickPills}
+                                </div>
+                            </div>
+                        )}
+
+                        {isGnrh && (
+                            <div className="gnrh-card anim-in" id="gnrhCard">
+                                <div className="ic"><Icon id="syr" /></div>
+                                <div className="tx">
+                                    <div className="t">{t('m3e.gnrh.title')}</div>
+                                    <div className="s">{t('m3e.gnrh.desc')}</div>
+                                </div>
+                            </div>
+                        )}
+
+                        {drug.noCurveReasonKey && !isNoDose && (
+                            <div className="peak-bar warn-only anim-in" id="peakBar">
+                                <span>{t(drug.noCurveReasonKey)}</span>
+                            </div>
+                        )}
+                        {peak !== null && !drug.noCurveReasonKey && (
+                            <div className="peak-bar anim-in" id="peakBar">
+                                <span>{t('m3e.peak.label')}</span>
+                                <b>+{peak} {mode === 'ftm' ? 'ng/dL' : 'pg/mL'}</b>
+                            </div>
+                        )}
+                    </div>
+
+                    <div>
+                        <div className="list" id="detailList">
+                            {listEntries.map((entry, idx) => (
+                                <React.Fragment key={`${animTick}-${entry.key}`}>
+                                    {React.isValidElement(entry.node)
+                                        ? React.cloneElement(entry.node as React.ReactElement<{ className?: string; style?: React.CSSProperties }>, {
+                                            className: `${(entry.node as React.ReactElement<{ className?: string }>).props.className ?? ''} anim-in`,
+                                            style: { ...(entry.node as React.ReactElement<{ style?: React.CSSProperties }>).props.style, animationDelay: `${idx * 40}ms` },
+                                        })
+                                        : entry.node}
+                                </React.Fragment>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             </div>
+
+            <div className="bot-bar">
+                {isEditingExisting && hideHeader && (
+                    <button
+                        type="button"
+                        className="del-btn"
+                        aria-label={t('m3e.delete')}
+                        title={t('m3e.delete')}
+                        onClick={() => showDialog('confirm', t('m3e.delete_confirm'), () => { onDelete(eventToEdit!.id); onCancel(); })}
+                    >
+                        <Icon id="trash" />
+                    </button>
+                )}
+                {!hideTemplates && (
+                    <button type="button" className="tpl-toggle" data-m style={{ ['--mo' as string]: '14px' }} onClick={openTplSheet}>
+                        <Icon id="mark" />{t('m3e.tpl.save')}
+                    </button>
+                )}
+                <button type="button" className="save-btn" data-m style={{ ['--mo' as string]: '16px' }} onClick={handleSave}>
+                    <Icon id="check" />{accentSubmit ? t('dose.add_submit') : t('m3e.save')}
+                </button>
+            </div>
+
+            {/* Secondary page: M3E calendar + hour/minute steppers. No native date input. */}
+            <div className={`sub-page${showTimePage ? ' open' : ''}`} id="timePage" aria-hidden={!showTimePage}>
+                <div className="hdr">
+                    <div className="hdr-l">
+                        <button type="button" className="ic-btn" data-m style={{ ['--mo' as string]: '12px' }} onClick={() => setShowTimePage(false)} aria-label={t('btn.cancel')}>
+                            <Icon id="chev" style={{ transform: 'rotate(180deg)' }} />
+                        </button>
+                        <span className="hdr-title">{t('m3e.time.title')}</span>
+                    </div>
+                    <button type="button" className="tpl-chip on" data-m style={{ ['--mo' as string]: '10px' }} onClick={restoreNow}>
+                        {t('m3e.time.now_restore')}
+                    </button>
+                </div>
+
+                <div className="tp-layout">
+                    <div className="m3e-cal-card">
+                        <div className="cal-head">
+                            <button type="button" className="cal-nav-btn" data-m style={{ ['--mo' as string]: '8px' }} onClick={() => changeMonth(-1)} aria-label="prev">
+                                <Icon id="chev" style={{ transform: 'rotate(180deg)' }} />
+                            </button>
+                            <span className="cal-title">{monthTitle}</span>
+                            <button type="button" className="cal-nav-btn" data-m style={{ ['--mo' as string]: '8px' }} onClick={() => changeMonth(1)} aria-label="next">
+                                <Icon id="chev" />
+                            </button>
+                        </div>
+                        <div className="cal-week">
+                            {weekdays.map((label, idx) => <span key={`${label}-${idx}`}>{label}</span>)}
+                        </div>
+                        <div className="cal-grid">
+                            {calendarCells.map(cell => cell.day === null ? (
+                                <div className="cal-day empty" key={cell.key} />
+                            ) : (
+                                <button
+                                    type="button"
+                                    key={cell.key}
+                                    className={`cal-day${sameDay(new Date(calYear, calMonth - 1, cell.day), new Date()) ? ' today' : ''}${sameDay(new Date(calYear, calMonth - 1, cell.day), draftTime) ? ' on' : ''}`}
+                                    data-m
+                                    style={{ ['--mo' as string]: '10px' }}
+                                    onClick={() => pickDay(cell.day!)}
+                                >
+                                    {cell.day}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="tp-card">
+                        <div className="tp-caption">{t('m3e.time.clock')}</div>
+                        <div className="tp-display">
+                            <div className="tp-col">
+                                <button type="button" className="tp-step" data-m style={{ ['--mo' as string]: '8px' }} onClick={() => stepClock('h', 1)}>+</button>
+                                <div className="tp-box">{String(draftTime.getHours()).padStart(2, '0')}</div>
+                                <button type="button" className="tp-step" data-m style={{ ['--mo' as string]: '8px' }} onClick={() => stepClock('h', -1)}>−</button>
+                            </div>
+                            <span className="tp-colon">:</span>
+                            <div className="tp-col">
+                                <button type="button" className="tp-step" data-m style={{ ['--mo' as string]: '8px' }} onClick={() => stepClock('m', 5)}>+</button>
+                                <div className="tp-box">{String(draftTime.getMinutes()).padStart(2, '0')}</div>
+                                <button type="button" className="tp-step" data-m style={{ ['--mo' as string]: '8px' }} onClick={() => stepClock('m', -5)}>−</button>
+                            </div>
+                        </div>
+                        <button type="button" className="save-btn tp-confirm" data-m style={{ ['--mo' as string]: '16px' }} onClick={confirmTime}>
+                            <Icon id="check" />{t('m3e.time.confirm')}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Save-as-template sheet */}
+            <div className={`scrim${showTplSheet ? ' open' : ''}`} onClick={closeTplSheet} />
+            <div className={`sheet${showTplSheet ? ' open' : ''}`} id="tplSheet" role="dialog" aria-modal="true" aria-label={t('m3e.tpl.sheet_title')}>
+                <div className="sh-handle" />
+                <div className="sh-title">{t('m3e.tpl.sheet_title')}</div>
+                <div className="sh-sub">{t('m3e.tpl.save_desc')}</div>
+                <input
+                    type="text"
+                    className="fld"
+                    id="tplNameInput"
+                    value={templateName}
+                    maxLength={18}
+                    placeholder={t('m3e.tpl.name_placeholder')}
+                    onChange={e => setTemplateName(e.target.value)}
+                />
+                <div className="sh-actions">
+                    <button type="button" className="sh-btn cancel" onClick={closeTplSheet}>{t('btn.cancel')}</button>
+                    <button type="button" className="sh-btn ok" onClick={confirmAddTemplate}>{t('m3e.tpl.add')}</button>
+                </div>
+            </div>
+
+            <div className={`dose-snack${snack ? ' on' : ''}`}>{snack}</div>
         </div>
     );
 };

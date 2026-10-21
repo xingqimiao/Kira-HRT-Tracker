@@ -1,3 +1,4 @@
+import { get as secureGet, set as secureSet, remove as secureRemove } from '../utils/secureStore';
 /**
  * Two-way sync against the Application Core.
  *
@@ -74,8 +75,8 @@ interface Options {
   pkEngine: unknown;
 }
 
-/** Absorb a burst of edits (a dose form can set several fields) into one push. */
-const PUSH_DEBOUNCE_MS = 3_000;
+/** Absorb a burst of edits into one push, kept fast (1s) so quick records sync promptly. */
+const PUSH_DEBOUNCE_MS = 1_000;
 
 /** Exponential backoff retry delays on transient sync failures. */
 const RETRY_DELAYS = [3_000, 8_000, 20_000, 60_000];
@@ -104,7 +105,19 @@ export const useCoreSync = ({
   pkEngine,
 }: Options): CoreSyncState => {
   const [status, setStatus] = useState<CoreSyncStatus>('off');
-  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+  // Persisted per account: "last synced" is a fact about this device, and losing it
+  // on reload made the sync card look like it had never run.
+  const lastSyncKey = userId ? `hrt-last-sync-${userId}` : null;
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(() => {
+    if (!userId) return null;
+    try {
+      const raw = secureGet(`hrt-last-sync-${userId}`);
+      const value = raw ? Number(raw) : NaN;
+      return Number.isFinite(value) ? value : null;
+    } catch {
+      return null;
+    }
+  });
   // Sticky in one direction only: cleared by a sync that gets through, so binding the
   // credential is what takes the gate down rather than a second server round trip.
   const [accountIncomplete, setAccountIncomplete] = useState(false);
@@ -170,6 +183,33 @@ export const useCoreSync = ({
     }
   }, []);
 
+  /** Record a completed sync in state and on disk, so a reload keeps the time. */
+  const markSynced = useCallback(() => {
+    const now = Date.now();
+    setLastSyncedAt(now);
+    if (!lastSyncKey) return;
+    try {
+      secureSet(lastSyncKey, String(now));
+    } catch {
+      // Private mode / storage disabled: the in-memory value is still correct.
+    }
+  }, [lastSyncKey]);
+
+  // Account switch: show that account's own last sync, not the previous one's.
+  useEffect(() => {
+    if (!lastSyncKey) {
+      setLastSyncedAt(null);
+      return;
+    }
+    try {
+      const raw = secureGet(lastSyncKey);
+      const value = raw ? Number(raw) : NaN;
+      setLastSyncedAt(Number.isFinite(value) ? value : null);
+    } catch {
+      setLastSyncedAt(null);
+    }
+  }, [lastSyncKey]);
+
   // Drop everything an in-flight run left armed as soon as the account changes.
   useEffect(() => {
     generationRef.current += 1;
@@ -183,10 +223,12 @@ export const useCoreSync = ({
     }
   }, [token, userId, clearRetry]);
 
-  const run = useCallback(async (): Promise<void> => {
+  const run = useCallback(async (force = false): Promise<void> => {
     const authToken = tokenRef.current;
     const account = userId;
-    if (!activeRef.current || !authToken) return;
+    // A manual "sync now" is a user action, so it works even when the automatic
+    // sync preference is off. Background paths still require the preference.
+    if (!authToken || !userId || !ready || (!enabled && !force)) return;
 
     if (runningRef.current) {
       // A sync is already in flight. Ask for a rerun and hand the caller a promise
@@ -234,7 +276,7 @@ export const useCoreSync = ({
       if (seen === lastSeenRef.current) {
         if (!stillMine()) return;
         bootstrappedForRef.current = account;
-        setLastSyncedAt(Date.now());
+        markSynced();
         setAccountIncomplete(false);
         setStatus('synced');
         retryCountRef.current = 0;
@@ -249,6 +291,7 @@ export const useCoreSync = ({
         updateExisting: true,
         remote: remoteState,
       });
+
 
       // The upload went out under `authToken`, so it cannot have landed on another
       // account — but the response's bookkeeping describes *this* run, and the state
@@ -269,7 +312,7 @@ export const useCoreSync = ({
 
       lastSeenRef.current = seen;
       bootstrappedForRef.current = account;
-      setLastSyncedAt(Date.now());
+      markSynced();
       setAccountIncomplete(false);
       setStatus('synced');
       retryCountRef.current = 0;
@@ -292,7 +335,7 @@ export const useCoreSync = ({
       // third level of finally blocks that each try to settle the waiter list.
       while (rerunRef.current) {
         rerunRef.current = false;
-        await run();
+        await run(force);
       }
       // Released once no rerun is outstanding: a caller that arrived mid-sync now sees
       // the outcome of a sync that actually happened, rather than of the one it missed.
@@ -300,7 +343,7 @@ export const useCoreSync = ({
       rerunWaitersRef.current = [];
       for (const release of waiters) release();
     }
-  }, [clearRetry, userId]);
+  }, [clearRetry, userId, enabled, ready, markSynced]);
 
   const scheduleRetry = useCallback(() => {
     clearRetry();
@@ -348,8 +391,6 @@ export const useCoreSync = ({
     if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
     pushTimerRef.current = setTimeout(() => {
       pushTimerRef.current = null;
-      // Postpone push if the tab/browser is currently backgrounded or hidden
-      if (typeof document !== 'undefined' && document.hidden) return;
       void run();
     }, PUSH_DEBOUNCE_MS);
     return () => {
@@ -358,7 +399,7 @@ export const useCoreSync = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localFingerprint, userId]);
 
-  // Foreground & network recovery: immediately retry/resync when returning to app or network comes back online
+  // Foreground & network recovery, and pagehide/visibilitychange flush
   useEffect(() => {
     const handleForeground = () => {
       if (!activeRef.current) return;
@@ -367,13 +408,32 @@ export const useCoreSync = ({
         void run();
       }
     };
+    const flushPending = () => {
+      if (!activeRef.current) return;
+      if (pushTimerRef.current) {
+        clearTimeout(pushTimerRef.current);
+        pushTimerRef.current = null;
+        void run();
+      }
+    };
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        flushPending();
+      } else {
+        handleForeground();
+      }
+    };
     window.addEventListener('online', handleForeground);
     window.addEventListener('focus', handleForeground);
-    document.addEventListener('visibilitychange', handleForeground);
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pagehide', flushPending);
+    window.addEventListener('beforeunload', flushPending);
     return () => {
       window.removeEventListener('online', handleForeground);
       window.removeEventListener('focus', handleForeground);
-      document.removeEventListener('visibilitychange', handleForeground);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pagehide', flushPending);
+      window.removeEventListener('beforeunload', flushPending);
     };
   }, [clearRetry, run]);
 
@@ -389,7 +449,7 @@ export const useCoreSync = ({
     // Clear lastSeenRef to force a real sync check with the server,
     // eliminating false 'synced' statuses after a previous failure.
     lastSeenRef.current = null;
-    await run();
+    await run(true);
   }, [clearRetry, run]);
 
   return { status, lastSyncedAt, syncNow, accountIncomplete };

@@ -1,3 +1,4 @@
+import { get as secureGet, set as secureSet, remove as secureRemove } from '../utils/secureStore';
 /**
  * Client for the Application Core's authentication API.
  *
@@ -237,7 +238,7 @@ const KEEP_SIGNED_IN_KEY = 'hrt_core_keep';
 
 function rememberKeepSignedIn(): void {
   try {
-    window.localStorage.setItem(KEEP_SIGNED_IN_KEY, '1');
+    secureSet(KEEP_SIGNED_IN_KEY, '1');
   } catch {
     // Private mode or a full quota: the sign-in still works, it just takes the
     // ordinary session. Not worth failing a login over.
@@ -246,8 +247,8 @@ function rememberKeepSignedIn(): void {
 
 function takeKeepSignedIn(): boolean {
   try {
-    const kept = window.localStorage.getItem(KEEP_SIGNED_IN_KEY) === '1';
-    window.localStorage.removeItem(KEEP_SIGNED_IN_KEY);
+    const kept = secureGet(KEEP_SIGNED_IN_KEY) === '1';
+    secureRemove(KEEP_SIGNED_IN_KEY);
     return kept;
   } catch {
     return false;

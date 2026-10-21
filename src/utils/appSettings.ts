@@ -1,3 +1,4 @@
+import { get as secureGet, set as secureSet, remove as secureRemove } from './secureStore';
 /**
  * The app's own preferences, as one movable bag.
  *
@@ -18,6 +19,7 @@
  * them directly.
  */
 import type { AppSettings } from './syncMerge';
+import { readGelProducts, writeGelProducts } from './gelProducts';
 
 /** Fired after `apply` so each owner can adopt its own key. */
 export const APP_SETTINGS_EVENT = 'app-settings-applied';
@@ -73,15 +75,35 @@ const STAMP_KEY = 'app-settings-at';
  */
 let lastKnown: AppSettings | null = null;
 
+/**
+ * A stable string for a bag value that is not a scalar (today: `gelProducts`, the
+ * user's own gel catalogue). Key order is sorted because the value makes a round
+ * trip through the server's jsonb, which does not preserve insertion order — a
+ * plain `!==` on two structurally equal arrays would report a change on every read
+ * and restamp the bag forever.
+ */
+function canonical(value: unknown): string {
+    if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+    if (value && typeof value === 'object') {
+        const o = value as Record<string, unknown>;
+        return `{${Object.keys(o).sort().map(k => `${k}:${canonical(o[k])}`).join(',')}}`;
+    }
+    return JSON.stringify(value) ?? 'null';
+}
+
 function sameBag(a: AppSettings, b: AppSettings): boolean {
     const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof AppSettings>;
-    for (const key of keys) if (a[key] !== b[key]) return false;
+    for (const key of keys) {
+        if (key === 'gelProducts') {
+            if (canonical(a.gelProducts ?? []) !== canonical(b.gelProducts ?? [])) return false;
+        } else if (a[key] !== b[key]) return false;
+    }
     return true;
 }
 
 /** Epoch ms this device's settings bag last changed. 0 for a device that never has. */
 export function appSettingsStamp(): number {
-    const raw = Number(localStorage.getItem(STAMP_KEY));
+    const raw = Number(secureGet(STAMP_KEY));
     return Number.isFinite(raw) && raw > 0 ? raw : 0;
 }
 
@@ -95,7 +117,7 @@ export function appSettingsStamp(): number {
  * quietly revert the edit.
  */
 export function touchAppSettings(): void {
-    localStorage.setItem(STAMP_KEY, String(Date.now()));
+    secureSet(STAMP_KEY, String(Date.now()));
 }
 
 /** Collect the values currently on this device. Missing keys are simply absent. */
@@ -104,17 +126,22 @@ export function readAppSettings(): AppSettings {
     // on why the key union's write type is not assignable per-key.
     const out: Record<string, unknown> = {};
     for (const [key, storageKey] of Object.entries(KEYS) as [GlobalSettingKey, string][]) {
-        const value = localStorage.getItem(storageKey);
+        const value = secureGet(storageKey);
         // Every one of these is persisted as a string; the boolean settings
         // store 'true'/'false' so a boolean is normalised back on the way out.
         if (value === null || value === '') continue;
         out[key] = BOOLEAN_KEYS.has(key) ? value !== 'false' : value;
     }
+    // The gel catalogue is the one non-scalar in the bag: stored as JSON under its
+    // own key, carried whole (see `gelProducts.ts`). Always present — including as
+    // `[]` — because the server merges `settings` key-by-key: an omitted key would
+    // keep the account's old list and resurrect products the user deleted.
+    out.gelProducts = readGelProducts();
     const bag = out as AppSettings;
     if (lastKnown === null) lastKnown = bag;
     else if (!sameBag(bag, lastKnown)) {
         lastKnown = bag;
-        localStorage.setItem(STAMP_KEY, String(Date.now()));
+        secureSet(STAMP_KEY, String(Date.now()));
     }
     return bag;
 }
@@ -132,20 +159,27 @@ export function readAppSettings(): AppSettings {
  */
 export function applyAppSettings(settings: AppSettings | undefined, at = 0): void {
     if (!settings) return;
-    const touched: GlobalSettingKey[] = [];
+    const touched: (keyof AppSettings)[] = [];
     const adopted: AppSettings = { ...(lastKnown ?? {}) };
     for (const [key, storageKey] of Object.entries(KEYS) as [GlobalSettingKey, string][]) {
         const value = settings[key];
         if (value === undefined || value === '') continue;
-        localStorage.setItem(storageKey, String(value));
+        secureSet(storageKey, String(value));
         (adopted as any)[key] = value;
         touched.push(key);
+    }
+    // The catalogue is an array, not a per-key string: adopting it replaces the whole
+    // stored list (and announces it, so the engine's registry follows).
+    if (Array.isArray(settings.gelProducts)) {
+        writeGelProducts(settings.gelProducts);
+        adopted.gelProducts = settings.gelProducts;
+        touched.push('gelProducts');
     }
     if (touched.length === 0) return;
     // Recorded before the listeners run: they read the bag back and must not see
     // it as an edit.
     lastKnown = adopted;
-    if (at > 0) localStorage.setItem(STAMP_KEY, String(at));
+    if (at > 0) secureSet(STAMP_KEY, String(at));
     window.dispatchEvent(new CustomEvent(APP_SETTINGS_EVENT));
 }
 

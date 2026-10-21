@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Icon from './Icon';
 /* reicon's own `cake`, re-exported under its own name by src/icons — the app's
    one place an icon is named. */
-import { Cake } from '../icons';
+import { Cake, X } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { usePresence } from '../hooks/usePresence';
 import type { MilestoneNotice } from '../utils/hrtMilestone';
@@ -194,20 +194,16 @@ const HrtMilestoneEffect: React.FC<HrtMilestoneEffectProps> = ({ milestone, days
     const { mounted, state } = usePresence(showing, EXIT_MS);
 
     /**
-     * Where the top of the bar belongs.
+     * How tall the bar is, so the page can be pushed down by exactly that.
      *
-     * Read from the element that is already carrying the notch inset rather than
-     * from a media query written here. It is a third of the way down `<html>`'s
-     * box, so on a phone in landscape with a notch it resolves to those insets,
-     * and on anything else — including the day that meta tag is dropped — it is
-     * `auto`, which is zero in an absolutely positioned box. Copying the insets
-     * would have been a second source of truth for a value nobody else in this
-     * sheet reads.
+     * The bar itself is `position: fixed` and pinned to the window's top edge
+     * (see `.m3-milestone-bar` in index.css); the shell is the in-flow spacer
+     * that reserves its height. Measuring is the only way to know it: the bar is
+     * one line on day 100 and three on day 365, and a number written here would
+     * clip whichever one it was not measured against. `offsetHeight` is the same
+     * box the CSS reads — no transform touches it, and `translateY` in the
+     * entrance keyframes does not resize it.
      *
-     * The shell is the bar's containing block and is exactly as tall as the bar, so
-     * the bar's `inset-block-start` here is an offset *within* its own strip: zero
-     * on anything without a notch, the status-bar inset on a phone that has one,
-     * and the strip animated to the bar's full height underneath it either way.
      * `max-height: 100%` on the words resolves against the bar rather than against
      * the shell, so a long message shrinks to the line instead of growing the bar
      * down over the page — and therefore cannot move the height mid-transition.
@@ -219,9 +215,6 @@ const HrtMilestoneEffect: React.FC<HrtMilestoneEffectProps> = ({ milestone, days
         const bar = barRef.current;
         const shell = shellRef.current;
         if (!bar || !shell) return;
-        const meta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
-        bar.style.top = meta ? getComputedStyle(document.documentElement).paddingTop : '0px';
-
         /*
          * The strip the bar takes out of the layout, and the reason the page no
          * longer jumps when it arrives.
@@ -335,6 +328,21 @@ const HrtMilestoneEffect: React.FC<HrtMilestoneEffectProps> = ({ milestone, days
                         <p className="m3-milestone-bar__body">{t('account.hrt_milestone.bar_body')}</p>
                     )}
                 </div>
+                {/*
+                  The one control on the strip. A celebration that arrives by itself
+                  should be dismissible — someone logging a dose at 2am may not want
+                  to wait out a party — so the X ends it immediately; the exit
+                  animation, the height settling and `onDone` are the same path the
+                  timer takes, so nothing downstream can tell the two apart.
+                */}
+                <button
+                    type="button"
+                    className="m3-milestone-bar__close"
+                    onClick={() => setShowing(false)}
+                    aria-label={t('btn.close')}
+                >
+                    <Icon icon={X} size={16} />
+                </button>
             </div>
         </div>
     );

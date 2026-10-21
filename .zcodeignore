@@ -1,0 +1,140 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+src-tauri/target
+src-tauri/target/release
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Credentials handed over out-of-band (X developer portal, etc). These arrive as
+# loose text/JSON files and would otherwise be swept up by `git add .` — which is
+# exactly how an OAuth client secret ends up in a public repository.
+oauth*.txt
+*credentials*.txt
+*secret*.txt
+client_secret*
+
+
+# Environment files and local runtime data.
+#
+# `.env.example` is allowed through deliberately: it holds placeholders only, and a
+# deployment guide that cannot be copied is one people guess at. Without the negation
+# it is swallowed by `.env.*`, which is how it stayed untracked while `DEPLOY.md`
+# documented the same variables by hand.
+.env
+.env.*
+!.env.example
+data/
+
+# Test Data
+test_data_*.json
+/media
+
+# Test Postgres clusters (the suite boots an embedded one per file) and the local
+# UI-test server. These are thousands of binary files and must never be committed.
+.pgdata*/
+server/.pgdata*/
+serve_ui.mjs
+ui_server.mjs
+.playwright-mcp/
+
+# Where check-ocr-engine.mjs writes its synthetic report image — a test artefact,
+# regenerated on every run.
+.ocr-check/
+
+# Output of tools/run-restricted.ps1, the helper that works around postgres
+# refusing to start under an elevated Windows token. See tools/README.md.
+server/t.out
+server/t.err
+server/t.exit
+
+# OCR assets assembled from node_modules and a pinned release by
+# scripts/sync-ocr-assets.mjs (run automatically by `npm run build`). Reproducible,
+# and ~22 MB — not something to keep in history.
+public/ocr/
+
+# Scratch space some tooling creates at the repo root (e.g. a temp bundle written
+# by a check script). Never part of the app.
+/tmp/
+
+# Diagnostic images and throwaway .mjs probes left at the root by an agent or a
+# check script. The real rule is not to `git add -A` while a background task is
+# still working: one such add swept ~75 of these, plus two traineddata files, into
+# a commit that then had to be rewritten.
+scratch-*
+/*.traineddata
+/*-zoom.png
+
+# One-off edit scripts. They are written to make a single change to a file, applied,
+# and deleted — but they keep surviving `git add -A` because they exist for the few
+# seconds between writing and running. Ignoring the pattern is cheaper than noticing
+# them in the status every time.
+/_tmp-*.mjs
+/tmp-*.mjs
+
+# Agent-harness scratch: plan documents and session notes the tooling writes into the
+# workspace. Nothing the app builds or serves.
+/.zcode/
+
+# Scratch files used while composing a commit message.
+.tmp-*
+
+# Build output and screenshot scratch from local verification runs. Never part of the app.
+dist-milestone/
+.milestone-shots/
+vite.dev-local.config.ts
+verification/
+server/test-out.txt
+
+# Local preview server (a dev tool, not part of the app).
+.preview-server.mjs
+
+# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
+.git/
+.hg/
+.svn/
+bower_components/
+jspm_packages/
+__pycache__/
+site-packages/
+venv/
+coverage/
+htmlcov/
+lcov-report/
+cmakefiles/
+cmake-build-*/
+bazel-*/
+pods/
+deriveddata/
+storybook-static/
+playwright-report/
+test-results/
+allure-results/
+allure-report/
+cdk.out/
+*.egg-info/
+*.dist-info/
+eggs/
+pip-wheel-metadata/
+wheels/
+# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----
+# 自定义规则写在下方（本行提示可删除）

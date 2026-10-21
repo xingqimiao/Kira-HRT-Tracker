@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>Kira HRT Tracker · 新增用药记录 M3E Canvas</title>
+<style>
+:root{
+  --stage:#0c0a0e;--bg:#16121a;--sc:#211c25;--sch:#2c2630;--sch-h:#362f3b;
+  --pri:#ffb1c8;--onpri:#5d1133;--pric:#7a2c4a;--onpric:#ffd9e3;
+  --secc:#4e3a43;--onsecc:#fbdbe6;--terc:#4d3a14;--onterc:#ffdea8;
+  --on:#eadfe6;--var:#cfc0c9;--out:#9a8d95;--ok:#7fe0a8;--okc:#1d3a2b;
+  --err:#ffb4ab;--errc:#5c1916;--onerrc:#ffdad6;--warn:#ffca64;--warnc:#423008;
+  --sh:0 24px 60px rgba(0,0,0,.55);
+}
+:root[data-theme="light"]{
+  --stage:#e9e4ea;--bg:#fff8f8;--sc:#f9ecf0;--sch:#f2e3e9;--sch-h:#ead6de;
+  --pri:#a03d63;--onpri:#ffffff;--pric:#ffd9e3;--onpric:#3f001e;
+  --secc:#f6dbe5;--onsecc:#2b151e;--terc:#ffe3b0;--onterc:#261900;
+  --on:#211a1d;--var:#4f4349;--out:#84757b;--ok:#2f8458;--okc:#d6f2e2;
+  --err:#ba1a1a;--errc:#ffdad6;--onerrc:#410002;--warn:#825500;--warnc:#ffddb3;
+  --sh:0 20px 50px rgba(80,30,50,.15);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none}
+html,body{height:100%;background:var(--stage);color:var(--on);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;overflow:hidden;transition:background .3s}
+button,input{font:inherit;color:inherit;background:none;border:0;outline:0}
+button{cursor:pointer}
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+input[type=number]{-moz-appearance:textfield}
+
+.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;pointer-events:none}
+
+/* M3E 切换弹簧关键帧动画 */
+@keyframes m3eSpringIn {
+  0% { opacity:0; transform:translateY(10px) scale(.96); }
+  100% { opacity:1; transform:translateY(0) scale(1); }
+}
+@keyframes m3ePop {
+  0% { transform:scale(.92); opacity:.65; }
+  60% { transform:scale(1.03); }
+  100% { transform:scale(1); opacity:1; }
+}
+.anim-in{animation:m3eSpringIn .36s cubic-bezier(.22,1.25,.36,1) both}
+.anim-pop{animation:m3ePop .32s cubic-bezier(.22,1.3,.36,1) both}
+
+/* 顶部画布调试控制栏 */
+.top{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:99;display:flex;flex-wrap:wrap;justify-content:center;gap:3px;padding:4px;background:var(--sc);border-radius:99px;box-shadow:0 6px 24px rgba(0,0,0,.35);border:1px solid rgba(154,141,149,.18);max-width:98vw}
+.top button{padding:5px 10px;border-radius:99px;font-size:11px;font-weight:700;color:var(--var);transition:.2s;white-space:nowrap}
+.top button.on{background:var(--pric);color:var(--onpric)}
+.top .sep{width:1px;background:rgba(154,141,149,.25);margin:4px 2px}
+
+.wrap{height:100%;display:grid;place-items:center;padding:52px 12px 12px}
+.phone{width:390px;height:820px;max-height:calc(100vh - 64px);background:var(--bg);border-radius:46px;border:7px solid #26202b;box-shadow:var(--sh);position:relative;overflow:hidden;display:flex;flex-direction:column;transition:width .4s cubic-bezier(.2,.9,.2,1),height .4s cubic-bezier(.2,.9,.2,1),border-radius .4s,background .3s}
+
+/* M3E 按压弹性圆角形变 */
+[data-m]{transition:border-radius .5s cubic-bezier(.3,1.8,.5,1),transform .35s cubic-bezier(.3,1.7,.5,1),background .2s,color .2s}
+[data-m].mo{border-radius:var(--mo,14px)!important;transform:scale(.95)}
+
+/* 顶栏 Header */
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:18px 18px 8px;flex-shrink:0}
+.hdr-l{display:flex;align-items:center;gap:12px}
+.ic-btn{width:42px;height:42px;border-radius:21px;background:var(--sch);color:var(--on);display:grid;place-items:center}
+.ic-btn:hover{background:var(--sch-h)}
+.hdr-title{font-size:22px;font-weight:800;letter-spacing:-.4px}
+.tpl-cnt{font-size:11px;font-weight:700;color:var(--var);background:var(--sch);padding:4px 10px;border-radius:99px}
+
+/* 顶部横向滑动模板条（MTF/FTM 独立，最多10个） */
+.tpl-strip{display:flex;gap:6px;overflow-x:auto;padding:4px 18px 10px;scrollbar-width:none;flex-shrink:0;cursor:grab;scroll-behavior:smooth}
+.tpl-strip::-webkit-scrollbar{display:none}
+.tpl-chip{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:16px;background:var(--sch);color:var(--on);font-size:12.5px;font-weight:600;white-space:nowrap;flex-shrink:0;transition:border-radius .35s cubic-bezier(.3,1.7,.5,1),background .25s,color .25s,transform .25s}
+.tpl-chip .i{width:15px;height:15px;color:var(--pri)}
+.tpl-chip.on{background:var(--pric);color:var(--onpric);font-weight:700;border-radius:22px}
+.tpl-chip.on .i{color:var(--onpric)}
+
+/* 主内容滚动区 */
+.body-scroll{flex:1;overflow-y:auto;padding:2px 18px 116px;scrollbar-width:none}
+.body-scroll::-webkit-scrollbar{display:none}
+
+/* 顶部分类连接式按钮组 (.cg) */
+.cg{display:flex;gap:3px}
+.cg button{flex:1;padding:9px 8px;background:var(--sch);color:var(--var);font-size:12px;font-weight:700;border-radius:6px;transition:border-radius .4s cubic-bezier(.3,1.8,.5,1),background .25s,color .25s,transform .25s;white-space:nowrap}
+.cg button:first-child{border-radius:20px 6px 6px 20px}
+.cg button:last-child{border-radius:6px 20px 20px 6px}
+.cg button.on{background:var(--pric);color:var(--onpric);border-radius:20px!important;transform:scale(1.02)}
+
+/* 列表项内部高对比度连接式胶囊组 (.cg-inner) */
+.cg-inner{display:flex;flex-wrap:wrap;gap:4px;width:100%}
+.cg-inner button{flex:1;min-width:calc(25% - 4px);padding:8px 8px;background:var(--sc);color:var(--var);font-size:12px;font-weight:700;border-radius:8px;transition:border-radius .38s cubic-bezier(.3,1.7,.5,1),background .2s,color .2s,transform .2s;white-space:nowrap;text-align:center}
+.cg-inner button:first-child{border-top-left-radius:18px;border-bottom-left-radius:18px}
+.cg-inner button:last-child{border-top-right-radius:18px;border-bottom-right-radius:18px}
+.cg-inner button.on{background:var(--pric);color:var(--onpric);border-radius:18px!important;transform:scale(1.02)}
+
+/* 简易凝胶专属提示条 */
+.gel-tip{padding:8px 12px;border-radius:14px;background:var(--terc);color:var(--onterc);font-size:12px;font-weight:600;line-height:1.4}
+
+/* 途径 + 药物合体容器 */
+.route-box{background:var(--sc);border-radius:26px;padding:6px;margin:8px 0 10px;transition:height .3s}
+.rg-strip{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:3px;margin-bottom:6px}
+.rt-item{padding:10px 2px 8px;background:var(--sch);color:var(--var);display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11.5px;font-weight:700;border-radius:8px;transition:border-radius .4s cubic-bezier(.3,1.8,.5,1),background .25s,color .25s,transform .25s}
+.rt-item:first-child{border-radius:20px 8px 8px 20px}
+.rt-item:last-child{border-radius:8px 20px 20px 8px}
+.rt-item:only-child{border-radius:20px}
+.rt-item .i{width:20px;height:20px;transition:transform .3s cubic-bezier(.3,1.8,.5,1)}
+.rt-item.on{background:var(--pric);color:var(--onpric);border-radius:20px!important}
+.rt-item.on .i{transform:scale(1.12)}
+
+.drug-sub{padding:2px 4px 4px;display:flex;flex-wrap:wrap;gap:6px}
+.drug-pill{padding:8px 14px;border-radius:14px;background:var(--sch);color:var(--var);font-size:12.5px;font-weight:600;transition:border-radius .35s cubic-bezier(.3,1.7,.5,1),background .22s,color .22s,transform .22s}
+.drug-pill.on{background:var(--pri);color:var(--onpri);border-radius:20px;font-weight:700;transform:scale(1.02)}
+
+/* 剂量英雄大磁贴 */
+.dose-hero{position:relative;overflow:hidden;border-radius:30px;padding:18px;background:var(--pric);color:var(--onpric);transition:background .35s,color .35s,transform .35s cubic-bezier(.22,1.25,.36,1);margin-bottom:10px}
+.dose-hero.aux-mode{background:var(--terc);color:var(--onterc)}
+.dose-hero.progest-mode{background:var(--secc);color:var(--onsecc)}
+.hero-cookie{position:absolute;right:-36px;top:-42px;width:136px;height:136px;opacity:.13;pointer-events:none;transition:transform .65s cubic-bezier(.2,1.1,.3,1)}
+.dh-top{display:flex;justify-content:space-between;align-items:center;position:relative;z-index:1}
+.dh-drug{font-size:14px;font-weight:800}
+
+.dh-main{display:flex;align-items:center;justify-content:space-between;margin:14px 0 16px;position:relative;z-index:1}
+.step-btn{width:52px;height:52px;border-radius:20px;background:rgba(255,255,255,.18);color:currentColor;display:grid;place-items:center;font-size:24px;font-weight:700}
+:root[data-theme="light"] .step-btn{background:rgba(0,0,0,.08)}
+.dh-val-wrap{text-align:center;flex:1}
+.dh-num-row{display:inline-flex;align-items:baseline;gap:6px}
+.dh-input{width:136px;text-align:center;font-size:44px;font-weight:800;letter-spacing:-1.5px;line-height:1;color:currentColor;border-bottom:2px dashed currentColor;padding-bottom:2px}
+.dh-unit{font-size:16px;font-weight:800;opacity:.85}
+
+/* 纯重量预设胶囊 */
+.preset-row{display:flex;flex-wrap:wrap;gap:6px;position:relative;z-index:1}
+.preset-pill{flex:1;min-width:64px;padding:8px 8px;border-radius:14px;background:rgba(0,0,0,.2);color:currentColor;font-size:12.5px;font-weight:700;text-align:center;transition:border-radius .35s cubic-bezier(.3,1.7,.5,1),background .2s,color .2s,transform .2s;white-space:nowrap}
+:root[data-theme="light"] .preset-pill{background:rgba(255,255,255,.55);color:var(--onpric)}
+:root[data-theme="light"] .dose-hero.aux-mode .preset-pill{color:var(--onterc)}
+:root[data-theme="light"] .dose-hero.progest-mode .preset-pill{color:var(--onsecc)}
+.preset-pill.on{background:var(--onpric);color:var(--pric);border-radius:99px;font-weight:800;transform:scale(1.03)}
+.dose-hero.aux-mode .preset-pill.on{background:var(--onterc);color:var(--terc)}
+.dose-hero.progest-mode .preset-pill.on{background:var(--onsecc);color:var(--secc)}
+
+/* GnRH 专属无剂量英雄状态卡 */
+.gnrh-card{border-radius:28px;padding:18px;background:var(--secc);color:var(--onsecc);display:none;align-items:center;gap:14px;margin-bottom:10px}
+.gnrh-card .ic{background:rgba(255,255,255,.18);color:currentColor}
+:root[data-theme="light"] .gnrh-card .ic{background:rgba(0,0,0,.08)}
+
+/* 48h 预计峰值胶囊条 */
+.peak-bar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-radius:20px;background:var(--okc);color:var(--ok);font-size:13px;font-weight:700;margin-bottom:10px}
+.peak-bar.warn-only{background:var(--warnc);color:var(--warn)}
+
+/* M3E 分段聚合列表 (.list > .li 全部为直接可见子元素) */
+.list{display:flex;flex-direction:column;gap:3px}
+.li{background:var(--sch);padding:14px 16px;display:flex;align-items:center;gap:13px;min-height:68px;border-radius:8px;transition:background .15s,border-radius .3s}
+.list>.li:first-child{border-radius:26px 26px 8px 8px}
+.list>.li:last-child{border-radius:8px 8px 26px 26px}
+.list>.li:only-child{border-radius:26px}
+.li.col-li{flex-direction:column;align-items:stretch;gap:11px}
+.li-row{display:flex;align-items:center;gap:13px;width:100%}
+.ic{width:42px;height:42px;border-radius:21px;background:var(--secc);color:var(--onsecc);display:grid;place-items:center;flex-shrink:0}
+.ic.p{background:var(--pric);color:var(--onpric)}
+.ic.am{background:var(--terc);color:var(--onterc)}
+.tx{flex:1;min-width:0}
+.t{font-size:14.5px;font-weight:700;color:var(--on)}
+.s{font-size:12px;color:var(--var);margin-top:2px}
+.ro-val{font-size:14.5px;font-weight:800;color:var(--onpric);background:var(--pric);padding:6px 13px;border-radius:14px;white-space:nowrap}
+
+/* 自研 M3E 嵌入式数字增减器 (.m3e-num) */
+.m3e-num{display:inline-flex;align-items:center;gap:2px;background:var(--sc);padding:3px;border-radius:18px}
+.m3e-num-btn{width:34px;height:34px;background:var(--sch-h);color:var(--on);font-size:18px;font-weight:800;display:grid;place-items:center;transition:.2s}
+.m3e-num-btn.minus{border-radius:15px 5px 5px 15px}
+.m3e-num-btn.plus{border-radius:5px 15px 15px 5px}
+.m3e-num-btn:active{background:var(--pric);color:var(--onpric);border-radius:15px}
+.m3e-num-val{width:54px;text-align:center;font-size:14px;font-weight:800;color:var(--on)}
+
+/* 底部悬浮操作栏 */
+.bot-bar{position:absolute;left:0;right:0;bottom:0;padding:12px 18px 20px;background:linear-gradient(to top,var(--bg) 80%,transparent);display:flex;gap:10px;align-items:center;z-index:10}
+.tpl-toggle{height:54px;padding:0 18px;border-radius:22px;background:var(--sch);color:var(--on);display:inline-flex;align-items:center;gap:8px;font-size:13.5px;font-weight:700;flex-shrink:0}
+.save-btn{flex:1;height:54px;border-radius:27px;background:var(--pri);color:var(--onpri);font-size:15px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 10px 26px rgba(0,0,0,.28)}
+
+/* ================= 二级全屏页：纯正 M3E 日历 + 时间选择器 (#timePage) ================= */
+.sub-page{position:absolute;inset:0;background:var(--bg);z-index:25;display:flex;flex-direction:column;padding:18px;transform:translateX(100%);transition:transform .38s cubic-bezier(.2,.9,.2,1);overflow-y:auto;scrollbar-width:none}
+.sub-page::-webkit-scrollbar{display:none}
+.sub-page.open{transform:none}
+
+/* M3E 原生感日历卡片 */
+.m3e-cal-card{background:var(--sc);border-radius:28px;padding:16px;margin-top:8px}
+.cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding:0 4px}
+.cal-title{font-size:15px;font-weight:800;color:var(--on)}
+.cal-nav{display:flex;gap:4px}
+.cal-nav-btn{width:36px;height:36px;border-radius:14px;background:var(--sch);color:var(--on);display:grid;place-items:center}
+.cal-week{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-size:11px;font-weight:700;color:var(--var);margin-bottom:6px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal-day{height:38px;border-radius:12px;font-size:13px;font-weight:700;color:var(--on);display:grid;place-items:center;transition:border-radius .35s cubic-bezier(.3,1.8,.5,1),background .2s,color .2s,transform .2s}
+.cal-day.empty{pointer-events:none}
+.cal-day.today{border:1.5px solid var(--pri);color:var(--pri)}
+.cal-day.on{background:var(--pri);color:var(--onpri);border-radius:19px!important;transform:scale(1.06);font-weight:800}
+
+/* M3E 时分选择器卡片 */
+.tp-card{background:var(--sc);border-radius:28px;padding:18px;margin-top:10px;display:flex;flex-direction:column;align-items:center;gap:14px}
+.tp-display{display:flex;align-items:center;gap:12px}
+.tp-col{display:flex;flex-direction:column;align-items:center;gap:6px}
+.tp-step{width:84px;height:32px;border-radius:12px;background:var(--sch);color:var(--var);font-size:16px;font-weight:800;display:grid;place-items:center}
+.tp-step:active{background:var(--pric);color:var(--onpric)}
+.tp-box{width:92px;height:70px;border-radius:22px;background:var(--pric);color:var(--onpric);font-size:36px;font-weight:800;text-align:center}
+.tp-colon{font-size:34px;font-weight:800;color:var(--var)}
+
+/* 底部面板：存为模板 M3E Bottom Sheet (#tplSheet) */
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:.25s;z-index:30}
+.scrim.open{opacity:1;pointer-events:auto}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--sc);border-radius:32px 32px 0 0;padding:12px 20px 24px;transform:translateY(102%);transition:transform .38s cubic-bezier(.2,.9,.2,1);z-index:35}
+.sheet.open{transform:none}
+.sh-handle{width:36px;height:4px;border-radius:2px;background:var(--out);opacity:.45;margin:0 auto 14px}
+.fld{width:100%;height:52px;border-radius:18px;background:var(--sch);color:var(--on);padding:0 16px;font-size:14.5px;font-weight:600;margin:12px 0 16px}
+.sh-actions{display:flex;gap:10px}
+.sh-btn{flex:1;height:48px;border-radius:24px;font-weight:700;font-size:14px}
+.sh-btn.cancel{background:var(--sch);color:var(--var)}
+.sh-btn.ok{background:var(--pri);color:var(--onpri)}
+
+/* Snackbar */
+#snack{position:absolute;left:18px;right:18px;bottom:84px;background:var(--on);color:var(--bg);padding:12px 16px;border-radius:16px;font-size:13px;font-weight:700;transform:translateY(30px);opacity:0;pointer-events:none;transition:.28s;z-index:40}
+#snack.on{transform:none;opacity:1}
+
+/* 桌面端双栏响应式 */
+body.desktop .phone{width:880px;height:710px;max-height:calc(100vh - 68px);border-radius:36px}
+body.desktop .hdr,body.desktop .tpl-strip{padding-left:28px;padding-right:28px}
+body.desktop .body-scroll{padding:4px 28px 104px}
+body.desktop .desk-grid{display:grid;grid-template-columns:1.02fr 1fr;gap:22px;align-items:start}
+body.desktop .bot-bar{padding:14px 28px 22px}
+body.desktop .sub-page{padding:24px 36px}
+body.desktop .tp-layout{display:grid;grid-template-columns:1.1fr 1fr;gap:20px;align-items:stretch}
+body.desktop .sheet{width:420px;left:50%;bottom:50%;transform:translate(-50%,60%) scale(.92);opacity:0;pointer-events:none;border-radius:32px;transition:.28s}
+body.desktop .sheet.open{transform:translate(-50%,50%) scale(1);opacity:1;pointer-events:auto}
+</style>
+</head>
+<body>
+
+<!-- 定制 SVG 图标库 -->
+<svg width="0" height="0" style="position:absolute">
+<defs>
+  <symbol id="x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="check" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></symbol>
+  <symbol id="chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="mark" viewBox="0 0 24 24"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z"/></symbol>
+  <symbol id="bolt" viewBox="0 0 24 24"><path d="M13 2 3 14h8l-1 8 10-12h-8l1-8Z"/></symbol>
+  <symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <!-- 口服：正圆形药片 + 中间一条斜杠 -->
+  <symbol id="pill" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="8.5"/>
+    <line x1="6.2" y1="17.8" x2="17.8" y2="6.2"/>
+  </symbol>
+  <!-- 注射：带刻度针筒 -->
+  <symbol id="syr" viewBox="0 0 24 24">
+    <path d="m18 2 4 4M17 5l2 2M14 5l5 5-9.5 9.5L4.5 14.5 14 5Z"/>
+    <path d="m7 17-4 4M11.5 7.5l2 2M9 10l2 2"/>
+  </symbol>
+  <!-- 贴片：折角贴纸造型 -->
+  <symbol id="patch" viewBox="0 0 24 24">
+    <path d="M6 4h9l5 5v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/>
+    <path d="M15 4v5h5"/>
+    <circle cx="9.5" cy="11.5" r="1" fill="currentColor"/><circle cx="13.5" cy="11.5" r="1" fill="currentColor"/>
+    <circle cx="9.5" cy="15.5" r="1" fill="currentColor"/><circle cx="13.5" cy="15.5" r="1" fill="currentColor"/>
+  </symbol>
+  <symbol id="peel" viewBox="0 0 24 24"><path d="M15 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M14 4c0 5 1 6 6 6M15 10l6-6"/></symbol>
+  <symbol id="tongue" viewBox="0 0 24 24"><path d="M5 9c0 5 3 11 7 11s7-6 7-11H5Zm7 0v7"/><path d="M3 9h18"/></symbol>
+  <symbol id="gel" viewBox="0 0 24 24"><path d="M12 3c4 5 6 8 6 11a6 6 0 1 1-12 0c0-3 2-6 6-11Z"/></symbol>
+  <symbol id="shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V6l-8-3Z"/></symbol>
+  <symbol id="spark" viewBox="0 0 24 24"><path d="m12 3 2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2L12 3Z"/></symbol>
+  <symbol id="tune" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4m4 0h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></symbol>
+</defs>
+</svg>
+
+<!-- 顶部多模式预览切换栏 -->
+<div class="top">
+  <button id="vMob" class="on" onclick="setView(false)">手机</button>
+  <button id="vDesk" onclick="setView(true)">桌面</button>
+  <div class="sep"></div>
+  <button id="tDark" class="on" onclick="setTheme('dark')">深色</button>
+  <button id="tLight" onclick="setTheme('light')">浅色</button>
+  <div class="sep"></div>
+  <button id="mMtf" class="on" onclick="setHrtMode('mtf')">MTF</button>
+  <button id="mFtm" onclick="setHrtMode('ftm')">FTM</button>
+  <div class="sep"></div>
+  <button id="eMihari" onclick="setEngine('mihari')">原版模型</button>
+  <button id="eTrans" class="on" onclick="setEngine('transmtf')">Transmtf</button>
+  <div class="sep"></div>
+  <button id="bCustomGel" onclick="toggleCustomGel()">自建凝胶: 无</button>
+</div>
+
+<div class="wrap">
+  <div class="phone">
+    <!-- 1. 顶栏 -->
+    <div class="hdr">
+      <div class="hdr-l">
+        <button class="ic-btn" data-m style="--mo:12px" onclick="toast('已关闭返回')">
+          <svg class="i"><use href="#x"/></svg>
+        </button>
+        <span class="hdr-title">新增用药记录</span>
+      </div>
+      <span class="tpl-cnt" id="tplCountBadge">模板 3/10</span>
+    </div>
+
+    <!-- 2. 可左右滑动的快捷模板条（MTF/FTM 各自独立，最多10个） -->
+    <div class="tpl-strip" id="tplStrip"></div>
+
+    <!-- 3. 主滚动区 -->
+    <div class="body-scroll">
+      <div class="cg" id="catStrip" style="margin-bottom:8px"></div>
+
+      <div class="desk-grid">
+        <!-- 左栏：途径+药物选择器 + 剂量英雄卡片 + 48h 预计峰值 -->
+        <div>
+          <div class="route-box" id="routeBox">
+            <div class="rg-strip" id="routeStrip"></div>
+            <div class="drug-sub" id="drugPills"></div>
+          </div>
+
+          <!-- 剂量英雄卡片 -->
+          <div class="dose-hero" id="doseHero">
+            <svg class="hero-cookie" id="heroCookie" viewBox="-80 -80 160 160"><path id="cookiePath" fill="currentColor"/></svg>
+            <div class="dh-top">
+              <div class="dh-drug" id="heroDrugName">戊酸雌二醇 (EV)</div>
+            </div>
+            <div class="dh-main" id="heroMainBox">
+              <button class="step-btn" data-m style="--mo:26px 10px 26px 10px" onclick="stepDose(-1)">−</button>
+              <div class="dh-val-wrap">
+                <div class="dh-num-row">
+                  <input id="doseInput" class="dh-input" type="number" step="1" value="2" oninput="updateDoseUI()" />
+                  <span class="dh-unit" id="doseUnit">mg</span>
+                </div>
+              </div>
+              <button class="step-btn" data-m style="--mo:10px 26px 10px 26px" onclick="stepDose(1)">+</button>
+            </div>
+            <div class="preset-row" id="presetRow"></div>
+          </div>
+
+          <!-- GnRH 专属无剂量卡片 -->
+          <div class="gnrh-card" id="gnrhCard">
+            <div class="ic"><svg class="i"><use href="#syr"/></svg></div>
+            <div class="tx">
+              <div class="t">GnRH 类似物施打记录</div>
+              <div class="s">剂量由临床医生控制，无需填写用量，仅记录今天已施打</div>
+            </div>
+          </div>
+
+          <!-- 48h 预计峰值条 -->
+          <div class="peak-bar" id="peakBar"></div>
+        </div>
+
+        <!-- 右栏：统一的 M3E 分段聚合列表 -->
+        <div>
+          <div class="list" id="detailList"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. 底部操作栏 -->
+    <div class="bot-bar">
+      <button class="tpl-toggle" data-m style="--mo:14px" onclick="openTplSheet()">
+        <svg class="i"><use href="#mark"/></svg>存为模板
+      </button>
+      <button class="save-btn" data-m style="--mo:16px" onclick="toast('已保存用药记录')">
+        <svg class="i"><use href="#check"/></svg>保存记录
+      </button>
+    </div>
+
+    <!-- ================= 二级页面：M3E 日历 + 时间选择器 (#timePage) ================= -->
+    <div class="sub-page" id="timePage">
+      <div class="hdr" style="padding:0 0 8px">
+        <div class="hdr-l">
+          <button class="ic-btn" data-m style="--mo:12px" onclick="closeTimePage()">
+            <svg class="i" style="transform:rotate(180deg)"><use href="#chev"/></svg>
+          </button>
+          <span class="hdr-title">选择给药时间</span>
+        </div>
+        <button class="tpl-chip on" data-m style="--mo:10px" onclick="resetTimeNow()">恢复现在</button>
+      </div>
+
+      <div class="tp-layout">
+        <!-- M3E 自绘日历选择器 -->
+        <div class="m3e-cal-card">
+          <div class="cal-head">
+            <button class="cal-nav-btn" data-m style="--mo:8px" onclick="changeCalMonth(-1)">
+              <svg class="i" style="transform:rotate(180deg)"><use href="#chev"/></svg>
+            </button>
+            <span class="cal-title" id="calMonthTitle">2026年 10月</span>
+            <button class="cal-nav-btn" data-m style="--mo:8px" onclick="changeCalMonth(1)">
+              <svg class="i"><use href="#chev"/></svg>
+            </button>
+          </div>
+          <div class="cal-week"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+          <div class="cal-grid" id="calGrid"></div>
+        </div>
+
+        <!-- M3E 时分选择器（无底部快捷加减按钮） -->
+        <div class="tp-card" style="justify-content:space-between">
+          <div style="font-size:13px;font-weight:700;color:var(--var);align-self:flex-start">具体时刻 (24小时制)</div>
+          <div class="tp-display">
+            <div class="tp-col">
+              <button class="tp-step" data-m style="--mo:8px" onclick="stepClock('h',1)">+</button>
+              <input type="number" id="tpHour" class="tp-box" value="21" />
+              <button class="tp-step" data-m style="--mo:8px" onclick="stepClock('h',-1)">−</button>
+            </div>
+            <span class="tp-colon">:</span>
+            <div class="tp-col">
+              <button class="tp-step" data-m style="--mo:8px" onclick="stepClock('m',5)">+</button>
+              <input type="number" id="tpMin" class="tp-box" value="30" />
+              <button class="tp-step" data-m style="--mo:8px" onclick="stepClock('m',-5)">−</button>
+            </div>
+          </div>
+          <button class="save-btn" data-m style="--mo:16px;width:100%;flex:none;margin-top:8px" onclick="confirmCustomTime()">
+            <svg class="i"><use href="#check"/></svg>确认时间
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= 底部面板：存为模板 M3E Sheet (#tplSheet) ================= -->
+    <div class="scrim" id="tplScrim" onclick="closeTplSheet()"></div>
+    <div class="sheet" id="tplSheet">
+      <div class="sh-handle"></div>
+      <div class="t" style="font-size:18px">存为快捷模板</div>
+      <div class="s">将保存当前药物与重量至顶部滑动栏（最多 10 个）</div>
+      <input type="text" id="tplNameInput" class="fld" placeholder="选填备注名（留空默认显示药物+重量）" maxlength="18" />
+      <div class="sh-actions">
+        <button class="sh-btn cancel" onclick="closeTplSheet()">取消</button>
+        <button class="sh-btn ok" onclick="confirmAddTemplate()">添加模板</button>
+      </div>
+    </div>
+
+    <div id="snack"><span id="snackText">提示</span></div>
+  </div>
+</div>
+
+<script>
+// 曲奇背景
+function cookie(cx,cy,r,n,a){
+  const pts=[];
+  for(let i=0;i<=120;i++){
+    const t=i/120*Math.PI*2, rr=r*(1+a*Math.cos(n*t));
+    pts.push(`${i?'L':'M'}${(cx+rr*Math.cos(t)).toFixed(2)},${(cy+rr*Math.sin(t)).toFixed(2)}`);
+  }
+  return pts.join(' ')+'Z';
+}
+document.getElementById('cookiePath').setAttribute('d', cookie(0,0,72,9,0.09));
+
+// 全局状态
+let hrtMode = 'mtf';       // 'mtf' | 'ftm'
+let pkEngine = 'transmtf'; // 'mihari' | 'transmtf'
+let curCat = 'hrt';
+let curRoute = 'oral';
+let curDrugId = 'EV_ORAL';
+let patchMode = 'rate';
+let patchDays = '3.5';
+let subTier = 'standard';
+let customSubMin = 8;
+let gelSite = '手臂';
+let gelProduct = 'Oestrogel';
+let gelArea = '产品默认';
+let gelCo = '无';
+let gelWashHours = 0;
+let timeLabel = '现在记录';
+let timeSubLabel = '实时当前时间 · 点击修改';
+let cookieDeg = 0;
+
+// 模拟用户在设置中自建的凝胶产品列表（id >= 1000，仅非空时才显示自建产品项！）
+let userCustomGelProducts = [];
+
+// M3E 日历状态
+let calYear = 2026, calMonth = 10, calSelectedDay = 18;
+
+// MTF 与 FTM 各自独立的预设模板列表
+const templatesByMode = {
+  mtf: [
+    { cat:'hrt', route:'oral', drug:'EV_ORAL', dose:2, label:'戊酸雌二醇 · 2 mg' },
+    { cat:'hrt', route:'gel', drug:'E2_GEL', dose:1.5, label:'雌二醇凝胶 · 1.5 mg' },
+    { cat:'aa', route:'oral', drug:'CPA', dose:12.5, label:'醋酸环丙孕酮 · 12.5 mg' }
+  ],
+  ftm: [
+    { cat:'hrt', route:'inj', drug:'TC', dose:100, label:'环戊丙酸睾酮 · 100 mg' },
+    { cat:'hrt', route:'gel', drug:'T_GEL', dose:40.5, label:'未酯化睾酮凝胶 · 40.5 mg' },
+    { cat:'hair', route:'oral', drug:'FIN_FTM', dose:1, label:'非那雄胺 · 1 mg' }
+  ]
+};
+let activeTplIdx = 0;
+
+// 严格按社群常用度排列（口服 ＞ 舌下 ＞ 凝胶 ＞ 注射 ＞ 贴片），MPA 为 FTM 独占，无米诺地尔
+const CATALOG = {
+  mtf: {
+    cats: [
+      { id:'hrt', name:'雌激素' },
+      { id:'aa', name:'抗雄' },
+      { id:'progest', name:'孕激素/SERM' },
+      { id:'hair', name:'毛发' }
+    ],
+    hrt: {
+      routes: [
+        { id:'oral', name:'口服', icon:'pill', drugs:[
+          { id:'EV_ORAL', name:'戊酸雌二醇 (EV)', presets:[1, 2, 4], step:1, def:2, factor:0.76, curve:true },
+          { id:'E2_ORAL', name:'17β-雌二醇 (E2)', presets:[1, 2, 4], step:1, def:2, factor:1.0, curve:true }
+        ]},
+        { id:'sub', name:'舌下', icon:'tongue', drugs:[
+          { id:'EV_SUB', name:'戊酸雌二醇 (EV)', presets:[1, 2, 4], step:0.5, def:2, factor:0.76, curve:true },
+          { id:'E2_SUB', name:'17β-雌二醇 (E2)', presets:[1, 2, 4], step:0.5, def:2, factor:1.0, curve:true }
+        ]},
+        { id:'gel', name:'凝胶', icon:'gel', drugs:[
+          { id:'E2_GEL', name:'17β-雌二醇凝胶', presets:[0.75, 1.5, 3], step:0.75, def:1.5, factor:1.0, curve:true }
+        ]},
+        { id:'inj', name:'注射', icon:'syr', drugs:[
+          { id:'EV_INJ', name:'戊酸雌二醇 (EV)', presets:[5, 10], step:5, def:5, factor:0.76, curve:true, showEq:true },
+          { id:'EN', name:'庚酸雌二醇 (EN)', presets:[10, 50], step:5, def:10, factor:0.72, curve:true },
+          { id:'EC', name:'环戊丙酸雌二醇 (EC)', presets:[5, 6, 10, 12, 25], step:1, def:5, factor:0.70, curve:true },
+          { id:'EB', name:'苯甲酸雌二醇 (EB)', presets:[1, 2], step:1, def:2, factor:0.72, curve:true },
+          { id:'EU', name:'十一酸雌二醇 (EU)', presets:[10, 40], step:10, def:40, factor:0.63, curve:true }
+        ]},
+        { id:'patch', name:'贴片', icon:'patch', drugs:[
+          { id:'E2_PATCH', name:'雌二醇贴片', presets:[50, 100, 150, 200], step:25, def:100, factor:1.0, curve:true }
+        ]},
+        { id:'peel', name:'撕下', icon:'peel', drugs:[
+          { id:'E2_PEEL', name:'撕下在贴贴片', presets:[], step:0, def:0, noDose:true }
+        ]}
+      ]
+    },
+    aa: {
+      routes: [
+        { id:'oral', name:'抗雄与阻断剂', icon:'shield', drugs:[
+          { id:'CPA', name:'醋酸环丙孕酮 (CPA)', presets:[6.25, 12.5], step:6.25, def:12.5, max:100 },
+          { id:'SPIRO', name:'螺内酯 (SPIRO)', presets:[20, 100], step:20, def:100 },
+          { id:'BICAL', name:'比卡鲁胺 (BICAL)', presets:[25, 50], step:25, def:25, max:50 },
+          { id:'GNRH_MTF', name:'GnRH 类似物', presets:[], step:0, def:0, isGnrh:true }
+        ]}
+      ]
+    },
+    progest: {
+      routes: [
+        { id:'oral', name:'孕激素与受体调节', icon:'pill', drugs:[
+          { id:'P4_MIC', name:'微粉化黄体酮', presets:[100, 200], step:100, def:100 },
+          { id:'RALOX', name:'雷洛昔芬 (SERM)', presets:[60], step:30, def:60 }
+        ]}
+      ]
+    },
+    hair: {
+      routes: [
+        { id:'oral', name:'5α-还原酶抑制剂', icon:'pill', drugs:[
+          { id:'FIN_MTF', name:'非那雄胺 (Finasteride)', presets:[1, 5], step:1, def:1 },
+          { id:'DUT_MTF', name:'度他雄胺 (Dutasteride)', presets:[0.5], step:0.5, def:0.5 }
+        ]}
+      ]
+    }
+  },
+  ftm: {
+    cats: [
+      { id:'hrt', name:'雄激素' },
+      { id:'cycle', name:'周期管理' },
+      { id:'hair', name:'毛发' }
+    ],
+    hrt: {
+      routes: [
+        { id:'gel', name:'凝胶', icon:'gel', drugs:[
+          { id:'T_GEL', name:'未酯化睾酮凝胶 (T)', presets:[40.5, 50], step:10, def:40.5, factor:1.0, curve:true }
+        ]},
+        { id:'inj', name:'注射', icon:'syr', drugs:[
+          { id:'TC', name:'环戊丙酸睾酮 (TC)', presets:[100, 200], step:50, def:100, factor:0.70, curve:true, showTEq:true },
+          { id:'TE', name:'庚酸睾酮 (TE)', presets:[250], step:125, def:250, factor:0.72, curve:true, showTEq:true },
+          { id:'TU', name:'十一酸睾酮注射液 (TU)', presets:[250, 1000], step:250, def:250, factor:0.63, curve:true, showTEq:true }
+        ]},
+        { id:'oral', name:'口服软胶囊', icon:'pill', drugs:[
+          { id:'TU_CAP', name:'十一酸睾酮软胶囊', presets:[40, 80], step:40, def:40, curve:false, noCurveReason:'十一酸睾酮软胶囊经淋巴吸收个体差异大，仅作记录，无法给出浓度曲线' }
+        ]}
+      ]
+    },
+    cycle: {
+      routes: [
+        { id:'oral', name:'停经与周期抑制', icon:'shield', drugs:[
+          { id:'MPA_FTM', name:'醋酸甲羟孕酮 (MPA)', presets:[2, 5], step:1, def:5 },
+          { id:'NET', name:'炔诺酮 (Norethisterone)', presets:[5], step:2.5, def:5 },
+          { id:'GNRH_FTM', name:'GnRH 类似物', presets:[], step:0, def:0, isGnrh:true }
+        ]}
+      ]
+    },
+    hair: {
+      routes: [
+        { id:'oral', name:'5α-还原酶抑制剂', icon:'pill', drugs:[
+          { id:'FIN_FTM', name:'非那雄胺 (Finasteride)', presets:[1], step:0.5, def:1 },
+          { id:'DUT_FTM', name:'度他雄胺 (Dutasteride)', presets:[0.5], step:0.5, def:0.5 }
+        ]}
+      ]
+    }
+  }
+};
+
+function getCurRouteObj() {
+  const routes = CATALOG[hrtMode][curCat].routes;
+  return routes.find(r => r.id === curRoute) || routes[0];
+}
+function getCurDrugObj() {
+  const rObj = getCurRouteObj();
+  return rObj.drugs.find(d => d.id === curDrugId) || rObj.drugs[0];
+}
+
+function triggerSpring(el, cls = 'anim-in') {
+  if (!el) return;
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
+
+function renderTemplates() {
+  const list = templatesByMode[hrtMode];
+  const strip = document.getElementById('tplStrip');
+  document.getElementById('tplCountBadge').textContent = `模板 ${list.length}/10`;
+  strip.innerHTML = list.map((t, i) => `
+    <button class="tpl-chip ${i===activeTplIdx?'on':''}" data-m style="--mo:10px" onclick="useTemplate(${i})">
+      <svg class="i"><use href="#bolt"/></svg>${t.label}
+    </button>
+  `).join('');
+}
+
+function useTemplate(idx) {
+  activeTplIdx = idx;
+  const t = templatesByMode[hrtMode][idx];
+  selectCat(t.cat, false);
+  selectRoute(t.route, false);
+  selectDrug(t.drug, false);
+  setDose(t.dose);
+  renderTemplates();
+}
+
+function setHrtMode(m) {
+  hrtMode = m;
+  activeTplIdx = 0;
+  document.getElementById('mMtf').classList.toggle('on', m === 'mtf');
+  document.getElementById('mFtm').classList.toggle('on', m === 'ftm');
+  renderTemplates();
+  selectCat('hrt');
+}
+
+function setEngine(eng) {
+  pkEngine = eng;
+  document.getElementById('eMihari').classList.toggle('on', eng === 'mihari');
+  document.getElementById('eTrans').classList.toggle('on', eng === 'transmtf');
+  renderDetailList(true);
+  updateDoseUI();
+}
+
+function toggleCustomGel() {
+  if (userCustomGelProducts.length === 0) {
+    userCustomGelProducts = [{ id: 1001, name: '自建: 0.1% 高浓凝胶' }];
+    document.getElementById('bCustomGel').textContent = '自建凝胶: 有(1)';
+    document.getElementById('bCustomGel').classList.add('on');
+  } else {
+    userCustomGelProducts = [];
+    if (gelProduct.startsWith('自建')) gelProduct = 'Oestrogel';
+    document.getElementById('bCustomGel').textContent = '自建凝胶: 无';
+    document.getElementById('bCustomGel').classList.remove('on');
+  }
+  renderDetailList(true);
+}
+
+function selectCat(catId, autoFirst = true) {
+  curCat = catId;
+  const cats = CATALOG[hrtMode].cats;
+  document.getElementById('catStrip').innerHTML = cats.map(c =>
+    `<button class="${c.id===catId?'on':''}" data-m style="--mo:12px" onclick="selectCat('${c.id}')">${c.name}</button>`
+  ).join('');
+  if (autoFirst) selectRoute(CATALOG[hrtMode][catId].routes[0].id);
+}
+
+function selectRoute(rId, autoFirst = true) {
+  curRoute = rId;
+  const routes = CATALOG[hrtMode][curCat].routes;
+  const rObj = getCurRouteObj();
+
+  const rs = document.getElementById('routeStrip');
+  rs.style.display = routes.length > 1 ? 'grid' : 'none';
+  rs.innerHTML = routes.map(r => `
+    <button class="rt-item ${r.id===rObj.id?'on':''}" data-m style="--mo:14px" onclick="selectRoute('${r.id}')">
+      <svg class="i"><use href="#${r.icon}"/></svg>${r.name}
+    </button>
+  `).join('');
+
+  if (autoFirst) selectDrug(rObj.drugs[0].id);
+}
+
+function selectDrug(dId, resetDef = true) {
+  curDrugId = dId;
+  const rObj = getCurRouteObj();
+  const dObj = getCurDrugObj();
+
+  const dp = document.getElementById('drugPills');
+  dp.innerHTML = rObj.drugs.map((d, idx) =>
+    `<button class="drug-pill anim-in ${d.id===dObj.id?'on':''}" style="animation-delay:${idx*35}ms;--mo:10px" data-m onclick="selectDrug('${d.id}')">${d.name}</button>`
+  ).join('');
+
+  const hero = document.getElementById('doseHero');
+  const gnrhCard = document.getElementById('gnrhCard');
+  if (dObj.isGnrh) {
+    hero.style.display = 'none';
+    gnrhCard.style.display = 'flex';
+    triggerSpring(gnrhCard, 'anim-in');
+  } else if (dObj.noDose) {
+    hero.style.display = 'none';
+    gnrhCard.style.display = 'none';
+  } else {
+    hero.style.display = 'block';
+    gnrhCard.style.display = 'none';
+    triggerSpring(document.getElementById('heroMainBox'), 'anim-pop');
+  }
+
+  hero.classList.toggle('aux-mode', curCat === 'aa' || curCat === 'cycle');
+  hero.classList.toggle('progest-mode', curCat === 'progest' || curCat === 'hair');
+  cookieDeg += 40;
+  document.getElementById('heroCookie').style.transform = `rotate(${cookieDeg}deg)`;
+
+  if (!dObj.isGnrh && !dObj.noDose) {
+    const isPatchTotal = curRoute === 'patch' && patchMode === 'total';
+    const unitStr = (curRoute === 'patch' && patchMode === 'rate') ? 'µg/d' : 'mg';
+    const stepVal = isPatchTotal ? 0.5 : dObj.step;
+    const defVal = isPatchTotal ? 3 : dObj.def;
+    const presets = isPatchTotal ? [1.5, 3, 5, 6] : dObj.presets;
+
+    document.getElementById('doseUnit').textContent = unitStr;
+    document.getElementById('doseInput').step = stepVal;
+    if (resetDef) document.getElementById('doseInput').value = defVal;
+
+    document.getElementById('presetRow').innerHTML = presets.map((v, idx) =>
+      `<button class="preset-pill anim-in" style="animation-delay:${idx*30}ms;--mo:10px" data-m onclick="setDose(${v})">${v} ${unitStr}</button>`
+    ).join('');
+  }
+
+  renderDetailList(true);
+  updateDoseUI();
+}
+
+function setDose(v) {
+  const inp = document.getElementById('doseInput');
+  inp.value = v;
+  triggerSpring(inp, 'anim-pop');
+  updateDoseUI();
+}
+
+function stepDose(dir) {
+  const dObj = getCurDrugObj();
+  const isPatchTotal = curRoute === 'patch' && patchMode === 'total';
+  const step = isPatchTotal ? 0.5 : (dObj.step || 1);
+  const inp = document.getElementById('doseInput');
+  const cur = parseFloat(inp.value) || 0;
+  const next = Math.max(step, Number((cur + dir * step).toFixed(2)));
+  setDose(next);
+}
+
+function updateDoseUI() {
+  const dObj = getCurDrugObj();
+  let val = parseFloat(document.getElementById('doseInput').value) || 0;
+  if (dObj.max && val > dObj.max) {
+    val = dObj.max;
+    document.getElementById('doseInput').value = val;
+    toast(`已限制为上限 ${dObj.max} mg`);
+  }
+
+  document.getElementById('heroDrugName').textContent = dObj.name;
+
+  document.querySelectorAll('#presetRow .preset-pill').forEach(btn => {
+    const num = parseFloat(btn.textContent);
+    btn.classList.toggle('on', Math.abs(num - val) < 0.01);
+  });
+
+  const eqValEl = document.getElementById('equivValue');
+  if (eqValEl && dObj.factor) {
+    eqValEl.textContent = `${(val * dObj.factor).toFixed(dObj.showTEq ? 1 : 2)} mg`;
+  }
+
+  const pb = document.getElementById('peakBar');
+  if (dObj.noDose || dObj.isGnrh || curCat !== 'hrt') {
+    pb.style.display = 'none';
+    return;
+  }
+
+  if (dObj.noCurveReason) {
+    pb.style.display = 'flex';
+    pb.className = 'peak-bar warn-only anim-in';
+    pb.innerHTML = `<span>${dObj.noCurveReason}</span>`;
+  } else {
+    pb.style.display = 'flex';
+    pb.className = 'peak-bar anim-in';
+    const unit = hrtMode === 'ftm' ? 'ng/dL' : 'pg/mL';
+    const est = hrtMode === 'ftm' ? Math.round(val * 3.8) : Math.round(val * (curRoute==='sub'?82:curRoute==='inj'?38:curRoute==='patch'?0.75:45));
+    pb.innerHTML = `<span>预计本次给药后 48h 预计峰值</span><b>+${est} ${unit}</b>`;
+  }
+}
+
+// 渲染右侧/下方 M3E 分段聚合列表
+function renderDetailList(animate = false) {
+  const listEl = document.getElementById('detailList');
+  const dObj = getCurDrugObj();
+  const effectiveEngine = hrtMode === 'ftm' ? 'mihari' : pkEngine;
+  const rawItems = [];
+
+  // 1. 通用必填：给药时间
+  rawItems.push(`
+    <div class="li" style="cursor:pointer" data-m style="--mo:18px" onclick="openTimePage()">
+      <div class="ic p"><svg class="i"><use href="#clock"/></svg></div>
+      <div class="tx">
+        <div class="t">${timeLabel}</div>
+        <div class="s">${timeSubLabel}</div>
+      </div>
+      <svg class="i" style="color:var(--var)"><use href="#chev"/></svg>
+    </div>
+  `);
+
+  // 2. 只读当量行（仅 EV 注射 或 FTM 睾酮酯注射显示）
+  if (dObj.showEq || dObj.showTEq) {
+    const val = parseFloat(document.getElementById('doseInput').value) || dObj.def;
+    const eqStr = (val * dObj.factor).toFixed(dObj.showTEq ? 1 : 2);
+    rawItems.push(`
+      <div class="li">
+        <div class="ic"><svg class="i"><use href="#spark"/></svg></div>
+        <div class="tx">
+          <div class="t">${dObj.showTEq ? 'T 当量' : 'E2 当量'}</div>
+          <div class="s">只读推算值（×${dObj.factor.toFixed(2)}）</div>
+        </div>
+        <span class="ro-val" id="equivValue">${eqStr} mg</span>
+      </div>
+    `);
+  }
+
+  // 3. 舌下专属
+  if (curCat === 'hrt' && curRoute === 'sub') {
+    const theta = Math.min(0.35, (0.05 + customSubMin * 0.014)).toFixed(2);
+    rawItems.push(`
+      <div class="li col-li">
+        <div class="li-row">
+          <div class="ic p"><svg class="i"><use href="#tongue"/></svg></div>
+          <div class="tx">
+            <div class="t">舌下吸收档位</div>
+            <div class="s">含服时长决定快速透黏膜吸收比例 θ</div>
+          </div>
+        </div>
+        <div class="cg-inner">
+          <button class="${subTier==='quick'?'on':''}" onclick="setSubTier('quick')">2m (quick)</button>
+          <button class="${subTier==='casual'?'on':''}" onclick="setSubTier('casual')">5m</button>
+          <button class="${subTier==='standard'?'on':''}" onclick="setSubTier('standard')">10m</button>
+          <button class="${subTier==='strict'?'on':''}" onclick="setSubTier('strict')">15m</button>
+          <button class="${subTier==='custom'?'on':''}" onclick="setSubTier('custom')">自订</button>
+        </div>
+        ${subTier==='custom' ? `
+          <div class="li-row" style="justify-content:space-between;padding-top:4px">
+            <div class="tx">
+              <div class="t" style="font-size:13.5px">自订含服分钟数</div>
+              <div class="s">换算吸收系数 θ ≈ ${theta}</div>
+            </div>
+            <div class="m3e-num">
+              <button class="m3e-num-btn minus" onclick="stepSubMin(-1)">−</button>
+              <span class="m3e-num-val">${customSubMin} m</span>
+              <button class="m3e-num-btn plus" onclick="stepSubMin(1)">+</button>
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `);
+  }
+
+  // 4. 凝胶专属（简易凝胶提醒 + 自建产品按需显示）
+  if (curCat === 'hrt' && curRoute === 'gel') {
+    const sites = hrtMode === 'mtf' ? ['手臂', '大腿', '阴囊', '腹部'] : ['手臂', '大腿', '腹部'];
+    rawItems.push(`
+      <div class="li col-li">
+        <div class="li-row">
+          <div class="ic p"><svg class="i"><use href="#gel"/></svg></div>
+          <div class="tx">
+            <div class="t">涂抹部位</div>
+            <div class="s">不同部位角质层透皮吸收率不同</div>
+          </div>
+        </div>
+        <div class="cg-inner">
+          ${sites.map(s => `<button class="${gelSite===s?'on':''}" onclick="gelSite='${s}';renderDetailList(false)">${s}</button>`).join('')}
+        </div>
+      </div>
+    `);
+
+    if (effectiveEngine === 'transmtf') {
+      const baseProds = ['Oestrogel', 'Estreva', 'EstroGel', 'Divigel', '简易凝胶'];
+      const customNames = userCustomGelProducts.map(p => p.name);
+      const prods = [...baseProds, ...customNames];
+      const areas = ['产品默认', '1 掌', '2 掌', '3 掌', '单侧大腿', '单臂', '双臂'];
+      const cos = ['无', '防晒 (−16%)', '保湿 (+38%)'];
+      rawItems.push(`
+        <div class="li col-li">
+          <div class="li-row">
+            <div class="ic"><svg class="i"><use href="#tune"/></svg></div>
+            <div class="tx"><div class="t">凝胶产品</div><div class="s">Transmtf 三室透皮模型参数</div></div>
+          </div>
+          <div class="cg-inner">
+            ${prods.map(p => `<button class="${gelProduct===p?'on':''}" onclick="gelProduct='${p}';renderDetailList(false)">${p}</button>`).join('')}
+          </div>
+          ${gelProduct === '简易凝胶' ? `
+            <div class="gel-tip anim-in">此渗透率按酒精凝胶+雌二醇的无促渗剂配方估计</div>
+          ` : ''}
+        </div>
+        <div class="li col-li">
+          <div class="li-row">
+            <div class="ic"><svg class="i"><use href="#patch"/></svg></div>
+            <div class="tx"><div class="t">涂抹面积</div><div class="s">影响皮肤储库饱和度与吸收速率</div></div>
+          </div>
+          <div class="cg-inner">
+            ${areas.map(a => `<button class="${gelArea===a?'on':''}" onclick="gelArea='${a}';renderDetailList(false)">${a}</button>`).join('')}
+          </div>
+        </div>
+        <div class="li col-li">
+          <div class="li-row">
+            <div class="ic"><svg class="i"><use href="#spark"/></svg></div>
+            <div class="tx"><div class="t">共涂物</div><div class="s">防晒约 −16% AUC · 保湿约 +38% AUC</div></div>
+          </div>
+          <div class="cg-inner">
+            ${cos.map(c => `<button class="${gelCo===c?'on':''}" onclick="gelCo='${c}';renderDetailList(false)">${c}</button>`).join('')}
+          </div>
+        </div>
+        <div class="li">
+          <div class="ic"><svg class="i"><use href="#clock"/></svg></div>
+          <div class="tx">
+            <div class="t">冲洗时间</div>
+            <div class="s">${gelWashHours===0 ? '当前：不冲洗' : `涂抹 ${gelWashHours} 小时后洗掉`}</div>
+          </div>
+          <div class="m3e-num">
+            <button class="m3e-num-btn minus" onclick="stepWash(-1)">−</button>
+            <span class="m3e-num-val">${gelWashHours===0 ? '不洗' : gelWashHours+'h'}</span>
+            <button class="m3e-num-btn plus" onclick="stepWash(1)">+</button>
+          </div>
+        </div>
+      `);
+    }
+  }
+
+  // 5. 贴片（贴上）专属
+  if (curCat === 'hrt' && curRoute === 'patch') {
+    rawItems.push(`
+      <div class="li col-li">
+        <div class="li-row">
+          <div class="ic p"><svg class="i"><use href="#patch"/></svg></div>
+          <div class="tx"><div class="t">贴片计量模式</div><div class="s">可按每日释放率或整片总含量记录</div></div>
+        </div>
+        <div class="cg-inner">
+          <button class="${patchMode==='rate'?'on':''}" onclick="setPatchMode('rate')">释放率 (µg/d)</button>
+          <button class="${patchMode==='total'?'on':''}" onclick="setPatchMode('total')">贴片总量 (mg)</button>
+        </div>
+      </div>
+      <div class="li col-li">
+        <div class="li-row">
+          <div class="ic"><svg class="i"><use href="#clock"/></svg></div>
+          <div class="tx"><div class="t">佩戴天数</div><div class="s">到期自动提醒更换或撕下</div></div>
+        </div>
+        <div class="cg-inner">
+          ${['3.5', '7', '直到撕下'].map(d => `<button class="${patchDays===d?'on':''}" onclick="patchDays='${d}';renderDetailList(false)">${d==='直到撕下'?d:d+' 天'}</button>`).join('')}
+        </div>
+      </div>
+    `);
+  }
+
+  // 6. 贴片（撕下）专属
+  if (curCat === 'hrt' && curRoute === 'peel') {
+    rawItems.push(`
+      <div class="li col-li">
+        <div class="li-row">
+          <div class="ic p"><svg class="i"><use href="#peel"/></svg></div>
+          <div class="tx"><div class="t">选择要撕下的贴片</div><div class="s">无需填写剂量，关联后自动截止释放曲线</div></div>
+        </div>
+        <div class="cg-inner" style="flex-direction:column">
+          <button class="on" style="text-align:left;padding:12px 14px" onclick="pickCg(this)">10月15日 21:00 贴上 · 100 µg/d（已戴 72h）</button>
+          <button style="text-align:left;padding:12px 14px" onclick="pickCg(this)">10月12日 09:00 贴上 · 50 µg/d</button>
+        </div>
+      </div>
+    `);
+  }
+
+  listEl.innerHTML = rawItems.map((html, idx) =>
+    animate ? html.replace('class="li', `style="animation-delay:${idx*40}ms" class="li anim-in`) : html
+  ).join('');
+}
+
+function setSubTier(t) { subTier = t; renderDetailList(false); }
+function stepSubMin(d) { customSubMin = Math.max(1, Math.min(60, customSubMin + d)); renderDetailList(false); }
+function stepWash(d) { gelWashHours = Math.max(0, Math.min(24, gelWashHours + d)); renderDetailList(false); }
+function setPatchMode(m) { patchMode = m; selectDrug('E2_PATCH'); }
+function pickCg(btn) {
+  btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+}
+
+// ================= 二级页面：M3E 自绘日历 + 时间选择器 =================
+function renderCalendar() {
+  document.getElementById('calMonthTitle').textContent = `${calYear}年 ${calMonth}月`;
+  const firstDay = new Date(calYear, calMonth - 1, 1).getDay();
+  const daysInMonth = new Date(calYear, calMonth, 0).getDate();
+  let html = '';
+  for (let i = 0; i < firstDay; i++) html += `<div class="cal-day empty"></div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const isToday = (calYear === 2026 && calMonth === 10 && d === 18);
+    const isSel = (d === calSelectedDay);
+    html += `<button class="cal-day ${isToday?'today':''} ${isSel?'on':''}" data-m style="--mo:10px" onclick="selectCalDay(${d})">${d}</button>`;
+  }
+  document.getElementById('calGrid').innerHTML = html;
+}
+function changeCalMonth(delta) {
+  calMonth += delta;
+  if (calMonth > 12) { calMonth = 1; calYear++; }
+  if (calMonth < 1) { calMonth = 12; calYear--; }
+  calSelectedDay = 1;
+  renderCalendar();
+}
+function selectCalDay(d) {
+  calSelectedDay = d;
+  renderCalendar();
+}
+
+function openTimePage() {
+  renderCalendar();
+  document.getElementById('timePage').classList.add('open');
+}
+function closeTimePage() { document.getElementById('timePage').classList.remove('open'); }
+function resetTimeNow() {
+  timeLabel = '现在记录';
+  timeSubLabel = '实时当前时间 · 点击修改';
+  renderDetailList(false);
+  closeTimePage();
+}
+function stepClock(type, delta) {
+  if (type === 'h') {
+    let h = parseInt(document.getElementById('tpHour').value) || 0;
+    document.getElementById('tpHour').value = String((h + delta + 24) % 24).padStart(2, '0');
+  } else {
+    let h = parseInt(document.getElementById('tpHour').value) || 0;
+    let m = parseInt(document.getElementById('tpMin').value) || 0;
+    let total = (h * 60 + m + delta + 1440) % 1440;
+    document.getElementById('tpHour').value = String(Math.floor(total / 60)).padStart(2, '0');
+    document.getElementById('tpMin').value = String(total % 60).padStart(2, '0');
+  }
+}
+function confirmCustomTime() {
+  const mStr = String(calMonth).padStart(2, '0');
+  const dStr = String(calSelectedDay).padStart(2, '0');
+  const h = String(document.getElementById('tpHour').value).padStart(2, '0');
+  const m = String(document.getElementById('tpMin').value).padStart(2, '0');
+  timeLabel = `${calYear}-${mStr}-${dStr} ${h}:${m}`;
+  timeSubLabel = '自定义给药时间 · 点击修改';
+  renderDetailList(false);
+  closeTimePage();
+}
+
+// 底部抽屉：存为模板
+function openTplSheet() {
+  const list = templatesByMode[hrtMode];
+  if (list.length >= 10) return toast('当前模式最多只能添加 10 个常用模板');
+  document.getElementById('tplNameInput').value = '';
+  document.getElementById('tplScrim').classList.add('open');
+  document.getElementById('tplSheet').classList.add('open');
+}
+function closeTplSheet() {
+  document.getElementById('tplScrim').classList.remove('open');
+  document.getElementById('tplSheet').classList.remove('open');
+}
+function confirmAddTemplate() {
+  const list = templatesByMode[hrtMode];
+  if (list.length >= 10) return toast('模板数量已达上限 10 个');
+  const dObj = getCurDrugObj();
+  const val = parseFloat(document.getElementById('doseInput').value) || 0;
+  const unit = document.getElementById('doseUnit').textContent;
+  const custom = document.getElementById('tplNameInput').value.trim();
+  const shortName = dObj.name.split(' ')[0];
+  const label = dObj.isGnrh ? (custom || 'GnRH 施打') : `${custom || shortName} · ${val} ${unit}`;
+  list.push({ cat:curCat, route:curRoute, drug:curDrugId, dose:val, label });
+  activeTplIdx = list.length - 1;
+  renderTemplates();
+  closeTplSheet();
+  toast('已添加至顶部快捷模板栏');
+}
+
+// 鼠标拖拽横向滑动模板栏
+const slider = document.getElementById('tplStrip');
+let isDown = false, startX, scrollLeft;
+slider.addEventListener('mousedown', e => { isDown = true; startX = e.pageX - slider.offsetLeft; scrollLeft = slider.scrollLeft; });
+slider.addEventListener('mouseleave', () => isDown = false);
+slider.addEventListener('mouseup', () => isDown = false);
+slider.addEventListener('mousemove', e => {
+  if (!isDown) return;
+  e.preventDefault();
+  slider.scrollLeft = scrollLeft - (e.pageX - slider.offsetLeft - startX);
+});
+
+function setView(desk) {
+  document.body.classList.toggle('desktop', desk);
+  document.getElementById('vMob').classList.toggle('on', !desk);
+  document.getElementById('vDesk').classList.toggle('on', desk);
+}
+function setTheme(t) {
+  if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  else document.documentElement.removeAttribute('data-theme');
+  document.getElementById('tDark').classList.toggle('on', t === 'dark');
+  document.getElementById('tLight').classList.toggle('on', t === 'light');
+}
+
+let st;
+function toast(msg) {
+  const s = document.getElementById('snack');
+  document.getElementById('snackText').textContent = msg;
+  s.classList.add('on');
+  clearTimeout(st);
+  st = setTimeout(() => s.classList.remove('on'), 2200);
+}
+
+document.addEventListener('pointerdown', e => {
+  const el = e.target.closest('[data-m]');
+  if (el) el.classList.add('mo');
+});
+['pointerup','pointercancel'].forEach(ev => document.addEventListener(ev, () => {
+  setTimeout(() => document.querySelectorAll('.mo').forEach(el => el.classList.remove('mo')), 250);
+}));
+
+// 初始化
+renderTemplates();
+selectCat('hrt');
+</script>
+</body>
+</html>

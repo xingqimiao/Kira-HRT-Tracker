@@ -1,7 +1,7 @@
 import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Icon from './Icon';
 import { AlertCircle, AlertTriangle, Check, ImagePlus, Scan } from '../icons';
-import { Progress } from './ui';
+import { M3LoadingIndicator } from '@alerix/m3-loading-indicator/react';
 import { useTranslation } from '../contexts/LanguageContext';
 import {
     findHormoneValues,
@@ -15,6 +15,8 @@ import type { OcrPage } from '../utils/ppocr';
 interface LabScanProps {
     /** Prefill the form with what was read. The user still edits and saves it. */
     onExtracted: (candidates: HormoneCandidate[]) => void;
+    /** Direct save without jumping to the manual entry form. */
+    onDirectSave?: (candidates: HormoneCandidate[]) => void;
     onCancel: () => void;
 }
 
@@ -148,7 +150,7 @@ async function toPixels(dataUrl: string): Promise<{
  * ONNX Runtime into the main chunk and defeat the point. See `scripts/sync-ocr-assets.mjs`
  * for where the assets come from and `src/utils/ppocr.ts` for the pipeline itself.
  */
-const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
+const LabScan: React.FC<LabScanProps> = ({ onExtracted, onDirectSave, onCancel }) => {
     const { t } = useTranslation();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [state, setState] = useState<ScanState>({ kind: 'idle' });
@@ -288,6 +290,9 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
 
     const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
+        // Clear the picker value so choosing the same photo again still fires
+        // `change`; the previous value made the second choose look dead.
+        e.target.value = '';
         if (!file) return;
         if (file.size > 20 * 1024 * 1024) {
             setState({ kind: 'failed', message: t('scan.error_too_large') });
@@ -340,6 +345,7 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
             return {
                 key: `${rowIndex}-${boxIndex}`,
                 candidate,
+                boxIndex,
                 box: regionToBox(region, fit),
                 value: state.candidates[candidate],
                 // A box for a candidate the geometry doubted gets a separate shape and
@@ -351,10 +357,12 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
         : [];
 
     return (
-        <div className="space-y-5">
-            <div className="flex items-start gap-2 text-xs callout">
-                <Icon icon={Scan} size={14} className="shrink-0 mt-0.5" />
-                <span>{t('scan.intro')}</span>
+        <div className="d-col" style={{ gap: 16 }}>
+            <div className="card" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'var(--sch)' }}>
+                <span className="ic p" style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--pric)', color: 'var(--onpric)', display: 'grid', placeItems: 'center', flex: 'none' }}>
+                    <Icon icon={Scan} size={18} />
+                </span>
+                <span style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--var)' }}>{t('scan.intro')}</span>
             </div>
 
             {state.kind === 'failed' && (
@@ -378,7 +386,7 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
                             {/* Every box is drawn, in the pixels the engine worked in.
                                 Detector geometry is axis-aligned (see 'detectRegions'),
                                 so a rectangle is the honest shape. */}
-                            {boxes.map(({ key, candidate, box, value, doubt }) => candidate < 0 ? (
+                            {boxes.map(({ key, candidate, boxIndex, box, value, doubt }) => candidate < 0 ? (
                                 /* No candidate: a thin dashed hairline, no badge, no
                                    warning. Three border shapes carry the states that a
                                    hue alone would not: solid = checked pair, dashed =
@@ -396,7 +404,7 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
                                 <button
                                     key={key}
                                     type="button"
-                                    className={`absolute rounded-[2px] border-2 pointer-events-auto ${doubt ? 'border-dotted' : 'border-solid'}`}
+                                    className={`absolute rounded-[2px] border-2 pointer-events-auto transition-colors ${doubt ? 'border-dotted' : 'border-solid'}`}
                                     onMouseEnter={() => setActive(candidate)}
                                     onMouseLeave={() => setActive((previous) => (previous === candidate ? null : previous))}
                                     onFocus={() => setActive(candidate)}
@@ -406,37 +414,39 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
                                         ...box,
                                         borderColor: doubt ? 'var(--color-m3-error)' : 'var(--color-m3-primary)',
                                         backgroundColor: active === candidate
-                                            ? (doubt ? 'var(--color-m3-error-container)' : 'var(--color-m3-primary-container)')
-                                            : 'transparent',
+                                            ? (doubt ? 'rgba(255, 180, 171, 0.22)' : 'rgba(255, 177, 200, 0.22)')
+                                            : 'rgba(255, 177, 200, 0.03)',
                                         boxShadow: active === candidate
-                                            ? `0 0 0 3px ${doubt ? 'var(--color-m3-error-container)' : 'var(--color-m3-primary-container)'}`
+                                            ? `0 0 0 2px ${doubt ? 'var(--color-m3-error)' : 'var(--color-m3-primary)'}`
                                             : 'none',
                                     }}
                                     aria-label={`${t(value.analyte === 'E2' ? 'scan.analyte_e2' : 'scan.analyte_t')} ${value.value} ${value.unit}${doubt ? ' — ' + t('scan.check_pair') : ''}`}
                                     title={`${value.value} ${value.unit}`}
                                 >
-                                    {/* The number, not the colour, is the link: it is the
-                                        same digit on the row below, so the pair can be
-                                        matched without telling the two hues apart. */}
-                                    <span
-                                        aria-hidden="true"
-                                        className="absolute left-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-br-[2px] rounded-tl-[2px] px-1 text-[10px] font-semibold leading-none tabular-nums"
-                                        style={{
-                                            backgroundColor: 'var(--color-m3-primary)',
-                                            color: 'var(--color-m3-on-primary)',
-                                        }}
-                                    >
-                                        {candidate + 1}
-                                    </span>
-                                    {/* A shape, not only a colour: the warning marker and
-                                        the dotted border both say "confirm this one". */}
-                                    {doubt && (
+                                    {/* The number badge floats right above the box (-top-3.5) and is shown ONLY on the first region of the row (boxIndex === 0) */}
+                                    {boxIndex === 0 && (
                                         <span
                                             aria-hidden="true"
-                                            className="absolute -right-1.5 -top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full"
+                                            className="absolute -top-3.5 left-0 flex h-3.5 min-w-3.5 items-center justify-center rounded px-1 text-[9px] font-bold leading-none tabular-nums shadow-sm pointer-events-none"
+                                            style={{
+                                                backgroundColor: doubt ? 'var(--color-m3-error)' : 'var(--color-m3-primary)',
+                                                color: doubt ? 'var(--color-m3-on-error)' : 'var(--color-m3-on-primary)',
+                                                zIndex: 3,
+                                            }}
+                                        >
+                                            {candidate + 1}
+                                        </span>
+                                    )}
+                                    {/* A shape, not only a colour: the warning marker and
+                                        the dotted border both say "confirm this one". */}
+                                    {doubt && boxIndex === 0 && (
+                                        <span
+                                            aria-hidden="true"
+                                            className="absolute -right-1.5 -top-3.5 flex h-3.5 w-3.5 items-center justify-center rounded-full pointer-events-none"
                                             style={{
                                                 backgroundColor: 'var(--color-m3-error)',
                                                 color: 'var(--color-m3-on-error)',
+                                                zIndex: 3,
                                             }}
                                         >
                                             <Icon icon={AlertTriangle} size={9} />
@@ -451,7 +461,7 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
 
             {state.kind === 'preparing' && (
                 <p className={`flex items-center gap-2 text-sm ${muted}`}>
-                    <Progress size={14} />
+                    <M3LoadingIndicator size={14} color="currentColor" />
                     {t('scan.preparing')}
                 </p>
             )}
@@ -459,7 +469,7 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
             {state.kind === 'recognising' && (
                 <div className="space-y-2">
                     <p className={`flex items-center gap-2 text-sm ${muted}`}>
-                        <Progress size={14} />
+                        <M3LoadingIndicator size={14} color="currentColor" />
                         {t('scan.recognising')}
                     </p>
                     {/* A determinate bar rather than a spinner: recognition takes seconds
@@ -559,57 +569,62 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onCancel }) => {
                 <p className={`text-xs ${muted}`}>{t('scan.confirm_title')}</p>
             )}
 
-            <div className="flex gap-2">
+            <div style={{ display: 'flex', gap: 8 }}>
                 <button
                     type="button"
                     onClick={onCancel}
-                    className="btn-secondary flex-1"
+                    className="btn x"
+                    style={{ flex: 1 }}
                 >
                     {t('btn.cancel')}
                 </button>
                 {state.kind === 'done' && state.candidates.length > 0 ? (
                     <>
-                        {/* End on a choice, not an assumption. 'retake' resets this
-                            component and tells the caller nothing — see 'reset' — so the
-                            only path that reaches the form is 'keep'. Both are still on
-                            screen: the tier that read the values stays visible above. */}
-                        <button
-                            type="button"
-                            onClick={reset}
-                            className="btn-secondary flex-1"
-                        >
-                            {t('scan.retake')}
-                        </button>
-                        {/* The only way anything leaves this screen, and it still only
-                            *prefills* the form — the user edits and saves it themselves. */}
                         <button
                             type="button"
                             onClick={() => onExtracted(state.candidates)}
-                            className="btn-primary flex-1"
+                            className="btn t"
+                            style={{ flex: 1 }}
+                            title={t('scan.use_values')}
                         >
-                            {t('scan.keep')}
+                            {t('scan.use_values')}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => (onDirectSave ? onDirectSave(state.candidates) : onExtracted(state.candidates))}
+                            className="btn"
+                            style={{ flex: 1.5 }}
+                        >
+                            <Icon icon={Check} size={16} />
+                            <span>{t('scan.direct_save')}</span>
                         </button>
                     </>
                 ) : (
-                    <button
-                        type="button"
-                        onClick={() => (preview ? reset() : fileInputRef.current?.click())}
-                        disabled={state.kind === 'preparing' || state.kind === 'recognising'}
-                        className="btn-primary flex-1 disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                        <Icon icon={ImagePlus} size={16} />
-                        {preview ? t('scan.choose_another') : t('scan.choose')}
-                    </button>
+                    <>
+                        <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="btn"
+                            disabled={state.kind === 'preparing' || state.kind === 'recognising'}
+                            style={{
+                                flex: 1,
+                                opacity: state.kind === 'preparing' || state.kind === 'recognising' ? 0.5 : 1,
+                                cursor: state.kind === 'preparing' || state.kind === 'recognising' ? 'not-allowed' : 'pointer',
+                            }}
+                        >
+                            <Icon icon={ImagePlus} size={16} />
+                            {preview ? t('scan.choose_another') : t('scan.choose')}
+                        </button>
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleFile}
+                            accept="image/jpeg,image/png,image/webp"
+                            style={{ display: 'none' }}
+                        />
+                    </>
                 )}
             </div>
-
-            <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFile}
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-            />
         </div>
     );
 };

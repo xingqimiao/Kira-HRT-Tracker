@@ -15,7 +15,6 @@
  */
 import { Ester, Route, DoseEvent } from '../../logic';
 import {
-    pending,
     cancel,
     createChannel,
     Importance,
@@ -23,6 +22,7 @@ import {
     requestPermission,
     Schedule,
     sendNotification,
+    Visibility,
 } from '@choochmeque/tauri-plugin-notifications-api';
 import { isNativeApp } from './platform';
 import { applyNotifFallbacks, notifFallbacks, type NotifFallbacks } from './notifLocale';
@@ -36,6 +36,15 @@ import { occurrenceKey, readLedger, serializeLedger, pruneLedger } from './medPl
 const MIGRATED_KEY = 'hrt-med-plan-migrated';
 const PLAN_METADATA_MIGRATED_KEY = 'hrt-med-plan-metadata-migrated';
 const OWNED_NOTIFICATION_IDS_KEY = 'hrt-med-plan-notification-ids';
+/**
+ * The user's own "stop reminding me", as distinct from the permission.
+ *
+ * A browser permission cannot be revoked from a page, and on Android the app
+ * cannot turn its own channel off. Without this flag the only "off" the UI could
+ * offer was "you already granted it", which is not a control. Set by the plan
+ * screen's switch; cleared when reminders are enabled again.
+ */
+const NOTIFY_OFF_KEY = 'hrt-med-plan-notify-off';
 const NATIVE_QUEUE_SIZE = 5;
 
 function currentMode(): HRTMode {
@@ -50,7 +59,7 @@ function currentMode(): HRTMode {
 // pushes the resolved fallbacks to the remote transports whenever the language changes
 // or the packs finish loading — see `setPlanNotificationLanguage`.
 let notifTranslate: (key: string) => string = (key) => key;
-let notifFallback: NotifFallbacks = { title: 'Medication reminder', body: '' };
+let notifFallback: NotifFallbacks = { title: 'Medication reminder', body: '', hidden: 'You have a reminder' };
 
 /** The app's translator, bound once from App. */
 export function setPlanNotificationLanguage(t: (key: string) => string): void {
@@ -126,22 +135,41 @@ function stableIntId(id: string): number {
     return (hash >>> 0) & 0x7fffffff;
 }
 
+/** Serialises the reschedules so two of them can never interleave. */
+let rescheduleChain: Promise<boolean> = Promise.resolve(false);
+
 export async function reschedulePlanNotifications(request = false): Promise<boolean> {
     if (!isNativeApp()) return false;
+    // Single flight. This runs on launch, on every visibility/focus change and
+    // after every plan save; two overlapping runs each cancelled only the ids
+    // they had read, then both scheduled — the "one reminder rang twice" bug.
+    // Chaining them means the second run sees what the first actually wrote.
+    const run = rescheduleChain.catch(() => false).then(() => rescheduleOnce(request));
+    rescheduleChain = run.catch(() => false);
+    return run;
+}
+
+async function rescheduleOnce(request: boolean): Promise<boolean> {
     let granted = await isPermissionGranted();
     if (!granted && request) granted = (await requestPermission()) === 'granted';
-    await createChannel({ id: 'hrt-med', name: 'HRT medication', importance: Importance.Default, vibration: true });
+    // Private: the tray entry is complete once the device is unlocked, but the
+    // lock screen shows only the public version (app lock plan §10).
+    await createChannel({ id: 'hrt-med', name: 'HRT medication', importance: Importance.Default, vibration: true, visibility: Visibility.Private });
 
-    const pendingIds = new Set((await pending().catch(() => [])).map(item => item.id));
+    // Cancel every id this module has ever issued, not just the ones the plugin
+    // still reports as pending. `pending()` can drop an id it has already
+    // handed to the OS scheduler, and an id that is not in the list was
+    // previously left uncancelled — so it rang alongside the freshly scheduled
+    // one. Cancelling a dead id is a no-op, so the full list is the safe read.
     const storedIds = (() => {
         try { return JSON.parse(get(OWNED_NOTIFICATION_IDS_KEY) ?? '[]') as number[]; } catch { return []; }
     })();
-    const ownedIds = new Set<number>(storedIds.filter((id): id is number => Number.isInteger(id) && pendingIds.has(id)));
-    if (ownedIds.size) await cancel([...ownedIds]).catch(() => undefined);
+    const ownedIds = storedIds.filter((id): id is number => Number.isInteger(id));
+    if (ownedIds.length) await cancel(ownedIds).catch(() => undefined);
     const nextIds: number[] = [];
-    if (!granted) {
+    if (!granted || get(NOTIFY_OFF_KEY) === '1') {
         set(OWNED_NOTIFICATION_IDS_KEY, '[]');
-        return false;
+        return granted;
     }
     const now = new Date();
     const mode = currentMode();
@@ -175,7 +203,12 @@ export async function reschedulePlanNotifications(request = false): Promise<bool
             }
         }
         for (const time of schedules) {
-            const id = stableIntId(`med-plan:${plan.id}:${time.getTime()}`);
+            // The id is the *drug at an instant*, not the plan at an instant.
+            // Two plans for the same compound and route at the same time (the
+            // migration could leave one behind, and a user can create one by
+            // hand) are one reminder: the second write replaces the first
+            // instead of stacking a second tray entry beside it.
+            const id = stableIntId(`med-plan:${drugKeyOf(plan)}:${time.getTime()}`);
             nextIds.push(id);
             await sendNotification({
                 id,
@@ -190,9 +223,21 @@ export async function reschedulePlanNotifications(request = false): Promise<bool
     return true;
 }
 
+/**
+ * The identity a reminder is deduplicated by: compound + route.
+ *
+ * Deliberately not the plan id. One person taking estradiol orally at 21:00
+ * should get one reminder at 21:00, whether they wrote that down as one plan or
+ * two — and the reminder text is the same either way.
+ */
+function drugKeyOf(plan: { ester: string; route?: string }): string {
+    return `${plan.ester}|${plan.route ?? '*'}`;
+}
+
 // --- Web: a 60-second check while the app is open ------------------------------
 
 let webTimerStarted = false;
+let webTimer: ReturnType<typeof setInterval> | null = null;
 let doseSource: (() => DoseEvent[]) | null = null;
 /** What this browser has already shown. Persisted, so a reload does not re-fire a
  *  reminder that already appeared. Keyed by plan id + due instant (see the ledger). */
@@ -252,11 +297,13 @@ export function openNativeNotificationSettings(): void {
 /** Start the web check. The permission must already be granted (asked in settings). */
 export function startPlanWebNotifications(): void {
     if (webTimerStarted || isNativeApp()) return;
+    if (get(NOTIFY_OFF_KEY) === '1') return;
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     webTimerStarted = true;
-    setInterval(() => {
+    webTimer = setInterval(() => {
         try {
             if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+            if (get(NOTIFY_OFF_KEY) === '1') return;
             const plans = plansForMode(readMedPlans(), currentMode());
             if (plans.length === 0) return;
             const nowMs = Date.now();
@@ -267,10 +314,15 @@ export function startPlanWebNotifications(): void {
             const ledger = pruneLedger(stored, nowMs);
             if (ledger.length !== stored.length) set(WEB_LEDGER_KEY, serializeLedger(ledger));
             const seen = new Set(ledger);
+            // `seen` also swallows the second of two plans that describe the same
+            // drug at the same instant: the key is the drug, not the plan, so one
+            // due time is one notification however many plans point at it.
+            const fired = new Set<string>();
             for (const st of planStatuses(plans, doseSource?.() ?? [], nowMs, tz)) {
                 for (const missed of st.missed) {
-                    const key = occurrenceKey(st.plan.id, missed);
-                    if (seen.has(key)) continue;
+                    const key = occurrenceKey(drugKeyOf(st.plan), missed);
+                    if (seen.has(key) || fired.has(key)) continue;
+                    fired.add(key);
                     seen.add(key);
                     // Persist before dispatch: at-most-once beats a duplicate ring on
                     // every reload, so a failed post must not leave the key unrecorded.
@@ -289,6 +341,33 @@ export function startPlanWebNotifications(): void {
             // A bad tick must never kill the interval.
         }
     }, 60_000);
+}
+
+/**
+ * Stop the web check, and keep it stopped across reloads.
+ *
+ * The browser permission itself cannot be withdrawn by the page, so "off" is
+ * this flag: the interval is cleared and `startPlanWebNotifications` — which App
+ * calls on every launch — refuses to arm it again.
+ */
+export function stopPlanWebNotifications(): void {
+    if (webTimer !== null) {
+        clearInterval(webTimer);
+        webTimer = null;
+    }
+    webTimerStarted = false;
+    set(NOTIFY_OFF_KEY, '1');
+}
+
+/** Turn reminders back on for this device, clearing the opt-out. */
+export function resumePlanNotifications(): void {
+    set(NOTIFY_OFF_KEY, '0');
+    startPlanWebNotifications();
+}
+
+/** Whether the user has switched reminders off on this device. */
+export function arePlanNotificationsMuted(): boolean {
+    return get(NOTIFY_OFF_KEY) === '1';
 }
 
 // --- Re-export so callers need only this module --------------------------------

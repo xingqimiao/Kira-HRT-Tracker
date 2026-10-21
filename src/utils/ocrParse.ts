@@ -164,11 +164,9 @@ function canonicalLabel(text: string): string {
  * health record, so the exclusion list is checked before the label.
  */
 const EXCLUSIONS = [
-    'shbg', 'shbg', '性激素结合球蛋白', '性激素结合',
+    'shbg', '性激素结合球蛋白', '性激素结合',
     '游离', 'free ', 'free-', 'bioavailable', '生物可利用',
     'fai', '游离雄激素指数',
-    // Reference ranges and controls are not patient values.
-    '参考', 'reference', '范围', 'range', '正常值',
 ]
 
 /**
@@ -206,13 +204,11 @@ const UNIT_NICKNAMES = (() => {
     const known = Object.keys(UNIT_ANALYTES) as LabUnit[]
     for (const unit of known) {
         map.set(unit, unit)
-        // Every `l` in a real unit also arrives as `I`, `i`, `1` or `|`. Generated
-        // rather than listed, because the confusion applies to every position and a
-        // hand-written list keeps missing one — the first version missed `nmo1/l`
-        // and `pmol/I`.
+        // Every `l` in a real unit also arrives as `I`, `i`, `1` or `|`.
+        // The leading `n` in `nmol/l` or `ng/dl` also arrives as `h` in OCR on small text.
         let variants = ['']
         for (const char of unit) {
-            const alternates = char === 'l' ? ['l', 'I', 'i', '1'] : [char]
+            const alternates = char === 'l' ? ['l', 'I', 'i', '1'] : char === 'n' ? ['n', 'h'] : [char]
             variants = variants.flatMap((prefix) => alternates.map((alt) => prefix + alt))
         }
         for (const variant of variants) map.set(variant.toLowerCase(), unit)
@@ -221,6 +217,7 @@ const UNIT_NICKNAMES = (() => {
     // always wins, and so these cannot shadow one.
     for (const [from, to] of [
         ['pgml', 'pg/ml'], ['pmoll', 'pmol/l'], ['ngdl', 'ng/dl'], ['nmoll', 'nmol/l'],
+        ['hmoll', 'nmol/l'], ['hgdl', 'ng/dl'],
     ] as [string, LabUnit][]) {
         if (!map.has(from)) map.set(from, to)
     }

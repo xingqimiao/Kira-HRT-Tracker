@@ -30,6 +30,7 @@
 
 import { isTestosteroneEster, isT_LabUnit } from '../../logic';
 import { sanitizeMedPlans, type MedPlan } from './medPlan';
+import type { GelProduct } from './gelProducts';
 
 export type ModeKey = 'transfem' | 'transmasc';
 export const MODE_KEYS: readonly ModeKey[] = ['transfem', 'transmasc'];
@@ -135,13 +136,24 @@ export interface AppSettings {
      * one-way street this transport exists to close.
      */
     timezone?: string;
+    /**
+     * The account's own gel products — ids ≥ 1000, the catalogue a gel record's
+     * `gelProductId` resolves against.
+     *
+     * An array rather than a string, unlike every other key here: it is a list the
+     * Transmtf engine reads at simulation time, and without it a custom product
+     * silently resolves to Oestrogel. It travels in the same sealed bag, so all of
+     * the account's devices compute the same curve. Validation lives with the
+     * engine (`sanitizeGelProducts`); the bag only has to carry it.
+     */
+    gelProducts?: GelProduct[];
 }
 
 /** Every key `sanitizeAppSettings` will carry. An unknown key is dropped. */
 export const APP_SETTING_KEYS: readonly (keyof AppSettings)[] = [
     'theme', 'keyColor', 'lang', 'hrtMode', 'calMethod', 'calHistoryMode', 'aaChartMode',
     'hrtStartDate', 'recheckIntervals', 'ocrModelTier', 'pkEngine', 'timezone',
-    'chartStyle', 'readingDecimals', 'hideAA',
+    'chartStyle', 'readingDecimals', 'hideAA', 'gelProducts',
 ];
 
 export interface SyncState {
@@ -311,6 +323,9 @@ export function sanitizeAppSettings(raw: unknown): AppSettings {
         const value = src[key];
         if (BOOLEAN_SETTING_KEYS.has(key)) {
             if (typeof value === 'boolean') out[key] = value;
+        } else if (key === 'gelProducts') {
+            // An array, not a string; the engine's sanitizer is the validator.
+            if (Array.isArray(value)) out[key] = value;
         } else if (typeof value === 'string' && value !== '') {
             out[key] = value;
         }
@@ -470,7 +485,17 @@ export function stableString(value: unknown): string {
     return Number.isFinite(n) && String(value).trim() !== '' ? String(n) : String(value);
 }
 
-function contentFingerprint(kind: RecordKind, record: any): string {
+/**
+ * The identity of one record's *content*, for a given kind.
+ *
+ * Exported because the sync transport decides what to upload by it: a record the
+ * server already holds is one whose identity matches, and "already holds" has to mean
+ * exactly what the merge means by it. Comparing whole records instead would treat the
+ * bookkeeping fields `updatedAt`/`createdAt` as content — the quick-dose `createdAt`
+ * drift documented in `fingerprintState` — and the two devices would re-upload to each
+ * other forever.
+ */
+export function contentFingerprint(kind: RecordKind, record: any): string {
     return CONTENT_FIELDS[kind].map(f => stableString(record?.[f])).join('|');
 }
 

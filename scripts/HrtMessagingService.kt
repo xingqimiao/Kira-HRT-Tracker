@@ -1,5 +1,6 @@
 package com.kiramyao.hrt
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -115,7 +116,12 @@ class HrtMessagingService : FirebaseMessagingService() {
                 CHANNEL_ID,
                 "HRT medication",
                 NotificationManager.IMPORTANCE_DEFAULT,
-            ).apply { enableVibration(true) }
+            ).apply {
+                enableVibration(true)
+                // Device locked: only the public version below is shown. Unlocked,
+                // the tray shows the real title and dose.
+                lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+            }
             manager.createNotificationChannel(channel)
         }
 
@@ -131,9 +137,26 @@ class HrtMessagingService : FirebaseMessagingService() {
             .setSmallIcon(applicationInfo.icon)
             .setContentTitle(title)
             .setContentText(body)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            // What the lock screen shows instead: one generic localized line, with
+            // no alias and no dose (app lock plan §10).
+            .setPublicVersion(publicVersion())
             .setAutoCancel(true)
             .setContentIntent(pending)
             .build()
         manager.notify(tag, tag.hashCode(), notification)
+    }
+
+    /** The locked-device rendering: app name, then "you have a reminder". */
+    private fun publicVersion(): Notification {
+        val hidden = getSharedPreferences(MainActivity.NOTIF_PREFS, Context.MODE_PRIVATE)
+            .getString(MainActivity.NOTIF_HIDDEN_KEY, null)
+            ?: getString(R.string.app_name)
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(applicationInfo.icon)
+            .setContentTitle(hidden)
+            .setContentText(getString(R.string.app_name))
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .build()
     }
 }

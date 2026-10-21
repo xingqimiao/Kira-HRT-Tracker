@@ -1,9 +1,13 @@
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { isNativeApp } from './platform';
+import { beginExternalFlow } from './appLock';
 
 /** On Android, hand web links to the system browser. */
 export async function openExternalUrl(url: string): Promise<void> {
     if (isNativeApp()) {
+        // OAuth authorisation and ordinary links both leave the app; the
+        // background re-lock must not treat that as the user walking away.
+        beginExternalFlow();
         await openUrl(url);
     } else {
         window.open(url, '_blank', 'noopener,noreferrer');

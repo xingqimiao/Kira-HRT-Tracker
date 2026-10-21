@@ -94,7 +94,19 @@ export enum ExtraKey {
     // WHICH apply it terminates. These two keys carry STRING event ids; every
     // other extras key stays numeric.
     patchInstanceId = "patchInstanceId",
-    patchRemovalFor = "patchRemovalFor"
+    patchRemovalFor = "patchRemovalFor",
+    /**
+     * Injection vehicle formulation:
+     * 0 = oil (Depo-Estradiol, peanut/cottonseed oil, Tmax ~4d),
+     * 1 = aqueous microcrystalline suspension (Cyclofem / Mesigyna, Tmax ~1.5d).
+     * Currently applied to Estradiol Cypionate (EC).
+     */
+    vehicle = "vehicle"
+}
+
+export enum VehicleType {
+    oil = 0,
+    aqueous = 1
 }
 
 /**

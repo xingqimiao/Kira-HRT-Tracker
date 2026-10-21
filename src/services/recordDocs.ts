@@ -38,7 +38,7 @@
 import type { SyncPayload } from './coreSync';
 // Value import, and the shape itself rather than a copy of it: a kind added to that
 // list is carried here without this file being touched.
-import { RECORD_KINDS } from '../utils/syncMerge';
+import { RECORD_KINDS, contentFingerprint, stableString } from '../utils/syncMerge';
 
 /** Records the server stores: `kind` is coarse, `data` is the payload. */
 export interface RecordDoc {
@@ -47,6 +47,17 @@ export interface RecordDoc {
     /** Epoch ms. Drives ordering and paging server-side. */
     takenAt: number;
     data: unknown;
+}
+
+/**
+ * One record plus the identity that decides whether the server already holds it.
+ *
+ * The identity is *not* sent — it is the merge engine's own notion of "the same
+ * record", computed while the payload is being split, so the upload half and the merge
+ * half cannot disagree about what counts as a change (see `changedRecords`).
+ */
+interface PendingDoc extends RecordDoc {
+    identity: string;
 }
 
 interface ModePayload {
@@ -97,11 +108,17 @@ function modeOf(payload: SyncPayload, mode: (typeof MODES)[number]): ModePayload
  * and pages by; a scalar or a tombstone map has no time of its own, so it uses its
  * stamp (or the epoch, for something that has never been written).
  */
-export function payloadToRecords(payload: SyncPayload): RecordDoc[] {
-    const out: RecordDoc[] = [];
+function payloadToDocs(payload: SyncPayload): PendingDoc[] {
+    const out: PendingDoc[] = [];
 
-    const push = (id: string, category: RecordDoc['category'], takenAt: number, data: unknown) => {
-        out.push({ id, category, takenAt, data });
+    const push = (
+        id: string,
+        category: RecordDoc['category'],
+        takenAt: number,
+        data: unknown,
+        identity: string,
+    ) => {
+        out.push({ id, category, takenAt, data, identity });
     };
 
     for (const mode of MODES) {
@@ -115,7 +132,7 @@ export function payloadToRecords(payload: SyncPayload): RecordDoc[] {
             const takenAt = typeof timeH === 'number' && Number.isFinite(timeH)
                 ? timeH * 3_600_000
                 : stampOf(event);
-            push(`dose:${mode}:${id}`, 'dose', takenAt, event);
+            push(`dose:${mode}:${id}`, 'dose', takenAt, event, contentFingerprint('events', event));
         }
 
         for (const lab of block.labResults ?? []) {
@@ -125,19 +142,19 @@ export function payloadToRecords(payload: SyncPayload): RecordDoc[] {
             const takenAt = typeof timeH === 'number' && Number.isFinite(timeH)
                 ? timeH * 3_600_000
                 : stampOf(lab);
-            push(`lab:${mode}:${id}`, 'lab', takenAt, lab);
+            push(`lab:${mode}:${id}`, 'lab', takenAt, lab, contentFingerprint('labResults', lab));
         }
 
         for (const template of block.doseTemplates ?? []) {
             const id = idOf(template);
             if (!id) continue;
-            push(`tpl:${mode}:${id}`, 'setting', stampOf(template), template);
+            push(`tpl:${mode}:${id}`, 'setting', stampOf(template), template, contentFingerprint('doseTemplates', template));
         }
 
         for (const quick of block.quickDoses ?? []) {
             const id = idOf(quick);
             if (!id) continue;
-            push(`quick:${mode}:${id}`, 'setting', stampOf(quick), quick);
+            push(`quick:${mode}:${id}`, 'setting', stampOf(quick), quick, contentFingerprint('quickDoses', quick));
         }
 
         for (const entry of block.journal ?? []) {
@@ -149,7 +166,7 @@ export function payloadToRecords(payload: SyncPayload): RecordDoc[] {
             const takenAt = typeof timeH === 'number' && Number.isFinite(timeH)
                 ? timeH * 3_600_000
                 : stampOf(entry);
-            push(`journal:${mode}:${id}`, 'journal', takenAt, entry);
+            push(`journal:${mode}:${id}`, 'journal', takenAt, entry, contentFingerprint('journal', entry));
         }
 
         // Every kind that can be deleted, driven by the tombstone shape rather than a
@@ -164,7 +181,12 @@ export function payloadToRecords(payload: SyncPayload): RecordDoc[] {
             const map = block.deletions?.[kind];
             if (!map || Object.keys(map).length === 0) continue;
             const newest = Math.max(...Object.values(map).filter((v) => Number.isFinite(v)), 0);
-            push(`del:${mode}:${kind}`, 'setting', newest, map);
+            // A tombstone map has no content fields to project: the whole map *is* the
+            // content, and `stableString` sorts its ids so two devices holding the same
+            // deletions agree. Deletions merge as a union (`withRemoteTombstones`), so
+            // the map that travels is already the union; equality here means the server
+            // holds it and no write is needed.
+            push(`del:${mode}:${kind}`, 'setting', newest, map, stableString(map));
         }
     }
 
@@ -179,10 +201,14 @@ export function payloadToRecords(payload: SyncPayload): RecordDoc[] {
         // A payload that says nothing about a scalar must not invent a record for it:
         // writing an empty one would then win or lose a merge it should not enter.
         if (value === undefined && stamp === undefined) continue;
-        push(`scalar:${name}`, 'setting', typeof stamp === 'number' ? stamp : 0, {
+        const at = typeof stamp === 'number' ? stamp : 0;
+        // A scalar's whole content is its value, and its stamp is part of what makes it
+        // "the server's copy" — a payload whose value is unchanged but whose stamp moved
+        // is still an opinion worth landing (the server projects these into settings).
+        push(`scalar:${name}`, 'setting', at, {
             value: value ?? null,
-            stamp: typeof stamp === 'number' ? stamp : 0,
-        });
+            stamp: at,
+        }, `${stableString(value)}@${at}`);
     }
 
     // App-only settings live in the payload's `appState`, the blob `toAppState` builds
@@ -200,10 +226,103 @@ export function payloadToRecords(payload: SyncPayload): RecordDoc[] {
         push('scalar:appSettings', 'setting', at, {
             value: { settings: appState.settings, settingsUpdatedAt: stamp },
             stamp: at,
-        });
+        }, `${stableString(appState.settings)}@${at}`);
     }
 
     return out;
+}
+
+/**
+ * Split one payload into the records that carry it.
+ *
+ * The transport's upload half; `changedRecords` is the half that saves the write.
+ */
+export function payloadToRecords(payload: SyncPayload): RecordDoc[] {
+    return payloadToDocs(payload).map((doc) => ({
+        id: doc.id,
+        category: doc.category,
+        takenAt: doc.takenAt,
+        data: doc.data,
+    }));
+}
+
+/**
+ * The records that still have to be written: those whose content the server's copy
+ * does not already hold.
+ *
+ * ── Why a delta at all ───────────────────────────────────────────────────────
+ *
+ * Every push used to carry the whole merged state. At 353 records that is a few hundred
+ * KB per debounce, and a write per row per sync — for a state the server mostly already
+ * had. `syncWithCore` reads the account first (it must, to merge safely), so the answer
+ * to "what is missing over there" is sitting in hand.
+ *
+ * ── Why compare by identity, not by whole-record equality ────────────────────
+ *
+ * The merge engine decides "same record" by `contentFingerprint` on purpose: two devices
+ * legitimately hold the same record with different `updatedAt`/`createdAt`, and treating
+ * those as a difference is the documented quick-dose ping-pong. A delta that used a
+ * second, stricter notion of sameness would reintroduce it — this side would upload the
+ * record again on every sync while the merge considered both copies identical.
+ *
+ * ── Why settings get their own rule ─────────────────────────────────────────
+ *
+ * `scalar:appSettings` is the one record the server rewrites on the way in: it merges
+ * the incoming bag into the stored one per key (`mergeIncomingAppState`), so the stored
+ * value is the *union*. Equality is therefore the wrong question — a local bag that
+ * merely omits a key the server holds (an agent's `timezone`, say) would look different
+ * on every sync and be re-sent forever. What matters is whether the write would change
+ * anything: same stamp and every local key already present with the same value means no.
+ */
+export function changedRecords(local: SyncPayload, remote: SyncPayload): RecordDoc[] {
+    const held = new Map(payloadToDocs(remote).map((doc) => [doc.id, doc]));
+
+    return payloadToDocs(local)
+        .filter((doc) => {
+            const existing = held.get(doc.id);
+            if (!existing) return true;
+            if (doc.id === 'scalar:appSettings') {
+                return !settingsCoveredBy(doc.data, existing.data);
+            }
+            return doc.identity !== existing.identity;
+        })
+        .map((doc) => ({
+            id: doc.id,
+            category: doc.category,
+            takenAt: doc.takenAt,
+            data: doc.data,
+        }));
+}
+
+/** The settings bag and stamp a `scalar:appSettings` doc carries, defensively read. */
+function settingsBagOf(data: unknown): { stamp: number; settings: Record<string, unknown> } {
+    const body = data && typeof data === 'object' ? data as { value?: unknown } : {};
+    const value = body.value && typeof body.value === 'object' && !Array.isArray(body.value)
+        ? body.value as { settings?: unknown; settingsUpdatedAt?: unknown }
+        : {};
+    const settings = value.settings && typeof value.settings === 'object' && !Array.isArray(value.settings)
+        ? value.settings as Record<string, unknown>
+        : {};
+    const stamp = typeof value.settingsUpdatedAt === 'number' && Number.isFinite(value.settingsUpdatedAt)
+        ? value.settingsUpdatedAt
+        : 0;
+    return { stamp, settings };
+}
+
+/**
+ * Whether writing `local` over the server's copy would leave the server's copy unchanged.
+ *
+ * Same stamp (a different one is a real revision), and every key the local bag states is
+ * already there with the same value. Keys only the server holds are not a difference:
+ * its merge keeps them, so there is nothing to write.
+ */
+function settingsCoveredBy(localData: unknown, remoteData: unknown): boolean {
+    const local = settingsBagOf(localData);
+    const remote = settingsBagOf(remoteData);
+    if (local.stamp !== remote.stamp) return false;
+    return Object.entries(local.settings).every(([key, value]) => (
+        key in remote.settings && stableString(remote.settings[key]) === stableString(value)
+    ));
 }
 
 /**

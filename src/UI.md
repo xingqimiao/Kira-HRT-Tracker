@@ -88,8 +88,8 @@ carries the `aria-label`; `Icon` sets `aria-hidden` otherwise.
 Adding a glyph reicon lacks: add the name to `scripts/gen-compat-icons.mjs`,
 run it, and commit the regenerated `src/icons/compat.ts`.
 
-**Do not replace** `src/flag_svg/`, the pixel-cat sprite, or `ResultChart`'s marks —
-those are artwork and data marks, not icons.
+**Do not replace** the pixel-cat sprite or `ResultChart`'s marks — those are
+artwork and data marks, not icons.
 
 ## Motion
 

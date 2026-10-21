@@ -35,7 +35,7 @@ before(async () => {
     sessionTtlMinutes: 30,
     rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },
   });
-  pg = await bootPostgres({ dir: './.pgdata-cursor', port: 55441, database: 'hrt_cursor' });
+  pg = await bootPostgres({ dir: './.pgdata-cursor', port: 55451, database: 'hrt_cursor' });
   await useDatabase(pg);
   ({ server, base } = await startApiServer());
 }, { timeout: 180_000 });

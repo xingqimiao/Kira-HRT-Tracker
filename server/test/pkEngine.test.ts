@@ -38,6 +38,18 @@ const e2Injection = {
 // testosterone model, so the whole list is refused — this is the compound veto.
 const tInjection = { ...e2Injection, id: 'e2', ester: Ester.TE } satisfies DoseEvent;
 
+// A spironolactone dose: *neither* engine draws a curve for it, so it carries nothing
+// to lose and must be skipped rather than veto the engine. This is the line between
+// "the engine cannot model this compound" and "no curve depends on this compound".
+const spiroDose = {
+  id: 'e3',
+  route: Route.oral,
+  timeH: nowH - 12,
+  doseMG: 100,
+  ester: Ester.SPIRO,
+  extras: {},
+} satisfies DoseEvent;
+
 /** Read the E2 series at the sample nearest to now. */
 function e2AtNow(sim: ReturnType<typeof simulateForEngine>): number {
   assert.ok(sim, 'simulation produced no result');
@@ -74,6 +86,32 @@ test('engineForCurve honours the preference, vetoed by what the engine cannot mo
     engineForCurve('transmtf', false, { analyte: 'e2', events: [tInjection] }),
     'builtin',
   );
+  // ...unless the compound is drawn by neither engine (spironolactone): then it is
+  // skipped, not a reason to lose the Transmtf E2 curve.
+  assert.equal(
+    engineForCurve('transmtf', false, { analyte: 'e2', events: [e2Injection, spiroDose] }),
+    'transmtf',
+  );
+});
+
+test('a spironolactone record leaves the Transmtf E2 curve untouched', () => {
+  const without = simulateForEngine('transmtf', [e2Injection], 70, DEFAULT_PK_PARAMS);
+  const withSpiro = simulateForEngine('transmtf', [e2Injection, spiroDose], 70, DEFAULT_PK_PARAMS);
+
+  assert.ok(without, 'no baseline curve');
+  assert.ok(withSpiro, 'spironolactone vetoed the engine');
+  assert.equal(withSpiro.timeH.length, without.timeH.length);
+  for (let i = 0; i < without.timeH.length; i++) {
+    assert.equal(
+      withSpiro.concPGmL_E2[i],
+      without.concPGmL_E2[i],
+      `E2 differs at index ${i} — the spironolactone record reached the simulation`,
+    );
+  }
+  // And nothing was invented for it. `byCompound` is the vendor-side map the adapter
+  // passes through; the app's `SimulationResult` type does not name it.
+  const byCompound = (withSpiro as unknown as { byCompound?: Record<string, unknown> }).byCompound;
+  assert.equal(byCompound?.[Ester.SPIRO], undefined);
 });
 
 test('the two engines produce measurably different curves from the same dose', () => {

@@ -1,3 +1,4 @@
+import { get as secureGet, set as secureSet, remove as secureRemove } from './secureStore';
 import { Ester, Route, ExtraKey, type DoseEvent } from '../../logic';
 
 /**
@@ -110,14 +111,14 @@ export function sanitizeMedPlans(value: unknown): MedPlan[] {
 }
 
 export function readMedPlans(): MedPlan[] {
-    try { return sanitizeMedPlans(JSON.parse(localStorage.getItem(MED_PLAN_KEY) ?? '[]')); } catch { return []; }
+    try { return sanitizeMedPlans(JSON.parse(secureGet(MED_PLAN_KEY) ?? '[]')); } catch { return []; }
 }
 
 /** The plan's last-write stamp (epoch ms), or 0 when it was never stamped. Sync's
  *  last-write-wins compares this, so an edit on one device beats a stale plan from
  *  another. */
 export function medPlanUpdatedAt(): number {
-    try { return Number(localStorage.getItem(MED_PLAN_AT_KEY)) || 0; } catch { return 0; }
+    try { return Number(secureGet(MED_PLAN_AT_KEY)) || 0; } catch { return 0; }
 }
 
 /** Dispatched on every plan write, so a listener can re-read and re-render. The
@@ -135,8 +136,8 @@ export const MED_PLAN_CHANGED_EVENT = 'hrt-med-plan-changed';
  */
 export function writeMedPlans(plans: MedPlan[], at: number = Date.now()): void {
     try {
-        localStorage.setItem(MED_PLAN_KEY, JSON.stringify(sanitizeMedPlans(plans)));
-        if (at > 0) localStorage.setItem(MED_PLAN_AT_KEY, String(at));
+        secureSet(MED_PLAN_KEY, JSON.stringify(sanitizeMedPlans(plans)));
+        if (at > 0) secureSet(MED_PLAN_AT_KEY, String(at));
     } catch { /* private mode: the plan stays in memory for this session */ }
     if (typeof window !== 'undefined') window.dispatchEvent(new Event(MED_PLAN_CHANGED_EVENT));
 }

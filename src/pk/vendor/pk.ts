@@ -1,4 +1,4 @@
-import { Route, Ester, ExtraKey, type DoseEvent, type DoseEventExtras, type SimulationResult, type ConcUnit } from './types';
+import { Route, Ester, ExtraKey, VehicleType, type DoseEvent, type DoseEventExtras, type SimulationResult, type ConcUnit } from './types';
 
 /**
  * Route-specific metadata for transdermal gel absorption.
@@ -644,18 +644,27 @@ const TwoPartDepotPK: {
 };
 
 const InjectionPK: { formationFraction: Partial<Record<Ester, number>> } = {
-    formationFraction: { [Ester.EB]: 0.1092, [Ester.EV]: 0.0623, [Ester.EC]: 0.1173, [Ester.EN]: 0.12, [Ester.EU]: EU_DEPOT_PK.releaseScale, [Ester.E2]: 1.0 }
+    formationFraction: { [Ester.EB]: 0.078, [Ester.EV]: 0.078, [Ester.EC]: 0.078, [Ester.EN]: 0.078, [Ester.EU]: EU_DEPOT_PK.releaseScale, [Ester.E2]: 1.0 }
 };
 
 const EsterPK: { k2: Partial<Record<Ester, number>> } = {
     k2: { [Ester.EB]: 0.090, [Ester.EV]: 0.070, [Ester.EC]: 0.045, [Ester.EN]: 0.015, [Ester.EU]: EU_DEPOT_PK.kCleave, [Ester.E2]: 0 }
 };
 
+/** Microcrystalline aqueous suspension depot parameters for EC (e.g. Cyclofem / Mesigyna, peaks ~Day 1.5). */
+export const EC_AQUEOUS_DEPOT_PK = {
+    Frac_fast: 0.15,
+    k1_fast: 0.08,
+    k1_slow: 0.0035
+};
+
 const OralPK = {
-    kAbsE2: 0.32,
-    kAbsEV: 0.05,
-    bioavailability: 0.03,
-    kAbsSL: 1.8
+    kAbsE2: 0.045,  // Flip-flop kinetics (half-life ~15.4h, Tmax ~6h)
+    kAbsEV: 0.045,  // Cleaved rapidly during absorption, equivalent to E2
+    bioavailability: 0.030,
+    kAbsSL: 1.8,
+    kElimSL: 1.2,   // Mucosal rapid elimination rate (distinct from systemic 0.41/h)
+    sublingualRecyclingShare: 0.004 // 0.4% oral recycling share
 };
 
 // Deterministic ordering keeps the serialized tier index stable across UI and PK code.
@@ -664,8 +673,8 @@ export const SL_TIER_ORDER = ["quick", "casual", "standard", "strict"] as const;
 export const SublingualTierParams = {
     quick: { theta: 0.01, hold: 2 },
     casual: { theta: 0.04, hold: 5 },
-    standard: { theta: 0.11, hold: 10 },
-    strict: { theta: 0.18, hold: 15 }
+    standard: { theta: 0.08, hold: 10 },
+    strict: { theta: 0.15, hold: 15 }
 };
 
 /**
@@ -690,7 +699,7 @@ export function getBioavailabilityMultiplier(
         case Route.oral:
             return OralPK.bioavailability * mwFactor;
         case Route.sublingual: {
-            let theta = 0.11;
+            let theta = 0.08;
             if (extras[ExtraKey.sublingualTheta] !== undefined) {
                 const customTheta = extras[ExtraKey.sublingualTheta];
                 if (typeof customTheta === 'number' && Number.isFinite(customTheta)) {
@@ -699,9 +708,10 @@ export function getBioavailabilityMultiplier(
             } else if (extras[ExtraKey.sublingualTier] !== undefined) {
                 const tierIdx = Math.min(SL_TIER_ORDER.length - 1, Math.max(0, Math.round(extras[ExtraKey.sublingualTier]!)));
                 const tierKey = SL_TIER_ORDER[tierIdx] || 'standard';
-                theta = SublingualTierParams[tierKey]?.theta ?? 0.11;
+                theta = SublingualTierParams[tierKey]?.theta ?? 0.08;
             }
-            return (theta + (1 - theta) * OralPK.bioavailability) * mwFactor;
+            const recycled = theta < 1.0 ? OralPK.sublingualRecyclingShare / (1.0 - theta) : 0;
+            return (theta + (1 - theta) * (OralPK.bioavailability + recycled)) * mwFactor;
         }
         case Route.gel: {
             // Systemic absorbed fraction of the layered model = kPen/(kPen+kLoss),
@@ -731,6 +741,7 @@ interface PKParams {
     k1_slow: number;
     k2: number;
     k3: number;
+    k3_fast?: number; // Mucosal rapid clearance rate for sublingual fast branch
     F: number;
     rateMGh: number;
     F_fast: number;
@@ -756,16 +767,25 @@ export function resolveParams(event: DoseEvent): PKParams {
 
     switch (event.route) {
         case Route.injection: {
-            const Frac_fast = TwoPartDepotPK.Frac_fast[event.ester] ?? 0.5;
-            const k1_fast = (TwoPartDepotPK.k1_fast[event.ester] ?? 0.1) * CorePK.depotK1Corr;
-            const k1_slow = (TwoPartDepotPK.k1_slow[event.ester] ?? 0.01) * CorePK.depotK1Corr;
+            let Frac_fast = TwoPartDepotPK.Frac_fast[event.ester] ?? 0.5;
+            let k1_fast = (TwoPartDepotPK.k1_fast[event.ester] ?? 0.1) * CorePK.depotK1Corr;
+            let k1_slow = (TwoPartDepotPK.k1_slow[event.ester] ?? 0.01) * CorePK.depotK1Corr;
+
+            // Formulation vehicle override for EC:
+            // 0 = oil (standard, peaks ~Day 3.8-4); 1 = aqueous microcrystalline suspension (peaks ~Day 1.5)
+            if (event.ester === Ester.EC && extras[ExtraKey.vehicle] === VehicleType.aqueous) {
+                Frac_fast = EC_AQUEOUS_DEPOT_PK.Frac_fast;
+                k1_fast = EC_AQUEOUS_DEPOT_PK.k1_fast * CorePK.depotK1Corr;
+                k1_slow = EC_AQUEOUS_DEPOT_PK.k1_slow * CorePK.depotK1Corr;
+            }
+
             const k2 = EsterPK.k2[event.ester] ?? 0;
             const F = getBioavailabilityMultiplier(Route.injection, event.ester, extras);
             return { Frac_fast, k1_fast, k1_slow, k2, k3: defaultK3, F, rateMGh: 0, F_fast: F, F_slow: F };
         }
 
         case Route.sublingual: {
-            let theta = 0.11;
+            let theta = 0.08;
             if (extras[ExtraKey.sublingualTheta] !== undefined) {
                 const customTheta = extras[ExtraKey.sublingualTheta];
                 if (typeof customTheta === 'number' && Number.isFinite(customTheta)) {
@@ -780,17 +800,19 @@ export function resolveParams(event: DoseEvent): PKParams {
                 }
             }
             const k1_fast = OralPK.kAbsSL;
-            const k1_slow = event.ester === Ester.EV ? OralPK.kAbsEV : OralPK.kAbsE2;
-            const k2 = EsterPK.k2[event.ester] ?? 0;
+            const k1_slow = OralPK.kAbsE2;
+            const k3_fast = OralPK.kElimSL;
+            const k2 = 0;
             const F_fast = toE2;
-            const F_slow = OralPK.bioavailability * toE2;
+            const recycled = theta < 1.0 ? OralPK.sublingualRecyclingShare / (1.0 - theta) : 0;
+            const F_slow = (OralPK.bioavailability + recycled) * toE2;
             const F = theta * F_fast + (1 - theta) * F_slow;
-            return { Frac_fast: theta, k1_fast, k1_slow, k2, k3: defaultK3, F, rateMGh: 0, F_fast, F_slow };
+            return { Frac_fast: theta, k1_fast, k1_slow, k2, k3: defaultK3, k3_fast, F, rateMGh: 0, F_fast, F_slow };
         }
 
         case Route.gel: {
             const F = getBioavailabilityMultiplier(Route.gel, event.ester, extras);
-            const k1 = 0.022;
+            const k1 = 0.04;
             return { Frac_fast: 1.0, k1_fast: k1, k1_slow: 0, k2: 0, k3: defaultK3, F, rateMGh: 0, F_fast: F, F_slow: F };
         }
 
@@ -803,8 +825,8 @@ export function resolveParams(event: DoseEvent): PKParams {
             if (rateMGh > 0) {
                 return { Frac_fast: 1.0, k1_fast: 0, k1_slow: 0, k2: 0, k3: defaultK3, F, rateMGh, F_fast: F, F_slow: F };
             }
-            const k1 = 0.0075;
-            return { Frac_fast: 1.0, k1_fast: k1, k1_slow: 0, k2: 0, k3: defaultK3, F, rateMGh: 0, F_fast: F, F_slow: F };
+            const k1 = 0.0035;
+            return { Frac_fast: 1.0, k1_fast: k1, k1_slow: 0, k2: 0, k3: defaultK3, F, rateMGh, F_fast: F, F_slow: F };
         }
 
         case Route.patchRemove:
@@ -828,8 +850,8 @@ export function resolveParams(event: DoseEvent): PKParams {
                 };
             }
 
-            const k1Value = event.ester === Ester.EV ? OralPK.kAbsEV : OralPK.kAbsE2;
-            const k2Value = event.ester === Ester.EV ? (EsterPK.k2[Ester.EV] || 0) : 0;
+            const k1Value = OralPK.kAbsE2;
+            const k2Value = 0;
             const F = OralPK.bioavailability * toE2;
             return { Frac_fast: 1.0, k1_fast: k1Value, k1_slow: 0, k2: k2Value, k3: defaultK3, F, rateMGh: 0, F_fast: F, F_slow: F };
         }
@@ -1033,22 +1055,16 @@ class PrecomputedEventModel {
                 this.model = (timeH: number) => {
                     const tau = timeH - startTime;
                     if (tau < 0) return 0;
-                    if (params.k2 > 0) {
-                        const doseF = dose * params.Frac_fast;
-                        const doseS = dose * (1.0 - params.Frac_fast);
-                        return _analytic3C(tau, doseF, params.F_fast, params.k1_fast, params.k2, params.k3) +
-                            _analytic3C(tau, doseS, params.F_slow, params.k1_slow, params.k2, params.k3);
-                    } else {
-                        const doseF = dose * params.Frac_fast;
-                        const doseS = dose * (1.0 - params.Frac_fast);
+                    const doseF = dose * params.Frac_fast;
+                    const doseS = dose * (1.0 - params.Frac_fast);
+                    const fastElim = params.k3_fast ?? params.k3;
 
-                        const branch = (d: number, F: number, ka: number, ke: number, t: number) => {
-                            if (Math.abs(ka - ke) < 1e-9) return d * F * ka * t * Math.exp(-ke * t);
-                            return d * F * ka / (ka - ke) * (Math.exp(-ke * t) - Math.exp(-ka * t));
-                        };
-                        return branch(doseF, params.F_fast, params.k1_fast, params.k3, tau) +
-                            branch(doseS, params.F_slow, params.k1_slow, params.k3, tau);
-                    }
+                    const branch = (d: number, F: number, ka: number, ke: number, t: number) => {
+                        if (Math.abs(ka - ke) < 1e-9) return d * F * ka * t * Math.exp(-ke * t);
+                        return d * F * ka / (ka - ke) * (Math.exp(-ke * t) - Math.exp(-ka * t));
+                    };
+                    return branch(doseF, params.F_fast, params.k1_fast, fastElim, tau) +
+                        branch(doseS, params.F_slow, params.k1_slow, params.k3, tau);
                 };
                 break;
             case Route.patchApply: {
@@ -1196,9 +1212,8 @@ export function runSimulation(
             if (e === Ester.CPA) currentConc_CPA = conc;
         }
 
-        // Total curve keeps the historical behavior: E2 plus CPA scaled into
-        // pg/mL. Bicalutamide is intentionally NOT folded into the total.
-        const currentConc = currentConc_E2 + (currentConc_CPA * 1000);
+        // The combined series carries E2 alone; anti-androgens are kept on their own channel.
+        const currentConc = currentConc_E2;
 
         timeH.push(t);
         concPGmL.push(currentConc);

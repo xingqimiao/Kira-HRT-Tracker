@@ -1,26 +1,30 @@
-import React, { useEffect, useRef, useState } from 'react';
-import BloodVial from '../components/BloodVial';
-import { vialLevelForFill } from '../utils/vialLevel';
-import PixelMark, { MarkName, MarkState } from '../components/PixelMark';
-import OnboardingCurve, { useOnboardingCurve, BEATS, type Beat, type CurveData } from '../components/OnboardingCurve';
+import { get as secureGet, set as secureSet, remove as secureRemove } from '../utils/secureStore';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import type { Lang } from '../i18n/types';
-import CopyRow from '../components/CopyRow';
-import IntroCard from '../components/IntroCard';
-import FitText from '../components/FitText';
-import { LabScanDemo, JournalPreview, RecheckPreview, QuickAddDemo, BigLockAnimation, ImportSmashDemo } from '../components/OnboardingFeatures';
 import Icon from '../components/Icon';
-import DateTimePicker from '../components/DateTimePicker';
-import { Check, Plus, ChevronDown, AlertTriangle } from '../icons';
-import { buildMcpInstallPrompt } from '../utils/mcpInstallPrompt';
+import {
+    CalendarDays,
+    Check,
+    ChevronRight,
+    Download,
+    Droplet,
+    Info,
+    MonitorSmartphone,
+    ShieldCheck,
+    Syringe,
+    TriangleWarning,
+    Upload,
+} from '../icons';
+import { TimePage } from '../components/TimePage';
 import { fetchLatestApkUrl } from '../utils/nativeUpdate';
 import { LOCALE_MAP } from '../utils/helpers';
-import { toYmd, fromYmd } from '../utils/hrtStart';
+import { toYmd, fromYmd, hrtDaysSince } from '../utils/hrtStart';
 import { isPlausibleBodyWeightKG } from '../../logic';
-import { usePresence } from '../hooks/usePresence';
 import { isNativeApp } from '../utils/platform';
 import { APP_VERSION } from '../constants';
+import '../onboarding.css';
 
 const ONBOARDING_KEY = 'app-onboarded';
 
@@ -28,9 +32,6 @@ const ONBOARDING_KEY = 'app-onboarded';
  *  Built from `APP_VERSION` rather than written out, so a version bump cannot
  *  leave this link pointing at the previous release. */
 const ANDROID_APK_URL = `https://hrt.kiramyao.com/android/KiraHRT-${APP_VERSION.replace(/^v/, '')}-release.apk`;
-
-/** One definition, shared with the AI-assistant settings page. */
-const INSTALL_PROMPT = buildMcpInstallPrompt();
 
 /**
  * Anyone with records on this device has been using the app since before there
@@ -46,1128 +47,828 @@ const INSTALL_PROMPT = buildMcpInstallPrompt();
 const EVENTS_KEY = /^hrt-(u[^-]+-)?(masc-)?events$/;
 
 export const shouldShowOnboarding = (): boolean => {
-    if (localStorage.getItem(ONBOARDING_KEY) === 'true') return false;
+    if (secureGet(ONBOARDING_KEY) === 'true') return false;
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (!key || !EVENTS_KEY.test(key)) continue;
-        const value = localStorage.getItem(key);
+        const value = secureGet(key);
         if (value && value !== '[]') return false;
     }
     return true;
 };
 
 export const markOnboardingSeen = (): void => {
-    localStorage.setItem(ONBOARDING_KEY, 'true');
+    secureSet(ONBOARDING_KEY, 'true');
 };
 
-const divider = 'border-b intro-divider ';
-
-/** The tick beside a chosen language or mode, in the row's own text colour. */
-const Tick: React.FC = () => (
-    <PixelMark name="check" size={20} className="shrink-0 text-current" />
-);
-
-/**
- * One full-bleed colour block per step, named by M3 role — never a raw hex.
- * `surface`/`on` are the block's own pair. `accent`/`accentOn` fill a selected
- * option: filling it with the block's own container role would make the option
- * invisible against the block, so the block's accent takes that part. Index
- * order matches `steps` in the component below.
- */
-interface StepRoles {
-    surface: string;
-    on: string;
-    accent: string;
-    accentOn: string;
+/* ── The install prompt ────────────────────────────────────────────────────
+ *
+ * `beforeinstallprompt` fires once, early, and only if the browser considers the
+ * app installable — usually before this component mounts. Catching it at module
+ * scope is what keeps the PWA row working: a listener attached in an effect
+ * would regularly arrive after the event has already gone by, and the row would
+ * fall back to its hint every time. */
+interface InstallPromptEvent extends Event {
+    prompt: () => Promise<void>;
+    userChoice?: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+let deferredInstall: InstallPromptEvent | null = null;
+if (typeof window !== 'undefined') {
+    window.addEventListener('beforeinstallprompt', (event) => {
+        event.preventDefault();
+        deferredInstall = event as InstallPromptEvent;
+    });
 }
 
-const PRIMARY: StepRoles = { surface: '--md-sys-color-primary-container', on: '--md-sys-color-on-primary-container', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' };
-const SECONDARY: StepRoles = { surface: '--md-sys-color-secondary-container', on: '--md-sys-color-on-secondary-container', accent: '--md-sys-color-secondary', accentOn: '--md-sys-color-on-secondary' };
-const TERTIARY: StepRoles = { surface: '--md-sys-color-tertiary-container', on: '--md-sys-color-on-tertiary-container', accent: '--md-sys-color-tertiary', accentOn: '--md-sys-color-on-tertiary' };
-
-/** The two container steps the feature rows sit on — see STEP_ROLES. */
-const CONTAINER: StepRoles = { surface: '--md-sys-color-surface-container', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' };
-const CONTAINER_HIGH: StepRoles = { surface: '--md-sys-color-surface-container-high', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' };
-/** The surface the journal and reminder mocks used to sit on inside a frame — see STEP_ROLES. */
-const CONTAINER_LOWEST: StepRoles = { surface: '--md-sys-color-surface-container-lowest', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' };
-
-/**
- * One full-bleed colour block per step, named by M3 role — never a raw hex.
+/* ── The drawing ───────────────────────────────────────────────────────────
  *
- * Keyed by step rather than indexed by position: this flow has had steps
- * inserted into it (the assistant step, and now the start-date and keep steps),
- * and an index-keyed table silently repaints every step after the insertion
- * point. Keyed, an existing step keeps the block it always had.
- *
- * `surface`/`on` are the block's own pair. `accent`/`accentOn` fill a selected
- * option: filling it with the block's own container role would make the option
- * invisible against the block, so the block's accent takes that part.
- */
-const STEP_ROLES: Record<string, StepRoles> = {
-    welcome: PRIMARY,
-    // The closing card answers the greeting, so it wears the greeting's role.
-    sendoff: PRIMARY,
-    mode: SECONDARY,
-    // The chart step uses the page surface, not a container step above it:
-    // OnboardingCurve draws its own surface assumptions, and its hollow markers
-    // are filled with --color-m3-surface-dim. On a container-high block they no
-    // longer matched the surface they sit on, so the "hollow" read as a slightly
-    // wrong grey dot. surface-dim is exactly what the drawing expects in both
-    // themes.
-    how: { surface: '--md-sys-color-surface-dim', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' },
-    started: TERTIARY,
-    // Shares the date step's block: the two are the personal baseline the model is
-    // fitted against, and the slide between them repaints for neither.
-    weight: TERTIARY,
-    // The feature steps wear one of two adjacent containers. Templates and the
-    // lab scan are two ways records arrive, so they share a ground and the slide
-    // between them does not repaint. The journal and the reminder are cards of
-    // their own, so their blocks wear the surface that card sat on and the frame
-    // comes off (the `bare` IntroCard) — one card, not a card inside a card. The
-    // X and Google sign-in and the account preview are one pair, one step up.
-    quick: CONTAINER,
-    scan: CONTAINER,
-    journal: CONTAINER_LOWEST,
-    recheck: CONTAINER_LOWEST,
-    signin: CONTAINER_HIGH,
-    /* Between sign-in and the account preview, and the one coloured block of the
-       three. Sign-in, import and the account preview are one beat about "your data
-       and where it lives", so they shared a container — but that made three grey
-       screens in a row, and arriving at "what about the records I already have?"
-       changed nothing on screen. It takes the accent, the flow's cool second
-       colour, rather than the greeting pair's pink, so it reads as its own beat
-       and not as a second welcome. */
-    import: SECONDARY,
-    account: CONTAINER_HIGH,
-    pwa: SECONDARY,
-    mcp: TERTIARY,
-    privacy: { surface: '--md-sys-color-surface-bright', on: '--md-sys-color-on-surface', accent: '--md-sys-color-primary', accentOn: '--md-sys-color-on-primary' },
-    disclaimer: CONTAINER,
+ * A rose curve: `r = R(1 + a·cos(nθ))`. Each step passes its own lobe count, so
+ * the badge behind the vial gains and loses petals as the flow advances and the
+ * shape reads as a different object per step without ever being replaced. */
+const cookiePath = (cx: number, cy: number, r: number, lobes: number, amp: number): string => {
+    const points: string[] = [];
+    for (let i = 0; i <= 120; i++) {
+        const theta = (i / 120) * Math.PI * 2;
+        const radius = r * (1 + amp * Math.cos(lobes * theta));
+        const x = (cx + radius * Math.cos(theta)).toFixed(2);
+        const y = (cy + radius * Math.sin(theta)).toFixed(2);
+        points.push(`${i ? 'L' : 'M'}${x},${y}`);
+    }
+    return `${points.join(' ')}Z`;
 };
 
-/** Step order, for the colour lookup above; `steps` holds the panels themselves. */
-const STEP_KEYS = ['welcome', 'mode', 'how', 'started', 'weight', 'quick', 'scan', 'journal', 'recheck', 'signin', 'import', 'account', 'pwa', 'mcp', 'privacy', 'disclaimer', 'sendoff'] as const;
-
-/**
- * The three slots of the "how it works" step, and the only step that splits in
- * two on a wide window — because the chart is the only thing in the intro that
- * gains anything from a column of its own. Drawn at the width of a phone it was
- * a thumbnail beside 500px of empty ground; given half a wide window it draws
- * at roughly the size the Overview will draw it.
- *
- * On a phone the three stack in the order they have always read in: heading,
- * chart, rows. On a wide window the chart takes the left column and spans both
- * rows, with the words beside it.
- */
-const Head: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <div className="min-w-0 lg:col-start-2 lg:row-start-1">{children}</div>
+/** The pixel tick, drawn on a 12-unit grid with crisp edges — the one glyph in
+ *  the flow that is deliberately not a smooth icon, because it appears beside a
+ *  language name that just turned into a pill. */
+const PixelCheck: React.FC<{ className?: string }> = ({ className }) => (
+    <svg viewBox="0 0 12 12" shapeRendering="crispEdges" className={className} aria-hidden="true" focusable="false">
+        <rect x="9" y="2" width="1.5" height="1.5" fill="currentColor" />
+        <rect x="7.5" y="3.5" width="1.5" height="1.5" fill="currentColor" />
+        <rect x="6" y="5" width="1.5" height="1.5" fill="currentColor" />
+        <rect x="4.5" y="6.5" width="1.5" height="1.5" fill="currentColor" />
+        <rect x="3" y="8" width="1.5" height="1.5" fill="currentColor" />
+        <rect x="1.5" y="6.5" width="1.5" height="1.5" fill="currentColor" />
+        <rect x="0" y="5" width="1.5" height="1.5" fill="currentColor" />
+    </svg>
 );
 
-const Stage: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <div className="mt-4 flex items-center justify-center lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:mt-0">
-        {children}
-    </div>
+/** The vial the app is named for, as a 16×16 sprite with two rising bubbles. */
+const PixelTube: React.FC<{ className?: string }> = ({ className }) => (
+    <svg viewBox="0 0 16 16" shapeRendering="crispEdges" className={className} aria-hidden="true" focusable="false">
+        <rect x="6" y="1" width="4" height="1" fill="#f59e0b" />
+        <rect x="5" y="2" width="6" height="1" fill="#e2e8f0" />
+        <rect x="5" y="3" width="1" height="10" fill="#cbd5e1" />
+        <rect x="10" y="3" width="1" height="10" fill="#94a3b8" />
+        <rect x="6" y="13" width="1" height="1" fill="#cbd5e1" />
+        <rect x="9" y="13" width="1" height="1" fill="#94a3b8" />
+        <rect x="7" y="14" width="2" height="1" fill="#94a3b8" />
+        <rect x="6" y="3" width="4" height="3" fill="#2e1065" fillOpacity="0.35" />
+        <rect x="6" y="6" width="4" height="1" fill="#e879f9" />
+        <rect x="6" y="7" width="4" height="3" fill="#a855f7" />
+        <rect x="6" y="10" width="4" height="3" fill="#7e22ce" />
+        <rect x="7" y="13" width="2" height="1" fill="#6b21a8" />
+        <rect x="6" y="4" width="1" height="8" fill="#ffffff" fillOpacity="0.65" />
+        <rect className="px-bub1" x="8" y="8" width="1" height="1" fill="#fae8ff" />
+        <rect className="px-bub2" x="7" y="11" width="1" height="1" fill="#f5d0fe" />
+        <rect className="px-bub2" x="2" y="5" width="1" height="1" fill="#ffb1c8" />
+        <rect className="px-bub1" x="13" y="3" width="1" height="1" fill="#e879f9" />
+        <rect className="px-bub1" x="12" y="11" width="1" height="1" fill="#c084fc" />
+    </svg>
 );
 
-const Body: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <div className="mt-4 min-w-0 lg:col-start-2 lg:row-start-2 lg:mt-0">{children}</div>
-);
+/** A line-broken translation. `\n` in the packs is the only markup these strings
+ *  carry, so it is turned into a `<br>` rather than interpreted as HTML. */
+const lines = (text: string): React.ReactNode =>
+    text.split('\n').map((line, i) => (
+        <React.Fragment key={i}>
+            {i > 0 && <br />}
+            {line}
+        </React.Fragment>
+    ));
 
-/**
- * Progress, in the chart's own vocabulary: dose rings sitting on the zero rule,
- * the same hollow circle and the same hairline OnboardingCurve draws. Filled
- * behind you, hollow ahead — so the mark has already been read once by the time
- * the chart uses it for real.
- */
-const DoseRings: React.FC<{ count: number; at: number }> = ({ count, at }) => {
-    const PAD = 7, MID = 9;
-    // The ring row grows with every step added, and at this length the default
-    // 15px gap would make it wider than the back button's track can spare on a
-    // 320px screen. Tightening the gap keeps the row near 150px at any length.
-    const GAP = count > 1 ? Math.min(15, Math.floor((150 - PAD * 2) / (count - 1))) : 15;
-    const width = PAD * 2 + GAP * (count - 1);
-    return (
-        <svg
-            viewBox={`0 0 ${width} 18`}
-            width={width}
-            height={18}
-            aria-hidden="true"
-            focusable="false"
-            className="text-current "
-        >
-            <line
-                x1={PAD} y1={MID} x2={width - PAD} y2={MID}
-                strokeWidth={1}
-                className="stroke-current opacity-30 "
-            />
-            {Array.from({ length: count }, (_, i) => (
-                <circle
-                    key={i}
-                    className={`onb-ring ${i <= at
-                        ? 'fill-current stroke-current'
-                        : 'fill-none stroke-current opacity-40 '}`}
-                    cx={PAD + i * GAP}
-                    cy={MID}
-                    r={i === at ? 4.2 : 3}
-                    strokeWidth={1.5}
-                />
-            ))}
-        </svg>
-    );
-};
+type StepId = 'lang' | 'type' | 'date' | 'weight' | 'import' | 'app' | 'privacy' | 'bloom';
 
-/**
- * Read straight out of the packs to size the greeting — see the welcome step.
- */
-const SUBTITLE_KEY = 'onboarding.welcome_subtitle';
-
-interface PointProps {
-    /** One of the pixel sprites in PixelMark. */
-    mark: MarkName;
-    title: string;
-    desc: string;
-    /**
-     * Where the chart above is relative to this row's beat — see HowStep. The
-     * mark acts the beat out and the title dims while it is still to come,
-     * which is what stops the chart reading as decoration floating over an
-     * unrelated list. Omitted on the rows of steps that have no chart.
-     */
-    state?: MarkState;
-    /** The beat's length in ms, for the mark to play across. */
-    duration?: number;
-    /** Restarts the mark's beat when it changes. */
-    playKey?: number;
-    /** Makes the row a button: the beat it names replays from the top. */
-    onClick?: () => void;
+interface StepMeta {
+    id: StepId;
+    /** Petal count and depth of the badge behind the vial. */
+    lobes: number;
+    amp: number;
+    /** Which container role the badge borrows — the step's colour family. */
+    tone: '' | 'terc' | 'secc' | 'okc';
 }
 
-const Point: React.FC<PointProps> = ({ mark, title, desc, state = 'done', duration, playKey, onClick }) => {
-    const className = `flex w-full items-start gap-3.5 py-4 text-start ${divider} last:border-b-0`;
-    const body = (
-        <>
-            {/* A fixed box, not a well: the sprites are different heights and
-                have to sit on one column, but they are drawings, and a drawing
-                in a tinted square is an icon again. */}
-            <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center">
-                <PixelMark key={playKey} name={mark} size={28} state={state} duration={duration} />
-            </div>
-            <div>
-                <p className={`text-m3-title-medium ${state === 'asleep' ? 'intro-muted' : ''}`}>{title}</p>
-                <p className="mt-1 text-m3-body-large intro-muted">{desc}</p>
-            </div>
-        </>
-    );
-    return onClick
-        ? <button type="button" onClick={onClick} aria-pressed={state === 'playing'} className={className}>{body}</button>
-        : <div className={className}>{body}</div>;
-};
-
-/** Index of the chart step, the only one that takes two columns when there's room. */
-const CHART_STEP = 2;
-
-/** Rows of the "how it works" step, in beat order — see BEATS. */
-const HOW_ROWS: { mark: MarkName; title: string; desc: string }[] = [
-    { mark: 'syringe', title: 'onboarding.how_log', desc: 'onboarding.how_log_desc' },
-    { mark: 'chart', title: 'onboarding.how_chart', desc: 'onboarding.how_chart_desc' },
-    { mark: 'vial', title: 'onboarding.how_calibrate', desc: 'onboarding.how_calibrate_desc' },
+const ALL_STEPS: StepMeta[] = [
+    { id: 'lang', lobes: 9, amp: 0.09, tone: '' },
+    { id: 'type', lobes: 8, amp: 0.11, tone: '' },
+    { id: 'date', lobes: 7, amp: 0.09, tone: '' },
+    { id: 'weight', lobes: 6, amp: 0.08, tone: 'terc' },
+    { id: 'import', lobes: 10, amp: 0.09, tone: 'secc' },
+    { id: 'app', lobes: 8, amp: 0.10, tone: 'secc' },
+    { id: 'privacy', lobes: 9, amp: 0.08, tone: 'okc' },
+    { id: 'bloom', lobes: 12, amp: 0.10, tone: '' },
 ];
 
 /**
- * The weight step's visual, under the same contract as the start date it follows:
- * it writes through the data layer, and on a replay it is shown read-only, so
- * re-reading the intro cannot overwrite a weight the user set months ago.
+ * The language the device is set to, mapped onto the seven this build ships.
  *
- * Weight feeds the distribution volume, so the value is validated at the boundary
- * (`isPlausibleBodyWeightKG`) rather than trusted from the field: a half-typed or
- * out-of-range entry falls back to the last committed value on blur instead of
- * reaching the model. The step's own heading and explanation live on the IntroCard,
- * so this is the field alone.
+ * Only used to choose which card gets the full-width top row — the row carries no
+ * label saying so, because "系统语言" written on a button is a developer's word,
+ * not a user's. The position is the message.
  */
-const WeightVisual: React.FC<{ weight: number; onChange: (kg: number) => void; replay: boolean }> = ({ weight, onChange, replay }) => {
-    const { t } = useTranslation();
-    const [text, setText] = useState(String(weight));
-    // Re-sync when the stored value moves underneath — a sync or an import — but
-    // the effect only fires on commit, so it never fights the field mid-edit.
-    useEffect(() => setText(String(weight)), [weight]);
-
-    const commit = () => {
-        const kg = parseFloat(text);
-        if (isPlausibleBodyWeightKG(kg)) onChange(kg);
-        else setText(String(weight));
-    };
-
-    return (
-        <div className="flex w-full flex-col gap-2 text-start">
-            {/* Labelled like the date field above it: a bare number in a box reads
-                as a readout, and the label is what says "this one you type in". */}
-            <span className="text-m3-title-medium text-[var(--color-m3-on-surface)]">
-                {t('onboarding.weight_label')}
-            </span>
-            {replay ? (
-                <div className="flex items-center rounded-lg border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container)] px-3 py-2.5">
-                    <span className="text-m3-title-medium tabular-nums text-[var(--color-m3-on-surface)]">{weight} kg</span>
-                </div>
-            ) : (
-                <div className="flex items-center gap-2 rounded-lg border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container)] px-3 py-2.5 focus-within:border-[var(--color-m3-primary)]">
-                    <input
-                        type="number"
-                        inputMode="decimal"
-                        value={text}
-                        onChange={(e) => setText(e.target.value)}
-                        onBlur={commit}
-                        aria-label={t('onboarding.weight_label')}
-                        className="w-full min-w-0 bg-transparent text-m3-title-medium tabular-nums text-[var(--color-m3-on-surface)] outline-none"
-                    />
-                    <span className="shrink-0 text-m3-body-medium text-[var(--color-m3-on-surface-variant)]">kg</span>
-                </div>
-            )}
-        </div>
-    );
-};
-
-/**
- * The "how it works" step: the chart is the argument and the three rows are
- * its captions, one per beat. The sequence plays itself once on arrival, since
- * most people will just watch — but a film that runs while the title is still
- * being read is a film half missed, so every row is also a button that replays
- * the chart from that beat, and a Replay appears once the whole thing has run.
- *
- * Owns its clock, and is mounted only while the step is showing, so leaving
- * and coming back starts the story from the top.
- */
-const HowStep: React.FC<{ curve: CurveData | null }> = ({ curve }) => {
-    const { t } = useTranslation();
-    // Read from the context rather than threaded in as a prop: the step needs it for
-    // one conditional, and the mode is global state the provider already owns.
-    const { isTransmasc } = useHRTMode();
-    const [beat, setBeat] = useState<Beat>(0);
-    // Bumped on every replay: a beat restarted from its own start is the same
-    // state twice, and the chart and marks need something to remount on.
-    const [playKey, setPlayKey] = useState(0);
-    const [finished, setFinished] = useState(false);
-    // Nothing plays until the engine has answered; the marks wait grey rather
-    // than acting out a chart that isn't there yet.
-    const live = !!curve;
-
-    useEffect(() => {
-        if (!live) return;
-        if (finished) {
-            // Holds for 1 second after finishing, then loops automatically
-            const handle = window.setTimeout(() => {
-                play(0);
-            }, 1000);
-            return () => window.clearTimeout(handle);
+const detectSystemLang = (): Lang => {
+    if (typeof navigator === 'undefined') return 'zh';
+    const tags = [...(navigator.languages ?? []), navigator.language].filter(Boolean);
+    for (const tag of tags) {
+        const t = tag.toLowerCase();
+        if (t.startsWith('zh')) {
+            if (t.includes('yue') || t.includes('hk') || t.includes('mo')) return 'yue';
+            if (t.includes('hant') || t.includes('tw')) return 'zh-TW';
+            return 'zh';
         }
-        const handle = window.setTimeout(() => {
-            if (beat < 2) setBeat((beat + 1) as Beat);
-            else setFinished(true);
-        }, BEATS[beat]);
-        return () => window.clearTimeout(handle);
-    }, [live, beat, playKey, finished]);
-
-    const play = (from: Beat) => {
-        setBeat(from);
-        setFinished(false);
-        setPlayKey(k => k + 1);
-    };
-
-    const stateOf = (i: number): MarkState => {
-        if (!live) return 'asleep';
-        if (finished || i < beat) return 'done';
-        return i === beat ? 'playing' : 'asleep';
-    };
-
-    return (
-        <>
-            <Head>
-                <h1 className="intro-title text-m3-display-large break-words">{t('onboarding.how_title')}</h1>
-                <p className="mt-3 text-m3-body-large intro-muted">{t('onboarding.how_subtitle')}</p>
-            </Head>
-            {/* The three rows below say what the app does; this says it. The
-                curve, the doses and the fit are the engine's own output, so
-                what is promised here is what the Overview will draw. Given a
-                column to itself it draws at something like the size it will be
-                on the Overview, instead of at thumbnail size beside 500px of
-                empty page. */}
-            <Stage>
-                <div className="w-full">
-                    <OnboardingCurve
-                        data={curve}
-                        beat={beat}
-                        playKey={playKey}
-                        caption={t('onboarding.how_chart_caption')}
-                        legend={{ model: t('onboarding.how_chart_legend_model'), labs: t('onboarding.how_chart_legend_labs') }}
-                    />
-                </div>
-            </Stage>
-            <Body>
-                {HOW_ROWS.map(({ mark, title, desc }, i) => (
-                    <Point
-                        key={mark}
-                        mark={mark}
-                        title={t(title)}
-                        desc={t(desc)}
-                        state={stateOf(i)}
-                        duration={BEATS[i]}
-                        playKey={playKey}
-                        onClick={() => play(i as Beat)}
-                    />
-                ))}
-                {/* The two engines, named and credited, with nothing to choose.
-                    The choice lives in Settings where it can be revisited; this step's
-                    job is to say that the curve above came from a model that is someone
-                    else's work, and that a second one exists. Showing the faces is the
-                    point — an engine is a person's contribution here, not a vendor
-                    feature, and the attribution is already the licence's requirement.
-                    Feminine mode only, because the Transmtf engine models estradiol and
-                    nothing else, so on the transmasc path one of the two is not a thing
-                    that could be used. Filled and headline-sized rather than a hairline
-                    footnote: the two models are the answer to the question this step
-                    asks, so they sit above the disclaimer, not under it. */}
-                {!isTransmasc && (
-                    <div className="mt-5 rounded-[var(--radius-lg)] bg-[var(--color-m3-surface-container)] p-4">
-                        <p className="text-m3-title-small text-[var(--color-m3-on-surface)]">
-                            {t('onboarding.how_models_title')}
-                        </p>
-                        <ul className="mt-3 space-y-3">
-                            {([
-                                { img: 'mihari.jpg', nameKey: 'onboarding.how_model_mihari', noteKey: 'onboarding.how_model_mihari_note' },
-                                { img: 'transmtf.png', nameKey: 'onboarding.how_model_transmtf', noteKey: 'onboarding.how_model_transmtf_note' },
-                            ] as const).map(({ img, nameKey, noteKey }) => (
-                                <li key={img} className="flex items-start gap-3">
-                                    <img
-                                        src={`/${img}`}
-                                        alt=""
-                                        className="h-10 w-10 shrink-0 rounded-full object-cover"
-                                    />
-                                    <span className="min-w-0">
-                                        <span className="block text-m3-body-medium font-medium text-[var(--color-m3-on-surface)]">
-                                            {t(nameKey)}
-                                        </span>
-                                        <span className="mt-0.5 block text-m3-body-small leading-relaxed text-[var(--color-m3-on-surface-variant)]">
-                                            {t(noteKey)}
-                                        </span>
-                                    </span>
-                                </li>
-                            ))}
-                        </ul>
-                        <p className="mt-3 text-m3-body-small leading-relaxed text-[var(--color-m3-on-surface-variant)]">
-                            {t('onboarding.how_models_footer')}
-                        </p>
-                    </div>
-                )}
-
-                <p className="mt-5 text-m3-body-medium intro-muted">{t('onboarding.how_note')}</p>
-            </Body>
-        </>
-    );
+        if (t.startsWith('en')) return 'en';
+        if (t.startsWith('ja')) return 'ja';
+        if (t.startsWith('ko')) return 'ko';
+        if (t.startsWith('tr')) return 'tr';
+    }
+    return 'zh';
 };
 
-/**
- * The five stripes, top to bottom.
- *
- * These are the flag's own colours rather than theme roles, deliberately: a pride
- * flag whose hues followed the app's palette would be a different flag, and the
- * light blue has no M3 role to borrow. Everything around it — the frame, the type,
- * the ink — is themed; only the flag is literal, because only the flag is a
- * reference to something outside this app.
- */
-const TRANS_FLAG_COLOURS = ['#5BCEFA', '#F5A9B8', '#FFFFFF', '#F5A9B8', '#5BCEFA'];
-
-/**
- * The send-off's flag, drawn inline rather than shipped as a file.
- *
- * Five rectangles in a 3:2 viewBox: crisp at any size and in either theme, one
- * kilobyte of markup instead of a second image to compress and cache. It is the
- * one thing on the closing screen that is not the app's own drawing, which is the
- * point of it.
- */
-const TransFlag: React.FC = () => {
-    const { t } = useTranslation();
-    const stripe = 40 / TRANS_FLAG_COLOURS.length;
-    return (
-        <svg
-            viewBox="0 0 60 40"
-            className="w-full"
-            role="img"
-            aria-label={t('onboarding.sendoff_flag_alt')}
-        >
-            {TRANS_FLAG_COLOURS.map((fill, i) => (
-                <rect key={i} x="0" y={i * stripe} width="60" height={stripe} fill={fill} />
-            ))}
-        </svg>
-    );
-};
-
-/**
- * The signed-in account page as a picture.
- *
- * Modelled on `Account.tsx`'s own identity row and its sync row, at the roles that
- * page uses, so the picture is what signing up actually looks like rather than an
- * illustration of the idea. The avatar is a real circular crop of the supplied image
- * — `border-radius: 50%` plus `object-fit: cover` — which is the whole of what a
- * cropper would have done to a square source.
- */
-const AccountPreview: React.FC = () => {
-    const { t } = useTranslation();
-    return (
-        <div className="w-full rounded-[var(--md-sys-shape-corner-large)] border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-dim)] p-4 text-[var(--color-m3-on-surface)]">
-            <div className="flex items-center gap-3.5">
-                <img
-                    src="/intro-avatar.webp"
-                    alt=""
-                    width={512}
-                    height={512}
-                    className="h-16 w-16 shrink-0 rounded-full object-cover"
-                />
-                <div className="min-w-0">
-                    <p className="truncate text-lg font-semibold">KiraMyao</p>
-                    <p className="text-xs text-[var(--color-m3-on-surface-variant)]">
-                        {t('core.acct.signed_in_as')} KiraMyao
-                    </p>
-                </div>
-            </div>
-            <div className="mt-4 flex items-center justify-between gap-3 border-t border-[var(--color-m3-outline-variant)] pt-3">
-                <p className="text-m3-body-medium">{t('sync.title')}</p>
-                <span className="inline-flex items-center gap-1.5 text-m3-body-compact text-[var(--color-m3-primary)]">
-                    <Icon icon={Check} size={14} strokeWidth={1.5} />
-                    {t('sync.status.synced')}
-                </span>
-            </div>
-        </div>
-    );
-};
-
-/**
- * The install step's picture: the app's own icon, with the add affordance beside it
- * and the browser's name for that action underneath.
- *
- * Built from markup rather than a screenshot because the control it describes lives
- * in the browser's chrome, not in this app — a picture of someone else's address bar
- * would go stale on the next browser release, while the icon and the label are ours
- * and the user's language. The icon is the shipped PWA icon, so what the card shows
- * is what lands on the home screen.
- */
-const PwaVisual: React.FC = () => {
-    const { t } = useTranslation();
-    // Resolved from the update manifest so the download link tracks the released APK
-    // rather than this bundle's version; the version-derived URL is the initial value
-    // and the fallback, so the link is never empty.
-    const [apkUrl, setApkUrl] = useState(ANDROID_APK_URL);
-    useEffect(() => {
-        let alive = true;
-        void fetchLatestApkUrl().then(url => { if (alive) setApkUrl(url); });
-        return () => { alive = false; };
-    }, []);
-    return (
-        <div className="flex w-full flex-col items-center gap-5 py-6">
-            <div className="relative">
-                <img
-                    src="/pwa-512x512.png"
-                    alt=""
-                    width={512}
-                    height={512}
-                    className="h-28 w-28 rounded-[var(--md-sys-shape-corner-large)] border border-[var(--color-m3-outline-variant)]"
-                />
-                <span className="absolute -bottom-2 -right-2 flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-m3-primary)] text-[var(--color-m3-on-primary)]">
-                    <Icon icon={Plus} size={18} strokeWidth={2} />
-                </span>
-            </div>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-m3-outline)] px-4 py-2 text-m3-title-medium text-[var(--color-m3-on-surface)]">
-                {t('onboarding.pwa_add')}
-            </span>
-            {/* The native Android build, for a visitor who would rather install the app
-                than the PWA. A direct link to the signed APK the update manifest also
-                names; the same file the in-app updater downloads. */}
-            <a
-                href={apkUrl}
-                className="text-xs font-medium text-[var(--color-m3-primary)] underline-offset-4 hover:underline"
-            >
-                {t('onboarding.pwa_android')}
-            </a>
-        </div>
-    );
-};
+const PRESET_WEIGHTS = [45, 55, 65, 75];
 
 interface OnboardingProps {
     /** Same list Settings uses, rather than a second copy that can drift. */
     languageOptions: { value: Lang; label: string }[];
     /** `YYYY-MM-DD`, or '' when the question was skipped. */
     hrtStartDate: string;
-    /**
-     * Commits the answer. Goes through the data layer rather than straight to
-     * localStorage because the setting is account-scoped: the layer knows which
-     * account's namespace to write (and to adopt the signed-out value into).
-     */
-    onHrtStartChange: (value: string) => void;
-    /** Current body weight in kg; feeds the distribution volume. */
+    onHrtStartChange: (date: string) => void;
     weight: number;
-    /** Commits an edited weight through the same account-scoped data layer. */
     onWeightChange: (kg: number) => void;
+    /** The app's own import pipeline, so the row here reads the same backups the
+     *  data screen does — including the password prompt for an encrypted one. */
+    onImportJson?: (data: string | ArrayBuffer) => boolean | Promise<boolean>;
     /**
      * True when reached from Settings' "replay the intro" row rather than on a
-     * first run. The flow is a re-read then, so it must not write back — the
-     * start-date step in particular, where a stray tap would replace a date the
-     * user set months ago. The body-weight step that follows is frozen for the
-     * same reason. Every other step is either purely informational or idempotent
-     * (language/mode), so only those two values are frozen.
+     * first visit. The two steps that write something — the start date and the
+     * weight — are read-only in that case: re-reading the intro must never
+     * overwrite a value set months ago.
      */
     replay?: boolean;
     onDone: () => void;
 }
 
-/**
- * First run. Four screens, in the order a new user needs them: language before
- * anything else (the app defaults to Chinese, so every other word is unreadable
- * until it's set), then HRT mode, then what the app actually does, then what it
- * does with your data and what it can't do for you.
- *
- * Rendered instead of the app shell, not as a tab inside it — the nav would
- * invite tabbing away halfway through, leaving language and mode on defaults
- * that the flow exists to ask about.
- */
-const Onboarding: React.FC<OnboardingProps> = ({ languageOptions, hrtStartDate, onHrtStartChange, weight, onWeightChange, replay = false, onDone }) => {
+const Onboarding: React.FC<OnboardingProps> = ({
+    languageOptions,
+    hrtStartDate,
+    onHrtStartChange,
+    weight,
+    onWeightChange,
+    onImportJson,
+    replay = false,
+    onDone,
+}) => {
     const { t, lang, setLang, tIn, ensureAll } = useTranslation();
-    const { mode, setMode, isTransmasc } = useHRTMode();
-    const curve = useOnboardingCurve(isTransmasc);
+    const { mode, setMode } = useHRTMode();
 
-    // The picker below stacks all seven subtitles in one grid cell to measure the
-    // tallest, so every pack has to be resident — not just the selected one, which
-    // is all `t()` would have loaded. Without this the options whose pack has not
-    // arrived render nothing and the row collapses to the two languages already in
-    // memory. The intro is the one screen that needs the whole set, and it is only
-    // shown before the reader has picked a language, so the cost lands here once.
+    // The language step paints every greeting at once (stacked, so the block never
+    // changes height), which needs all seven packs resident — `t()` alone would
+    // only have loaded the selected one.
     useEffect(() => {
         const cancel = ensureAll();
         return cancel;
     }, [ensureAll]);
 
-    const [step, setStep] = useState(0);
-    // The app's own date picker, opened from the field below and used inline.
-    // Its unfolding motion lives in DateTimePicker itself.
+    // The Android build has no download or PWA step to offer: it is already the
+    // thing that step would install. Seven steps there, eight everywhere else.
+    const steps = useMemo(() => (isNativeApp() ? ALL_STEPS.filter(s => s.id !== 'app') : ALL_STEPS), []);
+    const [stepIndex, setStepIndex] = useState(0);
+    const index = Math.min(stepIndex, steps.length - 1);
+    const meta = steps[index];
+    const isLast = index === steps.length - 1;
+
     const [isStartPickerOpen, setIsStartPickerOpen] = useState(false);
-    // The native picker is capped at today: a start date in the future would
-    // make the account line read as a negative — or be discarded — either way
-    // the input would be the only place the mistake was visible.
-    const now = new Date();
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    // Only so the step change slides the way the app's view changes do.
-    const [direction, setDirection] = useState<'forward' | 'backward'>('forward');
 
-    const modeOptions = [
-        { value: 'transfem', labelKey: 'mode.transfem', descKey: 'onboarding.mode_transfem_desc' },
-        { value: 'transmasc', labelKey: 'mode.transmasc', descKey: 'onboarding.mode_transmasc_desc' },
-    ] as const;
+    /* Weight is edited as text so a half-typed "6" is not committed as 6 kg; the
+       stored value only moves when the field is left, a step button is pressed,
+       or a preset is chosen. */
+    const [weightText, setWeightText] = useState(() => String(weight));
+    const weightEditing = useRef(false);
+    useEffect(() => {
+        if (!weightEditing.current) setWeightText(String(weight));
+    }, [weight]);
 
-    const steps = [
-        // The cat is the welcome, so it gets the room. Whatever it happens to be
-        // doing at this hour is the greeting — the schedule is the point, and a
-        // pose reserved for first-timers would be the one cat in the app that
-        // isn't living out its day. It obeys the "show pixel cats" preference
-        // like every other cat: someone replaying the intro with them switched
-        // off asked not to see one.
-        // `h-full` only where it earns its keep. On a phone it is what lets the
-        // greeting stay put while the languages scroll under it. On a wide
-        // window there is room for all seven, and filling the height there
-        // pinned this step to the top with a slab of empty page under the last
-        // language — while every other step sat centred, so stepping between
-        // them jumped the page. Sized to its content it centres like the rest.
-        // `h-full` used to pin this step to the scroller's height so the greeting
-        // could hold still while only the list moved. The list no longer scrolls
-        // on its own (see below), so the step takes its natural height and the
-        // outer scroller does the work — which is what every other step does.
-        <div key="welcome" className="flex flex-col pt-6 text-center">
-            {/* One sentence explaining what is being chosen, directly under the
-                greeting. It travels with the greeting now rather than being held
-                above the list. */}
-            <div className="shrink-0">
-                {/* The one block on this step that is pure decoration. It is the
-                    first thing to go when height is scarce — see `.intro-welcome-vial`
-                    in index.css. */}
-                <div className="intro-welcome-vial flex justify-center">
-                    {/* Deliberately not a reading — this runs before any record exists. It is
-                        an illustration of what the app is for, so it sits at a fixed illustrative
-                        *fill* rather than an empty tube, which would read as "your data is
-                        missing" on a first visit. Expressed as a fraction rather than a
-                        concentration: inventing a plausible pg/mL number to show in an
-                        illustration would be a small lie, and with the curve non-linear the
-                        fraction is the only thing that means what it says. */}
-                    <BloodVial
-                        level={vialLevelForFill(0.45, isTransmasc ? 'transmasc' : 'transfem')}
-                        mode={isTransmasc ? 'transmasc' : 'transfem'}
-                        size={96}
-                    />
-                </div>
-                <h1 className="intro-title mt-6 text-m3-display-large break-words">{t('onboarding.welcome_title')}</h1>
-                {/* Every translation of the sentence stacked into one grid cell,
-                    the inactive ones hidden but still taking up their space, so
-                    the box is as tall as the longest one at whatever width this
-                    is. The list below therefore starts at the same y in every
-                    language — otherwise picking Türkçe after 简体中文 grows the
-                    sentence by a line and slides the list down under the finger
-                    that just tapped it. A fixed height can't stand in for this:
-                    the longest runs to four lines at 320px and three at 375px. */}
-                <div className="intro-welcome-subtitle mx-auto mt-3 grid max-w-sm">
-                    {languageOptions.map(({ value }) => {
-                        const current = value === lang;
-                        const text = tIn(value, SUBTITLE_KEY);
-                        if (!text) return null;
-                        return (
-                            <p
-                                key={value}
-                                className={`col-start-1 row-start-1 text-m3-body-large intro-muted ${current ? 'intro-welcome-subtitle-active' : 'invisible'}`}
-                            >
-                                {text}
-                            </p>
-                        );
-                    })}
-                </div>
-            </div>
-            {/* The list is sized to its content and the step scrolls as a whole,
-                rather than the list scrolling inside a pinned greeting.
+    const commitWeight = (raw: string) => {
+        const kg = parseFloat(raw);
+        if (!isPlausibleBodyWeightKG(kg)) {
+            setWeightText(String(weight));
+            return;
+        }
+        const clamped = Math.max(30, Math.min(180, Number(kg.toFixed(1))));
+        setWeightText(String(clamped));
+        onWeightChange(clamped);
+    };
 
-                It used to be `flex-1` inside an `h-full` column, with a 7.5rem
-                floor and `overflow-y-auto`: the greeting stayed put and the
-                languages scrolled under it. On a short viewport the floor won —
-                the list was handed exactly 120px and silently hid five of the
-                seven languages behind an inner scroll with no visible bar (the
-                fade the old code drew was meant to hint at it and did not). A
-                phone with heavy browser chrome is exactly that viewport, which
-                is the bug this fixes: the picker showed two rows and looked
-                broken.
+    const bumpWeight = (delta: number) => {
+        const base = parseFloat(weightText) || weight || 60;
+        const next = Math.max(30, Math.min(180, Number((base + delta).toFixed(1))));
+        setWeightText(String(next));
+        onWeightChange(next);
+    };
 
-                Flowing instead keeps every language in the page, one scroll for
-                the reader, and no nested scrollers to get trapped between. The
-                cost is the pinned greeting on tall screens, which was the lesser
-                half of the trade — and it is the fallback the old comment
-                already named ("the outer scroller takes over"). */}
-            <div className="intro-langs mx-auto mt-7 flex w-full max-w-xs flex-col gap-2 text-start lg:grid lg:max-w-none lg:grid-cols-2">
-                {languageOptions.map(({ value, label }) => (
-                    <button
-                        key={value}
-                        onClick={() => setLang(value as Lang)}
-                        aria-pressed={lang === value}
-                        className="intro-option"
-                    >
-                        <span className="text-m3-title-medium">{label}</span>
-                        {lang === value && <Tick />}
-                    </button>
-                ))}
-            </div>
-        </div>,
+    const currentWeight = parseFloat(weightText) || weight;
 
-        <div key="mode" className="pt-8">
-            <h1 className="intro-title text-m3-display-large break-words">{t('onboarding.mode_title')}</h1>
-            <p className="mt-3 text-m3-body-large intro-muted">{t('onboarding.mode_subtitle')}</p>
-            <div className="mt-6 space-y-2">
-                {modeOptions.map(({ value, labelKey, descKey }) => (
-                    <button
-                        key={value}
-                        onClick={() => setMode(value)}
-                        aria-pressed={mode === value}
-                        className="intro-option"
-                    >
-                        <span>
-                            <span className="block text-m3-title-medium">
-                                {t(labelKey)}
-                            </span>
-                            <span className="mt-1 block text-m3-body-large intro-muted">
-                                {t(descKey)}
-                            </span>
-                        </span>
-                        {mode === value && <Tick />}
-                    </button>
-                ))}
-            </div>
-        </div>,
+    const [apkUrl, setApkUrl] = useState(ANDROID_APK_URL);
+    useEffect(() => {
+        let alive = true;
+        void fetchLatestApkUrl().then(url => { if (alive && url) setApkUrl(url); });
+        return () => { alive = false; };
+    }, []);
 
-        <HowStep key="how" curve={curve} />,
+    const fileRef = useRef<HTMLInputElement | null>(null);
 
-        /* Inserted after the chart step rather than before it, so the chart keeps
-           index 2 and `CHART_STEP` needs no change — the warning about
-           incrementing it only applies to a step placed ahead of the chart. */
-        /* The card holds the app's own DateTimePicker in date mode, the same component
-           the lab form uses, rather than the browser's: a day count needs a date with no
-           time, and `mode="date"` is exactly that. Framed like every other visual so the
-           one question that is answered by choosing rather than by reading still belongs
-           to the same flow. */
-        <IntroCard
-            key="started"
-            title={t('onboarding.start_title')}
-            description={t('onboarding.start_subtitle')}
-            visual={
-                replay ? (
-                    /* A replay is a re-read. The date is shown as a plain field —
-                       no picker, no clear — because this step's only write is the
-                       start date, and re-running the intro must not overwrite a
-                       value the user set long ago. The words that follow still
-                       explain what the date does. */
-                    <div className="flex w-full flex-col gap-2 text-start">
-                        <span className="text-m3-title-medium text-[var(--color-m3-on-surface)]">
-                            {t('onboarding.start_label')}
-                        </span>
-                        <div className="flex items-center rounded-lg border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container)] px-3 py-2.5">
-                            <span className="text-m3-title-medium tabular-nums text-[var(--color-m3-on-surface)]">
-                                {hrtStartDate
-                                    ? fromYmd(hrtStartDate).toLocaleDateString(LOCALE_MAP[lang] || 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-                                    : '—'}
-                            </span>
-                        </div>
-                        <span className="text-m3-body-medium text-[var(--color-m3-on-surface-variant)]">
-                            {t('onboarding.start_hint')}
-                        </span>
-                    </div>
-                ) : (
-                <div className="flex w-full flex-col gap-2 text-start">
-                    <span className="text-m3-title-medium text-[var(--color-m3-on-surface)]">
-                        {t('onboarding.start_label')}
-                    </span>
-                    <div className="flex items-center gap-2">
-                        <button
-                            type="button"
-                            onClick={() => setIsStartPickerOpen(open => !open)}
-                            aria-expanded={isStartPickerOpen}
-                            className="flex flex-1 items-center justify-between gap-2 rounded-lg border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container)] px-3 py-2.5 text-start"
-                        >
-                            <span className="text-m3-title-medium tabular-nums text-[var(--color-m3-on-surface)]">
-                                {hrtStartDate
-                                    ? fromYmd(hrtStartDate).toLocaleDateString(LOCALE_MAP[lang] || 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-                                    : t('date.select')}
-                            </span>
-                            <Icon
-                                icon={ChevronDown}
-                                size={16}
-                                className={`shrink-0 text-[var(--color-m3-on-surface-variant)] ${isStartPickerOpen ? 'rotate-180' : ''}`}
-                            />
-                        </button>
-                        {hrtStartDate && (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    onHrtStartChange('');
-                                    setIsStartPickerOpen(false);
-                                }}
-                                aria-label={t('onboarding.start_clear')}
-                                title={t('onboarding.start_clear')}
-                                className="flex h-11 shrink-0 items-center justify-center rounded-lg border border-[var(--color-m3-outline-variant)] px-3 text-sm font-medium text-[var(--color-m3-on-surface-variant)] hover:bg-[var(--color-m3-surface-container)] hover:text-[var(--color-m3-on-surface)]"
-                            >
-                                {t('onboarding.start_clear')}
-                            </button>
-                        )}
-                    </div>
-                    {/* The picker used to appear by mounting, so the field grew by the
-                        picker's full height in one frame — the step jumped. Same
-                        grid-rows disclosure the app's other expandables use (see
-                        Collapsible), with the picker held mounted through the close so
-                        there is something to show on the way out. */}
-                    {/* DateTimePicker's inline mode owns the unfolding motion, so
-                        the card just holds it. The wrapper's own border and padding
-                        have to collapse with the picker, or a closed picker leaves an
-                        empty ~18px box under the field — the picker's content reaches
-                        zero height, but its parent's `p-2` does not. */}
-                    <div className={`rounded-lg border bg-[var(--color-m3-surface-container-low)] transition-[padding,border-color] duration-[250ms] ease-out ${isStartPickerOpen ? 'border-[var(--color-m3-outline-variant)] p-2' : 'border-transparent p-0'}`}>
-                        <DateTimePicker
-                            isOpen={isStartPickerOpen}
-                            inline
-                            mode="date"
-                            onClose={() => setIsStartPickerOpen(false)}
-                            onConfirm={(date) => {
-                                // The picker has no max, but the old native input refused a
-                                // future start: it would make the account's day count negative.
-                                // Keep that guard by clamping the answer to today.
-                                const picked = toYmd(date);
-                                onHrtStartChange(picked > today ? today : picked);
-                            }}
-                            initialDate={hrtStartDate ? fromYmd(hrtStartDate) : new Date()}
-                            title={t('onboarding.start_label')}
-                        />
-                    </div>
-                    <span className="text-m3-body-medium text-[var(--color-m3-on-surface-variant)]">
-                        {t('onboarding.start_hint')}
-                    </span>
-                </div>
-                )
-            }
-        />,
+    /**
+     * The transient hint, as text + visibility rather than text-or-null.
+     *
+     * It used to clear the string and the `.on` class in the same commit, which
+     * left the element's 24px black box emptying out *while* it faded — and if the
+     * fade was ever interrupted (a hidden tab, a paused WebView) the box stayed on
+     * screen with nothing in it. That empty bar under the buttons is what this
+     * fixes: the words stay until the next hint replaces them, and the CSS keeps
+     * the box out of the paint once it is closed.
+     */
+    const [snack, setSnack] = useState<{ text: string; open: boolean }>({ text: '', open: false });
+    const snackTimer = useRef<number | undefined>(undefined);
+    const toast = (message: string) => {
+        setSnack({ text: message, open: true });
+        window.clearTimeout(snackTimer.current);
+        snackTimer.current = window.setTimeout(() => setSnack(prev => ({ ...prev, open: false })), 2600);
+    };
+    useEffect(() => () => window.clearTimeout(snackTimer.current), []);
 
-        /* Its own step, right after the date: both are the personal baseline the
-           model is fitted against, but the weight is a number to type rather than a
-           day to pick, so bundling the two made one step hold two answers. */
-        <IntroCard
-            key="weight"
-            title={t('onboarding.weight_title')}
-            description={t('onboarding.weight_subtitle')}
-            visual={<WeightVisual weight={weight} onChange={onWeightChange} replay={replay} />}
-        />,
-
-        <IntroCard
-            key="quick"
-            title={t('onboarding.quick_title')}
-            description={t('onboarding.quick_subtitle')}
-            visual={<QuickAddDemo />}
-        />,
-
-        /* The lab scan: the other way a record gets in, straight from a photo.
-           It sits after the template step because the two answer the same
-           question — "how do I log this quickly?" — one for a dose, one for a
-           blood test. */
-        <IntroCard
-            key="scan"
-            title={t('onboarding.scan_title')}
-            description={t('onboarding.scan_subtitle')}
-            visual={<LabScanDemo />}
-        />,
-
-        /* The journal and the reminders are what the app gives back rather than
-           takes in: the private notes you keep for yourself, then the prompts
-           that come back on a schedule. */
-        <IntroCard
-            key="journal"
-            bare
-            title={t('onboarding.journal_title')}
-            description={t('onboarding.journal_subtitle')}
-            visual={<JournalPreview />}
-        />,
-
-        <IntroCard
-            key="recheck"
-            bare
-            title={t('onboarding.recheck_title')}
-            description={t('onboarding.recheck_subtitle')}
-            visual={<RecheckPreview />}
-        />,
-
-        /* Where your history can come from: the picture shows three other
-           trackers landing here, which is what the import actually does. */
-        <IntroCard
-            key="import"
-            framed={false}
-            title={t('onboarding.import_title')}
-            description={t('onboarding.import_subtitle')}
-            visual={<ImportSmashDemo />}
-        />,
-
-        <IntroCard
-            key="account"
-            /* Unframed: `AccountPreview` is already a card with its own border and
-               ground, so the intro frame wrapped a card in a card. With the outer
-               frame gone the preview breaks out of the reading gutter and gets the
-               width instead. Same treatment the assistant step uses. */
-            framed={false}
-            title={t('onboarding.account_title')}
-            description={t('onboarding.account_subtitle')}
-            visual={<AccountPreview />}
-        />,
-
-        ...(!isNativeApp() ? [
-            <IntroCard
-                key="pwa"
-                title={t('onboarding.pwa_title')}
-                description={t('onboarding.pwa_subtitle')}
-                visual={<PwaVisual />}
-            />,
-        ] : []),
-
-        /* The assistant step: the picture, what the token actually is, and the prompt
-           to hand over. The endpoint is not printed on its own here — it is inside
-           the prompt below, and a second copy beside it was one more string to keep
-           in step with the constant. */
-        <div key="mcp">
-            <IntroCard
-                framed={false}
-                title={t('onboarding.mcp_title')}
-                description={t('onboarding.mcp_subtitle')}
-                visual={
-                    <img
-                        src="/mcp.webp"
-                        alt={t('mcp.image_alt')}
-                        width={900}
-                        height={672}
-                        loading="lazy"
-                        className="w-full"
-                    />
-                }
-            />
-            <div className="mt-4">
-                <Point mark="caution" title={t('onboarding.mcp_token')} desc={t('onboarding.mcp_token_desc')} />
-            </div>
-            {/* The reader can hand this straight to their own assistant instead of
-                wiring the client up by hand — one selectable block, not a field per
-                value. Same text as the AI-assistant settings page. */}
-            <p className="mt-5 text-m3-body-large">{t('onboarding.mcp_prompt')}</p>
-            <CopyRow variant="single" value={INSTALL_PROMPT} hint={t('onboarding.mcp_prompt_hint')} />
-            <p className="mt-2 text-m3-body-large intro-muted">{t('onboarding.mcp_more')}</p>
-        </div>,
-
-        /* The mark and the words are one block, centred in the step, with the
-           cloud note sunk to the foot just above the next button: a poster — a
-           mark, a sentence about it, a line of fine print — so nothing on this
-           step is framed, boxed or bordered.
-           `my-auto` and not a top padding: the header sits where the eye expects
-           a poster's type, and the free space falls below it rather than above. */
-        <div key="privacy" className="flex min-h-[68vh] flex-col items-center text-center">
-            <div className="my-auto flex w-full flex-col items-center">
-                <BigLockAnimation />
-                {/* The heading is the page, so it takes the largest type in the app
-                    (display-large, 57px).
-                    The middle line names two products and is naturally far wider than
-                    the Chinese around it — 520px at display-medium against the 364px a
-                    phone gives it — so at any size that still reads as a poster it
-                    wrapped, and the two names the line exists to say landed on separate
-                    lines. Scaled down alone it would have been a visibly smaller line
-                    between two full-size ones, so the whole heading goes through
-                    `FitText`: with the `<br>`s as the poster's line breaks, its
-                    `scrollWidth` is the *widest* of the three, and one ratio brings all
-                    three down together. The shape is then the same in every language,
-                    and the floor is lowered because a display heading would rather be
-                    small than clipped.
-                    The weight split follows the poster rather than the app's other
-                    headings: "隐私保护根植于" and "设计之中。" are set light and the
-                    product line alone is semibold, so the emphasis lands on the names
-                    and the two framing lines stay quiet. Bolding all three made the
-                    highlight a colour change with nothing carrying it.
-                    `w-full` on the heading *and* on the wrapper above it is
-                    load-bearing: `FitText`'s inner line is `white-space: nowrap`, so
-                    its min-content width is the whole line, and these are both flex
-                    items in a centred column — left to shrink-wrap they sized
-                    themselves to that line (482px in a 364px slot) and overflowed the
-                    step instead of being measured against it. */}
-                <h1 className="intro-title w-full text-m3-display-large leading-[1.06]">
-                    <FitText minRatio={0.42}>
-                        {t('onboarding.privacy_title_1')}<br />
-                        <span className="font-semibold text-[var(--color-m3-primary)]">{t('onboarding.privacy_title_highlight')}</span><br />
-                        {t('onboarding.privacy_title_2')}
-                    </FitText>
-                </h1>
-                <p className="mt-4 text-m3-title-medium intro-muted">
-                    {t('onboarding.privacy_subtitle')}
-                </p>
-            </div>
-            <p className="w-full pb-1 pt-5 text-m3-body-medium intro-muted">
-                {t('onboarding.privacy_cloud_note')}
-            </p>
-        </div>,
-
-        <div key="disclaimer" className="flex h-full flex-col items-center justify-center pt-6 text-center">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-m3-primary-container)] text-[var(--color-m3-primary)] mb-6">
-                <Icon icon={AlertTriangle} size={44} strokeWidth={2} />
-            </div>
-            <h1 className="intro-title text-m3-headline-medium md:text-m3-display-small font-bold break-words">
-                {t('onboarding.disclaimer_title')}
-            </h1>
-            <p className="mt-4 max-w-sm text-m3-body-large leading-relaxed text-[var(--color-m3-on-surface-variant)]">
-                {t('onboarding.disclaimer_body')}
-            </p>
-        </div>,
-
-        /* The send-off. The flag is the farewell — the one screen that faces outward
-           rather than at the app — and the sentence under it is the greeting's
-           answer, in the display type the greeting used. */
-        <IntroCard
-            key="sendoff"
-            framed={false}
-            title={t('onboarding.sendoff_line')}
-            visual={<TransFlag />}
-        />,
-    ];
-
-    const activeStepKeys = isNativeApp() ? STEP_KEYS.filter(key => key !== 'pwa') : STEP_KEYS;
-    const isLast = step === steps.length - 1;
-    const roles = STEP_ROLES[activeStepKeys[step]];
+    /* ── The press ─────────────────────────────────────────────────────────
+     *
+     * One delegated listener for the whole flow, adding `.mo` straight to the
+     * node. Doing it in React state would re-render the step on every
+     * pointerdown — cheap, but the point of the class is that the browser can
+     * start the radius transition on the same frame as the touch. */
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    useEffect(() => {
+        const root = rootRef.current;
+        if (!root) return;
+        let release: number | undefined;
+        const onDown = (event: PointerEvent) => {
+            const target = event.target as Element | null;
+            const el = target?.closest?.('[data-m]');
+            if (el) el.classList.add('mo');
+        };
+        const onUp = () => {
+            window.clearTimeout(release);
+            release = window.setTimeout(() => {
+                root.querySelectorAll('.mo').forEach(el => el.classList.remove('mo'));
+            }, 260);
+        };
+        root.addEventListener('pointerdown', onDown);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
+        return () => {
+            root.removeEventListener('pointerdown', onDown);
+            window.removeEventListener('pointerup', onUp);
+            window.removeEventListener('pointercancel', onUp);
+            window.clearTimeout(release);
+        };
+    }, []);
 
     const go = (next: number) => {
-        setDirection(next > step ? 'forward' : 'backward');
-        setStep(next);
+        setStepIndex(Math.max(0, Math.min(steps.length - 1, next)));
+    };
+
+    /* ── Language ──────────────────────────────────────────────────────────── */
+
+    const systemLang = useMemo(detectSystemLang, []);
+    // The device's own language takes the full-width row; the rest keep the order
+    // the packs declare, so the grid is the same on every device but one.
+    const orderedLangs = useMemo(() => {
+        const first = languageOptions.find(o => o.value === systemLang);
+        if (!first) return languageOptions;
+        return [first, ...languageOptions.filter(o => o.value !== systemLang)];
+    }, [languageOptions, systemLang]);
+
+    /* ── Date ──────────────────────────────────────────────────────────────── */
+
+    const notStarted = !hrtStartDate;
+    const dayCount = hrtDaysSince(hrtStartDate);
+    const dateLabel = hrtStartDate
+        ? fromYmd(hrtStartDate).toLocaleDateString(LOCALE_MAP[lang] || 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+        : t('ob2.date_pick');
+    const now = new Date();
+    const today = toYmd(now);
+
+    /* ── Import ────────────────────────────────────────────────────────────── */
+
+    /* The import pipeline reports its own outcome — a success dialog, an error
+       alert, or the password sheet an encrypted backup opens — so this row stays
+       quiet on success and only speaks up if the call itself throws. */
+    const handleFile = async (file: File) => {
+        if (!onImportJson) {
+            toast(t('ob2.import_where_desc'));
+            return;
+        }
+        try {
+            await onImportJson(await file.arrayBuffer());
+        } catch {
+            toast(t('ob2.import_fail'));
+        } finally {
+            if (fileRef.current) fileRef.current.value = '';
+        }
+    };
+
+    /* ── PWA ───────────────────────────────────────────────────────────────── */
+
+    const installPwa = async () => {
+        const event = deferredInstall;
+        if (!event) {
+            toast(t('ob2.app_pwa_hint'));
+            return;
+        }
+        deferredInstall = null;
+        try {
+            await event.prompt();
+            await event.userChoice;
+        } catch {
+            toast(t('ob2.app_pwa_hint'));
+        }
+    };
+
+    /* ── Panels ────────────────────────────────────────────────────────────── */
+
+    const titleFor = (): React.ReactNode => {
+        switch (meta.id) {
+            case 'type': return lines(t('ob2.title_type'));
+            case 'date': return lines(t('ob2.title_date'));
+            case 'weight': return lines(t('ob2.title_weight'));
+            case 'import': return lines(t('ob2.title_import'));
+            case 'app': return lines(t('ob2.title_app'));
+            case 'privacy': return lines(t('ob2.title_privacy'));
+            case 'bloom': return lines(t('ob2.title_bloom'));
+            default: return null;
+        }
+    };
+
+    const langPanel = (
+        <div className="lang-grid">
+            {orderedLangs.map(({ value, label }, i) => (
+                <button
+                    key={value}
+                    type="button"
+                    className={`lang-card${i === 0 && value === systemLang ? ' sys-top' : ''}${lang === value ? ' on' : ''}`}
+                    data-m
+                    style={{ '--mo': '14px' } as React.CSSProperties}
+                    aria-pressed={lang === value}
+                    onClick={() => setLang(value)}
+                >
+                    <span>{label}</span>
+                    <PixelCheck className="px-check" />
+                </button>
+            ))}
+        </div>
+    );
+
+    const typePanel = (
+        <div className="hrt-grid">
+            <button
+                type="button"
+                className={`hrt-tile mtf${mode === 'transfem' ? ' on' : ''}`}
+                data-m
+                style={{ '--mo': '20px' } as React.CSSProperties}
+                aria-pressed={mode === 'transfem'}
+                onClick={() => setMode('transfem')}
+            >
+                <span className="ht-ic"><Icon icon={Droplet} size={24} /></span>
+                <span>
+                    <span className="ht-t">{t('ob2.type_mtf')}</span>
+                    <span className="ht-s">{lines(t('ob2.type_mtf_desc'))}</span>
+                </span>
+            </button>
+            <button
+                type="button"
+                className={`hrt-tile ftm${mode === 'transmasc' ? ' on' : ''}`}
+                data-m
+                style={{ '--mo': '20px' } as React.CSSProperties}
+                aria-pressed={mode === 'transmasc'}
+                onClick={() => setMode('transmasc')}
+            >
+                <span className="ht-ic"><Icon icon={Syringe} size={24} /></span>
+                <span>
+                    <span className="ht-t">{t('ob2.type_ftm')}</span>
+                    <span className="ht-s">{lines(t('ob2.type_ftm_desc'))}</span>
+                </span>
+            </button>
+        </div>
+    );
+
+    const datePanel = (
+        <div className="list">
+            <button
+                type="button"
+                className="li"
+                data-m
+                style={{ '--mo': '18px' } as React.CSSProperties}
+                aria-disabled={replay}
+                onClick={() => { if (!replay) setIsStartPickerOpen(true); }}
+            >
+                <span className="ic p"><Icon icon={CalendarDays} size={22} /></span>
+                <span className="tx">
+                    <span className="t">{notStarted ? t('ob2.date_unset') : dateLabel}</span>
+                    <span className="s">
+                        {replay ? t('ob2.date_locked') : notStarted ? t('ob2.date_unset_sub') : t('ob2.date_pick_sub')}
+                    </span>
+                </span>
+                <span className={`day-badge${notStarted ? ' hide' : ''}`}>
+                    {t('ob2.date_badge').replace('{n}', String(dayCount ?? 0))}
+                </span>
+                <Icon icon={ChevronRight} size={20} className="chev" />
+            </button>
+            <button
+                type="button"
+                className="li"
+                data-m
+                style={{ '--mo': '18px' } as React.CSSProperties}
+                aria-pressed={notStarted}
+                aria-disabled={replay}
+                onClick={() => {
+                    if (replay) return;
+                    // Turning it on clears a date that is already set; turning it
+                    // off is the user saying they did start, so it opens the picker
+                    // rather than leaving the row empty and inert.
+                    if (hrtStartDate) onHrtStartChange('');
+                    else setIsStartPickerOpen(true);
+                }}
+            >
+                <span className="tx">
+                    <span className="t">{t('ob2.date_later')}</span>
+                    <span className="s">{t('ob2.date_later_sub')}</span>
+                </span>
+                <span className={`sw${notStarted ? ' on' : ''}`} aria-hidden="true" />
+            </button>
+        </div>
+    );
+
+    const weightPanel = (
+        <div>
+            <div className="weight-hero">
+                <div className="wh-label">{t('ob2.weight_label')}</div>
+                <div className="wh-main">
+                    <button
+                        type="button"
+                        className="step-btn"
+                        data-m
+                        style={{ '--mo': '26px 10px 26px 10px' } as React.CSSProperties}
+                        aria-label={`${t('ob2.weight_label')} −1`}
+                        disabled={replay}
+                        onClick={() => bumpWeight(-1)}
+                    >
+                        −
+                    </button>
+                    <div className="wh-value">
+                        <input
+                            className="wh-input"
+                            type="number"
+                            inputMode="decimal"
+                            step="0.5"
+                            min={30}
+                            max={180}
+                            value={weightText}
+                            readOnly={replay}
+                            aria-label={t('ob2.weight_label')}
+                            onFocus={() => { weightEditing.current = true; }}
+                            onChange={(e) => setWeightText(e.target.value)}
+                            onBlur={(e) => { weightEditing.current = false; commitWeight(e.target.value); }}
+                        />
+                        <span className="wh-unit">kg</span>
+                    </div>
+                    <button
+                        type="button"
+                        className="step-btn"
+                        data-m
+                        style={{ '--mo': '10px 26px 10px 26px' } as React.CSSProperties}
+                        aria-label={`${t('ob2.weight_label')} +1`}
+                        disabled={replay}
+                        onClick={() => bumpWeight(1)}
+                    >
+                        +
+                    </button>
+                </div>
+                <div className="preset-row">
+                    {PRESET_WEIGHTS.map((preset) => (
+                        <button
+                            key={preset}
+                            type="button"
+                            className={`preset-pill${Math.abs(currentWeight - preset) < 0.2 ? ' on' : ''}`}
+                            data-m
+                            style={{ '--mo': '10px' } as React.CSSProperties}
+                            aria-pressed={Math.abs(currentWeight - preset) < 0.2}
+                            disabled={replay}
+                            onClick={() => {
+                                setWeightText(String(preset));
+                                onWeightChange(preset);
+                            }}
+                        >
+                            {preset} kg
+                        </button>
+                    ))}
+                </div>
+            </div>
+            <div className="list">
+                <div className="li is-static">
+                    <span className="ic"><Icon icon={Info} size={22} /></span>
+                    <span className="tx">
+                        <span className="t">{t('ob2.weight_why')}</span>
+                        <span className="s">{t('ob2.weight_why_desc')}</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+    );
+
+    const importPanel = (
+        <div className="list">
+            <button
+                type="button"
+                className="li"
+                data-m
+                style={{ '--mo': '18px' } as React.CSSProperties}
+                onClick={() => fileRef.current?.click()}
+            >
+                <span className="ic p"><Icon icon={Upload} size={22} /></span>
+                <span className="tx">
+                    <span className="t">{t('ob2.import_pick')}</span>
+                    <span className="s">{t('ob2.import_formats')}</span>
+                </span>
+                <Icon icon={ChevronRight} size={20} className="chev" />
+            </button>
+            <div className="li is-static">
+                <span className="ic"><Icon icon={Info} size={22} /></span>
+                <span className="tx">
+                    <span className="t">{t('ob2.import_where')}</span>
+                    <span className="s">{t('ob2.import_where_desc')}</span>
+                </span>
+            </div>
+            <input
+                ref={fileRef}
+                type="file"
+                accept=".json,.csv,.txt,application/json,text/csv"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void handleFile(file);
+                }}
+            />
+        </div>
+    );
+
+    const appPanel = (
+        <div className="list">
+            <a
+                className="li"
+                href={apkUrl}
+                download
+                data-m
+                style={{ '--mo': '18px' } as React.CSSProperties}
+                onClick={() => toast(t('ob2.app_apk_hint'))}
+            >
+                <span className="ic am"><Icon icon={Download} size={22} /></span>
+                <span className="tx">
+                    <span className="t">{t('ob2.app_download')}</span>
+                    <span className="s">{t('ob2.app_download_desc')}</span>
+                </span>
+                <Icon icon={ChevronRight} size={20} className="chev" />
+            </a>
+            <button
+                type="button"
+                className="li"
+                data-m
+                style={{ '--mo': '18px' } as React.CSSProperties}
+                onClick={() => void installPwa()}
+            >
+                <span className="ic ok"><Icon icon={MonitorSmartphone} size={22} /></span>
+                <span className="tx">
+                    <span className="t">{t('ob2.app_pwa')}</span>
+                    <span className="s">{t('ob2.app_pwa_desc')}</span>
+                </span>
+                <Icon icon={ChevronRight} size={20} className="chev" />
+            </button>
+        </div>
+    );
+
+    const privacyPanel = (
+        <div className="list">
+            <div className="li is-static">
+                <span className="ic ok"><Icon icon={ShieldCheck} size={22} /></span>
+                <span className="tx">
+                    <span className="t">{t('ob2.privacy_hsm')}</span>
+                    <span className="s">{t('ob2.privacy_hsm_desc')}</span>
+                </span>
+            </div>
+            <div className="li is-static">
+                <span className="ic am"><Icon icon={TriangleWarning} size={22} /></span>
+                <span className="tx">
+                    <span className="t">{t('ob2.privacy_medical')}</span>
+                    <span className="s">{t('ob2.privacy_medical_desc')}</span>
+                </span>
+            </div>
+        </div>
+    );
+
+    const bloomPanel = (
+        <div className="blessing-stage" data-m style={{ '--mo': '24px' } as React.CSSProperties}>
+            <svg className="blessing-cookie" viewBox="-70 -70 140 140" aria-hidden="true" focusable="false">
+                <path d={cookiePath(0, 0, 64, 12, 0.09)} fill="currentColor" />
+            </svg>
+            <div>
+                <div className="trans-flag-wrap">
+                    {/* Zero-gap five-stripe flag: the bands overlap by 0.4 units and
+                        the viewBox is stretched, so no scale factor can open a
+                        hairline between two of them. The radius and the ring sit on
+                        the element, not on a wrapper. */}
+                    <svg
+                        className="trans-flag"
+                        viewBox="0 0 54 34"
+                        preserveAspectRatio="none"
+                        role="img"
+                        aria-label={t('onboarding.sendoff_flag_alt')}
+                    >
+                        <rect x="0" y="0" width="54" height="7.2" fill="#5BCEFA" />
+                        <rect x="0" y="6.8" width="54" height="7.2" fill="#F5A9B8" />
+                        <rect x="0" y="13.6" width="54" height="7.2" fill="#FFFFFF" />
+                        <rect x="0" y="20.4" width="54" height="7.2" fill="#F5A9B8" />
+                        <rect x="0" y="27.2" width="54" height="6.8" fill="#5BCEFA" />
+                    </svg>
+                </div>
+                <div className="blessing-quote">{lines(t('onboarding.sendoff_line'))}</div>
+            </div>
+            <div className="blessing-sub">Kira HRT Tracker</div>
+        </div>
+    );
+
+    const panels: Record<StepId, React.ReactNode> = {
+        lang: langPanel,
+        type: typePanel,
+        date: datePanel,
+        weight: weightPanel,
+        import: importPanel,
+        app: appPanel,
+        privacy: privacyPanel,
+        bloom: bloomPanel,
     };
 
     return (
-        <div
-            className="intro-screen flex h-[100dvh] w-full select-none flex-col font-sans"
-            style={{
-                '--intro-surface': `var(${roles.surface})`,
-                '--intro-on': `var(${roles.on})`,
-                '--intro-accent': `var(${roles.accent})`,
-                '--intro-accent-on': `var(${roles.accentOn})`,
-            } as React.CSSProperties}
-        >
-            <div className="flex shrink-0 justify-end px-4 pt-[calc(0.75rem+max(env(safe-area-inset-top,0px),var(--app-safe-top,0px)))]">
-                <button
-                    onClick={onDone}
-                    className={`rounded-full px-3 py-2 text-m3-label-large intro-muted hover:bg-[var(--color-m3-surface-container)] ${isLast ? 'invisible' : ''}`}
-                    tabIndex={isLast ? -1 : 0}
-                >
-                    {t('onboarding.skip')}
-                </button>
+        <div className="ob2" ref={rootRef}>
+            <div className="ob2-top">
+                <div className="ob2-top-inner">
+                    <button
+                        type="button"
+                        className={`back-pill${index === 0 ? ' hide' : ''}`}
+                        data-m
+                        style={{ '--mo': '12px' } as React.CSSProperties}
+                        aria-label={t('ob2.back')}
+                        tabIndex={index === 0 ? -1 : 0}
+                        onClick={() => go(index - 1)}
+                    >
+                        <span style={{ display: 'inline-flex', transform: 'rotate(180deg)' }}>
+                            <Icon icon={ChevronRight} size={22} />
+                        </span>
+                    </button>
+                    <div
+                        className="prog-bar"
+                        role="progressbar"
+                        aria-valuemin={1}
+                        aria-valuemax={steps.length}
+                        aria-valuenow={index + 1}
+                    >
+                        {steps.map((step, i) => (
+                            <span
+                                key={step.id}
+                                className={`prog-seg${i === index ? ' on' : i < index ? ' done' : ''}`}
+                            />
+                        ))}
+                    </div>
+                    <span className="step-tag">{index + 1} / {steps.length}</span>
+                </div>
             </div>
 
-            {/* `safe center`, not `start`: on a phone the step is usually taller
-                than the space for it anyway, so this was invisible there. On a
-                wide, short-content window — mode, how-it-works, privacy — start
-                left the card glued to the top of the flex area with a slab of
-                empty page below it down to the footer. Centering fixes that
-                without touching step 0, whose `h-full` already exactly fills
-                the cross axis; `safe` is what keeps a step that overflows a
-                short window scrolling from the top instead of clipping. */}
-            <div className="onboarding-steps flex flex-1 overflow-y-auto scrollbar-hide">
-                {/* The welcome step pins its greeting and scrolls its own list,
-                    so it needs the scroller's height to divide up; the rest are
-                    read top to bottom and just grow.
+            <div className="ob2-scroll">
+                <div className="ob2-split">
+                    <div className="hero-pane">
+                        <div className="morph-stage">
+                            <svg
+                                className={`morph-bg ${meta.tone}`}
+                                viewBox="-50 -50 100 100"
+                                style={{ transform: `rotate(${index * 32}deg)` }}
+                                aria-hidden="true"
+                                focusable="false"
+                            >
+                                <path d={cookiePath(0, 0, 44, meta.lobes, meta.amp)} fill="currentColor" />
+                            </svg>
+                            <PixelTube className="pixel-logo tube-float" />
+                        </div>
 
-                    Only the chart step widens on a wide window, into the two
-                    columns its Head / Stage / Body slots are placed in. The
-                    other three are a heading and a list of rows: given a second
-                    column there is nothing to put in it, and a column of empty
-                    ground beside a list is worse than a centred one. */}
-                {/* The sliding panel is the full width of the screen, so the
-                    shared-axis move reads as a block travelling rather than a
-                    card drifting; the reading column lives inside it. */}
-                <div
-                    key={step}
-                    className={`w-full
-                        ${direction === 'backward' ? 'view-enter-backward' : 'view-enter-forward'}`}
-                >
-                    <div
-                        className={`mx-auto w-full max-w-md px-6
-                            ${step === CHART_STEP ? 'lg:grid lg:max-w-5xl lg:grid-cols-2 lg:items-center lg:gap-x-14 lg:gap-y-5' : ''}
-                            ${step === 0 ? 'pb-6' : 'pb-8'}`}
-                    >
-                        {steps[step]}
+                        {meta.id === 'lang' ? (
+                            <>
+                                {/* Every greeting stacked in one cell, the inactive
+                                    ones invisible but still occupying their space:
+                                    the block is as tall as the longest, so choosing
+                                    a language never pushes the grid down under the
+                                    finger that just tapped it. */}
+                                <h1 className="ob-title stack-cell">
+                                    {languageOptions.map(({ value }) => {
+                                        const current = value === lang;
+                                        const text = tIn(value, 'ob2.lang_title') ?? t('ob2.lang_title');
+                                        return (
+                                            <span key={value} className={current ? '' : 'invisible'} aria-hidden={!current}>
+                                                {lines(text)}
+                                            </span>
+                                        );
+                                    })}
+                                </h1>
+                                <p className="ob-sub stack-cell">
+                                    {languageOptions.map(({ value }) => {
+                                        const current = value === lang;
+                                        const text = tIn(value, 'ob2.lang_sub') ?? t('ob2.lang_sub');
+                                        return (
+                                            <span key={value} className={current ? '' : 'invisible'} aria-hidden={!current}>
+                                                {text}
+                                            </span>
+                                        );
+                                    })}
+                                </p>
+                            </>
+                        ) : (
+                            <h1 className="ob-title">{titleFor()}</h1>
+                        )}
+                    </div>
+
+                    {/* Keyed by step only. A tap inside a step changes classes and
+                        nothing else, so the radius and colour transitions run on the
+                        node that already exists; re-keying here on a selection would
+                        remount the panel and replay the page entrance every time. */}
+                    <div key={meta.id} className="page-anim">
+                        {panels[meta.id]}
                     </div>
                 </div>
             </div>
 
-            <div className="shrink-0 px-6 pt-4 pb-[calc(1rem+max(env(safe-area-inset-bottom,0px),var(--app-safe-bottom,0px)))]">
-                <div className="mx-auto flex w-full max-w-md flex-col gap-3">
-                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
-                        <div className="justify-self-start">
-                            {/* `whitespace-nowrap` because the ring row grows with every step
-                                added, and at ten steps the 1fr track it shares is narrower than
-                                the label — the grid's min-content floor should decide the split,
-                                not a wrap. */}
-                            {step > 0 && (
-                                <button onClick={() => go(step - 1)} className="btn-secondary whitespace-nowrap">
-                                    {t('onboarding.back')}
-                                </button>
-                            )}
-                        </div>
-
-                        <DoseRings count={steps.length} at={step} />
-
-                        <div aria-hidden="true" />
-                    </div>
-
+            <div className="ob2-bot">
+                <div className="ob2-bot-inner">
+                    {!isLast && (
+                        <button
+                            type="button"
+                            className="skip-btn"
+                            data-m
+                            style={{ '--mo': '14px' } as React.CSSProperties}
+                            onClick={onDone}
+                        >
+                            {t('ob2.skip')}
+                        </button>
+                    )}
                     <button
-                        onClick={() => (isLast ? onDone() : go(step + 1))}
-                        className="btn-primary intro-cta"
+                        type="button"
+                        className="next-btn"
+                        data-m
+                        style={{ '--mo': '16px' } as React.CSSProperties}
+                        onClick={() => (isLast ? onDone() : go(index + 1))}
                     >
-                        {isLast
-                            ? t('onboarding.start')
-                            : (activeStepKeys[step] === 'weight' || (activeStepKeys[step] === 'started' && !hrtStartDate))
-                                ? t('onboarding.skip_step')
-                                : t('onboarding.next')}
+                        {isLast ? (
+                            <>
+                                <Icon icon={Check} size={20} />
+                                <span>{t('ob2.finish')}</span>
+                            </>
+                        ) : (
+                            <>
+                                <span>{t('ob2.next')}</span>
+                                <Icon icon={ChevronRight} size={20} />
+                            </>
+                        )}
                     </button>
                 </div>
             </div>
+
+            <div className={`ob2-snack${snack.open ? ' on' : ''}`} role="status" aria-live="polite" aria-hidden={!snack.open}>
+                <div className="ob2-snack-inner">{snack.text}</div>
+            </div>
+
+            <TimePage
+                open={isStartPickerOpen}
+                mode="date"
+                onClose={() => setIsStartPickerOpen(false)}
+                onConfirm={(date) => {
+                    // The picker has no max, but a future start would make the
+                    // account's day count negative. Clamp.
+                    const picked = toYmd(date);
+                    onHrtStartChange(picked > today ? today : picked);
+                    setIsStartPickerOpen(false);
+                }}
+                initialDate={hrtStartDate ? fromYmd(hrtStartDate) : new Date()}
+                title={t('ob2.title_date')}
+            />
         </div>
     );
 };

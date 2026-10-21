@@ -11,11 +11,16 @@ import { MCP_ENDPOINT } from '../constants';
  * it worked, and what the token really is: the account's full credential, usable
  * with no browser session and no unlock.
  *
- * The token is left as a placeholder on purpose. A prompt is often pasted into a
- * chat that keeps history, and a real token in a transcript is a leaked token.
+ * The token is left as a placeholder on purpose, and the prompt tells the assistant
+ * not to ask for it: a chat transcript is a log the user does not control, and a real
+ * token in one is a leaked token. The user pastes the credential into the config file
+ * themselves — locally, never through the model.
  */
 export const buildMcpInstallPrompt = (endpoint: string = MCP_ENDPOINT): string => [
     'Add an MCP server to my AI client by editing its configuration file yourself.',
+    '',
+    'Do not ask me for the token and do not put any credential in this chat. Write the',
+    'placeholder shown below and leave it for me to replace in the file.',
     '',
     'Server name: kira-tracker',
     'Transport:  Streamable HTTP (POST only)',
@@ -36,9 +41,11 @@ export const buildMcpInstallPrompt = (endpoint: string = MCP_ENDPOINT): string =
     '     }',
     '   }',
     '',
-    '3. Replace <TOKEN> with the token I give you. Ask me for it if I have not.',
+    '3. Leave "Bearer <TOKEN>" exactly as written. I will replace <TOKEN> in that file',
+    '   myself, and you must not read it, print it back, or ask me for it.',
     '4. Restart the client, then call hrt_reference to confirm it works. That tool',
-    '   needs no records and no unlock, so it is the right one to test with.',
+    '   needs no records and no unlock, so it is the right one to test with. Until I',
+    '   paste the token in, an auth failure there is expected.',
     '',
     'Two things to expect:',
     '- The token is a full credential for my records: it reads and writes them with no',

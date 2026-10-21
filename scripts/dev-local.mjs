@@ -28,7 +28,7 @@ const PG_DIR = './.pgdata-dev';
 const PG_PORT = 55447;
 const PG_DB = 'hrt_dev';
 const API_PORT = 8787;
-const WEB_ORIGIN = process.env.PUBLIC_ORIGIN ?? 'http://127.0.0.1:5175';
+const WEB_ORIGIN = process.env.PUBLIC_ORIGIN ?? 'http://127.0.0.1:3000';
 const USERNAME = process.env.DEV_USERNAME ?? 'dev';
 const PASSWORD = process.env.DEV_PASSWORD ?? 'dev-password-1';
 

@@ -34,6 +34,7 @@ import type {
     PkEngineId,
 } from '../../logic';
 import { canRunVendor } from './vendorEsters';
+import { GEL_PRODUCTS_EVENT, readGelProducts } from '../utils/gelProducts';
 
 /**
  * What every engine provides.
@@ -75,12 +76,29 @@ export const builtinEngine: PkEngine = {
  */
 let vendorEngine: PkEngine | null = null;
 let vendorLoad: Promise<PkEngine> | null = null;
+/**
+ * The vendor module's catalogue setter, kept from the same import.
+ *
+ * A function reference rather than a second `import()`: the module is already in
+ * memory by the time this is set, and re-importing it in the change listener would
+ * be a promise for a module we already hold.
+ */
+let vendorCatalogue: ((raw: unknown) => void) | null = null;
+
+/** Hand the account's own gel products to the engine (ids ≥ 1000). */
+function pushCatalogue(): void {
+    vendorCatalogue?.(readGelProducts());
+}
 
 export function loadVendorEngine(): Promise<PkEngine> {
     if (vendorEngine) return Promise.resolve(vendorEngine);
     if (vendorLoad) return vendorLoad;
     vendorLoad = import('../pk')
         .then(mod => {
+            vendorCatalogue = mod.setGelProductCatalogue;
+            // Before the engine serves a single curve: a record naming a custom
+            // product must not be drawn as Oestrogel even once.
+            pushCatalogue();
             vendorEngine = mod as unknown as PkEngine;
             return vendorEngine;
         })
@@ -89,6 +107,18 @@ export function loadVendorEngine(): Promise<PkEngine> {
             throw error;
         });
     return vendorLoad;
+}
+
+/**
+ * A catalogue edit while the engine is already loaded.
+ *
+ * The engine resolves products at simulation time, so re-installing on the change
+ * is enough for the next curve; nothing has to be recomputed eagerly. Registered at
+ * module scope because the catalogue is edited from settings and imported files,
+ * neither of which goes through this module.
+ */
+if (typeof window !== 'undefined') {
+    window.addEventListener(GEL_PRODUCTS_EVENT, pushCatalogue);
 }
 
 /** True once the vendor module is in memory — used to avoid a needless flash. */
@@ -107,13 +137,14 @@ export function isVendorLoaded(): boolean {
  *     testosterone curve, and an empty curve reads as "no dose recorded" — worse than
  *     ignoring the preference.
  *   - **Compounds.** The engine models estradiol esters and two anti-androgens, and
- *     refuses a whole event list when any recording names something it cannot model
- *     (a T ester, spironolactone). Returning `builtin` for such an account is not a
- *     preference being ignored: the alternative is a *blank* curve, because the vendor
- *     refuses the list rather than dropping the record. Without this veto the app drew
- *     nothing while the server — which applies the same rule, see `engineForCurve` —
- *     drew the built-in curve, so the two disagreed on exactly the account that could
- *     least tell why.
+ *     refuses a whole event list when any recording names a compound it cannot model
+ *     **and a curve depends on** — a T ester. Spironolactone is drawn by neither engine
+ *     and is skipped rather than vetoed (see `isCurveless`). Returning `builtin` for a
+ *     T account is not a preference being ignored: the alternative is a *blank* curve,
+ *     because the vendor refuses the list rather than dropping the record. Without this
+ *     veto the app drew nothing while the server — which applies the same rule, see
+ *     `engineForCurve` — drew the built-in curve, so the two disagreed on exactly the
+ *     account that could least tell why.
  */
 export function chooseEngine(
     preference: PkEngineId,

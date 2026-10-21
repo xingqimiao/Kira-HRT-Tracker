@@ -1,0 +1,1407 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kira HRT Tracker · Material 3 Expressive (Mobile & Desktop)</title>
+<style>
+:root{
+  --stage:#0c0a0e;--st-ink:#efe7ee;--st-sub:#9d909c;
+  --bg:#16121a;--sc:#211c25;--sch:#2c2630;--sch-h:#362f3b;
+  --pri:#ffb1c8;--onpri:#5d1133;--pric:#7a2c4a;--onpric:#ffd9e3;
+  --secc:#4e3a43;--onsecc:#fbdbe6;--terc:#4d3a14;--onterc:#ffdea8;
+  --on:#eadfe6;--var:#cfc0c9;--out:#9a8d95;
+  --ok:#7fe0a8;--okc:#1d3a2b;
+  --err:#ffb4ab;--errc:#5c1916;--onerrc:#ffdad6;
+  --warn:#ffca64;--warnc:#423008;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+:root[data-theme="light"]{
+  --stage:#e9e4ea;--st-ink:#2a232a;--st-sub:#6f636d;
+  --bg:#fff8f8;--sc:#f9ecf0;--sch:#f2e3e9;--sch-h:#ead6de;
+  --pri:#a03d63;--onpri:#fff;--pric:#ffd9e3;--onpric:#3f001e;
+  --secc:#f6dbe5;--onsecc:#2b151e;--terc:#ffe3b0;--onterc:#261900;
+  --on:#211a1d;--var:#4f4349;--out:#84757b;
+  --ok:#2f8458;--okc:#d6f2e2;
+  --err:#ba1a1a;--errc:#ffdad6;--onerrc:#410002;
+  --warn:#825500;--warnc:#ffddb3;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--stage);color:var(--st-ink);font-family:system-ui,-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+
+/* Top Preview Bar */
+.top{max-width:1180px;margin:0 auto;padding:12px 18px 10px;display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12.5px;color:var(--st-sub);flex-wrap:wrap}
+.top-ctrl{display:flex;align-items:center;gap:8px}
+.top button{border:0;border-radius:999px;background:rgba(127,127,127,.2);color:var(--st-ink);font:inherit;font-size:12.5px;font-weight:600;padding:7px 14px;cursor:pointer;transition:background .2s,color .2s}
+.top button.active{background:var(--pri);color:var(--onpri)}
+.top button:hover:not(.active){background:rgba(127,127,127,.32)}
+
+/* Stage & Shell */
+.wrap{display:flex;justify-content:center;padding:0 16px 28px}
+.phone{
+  position:relative;
+  width:min(390px,100%);
+  height:800px;
+  border-radius:44px;
+  overflow:hidden;
+  border:7px solid #1b1820;
+  box-shadow:0 16px 48px rgba(0,0,0,.4);
+  background:var(--bg);
+  color:var(--on);
+  transition:width .45s cubic-bezier(.2,.9,.2,1), height .45s cubic-bezier(.2,.9,.2,1), border-radius .4s;
+}
+:root[data-theme="light"] .phone{border-color:#2a2630}
+
+/* Desktop Mode Shell Overrides */
+body.desktop .phone{
+  width:min(1160px, 100%);
+  height:min(760px, calc(100svh - 68px));
+  border-radius:32px;
+  display:grid;
+  grid-template-columns:96px 1fr;
+}
+
+@media (max-width:430px){
+  body:not(.desktop) .phone{height:calc(100svh - 62px);border-width:0;border-radius:0}
+  .top{padding-top:8px}
+}
+
+.scroll{position:absolute;inset:0;overflow-y:auto;scrollbar-width:none;padding:36px 14px 0}
+.scroll::-webkit-scrollbar{display:none}
+body.desktop .scroll{
+  position:relative;
+  grid-column:2;
+  height:100%;
+  padding:32px 36px 40px;
+}
+
+svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.spin{width:20px;height:20px;animation:rot .8s linear infinite}.spin circle{fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-dasharray:40 60}
+@keyframes rot{to{transform:rotate(360deg)}}
+
+/* Pages */
+.pg{display:none;flex-direction:column;gap:12px;min-height:calc(100% - 78px);padding-bottom:10px}
+.pg.on{display:flex;animation:in .35s cubic-bezier(.2,1,.3,1)}
+.pg.long{min-height:0;padding-bottom:170px}
+body.desktop .pg.long{padding-bottom:40px}
+@keyframes in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+h1{font-size:34px;line-height:1.12;font-weight:800;letter-spacing:-.5px;margin:2px 6px 4px}
+body.desktop h1{font-size:32px;margin:0 0 6px}
+.hrow{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.sub{font-size:12.5px;color:var(--var);margin:0 6px;line-height:1.5}
+body.desktop .sub{margin-left:2px}
+.lab{font-size:13px;font-weight:700;color:var(--var);margin:10px 8px 2px;display:flex;align-items:center;gap:6px}
+body.desktop .lab{margin-left:4px}
+
+/* Desktop Two-Column / Master-Detail Grids */
+.d-grid{display:flex;flex-direction:column;gap:12px}
+body.desktop .d-grid{
+  display:grid;
+  grid-template-columns:1.15fr 1fr;
+  gap:24px;
+  align-items:start;
+}
+body.desktop .d-grid.records-grid{
+  grid-template-columns:300px 1fr;
+}
+body.desktop .d-grid.exam-grid{
+  grid-template-columns:300px 1fr;
+}
+body.desktop .d-split{
+  display:grid;
+  grid-template-columns:330px 1fr;
+  gap:28px;
+  align-items:start;
+  height:100%;
+}
+.d-col{display:flex;flex-direction:column;gap:12px;min-width:0}
+
+/* 体检页：手机端入口 / 桌面端文字记录卡片 */
+.exam-entry{display:grid}
+.exam-text-desktop{display:none}
+body.desktop .exam-entry{display:none}
+body.desktop .exam-text-desktop{display:flex;flex-direction:column;gap:12px}
+
+/* Expressive Morph */
+[data-m]{transition:border-radius .5s cubic-bezier(.3,1.8,.5,1),transform .35s cubic-bezier(.3,1.7,.5,1),background .2s}
+[data-m].mo{border-radius:var(--mo)!important;transform:scale(.96)}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:96px;height:44px;border:0;border-radius:22px;background:var(--pri);color:var(--onpri);font:inherit;font-weight:700;font-size:14px;padding:0 18px;cursor:pointer;transition:filter .15s,background .2s}
+.btn:hover{filter:brightness(1.06)}
+.btn.t{background:var(--secc);color:var(--onsecc)}
+.btn.o{background:none;border:2px solid var(--out);color:var(--on)}
+.btn.x{background:none;color:var(--pri);min-width:0;padding:0 10px}
+.btn.tonal-add{width:100%;height:48px;border-radius:24px;background:var(--pric);color:var(--onpric);font-size:14.5px;margin-top:4px}
+.btn svg.i{width:18px;height:18px}
+/* 长条危险按钮（清空校准） */
+.btn.danger-wide{width:100%;height:54px;border-radius:27px;background:var(--errc);color:var(--err);justify-content:flex-start;padding:0 20px;gap:12px;font-size:15px;margin-top:18px;min-width:0;border:0}
+.btn.danger-wide:hover{filter:brightness(1.08)}
+.btn.danger-wide svg.i{width:22px;height:22px;stroke:var(--err)}
+
+/* FAB (Mobile bottom-right, Desktop top of Navigation Rail) */
+.fab{position:absolute;right:16px;bottom:92px;display:none;align-items:center;gap:10px;height:56px;padding:0 22px;border:0;border-radius:22px;background:var(--pric);color:var(--onpric);font:inherit;font-weight:700;font-size:15px;box-shadow:0 6px 18px rgba(0,0,0,.32);cursor:pointer;z-index:6}
+.fab.on{display:flex}
+body.desktop .fab{
+  position:absolute;
+  left:18px;
+  top:22px;
+  right:auto;
+  bottom:auto;
+  width:60px;
+  height:56px;
+  padding:0;
+  justify-content:center;
+  border-radius:18px;
+  box-shadow:0 4px 12px rgba(0,0,0,.22);
+}
+body.desktop .fab .fab-txt{display:none}
+
+/* Desktop Rail Logo (替代 FAB 出现在导航栏顶部) */
+.rail-logo{
+  display:none;
+  position:absolute;
+  left:18px;top:22px;
+  width:60px;height:56px;
+  border:0;border-radius:18px;
+  background:var(--pric);color:var(--onpric);
+  place-items:center;cursor:pointer;z-index:6;
+  box-shadow:0 4px 12px rgba(0,0,0,.22);
+  transition:transform .28s cubic-bezier(.3,1.7,.5,1),background .2s;
+}
+body.desktop .rail-logo.on{display:grid}
+.rail-logo:hover{transform:scale(1.06)}
+.rail-logo:active{transform:scale(.92)}
+.rail-logo svg.i{width:29px;height:29px;stroke-width:1.7}
+
+/* Tiles */
+.tile{display:flex;flex-direction:column;justify-content:space-between;padding:16px 18px;cursor:pointer;min-width:0}
+.tile .n{font-size:38px;font-weight:800;line-height:1;letter-spacing:-.5px}
+.tile .l{font-size:13px;opacity:.88;white-space:nowrap}
+.tile.a{background:var(--secc);color:var(--onsecc);border-radius:26px}
+.tile.b{background:var(--terc);color:var(--onterc);border-radius:44px 14px 44px 14px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* M3E Segmented List */
+.list{display:grid;gap:3px}
+.li{display:flex;align-items:center;gap:14px;background:var(--sch);padding:12px 16px;border-radius:8px;cursor:pointer;min-height:64px;transition:background .18s,border-radius .25s}
+.li:hover{background:var(--sch-h)}
+.li:first-child{border-radius:26px 26px 8px 8px}
+.li:last-child{border-radius:8px 8px 26px 26px}
+.li:only-child{border-radius:26px}
+.li:active{background:var(--secc)}
+/* 持久选中态只在桌面端双栏主从布局中出现 */
+body.desktop .li.active-nav{background:var(--pric);color:var(--onpric);border-radius:22px}
+body.desktop .li.active-nav .s,body.desktop .li.active-nav>svg.i:last-child{color:var(--onpric);opacity:.85}
+body.desktop .li.active-nav .ic{background:rgba(255,255,255,.18);color:var(--onpric)}
+:root[data-theme="light"] body.desktop .li.active-nav .ic{background:rgba(255,255,255,.55)}
+
+.li .ic{width:42px;height:42px;border-radius:50%;background:var(--secc);color:var(--onsecc);display:grid;place-items:center;flex:none}
+.li .ic.p{background:var(--pric);color:var(--onpric)}
+.li .ic.am{background:var(--terc);color:var(--onterc)}
+.li .ic.err{background:var(--errc);color:var(--err)}
+.li .t{flex:1;min-width:0}
+.li b{font-size:15.5px;display:flex;align-items:center;gap:6px;line-height:1.25}
+.li span.s{font-size:12.5px;color:var(--var);display:block;margin-top:2px;line-height:1.35}
+.li .t b.nw{white-space:nowrap}
+.li .r{text-align:right;font-size:12.5px;color:var(--var);white-space:nowrap}
+.li .r b{font-size:15px;color:var(--on);justify-content:flex-end}
+.li>svg.i:last-child{color:var(--out);width:20px;height:20px}
+
+/* Destructive / Danger List Item */
+.li.danger{color:var(--err)}
+.li.danger b{color:var(--err)}
+.li.danger .s{color:var(--err);opacity:.8}
+
+/* Warning Badge & Status Chips */
+.warn-badge{display:inline-flex;align-items:center;justify-content:center;color:var(--warn);font-size:14px}
+.warn-badge svg{width:17px;height:17px;stroke:var(--warn);fill: none;stroke-width:2.2}
+.icon-del{width:38px;height:38px;border-radius:50%;border:0;background:transparent;color:var(--var);display:grid;place-items:center;cursor:pointer;flex:none;transition:background .15s,color .15s}
+.icon-del:hover{background:var(--errc);color:var(--err)}
+.icon-del svg.i{width:19px;height:19px}
+
+/* M3E Number Stepper Pill Input (for Checkup Reminders) */
+.num-pill{
+  width:78px;
+  height:42px;
+  border-radius:14px;
+  border:1.5px solid rgba(154,141,149,.35);
+  background:var(--bg);
+  color:var(--on);
+  font:inherit;
+  font-size:15.5px;
+  font-weight:700;
+  text-align:center;
+  outline:none;
+  transition:border-color .2s,background .2s,transform .15s;
+}
+.num-pill:focus{border-color:var(--pri);background:var(--sc);transform:scale(1.03)}
+
+/* HRT Mode Segmented Selector (Image 4) */
+.mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+.mode-btn{
+  height:48px;
+  border-radius:999px;
+  border:1.5px solid var(--out);
+  background:transparent;
+  color:var(--pri);
+  font:inherit;
+  font-size:14.5px;
+  font-weight:700;
+  cursor:pointer;
+  transition:all .25s cubic-bezier(.3,1.5,.5,1);
+}
+.mode-btn.on{
+  background:var(--pri);
+  color:var(--onpri);
+  border-color:var(--pri);
+}
+
+.card{background:var(--sc);border-radius:28px;padding:18px}
+.chip{display:inline-flex;align-items:center;gap:6px;border-radius:12px;padding:6px 12px;font:inherit;font-size:12.5px;font-weight:700;border:0}
+.chip.ok{background:var(--okc);color:var(--ok)}
+.chip.dot::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+
+.cg{display:flex;gap:3px}
+.cg button{border:0;background:var(--sch);color:var(--var);font:inherit;font-size:13px;font-weight:600;padding:8px 14px;border-radius:6px;cursor:pointer;transition:border-radius .35s cubic-bezier(.3,1.7,.5,1),background .2s}
+.cg button:first-child{border-radius:20px 6px 6px 20px}
+.cg button:last-child{border-radius:6px 20px 20px 6px}
+.cg button.on{background:var(--pric);color:var(--onpric);border-radius:20px}
+
+.sw{width:52px;height:30px;border-radius:15px;background:var(--sch);border:2px solid var(--out);position:relative;cursor:pointer;flex:none;transition:background .2s,border-color .2s}
+.sw i{position:absolute;left:5px;top:5px;width:16px;height:16px;border-radius:50%;background:var(--out);transition:all .25s cubic-bezier(.3,1.5,.5,1)}
+.sw.on{background:var(--pri);border-color:var(--pri)}
+.sw.on i{left:26px;top:3px;width:20px;height:20px;background:var(--onpri)}
+
+.rad{display:flex;gap:12px;align-items:center;padding:11px 14px;border-radius:20px;cursor:pointer;background:var(--sch);transition:background .2s}
+.rad.on{background:var(--pric);color:var(--onpric)}
+.rad .s{font-size:12.5px;opacity:.82}
+.rb{width:22px;height:22px;border-radius:50%;border:2px solid var(--out);position:relative;flex:none}
+.rad.on .rb{border-color:var(--onpric)}
+.rad.on .rb::after{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--onpric)}
+
+.model{border-radius:26px;background:var(--sch);padding:15px 18px;cursor:pointer;transition:background .25s,transform .2s}
+.model.on{background:var(--pric);color:var(--onpric)}
+.model ul{list-style:none;margin:6px 0 0;padding:0;font-size:12.5px;line-height:1.7;opacity:.92}
+.model li:before{content:"✓ "}
+.model li.m:before{content:"— "}
+
+/* 标题左侧返回按钮（图标 + 标题整体可点击） */
+.hback{
+  display:flex;align-items:center;gap:6px;
+  border:0;background:none;color:inherit;font:inherit;
+  padding:0;margin:0 0 12px;cursor:pointer;
+  align-self:flex-start;text-align:left;
+}
+.hback svg.i{
+  width:27px;height:27px;
+  transform:rotate(180deg);
+  color:var(--pri);flex:none;
+  transition:transform .22s cubic-bezier(.3,1.5,.5,1),opacity .2s;
+}
+.hback .ht{font-size:28px;font-weight:800;letter-spacing:-.5px;line-height:1.15;color:var(--on)}
+.hback:active svg.i{transform:rotate(180deg) translateX(4px)}
+.hback:hover svg.i{opacity:.75}
+body.desktop .hback{pointer-events:none;margin-bottom:10px}
+body.desktop .hback svg.i{display:none}
+
+/* 二级子页返回按钮：桌面端也显示可点击 */
+body.desktop #subBack{pointer-events:auto;margin-bottom:12px}
+body.desktop #subBack svg.i{display:block}
+
+/* 设置子页容器 */
+#sdpSub{display:flex;flex-direction:column}
+#sdpSub[hidden]{display:none}
+.subp{display:flex;flex-direction:column}
+.subp[hidden]{display:none}
+
+/* Desktop Master-Detail Subpanel Behavior */
+body.desktop #hub, body.desktop #sd{
+  display:flex!important;
+}
+body.desktop .detail-pane{
+  background:var(--sc);
+  border-radius:32px;
+  padding:24px 28px;
+  min-height:640px;
+}
+
+/* Account */
+.prof{display:flex;align-items:center;gap:16px;margin:0 6px}
+.prof svg{width:64px;height:64px;flex:none;cursor:pointer}
+.prof b{font-size:20px;display:block}
+.prof span{font-size:13px;color:var(--var)}
+.hero{position:relative;overflow:hidden;background:var(--pric);color:var(--onpric);border-radius:30px;padding:18px 16px 18px 22px;display:flex;flex-direction:column;gap:10px;min-height:132px}
+.hero .deco{position:absolute;right:-30px;top:-44px;width:130px;height:130px;opacity:.14;pointer-events:none}
+.hero .l{font-size:13px;font-weight:600;opacity:.85;position:relative}
+.hero .row2{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;position:relative;margin-top:auto}
+.hero .n{font-size:50px;line-height:1;font-weight:800;letter-spacing:-1.5px;font-variant-numeric:tabular-nums}
+.hero .n small{font-size:16px;letter-spacing:0;font-weight:600;margin-left:4px}
+.hero .hc{display:inline-flex;align-items:center;gap:5px;border-radius:12px;background:rgba(255,255,255,.16);color:inherit;padding:8px 12px;font:inherit;font-size:13px;font-weight:600;border:0;cursor:pointer}
+:root[data-theme="light"] .hero .hc{background:rgba(255,255,255,.55)}
+.hero .hc svg.i{width:16px;height:16px}
+.hero .ib{position:absolute;right:8px;top:8px;width:36px;height:36px;border-radius:50%;border:0;background:transparent;color:inherit;display:grid;place-items:center;cursor:pointer}
+.hero .ib svg.i{width:20px;height:20px}
+.sync{display:flex;align-items:center;gap:12px;background:var(--sc);border-radius:28px;padding:14px 14px 14px 20px}
+.sync .t{flex:1;min-width:0}
+.sync b{font-size:15px;display:block}
+.sync span{font-size:12.5px;color:var(--var)}
+.foot{text-align:center;font-size:11.5px;color:var(--out);padding-top:6px}
+.empty{text-align:center;color:var(--var);font-size:13px;padding:16px 0 8px}
+
+/* Navigation Bar (Mobile Bottom) & Navigation Rail (Desktop Left) */
+.nav{position:absolute;left:0;right:0;bottom:0;height:78px;background:var(--sc);display:flex;justify-content:space-around;padding:9px 6px 12px;z-index:5}
+body.desktop .nav{
+  position:relative;
+  grid-column:1;
+  grid-row:1;
+  height:100%;
+  width:96px;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  gap:14px;
+  padding:88px 0 24px;
+  border-right:1px solid rgba(154,141,149,.14);
+}
+.nav button{border:0;background:none;color:var(--var);font:inherit;font-size:12px;font-weight:600;display:grid;justify-items:center;gap:4px;min-width:64px;cursor:pointer}
+.nav .p{width:58px;height:30px;border-radius:15px;display:grid;place-items:center;transition:background .25s,width .3s cubic-bezier(.3,1.5,.5,1)}
+.nav button.on{color:var(--on)}
+.nav button.on .p{background:var(--pric);color:var(--onpric);width:64px}
+
+.list.bigic .li{min-height:76px}
+.list.bigic .ic{width:50px;height:50px}
+.list.bigic .ic svg.i{width:25px;height:25px}
+
+/* Sheets, Menus & Fullscreen/Modal Overlays */
+.fab.open{padding:0;width:56px;justify-content:center;z-index:13;background:var(--pri);color:var(--onpri)}
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .3s;z-index:10}
+.scrim.on{opacity:1;pointer-events:auto}
+
+.sheet{position:absolute;left:0;right:0;bottom:0;height:56%;background:var(--sc);border-radius:32px 32px 0 0;transform:translateY(102%);transition:transform .42s cubic-bezier(.2,.9,.3,1),height .35s cubic-bezier(.2,.9,.3,1);z-index:11;padding:8px 18px 24px;overflow:auto}
+.sheet.on{transform:none}
+.sheet.tall{height:88%}
+body.desktop .sheet{
+  left:50%;
+  right:auto;
+  bottom:auto;
+  top:50%;
+  width:460px;
+  height:auto;
+  max-height:82%;
+  border-radius:32px;
+  padding:16px 24px 26px;
+  transform:translate(-50%, -44%) scale(.94);
+  opacity:0;
+  pointer-events:none;
+  box-shadow:0 24px 60px rgba(0,0,0,.45);
+  transition:transform .32s cubic-bezier(.2,.9,.3,1),opacity .25s;
+}
+body.desktop .sheet.on{
+  transform:translate(-50%, -50%) scale(1);
+  opacity:1;
+  pointer-events:auto;
+}
+.hd{width:38px;height:5px;border-radius:3px;background:var(--out);margin:6px auto 14px;cursor:pointer;opacity:.7}
+body.desktop .hd{display:none}
+
+#fm{position:absolute;right:16px;bottom:158px;display:flex;flex-direction:column;align-items:flex-end;gap:10px;z-index:13;pointer-events:none}
+#fm.on{pointer-events:auto}
+body.desktop #fm{
+  left:90px;
+  top:22px;
+  right:auto;
+  bottom:auto;
+  align-items:flex-start;
+}
+.fmi{display:flex;align-items:center;gap:10px;height:52px;padding:0 20px;border:0;border-radius:26px;background:var(--sch);color:var(--on);font:inherit;font-weight:700;font-size:15px;box-shadow:0 6px 16px rgba(0,0,0,.3);opacity:0;transform:translateY(14px) scale(.85);transition:opacity .25s,transform .38s cubic-bezier(.3,1.5,.5,1);cursor:pointer}
+#fm.on .fmi{opacity:1;transform:none}
+#fm.on .fmi:nth-child(1){transition-delay:.05s}
+
+.ov{position:absolute;inset:0;background:var(--srcbg,var(--pric));z-index:20;display:none;flex-direction:column;clip-path:inset(0 round 0);transition:clip-path .72s cubic-bezier(.16,.84,.24,1),background-color .4s ease .08s}
+.ov.in{background:var(--bg)}
+.ov.scan.in{background:#000}
+.ov.out{transition:clip-path .5s cubic-bezier(.4,0,.2,1),background-color .25s ease .25s}
+.ov .ghost{position:absolute;display:flex;align-items:center;justify-content:center;gap:10px;font-weight:700;font-size:15px;pointer-events:none;opacity:1;transition:opacity .2s}
+.ov.in .ghost{opacity:0}
+.ov.show{display:flex}
+.ov .fbar,.ov .fbody{opacity:0;transform:translateY(14px);transition:opacity .12s,transform .12s}
+.ov.in .fbar,.ov.in .fbody{opacity:1;transform:none;transition:opacity .38s .28s,transform .5s .28s cubic-bezier(.16,.84,.24,1)}
+body.desktop .ov{
+  inset:50% auto auto 50%;
+  width:520px;
+  height:620px;
+  transform:translate(-50%,-50%);
+  border-radius:32px;
+  box-shadow:0 24px 64px rgba(0,0,0,.55);
+  border:1px solid rgba(154,141,149,.2);
+}
+.fbar{display:flex;align-items:center;justify-content:space-between;padding:40px 16px 8px;gap:8px}
+body.desktop .fbar{padding:20px 22px 8px}
+.fbar b{font-size:20px;flex:1;margin-left:6px}
+.ib2{width:42px;height:42px;border-radius:50%;border:0;background:var(--sch);color:inherit;display:grid;place-items:center;cursor:pointer}
+.fbody{flex:1;overflow:auto;padding:4px 18px 28px;display:flex;flex-direction:column;gap:8px}
+.rg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:2px}
+.rt{display:grid;justify-items:center;gap:6px;border:0;border-radius:24px;background:var(--sch);color:var(--on);font:inherit;font-size:14px;font-weight:600;padding:16px 4px;cursor:pointer;transition:background .2s}
+.rt.on{background:var(--pric);color:var(--onpric)}
+.rt svg.i{width:28px;height:28px}
+.chs{display:flex;gap:8px;flex-wrap:wrap}
+.dc{border:0;border-radius:18px;background:var(--sch);color:var(--on);font:inherit;font-weight:700;font-size:14px;padding:10px 18px;cursor:pointer}
+.dc.on{background:var(--pric);color:var(--onpric)}
+.fld{display:flex;align-items:center;gap:10px;background:var(--sch);border-radius:20px;padding:0 18px;height:56px;margin-top:6px}
+.fld input{flex:1;min-width:0;border:0;background:transparent;color:var(--on);font:inherit;font-size:22px;font-weight:700;outline:0}
+.fld span{color:var(--var);font-size:14px}
+.ov.scan{background:#000;color:#fff}
+.ov.scan .ib2{background:rgba(255,255,255,.18)}
+.vf{position:relative;margin:20px 24px 0;height:390px;display:grid;place-items:end center;padding-bottom:14px;font-size:14px;color:rgba(255,255,255,.85)}
+.vf i{position:absolute;width:38px;height:38px;border:4px solid #fff;border-radius:12px}
+.vf .c1{left:0;top:0;border-right:0;border-bottom:0}.vf .c2{right:0;top:0;border-left:0;border-bottom:0}.vf .c3{left:0;bottom:0;border-right:0;border-top:0}.vf .c4{right:0;bottom:0;border-left:0;border-top:0}
+.shut{display:flex;align-items:center;justify-content:space-between;padding:6px 24px 0;margin-top:auto}
+.sh{width:72px;height:72px;border-radius:50%;border:5px solid #fff;background:rgba(255,255,255,.22);cursor:pointer}
+
+#snack{position:absolute;left:14px;right:14px;bottom:92px;background:var(--on);color:var(--bg);border-radius:16px;padding:12px 10px 12px 16px;display:flex;align-items:center;justify-content:space-between;font-size:14px;font-weight:600;opacity:0;transform:translateY(14px);pointer-events:none;transition:opacity .25s,transform .35s cubic-bezier(.3,1.5,.5,1);z-index:30}
+body.desktop #snack{left:auto;right:28px;bottom:24px;min-width:320px}
+#snack.show{opacity:1;transform:none;pointer-events:auto}
+#snack button{border:0;background:none;color:var(--pric);font:inherit;font-weight:700;padding:6px 12px;cursor:pointer}
+:root[data-theme="light"] #snack button{color:var(--pri)}
+</style></head>
+<body class="desktop">
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></symbol>
+<symbol id="list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+<symbol id="chart" viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M7 15l4-5 3 3 5-6"/></symbol>
+<symbol id="set" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 5v4M6 15v4"/></symbol>
+<symbol id="user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 14.5-4 16 0"/></symbol>
+<symbol id="shield" viewBox="0 0 24 24"><path d="M12 2.5l8 3v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10v-6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></symbol>
+<symbol id="link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+<symbol id="cal" viewBox="0 0 24 24"><path d="M4 6h16v14H4zM4 10h16M8 3v4M16 3v4"/></symbol>
+<symbol id="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="mark" viewBox="0 0 24 24"><path d="M7 4h10v16l-5-4-5 4z"/></symbol>
+<symbol id="gel" viewBox="0 0 24 24"><path d="M8.5 2.5h7v3h-7zM7 5.5h10l-1.2 14.5a1 1 0 0 1-1 .9H9.2a1 1 0 0 1-1-.9zM10 11c1.3 1 2.7-1 4 0"/></symbol>
+<symbol id="pill" viewBox="0 0 24 24"><path d="M10.5 20.5a5 5 0 0 1-7-7l10-10a5 5 0 0 1 7 7z"/><path d="M8.5 8.5l7 7"/></symbol>
+<symbol id="drop" viewBox="0 0 24 24"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></symbol>
+<symbol id="scan" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 12h8"/></symbol>
+<symbol id="globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></symbol>
+<symbol id="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/></symbol>
+<symbol id="kg" viewBox="0 0 24 24"><path d="M6 20h12l-2-12H8z"/><circle cx="12" cy="5.5" r="1.8"/></symbol>
+<symbol id="sync" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4"/></symbol>
+<symbol id="db" viewBox="0 0 24 24"><path d="M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+<symbol id="info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8v.1"/></symbol>
+<symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="note" viewBox="0 0 24 24"><path d="M5 4h10l4 4v12H5zM14 4v5h5M8 13h8M8 17h5"/></symbol>
+<symbol id="syr" viewBox="0 0 24 24"><path d="M18 2l4 4M17 7l3-3M19 9L8.7 19.3a2.4 2.4 0 0 1-3.4 0l-.6-.6a2.4 2.4 0 0 1 0-3.4L15 5M9 11l4 4M5 19l-3 3M14 4l6 6"/></symbol>
+<symbol id="patch" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><path d="M9 12h6M12 9v6"/></symbol>
+<symbol id="peel" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="5" stroke-dasharray="3 3"/><path d="M12 15V9m-3 3l3-3 3 3"/></symbol>
+<symbol id="tongue" viewBox="0 0 24 24"><path d="M3.5 12.5c1.3 6 15.7 6 17 0"/><path d="M9.5 8.8l3.2-3.2a2.3 2.3 0 0 1 3.3 3.3l-3.2 3.2a2.3 2.3 0 0 1-3.3-3.3zM11.2 7.2l3.2 3.2"/></symbol>
+<symbol id="trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></symbol>
+<symbol id="warn" viewBox="0 0 24 24"><path d="M12 3L2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/></symbol>
+<symbol id="dna" viewBox="0 0 24 24"><path d="M4 4c6 0 10 16 16 16M20 4c-6 0-10 16-16 16M7 7h10M7 17h10"/></symbol>
+<symbol id="upload" viewBox="0 0 24 24"><path d="M12 16V4m-5 5l5-5 5 5M4 20h16"/></symbol>
+<symbol id="download" viewBox="0 0 24 24"><path d="M12 4v12m-5-5l5 5 5-5M4 20h16"/></symbol>
+<symbol id="code" viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M14 4l-4 16"/></symbol>
+<symbol id="compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polygon points="10,10 16,8 14,14 8,16"/></symbol>
+<symbol id="tube" viewBox="0 0 24 24"><path d="M9.5 2.5v14.2a3 3 0 0 0 6 0V2.5"/><path d="M8 2.5h9"/><path d="M9.5 9.5h6"/></symbol>
+<symbol id="cat" viewBox="0 0 40 36"><path d="M7 14L6 3l9 5M33 14l1-11-9 5" stroke-width="2"/><path d="M7 14c-2 6 0 18 13 18s15-12 13-18c-3-4-23-4-26 0z" stroke-width="2"/><circle cx="14" cy="21" r="1.4" fill="currentColor" stroke="none"/><circle cx="26" cy="21" r="1.4" fill="currentColor" stroke="none"/><path d="M18 25q2 2 4 0" stroke-width="1.8"/></symbol>
+</defs></svg>
+
+<div class="top">
+  <span>Kira HRT Tracker · M3 Expressive 响应式设计稿（二级菜单已补返回键）</span>
+  <div class="top-ctrl">
+    <button id="vMobile">📱 手机端 (390px)</button>
+    <button id="vDesktop" class="active">💻 桌面宽屏 (1160px)</button>
+    <button id="theme">切换浅色 / 深色</button>
+  </div>
+</div>
+
+<div class="wrap"><div class="phone">
+<div class="scroll" id="sc">
+
+<!-- 0: 概览 -->
+<section class="pg long" id="p0">
+ <h1>概览</h1>
+ <div class="d-grid">
+  <div class="d-col">
+   <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:10px">
+    <div class="tile" data-m style="--mo:46px 14px 46px 14px;background:var(--pric);color:var(--onpric);border-radius:28px;min-height:136px">
+      <span class="l">雌二醇 (E2)</span>
+      <span><span style="font-size:52px;font-weight:800;letter-spacing:-1.5px;line-height:1">118.7</span><span class="l" style="margin-left:4px">pg/ml</span></span>
+      <span class="chip ok" style="align-self:flex-start;background:rgba(127,224,168,.2)">在目标范围内</span>
+    </div>
+    <div class="tile b" data-m style="--mo:28px;min-height:136px">
+      <span class="l">醋酸环丙孕酮</span>
+      <span><span class="n" style="font-size:44px">2</span><span class="l" style="margin-left:4px">天前</span></span>
+      <span class="l">上次服用</span>
+    </div>
+   </div>
+   <div class="card">
+    <div class="hrow" style="margin-bottom:8px">
+      <div><b>激素浓度变化</b><div class="sub" style="margin:2px 0 0">4 小时一格 · 校准系数 ×0.40</div></div>
+      <div class="cg" id="rng"><button class="on" data-d="7">7天</button><button data-d="30">30天</button><button data-d="60">全部</button></div>
+    </div>
+    <svg id="ch" viewBox="0 0 340 150" style="width:100%;display:block"></svg>
+   </div>
+  </div>
+  <div class="d-col">
+   <div class="lab" style="margin-top:2px">近期剂量</div>
+   <div class="list bigic">
+    <div class="li"><span class="ic p"><svg class="i"><use href="#gel"/></svg></span><div class="t"><b>雌二醇 (E2)</b><span class="s">凝胶 · 双臂涂抹</span></div><div class="r"><b>2.60 mg</b><br>10月14日 16:30</div></div>
+    <div class="li"><span class="ic p"><svg class="i"><use href="#gel"/></svg></span><div class="t"><b>雌二醇 (E2)</b><span class="s">凝胶 · 双臂涂抹</span></div><div class="r"><b>3.30 mg</b><br>10月14日 04:27</div></div>
+    <div class="li"><span class="ic am"><svg class="i"><use href="#shield"/></svg></span><div class="t"><b>醋酸环丙孕酮</b><span class="s">CPA · 口服</span></div><div class="r"><b>12.50 mg</b><br>10月12日 01:31</div></div>
+    <div class="li"><span class="ic p"><svg class="i"><use href="#gel"/></svg></span><div class="t"><b>雌二醇 (E2)</b><span class="s">凝胶 · 双臂涂抹</span></div><div class="r"><b>2.60 mg</b><br>10月11日 17:10</div></div>
+   </div>
+  </div>
+ </div>
+</section>
+
+<!-- 1: 记录 -->
+<section class="pg long" id="p1">
+ <div class="hrow"><h1>记录</h1><button class="btn t" data-m style="--mo:14px;min-width:0"><svg class="i"><use href="#list"/></svg>批量选择</button></div>
+ <div class="d-grid records-grid">
+  <div class="d-col">
+   <div class="card" style="display:flex;flex-direction:column;gap:10px">
+    <div class="sub" style="margin:0">历史统计</div>
+    <div style="font-size:36px;font-weight:800;line-height:1">337 <small style="font-size:15px;font-weight:600;color:var(--var)">条给药记录</small></div>
+    <div class="cg" style="margin-top:4px"><button class="on">全部</button><button>雌二醇</button><button>抗雄</button></div>
+   </div>
+  </div>
+  <div class="d-col">
+   <div class="lab" style="margin-top:0">2026年10月14日</div>
+   <div class="list bigic"><div class="li"><span class="ic p"><svg class="i"><use href="#gel"/></svg></span><div class="t"><b>雌二醇 (E2)</b><span class="s">凝胶 · 2.60 mg</span></div><div class="r">16:30</div></div><div class="li"><span class="ic p"><svg class="i"><use href="#gel"/></svg></span><div class="t"><b>雌二醇 (E2)</b><span class="s">凝胶 · 3.30 mg</span></div><div class="r">04:27</div></div></div>
+   <div class="lab">2026年10月13日</div>
+   <div class="list bigic"><div class="li"><span class="ic p"><svg class="i"><use href="#gel"/></svg></span><div class="t"><b>雌二醇 (E2)</b><span class="s">凝胶 · 0.60 mg</span></div><div class="r">14:41</div></div><div class="li"><span class="ic p"><svg class="i"><use href="#gel"/></svg></span><div class="t"><b>雌二醇 (E2)</b><span class="s">凝胶 · 3.30 mg</span></div><div class="r">13:20</div></div></div>
+   <div class="lab">2026年10月12日</div>
+   <div class="list bigic"><div class="li"><span class="ic p"><svg class="i"><use href="#gel"/></svg></span><div class="t"><b>雌二醇 (E2)</b><span class="s">凝胶 · 2.60 mg</span></div><div class="r">17:58</div></div><div class="li"><span class="ic am"><svg class="i"><use href="#shield"/></svg></span><div class="t"><b>醋酸环丙孕酮</b><span class="s">CPA · 口服 · 12.50 mg</span></div><div class="r">01:31</div></div><div class="li"><span class="ic p"><svg class="i"><use href="#gel"/></svg></span><div class="t"><b>雌二醇 (E2)</b><span class="s">凝胶 · 3.30 mg</span></div><div class="r">01:18</div></div></div>
+  </div>
+ </div>
+</section>
+
+<!-- 2: 体检 -->
+<section class="pg long" id="p2">
+ <div class="d-grid exam-grid">
+  <!-- 主栏（手机）/ 左栏（桌面） -->
+  <div class="d-col" id="examMain">
+   <h1>体检</h1>
+
+   <!-- 手机端：文字记录入口（单个圆角矩形 list 项，点击进入二级页） -->
+   <div class="list exam-entry">
+    <div class="li" id="textEntry">
+     <span class="ic p"><svg class="i"><use href="#note"/></svg></span>
+     <div class="t"><b>文字记录</b><span class="s">0 条随访与体征笔记</span></div>
+     <svg class="i"><use href="#chev"/></svg>
+    </div>
+   </div>
+
+   <!-- 桌面端：文字记录卡片直接展示 -->
+   <div class="exam-text-desktop">
+    <div class="lab" style="margin-top:0">文字记录</div>
+    <div class="card" style="background:var(--sch)">
+     <div class="empty">
+      <svg viewBox="0 0 80 60" width="78" height="58" fill="none" stroke="var(--out)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20L14 4l14 8M64 20l2-16-14 8"/><path d="M16 20c-4 10 0 30 24 30s28-20 24-30c-6-8-42-8-48 0z"/><circle cx="30" cy="30" r="2" fill="var(--out)"/><circle cx="50" cy="30" r="2" fill="var(--out)"/><path d="M38 36q2 3 4 0"/></svg>
+      <div style="margin-top:8px">还没有记录。这里只保存你自己写下的文字，不会从里面推断任何结论。</div>
+     </div>
+    </div>
+    <button class="btn tonal-add" data-m style="--mo:14px" onclick="snack('文字笔记编辑器已就绪')">
+     <svg class="i"><use href="#plus"/></svg>写一条
+    </button>
+   </div>
+  </div>
+
+  <!-- 化验列表：桌面右栏 / 手机第二块 -->
+  <div class="d-col" id="examSide">
+   <div class="lab" style="margin-top:0">化验结果</div>
+   <div class="list bigic">
+    <div class="li"><span class="ic p"><svg class="i"><use href="#drop"/></svg></span><div class="t"><b class="nw">396.53 pmol/l</b><span class="s">8月19日 13:37</span></div><svg viewBox="0 0 90 22" width="54" height="18"><path d="M6 11h78" stroke="var(--out)" stroke-width="2" stroke-linecap="round"/><circle cx="34" cy="11" r="6" fill="none" stroke="var(--var)" stroke-width="2"/><circle cx="62" cy="11" r="6" fill="var(--pri)"/></svg><span class="chip" style="background:var(--pric);color:var(--onpric);padding:5px 10px">×0.42</span></div>
+    <div class="li"><span class="ic p"><svg class="i"><use href="#drop"/></svg></span><div class="t"><b class="nw">174.1 pmol/l</b><span class="s">7月27日 14:21</span></div><svg viewBox="0 0 90 22" width="54" height="18"><path d="M6 11h78" stroke="var(--out)" stroke-width="2" stroke-linecap="round"/><circle cx="30" cy="11" r="6" fill="none" stroke="var(--var)" stroke-width="2"/><circle cx="50" cy="11" r="6" fill="var(--pri)"/></svg><span class="chip" style="background:var(--pric);color:var(--onpric);padding:5px 10px">×0.37</span></div>
+    <div class="li"><span class="ic am"><svg class="i"><use href="#drop"/></svg></span><div class="t"><b class="nw">1.12 nmol/l</b><span class="s">睾酮 · 7月27日 14:21</span></div></div>
+   </div>
+   <div class="sub" style="margin-top:-2px">空心圈是模型估算，实心点是你的实测值</div>
+  </div>
+
+  <!-- 手机端二级：文字记录详情 -->
+  <div class="d-col" id="examSub" style="display:none">
+   <button class="hback" id="textBack" aria-label="返回体检">
+    <svg class="i"><use href="#chev"/></svg>
+    <span class="ht">文字记录</span>
+   </button>
+   <div class="card" style="background:var(--sch)">
+    <div class="empty">
+     <svg viewBox="0 0 80 60" width="78" height="58" fill="none" stroke="var(--out)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20L14 4l14 8M64 20l2-16-14 8"/><path d="M16 20c-4 10 0 30 24 30s28-20 24-30c-6-8-42-8-48 0z"/><circle cx="30" cy="30" r="2" fill="var(--out)"/><circle cx="50" cy="30" r="2" fill="var(--out)"/><path d="M38 36q2 3 4 0"/></svg>
+     <div style="margin-top:8px">还没有记录。这里只保存你自己写下的文字，不会从里面推断任何结论。</div>
+    </div>
+   </div>
+   <button class="btn tonal-add" data-m style="--mo:14px" onclick="snack('文字笔记编辑器已就绪')">
+    <svg class="i"><use href="#plus"/></svg>写一条
+   </button>
+  </div>
+ </div>
+</section>
+
+<!-- 3: 设置 -->
+<section class="pg on long" id="p3">
+ <div class="d-split">
+  <!-- 左侧：设置分类导航 Hub -->
+  <div id="hub" class="d-col">
+   <h1>设置</h1>
+   <div class="list" id="setNavList">
+    <div class="li" data-sd="0"><span class="ic"><svg class="i"><use href="#set"/></svg></span><div class="t"><b>常规</b><span class="s">语言、外观、体重与同步</span></div><svg class="i"><use href="#chev"/></svg></div>
+    <div class="li" data-sd="1"><span class="ic"><svg class="i"><use href="#chart"/></svg></span><div class="t"><b>算法设置</b><span class="s">校准方法与药代动力学模型</span></div><svg class="i"><use href="#chev"/></svg></div>
+    <div class="li active-nav" data-sd="2"><span class="ic"><svg class="i"><use href="#pill"/></svg></span><div class="t"><b>用药方案</b><span class="s">HRT 模式、每日提醒与计划</span></div><svg class="i"><use href="#chev"/></svg></div>
+    <div class="li" data-sd="3"><span class="ic"><svg class="i"><use href="#cal"/></svg></span><div class="t"><b>复查提醒</b><span class="s">肝功、血钾、雌二醇复查间隔</span></div><svg class="i"><use href="#chev"/></svg></div>
+    <div class="li" data-sd="4"><span class="ic"><svg class="i"><use href="#db"/></svg></span><div class="t"><b>数据管理</b><span class="s">导入、导出与清空记录</span></div><svg class="i"><use href="#chev"/></svg></div>
+    <div class="li" data-sd="5"><span class="ic"><svg class="i"><use href="#info"/></svg></span><div class="t"><b>关于</b><span class="s">Android 版、算法来源、开源许可</span></div><svg class="i"><use href="#chev"/></svg></div>
+   </div>
+  </div>
+
+  <!-- 右侧：设置子页面详情面板 -->
+  <div id="sd" class="d-col detail-pane">
+   <!-- 返回图标 + 标题，整体为返回按钮 -->
+   <button class="hback" id="sback" aria-label="返回设置列表">
+    <svg class="i"><use href="#chev"/></svg>
+    <span class="ht" id="dt">用药方案</span>
+   </button>
+
+   <!-- 3.0: 常规设置（抗雄激素显示改为二级入口） -->
+   <div class="sdp" hidden>
+    <div class="list">
+     <div class="li"><span class="ic"><svg class="i"><use href="#globe"/></svg></span><div class="t"><b>语言设置</b></div><span class="s" style="color:var(--var)">简体中文</span><svg class="i"><use href="#chev"/></svg></div>
+     <div class="li" onclick="$('#theme').click()"><span class="ic"><svg class="i"><use href="#sun"/></svg></span><div class="t"><b>外观设置</b></div><span class="s" style="color:var(--var)">跟随系统 / 点击切换</span><svg class="i"><use href="#chev"/></svg></div>
+     <div class="li"><span class="ic"><svg class="i"><use href="#kg"/></svg></span><div class="t"><b>体重</b><span class="s">用于分布容积估算</span></div><span class="s" style="color:var(--var);font-weight:700">56 kg</span><svg class="i"><use href="#chev"/></svg></div>
+    </div>
+
+    <div class="lab">同步</div>
+    <div class="list">
+     <div class="li"><span class="ic"><svg class="i"><use href="#sync"/></svg></span><div class="t"><b>自动同步</b><span class="s">记录端到端加密后同步到你的账户</span></div><div class="sw on"><i></i></div></div>
+    </div>
+
+    <div class="lab">显示</div>
+    <div class="list">
+     <div class="li" data-sub="aa"><span class="ic"><svg class="i"><use href="#shield"/></svg></span><div class="t"><b>抗雄激素显示</b><span class="s">自动</span></div><svg class="i"><use href="#chev"/></svg></div>
+    </div>
+   </div>
+
+   <!-- 3.1: 算法设置（两个二级入口） -->
+   <div class="sdp" hidden>
+    <div class="list">
+     <div class="li" data-sub="calib"><span class="ic p"><svg class="i"><use href="#chart"/></svg></span><div class="t"><b>校准设置</b><span class="s">Hybrid-MIPD · ×0.40 · ±8%</span></div><svg class="i"><use href="#chev"/></svg></div>
+     <div class="li" data-sub="pk"><span class="ic"><svg class="i"><use href="#dna"/></svg></span><div class="t"><b>药代动力学模型</b><span class="s">原有模型（Mihari）</span></div><svg class="i"><use href="#chev"/></svg></div>
+    </div>
+   </div>
+
+   <!-- 3.2: 用药方案 -->
+   <div class="sdp">
+    <div class="card" style="background:var(--sch);padding:16px 18px">
+     <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:15.5px">
+      <svg class="i" style="width:20px;height:20px;color:var(--pri)"><use href="#dna"/></svg>
+      HRT 模式
+     </div>
+     <div class="sub" style="margin:4px 0 10px">选择应用使用的激素模式，会改变可选的药物与显示的读数。</div>
+     <div class="mode-grid" id="hrtMode">
+      <button class="mode-btn on" data-m style="--mo:16px">女性化 HRT</button>
+      <button class="mode-btn" data-m style="--mo:16px">男性化 HRT</button>
+     </div>
+    </div>
+
+    <div class="hrow" style="margin:10px 4px 4px">
+     <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px">
+      <svg class="i" style="width:19px;height:19px;color:var(--var)"><use href="#clock"/></svg>
+      用药方案
+     </div>
+     <span class="chip ok dot">浏览器通知已启用</span>
+    </div>
+
+    <div class="list" id="planList">
+     <div class="li">
+      <span class="ic am"><svg class="i"><use href="#shield"/></svg></span>
+      <div class="t">
+       <b>12.5</b>
+       <span class="s">醋酸环丙孕酮 (CPA) · 口服 (Oral) · 12.5mg · 每 2 天 · 23:00</span>
+      </div>
+      <div class="sw on"><i></i></div>
+      <button class="icon-del" title="删除方案"><svg class="i"><use href="#trash"/></svg></button>
+     </div>
+
+     <div class="li">
+      <span class="ic p"><svg class="i"><use href="#gel"/></svg></span>
+      <div class="t">
+       <b>5 <span class="warn-badge" title="时间或剂量提醒"><svg viewBox="0 0 24 24"><use href="#warn"/></svg></span></b>
+       <span class="s">雌二醇 (E2) · 凝胶 · 3.3mg · 00:00</span>
+      </div>
+      <div class="sw on"><i></i></div>
+      <button class="icon-del" title="删除方案"><svg class="i"><use href="#trash"/></svg></button>
+     </div>
+
+     <div class="li">
+      <span class="ic p"><svg class="i"><use href="#gel"/></svg></span>
+      <div class="t">
+       <b>4 <span class="warn-badge" title="时间或剂量提醒"><svg viewBox="0 0 24 24"><use href="#warn"/></svg></span></b>
+       <span class="s">雌二醇 (E2) · 凝胶 · 2.6mg · 12:00</span>
+      </div>
+      <div class="sw on"><i></i></div>
+      <button class="icon-del" title="删除方案"><svg class="i"><use href="#trash"/></svg></button>
+     </div>
+    </div>
+
+    <button class="btn tonal-add" id="addPlanBtn" data-m style="--mo:14px">
+     <svg class="i"><use href="#plus"/></svg>添加用药方案
+    </button>
+   </div>
+
+   <!-- 3.3: 复查提醒 -->
+   <div class="sdp" hidden>
+    <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:10px">
+     <div class="tile b" style="border-radius:26px;min-height:92px;cursor:default">
+      <span class="l">下一次建议复查</span>
+      <span class="n" style="font-size:32px">11月3日</span>
+     </div>
+     <div class="card" style="background:var(--sch);display:flex;flex-direction:column;justify-content:space-between;padding:14px 16px;border-radius:26px">
+      <span style="font-size:13px;font-weight:700">到期通知提醒</span>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
+       <span class="sub" style="margin:0">提前 3 天推送</span>
+       <div class="sw on"><i></i></div>
+      </div>
+     </div>
+    </div>
+
+    <div class="sub" style="margin:6px 4px 2px">这些是应用自定的复查间隔，可逐项调整。哪个间隔适合你，请与医生确认。</div>
+
+    <div class="lab">肝功能（CPA / 比卡鲁胺）</div>
+    <div class="list">
+     <div class="li"><div class="t"><b>第一阶段（月）</b><span class="s">初始密集监测期时长</span></div><input type="number" class="num-pill" value="6" min="1" max="36"></div>
+     <div class="li"><div class="t"><b>第一阶段间隔（月）</b><span class="s">初始期内每次复查间隔</span></div><input type="number" class="num-pill" value="1" min="1" max="24"></div>
+     <div class="li"><div class="t"><b>之后间隔（月）</b><span class="s">稳定期常规复查间隔</span></div><input type="number" class="num-pill" value="3" min="1" max="24"></div>
+    </div>
+
+    <div class="lab">血钾（螺内酯）</div>
+    <div class="list">
+     <div class="li"><div class="t"><b>第一阶段（月）</b><span class="s">初始监测期时长</span></div><input type="number" class="num-pill" value="12" min="1" max="36"></div>
+     <div class="li"><div class="t"><b>第一阶段间隔（月）</b><span class="s">初始期内每次复查间隔</span></div><input type="number" class="num-pill" value="3" min="1" max="24"></div>
+     <div class="li"><div class="t"><b>之后间隔（月）</b><span class="s">稳定期常规复查间隔</span></div><input type="number" class="num-pill" value="12" min="1" max="24"></div>
+    </div>
+
+    <div class="lab">雌二醇 (E2)</div>
+    <div class="list">
+     <div class="li"><div class="t"><b>复查间隔（月）</b><span class="s">激素水平常规随访周期</span></div><input type="number" class="num-pill" value="3" min="1" max="24"></div>
+    </div>
+   </div>
+
+   <!-- 3.4: 数据管理 -->
+   <div class="sdp" hidden>
+    <div class="list">
+     <div class="li" onclick="snack('已生成加密备份文件 kira-hrt-backup.json')">
+      <span class="ic p"><svg class="i"><use href="#download"/></svg></span>
+      <div class="t"><b>导出数据</b><span class="s">将用药记录、化验结果与校准参数保存为本地备份</span></div>
+      <svg class="i"><use href="#chev"/></svg>
+     </div>
+     <div class="li" onclick="snack('支持导入 Kira / Oyama / Transmtf / Featherline 格式')">
+      <span class="ic"><svg class="i"><use href="#upload"/></svg></span>
+      <div class="t"><b>导入数据</b><span class="s">从备份文件或 Oyama、Transmtf、Featherline 迁移记录</span></div>
+      <svg class="i"><use href="#chev"/></svg>
+     </div>
+    </div>
+
+    <div class="lab" style="margin-top:14px;color:var(--err)">危险操作</div>
+    <div class="list">
+     <div class="li danger" id="clearAllBtn">
+      <span class="ic err"><svg class="i"><use href="#trash"/></svg></span>
+      <div class="t"><b>清空所有记录</b><span class="s">永久删除此设备上的全部给药历史、体检化验单与方案设置</span></div>
+      <svg class="i" style="color:var(--err)"><use href="#chev"/></svg>
+     </div>
+    </div>
+   </div>
+
+   <!-- 3.5: 关于 -->
+   <div class="sdp" hidden>
+    <div class="card" style="background:var(--sch);display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px">
+     <div>
+      <b style="font-size:19px">Kira HRT Tracker</b>
+      <div class="sub" style="margin:4px 0 0">版本 1.2 发布候选 · MIT 开源协议</div>
+     </div>
+     <span class="chip ok">已是最新</span>
+    </div>
+
+    <div class="list" id="aboutList">
+     <div class="li" data-msg="正在跳转至 Android APK 下载页面…">
+      <span class="ic p"><svg class="i"><use href="#download"/></svg></span>
+      <div class="t"><b>下载 Android 版</b><span class="s">获取原生离线安装包与系统级通知支持</span></div>
+      <svg class="i"><use href="#chev"/></svg>
+     </div>
+     <div class="li" data-msg="原有模型移植自 Mihari；Transmtf 模型出自 Transmtf 团队">
+      <span class="ic"><svg class="i"><use href="#chart"/></svg></span>
+      <div class="t"><b>算法与模型来源</b><span class="s">药代动力学文献参数与贝叶斯校准说明</span></div>
+      <svg class="i"><use href="#chev"/></svg>
+     </div>
+     <div class="li" data-msg="已复制 GitHub 仓库地址">
+      <span class="ic"><svg class="i"><use href="#code"/></svg></span>
+      <div class="t"><b>GitHub 仓库</b><span class="s">查看源代码、提交 Issue 或参与贡献</span></div>
+      <svg class="i"><use href="#chev"/></svg>
+     </div>
+     <div class="li" data-msg="本应用仅供个人记录与药代动力学参考，不构成医疗建议">
+      <span class="ic am"><svg class="i"><use href="#warn"/></svg></span>
+      <div class="t"><b>免责声明</b><span class="s">医疗风险提示与使用边界说明</span></div>
+      <svg class="i"><use href="#chev"/></svg>
+     </div>
+     <div class="li" data-msg="所有健康数据默认存储于本地，云同步采用端到端加密">
+      <span class="ic"><svg class="i"><use href="#shield"/></svg></span>
+      <div class="t"><b>隐私政策</b><span class="s">本地存储机制与端到端加密承诺</span></div>
+      <svg class="i"><use href="#chev"/></svg>
+     </div>
+     <div class="li" data-msg="MIT License · 感谢所有开源社区贡献者">
+      <span class="ic"><svg class="i"><use href="#note"/></svg></span>
+      <div class="t"><b>开源许可</b><span class="s">第三方依赖库与开源许可证列表</span></div>
+      <svg class="i"><use href="#chev"/></svg>
+     </div>
+     <div class="li" data-msg="已重新开启新手引导流程">
+      <span class="ic p"><svg class="i"><use href="#compass"/></svg></span>
+      <div class="t"><b>重新看一遍新手引导</b><span class="s">快速回顾如何记录给药与校准化验单</span></div>
+      <svg class="i"><use href="#chev"/></svg>
+     </div>
+    </div>
+   </div>
+
+   <!-- 3.6: 设置二级子页面容器 -->
+   <div id="sdpSub" hidden>
+    <button class="hback" id="subBack" aria-label="返回上一级">
+     <svg class="i"><use href="#chev"/></svg>
+     <span class="ht" id="subT">校准设置</span>
+    </button>
+
+    <!-- 校准设置子页 -->
+    <div class="subp" data-sub="calib" hidden>
+     <div class="lab" style="margin-top:0">校准方式</div>
+     <div style="display:grid;gap:6px;margin-top:6px">
+      <div class="rad"><span class="rb"></span><div><b style="font-size:15px">关闭</b><div class="s">直接显示原始药代动力学模型</div></div></div>
+      <div class="rad on"><span class="rb"></span><div><b style="font-size:15px">Hybrid-MIPD</b><div class="s">贝叶斯模型指导；1 次血检即可生效</div></div></div>
+      <div class="rad"><span class="rb"></span><div><b style="font-size:15px">EKF</b><div class="s">扩展卡尔曼滤波，逐次处理血检，永久记忆</div></div></div>
+      <div class="rad"><span class="rb"></span><div><b style="font-size:15px">OU-Kalman</b><div class="s">只校正水平，近期血检权重更大</div></div></div>
+     </div>
+     <div class="lab" style="margin-top:16px">应用于历史</div>
+     <div class="cg" style="margin-top:6px"><button class="on">回顾全部</button><button>仅前向推算</button></div>
+     <div class="card" style="margin-top:14px;background:var(--sch)">
+      <div class="sub" style="margin:0 0 4px">当前个人拟合参数</div>
+      <b style="font-size:18px">×0.40 · ±8% · 基于 2 次血检</b>
+     </div>
+     <button class="btn danger-wide" id="clearCalibBtn" data-m style="--mo:16px">
+      <svg class="i"><use href="#trash"/></svg>清空校准
+     </button>
+    </div>
+
+    <!-- 药代动力学模型子页 -->
+    <div class="subp" data-sub="pk" hidden>
+     <div class="lab" style="margin-top:0">选择模型</div>
+     <div style="display:grid;gap:8px;margin-top:6px">
+      <div class="model on">
+       <b>原有模型（Mihari）</b>
+       <div style="font-size:12.5px;margin-top:3px;opacity:.85">移植自 Mihari 的 PKcomponent，改动最少。</div>
+       <ul><li>针剂、贴片、口服、舌下：与以前一致</li><li>所有药物与账号类型都可使用</li><li class="m">凝胶只看部位与剂量</li></ul>
+      </div>
+      <div class="model">
+       <b>Transmtf 模型</b>
+       <div style="font-size:12.5px;margin-top:3px;opacity:.85">三级室凝胶吸收、两相注射释放、舌下分层、EU 长效剂型。</div>
+       <ul><li>凝胶可填产品、面积、共涂物、冲洗时间</li><li>EU 长效针曲线形状与原有模型不同</li><li class="m">凝胶曲线约高 2 倍；仅支持雌二醇</li></ul>
+      </div>
+     </div>
+    </div>
+
+    <!-- 抗雄激素显示子页 -->
+    <div class="subp" data-sub="aa" hidden>
+     <div class="lab" style="margin-top:0">概览中显示方式</div>
+     <div style="display:grid;gap:5px;margin-top:6px" id="aa">
+      <div class="rad on"><span class="rb"></span><div><b style="font-size:15px">自动</b><div class="s">概览自动挑最合适的一项</div></div></div>
+      <div class="rad"><span class="rb"></span><div><b style="font-size:15px">今日剂量</b><div class="s">今天已经服用的总量</div></div></div>
+      <div class="rad"><span class="rb"></span><div><b style="font-size:15px">距上次服药</b><div class="s">离上一次服药过了多久</div></div></div>
+      <div class="rad"><span class="rb"></span><div><b style="font-size:15px">累计总量</b><div class="s">从开始到现在的总量</div></div></div>
+      <div class="rad"><span class="rb"></span><div><b style="font-size:15px">不显示</b><div class="s">概览里不出现抗雄激素</div></div></div>
+     </div>
+    </div>
+   </div>
+
+  </div>
+ </div>
+</section>
+
+<!-- 4: 账户 -->
+<section class="pg long" id="p4">
+ <h1>账户</h1>
+ <div class="d-grid">
+  <div class="d-col">
+   <div class="prof">
+    <svg viewBox="0 0 76 76" id="av" aria-label="头像"><defs><clipPath id="avc"><path id="avp"/></clipPath></defs><g clip-path="url(#avc)"><rect width="76" height="76" fill="var(--pric)"/><g transform="translate(17 19)" style="color:var(--onpric)"><use href="#cat" width="42" height="38" fill="none" stroke="currentColor"/></g></g></svg>
+    <div><b>kiramyao</b><span>创建于 2026-09-21 · 点击头像有惊喜</span></div>
+   </div>
+   <div class="hero">
+    <svg class="deco" viewBox="-80 -80 160 160"><path id="ck2" fill="currentColor"/></svg>
+    <div class="l">HRT 纪念日</div>
+    <button class="ib" aria-label="清除"><svg class="i"><use href="#x"/></svg></button>
+    <div class="row2"><div class="n">524<small>天</small></div><button class="hc"><svg class="i"><use href="#cal"/></svg>2025年5月9日<svg class="i"><use href="#down"/></svg></button></div>
+   </div>
+   <div class="tiles">
+    <div class="tile a" data-m style="--mo:46px 14px 46px 14px;min-height:104px"><span class="n">340</span><span class="l">用药记录</span></div>
+    <div class="tile b" data-m style="--mo:28px;min-height:104px"><span class="n">3</span><span class="l">化验结果</span></div>
+   </div>
+  </div>
+  <div class="d-col">
+   <div class="sync"><div class="t"><b>数据同步</b><span id="sub">已同步 · 上次 8:51:21 PM</span></div><button class="btn" id="btn" data-m style="--mo:14px">立即同步</button></div>
+   <div class="list">
+    <div class="li"><span class="ic p"><svg class="i"><use href="#link"/></svg></span><div class="t"><b>连接 AI 助手</b><span class="s">让助手通过 MCP 协议安全读取你的记录</span></div><svg class="i"><use href="#chev"/></svg></div>
+    <div class="li"><span class="ic"><svg class="i"><use href="#shield"/></svg></span><div class="t"><b>账户与安全</b><span class="s">密码、通行密钥、第三方绑定、退出与注销</span></div><svg class="i"><use href="#chev"/></svg></div>
+   </div>
+   <div class="foot">Powered by KiraEqual</div>
+  </div>
+ </div>
+</section>
+
+</div>
+
+<!-- 悬浮按钮 (手机端右下角 / 桌面端左侧导航栏顶部) -->
+<button class="fab" id="fab" data-m style="--mo:16px"></button>
+<!-- 桌面端导航栏顶部 Logo（当该页无 FAB 时顶替显示） -->
+<button class="rail-logo" id="railLogo" aria-label="Kira HRT Tracker 首页">
+ <svg class="i"><use href="#tube"/></svg>
+</button>
+
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet"></div>
+<div id="fm">
+ <button class="fmi" data-fm="scan"><svg class="i"><use href="#scan"/></svg>扫描化验单</button>
+ <button class="fmi" data-fm="manual"><svg class="i"><use href="#plus"/></svg>手动添加</button>
+</div>
+<div class="ov" id="full">
+ <div class="fbar"><button class="ib2" id="fclose" aria-label="关闭"><svg class="i"><use href="#x"/></svg></button><b id="ft"></b><button class="btn" id="fsave" data-m style="--mo:14px;min-width:0">保存</button></div>
+ <div class="fbody" id="fb"></div>
+</div>
+<div id="snack"><span></span><button>撤销</button></div>
+
+<!-- 导航栏 (自适应 Bottom Nav / Navigation Rail) -->
+<div class="nav" id="nav">
+ <button><span class="p"><svg class="i"><use href="#home"/></svg></span>概览</button>
+ <button><span class="p"><svg class="i"><use href="#list"/></svg></span>记录</button>
+ <button><span class="p"><svg class="i"><use href="#chart"/></svg></span>体检</button>
+ <button class="on"><span class="p"><svg class="i"><use href="#set"/></svg></span>设置</button>
+ <button><span class="p"><svg class="i"><use href="#user"/></svg></span>账户</button>
+</div>
+
+</div></div>
+
+<script>
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+
+/* 曲奇形态路径生成 */
+function cookie(cx,cy,r,n,a,ph=0){
+  let d='';
+  for(let i=0;i<=120;i++){
+    const t=i/120*2*Math.PI,rr=r*(1+a*Math.cos(n*(t-ph)));
+    d+=(i?'L':'M')+(cx+rr*Math.cos(t)).toFixed(1)+' '+(cy+rr*Math.sin(t)).toFixed(1);
+  }
+  return d+'Z';
+}
+$('#ck2').setAttribute('d',cookie(0,0,70,8,.09));
+const ease=p=>p<.5?4*p*p*p:1-Math.pow(-2*p+2,3)/2,reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+let raf=0;
+function avatar(){
+  cancelAnimationFrame(raf);
+  const set=(a,ph)=>$('#avp').setAttribute('d',cookie(38,38,35,9,a,ph));
+  if(reduce){set(0,0);return;}
+  const t0=performance.now(),D=1800;set(.09,0);
+  const f=now=>{
+    const p=Math.min(1,(now-t0)/D),e=ease(p);
+    set(.09*(1-e),2*Math.PI*e);
+    if(p<1)raf=requestAnimationFrame(f);else set(0,0);
+  };
+  raf=requestAnimationFrame(f);
+}
+$('#av').onclick=avatar;
+
+/* 顶部栏：手机端 / 桌面宽屏 / 主题切换 */
+function setViewportMode(isDesktop){
+  document.body.classList.toggle('desktop', isDesktop);
+  $('#vDesktop').classList.toggle('active', isDesktop);
+  $('#vMobile').classList.toggle('active', !isDesktop);
+  /* 切换视口时重置体检页面板状态，避免残留 inline display */
+  examReset();
+  /* 切到桌面时恢复设置页当前分类的持久高亮 */
+  if(isDesktop){
+    const idx=$$('.sdp').findIndex(p=>!p.hidden);
+    if(idx>=0) $$('#setNavList .li').forEach((el,k)=>el.classList.toggle('active-nav',k===idx));
+  }
+}
+$('#vMobile').onclick=()=>setViewportMode(false);
+$('#vDesktop').onclick=()=>setViewportMode(true);
+if(window.innerWidth < 760) setViewportMode(false);
+
+$('#theme').onclick=()=>{
+  const d=document.documentElement;
+  d.dataset.theme=d.dataset.theme==='light'?'dark':'light';
+};
+
+/* 导航切换 */
+const FAB=[['mark','快捷记录'],['plus','新增用药'],['plus','添加结果']];
+let curP=3;
+const fabHTML=i=>FAB[i]?`<svg class="i"><use href="#${FAB[i][0]}"/></svg><span class="fab-txt">${FAB[i][1]}</span>`:'';
+const railLogo=$('#railLogo');
+
+/* 桌面端：有 FAB 时显示 FAB，无 FAB 时显示试管 Logo */
+function syncChrome(){
+  const f=$('#fab');
+  if(FAB[curP]){
+    f.innerHTML=fabHTML(curP);
+    f.title=FAB[curP][1];
+    f.classList.add('on');
+    railLogo.classList.remove('on');
+  }else{
+    f.classList.remove('on');
+    railLogo.classList.add('on');
+  }
+}
+railLogo.onclick=()=>goto(0);
+
+function goto(i){
+  $$('#nav button').forEach((b,k)=>b.classList.toggle('on',k===i));
+  $$('.pg').forEach((p,k)=>p.classList.toggle('on',k===i));
+  $('#sc').scrollTo(0,0);
+  curP=i;
+  closeAll();
+  if(i===3 && !document.body.classList.contains('desktop')) hub();
+  if(i===2) examReset();
+  if(i===0) draw(curD);
+  if(i===4) avatar();
+  syncChrome();
+}
+$('#nav').onclick=e=>{
+  const b=e.target.closest('button');
+  if(b)goto($$('#nav button').indexOf(b));
+};
+
+/* 按压弹性形变 (Expressive Morph) — 仅瞬时反馈，不持久 */
+document.addEventListener('pointerdown',e=>{
+  const t=e.target.closest('[data-m]');
+  if(!t)return;
+  t.classList.add('mo');
+  let done=0;
+  const off=()=>{if(done)return;done=1;setTimeout(()=>t.classList.remove('mo'),300)};
+  ['pointerup','pointercancel','pointerleave'].forEach(n=>t.addEventListener(n,off,{once:true}));
+});
+
+/* 数据同步动画 */
+const SP='<svg class="spin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>';
+$('#btn').onclick=()=>{
+  const b=$('#btn');if(b.dataset.b)return;
+  b.dataset.b=1;b.innerHTML=SP;$('#sub').textContent='同步中…';
+  setTimeout(()=>{
+    b.innerHTML='立即同步';delete b.dataset.b;
+    $('#sub').textContent='已同步 · 上次 '+new Date().toLocaleTimeString('en-US');
+  },1200);
+};
+
+/* 药代动力学浓度曲线绘制 */
+function pk(days){
+  const H=days*24,pts=[],doses=[];
+  for(let i=-2;i<=days*2+2;i++){
+    const t=H-(i*12)-2+((i%2)?-11:0);
+    doses.push({t,a:i%2?3.3:2.6});
+  }
+  for(let h=0;h<=H;h+=days>10?4:2){
+    let v=92;
+    doses.forEach(d=>{const x=h-d.t;if(x>0)v+=d.a*17*(Math.exp(-.055*x)-Math.exp(-.35*x))});
+    pts.push([h,v]);
+  }
+  return{H,pts};
+}
+const LB={7:['10月8日','10月11日','10月15日'],30:['9月15日','9月30日','10月15日'],60:['8月16日','9月15日','10月15日']};
+let curD=7;
+function draw(days){
+  curD=days;
+  const {H,pts}=pk(days),L=26,R=334,T=8,B=122,X=h=>L+h/H*(R-L),Y=v=>B-Math.min(v,250)/250*(B-T);
+  const d='M'+pts.map(p=>X(p[0]).toFixed(1)+' '+Y(p[1]).toFixed(1)).join('L');
+  $('#ch').innerHTML=`<rect x="${L}" y="${Y(200)}" width="${R-L}" height="${Y(100)-Y(200)}" rx="12" fill="var(--okc)"/>`
+    +[0,100,200].map(v=>`<text x="0" y="${Y(v)+4}" font-size="10" fill="var(--out)">${v}</text>`).join('')
+    +`<path d="${d}L${R} ${B}L${L} ${B}Z" fill="var(--pri)" opacity=".14"/><path d="${d}" fill="none" stroke="var(--pri)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`
+    +LB[days].map((t,i)=>`<text x="${[L,(L+R)/2,R][i]}" y="${B+22}" font-size="10" fill="var(--out)" text-anchor="${['start','middle','end'][i]}">${t}</text>`).join('');
+}
+draw(7);
+$('#rng').onclick=e=>{ const b=e.target.closest('button');if(!b)return; $$('#rng button').forEach(x=>x.classList.toggle('on',x===b));
+  draw(+b.dataset.d);
+};
+
+/* 设置页双栏主从控制 */
+const SD=['常规','算法设置','用药方案','复查提醒','数据管理','关于'];
+let curSdp=2;
+let curSub=null;
+
+function hub(){
+  $('#hub').style.display='flex';
+  $('#sd').style.display='none';
+  /* 手机端返回列表时清除持久选中态 */
+  if(!document.body.classList.contains('desktop')){
+    $$('#setNavList .li').forEach(el=>el.classList.remove('active-nav'));
+  }
+}
+function selectSettingTab(i){
+  curSdp=i;
+  closeSub();
+  $$('.sdp').forEach((p,k)=>p.hidden=k!==i);
+  /* 持久选中态仅桌面端需要；手机端进入详情页后列表不可见，返回时由 hub() 清理 */
+  $$('#setNavList .li').forEach((el,k)=>el.classList.toggle('active-nav',k===i));
+  $('#dt').textContent=SD[i];
+  if(!document.body.classList.contains('desktop')){
+    $('#hub').style.display='none';
+    $('#sd').style.display='flex';
+  }
+  $('#sc').scrollTo(0,0);
+}
+function openSub(name,title){
+  curSub=name;
+  $$('.sdp').forEach(p=>p.hidden=true);
+  $('#sdpSub').hidden=false;
+  $$('#sdpSub .subp').forEach(p=>p.hidden=p.dataset.sub!==name);
+  $('#subT').textContent=title;
+  $('#sback').style.display='none';
+  $('#sc').scrollTo(0,0);
+}
+function closeSub(){
+  if(curSub===null)return;
+  curSub=null;
+  $('#sdpSub').hidden=true;
+  $('#sback').style.display='';
+  $$('.sdp').forEach((p,k)=>p.hidden=k!==curSdp);
+  $('#dt').textContent=SD[curSdp];
+}
+
+/* 体检页：手机端主列表 / 文字记录二级页 */
+function examReset(){
+  if(document.body.classList.contains('desktop'))return;
+  $('#examMain').style.display='flex';
+  $('#examSide').style.display='flex';
+  $('#examSub').style.display='none';
+}
+function examOpenText(){
+  if(document.body.classList.contains('desktop'))return;
+  $('#examMain').style.display='none';
+  $('#examSide').style.display='none';
+  $('#examSub').style.display='flex';
+  $('#sc').scrollTo(0,0);
+}
+
+/* 备份被删除的方案以便撤销 */
+let lastDeletedPlan = null;
+
+document.addEventListener('click',e=>{
+  /* 体检页：文字记录入口 / 二级页返回 */
+  if(e.target.closest('#textEntry')){examOpenText();return;}
+  if(e.target.closest('#textBack')){examReset();return;}
+
+  /* 设置二级菜单入口 */
+  const subEntry=e.target.closest('.li[data-sub]');
+  if(subEntry){
+    const key=subEntry.dataset.sub;
+    const title=subEntry.querySelector('b').textContent.trim();
+    openSub(key,title);
+    return;
+  }
+  if(e.target.closest('#subBack')){closeSub();return;}
+
+  /* 设置导航点击 */
+  const r=e.target.closest('[data-sd]');
+  if(r){selectSettingTab(+r.dataset.sd);return;}
+  if(e.target.closest('#sback')){hub();return;}
+
+  /* HRT 模式切换 */
+  const hm=e.target.closest('#hrtMode .mode-btn');
+  if(hm){
+    $$('#hrtMode .mode-btn').forEach(x=>x.classList.toggle('on',x===hm));
+    snack('已切换为：'+hm.textContent);
+    return;
+  }
+
+  /* 删除用药方案按钮 */
+  const del=e.target.closest('.icon-del');
+  if(del){
+    const item=del.closest('.li');
+    lastDeletedPlan={el:item, parent:item.parentElement, next:item.nextElementSibling};
+    item.remove();
+    snack('已删除用药方案', ()=>{
+      if(lastDeletedPlan){
+        lastDeletedPlan.parent.insertBefore(lastDeletedPlan.el, lastDeletedPlan.next);
+        lastDeletedPlan=null;
+      }
+    });
+    return;
+  }
+
+  /* 新增用药方案 */
+  if(e.target.closest('#addPlanBtn')){
+    const list=$('#planList');
+    const div=document.createElement('div');
+    div.className='li';
+    div.innerHTML=`<span class="ic p"><svg class="i"><use href="#gel"/></svg></span><div class="t"><b>2.0</b><span class="s">雌二醇 (E2) · 凝胶 · 2.0mg · 20:00</span></div><div class="sw on"><i></i></div><button class="icon-del" title="删除方案"><svg class="i"><use href="#trash"/></svg></button>`;
+    list.appendChild(div);
+    snack('已添加新方案：雌二醇 2.0mg (20:00)');
+    return;
+  }
+
+  /* 清空校准长条按钮 */
+  if(e.target.closest('#clearCalibBtn')){
+    const calib=$('.subp[data-sub="calib"]');
+    const radios=[...calib.querySelectorAll('.rad')];
+    radios.forEach((r,i)=>r.classList.toggle('on',i===1));
+    $('.li[data-sub="calib"] .s').textContent='Hybrid-MIPD · ×0.40 · ±8%';
+    snack('已重置个人药代动力学拟合校准');
+    return;
+  }
+
+  /* 清空所有记录 */
+  if(e.target.closest('#clearAllBtn')){
+    snack('已清空本地记录（点击右侧可立即撤销恢复）');
+    return;
+  }
+
+  /* 关于列表项点击提示 */
+  const ab=e.target.closest('#aboutList .li');
+  if(ab && ab.dataset.msg){
+    snack(ab.dataset.msg);
+    return;
+  }
+
+  /* 开关、单选框、模型卡片、分段按钮交互 */
+  const w=e.target.closest('.sw');if(w){w.classList.toggle('on');return;}
+
+  const q=e.target.closest('.rad');
+  if(q){
+    [...q.parentElement.children].forEach(x=>x.classList.toggle('on',x===q));
+    const subp=q.closest('.subp');
+    if(subp){
+      const key=subp.dataset.sub;
+      const label=q.querySelector('b')?.textContent?.trim()||'';
+      const entry=$(`.li[data-sub="${key}"] .s`);
+      if(entry){
+        if(key==='calib') entry.textContent = label==='关闭' ? '关闭' : `${label} · ×0.40 · ±8%`;
+        else entry.textContent = label;
+      }
+    }
+    return;
+  }
+
+  const m=e.target.closest('.model');
+  if(m){
+    $$('.model').forEach(x=>x.classList.toggle('on',x===m));
+    const subp=m.closest('.subp');
+    if(subp && subp.dataset.sub==='pk'){
+      const label=m.querySelector('b').textContent.trim();
+      const entry=$('.li[data-sub="pk"] .s');
+      if(entry) entry.textContent=label;
+    }
+    return;
+  }
+
+  const g=e.target.closest('.cg:not(#rng) button');
+  if(g)g.parentElement.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===g));
+});
+
+/* ---- FAB 弹窗与抽屉交互 ---- */
+const ph=$('.phone'),HD='<div class="hd"></div>';
+let undoCallback = null;
+function snack(t, onUndo){
+  const n=$('#snack');
+  n.firstElementChild.textContent=t;
+  undoCallback = onUndo || null;
+  n.classList.add('show');
+  clearTimeout(snack.t);
+  snack.t=setTimeout(()=>n.classList.remove('show'),3200);
+}
+function openSheet(h,tall){
+  $('#sheet').innerHTML=h;
+  $('#sheet').classList.toggle('tall',!!tall);
+  $('#scrim').classList.add('on');
+  requestAnimationFrame(()=>requestAnimationFrame(()=>$('#sheet').classList.add('on')));
+}
+function closeSheet(){$('#sheet').classList.remove('on')}
+function toggleMenu(o){
+  const m=$('#fm');
+  if(o===undefined)o=!m.classList.contains('on');
+  m.classList.toggle('on',o);
+  $('#fab').classList.toggle('open',o);
+  $('#fab').innerHTML=o?'<svg class="i"><use href="#x"/></svg>':fabHTML(curP);
+  if(o)$('#scrim').classList.add('on');
+  else if(!$('#sheet').classList.contains('on'))$('#scrim').classList.remove('on');
+}
+function closeAll(){closeSheet();toggleMenu(false);$('#scrim').classList.remove('on')}
+
+const QR=HD+'<div class="hrow" style="margin-bottom:2px"><b style="font-size:20px">快捷记录</b><button class="btn x" data-m style="--mo:12px">管理模板</button></div><div class="sub" style="margin:0 0 10px">点一下就记录，时间是现在</div><div class="list bigic">'+[['雌二醇 (E2)','凝胶 · 3.30 mg','gel','p'],['雌二醇 (E2)','凝胶 · 2.60 mg','gel','p'],['醋酸环丙孕酮','CPA · 口服 · 12.50 mg','shield','am']].map(r=>`<div class="li" data-q="${r[0]} ${r[1].split(' · ').pop()}"><span class="ic ${r[3]}"><svg class="i"><use href="#${r[2]}"/></svg></span><div class="t"><b>${r[0]}</b><span class="s">${r[1]}</span></div><svg class="i"><use href="#plus"/></svg></div>`).join('')+'</div>';
+const MAN=HD+'<b style="font-size:20px">手动添加结果</b><div class="lab" style="margin-left:2px">激素</div><div class="cg" style="margin-top:6px"><button class="on">雌二醇</button><button>睾酮</button></div><div class="lab" style="margin-left:2px">数值</div><label class="fld"><input inputmode="decimal" placeholder="0.0"><span id="unit">pmol/l</span></label><div class="cg" style="margin-top:8px" id="units"><button class="on">pmol/l</button><button>pg/ml</button><button>nmol/l</button><button>ng/dl</button></div><div style="margin-top:16px"><button class="btn" id="msave" data-m style="--mo:14px;width:100%">保存</button></div>';
+const RT=[['sublingual','舌下','tongue'],['injection','注射','syr'],['patch','贴片','patch'],['peel','撕下','peel'],['gel','凝胶','gel'],['oral','口服','pill']],DRG={sublingual:['E2','EV'],injection:['EB','EV','EC','EN','EU'],patch:['E2'],peel:[],gel:['E2'],oral:['E2','EV','CPA']};
+let AS={rt:'gel',dr:'E2'};
+
+function addHTML(){
+  const d=DRG[AS.rt];
+  return '<div class="lab" style="margin-left:2px">用药方式</div><div class="rg">'+RT.map(r=>`<button class="rt${AS.rt===r[0]?' on':''}" data-rt="${r[0]}"><svg class="i"><use href="#${r[2]}"/></svg>${r[1]}</button>`).join('')+'</div>'+(d.length?'<div class="lab" style="margin-left:2px">药物</div><div class="chs">'+d.map(x=>`<button class="dc${AS.dr===x?' on':''}" data-dr="${x}">${x}</button>`).join('')+'</div>':'')+'<div class="lab" style="margin-left:2px">记录</div><div class="list"><div class="li"><span class="ic"><svg class="i"><use href="#clock"/></svg></span><div class="t"><b>给药时间</b><span class="s">现在</span></div><svg class="i"><use href="#chev"/></svg></div></div>'+(d.length?'<label class="fld"><input inputmode="decimal" placeholder="0.0"><span>mg</span></label>':'');
+}
+const SCAN='<div class="vf"><i class="c1"></i><i class="c2"></i><i class="c3"></i><i class="c4"></i><span>把化验单放进框里，保持光线明亮</span></div><div class="shut"><button class="btn t" id="gal" data-m style="--mo:14px">相册</button><button class="sh" id="shut" aria-label="拍摄"></button><span style="width:78px"></span></div>';
+
+function openFull(kind,src){
+  const o=$('#full');
+  o.classList.toggle('scan',kind==='scan');
+  $('#ft').textContent=kind==='scan'?'扫描化验单':'新增用药';
+  $('#fsave').style.display=kind==='scan'?'none':'';
+  $('#fb').innerHTML=kind==='scan'?SCAN:addHTML();
+  if(document.body.classList.contains('desktop')){
+    $('#scrim').classList.add('on');
+    o.style.clipPath='none';
+    o.classList.add('show','in');
+    return;
+  }
+  const b=ph.getBoundingClientRect(),r=src.getBoundingClientRect(),cs=getComputedStyle(src),L=b.left+ph.clientLeft,T=b.top+ph.clientTop,W=ph.clientWidth,H=ph.clientHeight;
+  o._from=`inset(${r.top-T}px ${W-(r.right-L)}px ${H-(r.bottom-T)}px ${r.left-L}px round ${Math.min(28,r.height/2)}px)`;
+  o.style.setProperty('--srcbg',cs.backgroundColor);
+  let g=o.querySelector('.ghost');if(!g){g=document.createElement('div');g.className='ghost';o.prepend(g)}
+  g.innerHTML=src.innerHTML;g.style.cssText=`left:${r.left-L}px;top:${r.top-T}px;width:${r.width}px;height:${r.height}px;color:${cs.color}`;
+  o.classList.remove('out','in');o.style.transition='none';o.style.clipPath=o._from;o.classList.add('show');
+  if(src.id==='fab')src.style.visibility='hidden';
+  void o.offsetWidth;o.style.transition='';
+  requestAnimationFrame(()=>{o.style.clipPath='inset(0px round 0px)';o.classList.add('in')});
+}
+function closeFull(){
+  const o=$('#full');
+  if(document.body.classList.contains('desktop')){
+    o.classList.remove('show','in','out');
+    $('#scrim').classList.remove('on');
+    return;
+  }
+  o.classList.add('out');o.classList.remove('in');o.style.clipPath=o._from;
+  setTimeout(()=>{o.classList.remove('show','out');$('#fab').style.visibility=''},520);
+}
+
+$('#fab').addEventListener('click',()=>{
+  if(curP===0)openSheet(QR);
+  else if(curP===1)openFull('add',$('#fab'));
+  else if(curP===2)toggleMenu();
+});
+$('#scrim').onclick=()=>{closeAll();closeFull();};
+
+document.addEventListener('click',e=>{
+  if(e.target.closest('.hd')){$('#sheet').classList.toggle('tall');return;}
+  const q=e.target.closest('[data-q]');if(q){closeAll();snack('已记录 '+q.dataset.q);return;}
+  const f=e.target.closest('[data-fm]');
+  if(f){
+    if(f.dataset.fm==='scan'){closeAll();openFull('scan',f);}
+    else{closeAll();openSheet(MAN);}
+    return;
+  }
+  if(e.target.closest('#msave')){closeAll();snack('已添加化验结果');return;}
+  const u=e.target.closest('#units button');if(u)$('#unit').textContent=u.textContent;
+  if(e.target.closest('#fclose')){closeFull();return;}
+  if(e.target.closest('#fsave')){closeFull();snack('已记录 '+(AS.dr&&DRG[AS.rt].length?'雌二醇 · '+RT.find(r=>r[0]===AS.rt)[1]:'撕下贴片'));return;}
+  if(e.target.closest('#shut')||e.target.closest('#gal')){closeFull();snack('已识别 2 项化验指标，请确认数值');return;}
+  const rt=e.target.closest('[data-rt]');
+  if(rt){AS.rt=rt.dataset.rt;if(!DRG[AS.rt].includes(AS.dr))AS.dr=DRG[AS.rt][0];$('#fb').innerHTML=addHTML();return;}
+  const dr=e.target.closest('[data-dr]');
+  if(dr){AS.dr=dr.dataset.dr;$('#fb').innerHTML=addHTML();return;}
+  if(e.target.closest('#snack button')){
+    if(undoCallback){undoCallback();undoCallback=null;}
+    $('#snack').classList.remove('show');
+  }
+});
+setTimeout(avatar,350);
+</script></body></html>

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Icon from './Icon';
-import FloatingToast from './ui/FloatingToast';
 import { RefreshCw, X } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { onUpdateReady, applyUpdate } from '../utils/swUpdate';
@@ -56,34 +55,28 @@ const UpdateNotice: React.FC = () => {
         );
     }
 
-    return (
-        <FloatingToast
-            open={ready && !dismissed}
-            edge="top"
-            icon={<Icon icon={RefreshCw} size={13} strokeWidth={2.5} />}
-            onDismiss={() => setDismissed(true)}
-            actions={
-                <>
-                    <button
-                        type="button"
-                        onClick={applyUpdate}
-                        className="shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold text-[var(--color-m3-primary)] transition-colors hover:bg-[var(--color-m3-primary)]/10"
-                    >
-                        {t('update.reload')}
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setDismissed(true)}
-                        aria-label={t('update.later')}
-                        className="mr-1 shrink-0 rounded-full p-1.5 text-[var(--color-m3-on-surface-variant)] transition-colors hover:bg-[var(--color-m3-surface-container)]"
-                    >
-                        <Icon icon={X} size={13} />
-                    </button>
-                </>
-            }
-        >
-            {t('update.ready')}
-        </FloatingToast>
+    // The prototype's snackbar: a dark pill at the bottom inline-start, above the
+    // navigation bar, with the action in the accent colour. It was still using the
+    // legacy M3 toast shell, which is what made the update prompt look like it came
+    // from a different app after the restyle.
+    return createPortal(
+        <div className={`snack${ready && !dismissed ? ' show' : ''}`} role="status" aria-live="polite">
+            <span className="min-w-0">{t('update.ready')}</span>
+            <span className="flex shrink-0 items-center gap-1">
+                <button type="button" onClick={applyUpdate}>
+                    {t('update.reload')}
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setDismissed(true)}
+                    aria-label={t('update.later')}
+                    style={{ color: 'inherit', padding: 6, lineHeight: 0 }}
+                >
+                    <Icon icon={X} size={14} />
+                </button>
+            </span>
+        </div>,
+        document.body,
     );
 };
 
@@ -160,7 +153,7 @@ const NativeUpdateCard: React.FC<{
             <div
                 role="status"
                 aria-live="polite"
-                className="w-full max-w-[24rem] rounded-[var(--radius-lg)] border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-container-highest)] p-4 shadow-[var(--shadow-m3-3)]"
+                className="w-full max-w-[24rem] rounded-[24px] border border-[var(--out)] bg-[var(--sch)] p-4 shadow-[0_12px_32px_rgba(0,0,0,0.35)]"
                 style={{
                     transform: entered ? 'none' : 'translateY(-18px) scale(0.97)',
                     opacity: entered ? 1 : 0,
@@ -168,27 +161,27 @@ const NativeUpdateCard: React.FC<{
                 }}
             >
                 <div className="flex items-start gap-3">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--color-m3-primary)] text-[var(--color-m3-on-primary)]">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--pri)] text-[var(--onpri)]">
                         <Icon icon={RefreshCw} size={14} strokeWidth={2.5} />
                     </span>
-                    <p className="min-w-0 flex-1 pt-0.5 text-sm font-semibold text-[var(--color-m3-on-surface)]">
+                    <p className="min-w-0 flex-1 pt-0.5 text-sm font-semibold text-[var(--on)]">
                         {t('update.native_ready').replace('{version}', update.version)}
                     </p>
                     <button
                         type="button"
                         onClick={onDismiss}
                         aria-label={t('update.later')}
-                        className="-mr-1 -mt-1 shrink-0 rounded-full p-1.5 text-[var(--color-m3-on-surface-variant)] transition-colors hover:bg-[var(--color-m3-surface-container)]"
+                        className="-mr-1 -mt-1 shrink-0 rounded-full p-1.5 text-[var(--var)] transition-colors hover:bg-[var(--sch)]"
                     >
                         <Icon icon={X} size={14} />
                     </button>
                 </div>
 
                 {(phase === 'idle') && notes.length > 0 && (
-                    <ul className="mt-3 space-y-1.5 ps-1 text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)]">
+                    <ul className="mt-3 space-y-1.5 ps-1 text-xs leading-relaxed text-[var(--var)]">
                         {notes.map((note, i) => (
                             <li key={i} className="flex gap-2">
-                                <span aria-hidden className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-[var(--color-m3-outline)]" />
+                                <span aria-hidden className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-[var(--out)]" />
                                 <span className="min-w-0">{note}</span>
                             </li>
                         ))}
@@ -199,19 +192,19 @@ const NativeUpdateCard: React.FC<{
                         type="button"
                         onClick={() => setExpanded(v => !v)}
                         aria-expanded={expanded}
-                        className="mt-2 ps-1 text-xs font-medium text-[var(--color-m3-primary)] transition-colors hover:underline"
+                        className="mt-2 ps-1 text-xs font-medium text-[var(--pri)] transition-colors hover:underline"
                     >
                         {expanded ? t('update.less') : t('update.more').replace('{n}', String(hidden))}
                     </button>
                 )}
 
                 {phase === 'permission' && (
-                    <p className="mt-3 text-xs leading-relaxed text-[var(--color-m3-on-surface-variant)]">
+                    <p className="mt-3 text-xs leading-relaxed text-[var(--var)]">
                         {t('update.perm_hint')}
                     </p>
                 )}
                 {phase === 'error' && (
-                    <p className="mt-3 text-xs leading-relaxed text-[var(--color-m3-error)]">
+                    <p className="mt-3 text-xs leading-relaxed text-[var(--err)]">
                         {t('update.failed')}
                     </p>
                 )}
@@ -219,9 +212,9 @@ const NativeUpdateCard: React.FC<{
                 {/* Determinate while downloading; an indeterminate filler bar while the
                     installer is coming up, so the button always shows it is working. */}
                 {(phase === 'downloading' || phase === 'installing') && (
-                    <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-[var(--color-m3-surface-container)]">
+                    <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-[var(--sch)]">
                         <div
-                            className={`h-full rounded-full bg-[var(--color-m3-primary)] ${phase === 'installing' ? 'w-full animate-pulse' : ''}`}
+                            className={`h-full rounded-full bg-[var(--pri)] ${phase === 'installing' ? 'w-full animate-pulse' : ''}`}
                             style={phase === 'installing' ? undefined : { width: `${pct}%` }}
                         />
                     </div>
@@ -231,7 +224,7 @@ const NativeUpdateCard: React.FC<{
                     type="button"
                     onClick={start}
                     disabled={busy}
-                    className="mt-4 w-full rounded-full bg-[var(--color-m3-primary)] px-4 py-2.5 text-sm font-semibold text-[var(--color-m3-on-primary)] transition-colors hover:brightness-105 disabled:opacity-70"
+                    className="mt-4 w-full rounded-full bg-[var(--pri)] px-4 py-2.5 text-sm font-semibold text-[var(--onpri)] transition-colors hover:brightness-105 disabled:opacity-70"
                 >
                     {label}
                 </button>
@@ -242,3 +235,5 @@ const NativeUpdateCard: React.FC<{
 };
 
 export default UpdateNotice;
+
+

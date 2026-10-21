@@ -4,8 +4,13 @@
  * The browser transport fires a reminder when a plan's due time passes without a
  * matching dose. With only in-memory memory of what it already showed, every page
  * reload re-fires the same reminder — the reported bug. This ledger records each
- * occurrence the moment it is about to be shown, keyed by plan id and the *due
- * instant*, so one occurrence is shown at most once for the life of the record.
+ * occurrence the moment it is about to be shown, keyed by the *drug* (compound +
+ * route) and the due instant, so one occurrence is shown at most once for the
+ * life of the record.
+ *
+ * Drug, not plan id: two plans for the same compound at the same time are one
+ * reminder to the person holding the phone, and keying by plan id rang it twice.
+ * The native scheduler and the server's push scan dedup on the same identity.
  *
  * Identity is the due instant, not the calendar day, so nothing needs clearing at a
  * day boundary: tomorrow's due time is simply a different key. The ledger is pruned

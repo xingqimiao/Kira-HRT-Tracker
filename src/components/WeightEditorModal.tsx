@@ -49,11 +49,11 @@ const WeightEditorModal = ({ isOpen, onClose, currentWeight, onSave }: any) => {
                                 inputMode="decimal"
                                 value={weightStr}
                                 onChange={(e) => setWeightStr(e.target.value)}
-                                className="input-num w-24 text-2xl font-medium text-body"
+                                className="wt-num"
                                 placeholder="0.0"
                                 autoFocus
                             />
-                            <span className="text-sm text-muted pb-1">kg</span>
+                            <span className="text-sm text-muted pb-2">kg</span>
                         </div>
                     </div>
 

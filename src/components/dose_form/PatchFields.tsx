@@ -1,91 +1,70 @@
 import React from 'react';
 import { useTranslation } from '../../contexts/LanguageContext';
-import { Route } from '../../../logic';
-import { FieldRow, ChipRow } from './FormControls';
-import { FieldIcon } from '../compoundIcons';
+import { Icon } from '../../ui/SvgDefs';
 
 interface PatchFieldsProps {
-    patchMode: "dose" | "rate";
-    setPatchMode: (val: "dose" | "rate") => void;
-    patchRate: string;
-    setPatchRate: (val: string) => void;
-    rawDose: string;
-    onRawChange: (val: string) => void;
+    patchMode: 'dose' | 'rate';
+    setPatchMode: (val: 'dose' | 'rate') => void;
     patchWearDays: string;
     setPatchWearDays: (val: string) => void;
-    route: Route;
 }
 
-// Common transdermal E2 patch nominal release rates (µg/day).
-const RATE_PRESETS = ['25', '37.5', '50', '75', '100'];
-// Common wear schedules, in days. Index 2 points past the presets at "until removed".
 const WEAR_PRESETS = ['3.5', '7'];
 
+/**
+ * Patch-specific plan fields, in the same `.list` / `.li` / `.cg-inner`
+ * vocabulary as the add-dose panel. The old `FieldRow` / `ChipRow` controls were
+ * a second visual system; the plan editor now shares the record editor's rows.
+ */
 const PatchFields: React.FC<PatchFieldsProps> = ({
-    patchMode, setPatchMode, patchRate, setPatchRate,
-    rawDose, onRawChange, patchWearDays, setPatchWearDays,
+    patchMode,
+    setPatchMode,
+    patchWearDays,
+    setPatchWearDays,
 }) => {
     const { t } = useTranslation();
-    const rateIdx = RATE_PRESETS.indexOf(patchRate);
-    const wearIdx = patchWearDays.trim() === '' ? WEAR_PRESETS.length : WEAR_PRESETS.indexOf(patchWearDays);
 
     return (
-        <div className="space-y-2.5">
-            <FieldRow icon={FieldIcon.weight} label={t('field.patch_mode')}>
-                <ChipRow options={[t('field.patch_rate'), t('field.patch_total')]} value={patchMode === 'rate' ? 0 : 1} onChange={(i) => setPatchMode(i ? 'dose' : 'rate')} />
-            </FieldRow>
-
-            {patchMode === 'rate' ? (
-                <FieldRow icon={FieldIcon.gauge} label={t('field.patch_rate')} delay={1}>
-                    <div className="flex items-center gap-2">
-                        <input
-                            type="number" inputMode="decimal" min="0" step="1"
-                            value={patchRate} onChange={(e) => setPatchRate(e.target.value)}
-                            placeholder={t('patch.rate_placeholder')}
-                            className="hrt-num"
-                            style={{ fontSize: '16px' }}
-                        />
-                        <span className="text-xs text-[var(--color-m3-on-surface-variant)] shrink-0">µg/d</span>
+        <div className="list">
+            <div className="li col-li">
+                <div className="li-row">
+                    <div className="ic p"><Icon id="patch" /></div>
+                    <div className="tx">
+                        <div className="t">{t('m3e.field.patch_mode')}</div>
+                        <div className="s">{t('m3e.field.patch_mode_desc')}</div>
                     </div>
-                    <div className="mt-2"><ChipRow options={RATE_PRESETS} value={rateIdx} onChange={(i) => setPatchRate(RATE_PRESETS[i])} /></div>
-                </FieldRow>
-            ) : (
-                <FieldRow icon={FieldIcon.drop} label={t('field.patch_total')} delay={1}>
-                    <div className="flex items-center gap-2">
-                        <input
-                            type="number" inputMode="decimal" min="0" step="0.001"
-                            value={rawDose} onChange={(e) => onRawChange(e.target.value)}
-                            placeholder="0.0"
-                            className="hrt-num"
-                            style={{ fontSize: '16px' }}
-                        />
-                        <span className="text-xs text-[var(--color-m3-on-surface-variant)] shrink-0">mg</span>
-                    </div>
-                </FieldRow>
-            )}
+                </div>
+                <div className="cg-inner">
+                    <button type="button" className={patchMode === 'rate' ? 'on' : ''} onClick={() => setPatchMode('rate')}>
+                        {t('m3e.field.patch_rate')}
+                    </button>
+                    <button type="button" className={patchMode === 'dose' ? 'on' : ''} onClick={() => setPatchMode('dose')}>
+                        {t('m3e.field.patch_total')}
+                    </button>
+                </div>
+            </div>
 
-            {/* Wear duration — applies to both modes. Empty means the patch stays on
-                until a separate "remove" event is logged. */}
-            <FieldRow icon={FieldIcon.cal} label={t('field.patch_wear')} delay={2}>
-                <div className="flex items-center gap-2">
-                    <input
-                        type="number" inputMode="decimal" min="0" step="0.5"
-                        value={patchWearDays} onChange={(e) => setPatchWearDays(e.target.value)}
-                        placeholder={t('field.patch_wear_placeholder')}
-                        className="hrt-num"
-                        style={{ fontSize: '16px' }}
-                    />
-                    <span className="text-xs text-[var(--color-m3-on-surface-variant)] shrink-0">{t('unit.day_short')}</span>
+            <div className="li col-li">
+                <div className="li-row">
+                    <div className="ic"><Icon id="clock" /></div>
+                    <div className="tx">
+                        <div className="t">{t('m3e.field.patch_wear')}</div>
+                        <div className="s">{t('m3e.field.patch_wear_desc')}</div>
+                    </div>
                 </div>
-                <div className="mt-2">
-                    <ChipRow
-                        options={[...WEAR_PRESETS.map((d) => `${d} ${t('unit.day_short')}`), t('field.patch_until_removed')]}
-                        value={wearIdx}
-                        onChange={(i) => setPatchWearDays(i < WEAR_PRESETS.length ? WEAR_PRESETS[i] : '')}
-                    />
+                <div className="cg-inner">
+                    {[...WEAR_PRESETS, ''].map(value => (
+                        <button
+                            type="button"
+                            key={value || 'until'}
+                            className={patchWearDays === value ? 'on' : ''}
+                            onClick={() => setPatchWearDays(value)}
+                        >
+                            {value ? `${value} ${t('unit.day_short')}` : t('m3e.field.patch_until')}
+                        </button>
+                    ))}
                 </div>
-                <p className="text-xs text-[var(--color-m3-on-surface-variant)] mt-1.5">{t('field.patch_wear_hint')}</p>
-            </FieldRow>
+            </div>
         </div>
     );
 };

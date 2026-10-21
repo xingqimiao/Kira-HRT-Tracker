@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { DoseEvent, Route, Ester, SimulationResult, runSimulation, interpolateConcentration_E2, interpolateConcentration_T, LabResult, computeCalibration, CalibrationMethod, CalibrationHistoryMode, normalizeCalibrationMethod, AntiandrogenChartMode, normalizeAntiandrogenChartMode, isTestosteroneEster, isAntiandrogen, isT_LabUnit, PKCustomParams, applyPKOverrides, sanitizePKParams, isPlausibleBodyWeightKG,
+import { DoseEvent, Route, Ester, SimulationResult, runSimulation, interpolateConcentration_E2, interpolateConcentration_T, LabResult, computeCalibration, CalibrationMethod, CalibrationHistoryMode, normalizeCalibrationMethod, AntiandrogenChartMode, normalizeAntiandrogenChartMode, isTestosteroneEster, isEstradiolEster, isAntiandrogen, isT_LabUnit, PKCustomParams, applyPKOverrides, sanitizePKParams, isPlausibleBodyWeightKG,
          RecheckIntervals, normalizeRecheckIntervals,
          OcrModelTier, normalizeOcrModelTier,
          PkEngineId, normalizePkEngine, DEFAULT_PK_ENGINE,
@@ -87,6 +87,12 @@ function adoptSignedOutData(owner: string): void {
 export interface DoseTemplate {
     id: string;
     name: string;
+    /** Full capsule label for the M3E template strip (drug/custom + amount). */
+    label?: string;
+    /** The dose panel's UI drug id, when the template was saved from it. */
+    drugId?: string;
+    /** Panel mode that owns the template; absent on legacy rows. */
+    mode?: 'mtf' | 'ftm';
     route: Route;
     ester: Ester;
     doseMG: number;
@@ -234,7 +240,7 @@ export const useAppData = (
     const [events, setEvents] = useState<DoseEvent[]>(() => loadJSON(keyFor(mode, 'events'), [] as DoseEvent[]));
     const [weight, setWeightState] = useState<number>(() => {
         // Weight is shared across modes (a physical attribute of the person).
-        const saved = localStorage.getItem(sharedKey('weight'));
+        const saved = secureGet(sharedKey('weight'));
         return saved ? parseFloat(saved) : 70.0;
     });
     // Weight and the PK overrides are single values, not record sets, so sync
@@ -243,36 +249,36 @@ export const useAppData = (
     // the sync apply path use the raw setters so neither forges a fresh write.
     const setWeight = (w: number) => {
         setWeightState(w);
-        localStorage.setItem(sharedKey('weight-at'), String(Date.now()));
+        secureSet(sharedKey('weight-at'), String(Date.now()));
     };
     const [labResults, setLabResults] = useState<LabResult[]>(() => loadJSON(keyFor(mode, 'lab-results'), [] as LabResult[]));
     const [calibrationMethod, setCalibrationMethodState] = useState<CalibrationMethod>(() =>
         // Hybrid-MIPD is the default; legacy 'average'/'adaptive' values are migrated.
-        normalizeCalibrationMethod(localStorage.getItem(sharedKey('cal-method')))
+        normalizeCalibrationMethod(secureGet(sharedKey('cal-method')))
     );
     const setCalibrationMethod = (m: CalibrationMethod) => {
         setCalibrationMethodState(m);
-        localStorage.setItem(sharedKey('cal-method'), m);
+        secureSet(sharedKey('cal-method'), m);
         touchAppSettings();
     };
     const [calibrationHistoryMode, setCalibrationHistoryModeState] = useState<CalibrationHistoryMode>(() => {
-        const saved = localStorage.getItem(sharedKey('cal-history-mode'));
+        const saved = secureGet(sharedKey('cal-history-mode'));
         return saved === 'forward' ? 'forward' : 'retrospective';
     });
     const setCalibrationHistoryMode = (m: CalibrationHistoryMode) => {
         setCalibrationHistoryModeState(m);
-        localStorage.setItem(sharedKey('cal-history-mode'), m);
+        secureSet(sharedKey('cal-history-mode'), m);
         touchAppSettings();
     };
     // Which reading the Home card's anti-androgen column shows. Account-scoped and
     // synced exactly like the two calibration settings above: it is a display
     // preference, so it rides the settings bag rather than the records.
     const [aaChartMode, setAaChartModeState] = useState<AntiandrogenChartMode>(() =>
-        normalizeAntiandrogenChartMode(localStorage.getItem(sharedKey('aa-chart')))
+        normalizeAntiandrogenChartMode(secureGet(sharedKey('aa-chart')))
     );
     const setAaChartMode = (m: AntiandrogenChartMode) => {
         setAaChartModeState(m);
-        localStorage.setItem(sharedKey('aa-chart'), m);
+        secureSet(sharedKey('aa-chart'), m);
         touchAppSettings();
     };
     // The day the user's HRT began, as `YYYY-MM-DD`. A plain string setting like
@@ -280,13 +286,13 @@ export const useAppData = (
     // before there is any record to attach it to, and it has to reach the next
     // device with the account rather than staying in this browser.
     const [hrtStartDate, setHrtStartDateState] = useState<string>(() => {
-        const stored = normalizeHrtStartDate(localStorage.getItem(sharedKey('hrt-start')));
+        const stored = normalizeHrtStartDate(secureGet(sharedKey('hrt-start')));
         if (stored) return stored;
         if (owner !== LOCAL_OWNER) {
-            const guestVal = normalizeHrtStartDate(localStorage.getItem(nsFor(LOCAL_OWNER, 'hrt-start')));
+            const guestVal = normalizeHrtStartDate(secureGet(nsFor(LOCAL_OWNER, 'hrt-start')));
             if (guestVal) {
-                localStorage.setItem(sharedKey('hrt-start'), guestVal);
-                localStorage.removeItem(nsFor(LOCAL_OWNER, 'hrt-start'));
+                secureSet(sharedKey('hrt-start'), guestVal);
+                secureRemove(nsFor(LOCAL_OWNER, 'hrt-start'));
                 return guestVal;
             }
         }
@@ -295,8 +301,8 @@ export const useAppData = (
     const setHrtStartDate = (value: string) => {
         const normalized = normalizeHrtStartDate(value) ?? '';
         setHrtStartDateState(normalized);
-        if (normalized) localStorage.setItem(sharedKey('hrt-start'), normalized);
-        else localStorage.removeItem(sharedKey('hrt-start'));
+        if (normalized) secureSet(sharedKey('hrt-start'), normalized);
+        else secureRemove(sharedKey('hrt-start'));
         touchAppSettings();
     };
     // The re-check intervals, each individually adjustable in Settings. Stored as
@@ -309,19 +315,19 @@ export const useAppData = (
     const setRecheckIntervals = (next: RecheckIntervals) => {
         const normalized = normalizeRecheckIntervals(next);
         setRecheckIntervalsState(normalized);
-        try { localStorage.setItem(sharedKey('recheck-intervals'), JSON.stringify(normalized)); } catch { /* private mode */ }
+        try { secureSet(sharedKey('recheck-intervals'), JSON.stringify(normalized)); } catch { /* private mode */ }
         touchAppSettings();
     };
     // Which OCR model tier the scan uses. A preference like the intervals, so it
     // rides the settings bag; the models themselves are fetched only when a scan or
     // a retry actually needs them, never at app start.
     const [ocrModelTier, setOcrModelTierState] = useState<OcrModelTier>(() =>
-        normalizeOcrModelTier(localStorage.getItem(sharedKey('ocr-model-tier')))
+        normalizeOcrModelTier(secureGet(sharedKey('ocr-model-tier')))
     );
     const setOcrModelTier = (tier: OcrModelTier) => {
         const normalized = normalizeOcrModelTier(tier);
         setOcrModelTierState(normalized);
-        try { localStorage.setItem(sharedKey('ocr-model-tier'), normalized); } catch { /* private mode */ }
+        try { secureSet(sharedKey('ocr-model-tier'), normalized); } catch { /* private mode */ }
         touchAppSettings();
     };
 
@@ -335,12 +341,12 @@ export const useAppData = (
      * cannot serve at all (no testosterone model) — see `chooseEngine`.
      */
     const [pkEngine, setPkEngineState] = useState<PkEngineId>(() =>
-        normalizePkEngine(localStorage.getItem(sharedKey('pk-engine')))
+        normalizePkEngine(secureGet(sharedKey('pk-engine')))
     );
     const setPkEngine = (id: PkEngineId) => {
         const normalized = normalizePkEngine(id);
         setPkEngineState(normalized);
-        try { localStorage.setItem(sharedKey('pk-engine'), normalized); } catch { /* private mode */ }
+        try { secureSet(sharedKey('pk-engine'), normalized); } catch { /* private mode */ }
         touchAppSettings();
     };
 
@@ -387,7 +393,7 @@ export const useAppData = (
         // commit cannot lose the first.
         const next = { ...loadJSON(sharedKey('recheck-dismissed'), {} as Record<string, string>), [kind]: due };
         setDismissedRechecksState(next);
-        try { localStorage.setItem(sharedKey('recheck-dismissed'), JSON.stringify(next)); } catch { /* private mode */ }
+        try { secureSet(sharedKey('recheck-dismissed'), JSON.stringify(next)); } catch { /* private mode */ }
     };
     /**
      * A milestone the account page should celebrate this visit, as
@@ -427,8 +433,8 @@ export const useAppData = (
         const key = sharedKey('hrt-milestone');
         // Unreadable storage is treated as "not shown yet": the alternative is
         // swallowing a celebration because a write once threw.
-        try { if (localStorage.getItem(key) === `${today}:${milestone}`) return ''; } catch { /* see above */ }
-        try { localStorage.setItem(key, `${today}:${milestone}`); } catch { /* see above */ }
+        try { if (secureGet(key) === `${today}:${milestone}`) return ''; } catch { /* see above */ }
+        try { secureSet(key, `${today}:${milestone}`); } catch { /* see above */ }
         return `${days}:${milestone}`;
     });
 
@@ -471,8 +477,8 @@ export const useAppData = (
         if (!isThirdDayStreak(days, today)) return;
         // Claim it in storage before showing: a reload mid-notice must not replay it.
         const key = sharedKey('streak3');
-        try { if (localStorage.getItem(key) === 'shown') { streakArmedRef.current = true; return; } } catch { /* private mode */ }
-        try { localStorage.setItem(key, 'shown'); } catch { /* private mode */ }
+        try { if (secureGet(key) === 'shown') { streakArmedRef.current = true; return; } } catch { /* private mode */ }
+        try { secureSet(key, 'shown'); } catch { /* private mode */ }
         streakArmedRef.current = true;
         setShowStreakNotice(true);
     }, [events]);
@@ -484,7 +490,7 @@ export const useAppData = (
     // tombstones and a real merge path (see "journal" in syncMerge.ts).
     const [journal, setJournal] = useState<JournalEntry[]>(() => loadJSON(keyFor(mode, 'journal'), [] as JournalEntry[]));
     const [pkParams, setPkParamsState] = useState<PKCustomParams | null>(() => {
-        const saved = localStorage.getItem(sharedKey('pk-params'));
+        const saved = secureGet(sharedKey('pk-params'));
         if (!saved) return null;
         try {
             const parsed = sanitizePKParams(JSON.parse(saved));
@@ -529,15 +535,15 @@ export const useAppData = (
         setQuickDoses(loadJSON(keyFor(mode, 'quick-doses'), [] as QuickDose[]));
         setJournal(loadJSON(keyFor(mode, 'journal'), [] as JournalEntry[]));
         // Mode-independent, but still per-account, so they reload on the same beat.
-        const savedWeight = localStorage.getItem(sharedKey('weight'));
+        const savedWeight = secureGet(sharedKey('weight'));
         setWeightState(savedWeight ? parseFloat(savedWeight) : 70.0);
-        setCalibrationMethodState(normalizeCalibrationMethod(localStorage.getItem(sharedKey('cal-method'))));
-        setCalibrationHistoryModeState(localStorage.getItem(sharedKey('cal-history-mode')) === 'forward' ? 'forward' : 'retrospective');
-        setAaChartModeState(normalizeAntiandrogenChartMode(localStorage.getItem(sharedKey('aa-chart'))));
-        setHrtStartDateState(normalizeHrtStartDate(localStorage.getItem(sharedKey('hrt-start'))) ?? '');
+        setCalibrationMethodState(normalizeCalibrationMethod(secureGet(sharedKey('cal-method'))));
+        setCalibrationHistoryModeState(secureGet(sharedKey('cal-history-mode')) === 'forward' ? 'forward' : 'retrospective');
+        setAaChartModeState(normalizeAntiandrogenChartMode(secureGet(sharedKey('aa-chart'))));
+        setHrtStartDateState(normalizeHrtStartDate(secureGet(sharedKey('hrt-start'))) ?? '');
         setRecheckIntervalsState(normalizeRecheckIntervals(loadJSON<unknown>(sharedKey('recheck-intervals'), null)));
-        setOcrModelTierState(normalizeOcrModelTier(localStorage.getItem(sharedKey('ocr-model-tier'))));
-        setPkEngineState(normalizePkEngine(localStorage.getItem(sharedKey('pk-engine'))));
+        setOcrModelTierState(normalizeOcrModelTier(secureGet(sharedKey('ocr-model-tier'))));
+        setPkEngineState(normalizePkEngine(secureGet(sharedKey('pk-engine'))));
         setDismissedRechecksState(loadJSON(sharedKey('recheck-dismissed'), {} as Record<string, string>));
         setPkParamsState(sanitizePKParams(loadJSON<unknown>(sharedKey('pk-params'), null)));
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -576,7 +582,7 @@ export const useAppData = (
     }, [events, scope]);
     useEffect(() => {
         if (loadedScopeRef.current !== scope) return;
-        localStorage.setItem(sharedKey('weight'), weight.toString());
+        secureSet(sharedKey('weight'), weight.toString());
     }, [weight, scope]);
     useEffect(() => {
         // The override is applied unconditionally — the simulation must track
@@ -586,9 +592,9 @@ export const useAppData = (
         applyPKOverrides(pkParams);
         if (loadedScopeRef.current !== scope) return;
         if (pkParams) {
-            localStorage.setItem(sharedKey('pk-params'), JSON.stringify(pkParams));
+            secureSet(sharedKey('pk-params'), JSON.stringify(pkParams));
         } else {
-            localStorage.removeItem(sharedKey('pk-params'));
+            secureRemove(sharedKey('pk-params'));
         }
     }, [pkParams, scope]);
     useEffect(() => {
@@ -724,30 +730,83 @@ export const useAppData = (
         return groups;
     }, [events, lang]);
 
+    // Pharmacological active duration for injected esters (hours):
+    // EB: ~5d, EV: ~12d, EC/EN/TC/TE: ~21d, EU: ~60d, TU (Nebido): ~84d.
+    const getEsterActiveHours = (ester: Ester): number => {
+        switch (ester) {
+            case Ester.EB: return 24 * 5;
+            case Ester.EV: return 24 * 12;
+            case Ester.EC:
+            case Ester.EN:
+            case Ester.TC:
+            case Ester.TE: return 24 * 21;
+            case Ester.EU: return 24 * 60;
+            case Ester.TU: return 24 * 84;
+            default: return 24 * 14;
+        }
+    };
+
+    // Route detection: strictly determined by actual recent logged doses (events only, ignoring medPlan).
+    // An injection regimen is active if:
+    // 1) The most recent logged hormone dose was an injection (regimen of record); or
+    // 2) An injection dose occurred within that specific ester's physiological depot lifespan.
+    const isInjectionRegimen = useMemo(() => {
+        const nowH = Date.now() / 3600000;
+        const relevantEvents = events
+            .filter(e => e.route !== Route.patchRemove && (!isTransmasc ? isEstradiolEster(e.ester) : isTestosteroneEster(e.ester)))
+            .sort((a, b) => b.timeH - a.timeH);
+        if (relevantEvents.length === 0) return false;
+
+        // 1. Most recent active hormone dose was an injection
+        if (relevantEvents[0].route === Route.injection) return true;
+
+        // 2. Or a depot injection is still active within its pharmacological lifespan
+        return relevantEvents.some(e => {
+            if (e.route !== Route.injection) return false;
+            return (nowH - e.timeH) <= getEsterActiveHours(e.ester);
+        });
+    }, [events, isTransmasc]);
+
     const currentStatus = useMemo(() => {
         if (isTransmasc) {
-            // Transmasc: total T status bands (ng/dL). Reference: male range 300–1000 ng/dL.
+            // Transmasc: total T status bands (ng/dL). Reference: male physiological range 300–1000 ng/dL.
             if (currentT > 0) {
                 const c = currentT;
-                if (c > 1000) return { label: 'status.level.t_high',    color: 'text-cos-warning', bg: 'bg-cos-warning-container',  border: 'border-cos-warning' };
-                if (c >= 600) return { label: 'status.level.t_upper',   color: 'text-cos-success', bg: 'bg-cos-success-container', border: 'border-cos-success' };
-                if (c >= 300) return { label: 'status.level.t_male',    color: 'text-cos-success', bg: 'bg-cos-success-container', border: 'border-cos-success' };
-                if (c >= 100) return { label: 'status.level.t_subtarget', color: 'text-cos-accent', bg: 'bg-indigo-50', border: 'border-indigo-200' };
-                return { label: 'status.level.t_low', color: 'text-cos-on-surface-variant', bg: 'bg-cos-surface-container', border: 'border-cos-outline' };
+                if (c > 1100) return { label: 'status.level.t_high',      tone: 'err' as const,  color: 'text-cos-warning', bg: 'bg-cos-warning-container', border: 'border-cos-warning' };
+                if (c >= 700)  return { label: 'status.level.t_upper',     tone: 'ok' as const,   color: 'text-cos-success', bg: 'bg-cos-success-container', border: 'border-cos-success' };
+                if (c >= 350)  return { label: 'status.level.t_male',      tone: 'ok' as const,   color: 'text-cos-success', bg: 'bg-cos-success-container', border: 'border-cos-success' };
+                if (c >= 200)  return { label: 'status.level.t_subtarget', tone: 'warn' as const, color: 'text-cos-accent',  bg: 'bg-indigo-50',           border: 'border-indigo-200' };
+                return { label: 'status.level.t_low', tone: 'err' as const, color: 'text-cos-on-surface-variant', bg: 'bg-cos-surface-container', border: 'border-cos-outline' };
             }
             return null;
         }
         if (currentLevel > 0) {
             const conc = currentLevel;
-            if (conc > 300) return { label: 'status.level.high', color: 'text-cos-warning', bg: 'bg-cos-warning-container', border: 'border-cos-warning' };
-            if (conc >= 100 && conc <= 200) return { label: 'status.level.mtf', color: 'text-cos-success', bg: 'bg-cos-success-container', border: 'border-cos-success' };
-            if (conc >= 70 && conc <= 300) return { label: 'status.level.luteal', color: 'text-cos-accent', bg: 'bg-blue-50', border: 'border-blue-200' };
-            if (conc >= 30 && conc < 70) return { label: 'status.level.follicular', color: 'text-cos-accent', bg: 'bg-indigo-50', border: 'border-indigo-200' };
-            if (conc >= 8 && conc < 30) return { label: 'status.level.male', color: 'text-cos-on-surface-variant', bg: 'bg-cos-surface-container', border: 'border-cos-outline' };
-            return { label: 'status.level.low', color: 'text-cos-warning', bg: 'bg-cos-warning-container', border: 'border-cos-warning' };
+
+            // Route-specific clinical interpretation:
+            // Injections exhibit pronounced peak-to-trough pharmacokinetics where mid-cycle levels of
+            // 200-400 pg/mL are physiologically optimal, while oral/transdermal regimens maintain steady 100-250 pg/mL.
+            if (isInjectionRegimen) {
+                if (conc > 550) return { label: 'status.level.inj_high',   tone: 'err' as const,  color: 'text-cos-warning', bg: 'bg-cos-warning-container', border: 'border-cos-warning' };
+                if (conc > 400) return { label: 'status.level.inj_peak',   tone: 'ok' as const,   color: 'text-cos-success', bg: 'bg-cos-success-container', border: 'border-cos-success' };
+                if (conc >= 200) return { label: 'status.level.inj_target', tone: 'ok' as const,   color: 'text-cos-success', bg: 'bg-cos-success-container', border: 'border-cos-success' };
+                if (conc >= 100) return { label: 'status.level.inj_trough', tone: 'ok' as const,   color: 'text-cos-success', bg: 'bg-cos-success-container', border: 'border-cos-success' };
+                if (conc >= 50)  return { label: 'status.level.subtarget',  tone: 'warn' as const, color: 'text-cos-accent',  bg: 'bg-indigo-50',           border: 'border-indigo-200' };
+                return { label: 'status.level.low', tone: 'err' as const, color: 'text-cos-warning', bg: 'bg-cos-warning-container', border: 'border-cos-warning' };
+            }
+
+            // Non-injection (oral, sublingual, gel, patch):
+            // Endocrine Society guideline target: 100-200 pg/mL (safe upper margin up to 250 pg/mL).
+            // 250-350 pg/mL is physiologically elevated (approaching ovulatory peak), not standard target.
+            if (conc > 350) return { label: 'status.level.high',      tone: 'err' as const,  color: 'text-cos-warning', bg: 'bg-cos-warning-container', border: 'border-cos-warning' };
+            if (conc > 250) return { label: 'status.level.upper',     tone: 'warn' as const, color: 'text-cos-accent',  bg: 'bg-indigo-50',           border: 'border-indigo-200' };
+            if (conc >= 100) return { label: 'status.level.mtf',       tone: 'ok' as const,   color: 'text-cos-success', bg: 'bg-cos-success-container', border: 'border-cos-success' };
+            if (conc >= 50)  return { label: 'status.level.subtarget', tone: 'warn' as const, color: 'text-cos-accent',  bg: 'bg-blue-50',             border: 'border-blue-200' };
+            if (conc >= 10)  return { label: 'status.level.male',      tone: 'mute' as const, color: 'text-cos-on-surface-variant', bg: 'bg-cos-surface-container', border: 'border-cos-outline' };
+            return { label: 'status.level.low', tone: 'err' as const, color: 'text-cos-warning', bg: 'bg-cos-warning-container', border: 'border-cos-warning' };
         }
         return null;
-    }, [currentLevel, currentT, isTransmasc]);
+    }, [currentLevel, currentT, isTransmasc, isInjectionRegimen]);
 
 
     // --- Actions ---
@@ -848,7 +907,7 @@ export const useAppData = (
         setQuickDoses(prev => prev.filter(d => d.id !== id));
     };
 
-    const touchPkParams = () => localStorage.setItem(sharedKey('pk-params-at'), String(Date.now()));
+    const touchPkParams = () => secureSet(sharedKey('pk-params-at'), String(Date.now()));
     const setPkParams = (params: PKCustomParams) => { touchPkParams(); setPkParamsState(params); };
     const clearPkParams = () => { touchPkParams(); setPkParamsState(null); };
     const resetPkParams = () => {
@@ -1050,7 +1109,7 @@ export const useAppData = (
                         if (Array.isArray(block.doseTemplates)) { newTemplates = tmps; replaced.doseTemplates = true; }
                         if (Array.isArray(block.journal)) { newJournal = sanitizeJournalEntries(block.journal); replaced.journal = true; }
                     } else {
-                        // Write other mode's data straight to localStorage.
+                        // Write the other mode's data through the secure store.
                         // Restored records are restamped with the import time, so the
                         // merge can tell them from a copy that merely predates its own
                         // deletion — see `reconcileReplacement`.
@@ -1155,7 +1214,7 @@ export const useAppData = (
                     const existing = loadJSON<DoseEvent[]>(keyFor(otherMode, 'events'), []);
                     const existingIds = new Set(existing.map(x => x.id));
                     forgetDeletions('events', otherEvs.map(e => e.id), otherMode);
-                    localStorage.setItem(
+                    secureSet(
                         keyFor(otherMode, 'events'),
                         JSON.stringify([...existing, ...otherEvs.filter(e => !existingIds.has(e.id))])
                     );
@@ -1171,7 +1230,7 @@ export const useAppData = (
                     const existing = loadJSON<LabResult[]>(keyFor(otherMode, 'lab-results'), []);
                     const existingIds = new Set(existing.map(x => x.id));
                     forgetDeletions('labResults', otherLs.map(l => l.id), otherMode);
-                    localStorage.setItem(
+                    secureSet(
                         keyFor(otherMode, 'lab-results'),
                         JSON.stringify([...existing, ...otherLs.filter(l => !existingIds.has(l.id))])
                     );
@@ -1427,7 +1486,7 @@ export const useAppData = (
             // Last-write stamps for the two values sync can't merge per record.
             // Missing on payloads written before sync existed, which is exactly
             // how they should lose to a stamped one.
-            weightUpdatedAt: Number(localStorage.getItem(sharedKey('weight-at'))) || undefined,
+            weightUpdatedAt: Number(secureGet(sharedKey('weight-at'))) || undefined,
             modes,
             // Flat v1-compatible fields mirror the currently active mode.
             events,
@@ -1437,7 +1496,7 @@ export const useAppData = (
             // them — omitting the key would read as "this payload says nothing
             // about PK params", and the cleared state would never propagate.
             pkParams: pkParams ?? null,
-            pkParamsUpdatedAt: Number(localStorage.getItem(sharedKey('pk-params-at'))) || undefined,
+            pkParamsUpdatedAt: Number(secureGet(sharedKey('pk-params-at'))) || undefined,
             // The medication plan (用药方案) as a synced scalar, next to weight and PK
             // overrides. It lives in its own key (see medPlan.ts) rather than an
             // account-scoped one, so it is read here verbatim; the stamp makes the
@@ -1539,44 +1598,44 @@ export const useAppData = (
             if (calMethod) {
                 const normalized = normalizeCalibrationMethod(calMethod);
                 setCalibrationMethodState(normalized);
-                localStorage.setItem(sharedKey('cal-method'), normalized);
+                secureSet(sharedKey('cal-method'), normalized);
             }
             if (calHistoryMode) {
                 const normalized: CalibrationHistoryMode = calHistoryMode === 'forward' ? 'forward' : 'retrospective';
                 setCalibrationHistoryModeState(normalized);
-                localStorage.setItem(sharedKey('cal-history-mode'), normalized);
+                secureSet(sharedKey('cal-history-mode'), normalized);
             }
             if (aaChartMode) {
                 const normalized = normalizeAntiandrogenChartMode(aaChartMode);
                 setAaChartModeState(normalized);
-                localStorage.setItem(sharedKey('aa-chart'), normalized);
+                secureSet(sharedKey('aa-chart'), normalized);
             }
             // Set on the raw setter, not `setRecheckIntervals`: adopting the
             // account's value must not stamp it as this device's edit.
             if (recheckIntervals !== undefined) {
                 const normalized = normalizeRecheckIntervals(recheckIntervals);
                 setRecheckIntervalsState(normalized);
-                try { localStorage.setItem(sharedKey('recheck-intervals'), JSON.stringify(normalized)); } catch { /* private mode */ }
+                try { secureSet(sharedKey('recheck-intervals'), JSON.stringify(normalized)); } catch { /* private mode */ }
             }
             if (ocrModelTier !== undefined) {
                 const normalized = normalizeOcrModelTier(ocrModelTier);
                 setOcrModelTierState(normalized);
-                try { localStorage.setItem(sharedKey('ocr-model-tier'), normalized); } catch { /* private mode */ }
+                try { secureSet(sharedKey('ocr-model-tier'), normalized); } catch { /* private mode */ }
             }
             // Raw setter again: the engine choice follows the account, so adopting it
             // must not look like this device's own edit and bounce back.
             if (syncedPkEngine !== undefined) {
                 const normalized = normalizePkEngine(syncedPkEngine);
                 setPkEngineState(normalized);
-                try { localStorage.setItem(sharedKey('pk-engine'), normalized); } catch { /* private mode */ }
+                try { secureSet(sharedKey('pk-engine'), normalized); } catch { /* private mode */ }
             }
             // Set on the raw setters, not `setHrtStartDate`: adopting the
             // account's value must not stamp it as this device's edit.
             if (hrtStartDate !== undefined) {
                 const normalized = normalizeHrtStartDate(hrtStartDate) ?? '';
                 setHrtStartDateState(normalized);
-                if (normalized) localStorage.setItem(sharedKey('hrt-start'), normalized);
-                else localStorage.removeItem(sharedKey('hrt-start'));
+                if (normalized) secureSet(sharedKey('hrt-start'), normalized);
+                else secureRemove(sharedKey('hrt-start'));
             }
         }
 
@@ -1585,15 +1644,15 @@ export const useAppData = (
         // and let a stale value beat a newer one on the next round.
         if (state.weight !== undefined && isPlausibleBodyWeightKG(state.weight)) {
             setWeightState(state.weight);
-            localStorage.setItem(sharedKey('weight'), String(state.weight));
-            if (state.weightUpdatedAt > 0) localStorage.setItem(sharedKey('weight-at'), String(state.weightUpdatedAt));
+            secureSet(sharedKey('weight'), String(state.weight));
+            if (state.weightUpdatedAt > 0) secureSet(sharedKey('weight-at'), String(state.weightUpdatedAt));
         }
         if (state.pkParams !== undefined) {
             const next = sanitizePKParams(state.pkParams);
             setPkParamsState(next);
-            if (next) localStorage.setItem(sharedKey('pk-params'), JSON.stringify(next));
-            else localStorage.removeItem(sharedKey('pk-params'));
-            if (state.pkParamsUpdatedAt > 0) localStorage.setItem(sharedKey('pk-params-at'), String(state.pkParamsUpdatedAt));
+            if (next) secureSet(sharedKey('pk-params'), JSON.stringify(next));
+            else secureRemove(sharedKey('pk-params'));
+            if (state.pkParamsUpdatedAt > 0) secureSet(sharedKey('pk-params-at'), String(state.pkParamsUpdatedAt));
         }
         // The plan's own stamp travels with it, so adopting the account's copy is not
         // restamped as a fresh local edit — see `writeMedPlans`.

@@ -100,18 +100,19 @@ check('Featherline is recognised from its magic bytes, not from text', () => {
 
 // ── Conversion ───────────────────────────────────────────────────────────────
 
-check('Transmtf conversion drops gelProducts and reports the count', () => {
-    const { payload, skipped } = convertForeignPayload(
+check('Transmtf conversion hands the gel catalogue back beside the payload', () => {
+    const { payload, gelProducts } = convertForeignPayload(
         { weight: 60, events: [{ timeH: 1 }], labResults: [], gelProducts: [{ id: 1000 }, { id: 1001 }] },
         'transmtf',
     )
-    assert.equal(skipped.gelProducts, 2)
-    assert.ok(!('gelProducts' in payload), 'the catalogue must not reach the reader')
+    assert.equal(gelProducts.length, 2, 'the catalogue is returned, not dropped')
+    assert.ok(!('gelProducts' in payload), 'but it must not reach the record reader')
     assert.ok('events' in payload && 'weight' in payload, 'everything else is kept')
 })
 
-check('Transmtf with no custom products reports nothing skipped', () => {
-    const { skipped } = convertForeignPayload({ weight: 60, events: [], gelProducts: [] }, 'transmtf')
+check('Transmtf with no custom products returns no catalogue', () => {
+    const { gelProducts, skipped } = convertForeignPayload({ weight: 60, events: [], gelProducts: [] }, 'transmtf')
+    assert.equal(gelProducts, undefined)
     assert.equal(skipped.gelProducts, undefined)
 })
 

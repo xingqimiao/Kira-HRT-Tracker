@@ -91,14 +91,24 @@ check('a transmasc account is kept on the built-in engine', () => {
   assert.equal(R.chooseEngine('transmtf', true, evList(L.Ester.EV)), 'builtin');
 });
 
-check('an unsupported compound vetoes the vendor engine', () => {
+check('a compound a curve depends on vetoes the engine; a curveless one does not', () => {
   // A T ester in the history: the vendor would refuse the whole list, so the app
   // must fall back rather than ask it for a curve it will not draw.
   assert.equal(R.chooseEngine('transmtf', false, evList(L.Ester.TE)), 'builtin');
-  assert.equal(R.chooseEngine('transmtf', false, evList(L.Ester.SPIRO)), 'builtin');
-  // One bad record vetoes the lot, matching `canRunVendor`.
+  // One such record vetoes the lot, matching `canRunVendor`.
   const mixed = [...evList(L.Ester.EV), ev(L.Route.injection, L.Ester.TU, 100, 48)];
   assert.equal(R.chooseEngine('transmtf', false, mixed), 'builtin');
+
+  // Spironolactone is recorded by neither engine, so it is skipped rather than
+  // vetoing — the E2 curve has nothing to lose from its absence.
+  assert.equal(R.chooseEngine('transmtf', false, evList(L.Ester.SPIRO)), 'transmtf');
+  const withSpiro = [...evList(L.Ester.EV), ev(L.Route.oral, L.Ester.SPIRO, 100, 24)];
+  assert.equal(R.chooseEngine('transmtf', false, withSpiro), 'transmtf');
+  // ...and the skipped record does not change the E2 curve it was skipped from.
+  const bare = A.runSimulation(evList(L.Ester.EV), 70);
+  const skipped = A.runSimulation(withSpiro, 70);
+  assert.ok(bare && skipped, 'both lists must simulate');
+  assert.deepEqual(skipped.concPGmL_E2, bare.concPGmL_E2);
 });
 
 check('an empty history does not veto — there is nothing unsupported in it', () => {

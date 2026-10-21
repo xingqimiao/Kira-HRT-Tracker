@@ -71,7 +71,7 @@ const WIDGET_BOX_HEIGHT = 71;
 
 interface Props {
     /** The action the token is minted for; the server checks it matches. */
-    action: 'register' | 'oauth';
+    action: 'register' | 'oauth' | 'donate';
     /** Called with the token, or '' when it expires or the widget fails. */
     onToken: (token: string) => void;
     /**

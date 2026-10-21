@@ -37,7 +37,7 @@ export interface RuntimeLicence {
     licence: string;
 }
 
-export const GENERATED_AT = "2026-09-22";
+export const GENERATED_AT = "2026-10-21";
 
 export const UPSTREAM_WORKS: UpstreamWork[] = [
     {
@@ -81,6 +81,13 @@ export const UPSTREAM_WORKS: UpstreamWork[] = [
         "copyright": "Aly and the other authors of Transfeminine Science"
     },
     {
+        "name": "Featherline",
+        "url": "https://github.com/mkx173/Featherline",
+        "roleKey": "licence.upstream_featherline",
+        "licence": "GPL-3.0",
+        "noLicence": false
+    },
+    {
         "name": "Transmtf-HRT-Tracker",
         "url": "https://github.com/TransmtfTeam/Transmtf-HRT-Tracker",
         "roleKey": "licence.upstream_pk_model",
@@ -92,7 +99,23 @@ export const UPSTREAM_WORKS: UpstreamWork[] = [
 
 export const RUNTIME_LICENCES: RuntimeLicence[] = [
     {
-        "name": "@types/uuid",
+        "name": "@alerix/m3-loading-indicator",
+        "licence": "Apache-2.0"
+    },
+    {
+        "name": "@choochmeque/tauri-plugin-notifications-api",
+        "licence": "MIT"
+    },
+    {
+        "name": "@tauri-apps/plugin-opener",
+        "licence": "MIT OR Apache-2.0"
+    },
+    {
+        "name": "firebase",
+        "licence": "Apache-2.0"
+    },
+    {
+        "name": "hash-wasm",
         "licence": "MIT"
     },
     {
@@ -116,16 +139,20 @@ export const RUNTIME_LICENCES: RuntimeLicence[] = [
         "licence": "MIT"
     },
     {
+        "name": "react-virtuoso",
+        "licence": "MIT"
+    },
+    {
         "name": "reicon",
         "licence": "MIT"
     },
     {
-        "name": "reicon-mcp",
+        "name": "tauri-plugin-secure-storage-api",
         "licence": "MIT"
     },
     {
-        "name": "tesseract.js",
-        "licence": "Apache-2.0"
+        "name": "tslib",
+        "licence": "0BSD"
     },
     {
         "name": "uuid",

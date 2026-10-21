@@ -1,9 +1,10 @@
 import React from 'react';
 import Icon from '../components/Icon';
 import Switch from '../components/Switch';
-import { ArrowLeft, Check } from '../icons';
+import { Check } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { AppTheme, ChartStyle, KeyColor } from '../constants';
+import { ConnectedButtonGroup, HeaderBack, SegmentedList, SegmentedListItem } from '../ui/proto';
 
 interface AppearanceSettingsProps {
     theme: AppTheme;
@@ -22,10 +23,6 @@ interface AppearanceSettingsProps {
 /** The chart's draw styles, in display order — see `ChartStyle`. */
 const CHART_STYLES: readonly ChartStyle[] = ['line', '1d'];
 
-const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
-const rowLabel = 'text-m3-body-medium text-[var(--color-m3-on-surface)] ';
-const muted = 'text-[var(--color-m3-on-surface-variant)] ';
-
 const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({
     theme, setTheme, keyColor, setKeyColor,
     chartStyle, setChartStyle,
@@ -39,107 +36,88 @@ const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({
         { value: 'dark' as const, labelKey: 'theme.dark' },
     ];
 
-    // The two tuned swatches. Fixed identity tokens, not the role tokens: the
-    // roles swap when the choice is applied, so a swatch read from them would
-    // repaint itself as the other option the moment you picked it.
+    // Fixed identity tokens, not role tokens: the roles swap when the choice is
+    // applied, so a swatch read from them would repaint as the other option.
     const keyColors: { id: KeyColor; background: string }[] = [
         { id: 'pink', background: 'var(--color-m3-key-pink)' },
         { id: 'blue', background: 'var(--color-m3-key-blue)' },
     ];
 
     return (
-        <div className="relative space-y-4 pb-32">
-            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3">
-                <button
-                    onClick={onBack}
-                    className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] "
-                >
-                    <Icon icon={ArrowLeft} size={18} className="text-[var(--color-m3-on-surface-variant)]  shrink-0" />
-                    <span className="text-xl font-semibold text-[var(--color-m3-on-surface)] ">
-                        {t('settings.theme')}
-                    </span>
-                </button>
-            </div>
+        <div className="pg on long" style={{ maxWidth: 720, marginInline: 'auto', width: '100%' }}>
+            <HeaderBack title={t('settings.theme')} onBack={onBack} backLabel={t('core.back')} />
 
-            <div className="mx-auto w-full px-6 md:px-8 max-w-2xl">
-                {options.map(({ value, labelKey }) => (
-                    <button
-                        key={value}
-                        onClick={() => setTheme(value)}
-                        className={`w-full flex items-center justify-between py-4 ${divider}last:border-b-0 text-start`}
-                    >
-                        <span className={`text-m3-body-medium ${theme === value
-                            ? 'font-semibold text-[var(--color-m3-on-surface)] '
-                            : 'text-[var(--color-m3-on-surface)] '
-                        }`}>{t(labelKey)}</span>
-                        {theme === value && (
-                            <Icon icon={Check} size={16} className="text-[var(--color-m3-primary)]  shrink-0" />
-                        )}
-                    </button>
-                ))}
-            </div>
+            <SegmentedList label={t('settings.theme')}>
+                {options.map(({ value, labelKey }) => {
+                    const active = theme === value;
+                    return (
+                        <SegmentedListItem
+                            key={value}
+                            title={t(labelKey)}
+                            active={active}
+                            leadingTone={active ? 'primary' : 'default'}
+                            trailing={active ? <Icon icon={Check} size={20} /> : undefined}
+                            aria-pressed={active}
+                            onClick={() => setTheme(value)}
+                        />
+                    );
+                })}
+            </SegmentedList>
 
-            <div className="mx-auto w-full px-6 md:px-8 max-w-2xl">
-                <p className="pt-2 pb-1 text-xs font-semibold uppercase tracking-wider text-[var(--color-m3-on-surface-variant)] ">
-                    {t('settings.key_color')}
-                </p>
-                <div className="w-full flex items-center justify-between py-4">
-                    <span className={rowLabel}>{t(`settings.key_color.${keyColor}`)}</span>
-                    <div className="flex items-center gap-2.5">
+            <div className="lab">{t('settings.key_color')}</div>
+            <SegmentedList label={t('settings.key_color')}>
+                <div className="li" style={{ cursor: 'default' }}>
+                    <div className="t">
+                        <b>{t(`settings.key_color.${keyColor}`)}</b>
+                        <span className="s">{t('settings.key_color')}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10 }}>
                         {keyColors.map(({ id, background }) => (
                             <button
                                 key={id}
+                                type="button"
                                 onClick={() => setKeyColor(id)}
                                 aria-label={t(`settings.key_color.${id}`)}
                                 aria-pressed={keyColor === id}
-                                className={`h-7 w-7 shrink-0 rounded-full border border-[var(--color-m3-outline-variant)]  ${
-                                    keyColor === id
-                                        ? 'ring-2 ring-[var(--color-m3-primary)] ring-offset-2 ring-offset-[var(--color-m3-surface-dim)] '
-                                        : ''
-                                }`}
-                                style={{ background }}
+                                className="chip"
+                                style={{
+                                    width: 34,
+                                    height: 34,
+                                    padding: 0,
+                                    borderRadius: '50%',
+                                    background,
+                                    boxShadow: keyColor === id ? '0 0 0 3px var(--bg), 0 0 0 5px var(--pri)' : 'inset 0 0 0 1px rgba(0,0,0,.12)',
+                                    transition: 'box-shadow .25s, transform .25s cubic-bezier(.3,1.7,.5,1)',
+                                    transform: keyColor === id ? 'scale(1.06)' : 'none',
+                                }}
                             />
                         ))}
                     </div>
                 </div>
-            </div>
+            </SegmentedList>
 
-            {/* Overview display options. These are looks, not data: how the
-                overview is drawn, so they belong with the theme rather than with
-                the record settings they used to sit among. */}
-            <div className="mx-auto w-full px-6 md:px-8 max-w-2xl">
-                <p className="pt-2 pb-1 text-xs font-semibold uppercase tracking-wider text-[var(--color-m3-on-surface-variant)] ">
-                    {t('settings.group.display')}
-                </p>
-
-                <div className={`${divider} w-full flex items-center justify-between py-4`}>
-                    <div>
-                        <p className={rowLabel}>{t('settings.reading_decimals')}</p>
-                        <p className={`text-xs ${muted} mt-0.5`}>{t('settings.reading_decimals_desc')}</p>
+            <div className="lab">{t('settings.group.display')}</div>
+            <SegmentedList label={t('settings.group.display')}>
+                <div className="li" style={{ cursor: 'default' }}>
+                    <div className="t">
+                        <b>{t('settings.reading_decimals')}</b>
+                        <span className="s" style={{ whiteSpace: 'normal' }}>{t('settings.reading_decimals_desc')}</span>
                     </div>
                     <Switch checked={readingDecimals} onChange={setReadingDecimals} />
                 </div>
+            </SegmentedList>
 
-                {/* How the overview chart draws the primary series. The candle
-                    option is a *request* — a window too wide to honour it draws
-                    a coarser interval, and the chart's header chip says which. */}
-                <div className={`${divider} w-full py-4`}>
-                    <p className={rowLabel}>{t('settings.chart_style')}</p>
-                    <p className={`text-xs ${muted} mt-0.5`}>{t('settings.chart_style_desc')}</p>
-                    <div className="mt-3 flex flex-wrap gap-1" role="group" aria-label={t('settings.chart_style')}>
-                        {CHART_STYLES.map(s => (
-                            <button
-                                key={s}
-                                type="button"
-                                aria-pressed={chartStyle === s}
-                                onClick={() => setChartStyle(s)}
-                                className={`m3-btn m3-btn-sm ${chartStyle === s ? 'm3-btn-filled' : 'm3-btn-outlined'}`}
-                            >
-                                {t(`settings.chart_style.${s}`)}
-                            </button>
-                        ))}
-                    </div>
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div>
+                    <b style={{ fontSize: 15 }}>{t('settings.chart_style')}</b>
+                    <p className="sub" style={{ margin: '3px 0 0', fontSize: 12 }}>{t('settings.chart_style_desc')}</p>
                 </div>
+                <ConnectedButtonGroup
+                    options={CHART_STYLES.map(s => ({ value: s, label: t(`settings.chart_style.${s}`) }))}
+                    value={chartStyle}
+                    onChange={setChartStyle}
+                    label={t('settings.chart_style')}
+                />
             </div>
         </div>
     );

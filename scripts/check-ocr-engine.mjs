@@ -76,6 +76,12 @@ registerHooks({
                 shortCircuit: true,
             }
         }
+        if (specifier === './platform' && context.parentURL?.includes('src/utils/ppocr.ts')) {
+            return {
+                url: pathToFileURL(join(ROOT, 'src', 'utils', 'platform.ts')).href,
+                shortCircuit: true,
+            }
+        }
         return nextResolve(specifier, context)
     },
 })

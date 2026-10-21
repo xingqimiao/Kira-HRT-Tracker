@@ -8,6 +8,7 @@ import {
     convertToPgMl, convertToNgDl, isT_LabUnit, T_ESTERS,
 } from '../../logic';
 import { Activity } from '../icons';
+import { ConnectedButtonGroup } from '../ui/proto';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { useElementSize } from '../hooks/useElementSize';
 import { buildCandles, resolveCandleIntervalH, type CandleBaseH } from '../utils/candles';
@@ -234,13 +235,32 @@ const ResultChart = ({
 
     // Typical target band for the primary series, matching the reference ranges the
     // app uses for its status labels (see useAppData currentStatus): transmasc total-T
-    // sits in the ~300–1000 ng/dL male range; transfem E2 in the ~100–200 pg/mL band.
+    // sits in the ~350–1000 ng/dL male range; transfem E2 in the 100–250 pg/mL band (or
+    // 100–400 pg/mL for injections to cover mid-cycle physiologic peaks).
     // CPA has no target range, so it gets none. Shown as a quiet shaded region only.
+    const isInjectionRegimen = useMemo(() => {
+        const nowH = Date.now() / HOUR;
+        const sorted = [...events]
+            .filter(e => e.route !== 'patchRemove' && (!isTransmasc ? e.ester !== 'CPA' && !T_ESTERS.has(e.ester) : T_ESTERS.has(e.ester)))
+            .sort((a, b) => b.timeH - a.timeH);
+        if (sorted.length === 0) return false;
+        if (sorted[0].route === 'injection') return true;
+        const getEsterLifespanH = (ester: string): number => {
+            if (ester === 'EB') return 24 * 5;
+            if (ester === 'EV') return 24 * 12;
+            if (ester === 'EC' || ester === 'EN' || ester === 'TC' || ester === 'TE') return 24 * 21;
+            if (ester === 'EU') return 24 * 60;
+            if (ester === 'TU') return 24 * 84;
+            return 24 * 14;
+        };
+        return sorted.some(e => e.route === 'injection' && (nowH - e.timeH) <= getEsterLifespanH(e.ester));
+    }, [events, isTransmasc]);
+
     const primaryTarget = useMemo<{ low: number; high: number } | null>(() => {
-        if (isTransmasc) return { low: 300, high: 1000 };
+        if (isTransmasc) return { low: 350, high: 1000 };
         if (primaryIsCPA) return null;
-        return { low: 100, high: 200 };
-    }, [isTransmasc, primaryIsCPA]);
+        return isInjectionRegimen ? { low: 100, high: 400 } : { low: 100, high: 250 };
+    }, [isTransmasc, primaryIsCPA, isInjectionRegimen]);
 
     // Resample the simulation into the (time, primary, secondary) shape we plot.
     const data = useMemo(() => {
@@ -287,12 +307,11 @@ const ResultChart = ({
     // without this the plot is mostly candles that have not happened yet.
     const futureCap = now + 2 * candleIntervalH * HOUR;
 
-    // The line view draws the modelled curve, which also runs past now (to the last
-    // dose plus its lifetime) — for a daily schedule that is a long, flat tail of
-    // "what is predicted to happen". Cap it at two days: the near future is the part
-    // that informs a decision, and beyond that the estimate is a straight line the
-    // chart is spending most of its width on. `data.length === 0` (nothing logged)
-    // keeps the plain window so an empty state still reads as empty.
+    // The line view runs two days past "now": the curve keeps being drawn there
+    // (the simulation covers the last dose's lifetime), and the forward window is
+    // what the reader asked for — the point of the chart is seeing where the level
+    // is heading, not only where it has been. The header's number is still the
+    // reading at "now", and the "现在" marker sits on the curve at that moment.
     const lineFutureCap = now + 2 * DAY;
 
     // Base window (before drag) — centered on "now" for 7d/30d, full span for "all".
@@ -304,15 +323,18 @@ const ResultChart = ({
             return [fullMin, Math.max(fullMin, hi)];
         }
         // Anchor the right edge then walk back one span. In candle view the right
-        // edge stops two candles past now; in line view two days past now; the
-        // clamp to fullMax keeps a short history from opening on empty space.
+        // edge stops two candles past now; in line view two days past now. Only the
+        // candle view is clamped back to the last datum — the line view is allowed
+        // to end in empty future, which is the two-day forward window.
         const center = Math.min(Math.max(now, fullMin), fullMax);
         let hi = isCandle
             ? Math.min(futureCap, fullMax)
-            : Math.min(center + span / 2, lineFutureCap, fullMax);
+            : Math.min(center + span / 2, lineFutureCap);
         let lo = hi - span;
-        if (lo < fullMin) { lo = fullMin; hi = Math.min(fullMax, lo + span); }
-        if (hi > fullMax) { hi = fullMax; lo = Math.max(fullMin, hi - span); }
+        if (lo < fullMin) {
+            lo = fullMin;
+            hi = isCandle ? Math.min(fullMax, lo + span) : Math.min(lineFutureCap, lo + span);
+        }
         return [lo, hi];
     }, [range, data.length, fullMin, fullMax, now, isCandle, futureCap, lineFutureCap]);
 
@@ -416,7 +438,7 @@ const ResultChart = ({
     const axisFont = 10 * ui;
 
     const mL = 32 * ui;
-    const mR = (hasSecondary ? 32 : 10) * ui;
+    const mR = (hasSecondary ? 32 : 26) * ui;
     const mT = 14 * ui;
     const mB = 26 * ui;
     const plotW = Math.max(0, width - mL - mR);
@@ -652,69 +674,53 @@ const ResultChart = ({
         );
     }
 
-    const chipBase = 'px-2 py-0.5 m3-text-2xs rounded-md transition-colors';
-    const chipOn = 'text-body font-medium border border-[var(--color-m3-outline-variant)] ';
-    const chipOff = 'text-muted hover:text-body';
-
     return (
         <div className="w-full">
-            {/* Header: title + range chips — flat, matching the page */}
-            <div className="flex items-center justify-between gap-3 mb-2">
-                <h2 className="text-m3-title-small text-[var(--color-m3-on-surface-variant)]  truncate">
-                    {title ?? t('chart.title')}
-                </h2>
-                <div className="flex items-center gap-2 shrink-0">
-                    {/* Candle view: what actually ran. The chosen granularity is a
-                        floor, and a window too wide to honour it draws a coarser
-                        interval — saying so here, not guessing silently. */}
-                    {isCandle && (
-                        <span className="m3-text-note opacity-70 tabular-nums">{kIntervalLabel}</span>
-                    )}
-                    {Math.abs(calFactor - 1) > 0.001 && (
-                        <span className="m3-text-note opacity-70 tabular-nums">
-                            ×{calFactor.toFixed(2)}
+            {/* M3E header: the subject and its key on the left, the window as a
+                connected button group on the right. The curve-style switch lives in
+                设置 → 外观, so it is not repeated here. */}
+            <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="min-w-0">
+                    <h2 className="text-m3-title-small text-[var(--color-m3-on-surface)]" style={{ fontWeight: 800 }}>
+                        {title ?? t('chart.title')}
+                    </h2>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 m3-text-2xs text-[var(--color-m3-on-surface-variant)]">
+                        <span className="flex items-center gap-1.5">
+                            {isCandle ? (
+                                <>
+                                    <span className="w-[3px] h-3 rounded-sm" style={{ background: c.up }} />
+                                    <span className="w-[3px] h-3 rounded-sm" style={{ background: c.down }} />
+                                </>
+                            ) : (
+                                <span className="w-3.5 h-[3px] rounded-full" style={{ background: c.primary }} />
+                            )}
+                            {primaryMeta.label}
                         </span>
-                    )}
-                    <div className="flex items-center gap-0.5">
-                        {rangeOpts.map(o => (
-                            <button
-                                key={o.key}
-                                onClick={() => selectRange(o.key)}
-                                className={`${chipBase} ${range === o.key ? chipOn : chipOff}`}
-                            >
-                                {o.label}
-                            </button>
-                        ))}
+                        {hasSecondary && (
+                            <span className="flex items-center gap-1.5">
+                                <span className="w-3.5 h-[2px] rounded-full" style={{ background: c.second }} />
+                                {t('label.cpa_chart')}
+                            </span>
+                        )}
+                        {isCandle && <span className="tabular-nums opacity-70">{kIntervalLabel}</span>}
+                        {Math.abs(calFactor - 1) > 0.001 && (
+                            <span className="chip" style={{ background: 'var(--pric)', color: 'var(--onpric)', padding: '3px 8px' }}>
+                                ×{calFactor.toFixed(2)}
+                            </span>
+                        )}
                     </div>
                 </div>
-            </div>
-
-            {/* Legend — always visible so each line is labelled, on mobile too */}
-            <div className="flex items-center gap-4 mb-1 m3-text-2xs text-[var(--color-m3-on-surface-variant)] ">
-                <span className="flex items-center gap-1.5">
-                    {isCandle ? (
-                        <>
-                            <span className="w-[3px] h-3 rounded-sm" style={{ background: c.up }} />
-                            <span className="w-[3px] h-3 rounded-sm" style={{ background: c.down }} />
-                        </>
-                    ) : (
-                        <span className="w-3.5 h-[2px] rounded-full" style={{ background: c.primary }} />
-                    )}
-                    {primaryMeta.label}
-                </span>
-                {hasSecondary && (
-                    <span className="flex items-center gap-1.5">
-                        <span
-                            className="w-3.5 h-[2px] rounded-full"
-                            style={{ background: c.second }}
-                        />
-                        {t('label.cpa_chart')}
-                    </span>
-                )}
+                <ConnectedButtonGroup
+                    options={rangeOpts.map(o => ({ value: o.key, label: o.label }))}
+                    value={range}
+                    onChange={selectRange}
+                    label={t('chart.title')}
+                    size="sm"
+                />
             </div>
 
             {/* Plot */}
-            <div ref={setPlotEl} className={`relative -mx-4 md:-mx-6 select-none touch-pan-y ${tall ? 'h-[26rem] md:h-[34rem]' : 'h-72 md:h-96'}`}>
+            <div ref={setPlotEl} className={`relative -mx-3 md:-mx-4 select-none touch-pan-y ${tall ? 'h-[15rem] md:h-[18rem]' : 'h-64 md:h-72'}`}>
 
 
                 {width > 0 && (
@@ -856,12 +862,12 @@ const ResultChart = ({
                                     })}
                                 </g>
                             ) : (
-                                <path d={linePath('p')} fill="none" stroke={c.primary} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />
+                                <path d={linePath('p')} fill="none" stroke={c.primary} strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" />
                             )}
 
                             {/* Secondary curve (CPA) — kept quiet so E2 stays the focus */}
                             {hasSecondary && (
-                                <path d={linePath('s')} fill="none" stroke={c.second} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+                                <path d={linePath('s')} fill="none" stroke={c.second} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" />
                             )}
                         </g>
 

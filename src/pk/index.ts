@@ -13,7 +13,8 @@
  *   - **Unsupported compounds.** The engine models estradiol esters and the two
  *     anti-androgens only — it has no testosterone. `Ester.T`/`TC`/`TE`/`TU` are
  *     refused here rather than silently simulated, and the caller keeps testosterone
- *     on the built-in engine (see `src/engine/registry.ts`).
+ *     on the built-in engine (see `src/engine/registry.ts`). Spironolactone is
+ *     *skipped*: no engine draws a curve for it, so dropping it costs nothing.
  *   - **Weight.** This app stores one body weight for the account; the engine wants
  *     it per event (it varies over a long history). The current weight is stamped
  *     onto every event, which is what a single-weight model can honestly do.
@@ -38,6 +39,9 @@ import {
     // Used by the coverage bridge below — see `adaptEvents`.
     resolveGelCoverageArea,
     getGelProductById,
+    // The user's own gel catalogue — see `setGelProductCatalogue`.
+    setCustomGelProducts,
+    sanitizeGelProducts,
 } from './vendor/pk';
 import { Route as VRoute, Ester as VEster, ExtraKey as VExtraKey } from './vendor/types';
 import type {
@@ -52,7 +56,7 @@ import { replayPersonalModel, computeSimulationWithCI } from './vendor/personalM
 
 // The vendor's supported compounds, and the check the registry reads without loading
 // this chunk. Re-exported below so `canRunVendor` keeps the public shape it had here.
-import { VENDOR_ESTERS, canRunVendor } from '../engine/vendorEsters';
+import { VENDOR_ESTERS, canRunVendor, isCurveless } from '../engine/vendorEsters';
 
 import type {
     DoseEvent,
@@ -96,6 +100,55 @@ export function isModelledByVendor(ester: Ester): boolean {
 export { canRunVendor };
 
 // ---------------------------------------------------------------------------
+// The account's own gel products
+// ---------------------------------------------------------------------------
+
+/**
+ * The catalogue last handed to the engine, in the raw shape it was stored in.
+ *
+ * Kept so a scoped run can restore the previous one, and so a caller does not have
+ * to re-read storage to put things back.
+ */
+let catalogue: unknown[] = [];
+
+/**
+ * Install the account's gel products (ids ≥ 1000) in the engine's registry.
+ *
+ * The products are *not* validated here beyond what the engine accepts: its own
+ * `sanitizeGelProducts` rejects an entry without three finite rate constants and
+ * clamps the rest, and that is the single authority on what a usable product is.
+ * Called with no catalogue it clears the registry, which is what a device with no
+ * custom products should compute with.
+ */
+export function setGelProductCatalogue(raw: unknown): void {
+    catalogue = Array.isArray(raw) ? raw : [];
+    setCustomGelProducts(sanitizeGelProducts(catalogue));
+}
+
+/** The catalogue currently installed — the one a scoped run would restore. */
+export function getGelProductCatalogue(): unknown[] {
+    return catalogue;
+}
+
+/**
+ * Run `fn` with a catalogue installed, then restore the previous one.
+ *
+ * Deliberately synchronous, and `fn` must not await: the registry is module state,
+ * so suspending between install and use would let another account's request compute
+ * against this account's products. The server documents the same hazard for its PK
+ * parameter overrides (`server/src/engine.ts`).
+ */
+export function withGelProductCatalogue<T>(raw: unknown, fn: () => T): T {
+    const previous = catalogue;
+    setGelProductCatalogue(raw);
+    try {
+        return fn();
+    } finally {
+        setGelProductCatalogue(previous);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Event adaptation
 // ---------------------------------------------------------------------------
 
@@ -104,15 +157,20 @@ export { canRunVendor };
  *
  * Extras carry the same names on both sides (`sublingualTier`, `gelSite`, …), so
  * they pass through; only the patch shape needs work, and only the timed-patch case
- * does anything. Returns null when a compound is unsupported, so the caller can
- * refuse rather than simulate a curve that is quietly missing a dose.
+ * does anything. Returns null when a compound the engine cannot model would have
+ * changed a curve; a curveless compound (spironolactone) is skipped instead, because
+ * neither engine draws anything for it.
  */
 function adaptEvents(events: readonly DoseEvent[], weightKG: number): VDoseEvent[] | null {
     const out: VDoseEvent[] = [];
 
     for (const event of events) {
         const ester = ESTER_TO_VENDOR[event.ester];
-        if (ester === undefined) return null;
+        if (ester === undefined) {
+            // Recorded, drawn by neither engine: leaving it out loses no series.
+            if (isCurveless(event.ester)) continue;
+            return null;
+        }
 
         // The engine's `ExtraKey` members are a superset of this app's, so the cast
         // is safe for every key this app can write: they are the same strings.

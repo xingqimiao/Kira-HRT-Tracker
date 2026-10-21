@@ -2,32 +2,16 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Icon from '../components/Icon';
 import { useTranslation } from '../contexts/LanguageContext';
-import { AlertTriangle, Check, LogOut, RefreshCw, Trash2, Unlink, DevicePhone, DeviceTablet, DeviceDesktop, DeviceBrowser, DeviceAgent } from '../icons';
+import { AlertTriangle, Check, LogOut, RefreshCw, Trash2, Unlink, DevicePhone, DeviceTablet, DeviceDesktop, DeviceBrowser, DeviceAgent, UserCircle, X } from '../icons';
 import { Progress } from '../components/ui';
+import { HeaderBack } from '../ui/proto';
+import { Icon as SpriteIcon } from '../ui/SvgDefs';
+import { GoogleBrand, XBrand } from '../icons/brand';
 
 import { coreAuth, CoreAuthError, PROVIDER_NAMES, type AccountSummary, type LoginMethods, type OAuthLink, type SessionInfo } from '../services/coreAuth';
-import { getCachedAvatar, refreshCachedAvatar, clearCachedAvatar } from '../utils/avatarCache';
 import type { CoreSession } from '../hooks/useCoreSession';
 import { openExternalUrl } from '../utils/externalLinks';
 import { isNativeApp } from '../utils/platform';
-
-/**
- * Account security for an Application Core session.
- *
- * A separate screen from the legacy `Account.tsx`, which manages the Worker-backed
- * session (cloud backup, sessions, profile). Merging the two would produce a
- * page where some rows talk to one backend and some to the other, with no way for a
- * reader — or a debugger — to tell which.
- *
- * Everything here is destructive-or-sensitive, so each action re-proves identity
- * rather than trusting the session alone: unlink wants the account's password, and
- * deletion wants the password too. A stolen session should not be enough to change
- * how an account is reached.
- */
-
-const on = 'text-[var(--color-m3-on-surface)] ';
-const muted = 'text-[var(--color-m3-on-surface-variant)] ';
-const divider = 'border-b border-[var(--color-m3-outline-variant)] ';
 
 interface CoreAccountSettingsProps {
   session: CoreSession;
@@ -38,27 +22,12 @@ interface CoreAccountSettingsProps {
 
 type Dialog = null | 'password' | 'unlink' | 'delete';
 
-/**
- * A date for display, or null when there is not one to show.
- *
- * Guarded rather than trusting the input: this is rendered from a value the server
- * sends, and "Invalid Date" is worse than a blank — it reads as a fault in the app
- * rather than a value we never had.
- */
 function formatDate(value: string | null | undefined): string | null {
   if (!value) return null;
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString();
 }
 
-/**
- * What a linked-provider row says under the name.
- *
- * The linked date is normally known, but the string is chosen rather than assembled:
- * `linked_used` carries two placeholders and the template has to be picked before
- * either is filled, which is what makes a missing one fall back cleanly instead of
- * leaving a stray `{last}` on screen.
- */
 function linkSubtitle(
   t: (key: string) => string,
   link: { linkedAt: string | null; lastLoginAt: string | null } | undefined,
@@ -71,154 +40,111 @@ function linkSubtitle(
   return t('core.acct.linked_used').replace('{date}', linked).replace('{last}', last);
 }
 
-/** The kind of client a session came from — drives which glyph the row shows. */
 type DeviceKind = 'app-phone' | 'app-tablet' | 'app-desktop' | 'browser' | 'browser-mobile' | 'agent' | 'unknown';
 
-/**
- * The Android model in a user agent, or '' when it names none.
- *
- * Chrome on Android once put the model after `Android <version>;` (`… Android 13;
- * SM-S918B …`). Modern Chrome *reduces* that away under User-Agent Reduction and
- * sends a fixed placeholder instead — the model becomes the single letter `K` — so
- * "Android K" is what a browser reports now, which names nothing. Every other
- * browser on Android writes `Mobile` or `Tablet` there, a form factor rather than a
- * device. All of those are rejected and the row falls back to plain "Android". iOS
- * exposes no model at all: Safari and every in-app webview omit it.
- */
 function androidModel(userAgent: string): string {
   const m = /Android[^;]*;\s*([^;)]+?)(?:\s+Build[/)]|\s*\))/.exec(userAgent)
     || /Android[^;]*;\s*([^;)]+?)\)/.exec(userAgent);
   const token = (m?.[1] ?? '').trim();
-  // `K` is Chrome's reduced-UA placeholder — the model, deliberately erased.
   if (!token || /^(mobile|tablet|build|wv|k)$/i.test(token)) return '';
   return token;
 }
 
-/**
- * A device row's label and kind, from a stored user agent.
- *
- * The Android app records the canonical `KiraHRT/<version> (<device>)` string the
- * server got from its `X-Kira-Client` header — e.g. `KiraHRT/1.0.2 (Android SM-S918B)`
- * — so it names itself here as the app, with its model, rather than as a browser.
- * Inferring the app from a webview's UA is deliberately NOT done: WeChat and other
- * in-app browsers share the same tokens and would be mislabelled as this app, which
- * is the same bug pointing the other way. `appLabel` is passed in so the wording
- * stays in the reader's language; the rest is a proper noun (a model code, a browser
- * name), which is why it is not translated.
- *
- * For a browser session the model is shown too *when the UA carries one* — Android
- * Chrome does, so a phone browser reads "Android SM-S918B · Chrome". Desktop browsers
- * and iOS expose no model, so those stay OS · browser; there is nothing to show.
- *
- * A UA that names neither a browser nor an OS is an API/MCP client — those send their
- * own agent string and get the agent glyph rather than "Unknown device".
- */
-function parseDevice(userAgent: string | null, fallback: string, appLabel: string): { label: string; kind: DeviceKind } {
+function parseDevice(
+  userAgent: string | null,
+  fallback: string,
+  appLabel: string,
+): { label: string; kind: DeviceKind } {
   if (!userAgent) return { label: fallback, kind: 'unknown' };
-
-  const app = /^KiraHRT\/([^\s(]+)\s*(?:\(([^)]*)\))?/i.exec(userAgent);
-  if (app) {
-    const version = app[1];
-    const device = (app[2] ?? '').trim();
-    const label = [`${appLabel} ${version}`, device].filter(Boolean).join(' · ');
-    const kind: DeviceKind = /tab|pad/i.test(device) ? 'app-tablet'
-      : /android|iphone|ipod/i.test(device) ? 'app-phone'
-      : device ? 'app-desktop'
-      : 'app-phone';
-    return { label, kind };
+  const native = /^KiraHRT\/[^\s]+ \(([^)]+)\)$/.exec(userAgent);
+  if (native) {
+    const raw = native[1];
+    const isTablet = /tablet|ipad/i.test(raw);
+    const isDesktop = /windows|macintosh|linux x86/i.test(raw);
+    const kind: DeviceKind = isTablet ? 'app-tablet' : isDesktop ? 'app-desktop' : 'app-phone';
+    return { label: `${appLabel} · ${raw}`, kind };
   }
-
-  const isAndroid = /Android/.test(userAgent);
-  const model = isAndroid ? androidModel(userAgent) : '';
-  const os = /Windows NT/.test(userAgent) ? 'Windows'
-    : isAndroid ? (model ? `Android ${model}` : 'Android')
-    : /iPhone|iPad|iPod/.test(userAgent) ? 'iOS'
-    : /Mac OS X/.test(userAgent) ? 'macOS'
-    : /Linux/.test(userAgent) ? 'Linux' : '';
-  const browser = /Edg\//.test(userAgent) ? 'Edge'
-    : /OPR\//.test(userAgent) ? 'Opera'
-    : /Firefox\//.test(userAgent) ? 'Firefox'
-    : /Chrome\//.test(userAgent) ? 'Chrome'
-    : /Safari\//.test(userAgent) ? 'Safari' : '';
-  const parts = [os, browser].filter(Boolean);
-  if (parts.length === 0) return { label: fallback, kind: 'agent' };
-  return {
-    label: parts.join(' · '),
-    kind: /Android|iPhone|iPod/i.test(userAgent) ? 'browser-mobile' : 'browser',
-  };
+  const isAgent = /claude|chatgpt|openai|cursor|windsurf|mcp/i.test(userAgent);
+  if (isAgent) {
+    const agent = /claude/i.test(userAgent) ? 'Claude'
+      : /chatgpt|openai/i.test(userAgent) ? 'ChatGPT'
+      : /cursor/i.test(userAgent) ? 'Cursor'
+      : /windsurf/i.test(userAgent) ? 'Windsurf'
+      : 'AI Agent';
+    return { label: agent, kind: 'agent' };
+  }
+  const isMobile = /mobile|iphone|ipod|android/i.test(userAgent);
+  const isTablet = /ipad|tablet/i.test(userAgent);
+  const browser = /edg\//i.test(userAgent) ? 'Edge'
+    : /chrome\//i.test(userAgent) ? 'Chrome'
+    : /safari\//i.test(userAgent) && !/chrome/i.test(userAgent) ? 'Safari'
+    : /firefox\//i.test(userAgent) ? 'Firefox'
+    : '';
+  const os = /iphone|ipad|ipod/i.test(userAgent) ? 'iOS'
+    : /android/i.test(userAgent) ? 'Android'
+    : /windows/i.test(userAgent) ? 'Windows'
+    : /macintosh/i.test(userAgent) ? 'macOS'
+    : /linux/i.test(userAgent) ? 'Linux'
+    : '';
+  const model = os === 'Android' ? androidModel(userAgent) : '';
+  const osWithModel = model ? `Android · ${model}` : os;
+  const kind: DeviceKind = isTablet ? 'app-tablet' : isMobile ? 'browser-mobile' : 'browser';
+  const label = [osWithModel, browser].filter(Boolean).join(' · ') || fallback;
+  return { label, kind };
 }
 
-/** The reicon glyph for a device kind. */
-function deviceIcon(kind: DeviceKind) {
+function deviceIcon(kind: DeviceKind): typeof DevicePhone {
   switch (kind) {
-    case 'app-tablet': return DeviceTablet;
-    case 'app-desktop': return DeviceDesktop;
+    case 'app-phone':
+    case 'browser-mobile':
+      return DevicePhone;
+    case 'app-tablet':
+      return DeviceTablet;
+    case 'app-desktop':
+      return DeviceDesktop;
+    case 'agent':
+      return DeviceAgent;
     case 'browser':
-    case 'browser-mobile': return DeviceBrowser;
-    case 'agent': return DeviceAgent;
-    default: return DevicePhone;
+    case 'unknown':
+    default:
+      return DeviceBrowser;
   }
 }
 
 const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBack, onDeleted }) => {
+  const { t } = useTranslation();
   const [summary, setSummary] = useState<AccountSummary | null>(null);
-  const [links, setLinks] = useState<OAuthLink[]>([]);
-  /** `providers` here are the *linked* ones; whether Google is offered is `/health`. */
   const [methods, setMethods] = useState<LoginMethods | null>(null);
-  const [googleAvailable, setGoogleAvailable] = useState(false);
+  const [links, setLinks] = useState<OAuthLink[]>([]);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
-  // The avatar paints with the first render from the device cache — same frame as
-  // the text, no late mount, no flash. See utils/avatarCache.ts.
-  const [avatarDataUrl, setAvatarDataUrl] = useState<string | null>(
-    () => getCachedAvatar(session.user?.username ?? '')?.dataUrl ?? null,
-  );
-  // Nothing paints until the first load lands — see the skeleton below.
+  const [googleAvailable, setGoogleAvailable] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [dialog, setDialog] = useState<Dialog>(null);
-  /** Which provider the unlink dialog is about, set by the row that opened it. */
-  const [unlinkTarget, setUnlinkTarget] = useState<'x' | 'google' | null>(null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<Dialog>(null);
+  const [unlinkTarget, setUnlinkTarget] = useState<'x' | 'google' | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const { t } = useTranslation();
   const token = session.token;
-  const createdDate = formatDate(summary?.createdAt);
 
   const refresh = useCallback(async () => {
-    if (!token) {
-      setLoaded(true);
-      return;
-    }
+    if (!token) return;
     try {
-      const [s, l, m, offered, d] = await Promise.all([
+      const [sum, m, l, s, providers] = await Promise.all([
         coreAuth.summary(token),
-        coreAuth.listXLinks(token),
         coreAuth.loginMethods(token).catch(() => null),
-        coreAuth.loginProviders(),
-        // A server that has not learned the sessions route yet must not break the page.
-        coreAuth.listSessions(token).catch(() => [] as SessionInfo[]),
+        coreAuth.listXLinks(token).catch(() => []),
+        coreAuth.listSessions(token).catch(() => []),
+        coreAuth.loginProviders().catch(() => ({ x: true, google: false })),
       ]);
-      setSummary(s);
-      setLinks(l);
+      setSummary(sum);
       setMethods(m);
-      setGoogleAvailable(offered.google);
-      setSessions(d);
-      // The picture: first paint came from the device cache; now revalidate in the
-      // background — an unchanged avatar is answered by the browser's own cache, a
-      // changed one swaps in without blanking. A removed avatar clears the cache.
-      const username = session.user?.username ?? '';
-      if (s.avatarUrl) {
-        void refreshCachedAvatar(username, s.avatarUrl).then((dataUrl) => {
-          if (dataUrl) setAvatarDataUrl(dataUrl);
-        });
-      } else {
-        clearCachedAvatar(username);
-        setAvatarDataUrl(null);
-      }
-    } catch {
-      // Leave the previous values rather than blanking the page on a transient
-      // failure; the next refresh will correct them.
+      setLinks(l);
+      setSessions(s);
+      setGoogleAvailable(providers.google);
+      setError(null);
+    } catch (err) {
+      setError(describe(err));
     } finally {
       setLoaded(true);
     }
@@ -228,22 +154,27 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
     void refresh();
   }, [refresh]);
 
-  function describe(error: unknown): string {
-    if (error instanceof CoreAuthError) {
-      switch (error.kind) {
+  const createdDate = formatDate(summary?.createdAt);
+
+  function describe(err: unknown): string {
+    if (err instanceof CoreAuthError) {
+      switch (err.kind) {
+        // The `core.err.*` keys, not `core.error.*`: the latter never existed, so
+        // `t()` returned the key itself and the screen showed a variable name. The
+        // `||` fallbacks could not save it — a missing key is a truthy string.
         case 'invalid_credentials':
-          return 'Incorrect password.';
+          return t('core.err.bad_credentials');
         case 'locked':
-          return 'Too many failed attempts. Wait a few minutes.';
+          return t('core.err.locked');
         case 'not_configured':
-          return 'X sign-in is not available on this server.';
+          return '此服务器未配置该第三方登录。';
         case 'network':
-          return 'Could not reach the server.';
+          return t('core.err.network');
         default:
-          return error.message;
+          return err.message;
       }
     }
-    return 'Something went wrong.';
+    return '操作失败，请重试。';
   }
 
   async function run(action: () => Promise<void>, successNotice?: string) {
@@ -262,7 +193,6 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
     }
   }
 
-  /** Send the browser to a provider's authorization page, to attach it to this account. */
   async function handleLink(provider: 'x' | 'google') {
     setBusy(true);
     setError(null);
@@ -278,302 +208,229 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
     }
   }
 
-  /**
-   * Whether a provider may be detached.
-   *
-   * Never when it is the last way in: the server refuses that, and a row whose only
-   * outcome is an error should not be offered. Named per provider rather than read from
-   * `recoveryRisk`, because an account with two providers linked and no password is at
-   * risk of losing the *account* yet can still safely drop one of them.
-   */
   const canDetach = (provider: 'x' | 'google') =>
     methods === null || methods.hasPassword || methods.providers.some((p) => p !== provider);
 
-  /**
-   * The provider the account's picture came from, named for display.
-   *
-   * Both providers write an avatar, so which one to name is decided by the same rule the
-   * server uses to pick the image: the most recently fetched one wins. Only providers
-   * that actually left a picture are considered, so the sentence never names a provider
-   * that supplied nothing.
-   */
-  const linkedProviderName = (): string | null => {
-    const withPicture = links.filter((l) => l.avatarUrl !== null);
-    if (withPicture.length === 0) return null;
-    const newest = withPicture[0].provider;
-    return newest === 'x' ? 'X' : newest === 'google' ? 'Google' : newest;
-  };
-
-  // Nothing paints until the first load lands: the page used to render only the parts
-  // that need no data and then grow as the summary and the X link arrived, which reads
-  // as a flicker on every visit.
   if (!loaded) return <AccountSkeleton />;
 
   return (
-    <div className="pt-4 pb-32 min-h-full flex justify-start md:justify-center">
-      <div className="mx-auto w-full max-w-[36rem] px-4">
-        <button
-          onClick={onBack}
-          className={`text-sm mb-4 inline-flex items-center gap-1.5 ${muted} hover:underline`}
-        >
-          ← {t('core.back')}
-        </button>
+    <div className="pg on long m3e-rise" style={{ maxWidth: 720, marginInline: 'auto', width: '100%' }}>
+      <HeaderBack title={t('settings.security')} onBack={onBack} backLabel={t('core.back')} />
 
-        <h1 className="text-m3-title-xl mb-1">{t('core.acct.title')}</h1>
-        {/* The account's picture, on the page that talks about the account. The URL is
-            the API's own — it re-serves the copy taken at link/sign-in time — so this
-            is not a request to X or Google and `img-src 'self'` allows it. Absent means
-            nothing is drawn: a placeholder beside a one-line "signed in as" would be
-            noise, unlike the account page header where it is the identity block. */}
-        <div className={`flex items-center gap-2.5 mb-6`}>
-          {(avatarDataUrl ?? summary?.avatarUrl) && (
-            <img
-              src={(avatarDataUrl ?? summary?.avatarUrl) as string}
-              alt=""
-              className="w-8 h-8 rounded-full object-cover shrink-0"
-              onError={(e) => { e.currentTarget.hidden = true; }}
-            />
-          )}
-          <div className="min-w-0">
-            <p className={`text-xs ${muted}`}>
-              {t('core.acct.signed_in_as')} <span className="font-medium">{session.user?.username}</span>
-              {createdDate ? ` · ${t('core.acct.created').replace('{date}', createdDate)}` : ''}
-            </p>
-          </div>
-        </div>
-
+      <div className="d-col" style={{ gap: 14 }}>
         {notice && (
-          <p className="callout !text-m3-label-medium mb-4" role="status">{notice}</p>
+          <div className="card" style={{ background: 'var(--okc)', color: 'var(--ok)', padding: '12px 16px', borderRadius: 20 }}>
+            <span style={{ fontSize: 13.5, fontWeight: 600 }}>{notice}</span>
+          </div>
         )}
         {error && (
-          <p
-            className="text-xs flex items-start gap-1.5 text-cos-error mb-4"
-            role="alert"
-          >
-            <Icon icon={AlertTriangle} size={13} className="mt-0.5 shrink-0" />
-            <span>{error}</span>
-          </p>
-        )}
-
-        {/* ── What this account holds ──────────────────────────────────────── */}
-        {summary && (
-          <section className="mb-6">
-            <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{t('core.acct.your_records')}</span>
-            <div className={`mt-2 rounded-[var(--radius-md)] border ${divider.replace('border-b ', '')} border-[var(--color-m3-outline-variant)]  px-4`}>
-              <Stat label={t('core.acct.doses')} value={summary.doseCount} />
-              <Stat label={t('core.acct.labs')} value={summary.labCount} />
-            </div>
-          </section>
+          <div className="card" style={{ background: 'var(--errc)', color: 'var(--err)', padding: '12px 16px', borderRadius: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Icon icon={AlertTriangle} size={16} />
+            <span style={{ fontSize: 13.5 }}>{error}</span>
+          </div>
         )}
 
         {/* ── Sign-in methods ─────────────────────────────────────────────── */}
-        <section className="mb-6">
-          <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{t('core.acct.signin_methods')}</span>
-
-          <div className="mt-2 flex flex-col">
-            <Row
-              icon={<Icon icon={RefreshCw} size={17} />}
-              title={t('core.acct.change_pw')}
-              subtitle={t('core.acct.change_pw_sub')}
-              onClick={() => setDialog('password')}
-            />
+        <div className="lab">{t('core.acct.signin_methods')}</div>
+        <div className="list">
+          <div className="li" role="button" tabIndex={0} onClick={() => setDialog('password')} style={{ cursor: 'pointer' }}>
+            <span className="ic p"><Icon icon={RefreshCw} size={18} /></span>
+            <div className="t">
+              <b>{t('core.acct.change_pw')}</b>
+              <span className="s">{t('core.acct.change_pw_sub')}</span>
+            </div>
+            <SpriteIcon id="chev" />
           </div>
-        </section>
+        </div>
 
         {/* ── X ────────────────────────────────────────────────────────────── */}
         {summary?.xLoginAvailable !== false && (
-          <section className="mb-6">
-            <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{t('core.acct.x_section')}</span>
-
-            <div className="mt-2 flex flex-col">
+          <>
+            <div className="lab">{t('core.acct.x_section')}</div>
+            <div className="list">
               {links.length === 0 ? (
-                <Row
-                  icon={<span className="text-m3-title-medium font-semibold">𝕏</span>}
-                  title={t('core.acct.connect').replace('{provider}', 'X')}
-                  /* No substitution on the subtitle: it names no provider, and a
-                     `.replace()` for a placeholder the string does not contain is a
-                     no-op today but becomes a half-substitution the moment someone
-                     adds `{provider}` to it. */
-                  subtitle={t('core.acct.connect_sub')}
-                  onClick={() => handleLink('x')}
-                  disabled={busy}
-                />
+                <div className="li" role="button" tabIndex={0} onClick={() => handleLink('x')} style={{ cursor: 'pointer' }}>
+                  <span className="ic"><span style={{ fontWeight: 700, fontSize: 16 }}>𝕏</span></span>
+                  <div className="t">
+                    <b>{t('core.acct.connect').replace('{provider}', 'X')}</b>
+                    <span className="s">{t('core.acct.connect_sub')}</span>
+                  </div>
+                  <SpriteIcon id="chev" />
+                </div>
               ) : (
                 links.map((l) => (
-                  <Row
-                    key={l.handle ?? l.linkedAt}
-                    icon={l.avatarUrl ? (
-                      // Note this is the *provider's* recorded URL, kept as the trace of
-                      // where the stored copy came from. It is drawn because it is what
-                      // marks a *specific* X account, and a picture the provider serves
-                      // is a public face, not a beacon — the app makes no request to X
-                      // until this row is rendered. The account header, which is on
-                      // screen far more often, draws the stored copy instead.
+                  <div key={l.handle ?? l.linkedAt} className="li no-hover">
+                    {l.avatarUrl ? (
                       <img
                         src={l.avatarUrl}
                         alt=""
-                        className="w-6 h-6 rounded-full object-cover"
-                        // A broken image must not leave a torn-icon in the row; hiding it degrades to
-                        // the empty slot rather than a broken glyph.
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                        style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', flex: 'none' }}
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                       />
                     ) : (
-                      <span className="text-m3-title-medium font-semibold">𝕏</span>
+                      <span style={{ width: 42, height: 42, display: 'grid', placeItems: 'center', flex: 'none' }}>
+                        <XBrand size={42} />
+                      </span>
                     )}
-                    title={l.handle ? `@${l.handle}` : t('core.acct.x_section')}
-                    subtitle={linkSubtitle(t, l, t('core.acct.x_section'))}
-                    right={canDetach('x') ? <Icon icon={Unlink} size={15} className={muted} /> : undefined}
-                    onClick={canDetach('x') ? () => { setUnlinkTarget('x'); setDialog('unlink'); } : undefined}
-                  />
+                    <div className="t">
+                      <b>{l.handle ? `@${l.handle}` : t('core.acct.x_section')}</b>
+                      <span className="s">{linkSubtitle(t, l, t('core.acct.x_section'))}</span>
+                    </div>
+                    {canDetach('x') && (
+                      <button
+                        type="button"
+                        onClick={() => { setUnlinkTarget('x'); setDialog('unlink'); }}
+                        className="btn x"
+                        style={{ color: 'var(--err)', minWidth: 64 }}
+                      >
+                        <Icon icon={Unlink} size={15} />
+                        <span>{t('core.acct.unlink') || '解绑'}</span>
+                      </button>
+                    )}
+                  </div>
                 ))
               )}
             </div>
-
             {!canDetach('x') && (
-              <p className={`text-xs mt-2 ${muted}`}>
-                {t('core.bind.banner')}
-              </p>
+              <p className="sub" style={{ margin: '0 6px' }}>{t('core.bind.banner')}</p>
             )}
-          </section>
+          </>
         )}
 
         {/* ── Google ───────────────────────────────────────────────────────── */}
-        {/* Same row, same rules. No handle: Google is never asked for `email`, and its
-            `sub` identifies the account without one. A link still shows when the
-            deployment has stopped offering Google, or the account would have no way to
-            detach it.
-            The picture is not drawn here for a boring reason: this row's icon slot holds
-            the letter that names the provider, and Google's picture only exists once
-            the account is linked — putting it in the slot on one branch and a "G" on the
-            other would make the same row mean two things. The account's picture is at
-            the top of this page instead. */}
         {(googleAvailable || methods?.providers.includes('google')) && (
-          <section className="mb-6">
-            <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{t('core.acct.google_section')}</span>
-
-            <div className="mt-2 flex flex-col">
+          <>
+            <div className="lab">{t('core.acct.google_section')}</div>
+            <div className="list">
               {methods?.providers.includes('google') ? (
-                <Row
-                  icon={<span className="text-m3-title-medium font-semibold">G</span>}
-                  title={t('core.acct.google_section')}
-                  subtitle={linkSubtitle(t, methods.links.find((l) => l.provider === 'google'), t('core.acct.google_section'))}
-                  right={canDetach('google') ? <Icon icon={Unlink} size={15} className={muted} /> : undefined}
-                  onClick={canDetach('google') ? () => { setUnlinkTarget('google'); setDialog('unlink'); } : undefined}
-                />
+                <div className="li no-hover">
+                  <span style={{ width: 42, height: 42, display: 'grid', placeItems: 'center', flex: 'none' }}>
+                    <GoogleBrand size={42} />
+                  </span>
+                  <div className="t">
+                    <b>{t('core.acct.google_section')}</b>
+                    <span className="s">{linkSubtitle(t, methods.links.find((l) => l.provider === 'google'), t('core.acct.google_section'))}</span>
+                  </div>
+                  {canDetach('google') && (
+                    <button
+                      type="button"
+                      onClick={() => { setUnlinkTarget('google'); setDialog('unlink'); }}
+                      className="btn x"
+                      style={{ color: 'var(--err)', minWidth: 64 }}
+                    >
+                      <Icon icon={Unlink} size={15} />
+                      <span>{t('core.acct.unlink') || '解绑'}</span>
+                    </button>
+                  )}
+                </div>
               ) : (
-                <Row
-                  icon={<span className="text-m3-title-medium font-semibold">G</span>}
-                  title={t('core.acct.connect').replace('{provider}', 'Google')}
-                  /* See the X row above. */
-                  subtitle={t('core.acct.connect_sub')}
-                  onClick={() => handleLink('google')}
-                  disabled={busy}
-                />
+                <div className="li" role="button" tabIndex={0} onClick={() => handleLink('google')} style={{ cursor: 'pointer' }}>
+                  <span style={{ width: 42, height: 42, display: 'grid', placeItems: 'center', flex: 'none' }}>
+                    <GoogleBrand size={42} />
+                  </span>
+                  <div className="t">
+                    <b>{t('core.acct.connect').replace('{provider}', 'Google')}</b>
+                    <span className="s">{t('core.acct.connect_sub')}</span>
+                  </div>
+                  <SpriteIcon id="chev" />
+                </div>
               )}
             </div>
-
             {!canDetach('google') && (
-              <p className={`text-xs mt-2 ${muted}`}>
-                {t('core.bind.banner')}
-              </p>
+              <p className="sub" style={{ margin: '0 6px' }}>{t('core.bind.banner')}</p>
             )}
-          </section>
+          </>
         )}
 
         {/* ── Signed-in devices ────────────────────────────────────────────── */}
-        {/* Listed so a person can end access they no longer recognise. The list names
-            devices, never tokens — see `listUserSessions` on the server. */}
         {sessions.length > 0 && (
-          <section className="mb-6">
-            <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{t('core.sessions.section')}</span>
-
-            <div className="mt-2 flex flex-col">
+          <>
+            <div className="lab">{t('core.sessions.section')}</div>
+            <div className="list">
               {sessions.map((s) => {
                 const dev = parseDevice(s.userAgent, t('core.sessions.unknown_device'), t('core.sessions.app'));
                 return (
-                <Row
-                  key={s.id}
-                  icon={
-                    // The current device wears a green ring and a check over its
-                    // type glyph — "this is you", readable without comparing text.
-                    s.current ? (
-                      <span className="relative inline-flex">
-                        <Icon icon={deviceIcon(dev.kind)} size={17} />
-                        <span className="absolute -bottom-1 -end-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[var(--color-m3-success)] text-[var(--color-m3-on-success)] ring-2 ring-[var(--color-m3-surface)]">
-                          <Icon icon={Check} size={9} strokeWidth={3} />
-                        </span>
+                  <div key={s.id} className="li">
+                    <span className="ic">
+                      <Icon icon={deviceIcon(dev.kind)} size={18} />
+                    </span>
+                    <div className="t">
+                      <b>
+                        {dev.label}
+                        {s.sessions > 1 ? ` · ${t('core.sessions.count').replace('{n}', String(s.sessions))}` : ''}
+                      </b>
+                      <span className="s">
+                        {t('core.sessions.last_seen').replace('{when}', formatDate(s.lastSeenAt) ?? '—')}
                       </span>
+                    </div>
+                    {s.current ? (
+                      <span className="chip ok">{t('core.sessions.current')}</span>
                     ) : (
-                      <Icon icon={deviceIcon(dev.kind)} size={17} />
-                    )
-                  }
-                  title={`${dev.label}${
-                    s.sessions > 1 ? ` · ${t('core.sessions.count').replace('{n}', String(s.sessions))}` : ''
-                  }`}
-                  subtitle={t('core.sessions.last_seen').replace('{when}', formatDate(s.lastSeenAt) ?? '—')}
-                  right={s.current
-                    ? <span className="text-xs text-[var(--color-m3-success)]">{t('core.sessions.current')}</span>
-                    : <Icon icon={Trash2} size={15} className={muted} />}
-                  danger={!s.current}
-                  onClick={s.current ? undefined : () => {
-                    void run(async () => {
-                      await coreAuth.revokeSessions(token!, s.ids);
-                      await refresh();
-                    }, t('core.sessions.notice_revoked'));
-                  }}
-                  disabled={busy}
-                />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void run(async () => {
+                            await coreAuth.revokeSessions(token!, s.ids);
+                            await refresh();
+                          }, t('core.sessions.notice_revoked'));
+                        }}
+                        className="icon-del"
+                        aria-label={t('btn.delete')}
+                        title={t('btn.delete')}
+                      >
+                        <Icon icon={Trash2} size={16} />
+                      </button>
+                    )}
+                  </div>
                 );
               })}
-
-              {sessions.some((s) => !s.current) && (
-                <Row
-                  icon={<Icon icon={LogOut} size={17} />}
-                  title={t('core.sessions.revoke_others')}
-                  danger
-                  onClick={() => {
-                    void run(async () => {
-                      await coreAuth.revokeOtherSessions(token!);
-                      await refresh();
-                    }, t('core.sessions.notice_revoked_others'));
-                  }}
-                  disabled={busy}
-                />
-              )}
             </div>
 
-            <p className={`text-xs mt-2 ${muted}`}>{t('core.sessions.note')}</p>
-          </section>
+            {sessions.some((s) => !s.current) && (
+              <button
+                type="button"
+                onClick={() => {
+                  void run(async () => {
+                    await coreAuth.revokeOtherSessions(token!);
+                    await refresh();
+                  }, t('core.sessions.notice_revoked_others'));
+                }}
+                className="btn danger-wide"
+                style={{ marginTop: 4 }}
+                disabled={busy}
+              >
+                <Icon icon={LogOut} size={17} />
+                <span>{t('core.sessions.revoke_others')}</span>
+              </button>
+            )}
+            <p className="sub" style={{ margin: '4px 6px 0', fontSize: 12 }}>{t('core.sessions.note')}</p>
+          </>
         )}
 
-        {/* ── Delete ───────────────────────────────────────────────────────── */}
-        <section>
-          <span className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{t('core.acct.delete_section')}</span>
-          <div className="mt-2 flex flex-col">
-            <Row
-              icon={<Icon icon={Trash2} size={17} />}
-              title={t('core.acct.delete')}
-              subtitle={
-                summary
+        {/* ── Delete Account ───────────────────────────────────────────────── */}
+        <div className="lab" style={{ marginTop: 8, color: 'var(--err)' }}>{t('core.acct.delete_section')}</div>
+        <div className="list">
+          <div
+            className="li danger"
+            role="button"
+            tabIndex={0}
+            onClick={() => setDialog('delete')}
+            style={{ cursor: 'pointer' }}
+          >
+            <span className="ic err"><Icon icon={Trash2} size={18} /></span>
+            <div className="t">
+              <b>{t('core.acct.delete')}</b>
+              <span className="s" style={{ whiteSpace: 'normal' }}>
+                {summary
                   ? t('core.acct.delete_sub')
                       .replace('{doses}', String(summary.doseCount))
                       .replace('{labs}', String(summary.labCount))
-                  : t('core.acct.delete_sub_basic')
-              }
-              danger
-              onClick={() => setDialog('delete')}
-            />
+                  : t('core.acct.delete_sub_basic')}
+              </span>
+            </div>
+            <SpriteIcon id="chev" />
           </div>
-        </section>
-
-        <button
-          onClick={() => void session.signOut().then(onBack)}
-          className={`mt-6 w-full flex items-center justify-center gap-2 py-3 rounded-[var(--radius-sm)] border ${divider.replace('border-b ', '')} border-[var(--color-m3-outline-variant)]  text-sm hover:bg-[var(--color-m3-surface-container)]  transition-colors`}
-          style={{ transitionDuration: 'var(--md-sys-motion-duration-short3)' }}
-        >
-          <Icon icon={LogOut} size={16} />
-          {t('core.acct.sign_out')}
-        </button>
+        </div>
       </div>
 
       {/* ── Dialogs ────────────────────────────────────────────────────────── */}
@@ -613,11 +470,10 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
           busy={busy}
           summary={summary}
           onClose={() => { setDialog(null); setError(null); }}
-          onSubmit={async (password) => {
+          onSubmit={async (pw) => {
             await run(async () => {
-              await coreAuth.deleteAccount(token!, password);
+              await coreAuth.deleteAccount(token!, pw);
             });
-            // The session is gone server-side; clear it locally and leave.
             await session.signOut().catch(() => undefined);
             onDeleted();
           }}
@@ -628,79 +484,64 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
   );
 };
 
-// ---------------------------------------------------------------------------
-// Small presentational pieces
-// ---------------------------------------------------------------------------
-
-/** The account page's shape before the first load lands, so nothing moves when it does. */
 const AccountSkeleton: React.FC = () => (
-  <div className="pt-4 pb-32 min-h-full flex justify-start md:justify-center" aria-busy="true">
-    <div className="mx-auto w-full max-w-[36rem] px-4 space-y-4">
+  <div className="pg on long m3e-rise" style={{ maxWidth: 720, marginInline: 'auto', width: '100%' }} aria-busy="true">
+    <div className="d-col" style={{ gap: 12 }}>
       {[0, 1, 2].map((row) => (
-        <div key={row} className="space-y-2">
-          <div className="h-3 w-28 rounded bg-[var(--color-m3-surface-container-high)] animate-pulse motion-reduce:animate-none" />
-          <div className="h-14 w-full rounded-[var(--radius-md)] bg-[var(--color-m3-surface-container-high)] animate-pulse motion-reduce:animate-none" />
+        <div key={row} className="card" style={{ height: 80, opacity: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="spin" />
         </div>
       ))}
     </div>
   </div>
 );
 
-const Stat: React.FC<{ label: string; value: number }> = ({ label, value }) => (
-  <div className={`flex items-center justify-between py-3 ${divider} last:border-b-0`}>
-    <span className={`text-sm ${muted}`}>{label}</span>
-    <span className={`text-sm font-medium tabular-nums ${on}`}>{value}</span>
-  </div>
-);
-
-const Row: React.FC<{
-  icon: React.ReactNode;
-  title: string;
-  subtitle?: string;
-  right?: React.ReactNode;
-  onClick?: () => void;
-  danger?: boolean;
-  disabled?: boolean;
-}> = ({ icon, title, subtitle, right, onClick, danger, disabled }) => {
-  const Tag = onClick ? 'button' : 'div';
-  return (
-    <Tag
-      {...(onClick ? { type: 'button' as const, onClick, disabled } : {})}
-      className={`w-full flex items-start gap-3 py-3.5 text-start ${divider} last:border-b-0 ${
-        onClick ? 'hover:bg-[var(--color-m3-surface-container)]  -mx-2 px-2 rounded transition-colors disabled:opacity-50' : ''
-      }`}
-      style={onClick ? { transitionDuration: 'var(--md-sys-motion-duration-short3)' } : undefined}
-    >
-      <span className={`mt-0.5 shrink-0 ${danger ? 'text-cos-error' : muted}`}>{icon}</span>
-      <span className="flex-1 min-w-0">
-        <span className={`block text-sm ${danger ? 'text-cos-error' : on}`}>{title}</span>
-        {subtitle && <span className={`block text-xs mt-0.5 leading-relaxed ${muted}`}>{subtitle}</span>}
-      </span>
-      {right && <span className="mt-0.5 shrink-0">{right}</span>}
-    </Tag>
-  );
-};
-
-/** Shared shell for the dialogs below, so motion and dismissal match everywhere. */
 const Dialog: React.FC<{
   title: string;
   onClose: () => void;
   children: React.ReactNode;
   danger?: boolean;
 }> = ({ title, onClose, children, danger }) => (
-  <div className="modal-overlay z-[70]" data-state="open" role="dialog" aria-modal="true" aria-label={title}>
-    <div className="modal-shell">
-      <div className="modal-card">
-        <h3 className={`modal-title ${danger ? 'text-cos-error' : ''}`}>{title}</h3>
-        {children}
+  <div
+    style={{
+      position: 'fixed',
+      inset: 0,
+      zIndex: 80,
+      background: 'rgba(0,0,0,0.55)',
+      display: 'grid',
+      placeItems: 'center',
+      padding: 'max(16px, env(safe-area-inset-top, 0px), var(--app-safe-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px), var(--app-safe-bottom, 0px))',
+      animation: 'fadeIn .2s ease-out',
+    }}
+    role="dialog"
+    aria-modal="true"
+    aria-label={title}
+    onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+  >
+    <div
+      className="card anim-in"
+      style={{
+        width: '100%',
+        maxWidth: 440,
+        background: 'var(--sc)',
+        borderRadius: 28,
+        padding: '24px 22px 20px',
+        boxShadow: '0 12px 32px rgba(0,0,0,.35)',
+      }}
+    >
+      <div className="hrow" style={{ marginBottom: 14 }}>
+        <b style={{ fontSize: 18, color: danger ? 'var(--err)' : 'var(--on)' }}>{title}</b>
         <button
           type="button"
           onClick={onClose}
-          className="mt-3 w-full text-xs py-2 text-[var(--color-m3-on-surface-variant)]  hover:underline"
+          className="btn x"
+          aria-label="关闭"
+          style={{ width: 36, height: 36, padding: 0, borderRadius: '50%', minWidth: 0 }}
         >
-          Cancel
+          <Icon icon={X} size={18} />
         </button>
       </div>
+      {children}
     </div>
   </div>
 );
@@ -714,21 +555,21 @@ const Field: React.FC<{
   autoFocus?: boolean;
   hint?: string;
 }> = ({ label, type = 'text', value, onChange, placeholder, autoFocus, hint }) => (
-  <div className="space-y-1.5">
-    <label className="text-sm">{label}</label>
-    <input
-      type={type}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      autoFocus={autoFocus}
-      autoComplete={type === 'password' ? 'off' : 'one-time-code'}
-      className="input-base"
-    />
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
+    <label className="sub" style={{ margin: 0, fontSize: 12.5, fontWeight: 600 }}>{label}</label>
+    <div className="fld" style={{ height: 48, borderRadius: 16, marginTop: 2 }}>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
+        autoComplete={type === 'password' ? 'off' : 'one-time-code'}
+        style={{ fontSize: 15 }}
+      />
+    </div>
     {hint && (
-      <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">
-        {hint}
-      </p>
+      <span className="sub" style={{ margin: 0, fontSize: 11.5 }}>{hint}</span>
     )}
   </div>
 );
@@ -742,16 +583,21 @@ const Submit: React.FC<{ busy: boolean; disabled?: boolean; danger?: boolean; ch
   <button
     type="submit"
     disabled={busy || disabled}
-    className={`${danger ? 'bg-cos-error text-cos-on-error' : 'btn-primary'} w-full mt-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-[var(--radius-sm)] text-sm font-medium disabled:opacity-50`}
+    className="btn"
+    style={{
+      width: '100%',
+      height: 48,
+      borderRadius: 24,
+      background: danger ? 'var(--errc)' : undefined,
+      color: danger ? 'var(--err)' : undefined,
+      marginTop: 8,
+      opacity: busy || disabled ? 0.45 : 1,
+    }}
   >
     {busy && <Progress size={16} />}
-    {children}
+    <span>{children}</span>
   </button>
 );
-
-// ---------------------------------------------------------------------------
-// Dialogs
-// ---------------------------------------------------------------------------
 
 const PasswordDialog: React.FC<{
   busy: boolean;
@@ -768,11 +614,9 @@ const PasswordDialog: React.FC<{
   return (
     <Dialog title={t('core.pw.submit')} onClose={onClose}>
       <form
-        className="space-y-3 mt-1"
+        style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}
         onSubmit={async (e) => {
           e.preventDefault();
-          // Checked locally because it is the one mistake the server cannot catch:
-          // a typo'd confirmation would otherwise lock the user out of their own data.
           if (next !== confirm) {
             setLocalError(t('core.pw.mismatch'));
             return;
@@ -794,21 +638,13 @@ const PasswordDialog: React.FC<{
           hint={t('core.pw.new_hint')}
         />
         <Field label={t('core.pw.confirm')} type="password" value={confirm} onChange={setConfirm} />
-        {localError && <p className="text-xs text-cos-error" role="alert">{localError}</p>}
+        {localError && <p className="sub" style={{ color: 'var(--err)', margin: '4px 0' }} role="alert">{localError}</p>}
         <Submit busy={busy} disabled={!current || next.length < 8}>{t('core.pw.submit')}</Submit>
       </form>
     </Dialog>
   );
 };
 
-/**
- * Unlink a provider.
- *
- * No credential is asked for: unlinking only removes a way *in*, so it cannot lock
- * anyone out, and the session already proves who is asking. The server still refuses
- * the last way in — which is why the row that opens this is not offered when there is
- * no password to fall back on.
- */
 const UnlinkDialog: React.FC<{
   busy: boolean;
   provider: 'x' | 'google';
@@ -823,13 +659,12 @@ const UnlinkDialog: React.FC<{
 
   return (
     <Dialog title={t('core.unlink.title').replace('{provider}', name)} onClose={onClose}>
-      <p className="text-xs text-[var(--color-m3-on-surface-variant)]  mb-3">
+      <p className="sub" style={{ margin: '0 0 14px', lineHeight: 1.5 }}>
         {handle
           ? t('core.unlink.body').replace('{handle}', `@${handle}`)
           : t('core.unlink.body_generic').replace('{provider}', name)}
       </p>
       <form
-        className="space-y-3"
         onSubmit={async (e) => {
           e.preventDefault();
           setError(null);
@@ -840,37 +675,13 @@ const UnlinkDialog: React.FC<{
           }
         }}
       >
-        {error && <p className="text-xs text-cos-error" role="alert">{error}</p>}
+        {error && <p className="sub" style={{ color: 'var(--err)', margin: '4px 0' }} role="alert">{error}</p>}
         <Submit busy={busy}>{t('core.unlink.submit')}</Submit>
       </form>
     </Dialog>
   );
 };
 
-/**
- * The delete confirmation, as a full-screen warning sign.
- *
- * Modelled on an airport biosecurity placard: a yellow bar of black capitals, a
- * Chinese line under it, and one plain sentence on white below. The point is that it
- * does not look like the rest of the app — it looks like a notice you walk past — so
- * the moment before an irreversible delete reads as a different kind of screen rather
- * than one more dialog with a red button.
- *
- * The sign copy is deliberately **bilingual, English and Chinese**, and is not routed
- * through `t()`. That is the motif, not a translation gap: a placard is printed, not
- * localised, and pairing the two languages is what makes it read as one. Every
- * functional label around it — the fields, the counts, the buttons, the errors — stays
- * translated as usual, because those are the app talking, not the sign.
- *
- * The form itself is unchanged from the dialog this replaced: password, type DELETE,
- * submit. Only the frame is new.
- *
- * It renders through `createPortal(…, document.body)`, like the app's other overlays.
- * That is not decoration: the view container animates with a `transform`, and an
- * identity transform still makes an element a containing block for `position: fixed`.
- * Left in place, this "full-screen" surface was measured at x=80 (inset by the nav
- * rail) and y=-73 (offset by the view's scroll) — the rail showed down its edge.
- */
 const DeleteAccountScreen: React.FC<{
   busy: boolean;
   summary: AccountSummary | null;
@@ -883,20 +694,19 @@ const DeleteAccountScreen: React.FC<{
   const [confirmText, setConfirmText] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  // Typing the word is deliberate friction on an irreversible action. It also makes
-  // an accidental Enter-through impossible.
   const ready = confirmText.trim().toUpperCase() === 'DELETE' && !!password;
 
   return createPortal(
     <div
       className="del-sign fixed inset-0 z-[80] overflow-y-auto bg-white text-black"
+      style={{
+        paddingTop: 'max(env(safe-area-inset-top, 0px), var(--app-safe-top, 0px))',
+        paddingBottom: 'max(env(safe-area-inset-bottom, 0px), var(--app-safe-bottom, 0px))',
+      }}
       role="dialog"
       aria-modal="true"
       aria-label={t('core.del.title')}
     >
-      {/* The sign. Black on yellow at display size — the contrast is the design, so
-          the colours are fixed rather than theme tokens: a placard does not have a
-          dark mode, and it must stay legible over the dark surface behind it. */}
       <div className="bg-[#FFB01C] px-5 py-6 sm:px-8 sm:py-8">
         <p className="text-[clamp(1.6rem,7vw,3.25rem)] font-black uppercase leading-[0.95] tracking-[-0.02em]">
           Last chance to keep or delete
@@ -906,7 +716,6 @@ const DeleteAccountScreen: React.FC<{
         </p>
       </div>
 
-      {/* The plain sentence below the bar, the way the placard carries one. */}
       <div className="border-b border-black/10 px-5 py-4 sm:px-8">
         <p className="text-sm leading-relaxed sm:text-base">
           You are about to delete your cloud account.{' '}
@@ -915,7 +724,6 @@ const DeleteAccountScreen: React.FC<{
       </div>
 
       <div className="mx-auto w-full max-w-xl px-5 py-6 sm:px-8">
-        {/* What actually goes, in the app's own voice — so it is translated. */}
         <div className="rounded-[var(--radius-sm)] border border-[#b3261e]/30 bg-[#b3261e]/5 p-3.5 text-xs leading-relaxed text-black">
           <strong>{t('core.del.warning')}</strong>
           {summary && (
@@ -937,29 +745,51 @@ const DeleteAccountScreen: React.FC<{
             }
           }}
         >
-          <Field label={t('core.del.password')} type="password" value={password} onChange={setPassword} autoFocus />
+          <div>
+            <label className="text-xs font-semibold uppercase text-black/70">
+              {t('core.del.enter_password')}
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="mt-1 w-full rounded border border-black/30 bg-transparent px-3 py-2 text-sm text-black"
+              autoFocus
+            />
+          </div>
 
-          <Field
-            label={t('core.del.confirm_label')}
-            value={confirmText}
-            onChange={setConfirmText}
-            placeholder="DELETE"
-          />
+          <div>
+            <label className="text-xs font-semibold uppercase text-black/70">
+              {t('core.del.type_delete')}
+            </label>
+            <input
+              type="text"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder="DELETE"
+              className="mt-1 w-full rounded border border-black/30 bg-transparent px-3 py-2 font-mono text-sm uppercase text-black placeholder:text-black/30"
+            />
+          </div>
 
-          {error && <p className="del-sign-error text-xs" role="alert">{error}</p>}
+          {error && <p className="text-xs text-[#b3261e]" role="alert">{error}</p>}
 
-          <Submit busy={busy} disabled={!ready} danger>{t('core.del.submit')}</Submit>
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 rounded border border-black/20 py-2.5 text-sm font-medium hover:bg-black/5"
+            >
+              {t('btn.cancel')}
+            </button>
+            <button
+              type="submit"
+              disabled={!ready || busy}
+              className="flex-1 rounded bg-[#b3261e] py-2.5 text-sm font-bold text-white hover:bg-[#8f1d17] disabled:opacity-40"
+            >
+              {busy ? <Progress size={16} /> : t('core.del.action')}
+            </button>
+          </div>
         </form>
-
-        {/* The way out. Named for what it does — keeping the account — because that
-            is the choice the sign puts beside deletion. */}
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-4 w-full py-2.5 text-sm font-medium text-black/70 underline underline-offset-4 hover:text-black"
-        >
-          {t('core.del.keep')}
-        </button>
       </div>
     </div>,
     document.body,

@@ -94,6 +94,65 @@ function instrumentFetch(origin: string): { calls: () => number; restore: () => 
 
 const nowH = () => Date.now() / 3_600_000;
 
+/** `POST` with a JSON body, the shape `call` wants. */
+const json = (body: unknown, token?: string): RequestInit => ({
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  body: JSON.stringify(body),
+});
+
+/**
+ * Capture the batch writes a sync makes, so "what was uploaded" is an observable.
+ *
+ * Counting round trips cannot answer it — the delta is about the *body* of the one
+ * request, and the difference between "one record" and "the whole history" is exactly
+ * what has to be asserted.
+ */
+function captureWrites(origin: string): { writes: () => { records?: { id?: string }[] }[]; restore: () => void } {
+  const original = globalThis.fetch;
+  const writes: { records?: { id?: string }[] }[] = [];
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' && input.startsWith('/') ? `${origin}${input}` : input;
+    if (
+      String(url).includes('/api/records/batch')
+      && init?.method === 'POST'
+      && typeof init.body === 'string'
+    ) {
+      try {
+        writes.push(JSON.parse(init.body));
+      } catch {
+        // Not our body shape; the sync would have failed on it anyway.
+      }
+    }
+    return original(url as RequestInfo, init);
+  }) as typeof fetch;
+  return {
+    writes: () => writes,
+    restore: () => {
+      globalThis.fetch = original;
+    },
+  };
+}
+
+/** One dose in the app's shape, with a fixed time so two calls hold the same record. */
+function dose(id: string, timeH: number, doseMG = 5, updatedAt = 1) {
+  return { id, route: 'injection', ester: 'EV', doseMG, timeH, extras: {}, updatedAt };
+}
+
+/** A payload carrying exactly `events`, in the shape `buildPayload` produces. */
+function payloadOf(events: ReturnType<typeof dose>[], weight = 70) {
+  const block = (rows: unknown[]) => ({
+    events: rows, labResults: [], doseTemplates: [], quickDoses: [], journal: [],
+    deletions: { events: {}, labResults: {}, doseTemplates: {}, journal: {}, quickDoses: {} },
+  });
+  return {
+    version: 3,
+    weight,
+    weightUpdatedAt: 1,
+    modes: { transfem: block(events), transmasc: block([]) },
+  };
+}
+
 /** A payload carrying `count` doses, otherwise in the app's own shape. */
 function payloadWith(count: number) {
   const t = nowH();
@@ -221,8 +280,11 @@ test('an app-only settings change reaches the account and a second device', asyn
     // The account side: the server's own settings reader sees it.
     const server = await call(base, '/api/settings', { headers: { Authorization: `Bearer ${token}` } });
     assert.equal(server.body.appState.settings.theme, 'dark', 'the settings never reached the account');
+    // `state` is no longer the server's echo — reassembling it decrypts the whole
+    // history, which the delta exists to avoid. It is the payload this call pushed,
+    // which is the account's state once everything was accepted.
     const pushedAppState = pushed.state!.appState as { settings?: { theme?: string } } | undefined;
-    assert.equal(pushedAppState?.settings?.theme, 'dark', 'the write response did not carry them');
+    assert.equal(pushedAppState?.settings?.theme, 'dark', 'the result did not describe what was written');
 
     // The second device holds only the records, and the app's own reader has to find
     // the settings there — this is the claim the record transport was silently breaking.
@@ -402,4 +464,131 @@ test('a device PK override and weight reach the account the model reads', async 
   } finally {
     restore();
   }
+});
+
+// --- incremental push -------------------------------------------------------
+//
+// The push is a delta: the merged payload minus what the account's read already holds.
+// A sync currently uploads the whole merged state, which is a write per record per
+// sync — on a 353-record account, a few hundred KB for a single new dose. These tests
+// are the reason `changedRecords` exists, and they are written against the real server
+// so the two halves cannot drift.
+
+test('a sync with nothing new sends no write at all', async () => {
+  const restore = installFetchOrigin(base);
+  try {
+    const { syncWithCore } = await import('../../src/services/coreSync.ts');
+    const token = await newAccount();
+    const t = nowH();
+    const payload = payloadOf([dose('idle-1', t, 5), dose('idle-2', t - 24, 6)]);
+
+    const first = captureWrites(base);
+    try {
+      await syncWithCore(token, payload);
+    } finally {
+      first.restore();
+    }
+    assert.equal(first.writes().length, 1, 'the first sync has to write');
+
+    // The same account, read back and pushed again with fresh `updatedAt` stamps — the
+    // bookkeeping the merge deliberately ignores. Nothing the server holds has changed.
+    const again = captureWrites(base);
+    try {
+      await syncWithCore(token, payloadOf([dose('idle-1', t, 5, 9_999), dose('idle-2', t - 24, 6, 9_999)]));
+    } finally {
+      again.restore();
+    }
+    assert.equal(again.writes().length, 0, 'an unchanged account must not be rewritten');
+  } finally {
+    restore();
+  }
+});
+
+test('a sync uploads only the records the account does not hold', async () => {
+  const restore = installFetchOrigin(base);
+  try {
+    const { syncWithCore } = await import('../../src/services/coreSync.ts');
+    const token = await newAccount();
+    const t = nowH();
+    await syncWithCore(token, payloadOf([dose('delta-1', t, 5), dose('delta-2', t - 24, 6)]));
+
+    const cap = captureWrites(base);
+    try {
+      // Two known doses with new bookkeeping stamps, plus one the account has never seen.
+      await syncWithCore(token, payloadOf([
+        dose('delta-1', t, 5, 9_999),
+        dose('delta-2', t - 24, 6, 9_999),
+        dose('delta-3', t - 48, 4),
+      ]));
+    } finally {
+      cap.restore();
+    }
+
+    const writes = cap.writes();
+    assert.equal(writes.length, 1, 'one batched request, not one per record');
+    assert.deepEqual(
+      writes[0].records?.map((r) => r.id),
+      ['dose:transfem:delta-3'],
+      'only the new record travelled',
+    );
+  } finally {
+    restore();
+  }
+});
+
+test('an edited dose is uploaded and its neighbours are not', async () => {
+  const restore = installFetchOrigin(base);
+  try {
+    const { syncWithCore } = await import('../../src/services/coreSync.ts');
+    const token = await newAccount();
+    const t = nowH();
+    await syncWithCore(token, payloadOf([dose('edit-1', t, 5), dose('edit-2', t - 24, 6)]));
+
+    const cap = captureWrites(base);
+    try {
+      await syncWithCore(token, payloadOf([dose('edit-1', t, 8, 5), dose('edit-2', t - 24, 6, 5)]));
+    } finally {
+      cap.restore();
+    }
+
+    const writes = cap.writes();
+    assert.equal(writes.length, 1);
+    assert.deepEqual(
+      writes[0].records?.map((r) => r.id),
+      ['dose:transfem:edit-1'],
+      'the edited dose, and only that one',
+    );
+  } finally {
+    restore();
+  }
+});
+
+test('a batch write can skip echoing the whole state', async () => {
+  const token = await newAccount();
+  const withState = await call(base, '/api/records/batch', json({
+    records: [{ id: 'echo-1', takenAt: Date.now(), category: 'dose', data: { med_name: 'ECHO' } }],
+  }, token));
+  assert.deepEqual(withState.body.written, ['echo-1']);
+  assert.ok(withState.body.state, 'the default still returns the state other callers read');
+
+  const withoutState = await call(base, '/api/records/batch', json({
+    records: [{ id: 'echo-2', takenAt: Date.now(), category: 'dose', data: { med_name: 'ECHO2' } }],
+    echoState: false,
+  }, token));
+  assert.deepEqual(withoutState.body.written, ['echo-2']);
+  assert.equal(withoutState.body.state, undefined, 'the state was skipped, not merely emptied');
+  assert.deepEqual(withoutState.body.rejected, []);
+});
+
+test('skipping the state does not hide a refusal', async () => {
+  // The client surfaces `rejected` as a failed sync and retries; losing it here would
+  // make a refused record look like a clean sync.
+  const token = await newAccount();
+  const response = await call(base, '/api/records/batch', json({
+    records: [{ id: 'skip-bad', takenAt: 'not a date', category: 'dose', data: { med_name: 'BAD' } }],
+    echoState: false,
+  }, token));
+  assert.deepEqual(response.body.written, []);
+  assert.equal(response.body.rejected?.[0]?.id, 'skip-bad');
+  assert.ok(response.body.rejected?.[0]?.reason, 'the reason still travels');
 });

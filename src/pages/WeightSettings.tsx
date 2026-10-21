@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import Icon from '../components/Icon';
-import { ArrowLeft } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
+import { HeaderBack } from '../ui/proto';
 
 interface WeightSettingsProps {
     weight: number;
@@ -29,51 +28,32 @@ const WeightSettings: React.FC<WeightSettingsProps> = ({ weight, onSave, onBack 
         }
     };
 
-    const divider = "border-b border-[var(--color-m3-outline-variant)] ";
-
     return (
-        <div className="relative pb-32">
-            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3">
-                <button
-                    onClick={onBack}
-                    className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] "
-                >
-                    <Icon icon={ArrowLeft} size={18} className="text-[var(--color-m3-on-surface-variant)]  shrink-0" />
-                    <span className="text-xl font-semibold text-[var(--color-m3-on-surface)] ">
-                        {t('status.weight')}
-                    </span>
-                </button>
+        <div className="pg on long" style={{ maxWidth: 720, marginInline: 'auto', width: '100%' }}>
+            <HeaderBack title={t('status.weight')} onBack={onBack} backLabel={t('core.back')} />
+
+            <div className="lf-hero" style={{ gap: 6 }}>
+                <span className="l">{t('status.weight')}</span>
+                <span style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                    <input
+                        type="number"
+                        inputMode="decimal"
+                        value={weightStr}
+                        onChange={(e) => setWeightStr(e.target.value)}
+                        className="lf-num"
+                        style={{ width: 170 }}
+                        placeholder="0.0"
+                        aria-label={t('status.weight')}
+                        autoFocus
+                    />
+                    <span style={{ fontSize: 20, fontWeight: 800, opacity: .85 }}>kg</span>
+                </span>
+                <span className="s" style={{ fontSize: 12.5, opacity: .8 }}>{t('modal.weight.desc')}</span>
             </div>
 
-            <div className="mx-auto w-full px-6 md:px-8 mt-4 max-w-2xl">
-                <div className={`flex items-center justify-between py-5 ${divider}`}>
-                    <div className="flex items-end gap-2">
-                        <input
-                            type="number"
-                            inputMode="decimal"
-                            value={weightStr}
-                            onChange={(e) => setWeightStr(e.target.value)}
-                            className="input-num w-32 text-m3-display-large text-[var(--color-m3-on-surface)]"
-                            placeholder="0.0"
-                            style={{ fontSize: '40px' }}
-                            autoFocus
-                        />
-                        <span className="text-lg font-medium text-[var(--color-m3-on-surface-variant)]  pb-1">kg</span>
-                    </div>
-                    <p className="text-xs text-[var(--color-m3-on-surface-variant)]  max-w-[140px] text-right">
-                        {t('modal.weight.desc')}
-                    </p>
-                </div>
-
-                <button
-                    onClick={handleSave}
-                    className={`w-full flex items-center py-[18px] ${divider} text-start`}
-                >
-                    <span className="text-m3-body-medium font-medium text-[var(--color-m3-primary)] ">
-                        {t('btn.save')}
-                    </span>
-                </button>
-            </div>
+            <button type="button" onClick={handleSave} className="btn" style={{ height: 52 }}>
+                {t('btn.save')}
+            </button>
         </div>
     );
 };

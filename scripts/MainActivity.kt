@@ -7,9 +7,11 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.Settings
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
@@ -25,6 +27,11 @@ class MainActivity : TauriActivity() {
   private var bottomInset = 0f
   private var appWebView: WebView? = null
   private var pendingOAuthUrl: String? = null
+  /** Set by onStop, consumed by onStart to decide whether background re-lock is due. */
+  private var stoppedAt = 0L
+  private var lockBridge: HrtLockBridge? = null
+  /** Text waiting for the document picker to return a destination. */
+  private var pendingSaveContent: String? = null
 
   companion object {
     /** SharedPreferences store for the notification-language fallbacks, read by
@@ -32,6 +39,9 @@ class MainActivity : TauriActivity() {
     const val NOTIF_PREFS = "hrt-push"
     const val NOTIF_TITLE_KEY = "notif-title"
     const val NOTIF_BODY_KEY = "notif-body"
+    /** The device-locked line: a generic "you have a reminder", never the dose. */
+    const val NOTIF_HIDDEN_KEY = "notif-hidden"
+    private const val REQUEST_SAVE_FILE = 4711
   }
 
   /** True while the SPA still has state for system back to pop (a dialog, a
@@ -132,9 +142,11 @@ class MainActivity : TauriActivity() {
         val obj = org.json.JSONObject(json)
         val title = obj.optString("title")
         val body = obj.optString("body")
+        val hidden = obj.optString("hidden")
         getSharedPreferences(NOTIF_PREFS, Context.MODE_PRIVATE).edit()
           .putString(NOTIF_TITLE_KEY, title)
           .putString(NOTIF_BODY_KEY, body)
+          .putString(NOTIF_HIDDEN_KEY, hidden)
           .apply()
       } catch (e: Exception) {
         // A malformed payload leaves the last known language in place.
@@ -163,6 +175,7 @@ class MainActivity : TauriActivity() {
     @JavascriptInterface fun openSettings() {
       runOnUiThread {
         try {
+          lockBridge?.markExternalFlow()
           val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
               .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
@@ -260,6 +273,7 @@ class MainActivity : TauriActivity() {
         // than dead-ending; the JS side invites a retry once it is back.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
           postUpdateEvent("hrt-update-error", "{\"reason\":\"permission\"}")
+          lockBridge?.markExternalFlow()
           val settings = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
           settings.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
           startActivity(settings)
@@ -275,6 +289,51 @@ class MainActivity : TauriActivity() {
       } catch (e: Exception) {
         postUpdateEvent("hrt-update-error", "{\"reason\":${org.json.JSONObject.quote(e.message ?: "error")}}")
       }
+    }
+  }
+
+  /**
+   * Export to a user-chosen file.
+   *
+   * A WebView ignores `<a download>` unless a DownloadListener is installed, so
+   * the web export path silently did nothing inside the APK. `ACTION_CREATE_DOCUMENT`
+   * is the platform's own "save as" surface — the user picks the location, and
+   * no storage permission is involved.
+   */
+  inner class ExportBridge {
+    @JavascriptInterface fun save(name: String, mime: String, content: String) {
+      pendingSaveContent = content
+      runOnUiThread {
+        try {
+          val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = mime.ifBlank { "application/octet-stream" }
+            putExtra(Intent.EXTRA_TITLE, name)
+          }
+          @Suppress("DEPRECATION")
+          startActivityForResult(intent, REQUEST_SAVE_FILE)
+        } catch (e: Exception) {
+          pendingSaveContent = null
+          Toast.makeText(this@MainActivity, e.message ?: "save failed", Toast.LENGTH_SHORT).show()
+        }
+      }
+    }
+  }
+
+  override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    super.onActivityResult(requestCode, resultCode, data)
+    if (requestCode != REQUEST_SAVE_FILE) return
+    val content = pendingSaveContent
+    pendingSaveContent = null
+    if (resultCode != RESULT_OK || data?.data == null || content == null) return
+    try {
+      contentResolver.openOutputStream(data.data!!)?.use { out ->
+        out.write(content.toByteArray(Charsets.UTF_8))
+        out.flush()
+      }
+      Toast.makeText(this, "已保存", Toast.LENGTH_SHORT).show()
+    } catch (e: Exception) {
+      Toast.makeText(this, e.message ?: "save failed", Toast.LENGTH_SHORT).show()
     }
   }
 
@@ -297,6 +356,9 @@ class MainActivity : TauriActivity() {
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     val url = intent?.dataString ?: return
+    // Returning from the OAuth browser is the end of that external flow: the
+    // callback cannot wait for the JS side to report it.
+    lockBridge?.endExternalFlow()
     pendingOAuthUrl = url
     appWebView?.postDelayed({
       appWebView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('hrt-oauth-callback',{detail:${org.json.JSONObject.quote(url)}}))", null)
@@ -318,6 +380,10 @@ class MainActivity : TauriActivity() {
     webView.addJavascriptInterface(UpdateBridge(), "HrtUpdate")
     webView.addJavascriptInterface(PushBridge(), "HrtPush")
     webView.addJavascriptInterface(NotificationBridge(), "HrtNotif")
+    webView.addJavascriptInterface(ExportBridge(), "HrtExport")
+    val lock = HrtLockBridge(this) { appWebView }
+    lockBridge = lock
+    webView.addJavascriptInterface(lock, "HrtLock")
     ViewCompat.setOnApplyWindowInsetsListener(webView) { _, insets ->
       val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
       val density = resources.displayMetrics.density
@@ -334,4 +400,23 @@ class MainActivity : TauriActivity() {
    *  no browser history — which is always, this is an SPA without pushState.
    *  Opting out leaves back handling entirely to the callback above. */
   override val handleBackNavigation: Boolean = false
+
+  /** Background re-lock: only a stop of 5 s or more counts, and only when no
+   *  external flow (OAuth, file picker, settings) is open. The WebView is not
+   *  reloaded; the JS layer draws the unlock surface over it. */
+  override fun onStop() {
+    stoppedAt = SystemClock.elapsedRealtime()
+    super.onStop()
+  }
+
+  override fun onStart() {
+    super.onStart()
+    lockBridge?.notifyEnrollmentReturn()
+    val stopped = stoppedAt
+    stoppedAt = 0L
+    if (stopped > 0L) {
+      val away = SystemClock.elapsedRealtime() - stopped
+      if (lockBridge?.shouldRelock(away) == true) lockBridge?.notifyRelocked()
+    }
+  }
 }

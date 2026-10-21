@@ -325,11 +325,19 @@ interface MissedInstance {
 async function missedInstances(ctx: AuthContext, nowMs: number, graceMs: number): Promise<MissedInstance[]> {
   const statuses = await MedPlanService.status(ctx, nowMs);
   const out: MissedInstance[] = [];
+  // One reminder per drug per instant, not per plan. Two plans for the same
+  // compound and route that fall due at the same time are one thing to the
+  // person holding the phone — the device dedups on the same identity, so the
+  // server has to agree or it reintroduces the duplicate it just removed.
+  const seen = new Set<string>();
   for (const status of statuses) {
     for (const iso of status.missed) {
       const dueAt = Date.parse(iso);
       if (!Number.isFinite(dueAt)) continue;
       if (nowMs - dueAt < graceMs) continue;
+      const drugKey = `${status.plan.ester}|${status.plan.route ?? '*'}|${dueAt}`;
+      if (seen.has(drugKey)) continue;
+      seen.add(drugKey);
       out.push({
         planId: status.plan.id,
         dueAt,

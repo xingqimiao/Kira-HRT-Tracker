@@ -36,7 +36,7 @@ const VERIFY_TIMEOUT_MS = 10_000;
  * `'x_setup'` used to be here: a social signup had a second leg that set a password
  * and enrolled a second factor. That leg is gone.
  */
-export type TurnstileAction = 'register' | 'oauth';
+export type TurnstileAction = 'register' | 'oauth' | 'donate';
 
 /**
  * A route may accept a token minted for more than one of its own actions.

@@ -1,26 +1,19 @@
 import React, { useState, useCallback } from 'react';
 import Icon from '../components/Icon';
-import { ArrowLeft, RotateCcw, ChevronDown, AlertTriangle, Info } from '../icons';
+import { RotateCcw, AlertTriangle, Info, Check } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';
 import { Tooltip } from '../components/ui';
 import { PKCustomParams, DEFAULT_PK_PARAMS, type PkEngineId } from '../../logic';
+import { ConnectedButtonGroup, HeaderBack } from '../ui/proto';
+import { Icon as SpriteIcon } from '../ui/SvgDefs';
 
 interface PKParamsPageProps {
     pkParams: PKCustomParams | null;
     onSave: (params: PKCustomParams) => void;
     onReset: () => void;
     onBack: () => void;
-    /**
-     * The engine actually in force (`engineInUse`), not the raw preference.
-     *
-     * The Transmtf engine has no parameter-override surface at all — its constants
-     * are internal to the vendored model and are not the same physical quantities this
-     * page edits. So the controls are disabled and the warning is replaced with the
-     * truth, rather than accepting edits that would be stored, synced and silently
-     * ignored. The stored values are kept: switching back to the built-in engine
-     * restores them.
-     */
+    /** The engine actually in force (`engineInUse`), not the raw preference. */
     engine: PkEngineId;
 }
 
@@ -97,18 +90,16 @@ const SECTIONS: { key: SectionKey; titleKey: string; fields: FieldDef[] }[] = [
     },
 ];
 
-const divider = "border-b border-[var(--color-m3-outline-variant)] ";
-
 const PKParamsPage: React.FC<PKParamsPageProps> = ({ pkParams, onSave, onReset, onBack, engine }) => {
     const { t } = useTranslation();
     const { showDialog } = useDialog();
 
     // The Transmtf engine cannot take these overrides, so the whole page is read-only
-    // while it is in force — see the `engine` prop note.
+    // while it is in force.
     const disabled = engine === 'transmtf';
 
     const [draft, setDraft] = useState<PKCustomParams>(() =>
-        pkParams ? { ...DEFAULT_PK_PARAMS, ...pkParams } : { ...DEFAULT_PK_PARAMS }
+        pkParams ? { ...DEFAULT_PK_PARAMS, ...pkParams } : { ...DEFAULT_PK_PARAMS },
     );
     const [openSections, setOpenSections] = useState<Set<SectionKey>>(new Set(['e2_inj']));
     const [saved, setSaved] = useState(false);
@@ -145,118 +136,115 @@ const PKParamsPage: React.FC<PKParamsPageProps> = ({ pkParams, onSave, onReset, 
 
     const isCustomized = (key: keyof PKCustomParams) => draft[key] !== DEFAULT_PK_PARAMS[key];
 
+    const hasAnyCustom = (Object.keys(DEFAULT_PK_PARAMS) as (keyof PKCustomParams)[]).some(
+        key => Math.abs(Number(draft[key]) - Number(DEFAULT_PK_PARAMS[key])) >= 1e-9,
+    );
+
+    const resetToDefault = () => {
+        if (disabled) return;
+        const next = { ...DEFAULT_PK_PARAMS };
+        setDraft(next);
+        onSave(next);
+    };
+
     return (
-        <div className="relative pb-32">
-            <div className="sticky top-0 z-20 bg-[var(--color-m3-surface-dim)]  px-6 md:px-8 pt-8 pb-3 flex items-center">
-                <button
-                    onClick={onBack}
-                    className="flex items-center gap-3 -ml-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-m3-surface-container)] "
-                >
-                    <Icon icon={ArrowLeft} size={18} className="text-[var(--color-m3-on-surface-variant)]  shrink-0" />
-                    <span className="text-xl font-semibold text-[var(--color-m3-on-surface)] ">
-                        {t('pk.title')}
-                    </span>
-                </button>
-                {pkParams && (
-                    <span className="ml-auto text-xs font-medium text-cos-warning  shrink-0">
-                        {t('pk.customized')}
-                    </span>
+        <div className="pg on long" style={{ maxWidth: 720, marginInline: 'auto', width: '100%' }}>
+            <HeaderBack title={t('pk.title')} onBack={onBack} backLabel={t('core.back')} />
+
+            {/* 2026 Literature standard baseline - sole authoritative foundation */}
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                    <div>
+                        <b style={{ fontSize: 15 }}>{t('pk.preset.title')}</b>
+                        <p className="sub" style={{ margin: '4px 0 0', fontSize: 12.5, lineHeight: 1.5 }}>
+                            {t('pk.preset.desc')}
+                        </p>
+                    </div>
+                    {hasAnyCustom && (
+                        <button
+                            type="button"
+                            className="btn-tonal"
+                            onClick={resetToDefault}
+                            disabled={disabled}
+                            style={{ padding: '6px 14px', fontSize: 12, borderRadius: 16, whiteSpace: 'nowrap', flexShrink: 0 }}
+                        >
+                            {t('action.reset')}
+                        </button>
+                    )}
+                </div>
+                {hasAnyCustom && (
+                    <p className="sub" style={{ margin: 0, fontSize: 12, color: 'var(--pri)' }}>
+                        {t('pk.preset.custom')}
+                    </p>
                 )}
             </div>
 
-            <div className="mx-auto w-full px-6 md:px-8 mt-4 max-w-2xl">
-                {/* Warning — or, on the Transmtf engine, why this page is inert */}
-                <div className="flex items-start gap-2 mb-6 pb-4 border-b border-[var(--color-m3-outline-variant)] ">
-                    <Icon icon={disabled ? Info : AlertTriangle} size={13} className={`${disabled ? 'text-[var(--color-m3-on-surface-variant)] ' : 'text-cos-warning  '}mt-0.5 shrink-0`} />
-                    <p className="text-sm text-[var(--color-m3-on-surface-variant)] ">{disabled ? t('pk.unsupported') : t('pk.warn')}</p>
-                </div>
+            <div className={`card`} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: disabled ? 'var(--sch)' : 'var(--warnc)', color: disabled ? 'var(--var)' : 'var(--onterc)' }}>
+                <Icon icon={disabled ? Info : AlertTriangle} size={18} />
+                <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>{disabled ? t('pk.unsupported') : t('pk.warn')}</p>
+            </div>
 
-                {/* Sections — flat, no cards */}
-                {SECTIONS.map(section => (
-                    <div key={section.key}>
+            {SECTIONS.map(section => {
+                const open = openSections.has(section.key);
+                return (
+                    <div key={section.key} className="list">
                         <button
+                            type="button"
                             onClick={() => toggleSection(section.key)}
-                            className={`w-full flex items-center justify-between py-4 ${divider} text-start`}
+                            className="li"
+                            style={{ width: '100%', border: 0, font: 'inherit', color: 'inherit', textAlign: 'left' }}
+                            aria-expanded={open}
                         >
-              <span className="text-m3-title-small text-[var(--color-m3-on-surface-variant)] ">
-                                {t(section.titleKey)}
-                            </span>
-                            <Icon icon={ChevronDown}
-                                size={14}
-                                className={`chev text-[var(--color-m3-on-surface-variant)]  ${openSections.has(section.key) ? 'rotate-180' : ''}`} />
+                            <div className="t"><b>{t(section.titleKey)}</b></div>
+                            <SpriteIcon id="down" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .28s cubic-bezier(.3,1.7,.5,1)' }} />
                         </button>
 
-                        <div className="disclosure" data-open={openSections.has(section.key)}>
-                            <div className="disclosure-inner">
-                                {section.fields.map(field => {
-                                    const defVal = DEFAULT_PK_PARAMS[field.key] as number;
-                                    const curVal = draft[field.key] as number;
-                                    const changed = isCustomized(field.key);
-                                    return (
-                                        <div key={field.key} className={`flex items-center gap-3 py-3 ${divider}`}>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className="text-sm text-[var(--color-m3-on-surface)] ">
-                                                        {t(field.labelKey)}
-                                                    </span>
-                                                    {changed && (
-                                                        <Tooltip label={t('pk.modified')}>
-                                                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--color-m3-primary)] flex-shrink-0" />
-                                                        </Tooltip>
-                                                    )}
-                                                </div>
-                                                <span className="text-xs text-[var(--color-m3-on-surface-variant)] ">
-                                                    {t('pk.default')}: {defVal.toFixed(field.precision)}
-                                                </span>
-                                            </div>
-                                            <input
-                                                type="number"
-                                                inputMode="decimal"
-                                                min={field.min}
-                                                max={field.max}
-                                                step={field.step}
-                                                value={curVal}
-                                                disabled={disabled}
-                                                onChange={e => updateField(field.key, e.target.value, field.min, field.max)}
-                                                className="input-num w-28 text-[var(--color-m3-on-surface)] disabled:opacity-40 disabled:cursor-not-allowed"
-                                                style={{ fontSize: '16px' }}
-                                            />
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
+                        {open && section.fields.map(field => {
+                            const defVal = DEFAULT_PK_PARAMS[field.key] as number;
+                            const curVal = draft[field.key] as number;
+                            const changed = isCustomized(field.key);
+                            return (
+                                <div key={field.key} className="li" style={{ cursor: 'default' }}>
+                                    <div className="t">
+                                        <b>
+                                            {t(field.labelKey)}
+                                            {changed && (
+                                                <Tooltip label={t('pk.modified')}>
+                                                    <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--pri)' }} />
+                                                </Tooltip>
+                                            )}
+                                        </b>
+                                        <span className="s">{t('pk.default')}: {defVal.toFixed(field.precision)}</span>
+                                    </div>
+                                    <input
+                                        type="number"
+                                        inputMode="decimal"
+                                        min={field.min}
+                                        max={field.max}
+                                        step={field.step}
+                                        value={curVal}
+                                        disabled={disabled}
+                                        onChange={e => updateField(field.key, e.target.value, field.min, field.max)}
+                                        className="num-pill tabular-nums"
+                                        style={{ width: 96, opacity: disabled ? .4 : 1 }}
+                                    />
+                                </div>
+                            );
+                        })}
                     </div>
-                ))}
+                );
+            })}
 
-                {/* Info note */}
-                <div className="flex items-start gap-2 pt-4 pb-2">
-                    <Icon icon={Info} size={13} className="text-[var(--color-m3-on-surface-variant)]  mt-0.5 flex-shrink-0" />
-                    <p className="text-xs text-[var(--color-m3-on-surface-variant)] ">{disabled ? t('pk.unsupported.note') : t('pk.note')}</p>
-                </div>
+            <p className="sub" style={{ margin: '0 6px', fontSize: 12, lineHeight: 1.55 }}>{disabled ? t('pk.unsupported.note') : t('pk.note')}</p>
 
-                {/* Save */}
-                <button
-                    onClick={handleSave}
-                    disabled={disabled}
-                    className={`w-full flex items-center justify-between py-[18px] ${divider} text-start ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-                >
-                    <span className="text-m3-body-medium font-medium text-[var(--color-m3-on-surface)] ">{t('btn.save')}</span>
-                    {saved && (
-                        <span className="text-xs text-cos-success  font-medium">{t('pk.saved')}</span>
-                    )}
-                </button>
-
-                {/* Reset all */}
-                <button
-                    onClick={handleReset}
-                    disabled={disabled}
-                    className={`w-full flex items-center gap-2 py-[18px] text-start ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-                >
-                    <Icon icon={RotateCcw} size={14} className="text-cos-error " />
-                    <span className="text-m3-body-medium text-cos-error ">{t('pk.reset')}</span>
-                </button>
-            </div>
+            <button type="button" onClick={handleSave} disabled={disabled} className="btn" style={{ height: 52, opacity: disabled ? .4 : 1 }}>
+                <Icon icon={Check} size={18} />
+                {saved ? t('pk.saved') : t('btn.save')}
+            </button>
+            <button type="button" onClick={handleReset} disabled={disabled} className="btn danger-wide" style={{ marginTop: 0, opacity: disabled ? .4 : 1 }}>
+                <Icon icon={RotateCcw} size={19} />
+                {t('pk.reset')}
+            </button>
         </div>
     );
 };

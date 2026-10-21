@@ -51,6 +51,34 @@ repository root unchanged and is not replaced by a licence of our own.
 
 ---
 
+## Featherline
+
+The `.hrtbackup` import path interoperates with Featherline's encrypted backup
+container: a `HRTBKP1` header, Argon2id key derivation, AES-256-GCM, and a gzipped
+JSON snapshot. The reader lives in `src/utils/featherlineBackup.ts` and was written
+against Featherline's `docs/backup-format.md` and its `BackupCrypto.kt` /
+`BackupSnapshot.kt` sources.
+
+Source:
+https://github.com/mkx173/Featherline
+
+Licensed under the **GNU General Public License, version 3.0**:
+
+```
+Featherline is released under the GNU General Public License, version 3.0.
+See LICENSES/GPL-3.0.txt for the complete licence text.
+```
+
+The upstream repository ships the standard GPL-3.0 text without a project-specific
+copyright line; copyright remains with mkx173 and the Featherline contributors. The
+full licence text is kept at [`LICENSES/GPL-3.0.txt`](LICENSES/GPL-3.0.txt) and is
+distributed with this repository.
+
+This section covers the backup-format interoperability code only. The Featherline
+Android application itself is not bundled here.
+
+---
+
 ## Transmtf pharmacokinetic engine
 
 A second pharmacokinetic engine, offered alongside the model above and selected in
@@ -152,6 +180,8 @@ from the icon set, and do not recolour Google's.
 ## How this file is surfaced
 
 - [`LICENSE`](LICENSE) carries the upstream MIT notice.
+- [`LICENSES/GPL-3.0.txt`](LICENSES/GPL-3.0.txt) carries the full GPL-3.0 text for
+  the Featherline backup-format interoperability code.
 - This file carries the model grant, which is **not** MIT and must not be collapsed
   into it — a reader who assumed one licence covered the repository would be wrong in
   a way that matters commercially.

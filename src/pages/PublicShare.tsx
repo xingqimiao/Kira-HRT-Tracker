@@ -2,12 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Icon from '../components/Icon';
 import { AlertCircle, Clock3, Eye, EyeOff, LockKeyhole } from '../icons';
 import { Progress } from '../components/ui';
-import { DoseEvent, Ester, ExtraKey, getToE2Factor, isTestosteroneEster, isAntiandrogen, modelledEvents, Route } from '../../logic';
+import { DoseEvent, Ester, ExtraKey, getToE2Factor, isTestosteroneEster, isAntiandrogen, isUnmodelledCompound, modelledEvents, Route } from '../../logic';
 import ResultChart from '../components/ResultChart';
 import { useTranslation } from '../contexts/LanguageContext';
 import { getShareCopy } from '../i18n/share';
 import { LOCALE_MAP } from '../utils/helpers';
-import { LockedShare, ShareApiError, ShareDetails, sharingService } from '../services/sharing';
+import { openShareSnapshot, shareKeyFromHash } from '../utils/shareCrypto';
+import { LockedShare, ShareApiError, ShareDetails, SharedDosageSnapshot, sharingService } from '../services/sharing';
 
 interface PublicShareProps {
     token: string | null;
@@ -16,12 +17,38 @@ interface PublicShareProps {
 type ShareState =
     | { kind: 'loading' }
     | { kind: 'locked'; meta: LockedShare }
-    | { kind: 'ready'; details: ShareDetails }
+    | { kind: 'ready'; details: ShareDetails; snapshot: SharedDosageSnapshot }
+    /**
+     * The snapshot is sealed and this URL carries no key. The key lives after the `#`,
+     * and browsers never send a fragment to the server — so a link pasted without it
+     * (or truncated by a chat client) cannot be opened by anyone.
+     */
+    | { kind: 'noKey' }
     | { kind: 'expired' }
     | { kind: 'unavailable' };
 
 const formatWearDays = (days: number): string =>
     (Math.round(days * 100) / 100).toString();
+
+/**
+ * A share payload is external input, and two shapes of it exist in the wild.
+ *
+ * The app writes full `DoseEvent`s — `timeH` plus `extras`. `hrt_create_share`
+ * writes a minimal record (`at` as an ISO string, no extras), which is enough for
+ * an assistant to describe but not what the viewer reads. Normalising once here
+ * keeps the chart, the date grouping and the rows on the same numbers, and means a
+ * link written by either path opens instead of throwing on `Invalid time value`.
+ */
+const normalizeSharedEvents = (events: DoseEvent[] | undefined): DoseEvent[] =>
+    (events ?? [])
+        .map((event) => {
+            const raw = event as DoseEvent & { at?: string };
+            const timeH = typeof raw.timeH === 'number' && Number.isFinite(raw.timeH)
+                ? raw.timeH
+                : Date.parse(raw.at ?? '') / 3_600_000;
+            return { ...raw, timeH, extras: raw.extras ?? {} } as DoseEvent;
+        })
+        .filter(event => Number.isFinite(event.timeH));
 
 const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
     const { lang, t } = useTranslation();
@@ -32,12 +59,59 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
     const [unlocking, setUnlocking] = useState(false);
     const [passwordError, setPasswordError] = useState<string | null>(null);
     const unlockedPasswordRef = useRef('');
+    const viewerPassRef = useRef('');
+    const [lockUntil, setLockUntil] = useState(0);
+    const [lockRemaining, setLockRemaining] = useState(0);
+
+    // Countdown for a per-link lockout. The server's Retry-After is authoritative;
+    // the page only renders it, so a reload does not invent a shorter wait.
+    useEffect(() => {
+        if (!lockUntil) { setLockRemaining(0); return; }
+        const tick = () => {
+            const seconds = Math.max(0, Math.ceil((lockUntil - Date.now()) / 1000));
+            setLockRemaining(seconds);
+            if (seconds === 0) setLockUntil(0);
+        };
+        tick();
+        const timer = window.setInterval(tick, 1000);
+        return () => window.clearInterval(timer);
+    }, [lockUntil]);
 
     const classifyError = (error: unknown): ShareState => {
         if (error instanceof ShareApiError && (error.status === 410 || error.code === 'SHARE_EXPIRED')) {
             return { kind: 'expired' };
         }
         return { kind: 'unavailable' };
+    };
+
+    /**
+     * Turn what the server returned into something renderable.
+     *
+     * A sealed link is opened here, in the browser, with the key from the fragment —
+     * the server was never able to read it. A link written before sealing (or by an
+     * agent) still arrives as a plaintext snapshot and is used as-is, so old links
+     * keep working.
+     */
+    const resolveDetails = async (details: ShareDetails): Promise<ShareState> => {
+        if (!details.sealed) {
+            return details.snapshot
+                ? { kind: 'ready', details, snapshot: details.snapshot }
+                : { kind: 'unavailable' };
+        }
+        const key = shareKeyFromHash(window.location.hash);
+        if (!key) return { kind: 'noKey' };
+        try {
+            const opened = await openShareSnapshot(details.sealed, key);
+            if (!opened || typeof opened !== 'object' || Array.isArray(opened)) {
+                return { kind: 'unavailable' };
+            }
+            return { kind: 'ready', details, snapshot: opened as SharedDosageSnapshot };
+        } catch {
+            // A wrong key and a damaged envelope are the same answer to the reader:
+            // this link cannot be opened. Showing an empty record instead would look
+            // like the sharer's history had been deleted.
+            return { kind: 'unavailable' };
+        }
     };
 
     useEffect(() => {
@@ -69,14 +143,27 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
         }
 
         setState({ kind: 'loading' });
-        sharingService.open(token)
-            .then(result => {
+        setLockUntil(0);
+        sharingService.open(token, viewerPassRef.current || undefined)
+            .then(async result => {
                 if (cancelled) return;
-                if ('snapshot' in result) setState({ kind: 'ready', details: result });
-                else setState({ kind: 'locked', meta: result });
+                if ('snapshot' in result) {
+                    viewerPassRef.current = result.viewerPass || viewerPassRef.current;
+                    const next = await resolveDetails(result);
+                    if (!cancelled) setState(next);
+                } else setState({ kind: 'locked', meta: result });
             })
             .catch(error => {
-                if (!cancelled) setState(classifyError(error));
+                if (cancelled) return;
+                if (error instanceof ShareApiError && error.status === 429) {
+                    setLockUntil(Date.now() + (error.retryAfterMs ?? 15 * 60_000));
+                    setState({
+                        kind: 'locked',
+                        meta: { passwordRequired: true, live: false, createdAt: Date.now(), updatedAt: Date.now(), expiresAt: null },
+                    });
+                    return;
+                }
+                setState(classifyError(error));
             });
         return () => { cancelled = true; };
         // classifyError contains no reactive state.
@@ -89,13 +176,21 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
         setUnlocking(true);
         setPasswordError(null);
         try {
-            const details = await sharingService.unlock(token, password);
+            const details = await sharingService.unlock(token, password, viewerPassRef.current || undefined);
             unlockedPasswordRef.current = password;
-            setState({ kind: 'ready', details });
-            setPassword('');
+            viewerPassRef.current = details.viewerPass || viewerPassRef.current;
+            const next = await resolveDetails(details);
+            setState(next);
+            if (next.kind === 'ready') {
+                setPassword('');
+                setLockUntil(0);
+            }
         } catch (error) {
             if (error instanceof ShareApiError && error.code === 'INVALID_PASSWORD') {
                 setPasswordError(copy.wrongPassword);
+            } else if (error instanceof ShareApiError && error.status === 429) {
+                setLockUntil(Date.now() + (error.retryAfterMs ?? 15 * 60_000));
+                setPasswordError(null);
             } else {
                 setState(classifyError(error));
             }
@@ -115,11 +210,20 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
             if (cancelled || refreshing || document.hidden || Date.now() < retryAfter) return;
             refreshing = true;
             try {
-                const result = unlockedPasswordRef.current
-                    ? await sharingService.unlock(token, unlockedPasswordRef.current)
-                    : await sharingService.open(token);
+                const result = viewerPassRef.current
+                    ? await sharingService.unlock(token, undefined, viewerPassRef.current)
+                    : (unlockedPasswordRef.current
+                        ? await sharingService.unlock(token, unlockedPasswordRef.current)
+                        : await sharingService.open(token));
                 if (!cancelled && 'snapshot' in result) {
-                    setState({ kind: 'ready', details: result });
+                    viewerPassRef.current = result.viewerPass || viewerPassRef.current;
+                    // Each live update is a fresh envelope sealed under the same key,
+                    // so it has to be opened again — by the same fragment key.
+                    const next = await resolveDetails(result);
+                    if (!cancelled && next.kind === 'ready') {
+                        viewerPassRef.current = next.details.viewerPass || viewerPassRef.current;
+                        setState(next);
+                    }
                 }
             } catch (error) {
                 if (cancelled) return;
@@ -159,9 +263,12 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
     if (state.kind === 'loading') {
         return (
             <PublicShell>
-                <div className="flex min-h-[65vh] flex-col items-center justify-center px-6 text-center" aria-live="polite">
-                    <Progress size={24} className="mb-4" />
-                    <p className="text-sm text-muted">{copy.loading}</p>
+                <div
+                    aria-live="polite"
+                    style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}
+                >
+                    <Progress size={24} />
+                    <p className="sub" style={{ margin: 0 }}>{copy.loading}</p>
                 </div>
             </PublicShell>
         );
@@ -170,53 +277,69 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
     if (state.kind === 'locked') {
         return (
             <PublicShell>
-                <main className="mx-auto flex min-h-[70vh] max-w-md items-center px-6 py-16">
-                    <div className="w-full rounded-xl border border-[var(--color-m3-outline-variant)] bg-[var(--color-m3-surface-bright)] p-6 shadow-[var(--shadow-m3-1)]">
-                        <div className="mb-5 flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--color-m3-primary-container)] text-[var(--color-m3-on-primary-container)]">
-                            <Icon icon={LockKeyhole} size={18} strokeWidth={1.75} />
-                        </div>
-                        <h1 className="text-m3-title-xl text-body">{copy.unlockTitle}</h1>
-                        <p className="mt-2 text-sm leading-relaxed text-muted">{copy.unlockDescription}</p>
-                        <form onSubmit={handleUnlock} className="mt-6">
-                            <label htmlFor="shared-record-password" className="mb-1.5 block text-xs font-medium text-muted">
-                                {copy.passwordLabel}
-                            </label>
-                            <div className="relative">
-                                <input
-                                    id="shared-record-password"
-                                    type={showPassword ? 'text' : 'password'}
-                                    value={password}
-                                    onChange={(event) => {
-                                        setPassword(event.target.value);
-                                        setPasswordError(null);
-                                    }}
-                                    className="input-base pr-11"
-                                    autoComplete="current-password"
-                                    minLength={8}
-                                    maxLength={128}
-                                    required
-                                    autoFocus
-                                    aria-invalid={!!passwordError}
-                                    aria-describedby={passwordError ? 'share-password-error' : undefined}
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => setShowPassword(value => !value)}
-                                    className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted hover:text-body"
-                                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                                >
-                                    {showPassword ? <Icon icon={EyeOff} size={16} /> : <Icon icon={Eye} size={16} />}
-                                </button>
-                            </div>
-                            {passwordError && (
-                                <p id="share-password-error" className="mt-2 text-sm text-cos-error" role="alert">{passwordError}</p>
-                            )}
-                            <button type="submit" className="btn-primary mt-4 w-full" disabled={unlocking || password.length < 8}>
-                                {unlocking ? copy.unlocking : copy.unlock}
+                <div className="card" style={{ background: 'var(--sc)', borderRadius: 28, padding: '22px 20px' }}>
+                    <span
+                        aria-hidden="true"
+                        style={{ display: 'grid', placeItems: 'center', width: 44, height: 44, borderRadius: '50%', background: 'var(--pric)', color: 'var(--onpric)', marginBottom: 14 }}
+                    >
+                        <Icon icon={LockKeyhole} size={20} />
+                    </span>
+                    <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.3px', margin: '0 0 6px' }}>{copy.unlockTitle}</h1>
+                    <p className="sub" style={{ margin: '0 0 16px' }}>{copy.unlockDescription}</p>
+                    <form onSubmit={handleUnlock}>
+                        <div className="fld" style={{ marginTop: 0 }}>
+                            <input
+                                id="shared-record-password"
+                                type={showPassword ? 'text' : 'password'}
+                                value={password}
+                                onChange={(event) => {
+                                    setPassword(event.target.value);
+                                    setPasswordError(null);
+                                }}
+                                placeholder={copy.passwordPlaceholder}
+                                autoComplete="current-password"
+                                minLength={8}
+                                maxLength={128}
+                                required
+                                autoFocus
+                                aria-label={copy.passwordLabel}
+                                aria-invalid={!!passwordError}
+                                aria-describedby={passwordError ? 'share-password-error' : undefined}
+                                style={{ fontSize: 17, fontWeight: 600 }}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(value => !value)}
+                                className="btn x"
+                                style={{ minWidth: 0, padding: '0 4px' }}
+                                aria-label={copy.passwordLabel}
+                            >
+                                <Icon icon={showPassword ? EyeOff : Eye} size={18} />
                             </button>
-                        </form>
-                    </div>
-                </main>
+                        </div>
+                        {passwordError && (
+                            <p id="share-password-error" role="alert" style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--err)' }}>{passwordError}</p>
+                        )}
+                        {lockRemaining > 0 && (
+                            <p role="status" style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--err)' }}>
+                                {t('share.shareLocked').replace(
+                                    '{time}',
+                                    lockRemaining >= 60
+                                        ? `${Math.ceil(lockRemaining / 60)} min`
+                                        : `${lockRemaining}s`,
+                                )}
+                            </p>
+                        )}
+                        <button
+                            type="submit"
+                            className="btn"
+                            style={{ width: '100%', marginTop: 16, opacity: unlocking || password.length < 8 || lockRemaining > 0 ? .5 : 1 }}
+                            disabled={unlocking || password.length < 8 || lockRemaining > 0}
+                        >
+                            {unlocking ? copy.unlocking : copy.unlock}
+                        </button>
+                    </form>
+                </div>
             </PublicShell>
         );
     }
@@ -225,39 +348,81 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
         const expired = state.kind === 'expired';
         return (
             <PublicShell>
-                <main className="mx-auto flex min-h-[70vh] max-w-md items-center px-6 py-16 text-center">
-                    <div className="w-full">
-                        <Icon icon={AlertCircle} size={28} strokeWidth={1.5} className="mx-auto mb-4 text-muted" />
-                        <h1 className="text-m3-title-xl text-body">
-                            {expired ? copy.expiredTitle : copy.unavailableTitle}
-                        </h1>
-                        <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
-                            {expired ? copy.expiredDescription : copy.unavailableDescription}
-                        </p>
-                    </div>
-                </main>
+                <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                    <Icon icon={AlertCircle} size={30} strokeWidth={1.5} className="text-muted" />
+                    <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.3px', margin: 0 }}>
+                        {expired ? copy.expiredTitle : copy.unavailableTitle}
+                    </h1>
+                    <p className="sub" style={{ margin: 0, maxWidth: 320 }}>
+                        {expired ? copy.expiredDescription : copy.unavailableDescription}
+                    </p>
+                </div>
             </PublicShell>
         );
     }
 
-    return <SharedRecord details={state.details} />;
+    if (state.kind === 'noKey') {
+        // Deliberately not the "expired / unavailable" screen: the link is fine, the
+        // part that opens it is missing, and the sender can fix it by copying it again.
+        return (
+            <PublicShell>
+                <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                    <Icon icon={LockKeyhole} size={30} strokeWidth={1.5} className="text-muted" />
+                    <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.3px', margin: 0 }}>
+                        {copy.noKeyTitle}
+                    </h1>
+                    <p className="sub" style={{ margin: 0, maxWidth: 340 }}>
+                        {copy.noKeyDescription}
+                    </p>
+                </div>
+            </PublicShell>
+        );
+    }
+
+    return <SharedRecord details={state.details} snapshot={state.snapshot} />;
 };
 
+/**
+ * The page a shared link opens.
+ *
+ * A standalone surface, not the app: no navigation, no rail, no account — a reader
+ * who came from a chat window should see the record and nothing else. It still
+ * speaks the app's shape language (the same 26px segment corners, tonal rows and
+ * `.chip` meta) so a link looks like the product that produced it.
+ *
+ * The column is centred and capped, and the vertical rhythm is the app's: the
+ * content starts under the viewport edge, not under a header bar.
+ */
 const PublicShell = ({ children }: { children: React.ReactNode }) => (
-    <div className="min-h-[100dvh] bg-[var(--color-m3-surface)] text-[var(--color-m3-on-surface)] selection:bg-[var(--color-m3-primary-container)]">
-        {children}
+    <div
+        style={{
+            /* Fixed, like the app shell: the page scrolls inside itself so the
+               crawler footer that lives after `#root` can never be reached, and the
+               background covers the window instead of ending where the content
+               does. */
+            position: 'fixed',
+            inset: 0,
+            overflowY: 'auto',
+            background: 'var(--bg)',
+            color: 'var(--on)',
+            padding: 'calc(26px + max(env(safe-area-inset-top, 0px), var(--app-safe-top, 0px))) 16px calc(40px + max(env(safe-area-inset-bottom, 0px), var(--app-safe-bottom, 0px)))',
+        }}
+    >
+        <div className="pg on" style={{ maxWidth: 780, width: '100%', margin: '0 auto', minHeight: 0, paddingBottom: 0, gap: 12 }}>
+            {children}
+        </div>
     </div>
 );
 
-const SharedRecord = ({ details }: { details: ShareDetails }) => {
+const SharedRecord = ({ details, snapshot }: { details: ShareDetails; snapshot: SharedDosageSnapshot }) => {
     const { lang, t } = useTranslation();
     const copy = getShareCopy(lang);
-    const { snapshot } = details;
     const locale = LOCALE_MAP[lang] || 'en-US';
     const timeZone = snapshot.timezone || 'UTC';
+    const events = useMemo(() => normalizeSharedEvents(snapshot.events), [snapshot.events]);
     // The chart plots modelled compounds only — see `modelledEvents`. The record
     // list below still shows every shared dose, CPA included.
-    const chartEvents = useMemo(() => modelledEvents(snapshot.events), [snapshot.events]);
+    const chartEvents = useMemo(() => modelledEvents(events), [events]);
 
     const formatDateTime = (timestamp: number) => new Intl.DateTimeFormat(locale, {
         dateStyle: 'medium',
@@ -273,14 +438,14 @@ const SharedRecord = ({ details }: { details: ShareDetails }) => {
             timeZone,
         });
         const grouped: { label: string; events: DoseEvent[] }[] = [];
-        for (const event of [...snapshot.events].sort((a, b) => b.timeH - a.timeH)) {
+        for (const event of [...events].sort((a, b) => b.timeH - a.timeH)) {
             const label = formatter.format(new Date(event.timeH * 3_600_000));
             const current = grouped[grouped.length - 1];
             if (current?.label === label) current.events.push(event);
             else grouped.push({ label, events: [event] });
         }
         return grouped;
-    }, [snapshot.events, locale, timeZone]);
+    }, [events, locale, timeZone]);
 
     const timeFormatter = useMemo(() => new Intl.DateTimeFormat(locale, {
         hour: '2-digit',
@@ -291,79 +456,70 @@ const SharedRecord = ({ details }: { details: ShareDetails }) => {
 
     return (
         <PublicShell>
-            <main className="mx-auto max-w-5xl px-6 pb-20 pt-10 md:px-8 md:pt-14">
-                <section className="border-b border-[var(--color-m3-outline-variant)] pb-8">
-                    <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-                        <div>
-                            <h1 className="text-m3-headline-large text-body md:text-m3-display-large">{copy.publicTitle}</h1>
-                            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">{copy.disclaimer}</p>
-                        </div>
-                        {details.passwordRequired && (
-                            <div className="flex shrink-0 flex-wrap gap-2 text-xs text-muted">
-                                <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-m3-outline-variant)] px-2.5 py-1.5">
-                                    <Icon icon={LockKeyhole} size={12} /> {copy.protected}
-                                </span>
-                            </div>
-                        )}
+            <div>
+                <p className="sub" style={{ margin: '0 0 4px' }}>{copy.publicEyebrow}</p>
+                <h1 style={{ fontSize: 30, lineHeight: 1.12, fontWeight: 800, letterSpacing: '-.5px', margin: '0 0 8px' }}>
+                    {copy.publicTitle}
+                </h1>
+                <p className="sub" style={{ margin: 0 }}>{copy.disclaimer}</p>
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {details.live && (
+                    <span className="chip" style={{ background: 'var(--pric)', color: 'var(--onpric)' }}>{copy.liveBadge}</span>
+                )}
+                {details.passwordRequired && (
+                    <span className="chip" style={{ background: 'var(--sch-h)', color: 'var(--var)' }}>
+                        <Icon icon={LockKeyhole} size={12} />{copy.protected}
+                    </span>
+                )}
+                <span className="chip" style={{ background: 'var(--sch-h)', color: 'var(--var)' }}>
+                    <Icon icon={Clock3} size={12} />{copy.sharedOn} {formatDateTime(details.createdAt)}
+                </span>
+                {details.live && (
+                    <span className="chip" style={{ background: 'var(--sch-h)', color: 'var(--var)' }}>
+                        {copy.updatedOn} {formatDateTime(details.updatedAt)}
+                    </span>
+                )}
+            </div>
+
+            {/* A link written by the app always carries a modelled curve; one written
+                by `hrt_create_share` carries only the doses. An empty 400px chart
+                frame above a full history reads as a broken chart, so the section is
+                simply absent when there is no curve to draw. */}
+            {snapshot.simulation && (
+                <>
+                    <div className="lab" style={{ marginTop: 4 }}>{`${copy.chartTitle} · ${timeZone}`}</div>
+                    <div className="card" style={{ background: 'var(--sc)', borderRadius: 28, padding: 10 }}>
+                        <ResultChart
+                            sim={snapshot.simulation}
+                            events={chartEvents}
+                            mode={snapshot.mode}
+                            timeZone={timeZone}
+                            title={t('chart.title')}
+                        />
                     </div>
-                    <dl className="mt-6 flex flex-wrap gap-x-7 gap-y-2 text-xs text-muted">
-                        <div className="flex items-center gap-1.5">
-                            <Icon icon={Clock3} size={13} />
-                            <dt>{copy.sharedOn}</dt>
-                            <dd className="text-body">{formatDateTime(details.createdAt)}</dd>
-                        </div>
-                        {details.live && (
-                            <div className="flex items-center gap-1.5 text-[var(--color-m3-primary)]">
-                                <dt>{copy.liveBadge}</dt>
-                                <dd>{copy.updatedOn} {formatDateTime(details.updatedAt)}</dd>
-                            </div>
-                        )}
-                    </dl>
-                </section>
+                </>
+            )}
 
-                <section className="pb-5 pt-8" aria-labelledby="shared-chart-title">
-                    <div className="mb-4 flex items-center justify-between gap-4">
-                        <h2 id="shared-chart-title" className="text-m3-title-large text-body">{copy.chartTitle}</h2>
-                        <span className="text-xs text-muted">{timeZone}</span>
+            <div className="lab" style={{ marginTop: 8 }}>{`${copy.historyTitle} · ${events.length} ${copy.records}`}</div>
+
+            {groups.length === 0 ? (
+                <div className="empty">{t('timeline.empty')}</div>
+            ) : groups.map(group => (
+                <div key={group.label}>
+                    <div className="sub" style={{ margin: '8px 6px 4px', fontWeight: 700 }}>{group.label}</div>
+                    <div className="list">
+                        {group.events.map(event => (
+                            <DoseHistoryRow
+                                key={event.id}
+                                event={event}
+                                time={timeFormatter.format(new Date(event.timeH * 3_600_000))}
+                            />
+                        ))}
                     </div>
-                    <ResultChart
-                        sim={snapshot.simulation}
-                        events={chartEvents}
-                        mode={snapshot.mode}
-                        timeZone={timeZone}
-                        title={t('chart.title')}
-                    />
-                </section>
-
-                <section aria-labelledby="shared-history-title">
-                    <div className="mb-6 flex items-end justify-between gap-4">
-                        <h2 id="shared-history-title" className="text-m3-title-large text-body">{copy.historyTitle}</h2>
-                        <span className="text-xs tabular-nums text-muted">{snapshot.events.length} {copy.records}</span>
-                    </div>
-
-                    {groups.length === 0 ? (
-                        <p className="py-12 text-center text-sm text-muted">{t('timeline.empty')}</p>
-                    ) : (
-                        <div className="grid gap-x-12 lg:grid-cols-2">
-                            {groups.map(group => (
-                                <div key={group.label} className="mb-7 break-inside-avoid">
-                  <h3 className="text-m3-title-small mb-1 border-b border-[var(--color-m3-outline-variant)] pb-2 text-muted">
-                                        {group.label}
-                                    </h3>
-                                    {group.events.map(event => (
-                                        <DoseHistoryRow
-                                            key={event.id}
-                                            event={event}
-                                            time={timeFormatter.format(new Date(event.timeH * 3_600_000))}
-                                        />
-                                    ))}
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </section>
-
-            </main>
+                </div>
+            ))}
         </PublicShell>
     );
 };
@@ -374,43 +530,34 @@ const DoseHistoryRow = ({ event, time }: { event: DoseEvent; time: string }) => 
     const releaseRate = event.extras[ExtraKey.releaseRateUGPerDay];
     const wearHours = event.extras[ExtraKey.patchWearH];
 
+    // One line, in the same order a person says it: what, how much, by which route.
+    const detail: string[] = [t(`route.${event.route}`)];
+    if (releaseRate) {
+        detail.push(`${releaseRate} µg/d`);
+    } else if (!isRemoval) {
+        detail.push(`${event.doseMG.toFixed(2)} mg`);
+        if (event.ester !== Ester.E2 && !isAntiandrogen(event.ester) && !isTestosteroneEster(event.ester) && !isUnmodelledCompound(event.ester)) {
+            detail.push(`(${t('label.e2')} eq ${(event.doseMG * getToE2Factor(event.ester)).toFixed(2)} mg)`);
+        }
+        if (isTestosteroneEster(event.ester) && event.ester !== Ester.T) {
+            detail.push(`(${t('label.t')} eq ${(event.doseMG * getToE2Factor(event.ester)).toFixed(2)} mg)`);
+        }
+    }
+    if (event.route === Route.patchApply && typeof wearHours === 'number' && wearHours > 0) {
+        detail.push(`${formatWearDays(wearHours / 24)} ${t('unit.day_short')}`);
+    }
+
     return (
-        <div className="flex items-start gap-3 border-b border-[var(--color-m3-outline-variant)] py-3.5 last:border-b-0">
-            <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-m3-primary)]" aria-hidden="true" />
-            <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-3">
-                    <p className="truncate text-sm font-medium text-body">
-                        {isRemoval ? t('route.patchRemove') : t(`ester.${event.ester}`)}
-                    </p>
-                    <time className="shrink-0 text-xs tabular-nums text-muted">{time}</time>
-                </div>
-                <div className="mt-1 flex flex-wrap items-baseline gap-x-2 text-xs text-muted">
-                    <span>{t(`route.${event.route}`)}</span>
-                    {releaseRate ? (
-                        <>
-                            <span aria-hidden="true">·</span>
-                            <span className="font-medium text-body">{releaseRate} µg/d</span>
-                        </>
-                    ) : !isRemoval && (
-                        <>
-                            <span aria-hidden="true">·</span>
-                            <span className="font-medium text-body">{event.doseMG.toFixed(2)} mg</span>
-                            {event.ester !== Ester.E2 && !isAntiandrogen(event.ester) && !isTestosteroneEster(event.ester) && (
-                                <span>({t('label.e2')} eq: {(event.doseMG * getToE2Factor(event.ester)).toFixed(2)} mg)</span>
-                            )}
-                            {isTestosteroneEster(event.ester) && event.ester !== Ester.T && (
-                                <span>({t('label.t')} eq: {(event.doseMG * getToE2Factor(event.ester)).toFixed(2)} mg)</span>
-                            )}
-                        </>
-                    )}
-                    {event.route === Route.patchApply && typeof wearHours === 'number' && wearHours > 0 && (
-                        <>
-                            <span aria-hidden="true">·</span>
-                            <span>{formatWearDays(wearHours / 24)} {t('unit.day_short')}</span>
-                        </>
-                    )}
-                </div>
+        <div className="li" style={{ cursor: 'default' }}>
+            <span
+                aria-hidden="true"
+                style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--pri)', flex: 'none' }}
+            />
+            <div className="t">
+                <b>{isRemoval ? t('route.patchRemove') : t(`ester.${event.ester}`)}</b>
+                <span className="s">{detail.join(' · ')}</span>
             </div>
+            <span className="r">{time}</span>
         </div>
     );
 };

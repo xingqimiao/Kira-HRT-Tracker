@@ -150,7 +150,12 @@ export default defineConfig(({ mode }) => {
           target: 'http://127.0.0.1:8787',
           changeOrigin: true,
           secure: false,
-        }
+        },
+        '/auth': {
+          target: 'http://127.0.0.1:8787',
+          changeOrigin: true,
+          secure: false,
+        },
       }
     },
     plugins: [
