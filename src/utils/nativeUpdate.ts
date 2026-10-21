@@ -2,7 +2,24 @@ import { openExternalUrl } from './externalLinks';
 import { isNativeApp } from './platform';
 import { APP_VERSION } from '../constants';
 
-const UPDATE_MANIFEST_URL = 'https://hrt.kiramyao.com/android/latest.json';
+/**
+ * Whether this build is allowed to update itself.
+ *
+ * The F-Droid variant is not: the store ships its updates, and an app that fetched a
+ * newer APK from our own host would be leaving the channel it was installed from —
+ * which is both bad behaviour and against F-Droid's inclusion policy. `VITE_NO_SELF_UPDATE=1`
+ * is set by the F-Droid build; `scripts/strip-fcm.mjs` refuses to build without it.
+ *
+ * Declared before the URLs on purpose: the two constants below are chosen by it, so in
+ * a store build they fold to empty and the endpoint is not merely unreachable — it is
+ * not in the bundle at all.
+ */
+export const SELF_UPDATE_ENABLED =
+    (import.meta.env.VITE_NO_SELF_UPDATE as string | undefined) !== '1';
+
+const UPDATE_MANIFEST_URL = SELF_UPDATE_ENABLED
+    ? 'https://hrt.kiramyao.com/android/latest.json'
+    : '';
 
 export interface NativeUpdate {
     version: string;
@@ -24,9 +41,13 @@ export const NATIVE_UPDATE_MANIFEST_URL = UPDATE_MANIFEST_URL;
  * instead, so the link follows the release; fall back to this build's own version only
  * if the manifest cannot be read.
  */
-const APK_URL_FROM_VERSION = `https://hrt.kiramyao.com/android/KiraHRT-${APP_VERSION.replace(/^v/, '')}-release.apk`;
+const APK_URL_FROM_VERSION = SELF_UPDATE_ENABLED
+    ? `https://hrt.kiramyao.com/android/KiraHRT-${APP_VERSION.replace(/^v/, '')}-release.apk`
+    : '';
 
 export async function fetchLatestApkUrl(): Promise<string> {
+    // A channel without self-update has no manifest to read and no APK to point at.
+    if (!SELF_UPDATE_ENABLED) return '';
     try {
         const response = await fetch(UPDATE_MANIFEST_URL, { cache: 'no-store' });
         if (!response.ok) throw new Error(`Update manifest HTTP ${response.status}`);
@@ -55,7 +76,7 @@ function isNewer(candidate: string, current: string): boolean {
 }
 
 export async function checkNativeUpdate(): Promise<NativeUpdate | null> {
-    if (!isNativeApp()) return null;
+    if (!isNativeApp() || !SELF_UPDATE_ENABLED) return null;
     const response = await fetch(UPDATE_MANIFEST_URL, { cache: 'no-store' });
     if (!response.ok) throw new Error(`Update manifest HTTP ${response.status}`);
     if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('Update manifest is not JSON');
@@ -116,6 +137,9 @@ export interface DownloadOptions {
  * on every terminal outcome, so a retry does not stack them.
  */
 export function downloadNativeUpdate(update: NativeUpdate, options: DownloadOptions = {}): void {
+    // Belt and braces: nothing should call this in a channel that does not self-update,
+    // but a stray caller must not become a hidden updater.
+    if (!SELF_UPDATE_ENABLED) return;
     const bridge = updateBridge();
     if (!bridge) {
         void openExternalUrl(update.apk);

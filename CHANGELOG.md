@@ -1,9 +1,21 @@
 # 更新日志
 
-本文件记录每个发布版本相对上一个发布版本的变化。当前仓库为 **2.0.2**，基线为 `v1.2.3`
+本文件记录每个发布版本相对上一个发布版本的变化。当前仓库为 **2.0.3**，基线为 `v1.2.3`
 （tag `25d82a5`）加上 `2809a71` 与 2.0.x 的整轮重构。
 
-> **状态**：2.0.2 已于 2026-10-22 部署（网站、Android 标准版与 F-Droid 版、GitHub Release）。
+> **状态**：2.0.3 是**商店渠道构建**，不通过本项目分发。网站与自助更新仍停在 2.0.2。
+
+---
+
+## 2.0.3 —— 2026-10-22（F-Droid 渠道构建）
+
+- 移除内置更新检查：不读取更新清单、不下载 APK，设置里也没有该入口。清单 URL 在构建时
+  被常量折叠掉，包里不再有它。`scripts/strip-fcm.mjs` 在只设了 `HRT_NO_FCM` 而没设
+  `VITE_NO_SELF_UPDATE` 时直接让构建失败。
+- 移除 FCM：与 2.0.x 的 F-Droid 构建相同，dex 内无 `com/google/firebase`。
+- 商店包里不再内嵌 `android/latest.json` 与 Firebase worker（`scripts/strip-store-assets.mjs`）。
+- 新增 `fastlane/metadata/android/{en-US,zh-CN}` 商店文案、图标与 AVD 实拍截图，
+  以及 `docs/fdroid/` 下的 fdroiddata 配方草稿与提交清单（**尚未提交**）。
 
 ---
 

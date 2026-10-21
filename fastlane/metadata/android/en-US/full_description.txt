@@ -1,0 +1,21 @@
+Kira HRT is a private record book for hormone replacement therapy: what you took, when, and what your blood tests say.
+
+Everything is stored on the device first. An account is optional — without one the app is a complete offline record book. With one, records sync between your devices through a server you can run yourself, and every record is sealed with a key derived from your password before it leaves the phone.
+
+WHAT IT DOES
+• Log doses with reusable one-tap templates, per route and ester
+• Model your estradiol curve from the doses you actually logged, with four selectable calibration methods
+• Record lab results and compare measured values against the modelled curve
+• Read a lab report from a photo — OCR runs on the device, the image never leaves it
+• Reminders for scheduled doses, plus an overview of what is due and what is overdue
+• Export and import (JSON/CSV), including profiles from other trackers
+• Light and dark themes, seven languages, phone and tablet layouts
+
+PRIVACY
+No ads. No analytics. No third-party trackers. The optional sync server stores records encrypted with a per-account key, and holds no key material of its own.
+
+OPEN SOURCE
+MIT licensed. The app and the optional server are in the same repository, so you can audit exactly what leaves the device — or run the server yourself. This build contains no Firebase Cloud Messaging and does not check for or install updates; updates come from F-Droid.
+
+NOT MEDICAL ADVICE
+This is a personal record-keeping tool, not a medical device. It does not recommend doses. Those decisions belong to you and your prescriber.

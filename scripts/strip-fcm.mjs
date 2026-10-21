@@ -32,6 +32,15 @@ if (!process.env.HRT_NO_FCM) {
   process.exit(0);
 }
 
+// A store build must satisfy the whole policy, not just the FCM half. F-Droid ships
+// the updates for apps it distributes, so a build that still pulls APKs from our own
+// host would be out of channel — and that is the reason the first F-Droid artifacts
+// had to be withdrawn. Fail here rather than publish one again.
+if (process.env.VITE_NO_SELF_UPDATE !== '1') {
+  console.error('strip-fcm: HRT_NO_FCM requires VITE_NO_SELF_UPDATE=1 (store builds must not self-update)');
+  process.exit(1);
+}
+
 const root = resolve(import.meta.dirname, '..');
 const appDir = resolve(root, 'src-tauri/gen/android/app');
 const javaDir = join(appDir, 'src/main/java/com/kiramyao/hrt');

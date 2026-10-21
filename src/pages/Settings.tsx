@@ -59,7 +59,7 @@ import { EngineGlyph } from '../components/compoundIcons';
 import { CalibrationAnimation } from '../components/CalibrationAnimation';
 import type { DoseTemplate } from '../components/DoseForm';
 import { useBackHandler } from '../utils/nativeBack';
-import { checkNativeUpdate, fetchLatestApkUrl } from '../utils/nativeUpdate';
+import { checkNativeUpdate, fetchLatestApkUrl, SELF_UPDATE_ENABLED } from '../utils/nativeUpdate';
 import { openUpdateSheet } from '../utils/updateSheet';
 import {
     confirmLockDisabled,
@@ -873,7 +873,10 @@ const Settings: React.FC<SettingsProps> = ({
                 />
             )}
 
-            {isNativeApp() && (
+            {/* The update item is the Android self-updater's entry point. A channel
+                that does not self-update (F-Droid) has no business offering it —
+                the store owns that job, and a hidden entry point would still be one. */}
+            {isNativeApp() && SELF_UPDATE_ENABLED && (
                 <SegmentedListItem
                     icon={RefreshCw}
                     title={t('settings.check_updates.title')}

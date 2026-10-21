@@ -1,0 +1,5 @@
+First F-Droid build.
+
+• No Firebase Cloud Messaging: the store build ships without FCM.
+• No built-in updater: the app no longer checks for or downloads APKs; F-Droid handles updates.
+• Everything else matches the 2.0.x line: incremental sync, lab OCR on the device, light/dark themes.
