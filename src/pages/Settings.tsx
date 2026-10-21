@@ -59,7 +59,8 @@ import { EngineGlyph } from '../components/compoundIcons';
 import { CalibrationAnimation } from '../components/CalibrationAnimation';
 import type { DoseTemplate } from '../components/DoseForm';
 import { useBackHandler } from '../utils/nativeBack';
-import { checkNativeUpdate, downloadNativeUpdate, fetchLatestApkUrl } from '../utils/nativeUpdate';
+import { checkNativeUpdate, fetchLatestApkUrl } from '../utils/nativeUpdate';
+import { openUpdateSheet } from '../utils/updateSheet';
 import {
     confirmLockDisabled,
     disableLock,
@@ -884,19 +885,11 @@ const Settings: React.FC<SettingsProps> = ({
                                 showDialog('alert', `${t('settings.check_updates.latest')} (${APP_VERSION.replace(/^v/, '')})`);
                                 return;
                             }
-                            const notes = update.notes.length > 0 ? `\n\n${update.notes.map(note => `• ${note}`).join('\n')}` : '';
-                            showDialog(
-                                'confirm',
-                                `${t('settings.check_updates.available').replace('{version}', update.version)}${notes}`,
-                                () => {
-                                    // The download runs in the background; only its terminal
-                                    // outcomes get a dialog (the top card drives progress).
-                                    downloadNativeUpdate(update, {
-                                        onPermission: () => showDialog('alert', t('update.perm_hint')),
-                                        onError: () => showDialog('alert', t('update.failed')),
-                                    });
-                                },
-                            );
+                            // The same M3E sheet the background notice opens. Answering with
+                            // a text dialog would start a download whose progress is drawn
+                            // somewhere else — which is exactly what this used to do, and
+                            // why "确定" looked like it did nothing.
+                            openUpdateSheet(update);
                         }).catch(() => showDialog('alert', t('settings.check_updates.error')));
                     }}
                 />

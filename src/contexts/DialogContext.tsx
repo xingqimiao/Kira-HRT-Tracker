@@ -57,8 +57,12 @@ export const DialogProvider = ({ children }: { children: React.ReactNode }) => {
     });
 
     const handleConfirm = () => {
-        if (onConfirm) onConfirm();
+        // Close first. A callback that opens its own dialog (a confirm whose action
+        // reports a failure, say) would otherwise be undone by the `setIsOpen(false)`
+        // that followed it: both updates batch, and the new dialog closes with the old
+        // one — which is what made "确定" on the update check look like a dead button.
         setIsOpen(false);
+        if (onConfirm) onConfirm();
     };
 
     return (
