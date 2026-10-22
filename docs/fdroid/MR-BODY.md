@@ -24,10 +24,10 @@ connection to an AI assistant over MCP, and seven languages with phone and table
 layouts.
 
 Screenshots, also in `fastlane/metadata/android/{en-US,zh-CN}/images/phoneScreenshots`:
-[overview](https://github.com/xingqimiao/Kira-HRT-Tracker/raw/v2.0.4/fastlane/metadata/android/en-US/images/phoneScreenshots/1-overview.jpg) ·
-[add dose](https://github.com/xingqimiao/Kira-HRT-Tracker/raw/v2.0.4/fastlane/metadata/android/en-US/images/phoneScreenshots/2-add-dose.jpg) ·
-[history](https://github.com/xingqimiao/Kira-HRT-Tracker/raw/v2.0.4/fastlane/metadata/android/en-US/images/phoneScreenshots/4-history.jpg) ·
-[calibration](https://github.com/xingqimiao/Kira-HRT-Tracker/raw/v2.0.4/fastlane/metadata/android/en-US/images/phoneScreenshots/7-calibration.jpg)
+[overview](https://raw.githubusercontent.com/xingqimiao/Kira-HRT-Tracker/v2.0.4/fastlane/metadata/android/en-US/images/phoneScreenshots/1-overview.jpg) ·
+[add dose](https://raw.githubusercontent.com/xingqimiao/Kira-HRT-Tracker/v2.0.4/fastlane/metadata/android/en-US/images/phoneScreenshots/2-add-dose.jpg) ·
+[history](https://raw.githubusercontent.com/xingqimiao/Kira-HRT-Tracker/v2.0.4/fastlane/metadata/android/en-US/images/phoneScreenshots/4-history.jpg) ·
+[calibration](https://raw.githubusercontent.com/xingqimiao/Kira-HRT-Tracker/v2.0.4/fastlane/metadata/android/en-US/images/phoneScreenshots/7-calibration.jpg)
 
 ## Licence
 
