@@ -19,10 +19,10 @@ Repo: https://github.com/xingqimiao/Kira-HRT-Tracker.git
 Builds:
   - versionName: 2.0.4
     versionCode: 2000004
-    commit: 9cdf06a2f1830b5a1a1d285ad5aa81ca5268373a
+    commit: abd5082aaeb5b4075e5061d1758c751514d55e56
     sudo:
       - apt-get update
-      - apt-get install -y nodejs npm rustup gcc pkg-config
+      - apt-get install -y nodejs npm rustup build-essential pkg-config
     init:
       - npm ci
       - rustup default stable
