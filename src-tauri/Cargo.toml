@@ -1,0 +1,25 @@
+[package]
+name = "kira-hrt"
+version = "2.0.0"
+description = "Kira HRT Tracker"
+authors = ["KiraEqual"]
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/xingqimiao/HRT"
+edition = "2024"
+rust-version = "1.90"
+
+[lib]
+name = "kira_hrt_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.3", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "2.12.4", features = [] }
+tauri-plugin-opener = "2.7.2"
+tauri-plugin-os = "2.4.0"
+tauri-plugin-secure-storage = "1.5.0"
+tauri-plugin-notifications = "0.5.0-rc.14"

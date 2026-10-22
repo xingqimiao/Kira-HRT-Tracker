@@ -8,7 +8,8 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-src-tauri/
+# The Tauri shell source is tracked — the store rebuilds from source. Only the
+# generated Android project and the build output are not.
 src-tauri/target/
 src-tauri/gen/
 releases/
@@ -118,3 +119,12 @@ server/test-out.txt
 
 # Agent/tooling state (not project source)
 .mimosa/
+
+# Internal working notes and agent instructions; kept locally, not published.
+PLAN.md
+AGENTS.md
+
+# Installed agent skills and local tooling output.
+.agents/
+.workbuddy-ai/
+skills-lock.json

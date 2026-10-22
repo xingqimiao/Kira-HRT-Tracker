@@ -73,16 +73,27 @@ Web 应用、Android 应用、MCP 服务端共用一套「应用内核」，云�
 
 - **账号**：用户名 + 密码；X（Twitter）与 Google 登录可互为补充、可互相绑定。
 - **设备会话列表**：查看并逐个注销登录过的设备。
-- **云同步**：记录与设置跨设备同步（含用药方案）。
+- **云同步**：记录与设置跨设备同步（含用药方案）。同步是**增量**的——服务端为每次写入打变更版本，客户端只拉取上次之后的变更、只上传本机改动过的记录，空闲同步几乎不产生流量。
 - **分享**：生成只读链接给医生或朋友，可设过期时间与密码，**只含你选择分享的内容**。
 - **数据导出与删除**：一键导出全部数据；可彻底删除账号。
 
 ### 客户端
 
 - **7 种语言**：简中、繁中、粤语、英、日、韩、土，按需加载。
-- **Android 应用**：Tauri 2 壳（`src-tauri/`，构建产物不入库）承载同一份 Web 前端，Kotlin 桥补齐原生能力：**应用锁**（生物识别 + 后台重锁）、**应用内自更新**（下载并调起系统安装界面）、预测式返回手势、系统文件导出、外部链接走系统浏览器。
+- **Android 应用**：Tauri 2 壳（`src-tauri/`，源码入库，`gen/` 与构建产物不入库）承载同一份 Web 前端，Kotlin 桥补齐原生能力：**应用锁**（生物识别 + 后台重锁）、预测式返回手势、系统文件导出、外部链接走系统浏览器。
+- **两个渠道**：官网 / GitHub 的标准包带 FCM 补推与**应用内自更新**；商店渠道（`2.0.2-fdroid`，用 `HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1` 构建）不含 Firebase，也不检查或安装更新——更新交给商店。
 - **主题**：浅色 / 深色 / 跟随系统；跟随主题的启动过渡。
 - **PWA**：离线可用，Service Worker 缓存。
+
+### 下载安装
+
+| 渠道 | 说明 |
+|---|---|
+| [网站](https://hrt.kiramyao.com) | Web 版可直接使用；Android 包与更新清单在同一目录 |
+| [GitHub Releases](https://github.com/xingqimiao/Kira-HRT-Tracker/releases) | 每个版本的标准包，带更新说明与 sha256 |
+| 商店渠道 | `2.0.2-fdroid`：无 Firebase、无自更新，更新由商店负责 |
+
+两个 Android 包用同一把签名密钥，可以互相覆盖安装，不需要先卸载。
 
 ---
 
@@ -203,7 +214,7 @@ Web 应用、Android 应用、MCP 服务端共用一套「应用内核」，云�
 | 协议 | REST + [MCP](https://modelcontextprotocol.io)（Streamable HTTP） |
 | 加密 | 逐帐户 DEK；口令 KEK + OCI KMS 主密钥（HSM）双重包裹 |
 | PK 引擎 | 上游 `logic.ts`（原样）· `src/pk/` 内的 Transmtf 引擎（懒加载） |
-| 识别 | onnxruntime-web（检测）+ tesseract.js（文字），**全部在本机** |
+| 识别 | PP-OCR（onnxruntime-web，检测 + 识别），**全部在本机** |
 | 推送 | 本地精准闹钟（`AlarmManager`）+ FCM 补推（HTTP v1，`node:crypto` 签 JWT），两端去重共用一条账本 |
 | PWA | vite-plugin-pwa（Workbox）|
 | i18n | 自建的 7 语言包，按需懒加载 |
@@ -225,13 +236,22 @@ VITE_API_ORIGIN=https://your-api-host/hrt npm run build
 
 服务端见 **[`server/ARCHITECTURE.md`](server/ARCHITECTURE.md)** 的「Running it」，测试为 `cd server && npm test`（内置 embedded-postgres）。
 
-Android 构建（Tauri 2，JDK 21 + Android SDK 35；`src-tauri/` 只在本地存在）：
+Android 构建（Tauri 2，JDK 17+ 与 Android SDK 37；`src-tauri/` 的源码在仓库里，`src-tauri/gen/` 由 Tauri 生成）：
 
 ```bash
 export VITE_API_ORIGIN=https://api.example.com/hrt
 npm run build:android
 node_modules/.bin/tauri android build --apk --target aarch64
 # 未签名产物：src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
+```
+
+商店渠道（F-Droid）构建：在同样的命令前加两个环境变量，并用 `--config` 覆盖版本名，仓库里的版本号保持不变。
+
+```bash
+export HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1
+node_modules/.bin/tauri android build --apk --target aarch64 \
+  --config '{"version":"2.0.2-fdroid"}'
+# versionName=2.0.2-fdroid, versionCode=2000002
 ```
 
 签名与发布流程见 `server/DEPLOY.md` §4b。

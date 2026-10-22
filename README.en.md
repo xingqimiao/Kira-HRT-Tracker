@@ -95,7 +95,10 @@ the image never leaves the device.
 - **Accounts** — username + password; X (Twitter) and Google sign-in that complement and can bind
   to each other.
 - **Device session list** — see and revoke each signed-in device.
-- **Cloud sync** — records and settings across devices, medication plans included.
+- **Cloud sync** — records and settings across devices, medication plans included. Sync is
+  **incremental**: the server stamps each write with a change version, so a client pulls only
+  what changed since its last sync and uploads only the records it touched. An idle sync
+  transfers almost nothing.
 - **Sharing** — a read-only link for a doctor or a friend, with an optional expiry and password,
   containing **only what you chose to share**.
 - **Data export and deletion** — export everything; delete the account outright.
@@ -104,10 +107,13 @@ the image never leaves the device.
 
 - **7 languages** — Simplified Chinese, Traditional Chinese, Cantonese, English, Japanese, Korean,
   Turkish, loaded on demand.
-- **Android app** — a Tauri 2 shell (`src-tauri/`, not committed) hosting the same web bundle, with
-  Kotlin bridges for what the web cannot do: **app lock** (biometric gate, re-locks in the
-  background), **in-app self-update** (it downloads the APK and fires the system installer),
-  predictive back, system file export, and external links that open in the system browser.
+- **Android app** — a Tauri 2 shell (`src-tauri/`, source committed; `gen/` and build output are
+  not) hosting the same web bundle, with Kotlin bridges for what the web cannot do: **app lock**
+  (biometric gate, re-locks in the background), predictive back, system file export, and
+  external links that open in the system browser.
+- **Two channels** — the website / GitHub build carries FCM catch-up push and an in-app
+  self-updater; the store build (`2.0.2-fdroid`, built with `HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1`)
+  has no Firebase and never checks for or installs updates — the store owns that.
 - **Themes** — light / dark / follow system, with a themed launch transition.
 - **PWA** — works offline, backed by a service worker.
 
@@ -259,7 +265,7 @@ a minimal example.
 | Protocols | REST + [MCP](https://modelcontextprotocol.io) (Streamable HTTP) |
 | Crypto | per-account DEK; wrapped by a password KEK and an OCI KMS master key (HSM) |
 | PK engines | upstream `logic.ts` (unmodified) · the Transmtf engine in `src/pk/` (lazy-loaded) |
-| Recognition | onnxruntime-web (detection) + tesseract.js (text), **entirely on-device** |
+| Recognition | PP-OCR on onnxruntime-web (detection + recognition), **entirely on-device** |
 | Push | exact local alarms (`AlarmManager`) + FCM catch-up (HTTP v1, JWT signed with `node:crypto`), sharing one de-duplication ledger |
 | PWA | vite-plugin-pwa (Workbox) |
 | i18n | a homegrown 7-pack system, lazily loaded |
@@ -282,13 +288,22 @@ VITE_API_ORIGIN=https://your-api-host/hrt npm run build
 Server: see "Running it" in **[`server/ARCHITECTURE.md`](server/ARCHITECTURE.md)**; tests are
 `cd server && npm test` (embedded Postgres).
 
-Android build (Tauri 2, JDK 21 + Android SDK 35; `src-tauri/` exists locally only):
+Android build (Tauri 2, JDK 17+ and Android SDK 37; the shell source is in the repo, `src-tauri/gen/` is generated):
 
 ```bash
 export VITE_API_ORIGIN=https://api.example.com/hrt
 npm run build:android
 node_modules/.bin/tauri android build --apk --target aarch64
 # unsigned: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
+```
+
+Store channel (F-Droid): add two env vars and override the version name, so the repository
+version stays put.
+
+```bash
+export HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1
+node_modules/.bin/tauri android build --apk --target aarch64 --config '{"version":"2.0.2-fdroid"}'
+# versionName=2.0.2-fdroid, versionCode=2000002
 ```
 
 Signing and publishing: `server/DEPLOY.md` §4b.

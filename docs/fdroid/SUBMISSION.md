@@ -18,8 +18,8 @@
 
 ## 2. 提交前必须确认的（真正的阻碍）
 
-1. **`src-tauri/gen/` 被 gitignore**。F-Droid 从源码构建，仓库里没有 Android Gradle 工程。
-   要么在配方里跑 `tauri android init`，要么把这个目录提交进仓库（会带来机器相关文件）。
+1. **`src-tauri/gen/` 由 Tauri 生成**（仓库里只有壳源码，`gen/` 与构建产物不入库）。
+   配方里需要跑 `tauri android init` 之后再构建。
 2. **构建服务器要能跑 Rust + Node + Android NDK**。这是 Tauri 应用进 F-Droid 的主要成本；
    `Builds:` 里的 Rust/NDK 版本必须和出包时一致，crates 需要 `cargo vendor` 离线化。
 3. **仓库必须是公开可匿名克隆的**（现在 `xingqimiao/Kira-HRT-Tracker` 满足）。
@@ -30,11 +30,11 @@
 ## 3. 提交时用到的信息
 
 - 包名：`com.kiramyao.hrt`
-- 版本：`2.0.3` / versionCode `2000003`
+- 版本：`2.0.2-fdroid` / versionCode `2000002`（同一份 2.0.2 代码，只加后缀）
 - 许可证：MIT（`LICENSE`）
 - 网站：<https://hrt.kiramyao.com>
 - 源码：<https://github.com/xingqimiao/Kira-HRT-Tracker>
-- 商店包 sha256：`4026CDD19009160961693D2846F25B75229F3ABF87D5F60582730D3EC3E3C1A4`（arm64-v8a，14 MB）
+- 商店包 sha256：`7873199439A9B8D56850A71B6380FE5FF37B8ED55BBD743FA7240A74F659C66E`（arm64-v8a，14 MB）
 
 ## 4. 截图规格
 
