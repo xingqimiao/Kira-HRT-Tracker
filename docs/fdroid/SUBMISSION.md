@@ -31,6 +31,9 @@
    crates 需要 `cargo vendor` 离线化。首轮大概率要来回改。
 4. 仓库公开可匿名克隆（`xingqimiao/Kira-HRT-Tracker`，满足）；tag `v2.0.4` 已推。
 5. 反特性：可选的 Google / X 登录已在配方里声明为 `NonFreeNet`；不登录也能完整使用。
+6. **OCR 是运行时下载**（首次扫描时从我们站点拉 ~23 MB 模型 + ORT wasm，之后走缓存）。
+   这属于「运行时下载可执行文件」，可能被要求改为打进 APK（+44 MB）或加显式同意弹窗。
+   已在 `MaintainerNotes` 与 MR 正文里写明，等他们表态。
 
 ## 3. 提交时用到的信息
 
@@ -88,6 +91,14 @@ was given in correspondence on 2026-09-18; it is recorded in full in
 is not a free licence. I am flagging it up front rather than leaving it to be found at
 build time — if that makes the app ineligible for the main repository, please say so
 and I will withdraw the MR.
+
+**Runtime download:** the lab-report scanner fetches its OCR models and the ONNX
+Runtime wasm (~23 MB) from https://hrt.kiramyao.com/ocr/ the first time it is used.
+Nothing is fetched at start-up; the download is triggered by the user opening the scan
+feature, the files are cached afterwards, they are byte-identical to what the web
+deploy serves, and no third-party CDN is involved. The app does not update itself. If
+this needs to be bundled into the APK for inclusion, say so and I will ship a build
+with the assets inside (about +44 MB).
 
 **Build:** Tauri 2 (Rust) + Vite front end. `src-tauri/gen/` is generated, so the
 recipe runs `tauri android init` before the Gradle build; Rust 1.90 and NDK

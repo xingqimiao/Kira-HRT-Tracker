@@ -19,7 +19,7 @@ AntiFeatures:
   - NonFreeNet
 
 AutoUpdateMode: Version
-UpdateCheckMode: Tags
+UpdateCheckMode: Tags ^v[0-9.]+$
 CurrentVersion: 2.0.4
 CurrentVersionCode: 2000004
 
@@ -55,6 +55,11 @@ MaintainerNotes: |-
   No google-services.json is needed: scripts/strip-fcm.mjs removes the google-services
   plugin and the Firebase dependencies before Gradle configures. Tauri's
   beforeBuildCommand runs `npm run build:android`, which is where that script is invoked.
+
+  The first OCR use fetches ~23 MB (two ONNX models plus the ONNX Runtime wasm) from
+  https://hrt.kiramyao.com/ocr/ — the native build does not bundle them. It is
+  user-initiated (the scan action), cached afterwards, byte-identical to the web
+  deploy, and no third-party CDN is involved. Say so if it should be bundled instead.
 
   Rust 1.90 (src-tauri/Cargo.toml `rust-version`) and NDK 27.0.12077973 are what the
   release APK used. Crates have to be vendored for the offline build step: `cargo
