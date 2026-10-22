@@ -41,6 +41,9 @@ class MainActivity : TauriActivity() {
     const val NOTIF_BODY_KEY = "notif-body"
     /** The device-locked line: a generic "you have a reminder", never the dose. */
     const val NOTIF_HIDDEN_KEY = "notif-hidden"
+    /** JSON map planId -> {title,body}, composed by the app from its own plans.
+     *  The push payload itself no longer carries any account text. */
+    const val NOTIF_PLANS_KEY = "notif-plans"
     private const val REQUEST_SAVE_FILE = 4711
   }
 
@@ -143,10 +146,12 @@ class MainActivity : TauriActivity() {
         val title = obj.optString("title")
         val body = obj.optString("body")
         val hidden = obj.optString("hidden")
+        val plans = obj.optJSONObject("plans")?.toString() ?: "{}"
         getSharedPreferences(NOTIF_PREFS, Context.MODE_PRIVATE).edit()
           .putString(NOTIF_TITLE_KEY, title)
           .putString(NOTIF_BODY_KEY, body)
           .putString(NOTIF_HIDDEN_KEY, hidden)
+          .putString(NOTIF_PLANS_KEY, plans)
           .apply()
       } catch (e: Exception) {
         // A malformed payload leaves the last known language in place.
@@ -214,10 +219,24 @@ class MainActivity : TauriActivity() {
    * yet (we then open that settings screen), otherwise a message string.
    */
   inner class UpdateBridge {
-    @JavascriptInterface fun download(url: String) {
+    /**
+     * Fetch an APK and hand it to the installer.
+     *
+     * `sha256` is required and checked while the bytes stream in: the signature check
+     * at install time is the real defence, but without this a tampered or truncated
+     * download only fails after the user has already committed to installing. An
+     * empty digest is refused outright rather than read as "no check" — every
+     * manifest this app ships carries one.
+     */
+    @JavascriptInterface fun download(url: String, sha256: String) {
       // Trust boundary: the URL arrives from JS, so accept only https.
       if (!url.trim().startsWith("https://")) {
         postUpdateEvent("hrt-update-error", "{\"reason\":\"badurl\"}")
+        return
+      }
+      val expected = sha256.trim().lowercase()
+      if (!expected.matches(Regex("[0-9a-f]{64}"))) {
+        postUpdateEvent("hrt-update-error", "{\"reason\":\"nohash\"}")
         return
       }
       Thread {
@@ -233,6 +252,7 @@ class MainActivity : TauriActivity() {
           val code = conn.responseCode
           if (code !in 200..299) throw Exception("HTTP $code")
           val total = conn.contentLengthLong
+          val digest = java.security.MessageDigest.getInstance("SHA-256")
           conn.inputStream.use { input ->
             apk.outputStream().use { output ->
               val buf = ByteArray(64 * 1024)
@@ -241,6 +261,7 @@ class MainActivity : TauriActivity() {
               var lastPct = -1
               while (input.read(buf).also { read = it } > 0) {
                 output.write(buf, 0, read)
+                digest.update(buf, 0, read)
                 done += read
                 if (total > 0) {
                   val pct = ((done * 100) / total).toInt()
@@ -248,6 +269,12 @@ class MainActivity : TauriActivity() {
                 }
               }
             }
+          }
+          val actual = digest.digest().joinToString("") { b -> "%02x".format(b) }
+          if (actual != expected) {
+            apk.delete()
+            postUpdateEvent("hrt-update-error", "{\"reason\":\"checksum\"}")
+            return@Thread
           }
           promptInstall(apk)
         } catch (e: Exception) {

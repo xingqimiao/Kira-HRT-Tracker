@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../ui/SvgDefs';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -6,7 +6,9 @@ import { LOCALE_MAP } from '../utils/helpers';
 import { useBackHandler } from '../utils/nativeBack';
 
 /**
- * The M3E calendar + clock page, extracted from the dose panel's `#timePage`.
+ * The M3E calendar + clock page. The dose panel used to carry its own copy; every
+ * caller now renders this one, which is what keeps the steppers and the editable
+ * digits identical everywhere.
  *
  * The lab editor used to unfold an inline three-dropdown picker; this is the
  * newer secondary page: a month grid, a 24-hour stepper, and one confirm bar.
@@ -26,9 +28,15 @@ export interface TimePageProps {
     /** Which halves of the page to show. Default is both. */
     mode?: 'datetime' | 'date' | 'time';
     title?: string;
+    /**
+     * Overrides what the "now" chip does. The dose panel tracks a "current time"
+     * flag (a dose logged as "now" must be stamped at save time, not at open
+     * time), so it cannot treat the result as a plain picked instant.
+     */
+    onRestoreNow?: (date: Date) => void;
 }
 
-export function TimePage({ open, initialDate, onClose, onConfirm, mode = 'datetime', title }: TimePageProps) {
+export function TimePage({ open, initialDate, onClose, onConfirm, mode = 'datetime', title, onRestoreNow }: TimePageProps) {
     const { t, lang } = useTranslation();
     const locale = LOCALE_MAP[lang] || 'en-US';
     const [draft, setDraft] = useState(initialDate);
@@ -49,9 +57,21 @@ export function TimePage({ open, initialDate, onClose, onConfirm, mode = 'dateti
         return true;
     });
 
+    /**
+     * Seed the page when it opens, and only then.
+     *
+     * `initialDate` is often a fresh `new Date()` built during the parent's render
+     * (the dose panel passes "now" on every pass), so depending on it re-seeded the
+     * draft on any re-render — a picked day or half-typed digits jumped back to the
+     * current instant every 60 seconds, because the app re-renders on its clock. The
+     * ref carries the latest value without making it a trigger.
+     */
+    const initialDateRef = useRef(initialDate);
+    initialDateRef.current = initialDate;
     useEffect(() => {
         if (!open) return;
-        const next = Number.isNaN(initialDate.getTime()) ? new Date() : initialDate;
+        const seed = initialDateRef.current;
+        const next = Number.isNaN(seed.getTime()) ? new Date() : seed;
         setDraft(next);
         setYear(next.getFullYear());
         setMonth(next.getMonth() + 1);
@@ -60,7 +80,7 @@ export function TimePage({ open, initialDate, onClose, onConfirm, mode = 'dateti
         setDayText(String(next.getDate()).padStart(2, '0'));
         setHourText(String(next.getHours()).padStart(2, '0'));
         setMinuteText(String(next.getMinutes()).padStart(2, '0'));
-    }, [open, initialDate]);
+    }, [open]);
 
     /** One writer for the draft, the calendar view and every editable field. */
     const applyDraft = (next: Date) => {
@@ -120,7 +140,8 @@ export function TimePage({ open, initialDate, onClose, onConfirm, mode = 'dateti
     const restoreNow = () => {
         const now = new Date();
         applyDraft(now);
-        onConfirm(now);
+        if (onRestoreNow) onRestoreNow(now);
+        else onConfirm(now);
     };
 
     /**

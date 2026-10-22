@@ -27,6 +27,7 @@ import { GEL_PRODUCTS_EVENT, readGelProducts, type GelProduct } from '../utils/g
 import { activePatches } from '../utils/medPlan';
 import { LOCALE_MAP } from '../utils/helpers';
 import { Icon } from '../ui/SvgDefs';
+import { TimePage } from './TimePage';
 import { cookie } from '../ui/cookie';
 import type { QuickDose } from './dose_form/QuickDoseButtons';
 import {
@@ -87,7 +88,6 @@ interface DoseFormProps {
 type PatchMode = 'rate' | 'total';
 
 const COOKIE_D = cookie(0, 0, 72, 9, 0.09).d;
-const WEEKDAYS_ZH = ['日', '一', '二', '三', '四', '五', '六'];
 
 const trimNumber = (value: number): string => {
     if (!Number.isFinite(value)) return '0';
@@ -106,9 +106,6 @@ const roundToStep = (value: number, step: number): number => {
     const decimals = Math.max(decimalsOf(step), 3);
     return Number(value.toFixed(decimals));
 };
-
-const sameDay = (a: Date, b: Date): boolean =>
-    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
 const thetaFromHold = (holdMin: number): number => {
     const points = SL_TIER_ORDER.map(key => ({ hold: SublingualTierParams[key].hold, theta: SublingualTierParams[key].theta }));
@@ -218,9 +215,6 @@ const DoseForm: React.FC<DoseFormProps> = ({
     const [time, setTime] = useState<Date>(initialTime);
     const [timeIsNow, setTimeIsNow] = useState<boolean>(!eventToEdit || addMode);
     const [showTimePage, setShowTimePage] = useState(false);
-    const [draftTime, setDraftTime] = useState<Date>(initialTime);
-    const [calYear, setCalYear] = useState(initialTime.getFullYear());
-    const [calMonth, setCalMonth] = useState(initialTime.getMonth() + 1);
 
     const [gelSite, setGelSite] = useState(() => eventToEdit?.extras?.[ExtraKey.gelSite] ?? 0);
     const [gelProductId, setGelProductId] = useState(() => eventToEdit?.extras?.[ExtraKey.gelProductId] ?? GEL_DEFAULT_PRODUCT_ID);
@@ -418,9 +412,6 @@ const DoseForm: React.FC<DoseFormProps> = ({
         setDoseText(trimNumber(value));
         setTime(record ? new Date(record.timeH * 3600_000) : new Date());
         setTimeIsNow(!record || asCopy);
-        setDraftTime(record ? new Date(record.timeH * 3600_000) : new Date());
-        setCalYear((record ? new Date(record.timeH * 3600_000) : new Date()).getFullYear());
-        setCalMonth((record ? new Date(record.timeH * 3600_000) : new Date()).getMonth() + 1);
 
         setGelSite(record?.extras?.[ExtraKey.gelSite] ?? 0);
         setGelProductId(record?.extras?.[ExtraKey.gelProductId] ?? GEL_DEFAULT_PRODUCT_ID);
@@ -468,59 +459,25 @@ const DoseForm: React.FC<DoseFormProps> = ({
         }
     }, [locale]);
 
-    const weekdays = useMemo(() => {
-        if (lang === 'zh' || lang === 'zh-TW' || lang === 'yue') return WEEKDAYS_ZH;
-        try {
-            const fmt = new Intl.DateTimeFormat(locale, { weekday: 'narrow' });
-            const sunday = new Date(2024, 0, 7);
-            return Array.from({ length: 7 }, (_, i) => fmt.format(new Date(sunday.getTime() + i * 86_400_000)));
-        } catch {
-            return ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-        }
-    }, [lang, locale]);
-
     const openTimePage = () => {
-        const next = timeIsNow ? new Date() : time;
-        setDraftTime(next);
-        setCalYear(next.getFullYear());
-        setCalMonth(next.getMonth() + 1);
         // The template sheet sits above the page; leaving it open covered the
         // time page's confirm button so only a pink strip was visible.
         setShowTplSheet(false);
         setShowTimePage(true);
     };
 
-    const confirmTime = () => {
-        setTime(draftTime);
+    const confirmTime = (picked: Date) => {
+        setTime(picked);
         setTimeIsNow(false);
         setShowTimePage(false);
         setPopKey(k => k + 1);
     };
 
     const restoreNow = () => {
-        const now = new Date();
-        setTime(now);
+        setTime(new Date());
         setTimeIsNow(true);
         setShowTimePage(false);
         setPopKey(k => k + 1);
-    };
-
-    const changeMonth = (delta: number) => {
-        const next = new Date(calYear, calMonth - 1 + delta, 1);
-        setCalYear(next.getFullYear());
-        setCalMonth(next.getMonth() + 1);
-    };
-
-    const pickDay = (day: number) => {
-        const next = new Date(calYear, calMonth - 1, day, draftTime.getHours(), draftTime.getMinutes());
-        setDraftTime(next);
-    };
-
-    const stepClock = (kind: 'h' | 'm', delta: number) => {
-        const next = new Date(draftTime);
-        if (kind === 'h') next.setHours((next.getHours() + delta + 24) % 24);
-        else next.setMinutes((next.getMinutes() + delta + 60) % 60);
-        setDraftTime(next);
     };
 
     // ——— Templates ———
@@ -824,26 +781,6 @@ const DoseForm: React.FC<DoseFormProps> = ({
     const timeSubLabel = timeIsNow ? t('m3e.time.now_sub') : t('m3e.time.custom_sub');
 
     const currentTplCount = Math.min(modeTemplates.length, 10);
-
-    // Calendar cells for the month being shown.
-    const calendarCells = useMemo(() => {
-        const firstWeekday = new Date(calYear, calMonth - 1, 1).getDay();
-        const daysInMonth = new Date(calYear, calMonth, 0).getDate();
-        const cells: Array<{ day: number | null; key: string }> = [];
-        for (let i = 0; i < firstWeekday; i += 1) cells.push({ day: null, key: `e${i}` });
-        for (let day = 1; day <= daysInMonth; day += 1) cells.push({ day, key: `d${day}` });
-        while (cells.length % 7 !== 0) cells.push({ day: null, key: `t${cells.length}` });
-        return cells;
-    }, [calMonth, calYear]);
-
-    const monthTitle = useMemo(() => {
-        try {
-            return new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long' })
-                .format(new Date(calYear, calMonth - 1, 1));
-        } catch {
-            return `${calYear}-${calMonth}`;
-        }
-    }, [calMonth, calYear, locale]);
 
     // ——— Segmented list. Every entry is a visible `.li` directly inside `.list`. ———
     type ListEntry = { key: string; node: React.ReactNode };
@@ -1507,73 +1444,16 @@ const DoseForm: React.FC<DoseFormProps> = ({
                 </button>
             </div>
 
-            {/* Secondary page: M3E calendar + hour/minute steppers. No native date input. */}
-            <div className={`sub-page${showTimePage ? ' open' : ''}`} id="timePage" aria-hidden={!showTimePage}>
-                <div className="hdr">
-                    <div className="hdr-l">
-                        <button type="button" className="ic-btn" data-m style={{ ['--mo' as string]: '12px' }} onClick={() => setShowTimePage(false)} aria-label={t('btn.cancel')}>
-                            <Icon id="chev" style={{ transform: 'rotate(180deg)' }} />
-                        </button>
-                        <span className="hdr-title">{t('m3e.time.title')}</span>
-                    </div>
-                    <button type="button" className="tpl-chip on" data-m style={{ ['--mo' as string]: '10px' }} onClick={restoreNow}>
-                        {t('m3e.time.now_restore')}
-                    </button>
-                </div>
-
-                <div className="tp-layout">
-                    <div className="m3e-cal-card">
-                        <div className="cal-head">
-                            <button type="button" className="cal-nav-btn" data-m style={{ ['--mo' as string]: '8px' }} onClick={() => changeMonth(-1)} aria-label="prev">
-                                <Icon id="chev" style={{ transform: 'rotate(180deg)' }} />
-                            </button>
-                            <span className="cal-title">{monthTitle}</span>
-                            <button type="button" className="cal-nav-btn" data-m style={{ ['--mo' as string]: '8px' }} onClick={() => changeMonth(1)} aria-label="next">
-                                <Icon id="chev" />
-                            </button>
-                        </div>
-                        <div className="cal-week">
-                            {weekdays.map((label, idx) => <span key={`${label}-${idx}`}>{label}</span>)}
-                        </div>
-                        <div className="cal-grid">
-                            {calendarCells.map(cell => cell.day === null ? (
-                                <div className="cal-day empty" key={cell.key} />
-                            ) : (
-                                <button
-                                    type="button"
-                                    key={cell.key}
-                                    className={`cal-day${sameDay(new Date(calYear, calMonth - 1, cell.day), new Date()) ? ' today' : ''}${sameDay(new Date(calYear, calMonth - 1, cell.day), draftTime) ? ' on' : ''}`}
-                                    data-m
-                                    style={{ ['--mo' as string]: '10px' }}
-                                    onClick={() => pickDay(cell.day!)}
-                                >
-                                    {cell.day}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="tp-card">
-                        <div className="tp-caption">{t('m3e.time.clock')}</div>
-                        <div className="tp-display">
-                            <div className="tp-col">
-                                <button type="button" className="tp-step" data-m style={{ ['--mo' as string]: '8px' }} onClick={() => stepClock('h', 1)}>+</button>
-                                <div className="tp-box">{String(draftTime.getHours()).padStart(2, '0')}</div>
-                                <button type="button" className="tp-step" data-m style={{ ['--mo' as string]: '8px' }} onClick={() => stepClock('h', -1)}>−</button>
-                            </div>
-                            <span className="tp-colon">:</span>
-                            <div className="tp-col">
-                                <button type="button" className="tp-step" data-m style={{ ['--mo' as string]: '8px' }} onClick={() => stepClock('m', 5)}>+</button>
-                                <div className="tp-box">{String(draftTime.getMinutes()).padStart(2, '0')}</div>
-                                <button type="button" className="tp-step" data-m style={{ ['--mo' as string]: '8px' }} onClick={() => stepClock('m', -5)}>−</button>
-                            </div>
-                        </div>
-                        <button type="button" className="save-btn tp-confirm" data-m style={{ ['--mo' as string]: '16px' }} onClick={confirmTime}>
-                            <Icon id="check" />{t('m3e.time.confirm')}
-                        </button>
-                    </div>
-                </div>
-            </div>
+            {/* Secondary page: the shared calendar + clock page. The dose panel used
+                to carry its own copy, which drifted: its minute stepper moved in 5s
+                and its digits were not editable. One implementation, one behaviour. */}
+            <TimePage
+                open={showTimePage}
+                initialDate={timeIsNow ? new Date() : time}
+                onClose={() => setShowTimePage(false)}
+                onConfirm={confirmTime}
+                onRestoreNow={restoreNow}
+            />
 
             {/* Save-as-template sheet */}
             <div className={`scrim${showTplSheet ? ' open' : ''}`} onClick={closeTplSheet} />

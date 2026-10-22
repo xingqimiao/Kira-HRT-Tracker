@@ -67,7 +67,7 @@ import {
 } from './utils/medPlanNotify';
 import { installNativeBack, useBackHandler } from './utils/nativeBack';
 import { installNativeLinkInterceptor } from './utils/externalLinks';
-import { syncPushRegistration } from './utils/pushRegister';
+import { retryPendingPushUnregister, syncPushRegistration } from './utils/pushRegister';
 import { isPlanNotificationGranted } from './utils/medPlanNotify';
 
 const AppContent = () => {
@@ -201,12 +201,35 @@ const AppContent = () => {
     // rotation) is the case that matters. Both transports bind here — native via the
     // Android bridge, web via the Firebase SDK; `syncPushRegistration` is a no-op
     // when notifications are not granted or web push is unconfigured.
+    // Replayed regardless of the current session: the record carries the token from
+    // the sign-out that failed, so it is the only way that request ever gets made.
+    useEffect(() => {
+        void retryPendingPushUnregister().catch(() => undefined);
+    }, []);
+
     useEffect(() => {
         if (!coreSession.token) return;
         void isPlanNotificationGranted()
             .then(granted => (granted ? syncPushRegistration(coreSession.token as string) : undefined))
             .catch(() => undefined);
     }, [coreSession.token]);
+
+    /**
+     * Re-arm the reminders when the account changes.
+     *
+     * The plan is per-account now (see `useAppData`), so the previous account's
+     * scheduled rings are wrong the moment someone else signs in — they would fire
+     * with that account's drug name. This cancels everything this device scheduled
+     * and rebuilds from the current account's plans; permission is not requested
+     * here, so a switch never raises a prompt on its own.
+     */
+    const planOwnerRef = useRef<string | null>(null);
+    useEffect(() => {
+        const owner = coreSession.user?.userId ?? null;
+        if (planOwnerRef.current === owner) return;
+        planOwnerRef.current = owner;
+        void reschedulePlanNotifications().catch(() => undefined);
+    }, [coreSession.user?.userId]);
 
     // Notifications that draw outside React (a scheduled native ring, an FCM nudge
     // the OS hands to the native service or the worker) must follow the app's

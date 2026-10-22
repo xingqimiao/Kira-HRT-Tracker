@@ -185,8 +185,10 @@ test('FCM pushes only the current mode plan and includes legacy plans', async ()
   const sends = installFakeFcm();
   const result = await scanMissedDoses(noon);
   assert.equal(result.pushed, 2, 'current-mode and legacy plans are pushed');
-  const aliases = sends.map((send) => (send.message as { data: Record<string, string> }).data.alias).sort();
-  assert.deepEqual(aliases, ['legacy-plan', 'masc-plan'], 'the other mode is not pushed');
+  // The payload names the plan and nothing else — the alias and dose are composed on
+  // the device from the account's own plans (M-5), so the assertion is on identity.
+  const planIds = sends.map((send) => (send.message as { data: Record<string, string> }).data.planId).sort();
+  assert.deepEqual(planIds, ['legacy-plan', 'masc-plan'], 'the other mode is not pushed');
 });
 
 test('two plans for the same drug at the same instant are one reminder', async () => {

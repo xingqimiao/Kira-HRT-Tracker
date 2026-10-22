@@ -2,7 +2,9 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 
 import { coreAuth, CoreAuthError } from '../services/coreAuth';
 import { unregisterPush } from '../utils/pushRegister';
-import { flushSecureStore, get as secureGet, remove as secureRemove, set as secureSet } from '../utils/secureStore';
+import { clearAccountData, flushSecureStore, get as secureGet, remove as secureRemove, set as secureSet } from '../utils/secureStore';
+import { writeMedPlans } from '../utils/medPlan';
+import { reschedulePlanNotifications } from '../utils/medPlanNotify';
 
 /**
  * The Application Core session.
@@ -61,7 +63,8 @@ export interface CoreSession {
     opts?: { turnstileToken?: string; persistent?: boolean },
   ) => Promise<void>;
   adoptSession: (token: string, userId: string, username: string) => void;
-  signOut: () => Promise<void>;
+  /** `clearLocal` also wipes this device's copy of the account's records. */
+  signOut: (opts?: { clearLocal?: boolean }) => Promise<void>;
 }
 
 interface CoreSessionState {
@@ -211,13 +214,38 @@ function useCoreSessionState() {
     [persist],
   );
 
-  const signOut = useCallback(async () => {
+  /**
+   * Sign out.
+   *
+   * `clearLocal` is the shared-browser answer: the records are kept by default so
+   * the next sign-in on this browser finds them, but a user who is handing the
+   * device over can ask for them to be wiped (see `clearAccountData`).
+   *
+   * The push unregister is awaited while the session token is still valid, because
+   * the server needs it to know which account to detach the device from; a failure
+   * is queued and replayed on the next launch instead of being swallowed.
+   */
+  const signOut = useCallback(async (opts: { clearLocal?: boolean } = {}) => {
     const token = state.token;
     void persist(null, null);
-    // Stop this device receiving the account's push nudges — told while the token
-    // is still valid, then FCM's own token is deleted. Fire-and-forget: the local
-    // session is already gone, and a failure must not leave the user stuck.
-    void unregisterPush(token).catch(() => undefined);
+    if (token) {
+      await unregisterPush(token, { retryable: true }).catch(() => undefined);
+    } else {
+      void unregisterPush(null).catch(() => undefined);
+    }
+    if (opts.clearLocal) {
+      try {
+        // Cancel first: a native ring embeds the title and body it was scheduled
+        // with, so the previous account's drug name would otherwise still appear when
+        // it fires. Emptying the plan makes the reschedule cancel every owned id and
+        // schedule nothing; the wipe then removes the (now empty) plan and the records.
+        writeMedPlans([]);
+        void reschedulePlanNotifications().catch(() => undefined);
+        await clearAccountData();
+      } catch {
+        // Storage unavailable: nothing was kept locally in the first place.
+      }
+    }
     // Revoke server-side too. Fire-and-forget: the local session is already gone,
     // and a failure here must not leave the user stuck in a signed-in UI.
     if (token) await coreAuth.logout(token).catch(() => undefined);

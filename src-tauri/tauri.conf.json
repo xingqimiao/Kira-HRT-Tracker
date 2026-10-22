@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Kira HRT",
-  "version": "2.0.4",
+  "version": "2.1.0",
   "identifier": "com.kiramyao.hrt",
   "build": {
     "frontendDist": "../dist",
@@ -20,7 +20,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://api.kiramyao.com https://hrt.kiramyao.com; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://api.kiramyao.com https://hrt.kiramyao.com https://challenges.cloudflare.com https://fcmregistrations.googleapis.com https://firebaseinstallations.googleapis.com https://www.googleapis.com; frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
     }
   },
   "bundle": {

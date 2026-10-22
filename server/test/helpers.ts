@@ -185,8 +185,8 @@ export async function registerAccountWithKey(
   // The real resolver, not a store lookup: a session row holds no key, so the DEK has
   // to come from the account's server wrapper exactly as it does in production.
   const ctx = await AccountService.resolveApiContext(account.token);
-  assert.ok(ctx && 'dek' in ctx, 'the session from registration resolves');
-  return { ...account, dek: ctx.dek };
+  assert.ok(ctx && 'recordKey' in ctx, 'the session from registration resolves');
+  return { ...account, dek: ctx.recordKey };
 }
 
 export { freshUsername };

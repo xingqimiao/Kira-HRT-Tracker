@@ -895,10 +895,12 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
     {
       title: 'Create a share link',
       description:
-        'Publish a read-only link to the user\'s dose history and modelled curve. Anyone with '
-        + 'the URL can read it until it expires, so confirm with the user before calling this. '
-        + 'Lab results, body weight and profile details are never included — the server refuses '
-        + 'a payload carrying them. The URL is returned once and cannot be retrieved again.',
+        'Publish a read-only link to the user\'s dose history. Anyone with the URL can read it '
+        + 'until it expires, so confirm with the user before calling this. Lab results, body '
+        + 'weight and profile details are never included — the server refuses a payload carrying '
+        + 'them. The URL is returned once and cannot be retrieved again. The snapshot has no '
+        + 'modelled curve: the model runs in the app, and a live link is refreshed from it '
+        + 'while the app is open.',
       inputSchema: {
         password: z.string().min(8).optional()
           .describe('Require this password to open the link. Omit for a link anyone can read.'),
@@ -925,10 +927,15 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
             at: e.at,
           }));
 
+        // The account's own mode, not a field on the context — AuthContext has no
+        // `mode`, so this used to be transfem for everyone, and a transmasc account's
+        // *live* link then never matched the app's refresh filter
+        // (`useLiveShareSync` compares it against the local mode).
+        const { hrtMode } = await AccountService.getSettings(ctx);
         return await ShareService.create(ctx.userId, {
           snapshot: {
             version: 1,
-            mode: (ctx as { mode?: unknown }).mode ?? 'transfem',
+            mode: hrtMode === 'transmasc' ? 'transmasc' : 'transfem',
             timezone: 'UTC',
             createdAt: Date.now(),
             events: doses,
@@ -946,7 +953,7 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         expires_at: new Date(r.value.value.expiresAt).toISOString(),
         password_required: r.value.value.passwordRequired,
         live: r.value.value.live,
-        included: 'dose history and the modelled curve',
+        included: 'dose history',
         not_included: 'lab results, body weight, account details',
         note: 'The URL is shown once. It cannot be retrieved again — only revoked.',
       });

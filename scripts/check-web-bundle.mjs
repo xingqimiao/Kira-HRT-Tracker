@@ -23,7 +23,7 @@
  *
  * Run by `npm run build` (as `postbuild`).
  */
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -49,9 +49,16 @@ const bundle = readFileSync(path.join(assetsDir, entry), 'utf8');
 const indexHtml = readFileSync(path.join(root, 'dist', 'index.html'), 'utf8');
 const cssEntry = readdirSync(assetsDir).find((f) => /^index-.*\.css$/.test(f));
 const css = cssEntry ? readFileSync(path.join(assetsDir, cssEntry), 'utf8') : '';
+// The class is added by /theme-init.js now (it moved out of index.html so the CSP
+// needs no 'unsafe-inline'). Asserting the string in index.html kept passing on a
+// prose comment, which is the sort of check that outlives what it checked.
+const themeInit = existsSync(path.join(root, 'dist', 'theme-init.js'))
+  ? readFileSync(path.join(root, 'dist', 'theme-init.js'), 'utf8')
+  : '';
 for (const [what, present] of [
   ['the site-about crawler footer in dist/index.html', indexHtml.includes('site-about')],
-  ['the app-viewport class add in dist/index.html', indexHtml.includes('app-viewport')],
+  ['the theme-init script tag in dist/index.html', indexHtml.includes('/theme-init.js')],
+  ['the app-viewport class add in dist/theme-init.js', themeInit.includes("classList.add('app-viewport')")],
   [`the app-viewport clamp rule in ${cssEntry ?? 'the built CSS'}`, css.includes('html.app-viewport')],
 ]) {
   if (!present) {

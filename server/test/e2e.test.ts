@@ -108,7 +108,7 @@ test('full agent path: register, log, predict, timeline', async () => {
   // model: the REST route and the MCP tool both call it.
   const { AccountService, PKSimulationService } = await import('../src/core.ts');
   const ctx = await AccountService.resolveApiContext(token);
-  assert.ok(ctx && 'dek' in ctx, 'the unlock token resolves to a session');
+  assert.ok(ctx && 'recordKey' in ctx, 'the unlock token resolves to a session');
 
   const prediction = await PKSimulationService.predict(ctx, { fromDays: 60, toDays: 14 });
   assert.ok(prediction.ok, `prediction failed: ${prediction.ok ? '' : prediction.error}`);
@@ -177,7 +177,7 @@ test('validation rejects rather than silently clamps', async () => {
   // interfaces reach them. The core is written through the *same* code the MCP
   // add-dose tool runs, so a rule enforced here is enforced for the agent too.
   const { MedicationService } = await import('../src/core.ts');
-  const ctx = { userId: account.userId, dek: account.dek };
+  const ctx = { userId: account.userId, recordKey: account.dek };
 
   const future = await MedicationService.add(ctx, {
     route: 'injection',
@@ -360,7 +360,7 @@ test('a predicted curve never reports a negative concentration', async () => {
   const { PKSimulationService } = await import('../src/core.ts');
   const { AccountService } = await import('../src/accounts.ts');
   const ctx = await AccountService.resolveApiContext(token);
-  assert.ok(ctx && 'dek' in ctx, 'the unlock token resolves to a session');
+  assert.ok(ctx && 'recordKey' in ctx, 'the unlock token resolves to a session');
 
   const pred = await PKSimulationService.predict(ctx, { fromDays: 90, toDays: 14 });
   assert.ok(pred.ok, `prediction failed: ${pred.ok ? '' : pred.error}`);
@@ -400,7 +400,7 @@ test('the stored pkEngine changes the curve the server predicts', async () => {
   const { PKSimulationService } = await import('../src/core.ts');
   const { AccountService } = await import('../src/accounts.ts');
   const ctx = await AccountService.resolveApiContext(token);
-  assert.ok(ctx && 'dek' in ctx, 'the unlock token resolves to a session');
+  assert.ok(ctx && 'recordKey' in ctx, 'the unlock token resolves to a session');
 
   // Built-in first: no preference stored, so the default stands.
   const builtin = await PKSimulationService.predict(ctx, { fromDays: 60, toDays: 14 });

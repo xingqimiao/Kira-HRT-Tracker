@@ -22,6 +22,8 @@ import { isNativeApp } from './platform';
  * is unregistered server-side and deleted from FCM.
  */
 const LAST_TOKEN_KEY = 'hrt-fcm-token';
+/** A logout that could not reach the server, replayed on the next launch. */
+const PENDING_UNREGISTER_KEY = 'hrt-push-unregister-pending';
 
 /** The VAPID public key for web push. Public by design; absent disables web push. */
 const VAPID_KEY = (import.meta.env.VITE_FIREBASE_VAPID_KEY as string | undefined)?.trim() ?? '';
@@ -134,13 +136,71 @@ export async function syncPushRegistration(authToken: string): Promise<void> {
 }
 
 /**
+ * Forget the local record of this device's FCM token, so the next
+ * `syncPushRegistration` registers it again.
+ *
+ * Needed after a password change: the server drops every device token with the
+ * account's sessions, but registration short-circuits when the local token already
+ * matches the FCM one, so without this the device would never come back and
+ * reminders would stop with nothing on screen to explain it.
+ */
+export function forgetLocalPushToken(): void {
+    try {
+        secureRemove(LAST_TOKEN_KEY);
+    } catch {
+        // Storage unavailable: the same short-circuit applies, nothing worse happens.
+    }
+}
+
+/**
+ * Replay a logout that could not reach the server. Called once at startup, before
+ * this launch's registration can overwrite the pending record.
+ *
+ * A 401 means the session expired in the meantime and the server has already
+ * forgotten it, so the entry is dropped rather than retried forever.
+ */
+export async function retryPendingPushUnregister(): Promise<void> {
+    let raw: string | null = null;
+    try {
+        raw = secureGet(PENDING_UNREGISTER_KEY);
+    } catch {
+        return;
+    }
+    if (!raw) return;
+    const drop = () => {
+        try {
+            secureRemove(PENDING_UNREGISTER_KEY);
+        } catch {
+            // Nothing to do; a stale entry is overwritten by the next sign-out.
+        }
+    };
+    let pending: { deviceToken?: unknown; authToken?: unknown };
+    try {
+        pending = JSON.parse(raw);
+    } catch {
+        drop();
+        return;
+    }
+    if (typeof pending.deviceToken !== 'string' || typeof pending.authToken !== 'string') {
+        drop();
+        return;
+    }
+    const ok = await apiFetch(apiEndpoint('/api/push/unregister'), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${pending.authToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: pending.deviceToken }),
+    }).then((res) => res.ok || res.status === 401).catch(() => false);
+    if (ok) drop();
+}
+
+/**
  * Stop this account's nudges reaching this device.
  *
  * Called on sign-out (with the token still in hand) so the server can be told which
  * device to forget, and with `null` when the session is already gone — then only the
  * local record and FCM's own token are cleared.
  */
-export async function unregisterPush(authToken: string | null): Promise<void> {
+export async function unregisterPush(authToken: string | null, opts: { retryable?: boolean } = {}): Promise<void> {
     let deviceToken: string | null = null;
     try {
         deviceToken = secureGet(LAST_TOKEN_KEY);
@@ -148,11 +208,23 @@ export async function unregisterPush(authToken: string | null): Promise<void> {
         deviceToken = null;
     }
     if (authToken && deviceToken) {
-        await apiFetch(apiEndpoint('/api/push/unregister'), {
+        const ok = await apiFetch(apiEndpoint('/api/push/unregister'), {
             method: 'POST',
             headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ token: deviceToken }),
-        }).catch(() => undefined);
+        }).then((res) => res.ok).catch(() => false);
+        if (!ok && opts.retryable) {
+            // Keep the device token and queue the call. Signing out used to fire this
+            // and forget, so a failure left the server still pushing the old account's
+            // reminders here until that account's next explicit revoke.
+            try {
+                secureSet(PENDING_UNREGISTER_KEY, JSON.stringify({ deviceToken, authToken }));
+            } catch {
+                // No storage: the retry is lost, but the next registration still
+                // reclaims the token server-side.
+            }
+            return;
+        }
     }
     try {
         secureRemove(LAST_TOKEN_KEY);

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import { createPortal } from 'react-dom';
 import { Icon } from './SvgDefs';
 import { useEscape } from '../hooks/useEscape';
+import { useBackHandler } from '../utils/nativeBack';
 
 /**
  * M3E Container Transform (docs/m3e-prototype.html `openFull` / `closeFull`).
@@ -93,6 +94,19 @@ export function ContainerTransform({
     const enterRaf = useRef<number | undefined>(undefined);
 
     useEscape(onClose, open && mounted);
+
+    /**
+     * The overlay is a modal, so system back must close it rather than reach the
+     * page underneath. Without this the med-plan editor stayed open while back
+     * torn the settings category down — one swipe flashed the page behind the
+     * sheet, a second one left settings altogether. Registered while `open`
+     * only: during the 520ms return animation the surface is still mounted but
+     * is no longer in front.
+     */
+    useBackHandler(open, () => {
+        onClose();
+        return true;
+    });
 
     // Capture before the first paint of the overlay, so the very first frame is
     // already clipped to the trigger rather than flashing full-screen.

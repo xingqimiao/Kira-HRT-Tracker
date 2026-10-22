@@ -13,6 +13,8 @@ export interface LockCopy {
     title: string;
     hint: string;
     failed: string;
+    /** Shown when a biometric enrolment change made the lock key unusable. */
+    invalidated: string;
     retry: string;
     reset: string;
     resetTitle: string;
@@ -29,6 +31,7 @@ const COPY: Record<Lang, LockCopy> = {
         title: '应用已锁定',
         hint: '使用指纹或面容解锁',
         failed: '验证未通过，请重试',
+        invalidated: "指纹或面容已更改，应用锁的密钥已被系统作废，本机记录无法再解开。清除本机数据并重新登录后会从云端恢复。",
         retry: '重试',
         reset: '重置',
         resetTitle: '无法解锁？',
@@ -43,6 +46,7 @@ const COPY: Record<Lang, LockCopy> = {
         title: '應用程式已鎖定',
         hint: '使用指紋或臉部解鎖',
         failed: '驗證未通過，請重試',
+        invalidated: "指紋或臉部已變更，應用程式鎖定的金鑰已被系統作廢，本機紀錄無法再解開。清除本機資料並重新登入後會從雲端還原。",
         retry: '重試',
         reset: '重設',
         resetTitle: '無法解鎖？',
@@ -57,6 +61,7 @@ const COPY: Record<Lang, LockCopy> = {
         title: '應用程式已鎖定',
         hint: '用指紋或者面容解鎖',
         failed: '驗證唔通過，請再試',
+        invalidated: "指紋或者面容改咗，應用鎖嘅金鑰已經被系統作廢，本機紀錄解唔返。清除本機資料再登入就會由雲端還原。",
         retry: '再試',
         reset: '重設',
         resetTitle: '解唔到鎖？',
@@ -71,6 +76,7 @@ const COPY: Record<Lang, LockCopy> = {
         title: 'App locked',
         hint: 'Unlock with your fingerprint or face',
         failed: 'Authentication failed. Try again.',
+        invalidated: "Your fingerprint or face changed, so the system invalidated the app-lock key and this device records can no longer be opened. Clear local data and sign in again to restore them from the cloud.",
         retry: 'Try again',
         reset: 'Reset',
         resetTitle: "Can't unlock?",
@@ -85,6 +91,7 @@ const COPY: Record<Lang, LockCopy> = {
         title: 'アプリはロックされています',
         hint: '指紋または顔で解除',
         failed: '認証できませんでした。もう一度お試しください。',
+        invalidated: "指紋または顔が変更されたため、アプリロックの鍵はシステムにより無効化され、この端末の記録は開けなくなりました。端末のデータを消去して再ログインするとクラウドから復元されます。",
         retry: '再試行',
         reset: 'リセット',
         resetTitle: 'ロックを解除できませんか？',
@@ -99,6 +106,7 @@ const COPY: Record<Lang, LockCopy> = {
         title: '앱이 잠겨 있습니다',
         hint: '지문 또는 얼굴로 잠금 해제',
         failed: '인증하지 못했습니다. 다시 시도하세요.',
+        invalidated: "지문이나 얼굴이 변경되어 시스템이 앱 잠금 키를 무효화했습니다. 이 기기의 기록은 더 이상 열 수 없습니다. 기기 데이터를 지우고 다시 로그인하면 클라우드에서 복원됩니다.",
         retry: '다시 시도',
         reset: '초기화',
         resetTitle: '잠금을 해제할 수 없나요?',
@@ -113,6 +121,7 @@ const COPY: Record<Lang, LockCopy> = {
         title: 'Uygulama kilitli',
         hint: 'Parmak izi veya yüzünüzle kilidi açın',
         failed: 'Kimlik doğrulama başarısız. Tekrar deneyin.',
+        invalidated: "Parmak iziniz veya yüzünüz değiştiği için sistem uygulama kilidi anahtarını geçersiz kıldı ve bu cihazdaki kayıtlar artık açılamıyor. Yerel verileri temizleyip yeniden giriş yapın; kayıtlar buluttan geri gelir.",
         retry: 'Tekrar dene',
         reset: 'Sıfırla',
         resetTitle: 'Kilit açılmıyor mu?',

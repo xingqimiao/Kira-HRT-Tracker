@@ -14,7 +14,8 @@
  */
 export interface AuthContext {
   userId: string;
-  dek: string;
+  /** The record key R: the DEK under key splitting, never the bare DEK. */
+  recordKey: string;
 }
 
 /**

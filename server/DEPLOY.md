@@ -323,7 +323,18 @@ api.kiramyao.com {
     }
 
     handle /hrt/* {
-        reverse_proxy 127.0.0.1:8788
+        reverse_proxy 127.0.0.1:8788 {
+            # Overwrite the header instead of appending to what the client sent.
+            #
+            # The API's per-IP buckets (login, register, account deletion, share
+            # unlock, OAuth start) read `CF-Connecting-IP` first and the LAST
+            # X-Forwarded-For hop second. Cloudflare sets `CF-Connecting-IP` and
+            # overwrites any value the client supplied, so that is the real address
+            # whenever the request came through the proxy. This line is the belt for
+            # the direct-to-origin case: with Caddy replacing the header, the last
+            # hop is always `{remote_host}`, never a value the caller chose.
+            header_up X-Forwarded-For {remote_host}
+        }
     }
 
     # Everything else on this host belongs to the comment service. If its block is
@@ -475,7 +486,16 @@ hrt.kiramyao.com {
         # and it does not widen `connect-src`, so the runtime and the models are still
         # fetched from this origin and nowhere else. Do not substitute the broader
         # keyword for it.
-        Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://hrt.kiramyao.com https://api.kiramyao.com; frame-ancestors 'none'; base-uri 'self'"
+        #
+        # Turnstile is the one third-party origin and it needs three slots: the loader
+        # script, the challenge iframe, and its own connect calls. `worker-src blob:`
+        # and `media-src blob:` cover ONNX Runtime and the OCR preview respectively.
+        #
+        # No `'unsafe-inline'` on `script-src`: the boot script that sets the theme
+        # class before first paint now lives in `/theme-init.js` (it is a classic,
+        # blocking file, so it still beats the first paint). Inline `application/ld+json`
+        # is not a JavaScript type and is not restricted by `script-src`.
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://hrt.kiramyao.com https://api.kiramyao.com https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'"
         -Server
     }
 }

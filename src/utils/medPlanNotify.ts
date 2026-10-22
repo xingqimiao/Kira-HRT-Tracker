@@ -26,7 +26,7 @@ import {
 } from '@choochmeque/tauri-plugin-notifications-api';
 import { isNativeApp } from './platform';
 import { applyNotifFallbacks, notifFallbacks, type NotifFallbacks } from './notifLocale';
-import { readMedPlans, writeMedPlans, sanitizeMedPlans, dueTimesToday, matchesPlan, planStatuses, plansForMode, localDateKey, isSavedTemplate, type MedPlan, type PlanStatus, type PlanTime, MED_PLAN_KEY } from './medPlan';
+import { readMedPlans, writeMedPlans, sanitizeMedPlans, dueTimesToday, matchesPlan, planStatuses, plansForMode, localDateKey, isSavedTemplate, type MedPlan, type PlanStatus, type PlanTime } from './medPlan';
 import { HRTMode } from '../../logic';
 import { get, set } from './secureStore';
 import { occurrenceKey, readLedger, serializeLedger, pruneLedger } from './medPlanNotifyLedger';
@@ -61,11 +61,29 @@ function currentMode(): HRTMode {
 let notifTranslate: (key: string) => string = (key) => key;
 let notifFallback: NotifFallbacks = { title: 'Medication reminder', body: '', hidden: 'You have a reminder' };
 
+/**
+ * The per-plan label map the background transports use, built from the plans this
+ * account actually holds. Recomputed on language change and on every reschedule, so
+ * an edit reaches the next push without a reload.
+ */
+export function planNotificationLabels(): Record<string, { title: string; body: string }> {
+    const out: Record<string, { title: string; body: string }> = {};
+    for (const plan of plansForMode(readMedPlans(), currentMode())) {
+        out[plan.id] = { title: reminderTitle(plan), body: reminderBody(plan) };
+    }
+    return out;
+}
+
+/** Push the language fallbacks *and* the plan labels to both remote transports. */
+function pushNotifFallbacks(): void {
+    applyNotifFallbacks({ ...notifFallback, plans: planNotificationLabels() });
+}
+
 /** The app's translator, bound once from App. */
 export function setPlanNotificationLanguage(t: (key: string) => string): void {
     notifTranslate = t;
     notifFallback = notifFallbacks(t);
-    applyNotifFallbacks(notifFallback);
+    pushNotifFallbacks();
 }
 
 /** The title a reminder shows: the user's alias, else the localized drug name. */
@@ -150,6 +168,10 @@ export async function reschedulePlanNotifications(request = false): Promise<bool
 }
 
 async function rescheduleOnce(request: boolean): Promise<boolean> {
+    // The plans can have changed since the last push (add, edit, delete, account
+    // switch); the background transports need the current labels before a nudge
+    // can arrive.
+    pushNotifFallbacks();
     let granted = await isPermissionGranted();
     if (!granted && request) granted = (await requestPermission()) === 'granted';
     // Private: the tray entry is complete once the device is unlocked, but the
@@ -372,5 +394,5 @@ export function arePlanNotificationsMuted(): boolean {
 
 // --- Re-export so callers need only this module --------------------------------
 
-export { readMedPlans, writeMedPlans, sanitizeMedPlans, dueTimesToday, matchesPlan, planStatuses, isSavedTemplate, MED_PLAN_KEY };
+export { readMedPlans, writeMedPlans, sanitizeMedPlans, dueTimesToday, matchesPlan, planStatuses, isSavedTemplate };
 export type { MedPlan, PlanStatus, PlanTime };

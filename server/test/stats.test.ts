@@ -106,7 +106,7 @@ test('record counts match the rows, and a deletion drops one', async () => {
   // Written through the store rather than over HTTP: the point is the endpoint's
   // count, not the write path, which has its own tests.
   const { RecordService } = await import('../src/records.ts');
-  const ctx = { userId: account.userId, dek: account.dek };
+  const ctx = { userId: account.userId, recordKey: account.dek };
   const dose = await RecordService.put(ctx, {
     id: `dose:transfem:stats-${Date.now()}`,
     takenAt: Date.now(),

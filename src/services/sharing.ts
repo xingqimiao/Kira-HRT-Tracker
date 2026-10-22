@@ -139,16 +139,10 @@ export const sharingService = {
      * the clear beside it: the owner's own list needs it without a key, and the live
      * sync uses it to find the right link.
      *
-     * ── The rollout fallback ─────────────────────────────────────────────────
-     *
-     * A server that predates sealed shares does not know `sealed`: its validator sees
-     * no snapshot and the insert fails, which comes back as a 5xx. During the window
-     * where a new client talks to an old deployment, retrying once with the older
-     * plaintext shape keeps the feature working instead of turning it into a 500.
-     * The retry is deliberately narrow — a 4xx is our own request being wrong, and
-     * retrying it in the clear would be a silent downgrade rather than a compatibility
-     * measure. The returned URL simply carries no key, and the page handles a plaintext
-     * link exactly as it always did.
+     * There is no plaintext fallback. It once existed for servers that predated
+     * sealed shares, keyed on a 5xx — which meant a database blip or a KMS outage
+     * silently published readable health data and handed back a key-less URL. Any
+     * failure is surfaced, and the caller retries the same sealed request.
      */
     async create(
         authToken: string,
@@ -172,17 +166,17 @@ export const sharingService = {
             live,
         };
 
-        let response = await post({ sealed, mode: snapshot.mode, ...common });
-        const unsealed = response.status >= 500;
-        if (unsealed) {
-            response = await post({ snapshot, ...common });
-        }
+        // One attempt, sealed. There used to be a fallback that retried with the
+        // plaintext snapshot whenever this failed with a 5xx — a "compatibility" path
+        // for servers that did not understand `sealed`. The effect was that a
+        // database blip, a KMS hiccup or a 502 made the app quietly upload readable
+        // health data and hand back a URL with no key, while the user believed only
+        // they could open the link. Capability negotiation happened nowhere; a 5xx is
+        // not a statement about the API version. Every server this app talks to has
+        // supported sealed shares since 2.0.
+        const response = await post({ sealed, mode: snapshot.mode, ...common });
         if (!response.ok) throw await readError(response);
         const created = await response.json() as CreatedShare;
-        if (unsealed) {
-            // The link this created is a plaintext one, so there is no key to keep.
-            return { ...created, url: absoluteShareUrl(created.url) };
-        }
         // A live link is rewritten by this device later, so its key has to survive a
         // reload. A frozen one is written once and never needs it again.
         if (live) await rememberShareKey(created.id, key);

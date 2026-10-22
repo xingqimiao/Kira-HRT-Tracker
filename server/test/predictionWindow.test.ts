@@ -64,7 +64,7 @@ async function accountDosingWeeksAgo(weeksAgo: number) {
   }
   const { AccountService } = await import('../src/accounts.ts');
   const ctx = await AccountService.resolveApiContext(a.token);
-  assert.ok(ctx && 'dek' in ctx, 'the session resolves');
+  assert.ok(ctx && 'recordKey' in ctx, 'the session resolves');
   return ctx;
 }
 

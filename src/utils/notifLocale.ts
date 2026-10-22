@@ -22,14 +22,25 @@ import { isNativeApp } from './platform';
  *     between messages, so a module variable would be lost — the cache is the durable
  *     slot.
  *
- * Only the **fallbacks** travel. A plan's own `alias` (user-chosen, language-neutral)
- * and `dose` still win when the server sends them.
+ * The **fallbacks** and a per-plan label map travel. The FCM payload no longer
+ * carries the alias or dose — those are composed here from this account's own plans,
+ * so a stale token cannot print another account's drug name.
  */
 export interface NotifFallbacks {
     title: string;
     body: string;
     /** The device-locked line: "You have a reminder", never the dose. */
     hidden: string;
+    /**
+     * Per-plan notification text, keyed by plan id and composed from the current
+     * account's own plans, in the current language.
+     *
+     * The server used to send the alias and dose inside the push payload. That put
+     * one account's drug name on a device that had since switched accounts, and it
+     * also made the notification text a server-side composition of health data. Now
+     * the payload names the plan and this map supplies the words.
+     */
+    plans?: Record<string, { title: string; body: string }>;
 }
 
 /** The resolved fallbacks for the current language. */

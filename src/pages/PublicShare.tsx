@@ -39,16 +39,47 @@ const formatWearDays = (days: number): string =>
  * keeps the chart, the date grouping and the rows on the same numbers, and means a
  * link written by either path opens instead of throwing on `Invalid time value`.
  */
+/**
+ * Whether an IANA zone is usable. `Intl.DateTimeFormat` throws a RangeError on an
+ * unknown one, and the zone comes from the shared snapshot — data the viewer does not
+ * control and the server only validated loosely.
+ */
+const isUsableTimeZone = (zone: unknown): zone is string => {
+    if (typeof zone !== 'string' || !zone) return false;
+    try {
+        new Intl.DateTimeFormat('en-US', { timeZone: zone });
+        return true;
+    } catch {
+        return false;
+    }
+};
+
+/**
+ * A snapshot event, or null when it cannot be rendered.
+ *
+ * The page used to trust the payload's shape: a string `doseMG` reached
+ * `toFixed` and threw, and an invalid zone threw at the first `Intl` call, so a
+ * malformed link crashed the viewer instead of saying "this link cannot be opened".
+ * Every field the renderer reads is coerced here, once.
+ */
+const sharedEvent = (event: unknown): DoseEvent | null => {
+    if (!event || typeof event !== 'object') return null;
+    const raw = event as DoseEvent & { at?: string };
+    const timeH = typeof raw.timeH === 'number' && Number.isFinite(raw.timeH)
+        ? raw.timeH
+        : Date.parse(raw.at ?? '') / 3_600_000;
+    const doseMG = Number(raw.doseMG);
+    if (!Number.isFinite(timeH) || !Number.isFinite(doseMG)) return null;
+    const extras = raw.extras && typeof raw.extras === 'object' && !Array.isArray(raw.extras)
+        ? raw.extras
+        : {};
+    return { ...raw, timeH, doseMG, extras } as DoseEvent;
+};
+
 const normalizeSharedEvents = (events: DoseEvent[] | undefined): DoseEvent[] =>
-    (events ?? [])
-        .map((event) => {
-            const raw = event as DoseEvent & { at?: string };
-            const timeH = typeof raw.timeH === 'number' && Number.isFinite(raw.timeH)
-                ? raw.timeH
-                : Date.parse(raw.at ?? '') / 3_600_000;
-            return { ...raw, timeH, extras: raw.extras ?? {} } as DoseEvent;
-        })
-        .filter(event => Number.isFinite(event.timeH));
+    (Array.isArray(events) ? events : [])
+        .map(sharedEvent)
+        .filter((event): event is DoseEvent => event !== null);
 
 const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
     const { lang, t } = useTranslation();
@@ -418,7 +449,10 @@ const SharedRecord = ({ details, snapshot }: { details: ShareDetails; snapshot: 
     const { lang, t } = useTranslation();
     const copy = getShareCopy(lang);
     const locale = LOCALE_MAP[lang] || 'en-US';
-    const timeZone = snapshot.timezone || 'UTC';
+    // An unusable zone falls back to UTC rather than throwing: the reading the viewer
+    // gets is off by a fixed number of hours, which is a bad link's fault, not a reason
+    // to show nothing at all.
+    const timeZone = isUsableTimeZone(snapshot.timezone) ? snapshot.timezone : 'UTC';
     const events = useMemo(() => normalizeSharedEvents(snapshot.events), [snapshot.events]);
     // The chart plots modelled compounds only — see `modelledEvents`. The record
     // list below still shows every shared dose, CPA included.

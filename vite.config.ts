@@ -163,14 +163,22 @@ export default defineConfig(({ mode }) => {
       ...(isAndroid ? [stripOcrForNative()] : []),
       react(),
       ...(!isAndroid ? [VitePWA({
-        registerType: 'autoUpdate',
+        // A new worker waits until the user accepts it. With `autoUpdate` it took
+        // over immediately while the open tab kept running the old bundle, so the
+        // next lazy import (an i18n pack, the PK vendor chunk, Firebase) asked for a
+        // file the deploy had already replaced and failed. The update prompt is what
+        // swaps both together.
+        registerType: 'prompt',
         // The worker gets a commit-stamped name so a deploy is never shadowed by a
         // cached copy at a fixed path — see `swStamp`.
         filename: SW_FILENAME,
-        // Registering inline puts the code in `index.html`, which is served
-        // `DYNAMIC` by Cloudflare and therefore never edge-cached. An external
-        // `/registerSW.js` would be one more fixed URL to go stale.
-        injectRegister: 'inline',
+        // Inline registration was the older choice (it keeps the code out of a
+        // fixed URL Cloudflare might cache). It cannot survive the CSP: the inline
+        // `<script>` the plugin writes into index.html is exactly what
+        // `script-src 'self'` blocks, and a per-build hash is not maintainable. The
+        // external `/registerSW.js` is one more fixed name to keep fresh, so it is
+        // in the same purge list as `/sw.js` on deploy (see DEPLOY.md).
+        injectRegister: 'script',
         includeAssets: ['favicon.png', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
         manifest: {
           name: 'Kira HRT Tracker',

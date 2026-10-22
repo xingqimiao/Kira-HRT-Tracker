@@ -102,7 +102,8 @@ export async function checkNativeUpdate(): Promise<NativeUpdate | null> {
 }
 
 /** The native bridge that fetches the APK and hands it to the installer. */interface UpdateBridge {
-    download: (url: string) => void;
+    /** The digest is required: the native side refuses an empty one. */
+    download: (url: string, sha256: string) => void;
 }
 function updateBridge(): UpdateBridge | null {
     const w = window as unknown as { HrtUpdate?: UpdateBridge };
@@ -166,5 +167,12 @@ export function downloadNativeUpdate(update: NativeUpdate, options: DownloadOpti
     window.addEventListener('hrt-update-progress', onProgress);
     window.addEventListener('hrt-update-ready', onReady);
     window.addEventListener('hrt-update-error', onError);
-    bridge.download(update.apk);
+    // A manifest without a digest cannot be verified, and an unverified APK is
+    // exactly what L-5 was about. Refuse rather than install blind.
+    if (!update.sha256) {
+        cleanup();
+        options.onError?.('nohash');
+        return;
+    }
+    bridge.download(update.apk, update.sha256);
 }

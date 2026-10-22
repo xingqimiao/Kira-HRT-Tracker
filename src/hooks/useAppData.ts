@@ -5,7 +5,7 @@ import { DoseEvent, Route, Ester, SimulationResult, runSimulation, interpolateCo
          OcrModelTier, normalizeOcrModelTier,
          PkEngineId, normalizePkEngine, DEFAULT_PK_ENGINE,
          BODY_WEIGHT_KG_MIN, BODY_WEIGHT_KG_MAX, DOSE_MG_MAX, SPIRO_MG_MAX_PER_DAY,
-         EVENT_TIME_H_MIN, EVENT_TIME_H_MAX } from '../../logic';
+         EVENT_TIME_H_MIN, EVENT_TIME_H_MAX, ExtraKey } from '../../logic';
 import { builtinEngine, chooseEngine, loadVendorEngine, type PkEngine } from '../engine/registry';
 import { createDayLabelFormatter, toDayKey } from '../utils/helpers';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -20,7 +20,7 @@ import { hrtDaysSince, normalizeHrtStartDate } from '../utils/hrtStart';
 import { milestoneFor } from '../utils/hrtMilestone';
 import { isThirdDayStreak } from '../utils/hrtStreak';
 import { get as secureGet, set as secureSet, remove as secureRemove } from '../utils/secureStore';
-import { readMedPlans, writeMedPlans, medPlanUpdatedAt, MED_PLAN_CHANGED_EVENT } from '../utils/medPlan';
+import { readMedPlans, writeMedPlans, medPlanUpdatedAt, setMedPlanOwner, MED_PLAN_CHANGED_EVENT } from '../utils/medPlan';
 
 /** Namespace used while signed out. Its keys are the original, un-prefixed ones. */
 const LOCAL_OWNER = 'local';
@@ -45,6 +45,9 @@ const SHARED_SUFFIXES = [
     'weight', 'pk-params', 'cal-method', 'cal-history-mode', 'aa-chart', 'hrt-start',
     'recheck-intervals', 'ocr-model-tier', 'pk-engine',
     'weight-at', 'pk-params-at',
+    // The medication plan and its stamp. Until 2.1.0 the plan ignored the account
+    // namespace entirely; the first sign-in after upgrading moves it here.
+    'med-plan', 'med-plan-at',
     // Which milestone this device has already celebrated, as `YYYY-MM-DD:key`.
     // Device-local by design — see `pendingMilestone` below.
     'hrt-milestone',
@@ -72,12 +75,21 @@ function adoptSignedOutData(owner: string): void {
     }
     for (const s of SHARED_SUFFIXES) moves.push([nsFor(LOCAL_OWNER, s), nsFor(owner, s)]);
 
+    // Suffixes that are adopted even when the account already has data.
+    //
+    // `hrt-start` always did: it has a single obvious value and a stale one left
+    // behind would silently win later. `med-plan` joined it in 2.1.0 — the plan was
+    // stored globally until then, so every existing signed-in user has *other*
+    // account data and the all-or-nothing rule would have made their plan vanish on
+    // upgrade. The move still only happens when the account has no plan of its own.
+    const ADOPT_IF_EMPTY = ['-hrt-start', '-med-plan', '-med-plan-at'];
     const hasTargetData = moves.some(([, to]) => secureGet(to) !== null);
     for (const [from, to] of moves) {
         const value = secureGet(from);
         if (value === null) continue;
         const targetValue = secureGet(to);
-        if (!hasTargetData || (targetValue === null && to.endsWith('-hrt-start'))) {
+        const perKey = targetValue === null && ADOPT_IF_EMPTY.some(suffix => to.endsWith(suffix));
+        if (!hasTargetData || perKey) {
             secureSet(to, value);
             secureRemove(from);
         }
@@ -146,7 +158,10 @@ export const useAppData = (
     // lets a plan edit become a sync-visible change: `writeMedPlans` dispatches the
     // event, this re-reads, and the value feeds the sync fingerprint — otherwise a plan
     // edit re-rendered nothing that the sync hook depends on and the push never armed.
-    const [medPlan, setMedPlanState] = useState(() => readMedPlans());
+    const [medPlan, setMedPlanState] = useState(() => {
+        setMedPlanOwner(owner);
+        return readMedPlans();
+    });
     useEffect(() => {
         const reread = () => setMedPlanState(readMedPlans());
         window.addEventListener(MED_PLAN_CHANGED_EVENT, reread);
@@ -527,8 +542,17 @@ export const useAppData = (
     // adoption happens before any persist effect can write an empty array into
     // the account's namespace and make adoption think it was already used.
     useEffect(() => {
+        // First, because the plan's own readers (Home, the plan screen, the reminder
+        // scheduler) go through the module rather than through this state, and they
+        // must already be pointed at the account when adoption and the reads below
+        // run.
+        setMedPlanOwner(owner);
         adoptSignedOutData(owner);
         loadedScopeRef.current = null;
+        // The plan lives outside this hook's state (see medPlan.ts), so the scope
+        // switch has to re-read it too — otherwise a new account kept the previous
+        // account's plan in memory and in the notification scheduler.
+        setMedPlanState(readMedPlans());
         setEvents(loadJSON(keyFor(mode, 'events'), [] as DoseEvent[]));
         setLabResults(loadJSON(keyFor(mode, 'lab-results'), [] as LabResult[]));
         setDoseTemplates(loadJSON(keyFor(mode, 'dose-templates'), [] as DoseTemplate[]));
@@ -949,6 +973,37 @@ export const useAppData = (
         });
     };
 
+    /**
+     * A record id, as the server and MCP accept one: at most 200 characters of
+     * `[A-Za-z0-9_.:-]`. An id is a storage key, a tombstone key and a sync
+     * identity, so a hand-edited backup could otherwise plant a multi-kilobyte id
+     * that every device then carries around forever.
+     */
+    const IMPORT_ID_SHAPE = /^[A-Za-z0-9_.:-]{1,200}$/;
+    const importId = (raw: unknown): string =>
+        typeof raw === 'string' && IMPORT_ID_SHAPE.test(raw) ? raw : uuidv4();
+
+    /**
+     * Extras survive as numbers only.
+     *
+     * The PK engine reads named numeric fields out of this bag; a nested object or a
+     * string there became NaN downstream and silently skewed a curve. Unknown keys are
+     * dropped for the same reason — the schema is small and closed.
+     */
+    // Derived from the enum, not a hand list, so a new extra cannot be silently
+    // dropped here (an import that loses the gel product would change the curve).
+    const IMPORT_EXTRA_KEYS = new Set<string>(Object.values(ExtraKey));
+    const importExtras = (raw: unknown): Record<string, number> => {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+        const out: Record<string, number> = {};
+        for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+            if (!IMPORT_EXTRA_KEYS.has(key)) continue;
+            const n = Number(value);
+            if (Number.isFinite(n)) out[key] = n;
+        }
+        return out;
+    };
+
     /** Carry a record's edit stamp through sanitising; absent or junk becomes undefined. */
     const keepStamp = (raw: any): number | undefined => {
         const n = Number(raw?.updatedAt);
@@ -969,9 +1024,9 @@ export const useAppData = (
             if (!Number.isFinite(timeNum) || timeNum < EVENT_TIME_H_MIN || timeNum > EVENT_TIME_H_MAX) return null;
             const doseNum = Number(doseMG);
             const validEster = Object.values(Ester).includes(ester) ? ester : Ester.E2;
-            const sanitizedExtras = (extras && typeof extras === 'object') ? extras : {};
+            const sanitizedExtras = importExtras(extras);
             return {
-                id: typeof item.id === 'string' ? item.id : uuidv4(),
+                id: importId(item.id),
                 route,
                 timeH: timeNum,
                 // The ceiling is per compound: `DOSE_MG_MAX` is estradiol's, and an
@@ -1498,9 +1553,9 @@ export const useAppData = (
             pkParams: pkParams ?? null,
             pkParamsUpdatedAt: Number(secureGet(sharedKey('pk-params-at'))) || undefined,
             // The medication plan (用药方案) as a synced scalar, next to weight and PK
-            // overrides. It lives in its own key (see medPlan.ts) rather than an
-            // account-scoped one, so it is read here verbatim; the stamp makes the
-            // merge's last-write-wins work across devices.
+            // overrides. It lives in its own account-scoped key (see medPlan.ts), read
+            // here through the module so the scope and the value cannot disagree; the
+            // stamp makes the merge's last-write-wins work across devices.
             medPlan: readMedPlans(),
             medPlanUpdatedAt: medPlanUpdatedAt() || undefined,
             // App-only collections. The Core stores this verbatim in

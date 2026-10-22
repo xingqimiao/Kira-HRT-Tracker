@@ -7,6 +7,7 @@ import {
     ChevronDown,
     LogOut,
     RefreshCw,
+    Trash2,
     UserCircle,
     X,
 } from '../icons';
@@ -320,6 +321,22 @@ const Account: React.FC<AccountProps> = ({
         showDialog('confirm', t('core.acct.sign_out_confirm'), () => { void session.signOut(); });
     };
 
+    /**
+     * Sign out *and* wipe what this browser kept for the account.
+     *
+     * Records live in localStorage so the next sign-in here finds them; on a shared
+     * browser that also means the next person to open DevTools reads the previous
+     * user's history. Two confirms, because the records are restored from the
+     * server only while the account still has them in its cloud copy.
+     */
+    const handleSignOutAndClear = () => {
+        showDialog('confirm', t('core.acct.sign_out_clear_confirm'), () => {
+            showDialog('confirm', t('core.acct.sign_out_clear_confirm_2'), () => {
+                void session.signOut({ clearLocal: true });
+            });
+        });
+    };
+
     const avatarSrc = avatarDataUrl ?? summary?.avatarUrl ?? null;
     const initial = username.trim().charAt(0).toUpperCase();
     const dateLabel = hrtStartDate
@@ -475,6 +492,13 @@ const Account: React.FC<AccountProps> = ({
                             <div className="li danger" role="button" tabIndex={0} onClick={handleSignOut} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSignOut(); } }}>
                                 <span className="ic err"><Icon icon={LogOut} size={22} /></span>
                                 <div className="t"><b>{t('core.acct.sign_out')}</b></div>
+                            </div>
+                            <div className="li danger" role="button" tabIndex={0} onClick={handleSignOutAndClear} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSignOutAndClear(); } }}>
+                                <span className="ic err"><Icon icon={Trash2} size={22} /></span>
+                                <div className="t">
+                                    <b>{t('core.acct.sign_out_clear')}</b>
+                                    <span className="s">{t('core.acct.sign_out_clear_hint')}</span>
+                                </div>
                             </div>
                         </div>
                     </div>

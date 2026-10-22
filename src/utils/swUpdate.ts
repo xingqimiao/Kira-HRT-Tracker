@@ -1,10 +1,11 @@
 /**
  * Offer a new build when one arrives, rather than forcing it.
  *
- * The worker is generated with `registerType: 'autoUpdate'`, so a new build installs
- * itself and claims the page in the background. What it cannot do is swap the
- * JavaScript this page already loaded — so a page left open keeps running the build it
- * booted with until it is reloaded.
+ * The worker is generated with `registerType: 'prompt'`: a new build installs and then
+ * **waits**. Nothing is swapped until the reader accepts, which is what keeps an open
+ * page's lazy imports resolvable — under the old `autoUpdate` the new worker claimed
+ * the page immediately, the tab kept its old bundle, and the next dynamic import
+ * asked for a file the deploy had already removed.
  *
  * This used to reload the moment the new worker took over, which is wrong here for a
  * reason specific to this app: someone can be halfway through a dose form, or reading a
@@ -47,6 +48,12 @@ export function applyUpdate(): void {
     reloadRequested = true;
     if (pendingWorker) {
         pendingWorker.postMessage({ type: 'SKIP_WAITING' });
+        // The reload rides `controllerchange`. A worker that never answers — killed
+        // mid-activation, a browser that drops the message — would leave the button
+        // doing nothing, so the switch is forced after a short wait.
+        window.setTimeout(() => {
+            if (!reloading) window.location.reload();
+        }, 3000);
         return;
     }
     window.location.reload();

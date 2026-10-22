@@ -171,6 +171,12 @@ class HrtLockBridge(
             try {
                 val cipher = decryptCipher(envelope.first)
                 startPrompt(cipher, callbackId, "authenticate", envelope.second, title, negative)
+            } catch (e: android.security.keystore.KeyPermanentlyInvalidatedException) {
+                // A new fingerprint was enrolled (or all were removed), and the key is
+                // set to invalidate on that. It can never be used again, so the local
+                // envelope is unrecoverable — a distinct code, because "error" gives
+                // the screen nothing to say and nothing to offer.
+                emitResult(callbackId, "invalidated")
             } catch (e: Exception) {
                 emitResult(callbackId, "error", e.message)
             }
@@ -197,6 +203,8 @@ class HrtLockBridge(
             try {
                 val cipher = decryptCipher(envelope.first)
                 startPrompt(cipher, callbackId, "disable", envelope.second, title, negative)
+            } catch (e: android.security.keystore.KeyPermanentlyInvalidatedException) {
+                emitResult(callbackId, "invalidated")
             } catch (e: Exception) {
                 emitResult(callbackId, "error", e.message)
             }
@@ -372,9 +380,12 @@ class HrtLockBridge(
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
             .setKeySize(256)
             .setUserAuthenticationRequired(true)
-            // Adding a fingerprint later must not invalidate B, or the user loses
-            // their local records in exchange for enrolling a new finger.
-            .setInvalidatedByBiometricEnrollment(false)
+            // Enrolling a new fingerprint invalidates the key, so someone who can
+            // unlock the phone (with its PIN) cannot add their own finger and then
+            // read this app's local records. The trade is that the user must sign
+            // back in after enrolling a finger — the app says so on the lock screen
+            // and restores from the server, so the records are not lost.
+            .setInvalidatedByBiometricEnrollment(true)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             builder.setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG)
         } else {

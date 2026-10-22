@@ -55,11 +55,34 @@ export interface MedPlan {
     enabled: boolean;
 }
 
+/**
+ * Storage keys, scoped to the signed-in account.
+ *
+ * Every other collection under `useAppData` is namespaced `hrt-u<id>-…`; the plan
+ * was the exception, so on a shared device the next person to sign in inherited the
+ * previous user's schedule — visible in the UI, used to reschedule that device's
+ * notifications, and pushed into the *new* account's cloud copy by the next sync's
+ * last-write-wins.
+ *
+ * `setMedPlanOwner` is called by `useAppData` when the account changes, before it
+ * re-reads anything. Signed out keeps the original bare names, which is also where
+ * a pre-2.1.0 installation's plan lives until the first sign-in adopts it.
+ */
+let storageOwner = 'local';
+
+/** Point the plan's storage at an account ('local' when signed out). */
+export function setMedPlanOwner(owner: string): void {
+    storageOwner = owner || 'local';
+}
+
+/** The current account's key, in the namespace shape `useAppData` uses. */
 export const MED_PLAN_KEY = 'hrt-med-plan';
+export const medPlanKey = (): string =>
+    storageOwner === 'local' ? MED_PLAN_KEY : `hrt-u${storageOwner}-med-plan`;
 /** Sibling stamp key: the plan's last-write time, which sync's last-write-wins
  *  compares. Kept beside the plan rather than inside it, so the plan array stays
  *  exactly what the UI edits. */
-const MED_PLAN_AT_KEY = 'hrt-med-plan-at';
+export const medPlanAtKey = (): string => `${medPlanKey()}-at`;
 
 const isEster = (v: unknown): v is Ester => Object.values(Ester).includes(v as Ester);
 const isRoute = (v: unknown): v is Route => Object.values(Route).includes(v as Route);
@@ -111,14 +134,14 @@ export function sanitizeMedPlans(value: unknown): MedPlan[] {
 }
 
 export function readMedPlans(): MedPlan[] {
-    try { return sanitizeMedPlans(JSON.parse(secureGet(MED_PLAN_KEY) ?? '[]')); } catch { return []; }
+    try { return sanitizeMedPlans(JSON.parse(secureGet(medPlanKey()) ?? '[]')); } catch { return []; }
 }
 
 /** The plan's last-write stamp (epoch ms), or 0 when it was never stamped. Sync's
  *  last-write-wins compares this, so an edit on one device beats a stale plan from
  *  another. */
 export function medPlanUpdatedAt(): number {
-    try { return Number(secureGet(MED_PLAN_AT_KEY)) || 0; } catch { return 0; }
+    try { return Number(secureGet(medPlanAtKey())) || 0; } catch { return 0; }
 }
 
 /** Dispatched on every plan write, so a listener can re-read and re-render. The
@@ -136,8 +159,8 @@ export const MED_PLAN_CHANGED_EVENT = 'hrt-med-plan-changed';
  */
 export function writeMedPlans(plans: MedPlan[], at: number = Date.now()): void {
     try {
-        secureSet(MED_PLAN_KEY, JSON.stringify(sanitizeMedPlans(plans)));
-        if (at > 0) secureSet(MED_PLAN_AT_KEY, String(at));
+        secureSet(medPlanKey(), JSON.stringify(sanitizeMedPlans(plans)));
+        if (at > 0) secureSet(medPlanAtKey(), String(at));
     } catch { /* private mode: the plan stays in memory for this session */ }
     if (typeof window !== 'undefined') window.dispatchEvent(new Event(MED_PLAN_CHANGED_EVENT));
 }

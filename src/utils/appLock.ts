@@ -16,7 +16,12 @@ const FLAG = 'app-lock';
 /** Native `canAuthenticate` result codes. */
 export type LockStatus = 'ok' | 'not_enrolled' | 'weak_only' | 'no_hardware' | 'hw_unavailable' | 'unavailable';
 
-export type LockFailure = 'cancelled' | 'lockout' | 'unavailable' | 'no_key' | 'error';
+/**
+ * `invalidated`: the Keystore key was invalidated by a biometric enrolment change.
+ * Unlike every other failure this one is permanent — the envelope can never be
+ * opened again — so the screen has to offer recovery, not a retry.
+ */
+export type LockFailure = 'cancelled' | 'lockout' | 'unavailable' | 'no_key' | 'invalidated' | 'error';
 
 export interface LockResult {
     ok: boolean;

@@ -11,6 +11,8 @@ import { GoogleBrand, XBrand } from '../icons/brand';
 import { coreAuth, CoreAuthError, PROVIDER_NAMES, type AccountSummary, type LoginMethods, type OAuthLink, type SessionInfo } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
 import { openExternalUrl } from '../utils/externalLinks';
+import { forgetLocalPushToken, syncPushRegistration } from '../utils/pushRegister';
+import { isPlanNotificationGranted } from '../utils/medPlanNotify';
 import { isNativeApp } from '../utils/platform';
 
 interface CoreAccountSettingsProps {
@@ -441,6 +443,15 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
           onSubmit={async (current, next) => {
             await run(async () => {
               await coreAuth.changePassword(token!, current, next);
+              // The server drops every device token with the old password (a device
+              // trusted under it should not keep receiving this account's reminders).
+              // Registration short-circuits on an unchanged FCM token, so the local
+              // record has to be cleared for this device to come back by itself —
+              // otherwise reminders stop and nothing on screen says why.
+              forgetLocalPushToken();
+              void isPlanNotificationGranted()
+                .then(granted => (granted ? syncPushRegistration(token!) : undefined))
+                .catch(() => undefined);
               setNotice(t('core.acct.notice_pw_changed'));
             });
             setDialog(null);

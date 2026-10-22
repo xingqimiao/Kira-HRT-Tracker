@@ -46,14 +46,34 @@ async function encrypt(value: string): Promise<string> {
     return JSON.stringify({ iv: b64(iv), data: b64(new Uint8Array(bytes)) });
 }
 
+/**
+ * Open one stored value: the plaintext when there was no encryption, the plaintext
+ * inside the envelope otherwise, and a throw when it *is* an envelope this device
+ * cannot open.
+ *
+ * The old version went straight to `JSON.parse`, which threw on any legacy plaintext
+ * that was not JSON shaped — a session token (`ks_…`), an enum value like `mipd`,
+ * a bare number. `hydrateRecords` caught the throw and treated the value as
+ * unreadable, so upgrading signed the user out and left the plaintext in
+ * localStorage, contradicting the "everything but the five boot keys is encrypted"
+ * promise. Only a `{iv,data}` pair is an envelope; anything else is plaintext by
+ * definition.
+ */
 async function decrypt(value: string): Promise<string> {
     if (!dataKey) throw new Error('secure store is not initialized');
-    const envelope = JSON.parse(value) as { iv?: string; data?: string };
-    if (!envelope.iv || !envelope.data) return value;
+    let envelope: unknown;
+    try {
+        envelope = JSON.parse(value);
+    } catch {
+        return value;
+    }
+    if (!envelope || typeof envelope !== 'object') return value;
+    const { iv, data } = envelope as { iv?: unknown; data?: unknown };
+    if (typeof iv !== 'string' || typeof data !== 'string' || !iv || !data) return value;
     const bytes = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: unb64(envelope.iv) as unknown as BufferSource },
+        { name: 'AES-GCM', iv: unb64(iv) as unknown as BufferSource },
         dataKey,
-        unb64(envelope.data) as unknown as BufferSource,
+        unb64(data) as unknown as BufferSource,
     );
     return new TextDecoder().decode(bytes);
 }
@@ -67,22 +87,43 @@ async function decrypt(value: string): Promise<string> {
  * boot key", so tokens, plans, reminders and settings are picked up and rewritten
  * here on the first launch, without a separate migration script.
  */
+/** Whether a stored string is this store's ciphertext envelope. */
+function isEnvelope(value: string): boolean {
+    try {
+        const parsed = JSON.parse(value) as { iv?: unknown; data?: unknown } | null;
+        return Boolean(parsed && typeof parsed === 'object'
+            && typeof (parsed as { iv?: unknown }).iv === 'string'
+            && typeof (parsed as { data?: unknown }).data === 'string');
+    } catch {
+        return false;
+    }
+}
+
 async function hydrateRecords(): Promise<void> {
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (!key || !isProtectedKey(key)) continue;
-        const raw = localStorage.getItem(key);
-        if (raw === null) continue;
+        const rawValue = localStorage.getItem(key);
+        if (rawValue === null) continue;
+        let plain: string;
         try {
-            const plain = await decrypt(raw);
-            cache.set(key, plain);
-            if (plain === raw) localStorage.setItem(key, await encrypt(plain));
+            plain = await decrypt(rawValue);
         } catch {
             // Ciphertext from a key this device no longer holds (a reset, a restored
-            // backup, a regenerated K). It cannot be read, but one unreadable
-            // settings value must not stop the app from starting; the owner will
-            // treat it as absent. Record keys are namespaced per account, so this
-            // does not silently mix two accounts' data.
+            // backup, a regenerated K). It cannot be read, but one unreadable value
+            // must not stop the app from starting; the owner treats it as absent.
+            // Record keys are namespaced per account, so this does not silently mix
+            // two accounts' data.
+            continue;
+        }
+        cache.set(key, plain);
+        // Rewrite anything that is not this device's envelope yet. Testing
+        // `plain === raw` was what broke the non-JSON case: it only matched when
+        // decrypt returned its input, which the old `JSON.parse` threw before
+        // reaching. The test is on the stored form now, so a bare token or a JSON
+        // array is rewritten exactly like JSON-shaped plaintext.
+        if (!isEnvelope(rawValue)) {
+            localStorage.setItem(key, await encrypt(plain));
         }
     }
 }
@@ -183,6 +224,55 @@ export function remove(key: string): void {
     if (!isProtectedKey(key)) { localStorage.removeItem(key); return; }
     cache.delete(key);
     localStorage.removeItem(key);
+}
+
+/**
+ * Forget every value this device stored for the signed-in account.
+ *
+ * The web build keeps records in localStorage by design (offline use, and the next
+ * sign-in on the same browser is expected to find them). That design has a cost on a
+ * shared browser: anyone who opens DevTools reads the previous user's history. So
+ * "sign out" keeps them — the default — and "sign out and clear this device" calls
+ * this.
+ *
+ * What goes: every account-namespaced key (`hrt-u…`), the medication plan, the share
+ * keys that can re-seal a live link, the push token and the pending-unregister
+ * record, and the legacy free-text reminder list. What stays: the five boot keys
+ * (theme, language, lock flag) — clearing them would reset the device's appearance
+ * for no privacy gain — plus the reminder bookkeeping explained below.
+ */
+export async function clearAccountData(): Promise<void> {
+  // Land any ciphertext still on the microtask queue first: `set` writes
+  // asynchronously, and a write that resolved after this loop would put a key back
+  // that the user just asked to delete.
+  await flushSecureStore();
+  const doomed: string[] = [];
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (!key || BOOT_KEYS.has(key)) continue;
+    // The plan itself is `hrt-med-plan` / `hrt-med-plan-at` (signed out) or
+    // `hrt-u<id>-med-plan…` (already covered by the prefix). Its *bookkeeping* —
+    // notification ids, the "reminders off" switch, migration flags, the dedup
+    // ledger — deliberately survives: it carries no health data, and dropping the id
+    // list would leave already-scheduled rings uncancellable.
+    const isPlanData = key === 'hrt-med-plan' || key === 'hrt-med-plan-at';
+    if (
+      key.startsWith('hrt-u')
+      || isPlanData
+      || key.startsWith('hrt-share-key-')
+      || key === 'hrt-med-reminders'
+      || key === 'hrt-fcm-token'
+      || key === 'hrt-push-unregister-pending'
+      || key === 'hrt_core_token'
+      || key === 'hrt_core_user'
+    ) {
+      doomed.push(key);
+    }
+  }
+  for (const key of doomed) {
+    cache.delete(key);
+    localStorage.removeItem(key);
+  }
 }
 
 /**

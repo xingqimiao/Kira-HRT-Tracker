@@ -214,6 +214,34 @@ async function saveMetadata(userId: string, metadata: EncryptionMetadata): Promi
  * rather than a privacy setting: every account's key material carries the server
  * wrapper. Server-side only.
  */
+/**
+ * Turn whatever a password wrapper opened into the bare DEK.
+ *
+ * 2.0.4 shipped the bug this repairs: `changePassword` wrapped the record key R into
+ * the password wrapper, and R is only the DEK for accounts without key splitting. An
+ * account that changed its password on that build therefore stores R where the DEK
+ * belongs, and `rotateKeys` refuses it forever. Changing the password is the one
+ * moment the current password is in hand, and the pad is reachable through the KMS,
+ * so the correct value is recoverable: `DEK = R xor H`.
+ *
+ * A value that is neither R nor the DEK (a different account's material, or a wrapper
+ * written by something we do not know) is returned unchanged — the caller's checks
+ * still reject it.
+ */
+async function repairBareDek(
+  metadata: EncryptionMetadata,
+  opened: string,
+  recordKey: string,
+  userId: string,
+): Promise<string> {
+  if (opened !== recordKey || !metadata.pad) return opened;
+  const kms = getConfig().kms;
+  if (!kms) return opened;
+  const h = await unwrapWithKms(metadata.pad, userId, kms);
+  if (!h) return opened;
+  return xorKeys(opened, h);
+}
+
 async function serverDekFor(user: AccountRow): Promise<string | null> {
   return await unwrapWithServer(metadataFor(user), user.id);
 }
@@ -455,7 +483,7 @@ export const AccountService = {
       // below. A KMS outage or a disabled master key is the only "locked" left.
       const sessionKey = await recordKeyFor(sessionUser);
       if (!sessionKey) return { denied: 'locked' };
-      return { userId: session.userId, dek: sessionKey };
+      return { userId: session.userId, recordKey: sessionKey };
     }
     const userId = await this.resolveApiToken(token);
     if (!userId) return null;
@@ -468,7 +496,7 @@ export const AccountService = {
     // A denial rather than a failure, so an adapter can say "locked" instead of
     // reporting an authentication error the credential does not have.
     if (!recordKey) return { denied: 'locked' };
-    return { userId, dek: recordKey };
+    return { userId, recordKey };
   },
 
   /**
@@ -485,7 +513,7 @@ export const AccountService = {
     if (!user) return null;
     const recordKey = await recordKeyFor(user);
     if (!recordKey) return { denied: 'locked' };
-    return { userId, dek: recordKey };
+    return { userId, recordKey };
   },
 
   async lock(token: string): Promise<void> {
@@ -512,7 +540,16 @@ export const AccountService = {
     // the operation cannot half-fail and leave a corrupted history behind. The server
     // wrapper, if present, is left untouched — it protects the same DEK, and the new
     // password is just another way to reach it.
-    const metadata = await setPasswordWrapper(metadataFor(user), ctx.dek, newPassword.value, ctx.userId);
+    //
+    // The value handed to the wrapper must be the *bare DEK*, and the context's
+    // recordKey is not it: under key splitting that is R = DEK xor H. Wrapping R
+    // here left the account with a password wrapper that opens R while rotateKeys
+    // demands the DEK, so one password change disabled rotation for good. The
+    // current password is what legitimately reveals the DEK, so unwrap with it.
+    const opened = await unwrapWithPassword(metadataFor(user), String(currentPassword), ctx.userId);
+    if (!opened) return { ok: false, error: 'current password does not open the account key' };
+    const bareDek = await repairBareDek(metadataFor(user), opened, ctx.recordKey, ctx.userId);
+    const metadata = await setPasswordWrapper(metadataFor(user), bareDek, newPassword.value, ctx.userId);
     const passwordHash = await hashPassword(newPassword.value);
     await getPool().query(
       `UPDATE users SET password_hash = $1, password_set_at = COALESCE(password_set_at, now()),
@@ -532,6 +569,10 @@ export const AccountService = {
     // recorded below.
     await closeUserSessions(ctx.userId);
     await getPool().query(`DELETE FROM api_tokens WHERE user_id = $1`, [ctx.userId]);
+    // Same reasoning as the tokens above: a device that was trusted under the old
+    // password should not keep receiving this account’s reminders. The app
+    // re-registers on the next launch, so a legitimate device recovers by itself.
+    await getPool().query(`DELETE FROM device_tokens WHERE user_id = $1`, [ctx.userId]);
     await this.recordAuthEvent(ctx.userId, 'password_change');
     return { ok: true, value: undefined };
   },
@@ -584,7 +625,7 @@ export const AccountService = {
       const h = await unwrapWithKms(metadata.pad, ctx.userId, kms);
       if (!h) return { ok: false, error: 'the key’s HSM half could not be opened' };
       const oldR = xorKeys(dekPlain, h);
-      if (oldR !== ctx.dek) {
+      if (oldR !== ctx.recordKey) {
         return { ok: false, error: 'the password does not open this account’s current key' };
       }
       const newH = randomBytes(32).toString('base64');
@@ -602,7 +643,7 @@ export const AccountService = {
 
     // Pre-split account: the records are sealed under the bare DEK, so the rotation
     // mints a new DEK and re-issues both wrappers around it.
-    if (dekPlain !== ctx.dek) {
+    if (dekPlain !== ctx.recordKey) {
       return { ok: false, error: 'the password does not open this account’s current key' };
     }
     const newDek = randomBytes(32).toString('base64');
@@ -767,6 +808,10 @@ export const AccountService = {
 
     const state = generateState();
     const codeVerifier = generateCodeVerifier();
+    // Nothing ever deleted a state row, and this route is unauthenticated: enough
+    // abandoned starts filled the table. Expired rows are useless by definition, so
+    // they go before a new one is added. The index on expires_at makes this cheap.
+    await getPool().query(`DELETE FROM oauth_states WHERE expires_at <= now()`);
     await getPool().query(
       `INSERT INTO oauth_states (state, code_verifier, purpose, user_id, expires_at, return_uri)
        VALUES ($1, $2, $3, $4, now() + ($5 || ' milliseconds')::interval, $6)`,
@@ -936,6 +981,10 @@ export const AccountService = {
     // Doubles as the ID-token replay guard; stored in the same row as the state so the
     // two cannot drift apart.
     const nonce = generateState();
+    // Nothing ever deleted a state row, and this route is unauthenticated: enough
+    // abandoned starts filled the table. Expired rows are useless by definition, so
+    // they go before a new one is added. The index on expires_at makes this cheap.
+    await getPool().query(`DELETE FROM oauth_states WHERE expires_at <= now()`);
     await getPool().query(
       `INSERT INTO oauth_states (state, code_verifier, purpose, provider, user_id, expires_at, return_uri)
        VALUES ($1, $2, $3, 'google', $4, now() + ($5 || ' milliseconds')::interval, $6)`,
@@ -1314,9 +1363,13 @@ export const AccountService = {
     // carried no password wrapper — the DEK was only reachable through the server
     // wrapper. Writing the hash alone would let the user sign in and then find every
     // record sealed against them, which is the same deadlock this endpoint exists to
-    // remove, one step later. The DEK is in hand already: it is the one the session
-    // that is calling this was opened with, so wrapping it needs no unwrap.
-    const metadata = await setPasswordWrapper(metadataFor(user), ctx.dek, password.value, ctx.userId);
+    // remove, one step later. The server wrapper is the account's own copy of the
+    // bare DEK, so no password unwrap is needed — but it must be the DEK, not the
+    // context's recordKey (which is R under key splitting), or rotation breaks the
+    // same way it did after a password change.
+    const bareDek = await serverDekFor(user);
+    if (!bareDek) return { ok: false, error: 'account key material is unreadable' };
+    const metadata = await setPasswordWrapper(metadataFor(user), bareDek, password.value, ctx.userId);
     const legacy = passwordEnvelopeOf(metadata);
 
     try {

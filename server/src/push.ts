@@ -181,8 +181,17 @@ export async function sendMessage(
 // ---------------------------------------------------------------------------
 
 export const PushStore = {
-  /** Record a device token for an account. Re-registering the same token is a no-op. */
+  /**
+   * Record a device token for an account. Re-registering the same token is a no-op.
+   *
+   * A token identifies one installation, so it belongs to the account that
+   * registered it *last*. The other rows for this token are deleted first: the
+   * logout-side unregister is best-effort (it races the sign-out and fails offline),
+   * and a leftover row meant the previous account's reminders kept arriving here
+   * after a switch — with the previous account's drug name in them.
+   */
   async register(userId: string, token: string, platform = 'android'): Promise<void> {
+    await getPool().query('DELETE FROM device_tokens WHERE token = $1 AND user_id <> $2', [token, userId]);
     await getPool().query(
       `INSERT INTO device_tokens (user_id, token, platform, updated_at)
        VALUES ($1, $2, $3, now())
@@ -277,13 +286,18 @@ export async function scanMissedDoses(nowMs: number = Date.now()): Promise<ScanR
       result.accounts += 1;
       for (const instance of await missedInstances(ctx, nowMs, graceMs)) {
         if (!(await PushStore.claimPush(userId, instance.planId, instance.dueAt))) continue;
+        // Only the identity of the reminder travels. It used to carry the plan's
+        // alias and dose so the device could print them without any local state —
+        // which meant a token left behind by the previous account rendered that
+        // account's drug name on this phone after a switch. The device already
+        // holds the plan, and the app pushes a per-plan label map alongside the
+        // language fallbacks, so the text is composed locally from data the
+        // current account owns.
         const data: Record<string, string> = {
           kind: 'dose_overdue',
           planId: instance.planId,
           dueAt: String(instance.dueAt),
         };
-        if (instance.alias) data.alias = instance.alias;
-        if (instance.dose) data.dose = instance.dose;
 
         let sentAny = false;
         for (const { token, platform } of tokens) {

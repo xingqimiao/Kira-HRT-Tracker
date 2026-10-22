@@ -311,7 +311,7 @@ export interface ListOptions {
  * could reproduce, which is how a record becomes unreadable by its owner.
  */
 function dekKey(ctx: AuthContext): Buffer {
-    const key = Buffer.from(ctx.dek, 'base64');
+    const key = Buffer.from(ctx.recordKey, 'base64');
     if (key.length !== 32) {
         // Deliberately fatal, for the same reason the old platform-key check was:
         // falling back to a key the reader cannot reconstruct would silently break

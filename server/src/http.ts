@@ -87,17 +87,30 @@ function corsHeaders(requestOrigin: string | undefined): Record<string, string> 
   // Tauri v2 serves the bundled Android frontend from its reserved local origin.
   // It is not the public website origin, but it is the trusted app that needs to
   // call the same API. Keep this an exact allowlist; never reflect arbitrary origins.
-  const allowedOrigins = new Set([
-    publicOrigin,
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://tauri.localhost',
-    'https://tauri.localhost',
-  ]);
+  const allowedOrigins = new Set([publicOrigin]);
+  // The packaged app is a production surface, not a dev one: Tauri v2 serves the
+  // bundled frontend from its reserved local origin, so every API call from the APK
+  // is cross-origin and needs exactly these two entries. They are not "localhost" in
+  // the sense that matters — the scheme+host is reserved to the app itself — so they
+  // stay in the list in every environment. (Gating them on NODE_ENV once shipped a
+  // production API that answered 403 to the whole native app.)
+  allowedOrigins.add('http://tauri.localhost');
+  allowedOrigins.add('https://tauri.localhost');
+  // The dev server origins *are* dev-only. They stayed in the allowlist long
+  // enough to be copied into a deployment, which is why this is gated on NODE_ENV
+  // rather than left as a comment. Note that a deployment which forgets NODE_ENV
+  // gets them back — and also skips every other production check in config.ts, so
+  // DEPLOY.md makes the variable mandatory.
+  if (process.env.NODE_ENV !== 'production') {
+    allowedOrigins.add('http://localhost:3000');
+    allowedOrigins.add('http://127.0.0.1:3000');
+    allowedOrigins.add('http://localhost:5173');
+    allowedOrigins.add('http://127.0.0.1:5173');
+  }
   // In development, also allow LAN IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x) on dev ports
-  const isDevLan = requestOrigin && /^http:\/\/(?:192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)(?::(?:3000|5173|5175))?$/.test(requestOrigin);
+  const isDevLan = process.env.NODE_ENV !== 'production'
+    && requestOrigin
+    && /^http:\/\/(?:192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)(?::(?:3000|5173|5175))?$/.test(requestOrigin);
   if (!requestOrigin || (!allowedOrigins.has(requestOrigin) && !isDevLan)) return null;
   return {
     'Access-Control-Allow-Origin': requestOrigin,
@@ -180,15 +193,41 @@ function rateLimited(key: string, max: number, windowMs: number): boolean {
   return entry.count > max;
 }
 
+/**
+ * The caller's address, as far as the rate limiter can trust it.
+ *
+ * It used to take the **leftmost** X-Forwarded-For entry, which is the one the
+ * caller wrote: every per-IP bucket (login, register, account deletion, share
+ * unlock) could be bypassed by prefixing a fresh value, leaving only the
+ * per-account lockout standing.
+ *
+ * The trustworthy values are, in order:
+ *
+ *   1. `CF-Connecting-IP`, which Cloudflare sets on every proxied request and
+ *      overwrites if the client sent one. The site is behind Cloudflare, so this
+ *      is the real client address.
+ *   2. The **last** X-Forwarded-For entry — the hop appended by the reverse proxy
+ *      that actually connects to us. Caddy appends rather than replaces, so the
+ *      leftmost entries are still caller-controlled.
+ *   3. The socket address, for a direct call.
+ *
+ * All three are only as good as the ingress: if the origin is reachable directly,
+ * any of them can be forged. `server/DEPLOY.md` therefore requires the service to
+ * stay bound to loopback and the origin to accept only Cloudflare's ranges.
+ * The result is length-capped because it becomes a Map key.
+ */
 function clientIp(req: IncomingMessage): string {
-  // Behind the reverse proxy the socket address is the proxy, so the forwarded
-  // header is the only usable value. It is spoofable if the app is reachable
-  // directly, which is why the deployment binds it to loopback.
+  const clamp = (value: string): string => value.trim().slice(0, 64);
+
+  const cf = req.headers['cf-connecting-ip'];
+  if (typeof cf === 'string' && cf.trim()) return clamp(cf);
+
   const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.length > 0) {
-    return forwarded.split(',')[0].trim();
+  if (typeof forwarded === 'string' && forwarded.trim()) {
+    const hops = forwarded.split(',').map((part) => part.trim()).filter(Boolean);
+    if (hops.length > 0) return clamp(hops[hops.length - 1]);
   }
-  return req.socket.remoteAddress ?? 'unknown';
+  return clamp(req.socket.remoteAddress ?? 'unknown');
 }
 
 // ---------------------------------------------------------------------------
@@ -585,6 +624,12 @@ export function createRequestHandler() {
       // URL, and the callback hands back a one-time code rather than a session, so a
       // URL that leaks from a browser history is not a credential.
       if (path === '/auth/google/start' && req.method === 'GET') {
+        // Unauthenticated and it writes a row per call, so it takes the register
+        // bucket rather than none at all.
+        const startLimits = getConfig().rateLimits;
+        if (rateLimited(`oauth-start:${clientIp(req)}`, startLimits.register, startLimits.windowMs)) {
+          return send(res, 429, { error: 'too many attempts; try again shortly' });
+        }
         const wantsLink = url.searchParams.get('purpose') === 'link';
         let userId: string | undefined;
         if (wantsLink) {
@@ -651,6 +696,12 @@ export function createRequestHandler() {
 
       // --- Auth: X OAuth ---------------------------------------------------
       if (path === '/auth/x/start' && req.method === 'GET') {
+        // Same reasoning as the Google route above: unauthenticated and it writes a
+        // row, so it rides the register bucket.
+        const xStartLimits = getConfig().rateLimits;
+        if (rateLimited(`oauth-start:${clientIp(req)}`, xStartLimits.register, xStartLimits.windowMs)) {
+          return send(res, 429, { error: 'too many attempts; try again shortly' });
+        }
         const wantsLink = url.searchParams.get('purpose') === 'link';
         let userId: string | undefined;
         if (wantsLink) {
@@ -1511,8 +1562,12 @@ export function createRequestHandler() {
 
       send(res, 404, { error: 'not found' });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'internal error';
-      if (!res.headersSent) send(res, 500, { error: message });
+      // Log the whole thing, answer with nothing. A thrown driver or DNS error
+      // carries hostnames, database names and query fragments — useful to us,
+      // reconnaissance to a caller. The audit's example was a malformed uuid that
+      // reached Postgres and echoed "invalid input syntax for type uuid" back.
+      console.error('[hrt] unhandled request error:', error);
+      if (!res.headersSent) send(res, 500, { error: 'internal error' });
     }
   };
 }

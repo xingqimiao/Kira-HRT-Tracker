@@ -56,6 +56,14 @@ const AppUnlockScreen: React.FC<AppUnlockScreenProps> = ({ onUnlocked, onLockout
             onLockout();
             return;
         }
+        if (result.error === 'invalidated') {
+            // The key is gone for good: a new fingerprint invalidated it. Say so, and
+            // open the one path that works — reset the lock and sign in again, which
+            // restores everything the cloud copy holds.
+            setError(copy.invalidated);
+            setSheetOpen(true);
+            return;
+        }
         if (result.error !== 'cancelled') setError(copy.failed);
     };
 

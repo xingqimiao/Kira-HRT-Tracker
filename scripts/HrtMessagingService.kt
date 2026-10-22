@@ -97,15 +97,26 @@ class HrtMessagingService : FirebaseMessagingService() {
         val updated = HashSet(shown).apply { add(key) }
         prefs.edit().putStringSet(SHOWN_KEY, updated).apply()
 
-        val alias = data["alias"]
-        val dose = data["dose"]
-        // Fallbacks follow the app's own language setting: the app resolves them
-        // from its packs and stores them via HrtPush.setNotificationFallbacks, so a
-        // plan with no alias/dose still reads in the chosen language rather than a
-        // hardcoded one. The user's alias/dose still win when the server sends them.
-        // Same prefs store as the shown-key set above (both "hrt-push").
-        val title = alias ?: prefs.getString(MainActivity.NOTIF_TITLE_KEY, null) ?: getString(R.string.app_name)
-        val body = dose ?: prefs.getString(MainActivity.NOTIF_BODY_KEY, null) ?: getString(R.string.app_name)
+        // The payload carries only kind/planId/dueAt. The words come from the map
+        // the app pushes for the account it is signed in to, so a reminder can never
+        // print a previous account's drug name. Falls back to the generic localized
+        // line when the plan is not in the map (deleted since, or a label set the
+        // app has not refreshed yet).
+        var labelTitle: String? = null
+        var labelBody: String? = null
+        if (planId.isNotEmpty()) {
+            try {
+                val plans = org.json.JSONObject(prefs.getString(MainActivity.NOTIF_PLANS_KEY, "{}") ?: "{}")
+                plans.optJSONObject(planId)?.let {
+                    labelTitle = it.optString("title").ifEmpty { null }
+                    labelBody = it.optString("body").ifEmpty { null }
+                }
+            } catch (e: Exception) {
+                // Malformed map: the generic line is still correct, only less specific.
+            }
+        }
+        val title = labelTitle ?: prefs.getString(MainActivity.NOTIF_TITLE_KEY, null) ?: getString(R.string.app_name)
+        val body = labelBody ?: prefs.getString(MainActivity.NOTIF_BODY_KEY, null) ?: getString(R.string.app_name)
         show(title, body, key)
     }
 

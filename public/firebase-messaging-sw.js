@@ -139,8 +139,11 @@ firebase.messaging().onBackgroundMessage(async (payload) => {
     // life, and the SDK keeps the push event alive long enough for the cache put.
     await persistShown();
 
-    const title = data.alias || fallbacks.title;
-    const body = data.dose || fallbacks.body;
+    // The payload carries only the plan id; the text comes from the map the page
+    // pushed for this account, so a nudge never prints another account's drug.
+    const label = (fallbacks.plans && fallbacks.plans[data.planId]) || null;
+    const title = label ? label.title : fallbacks.title;
+    const body = label ? label.body : fallbacks.body;
     await self.registration.showNotification(title, {
         body,
         tag: key,

@@ -65,7 +65,7 @@ before(async () => {
     rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },
   });
 
-  pg = await bootPostgres({ dir: './.pgdata-avatars', port: 55447, database: 'hrt_avatars' });
+  pg = await bootPostgres({ dir: './.pgdata-avatar-cdn', port: 55471, database: 'hrt_avatars' });
   await useDatabase(pg);
   ({ server, base } = await startApiServer());
 }, { timeout: 180_000 });
