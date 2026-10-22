@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Kira HRT Tracker · HRT dose log and level estimates</title>
+<meta name="description" content="Kira HRT Tracker: log HRT doses and blood tests, estimate the hormone curve with a population pharmacokinetic model, and refine it with your own results. Oral, sublingual, gel, injection and patches; local-first, optional encrypted sync, MIT." />
+<link rel="canonical" href="https://hrt.kiramyao.com/about/en/" />
+<link rel="alternate" hreflang="zh-CN" href="https://hrt.kiramyao.com/about/" />
+<link rel="alternate" hreflang="en" href="https://hrt.kiramyao.com/about/en/" />
+<link rel="alternate" hreflang="x-default" href="https://hrt.kiramyao.com/about/" />
+<link rel="icon" href="/pwa-192x192.png" />
+<link rel="stylesheet" href="/about/about.css" />
+<meta property="og:title" content="Kira HRT Tracker" />
+<meta property="og:description" content="Log doses and blood tests, estimate the curve, refine it with your own results. Local-first, encrypted sync, MIT." />
+<meta property="og:image" content="https://hrt.kiramyao.com/og-square.png" />
+<meta property="og:locale" content="en_US" />
+<meta property="og:locale:alternate" content="zh_CN" />
+</head>
+<body>
+<main>
+  <div class="brand">
+    <img src="/pwa-192x192.png" alt="" width="48" height="48" />
+    <div>
+      <h1>Kira HRT Tracker</h1>
+      <p class="tag">Dose log · level estimates · privacy first · open source</p>
+      <a class="lang" href="/about/" hreflang="zh-CN">中文</a>
+    </div>
+  </div>
+
+  <p class="lead">
+    Record what you took and when, estimate the curve with a population pharmacokinetic model,
+    and feed your own blood tests back in so the model fits you. It is a record book, not a prescription.
+  </p>
+
+  <div class="actions">
+    <a class="btn" href="/">Open the web app</a>
+    <a class="btn ghost" id="apk" href="/android/">Download for Android</a>
+  </div>
+  <p class="note" id="apk-note" style="margin-top:12px">About 14 MB, signed with the release key. Also on <a href="https://github.com/xingqimiao/Kira-HRT-Tracker/releases" rel="noopener">GitHub Releases</a>.</p>
+
+  <h2>Screens</h2>
+  <div class="shots">
+    <img src="/about/shots/1-overview.jpg" width="540" height="960" loading="lazy" alt="Overview: estradiol level, target band and the concentration curve" />
+    <img src="/about/shots/2-history.jpg" width="540" height="960" loading="lazy" alt="History: doses grouped by day" />
+    <img src="/about/shots/4-checkup.jpg" width="540" height="960" loading="lazy" alt="Checkup: entering a lab result" />
+  </div>
+  <p class="note" style="margin-top:12px">Phone and desktop are two layouts of the same screen: a bottom bar on a phone, a left rail with two columns on a wide window.</p>
+
+  <h2>Who it is for</h2>
+  <p>
+    People on injectable, gel, oral or patch HRT who want to answer "roughly where are my levels this
+    week", "was that dose too high", or "when should I get tested next" — without maintaining a
+    spreadsheet by hand.
+  </p>
+
+  <h2>Logging</h2>
+  <ul>
+    <li>Routes: oral, sublingual, gel, injection, patch, and patch removal.</li>
+    <li>
+      Sublingual takes an absorption tier, converting "how long you held it" into a fraction absorbed.
+      <p>Two minutes under the tongue and ten are not the same dose.</p>
+    </li>
+    <li>
+      Gel records the product, application site and area, co-applied sunscreen or moisturiser, and wash-off time.
+      <p>All of those change absorption; without them the curve is only an average.</p>
+    </li>
+    <li>Injections distinguish oil from aqueous vehicles — they release at different speeds.</li>
+    <li>Patches record the nominal release rate (µg/day) and wear hours; removal links to the patch that was worn.</li>
+    <li>Reusable one-tap templates, with undo.</li>
+    <li>Three schedule shapes (N times a day, every x hours, every x days); overdue doses are highlighted on the overview with one-tap catch-up.</li>
+    <li>Batch select and delete; table and timeline views.</li>
+  </ul>
+
+  <h2>Estimates</h2>
+  <ul>
+    <li>
+      Two engines: the built-in model (2026 literature parameters) and the Transmtf engine, giving two
+      comparable curves from one history.
+      <p>Switching changes the estimate only, never a record.</p>
+    </li>
+    <li>Line or candlestick (OHLC) chart, 7 / 30 / all windows, target band behind the curve.</li>
+    <li>Current level, time since the last dose and a dose-level reference, all on the first screen.</li>
+    <li>
+      Four calibrations: off, MIPD (MAP fit), EKF and OU-Kalman.
+      <p>Without labs the population model stands alone; with labs, calibration pulls it toward your own
+      metabolism. You can fit on the data before a test (forward) or on everything (retrospective).</p>
+    </li>
+    <li>Each curve shows its calibration multiplier, e.g. ×0.42 — the model's persistent overestimate of you,
+      quantified.</li>
+  </ul>
+
+  <h2>Labs and reminders</h2>
+  <ul>
+    <li>Estradiol (pg/mL, pmol/L) and testosterone (ng/dL, nmol/L); two values at one instant are saved separately and share a timestamp.</li>
+    <li>Monitoring items judged against reference thresholds — liver function, potassium and others — each notice naming its source and stating evidence rather than an instruction.</li>
+    <li>Re-check reminders on the intervals the community reference recommends.</li>
+    <li>Measured results sit beside the modelled curve: filled dot for the lab, hollow for the model.</li>
+  </ul>
+
+  <h2>Lab-report OCR</h2>
+  <p>
+    Photograph a report and it is read on the device (PP-OCR on onnxruntime-web) — the image is never
+    uploaded. The numbers are filled into the form for you to confirm before saving.
+  </p>
+
+  <h2>Data and privacy</h2>
+  <div class="card">
+    <ul>
+      <li>Fully usable without an account: everything is written locally first, and the web build is an
+        installable offline PWA.</li>
+      <li>An account adds sync between devices and the AI assistant. Sync is incremental: only cloud changes
+        are pulled, only local edits are pushed.</li>
+      <li>
+        Records are encrypted at rest with a per-account key, wrapped once by your password and once by a
+        master key held in an HSM.
+        <p>In other words: the database holds no plaintext, and a password change rewraps that key without
+        rewriting a single record. The service can unwrap it while you are signed in — which is what makes
+        sync, share links and the MCP assistant work.</p>
+      </li>
+      <li>Read-only share snapshots are sealed in the browser, with the key in the URL fragment — the server and its logs see ciphertext only.</li>
+      <li>App lock: fingerprint or face, re-locks in the background, and the lock screen never shows a drug name.</li>
+      <li>No ads, no analytics, no third-party trackers; without an account nothing leaves the device.</li>
+      <li>Export everything, or delete the account outright.</li>
+    </ul>
+  </div>
+
+  <h2>AI assistant</h2>
+  <p>
+    The app speaks MCP over Streamable HTTP: an assistant can read your records and write new doses or lab
+    results without a manual export. Authorisation is a separate token you can rotate or revoke.
+  </p>
+
+  <h2>Import / export</h2>
+  <ul>
+    <li>JSON and CSV, and an export can be imported straight back.</li>
+    <li>Also reads other trackers' data (Oyama, Transmtf, Featherline formats), with a count preview before importing.</li>
+    <li>On Android the export goes through the system save dialog, so no storage permission is needed.</li>
+  </ul>
+
+  <h2>Platforms</h2>
+  <ul>
+    <li>Web: any modern browser, installable as a PWA and usable offline.</li>
+    <li>Android: a Tauri 2 shell around the same front end, adding app lock, system export and predictive back.</li>
+    <li>Seven languages: Simplified Chinese, Traditional Chinese, Cantonese, English, Japanese, Korean, Turkish — loaded on demand.</li>
+    <li>Light, dark, or follow the system.</li>
+  </ul>
+
+  <h2>Supported compounds</h2>
+  <p class="note" style="margin:0 0 16px">Grouped the way the dose panel groups them. Unless noted, each records a dose and takes part in the estimate.</p>
+  <div class="drugs">
+    <div class="drug-group">
+      <h3>Estrogens · oral / sublingual</h3>
+      <p>Estradiol valerate (EV) · 17β-estradiol (E2)</p>
+    </div>
+    <div class="drug-group">
+      <h3>Estrogens · gel</h3>
+      <p>17β-estradiol gel · estradiol valerate gel</p>
+    </div>
+    <div class="drug-group">
+      <h3>Estrogens · injection</h3>
+      <p>EV · estradiol enanthate (EN) · estradiol cypionate (EC) · estradiol benzoate (EB) · estradiol undecylate (EU)</p>
+    </div>
+    <div class="drug-group">
+      <h3>Estrogens · patches</h3>
+      <p>Estradiol patches (50 / 100 / 150 / 200 µg/day) · removal records, linked to the patch worn</p>
+    </div>
+    <div class="drug-group">
+      <h3>Anti-androgens</h3>
+      <p>Cyproterone acetate (CPA) · spironolactone · bicalutamide · GnRH analogues (record only)</p>
+    </div>
+    <div class="drug-group">
+      <h3>Progestins / SERM</h3>
+      <p>Micronised progesterone · raloxifene</p>
+    </div>
+    <div class="drug-group">
+      <h3>Testosterone · gel / injection / capsules</h3>
+      <p>Unesterified testosterone gel · testosterone cypionate (TC) · testosterone enanthate (TE) · testosterone undecanoate injection · testosterone undecanoate capsules</p>
+    </div>
+    <div class="drug-group">
+      <h3>Cyclical</h3>
+      <p>Medroxyprogesterone acetate (MPA) · norethisterone</p>
+    </div>
+    <div class="drug-group">
+      <h3>Hair</h3>
+      <p>Finasteride · dutasteride</p>
+    </div>
+  </div>
+  <p class="note" style="margin-top:6px">This list follows the app version; what the app offers is authoritative.</p>
+
+  <h2>Get it</h2>
+  <ul>
+    <li>Web: right here in the browser, with offline support.</li>
+    <li>Android: <a href="/android/" id="apk2">the APK from this site</a>, or <a href="https://github.com/xingqimiao/Kira-HRT-Tracker/releases" rel="noopener">GitHub Releases</a>.</li>
+    <li>Store channel: the F-Droid build ships without Firebase and without a self-updater; the store handles updates.</li>
+  </ul>
+
+  <h2>Open source and self-hosting</h2>
+  <p>
+    The app and the optional sync server are MIT-licensed and live in the same repository. Sync is
+    optional: use it locally, run your own server, or skip accounts entirely. If you want to know what
+    leaves the device, read the source — that is the only reliable answer.
+  </p>
+
+  <h2>FAQ</h2>
+  <dl class="faq">
+    <dt>Do I need an account?</dt>
+    <dd>No. Without one it is a complete offline record book; it simply will not sync between devices.</dd>
+    <dt>Is my data uploaded?</dt>
+    <dd>Only when you sign in and sync, and then encrypted. Photos and lab images never leave the device.</dd>
+    <dt>How accurate is the estimate?</dt>
+    <dd>
+      Population models are rough — individuals can differ by a factor of several. With lab results,
+      calibration pulls it toward you, but it stays an estimate and never becomes a measurement.
+    </dd>
+    <dt>What if I change phones?</dt>
+    <dd>Sign in to the same account and sync; without an account, move across with an export file.</dd>
+  </dl>
+
+  <h2>Plain text</h2>
+  <p class="note">
+    The same description as Markdown: <a href="/about/about.md">/about/about.md</a> (Chinese first, English below).
+  </p>
+
+  <p class="warn">
+    Estimates come from a population pharmacokinetic model, not from a blood test, and must not be used to
+    decide a dose. Only a blood draw tells you the real level; always go by the laboratory report. This is
+    not a medical device and does not provide medical advice.
+  </p>
+
+  <footer>
+    <a href="https://github.com/xingqimiao/Kira-HRT-Tracker" rel="noopener">Source (MIT)</a>
+    <a href="https://github.com/xingqimiao/Kira-HRT-Tracker/issues" rel="noopener">Issues</a>
+    <a href="https://kiramyao.com" rel="noopener">KiraEqual</a>
+    <a href="https://kiramyao.com/privacy" rel="noopener">Privacy policy</a>
+    <a href="https://status.kiramyao.com" rel="noopener">Service status</a>
+  </footer>
+</main>
+<script>
+  fetch('/android/latest.json', { cache: 'no-store' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (m) {
+      if (!m || typeof m.apk !== 'string') return;
+      var a = document.getElementById('apk');
+      var b = document.getElementById('apk2');
+      a.href = m.apk; b.href = m.apk;
+      document.getElementById('apk-note').textContent =
+        'Android ' + m.version + ' · about 14 MB · signed with the release key';
+    })
+    .catch(function () { /* keep the static fallback */ });
+</script>
+</body>
+</html>

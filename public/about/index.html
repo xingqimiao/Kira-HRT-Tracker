@@ -6,73 +6,16 @@
 <title>Kira HRT Tracker · 用药记录与血药浓度估算</title>
 <meta name="description" content="Kira HRT Tracker：记录 HRT 用药与化验，用群体药代动力学模型估算激素曲线，并用你自己的化验结果校准。支持口服、舌下、凝胶、注射、贴片；本地优先、可选加密同步、开源（MIT）。" />
 <link rel="canonical" href="https://hrt.kiramyao.com/about/" />
+<link rel="alternate" hreflang="zh-CN" href="https://hrt.kiramyao.com/about/" />
+<link rel="alternate" hreflang="en" href="https://hrt.kiramyao.com/about/en/" />
+<link rel="alternate" hreflang="x-default" href="https://hrt.kiramyao.com/about/" />
 <link rel="icon" href="/pwa-192x192.png" />
+<link rel="stylesheet" href="/about/about.css" />
 <meta property="og:title" content="Kira HRT Tracker" />
 <meta property="og:description" content="记录用药与化验，估算激素曲线，用你自己的化验结果校准。本地优先、加密同步、开源。" />
 <meta property="og:image" content="https://hrt.kiramyao.com/og-square.png" />
-<style>
-  :root {
-    --bg: #16121a; --sc: #211c25; --sch: #2c2630;
-    --pri: #ffb1c8; --pric: #7a2c4a; --onpric: #ffd9e3;
-    --on: #eadfe6; --var: #cfc0c9; --out: #9a8d95; --ok: #7fe0a8;
-  }
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg: #fff8f8; --sc: #f9ecf0; --sch: #f2e3e9;
-      --pri: #a03d63; --pric: #ffd9e3; --onpric: #3f001e;
-      --on: #211a1d; --var: #4f4349; --out: #84757b; --ok: #2f8458;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--on);
-    font: 16px/1.75 system-ui, -apple-system, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-    -webkit-font-smoothing: antialiased;
-  }
-  main { max-width: 760px; margin: 0 auto; padding: 56px 24px 96px; }
-  .brand { display: flex; align-items: center; gap: 14px; }
-  .brand img { width: 48px; height: 48px; border-radius: 14px; }
-  h1 { font-size: 30px; line-height: 1.2; margin: 0; letter-spacing: -.02em; }
-  .tag { color: var(--var); margin: 6px 0 0; font-size: 15px; }
-  .lead { font-size: 18px; line-height: 1.75; margin: 32px 0 0; }
-  h2 { font-size: 15px; letter-spacing: .08em; text-transform: uppercase; color: var(--out); margin: 48px 0 14px; }
-  h3 { font-size: 16px; margin: 26px 0 6px; }
-  ul { margin: 0; padding: 0; list-style: none; }
-  li { position: relative; padding: 9px 0 9px 22px; border-bottom: 1px solid rgba(154,141,149,.16); }
-  li:last-child { border-bottom: 0; }
-  li::before { content: ""; position: absolute; left: 0; top: 19px; width: 7px; height: 7px; border-radius: 4px; background: var(--pri); }
-  li p { margin: 4px 0 0; color: var(--var); font-size: 15px; }
-  .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 34px 0 0; }
-  .btn {
-    display: inline-flex; align-items: center; justify-content: center;
-    min-height: 52px; padding: 0 26px; border-radius: 26px; border: 0;
-    font: inherit; font-weight: 700; text-decoration: none; cursor: pointer;
-    background: var(--pric); color: var(--onpric); transition: transform .2s ease, filter .2s ease;
-  }
-  .btn:hover { transform: translateY(-1px); filter: brightness(1.06); }
-  .btn.ghost { background: var(--sc); color: var(--on); box-shadow: inset 0 0 0 1px rgba(154,141,149,.3); }
-  .card { background: var(--sc); border-radius: 24px; padding: 20px 24px; margin: 0; }
-  .card ul li { border-bottom-color: rgba(154,141,149,.12); }
-  .note { color: var(--var); font-size: 14px; }
-  .warn { color: var(--var); font-size: 14px; border-left: 3px solid var(--out); padding-left: 14px; margin: 34px 0 0; }
-  footer { margin-top: 56px; padding-top: 22px; border-top: 1px solid rgba(154,141,149,.16); color: var(--out); font-size: 13px; display: flex; flex-wrap: wrap; gap: 8px 18px; }
-  footer a, .note a { color: var(--out); }
-  a { color: var(--pri); }
-  .en { margin-top: 64px; padding-top: 40px; border-top: 1px solid rgba(154,141,149,.16); }
-  .en .lead { font-size: 16px; }
-  .en h2 { margin-top: 34px; }
-  .shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0; }
-  .shots img { width: 100%; height: auto; display: block; border-radius: 20px; box-shadow: 0 10px 28px rgba(0,0,0,.28); }
-  @media (max-width: 560px) { .shots { grid-template-columns: repeat(2, 1fr); } }
-  .drugs { columns: 2; column-gap: 32px; }
-  @media (max-width: 560px) { .drugs { columns: 1; } }
-  .drug-group { break-inside: avoid; padding: 0 0 18px; }
-  .drug-group h3 { font-size: 14px; margin: 0 0 6px; color: var(--pri); font-weight: 700; }
-  .drug-group p { margin: 0; font-size: 14px; line-height: 1.75; color: var(--var); }
-  .faq { margin: 0; }
-  .faq dt { font-weight: 700; margin: 20px 0 4px; }
-  .faq dd { margin: 0; color: var(--var); font-size: 15px; }
-</style>
+<meta property="og:locale" content="zh_CN" />
+<meta property="og:locale:alternate" content="en_US" />
 </head>
 <body>
 <main>
@@ -81,6 +24,7 @@
     <div>
       <h1>Kira HRT Tracker</h1>
       <p class="tag">用药记录 · 血药浓度估算 · 隐私优先 · 开源</p>
+      <a class="lang" href="/about/en/" hreflang="en">English</a>
     </div>
   </div>
 
@@ -280,77 +224,6 @@
     <a href="https://kiramyao.com/privacy" rel="noopener">隐私说明</a>
     <a href="https://status.kiramyao.com" rel="noopener">服务状态</a>
   </footer>
-
-  <section class="en" lang="en">
-    <h1 style="font-size:24px">Kira HRT Tracker</h1>
-    <p class="tag">Dose log, level estimates, privacy first, MIT</p>
-    <p class="lead">
-      Record what you took and when, estimate the curve with a population pharmacokinetic model,
-      and feed your own blood tests back in so the model fits you. It is a record book, not a prescription.
-    </p>
-
-    <h2>Who it is for</h2>
-    <p>
-      People on injectable, gel, oral or patch HRT who want to answer "roughly where are my levels this
-      week", "was that dose too high", or "when should I get tested next" — without maintaining a
-      spreadsheet by hand.
-    </p>
-
-    <h2>Logging</h2>
-    <ul>
-      <li>Routes: oral, sublingual, gel, injection, patch, and patch removal.</li>
-      <li>Sublingual takes an absorption tier, converting "how long you held it" into a fraction absorbed.</li>
-      <li>Gel records the product, application site and area, co-applied sunscreen or moisturiser, and wash-off time.</li>
-      <li>Injections distinguish oil from aqueous vehicles; patches record the nominal release rate and wear hours.</li>
-      <li>Reusable one-tap templates, three schedule shapes, overdue doses highlighted with one-tap catch-up.</li>
-    </ul>
-
-    <h2>Estimates</h2>
-    <ul>
-      <li>Two engines: the built-in model (2026 literature parameters) and the Transmtf engine, switchable per account.</li>
-      <li>Four calibrations: off, MIPD (MAP fit), EKF, and OU-Kalman; forward-only or retrospective.</li>
-      <li>Line or candlestick chart, 7 / 30 / all windows, target band behind the curve, and a calibration
-        multiplier showing how far the model has had to move toward your own results.</li>
-    </ul>
-
-    <h2>Labs and reminders</h2>
-    <ul>
-      <li>Estradiol (pg/mL, pmol/L) and testosterone (ng/dL, nmol/L), plus monitoring items such as liver
-        function and potassium, each with the source of its threshold.</li>
-      <li>Re-check reminders on the intervals the community reference recommends.</li>
-      <li>Lab-report photos are read on the device (PP-OCR on onnxruntime-web); the image is never uploaded.</li>
-    </ul>
-
-    <h2>Privacy</h2>
-    <ul>
-      <li>Works completely offline without an account; the web build is an installable PWA.</li>
-      <li>Sync is incremental and optional. Records are encrypted with a per-account key, wrapped once by
-        your password and once by a KMS-held master key — the database holds no plaintext, and a password
-        change rewraps the key without rewriting a single record.</li>
-      <li>Read-only share links are sealed in the browser, with the key in the URL fragment.</li>
-      <li>No ads, no analytics, no third-party trackers.</li>
-    </ul>
-
-    <h2>Supported compounds</h2>
-    <p class="note" style="margin:0">
-      Estradiol valerate · 17β-estradiol · estradiol gel · EV gel · EV / EN / EC / EB / EU injections ·
-      estradiol patches (50–200 µg/day) · cyproterone acetate · spironolactone · bicalutamide ·
-      GnRH analogues (record only) · micronised progesterone · raloxifene · testosterone gel ·
-      testosterone cypionate · testosterone enanthate · testosterone undecanoate injection and capsules ·
-      medroxyprogesterone acetate · norethisterone · finasteride · dutasteride
-    </p>
-
-    <h2>Open source</h2>
-    <p>
-      The app and the optional sync server are MIT-licensed and live in the same repository. Read the source
-      if you want to know what leaves the device — that is the only reliable answer.
-    </p>
-
-    <p class="warn">
-      Estimates come from a population model, not from a blood test. They are not a dosing guide. This is
-      not a medical device and does not provide medical advice.
-    </p>
-  </section>
 </main>
 <script>
   // The versioned APK name lives in the update manifest; read it so this page does
