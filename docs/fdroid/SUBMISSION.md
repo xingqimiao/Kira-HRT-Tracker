@@ -60,57 +60,18 @@ F-Droid 要求至少 2 张手机截图，最短边 ≥ 320px，PNG/JPEG 均可�
 4. 提交后看该分支的 CI pipeline；`fdroid readmeta` / `lint` 的报错直接照着改。
 5. 开 MR 到 `fdroid/fdroiddata`，正文用 §6。
 
-## 6. MR 正文（直接粘贴）
+## 6. MR 正文
 
-```markdown
-## New app: Kira HRT (`org.kiramyao.hrt`)
+完整正文在 [`MR-BODY.md`](MR-BODY.md)：打开后全选复制，粘进 MR 描述框即可
+（它按评审模板的小节组织：Abstract / Licence / Build / 两个风险 / 可复现构建 / Metadata）。
 
-A privacy-first HRT dose log and level estimator. Records live on the device first;
-an account is optional and only adds cross-device sync. Estradiol/testosterone levels
-are estimated from logged doses with a pharmacokinetic model and refined against the
-user's own blood tests; lab reports can be read from a photo on the device.
+模板里特别要求的几条，已经落实在文件与配方里：
 
-**Licence:** GPL-3.0-or-later. The repository was MIT until 2.0.4; GPL-3.0 applies
-because the `.hrtbackup` reader derives from Featherline (GPL-3.0). The change is in
-`LICENSE` and `THIRD-PARTY-LICENSES.md` at tag `v2.0.4`.
-
-**This build (`HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1`)** contains no Firebase/FCM
-(`com/google/firebase` count in `classes.dex`: 0) and has no self-update path: the
-update manifest URL is folded out of the bundle and the "check for updates" item is
-not rendered. Updates come from F-Droid.
-
-**Anti-features:** `NonFreeNet` — optional sign-in with Google and X. The app is fully
-usable, offline, without an account; signing in is what enables sync and the
-assistant. Declared rather than argued.
-
-**One thing to weigh before the build starts:** the pharmacokinetic model
-(`LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test`) is reused under a **non-commercial**
-grant from its author. The upstream repository declares no licence file and the grant
-was given in correspondence on 2026-09-18; it is recorded in full in
-`THIRD-PARTY-LICENSES.md`. The app's own code is GPL-3.0-or-later, but this dependency
-is not a free licence. I am flagging it up front rather than leaving it to be found at
-build time — if that makes the app ineligible for the main repository, please say so
-and I will withdraw the MR.
-
-**Runtime download:** the lab-report scanner fetches its OCR models and the ONNX
-Runtime wasm (~23 MB) from https://hrt.kiramyao.com/ocr/ the first time it is used.
-Nothing is fetched at start-up; the download is triggered by the user opening the scan
-feature, the files are cached afterwards, they are byte-identical to what the web
-deploy serves, and no third-party CDN is involved. What is fetched is the open-source
-PP-OCRv6 text detector/recogniser (Apache-2.0, PaddlePaddle) and the ONNX Runtime Web
-wasm (MIT) — no proprietary weights, nothing compiled for this app; provenance and
-pinned revisions are in THIRD-PARTY-LICENSES.md. The app does not update itself. If
-this needs to be bundled into the APK for inclusion, say so and I will ship a build
-with the assets inside (about +44 MB).
-
-**Build:** Tauri 2 (Rust) + Vite front end. `src-tauri/gen/` is generated, so the
-recipe runs `tauri android init` before the Gradle build; Rust 1.90 and NDK
-27.0.12077973 match the release APK. Crates will need `cargo vendor` for the offline
-build step — the `Builds:` block is the part I expect to iterate on with you.
-
-Screenshots, listing text and the icon come from `fastlane/metadata/android/`
-(`en-US`, `zh-CN`).
-```
+- `commit:` 用**完整 hash**，不用 tag；
+- `AuthorName` / `AuthorEmail` 已填（`kira@kiramyao.com`）；
+- 配方里**没有** `Summary`/`Description`/`Changelog` 正文——那些在 `fastlane/`，符合“不要重复上游应提供的内容”；
+- 不接受可复现构建的理由写在 MR 正文里；
+- 单个 Builds 条目、无 disabled 版本、MR 只改一个文件。
 
 ## 7. 提交之后
 

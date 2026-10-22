@@ -4,8 +4,8 @@ Categories:
 License: GPL-3.0-or-later
 
 AutoName: Kira HRT
-
-Summary: HRT dose and level tracker. Local-first, encrypted sync, no ads or tracking.
+AuthorName: KiraEqual
+AuthorEmail: kira@kiramyao.com
 
 WebSite: https://hrt.kiramyao.com
 SourceCode: https://github.com/xingqimiao/Kira-HRT-Tracker
@@ -26,7 +26,7 @@ CurrentVersionCode: 2000004
 Builds:
   - versionName: 2.0.4
     versionCode: 2000004
-    commit: v2.0.4
+    commit: 6108e89af175a13dcd1ccde59a39b0da1922acc1
     subdir: src-tauri/gen/android
     sudo:
       - apt-get update
