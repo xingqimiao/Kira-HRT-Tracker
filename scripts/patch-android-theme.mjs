@@ -54,14 +54,18 @@ if (!readFileSync(gradleProperties, 'utf8').includes('kotlin.incremental=false')
 const activity = resolve(root, '..', 'java', 'com', 'kiramyao', 'hrt', 'MainActivity.kt');
 writeFileSync(activity, readFileSync(resolve(import.meta.dirname, 'MainActivity.kt'), 'utf8'));
 
-// The generated Gradle task runs `node tauri android android-studio-script` with
-// its working directory set to `src-tauri`. On Windows the CLI fails to resolve
-// its own entry point and writes the bare word "tauri", which Node then looks for
-// as `src-tauri/tauri` — a file that does not exist, so `rustBuild<target>` dies
-// before Cargo is ever reached (tauri-apps/tauri#13892). Point it at the actual
-// CLI entry, relative to that working directory.
+// The generated Gradle task runs the CLI from `src-tauri`. On Windows it fails to
+// resolve its own entry point and writes the bare word "tauri", which Node then looks
+// for as `src-tauri/tauri` — a file that does not exist, so `rustBuild<target>` dies
+// before Cargo is ever reached (tauri-apps/tauri#13892). Point it at the actual CLI
+// entry, relative to that working directory.
+//
+// Windows only: on Linux the generated command is `npx tauri …`, and npx finds the
+// locally installed bin. Rewriting the argument there turns the path into a package
+// spec, and npx fails with ENOTDIR (…/tauri.js/package.json) — which is how the
+// F-Droid build died once.
 const buildTask = resolve(root, '..', '..', '..', '..', 'buildSrc', 'src', 'main', 'java', 'com', 'kiramyao', 'hrt', 'kotlin', 'BuildTask.kt');
-if (existsSync(buildTask)) {
+if (existsSync(buildTask) && process.platform === 'win32') {
     const source = readFileSync(buildTask, 'utf8');
     const repaired = source.replace(
         'val args = listOf("tauri", "android", "android-studio-script");',
