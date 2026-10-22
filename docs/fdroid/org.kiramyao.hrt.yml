@@ -26,7 +26,7 @@ CurrentVersionCode: 2000004
 Builds:
   - versionName: 2.0.4
     versionCode: 2000004
-    commit: 6108e89af175a13dcd1ccde59a39b0da1922acc1
+    commit: 7020c665179da46ccc848c6ffacd4fc483de3ec0
     subdir: src-tauri/gen/android
     sudo:
       - apt-get update
