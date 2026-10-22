@@ -286,6 +286,6 @@ node_modules/.bin/tauri android build --apk --target aarch64 \
 
 ## 许可
 
-本仓库以 **MIT** 发布，分叉来源的原始声明完整保留在 [`LICENSE`](LICENSE)。
+本仓库以 **GPL-3.0 或更新版本**发布，完整文本在 [`LICENSE`](LICENSE)。之所以是 GPL：本应用的备份格式读取器派生自 Featherline（GPL-3.0），且引擎跟随其最新的药代动力学参数修正。各来源的原始声明（Oyama MIT、Transmtf MIT、Mihari 的非商业授权）逐条保留在 [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md)。
 
-**但请注意上游模型的非商业限制**：代码本身是 MIT，然而所依赖的药代动力学模型带有**非商业条款**，这限制了*整个应用*可以怎么用。若要用于收费产品，需先与版权持有人重新协商。详见 [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md)。
+**但请注意上游模型的非商业限制**：GPL-3.0 不会取消这条限制——所依赖的药代动力学模型带有**非商业条款**，这限制了*整个应用*可以怎么用。若要用于收费产品，需先与版权持有人重新协商。详见 [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md)。

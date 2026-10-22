@@ -1,97 +1,44 @@
-import { writeFileSync, existsSync } from 'node:fs';
+/**
+ * The 1200×630 social card: a black ground, the mark on the left, the name on
+ * the right, and nothing else.
+ *
+ * The mark is the app icon — the 1:2 vial with its two glints — read from
+ * `public/brand/kira-app-icon-dark.svg` rather than redrawn here. A copy of the
+ * drawing inside this script is a second source of truth, and the two drift the
+ * first time either changes.
+ *
+ *   node scripts/generate-og-black.mjs
+ *
+ * Writes `public/og.png`, which index.html points at for og:image,
+ * twitter:image and the JSON-LD image.
+ */
+import { writeFileSync } from 'node:fs';
 import sharp from 'sharp';
-
-import {
-  CANVAS,
-  INTERIOR,
-  SPARKLE_POS,
-  glassRects,
-  liquidBodyRect,
-  liquidFillOffset,
-} from '../src/utils/vialLevel.ts';
 
 const W = 1200;
 const H = 630;
 const BACKGROUND = '#000000';
 
-const ICON_SIZE = 288;
-const ICON_X = Math.round(W * 0.08); // 96
-const GAP = 56;
-const TEXT_X = ICON_X + ICON_SIZE + GAP; // 440
+/**
+ * The mark is 18 sprite units wide by 36 tall, so a square render is not the
+ * shape we want: LOGO_H is the height, and the width follows at half of it.
+ * LOGO_X is the mark's own left edge, which is why the vial and the title share
+ * the same optical margin instead of one being inset by transparent padding.
+ */
+const LOGO_H = 360;
+const LOGO_W = LOGO_H / 2; // 180
+const LOGO_X = Math.round(W * 0.08); // 96
+const LOGO_Y = Math.round((H - LOGO_H) / 2);
+
+const GAP = 120;
+const TEXT_X = LOGO_X + LOGO_W + GAP; // 396
 const RIGHT_MARGIN = 48;
 
 const TITLE = 'Kira HRT Tracker';
-const FONT_STACK = "'Google Sans', 'Product Sans', 'Google Sans Text', "
-  + "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+const FONT_STACK = "'Google Sans', 'Product Sans', Arial, sans-serif";
 
-const TITLE_FS = 84;
+const TITLE_FS = 96;
 const TITLE_WEIGHT = 500;
-
-// Color palette for Vial
-const C = {
-  outline: '#443348',
-  vialLiquid: '#B191DB',
-  vialSurface: '#C9B0E8',
-  vialSheen: '#F0E9FA',
-  vialSpec: '#8A63C4',
-  primary: '#F5A9B8',
-  primaryLight: '#F8C3CD',
-};
-
-const SPARKLE = ['.#.', '###', '.#.'];
-
-function vialSvg({ scale, x, y, fill = 0.5 }) {
-  const rects = [];
-  const body = liquidBodyRect();
-  const offset = liquidFillOffset(fill);
-  const interiorRows = INTERIOR.map(([ix, iw], i) => ({
-    top: y + (i + 1 + CANVAS.RIM_Y) * scale,
-    height: scale,
-    left: x + (ix + CANVAS.TUBE_X) * scale,
-    width: iw * scale,
-  }));
-  const bodyTop = y + (body.y + offset) * scale;
-  const bodyBottom = y + (body.y + body.h + offset) * scale;
-
-  for (const row of interiorRows) {
-    const top = Math.max(row.top, bodyTop);
-    const bottom = Math.min(row.top + row.height, bodyBottom);
-    if (bottom <= top) continue;
-    const isSurface = Math.abs(row.top - bodyTop) < row.height;
-    rects.push(
-      `<rect x="${row.left}" y="${top}" width="${row.width}" height="${bottom - top}" fill="${isSurface ? C.vialSurface : C.vialLiquid}"/>`,
-    );
-  }
-
-  for (const r of glassRects()) {
-    rects.push(
-      `<rect x="${x + r.x * scale}" y="${y + r.y * scale}" width="${r.w * scale}" height="${r.h * scale}" fill="${C.outline}"/>`,
-    );
-  }
-
-  const px = (cx, cy) => [x + cx * scale, y + cy * scale];
-  const [dashX, dashY] = px(CANVAS.TUBE_X + 2, CANVAS.RIM_Y + 2);
-  rects.push(`<rect x="${dashX}" y="${dashY}" width="${scale}" height="${5 * scale}" fill="${C.vialSpec}"/>`);
-  const [sheenX, sheenY] = px(CANVAS.TUBE_X + 2, CANVAS.RIM_Y + 11);
-  rects.push(`<rect x="${sheenX}" y="${sheenY}" width="${scale}" height="${9 * scale}" fill="${C.vialSheen}" opacity="0.55"/>`);
-  const [stubX, stubY] = px(CANVAS.TUBE_X + 2, CANVAS.RIM_Y + 23);
-  rects.push(`<rect x="${stubX}" y="${stubY}" width="${scale}" height="${3 * scale}" fill="${C.vialSheen}" opacity="0.35"/>`);
-  const [rimX, rimY] = px(CANVAS.TUBE_X, CANVAS.RIM_Y);
-  rects.push(`<rect x="${rimX}" y="${rimY}" width="${4 * scale}" height="${scale}" fill="${C.vialSpec}" opacity="0.6"/>`);
-
-  SPARKLE_POS.forEach(([sx, sy], i) => {
-    SPARKLE.forEach((row, dy) => {
-      for (let dx = 0; dx < row.length; dx++) {
-        if (row[dx] === '.') continue;
-        rects.push(
-          `<rect x="${x + (sx + dx) * scale}" y="${y + (sy + dy) * scale}" width="${scale}" height="${scale}" fill="${i === 0 ? C.primary : C.primaryLight}"/>`,
-        );
-      }
-    });
-  });
-
-  return rects.join('');
-}
 
 const textSvg = (fontSize) => `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
   <rect width="${W}" height="${H}" fill="${BACKGROUND}"/>
@@ -101,6 +48,7 @@ const textSvg = (fontSize) => `<svg xmlns="http://www.w3.org/2000/svg" width="${
         fill="#FFFFFF">${TITLE}</text>
 </svg>`;
 
+/** Right edge of the title's ink, so a longer name cannot run off the card. */
 async function textEdges(fontSize) {
   const { data, info } = await sharp(Buffer.from(textSvg(fontSize)))
     .greyscale().raw().toBuffer({ resolveWithObject: true });
@@ -116,99 +64,43 @@ async function textEdges(fontSize) {
   return last + 1;
 }
 
-/** Variant A: Site & Brand Icon (Character avatar with black field cutoff) */
-async function buildVariantBrand() {
-  const iconPath = existsSync('../dev-kiraequalcom/equal-status/static/icon-512.png')
-    ? '../dev-kiraequalcom/equal-status/static/icon-512.png'
-    : 'scripts/assets/intro-avatar.webp';
-
-  const { data: iconSrc, info: iconSrcInfo } = await sharp(iconPath)
-    .raw().toBuffer({ resolveWithObject: true });
-
-  const ICON_FIELD_CUTOFF = 40;
-  for (let i = 0; i < iconSrc.length; i += iconSrcInfo.channels) {
-    if (Math.max(iconSrc[i], iconSrc[i + 1], iconSrc[i + 2]) <= ICON_FIELD_CUTOFF) {
-      iconSrc[i] = 0;
-      iconSrc[i + 1] = 0;
-      iconSrc[i + 2] = 0;
-    }
-  }
-
-  const icon = await sharp(iconSrc, {
-    raw: { width: iconSrcInfo.width, height: iconSrcInfo.height, channels: iconSrcInfo.channels },
-  })
-    .resize(ICON_SIZE, ICON_SIZE)
-    .png()
-    .toBuffer();
-
-  const png = await sharp(Buffer.from(textSvg(TITLE_FS)))
-    .composite([{ input: icon, left: ICON_X, top: Math.round((H - ICON_SIZE) / 2) }])
-    .png({ compressionLevel: 9 })
-    .toBuffer();
-
-  return png;
-}
-
-/** Variant B: Blood/Estradiol Vial Sprite */
-async function buildVariantVial() {
-  const textBuffer = Buffer.from(textSvg(TITLE_FS));
-
-  // The vial is 18x42. At scale 7: width=126, height=294.
-  const scale = 7;
-  const vialW = CANVAS.W * scale; // 126
-  const vialH = CANVAS.H * scale; // 294
-  const vialX = ICON_X + Math.round((ICON_SIZE - vialW) / 2); // 96 + 81 = 177
-  const vialY = Math.round((H - vialH) / 2); // (630 - 294) / 2 = 168
-
-  const vialOverlay = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-    ${vialSvg({ scale, x: vialX, y: vialY, fill: 0.5 })}
-  </svg>`;
-
-  const png = await sharp(textBuffer)
-    .composite([{ input: Buffer.from(vialOverlay), left: 0, top: 0 }])
-    .png({ compressionLevel: 9 })
-    .toBuffer();
-
-  return png;
-}
-
-/** Variant C: PWA App Icon (Squircle shape on black ground) */
-async function buildVariantAppIcon() {
-  const maskSvg = Buffer.from(`<svg width="${ICON_SIZE}" height="${ICON_SIZE}">
-    <rect x="0" y="0" width="${ICON_SIZE}" height="${ICON_SIZE}" rx="56" ry="56" fill="#fff"/>
-  </svg>`);
-
-  const icon = await sharp('public/pwa-512x512.png')
-    .resize(ICON_SIZE, ICON_SIZE)
-    .composite([{ input: maskSvg, blend: 'dest-in' }])
-    .png()
-    .toBuffer();
-
-  const png = await sharp(Buffer.from(textSvg(TITLE_FS)))
-    .composite([{ input: icon, left: ICON_X, top: Math.round((H - ICON_SIZE) / 2) }])
-    .png({ compressionLevel: 9 })
-    .toBuffer();
-
-  return png;
-}
-
 async function main() {
   const textEnd = await textEdges(TITLE_FS);
   const slack = W - RIGHT_MARGIN - textEnd;
   console.log(`Title ink ends at ${textEnd}px, slack: ${slack}px`);
+  if (slack < 0) throw new Error(`Title overflows the card by ${-slack}px`);
 
-  const brandPng = await buildVariantBrand();
-  writeFileSync('public/og-brand.png', brandPng);
-  writeFileSync('public/og.png', brandPng); // Default canonical
-  console.log(`Wrote public/og.png & public/og-brand.png (${(brandPng.length / 1024).toFixed(1)} kB)`);
+  // The icon SVG is a square canvas with the 1:2 mark centred in it, so render
+  // it square at the mark's height and take the middle half — the result is the
+  // vial alone, at its own aspect, with no side padding to skew the lockup.
+  const square = await sharp('public/brand/kira-app-icon-dark.svg', {
+    density: (72 * LOGO_H) / 512,
+  }).png().toBuffer();
 
-  const vialPng = await buildVariantVial();
-  writeFileSync('public/og-vial.png', vialPng);
-  console.log(`Wrote public/og-vial.png (${(vialPng.length / 1024).toFixed(1)} kB)`);
+  const logo = await sharp(square)
+    .extract({ left: (LOGO_H - LOGO_W) / 2, top: 0, width: LOGO_W, height: LOGO_H })
+    .png()
+    .toBuffer();
 
-  const appIconPng = await buildVariantAppIcon();
-  writeFileSync('public/og-appicon.png', appIconPng);
-  console.log(`Wrote public/og-appicon.png (${(appIconPng.length / 1024).toFixed(1)} kB)`);
+  const card = await sharp(Buffer.from(textSvg(TITLE_FS)))
+    .composite([{ input: logo, left: LOGO_X, top: LOGO_Y }])
+    .png()
+    .toBuffer();
+
+  // Composite keeps the logo's alpha channel, so the card comes out RGBA with
+  // every pixel opaque. Re-encoding drops the channel: a social card has no
+  // transparent region, and some scrapers treat an alpha channel as one.
+  const png = await sharp(card)
+    .removeAlpha()
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+
+  const out = 'public/og.png';
+  writeFileSync(out, png);
+  console.log(`Wrote ${out} (${(png.length / 1024).toFixed(1)} kB)`);
 }
 
-main().catch(console.error);
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

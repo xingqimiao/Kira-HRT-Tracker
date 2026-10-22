@@ -37,7 +37,7 @@ export interface RuntimeLicence {
     licence: string;
 }
 
-export const GENERATED_AT = "2026-10-21";
+export const GENERATED_AT = "2026-10-22";
 
 export const UPSTREAM_WORKS: UpstreamWork[] = [
     {
@@ -84,7 +84,7 @@ export const UPSTREAM_WORKS: UpstreamWork[] = [
         "name": "Featherline",
         "url": "https://github.com/mkx173/Featherline",
         "roleKey": "licence.upstream_featherline",
-        "licence": "GPL-3.0",
+        "licence": "no code copied",
         "noLicence": false
     },
     {

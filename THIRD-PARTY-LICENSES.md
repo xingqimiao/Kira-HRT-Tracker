@@ -37,8 +37,9 @@ the sublingual absorption tiers. See `README.md` and the implementation in
 
 ## Upstream web application
 
-The web application this project is forked from is MIT-licensed. Its notice is
-preserved in full in [`LICENSE`](LICENSE):
+The web application this project is forked from is MIT-licensed. MIT code may be
+incorporated into a GPL-3.0 work, so its notice is preserved here in full (and
+repeated in the [`LICENSE`](LICENSE) header) rather than in the licence text itself:
 
 ```
 Copyright (c) 2025 Joseph Smirnova Oyama
@@ -46,8 +47,8 @@ Licensed under the MIT License.
 ```
 
 MIT requires the copyright notice and permission notice to be included in all copies
-or substantial portions of the software — which is why `LICENSE` stays at the
-repository root unchanged and is not replaced by a licence of our own.
+or substantial portions of the software; that is what the block above is for, and it
+ships with the app as well as with the repository.
 
 ---
 
@@ -179,9 +180,10 @@ from the icon set, and do not recolour Google's.
 
 ## How this file is surfaced
 
-- [`LICENSE`](LICENSE) carries the upstream MIT notice.
-- [`LICENSES/GPL-3.0.txt`](LICENSES/GPL-3.0.txt) carries the full GPL-3.0 text for
-  the Featherline backup-format interoperability code.
+- [`LICENSE`](LICENSE) carries GPL-3.0 (version 3 or later), which is this project's own
+  licence, followed by the upstream notice summary.
+- [`LICENSES/GPL-3.0.txt`](LICENSES/GPL-3.0.txt) carries the verbatim GPL-3.0 text; the
+  licence applies to the whole repository and ships with it.
 - This file carries the model grant, which is **not** MIT and must not be collapsed
   into it — a reader who assumed one licence covered the repository would be wrong in
   a way that matters commercially.

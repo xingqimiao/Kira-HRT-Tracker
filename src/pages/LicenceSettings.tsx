@@ -16,8 +16,9 @@ interface LicenceSettingsProps {
  *
  * Two distinct things are acknowledged here, and the difference matters:
  *
- *   1. **The upstream works this app is built from** — the pharmacokinetic
- *      algorithms, the web app it was forked from, and Featherline's fixes.
+ *   1. **The upstream works this app is built from or advises with** — the
+ *      pharmacokinetic algorithms, the web app it was forked from, and
+ *      Featherline's parameter advice (no code from it is copied).
  *   2. **The runtime dependencies.** Generated from `package.json`, never typed.
  *
  * ── The honest part ──────────────────────────────────────────────────────────

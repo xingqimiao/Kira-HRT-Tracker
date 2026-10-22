@@ -30,11 +30,11 @@
 ## 3. 提交时用到的信息
 
 - 包名：`com.kiramyao.hrt`
-- 版本：`2.0.3-fdroid` / versionCode `2000003`
-- 许可证：MIT（`LICENSE`）
+- 版本：`2.0.4` / versionCode `2000004`
+- 许可证：GPL-3.0-or-later（`LICENSE`）
 - 网站：<https://hrt.kiramyao.com>
 - 源码：<https://github.com/xingqimiao/Kira-HRT-Tracker>
-- 商店包 sha256：`80EDBA71A43CF1C85BCFCCA9A1FE3A93C7049E9762316251BA20432610332837`（arm64-v8a，14 MB）
+- 商店包 sha256：`658F7DDD527C4302AF7310B6880C68EC1C39EE4D5A67646874F319C7E16647ED`（arm64-v8a，13.7 MB），下载：<https://hrt.kiramyao.com/android/KiraHRT-2.0.4-fdroid.apk>
 
 ## 4. 截图规格
 
@@ -44,5 +44,5 @@ F-Droid 要求至少 2 张手机截图，纵向 9:16 到 16:9 之间，最短边
 ## 5. 提交之后
 
 - 首轮通常会被要求补 `Builds:` 细节或修构建失败；回复在 MR 里即可。
-- 上架后本仓库的 GitHub Release **不再附带 fdroid 包**，商店负责更新。
+- 上架后本仓库的 GitHub Release **不再附带 fdroid 包**（v2.0.3 的那个已删除），商店负责更新；网站按版本单独分发商店包，`latest.json` 始终指向标准包。
 - 应用内的自更新入口在该构建里不存在，这是刻意的。

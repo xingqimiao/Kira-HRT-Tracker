@@ -107,9 +107,13 @@ const UPSTREAM_WORKS = [
         name: 'Featherline',
         url: 'https://github.com/mkx173/Featherline',
         roleKey: 'licence.upstream_featherline',
-        // GPL-3.0. The upstream source of the latest pharmacokinetic fixes and
-        // model corrections this app's engine builds on.
-        licence: 'GPL-3.0',
+        // Advice only. The maintainer's corrections to the pharmacokinetic
+        // parameters are what this engine follows — no source file was copied, so
+        // Featherline's GPL-3.0 governs Featherline, not this project. The one
+        // Featherline file this repository does carry a derivative of is the
+        // backup container, and that is recorded separately in
+        // THIRD-PARTY-LICENSES.md under its own GPL-3.0 notice.
+        licence: 'no code copied',
         noLicence: false,
     },
     {

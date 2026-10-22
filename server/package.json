@@ -2,6 +2,7 @@
   "name": "hrt-server",
   "private": true,
   "version": "0.1.0",
+  "license": "GPL-3.0-or-later",
   "type": "module",
   "description": "Multi-user, agent-native HRT tracking service. Application core + MCP adapters over the upstream PK engine.",
   "scripts": {

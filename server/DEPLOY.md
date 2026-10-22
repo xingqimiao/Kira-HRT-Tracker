@@ -104,7 +104,7 @@ algorithm repository** and respect its licence terms. This is wired in three pla
 | Where | What |
 |---|---|
 | App → Settings → About | a row titled "Algorithm & model credits", describing the source and linking to the repo |
-| `THIRD-PARTY-LICENSES.md` | the model grant in full, plus the MIT copyright notice of the app code it is built from |
+| `THIRD-PARTY-LICENSES.md` | the model grant in full, plus each upstream copyright notice (Oyama MIT, Transmtf MIT, Featherline GPL-3.0) |
 | `README.md` | the upstream project's own attribution section, untouched |
 
 A link nobody can find does not satisfy "visibly", which is why the app row carries a
@@ -1032,12 +1032,12 @@ commercially. Read the limit before monetising anything.
 
 | Repository | Role | Licence |
 |---|---|---|
-| `xunxunProjects/Oyama-s-HRT-Tracker` | the app code this project forks | **MIT** — notice preserved in [`LICENSE`](../LICENSE) |
+| `xunxunProjects/Oyama-s-HRT-Tracker` | the app code this project forks | **MIT** — notice preserved in [`THIRD-PARTY-LICENSES.md`](../THIRD-PARTY-LICENSES.md) |
 | `LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test` | the pharmacokinetic model (`PKcore.swift` / `PKparameter.swift`) | **granted, non-commercial** — no licence file upstream |
 | `TransmtfTeam/Transmtf-HRT-Tracker` | the second PK engine | **MIT** — declared in that repository |
 
 The three must not be collapsed into one another. In particular, the model grant is
-**not** MIT and does not become MIT by sitting beside MIT code.
+**not** MIT and does not become MIT by sitting beside MIT code — this repository is GPL-3.0-or-later, which is compatible with both but cancels neither.
 
 ### The model grant
 

@@ -1,0 +1,5 @@
+- English UI: the calibration screen's legend and captions are translated (previously fixed Chinese).
+- Overview: the anti-androgen tile uses short labels (CPA / Spiro / Bica), so long names no longer overflow.
+- Overview: the "last dose" tile no longer repeats the worn-patch line; the patch strip shows it once.
+- Long drug names wrap instead of clipping in narrow tiles, in every language.
+- The app now ships an English landing page at /about/en/.
