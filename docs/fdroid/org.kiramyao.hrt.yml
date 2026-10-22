@@ -25,14 +25,17 @@ Builds:
       - apt-get install -y nodejs npm rustup
     init:
       - npm ci
-      - export PATH="$HOME/.cargo/bin:$PATH"; rustup default stable; rustup target add aarch64-linux-android
-      - export PATH="$HOME/.cargo/bin:$PATH"; npx @tauri-apps/cli android init
+      - rustup default stable
+      - rustup target add aarch64-linux-android
+      - export PATH="$HOME/.cargo/bin:$PATH"
+      - npx @tauri-apps/cli android init
     output: 
       src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
     prebuild:
       - export HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1
       - export VITE_API_ORIGIN=https://api.kiramyao.com/hrt VITE_PUBLIC_ORIGIN=https://hrt.kiramyao.com
       - npm ci
+      - export PATH="$HOME/.cargo/bin:$PATH"
       - (cd src-tauri && cargo vendor --locked vendor > .cargo/config.toml)
     build:
       - export HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1
