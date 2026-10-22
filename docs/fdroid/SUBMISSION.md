@@ -96,7 +96,10 @@ and I will withdraw the MR.
 Runtime wasm (~23 MB) from https://hrt.kiramyao.com/ocr/ the first time it is used.
 Nothing is fetched at start-up; the download is triggered by the user opening the scan
 feature, the files are cached afterwards, they are byte-identical to what the web
-deploy serves, and no third-party CDN is involved. The app does not update itself. If
+deploy serves, and no third-party CDN is involved. What is fetched is the open-source
+PP-OCRv6 text detector/recogniser (Apache-2.0, PaddlePaddle) and the ONNX Runtime Web
+wasm (MIT) — no proprietary weights, nothing compiled for this app; provenance and
+pinned revisions are in THIRD-PARTY-LICENSES.md. The app does not update itself. If
 this needs to be bundled into the APK for inclusion, say so and I will ship a build
 with the assets inside (about +44 MB).
 

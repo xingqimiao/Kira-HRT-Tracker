@@ -59,7 +59,10 @@ MaintainerNotes: |-
   The first OCR use fetches ~23 MB (two ONNX models plus the ONNX Runtime wasm) from
   https://hrt.kiramyao.com/ocr/ — the native build does not bundle them. It is
   user-initiated (the scan action), cached afterwards, byte-identical to the web
-  deploy, and no third-party CDN is involved. Say so if it should be bundled instead.
+  deploy, and no third-party CDN is involved. The files are the open-source
+  PP-OCRv6 small detector/recogniser (Apache-2.0, PaddlePaddle) and ONNX Runtime Web
+  (MIT) — no proprietary weights, nothing compiled for this app; provenance and
+  revisions are in THIRD-PARTY-LICENSES.md. Say so if it should be bundled instead.
 
   Rust 1.90 (src-tauri/Cargo.toml `rust-version`) and NDK 27.0.12077973 are what the
   release APK used. Crates have to be vendored for the offline build step: `cargo
