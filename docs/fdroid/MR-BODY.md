@@ -79,3 +79,15 @@ own signed APK will need one reinstall, because the keys differ.
 `fastlane/metadata/android/` in the app repo at the pinned commit: `en-US` and `zh-CN`,
 9 / 8 phone screenshots, icon, and the `2000004.txt` changelog. The metadata file is the
 only change in this MR.
+
+## Version tracking
+
+`UpdateCheckMode` is `Static`, not `Tags`, and the template asks for a reason when auto
+update is off. Releases are tagged (`v2.0.4` is commit `7020c66…`), but `checkupdates`
+learns versionName and versionCode by parsing `AndroidManifest.xml` or `build.gradle`,
+and a Tauri app has neither: the version lives in `src-tauri/tauri.conf.json`, and the
+versionCode is generated into `src-tauri/gen/android/app/tauri.properties` at build
+time, so no committed file holds the pair. Bumping `CurrentVersion` /
+`CurrentVersionCode` here on each release is one line, and I am happy to keep doing it.
+If you would prefer an automatic path — an `UpdateCheckData` regex over a committed
+file, say — tell me which file you want it to read and I will add it.
