@@ -148,18 +148,22 @@ edit(join(pluginAndroid, 'src/main/AndroidManifest.xml'), (s) =>
     .replace(/^[ \t]*<service\r?\n[ \t]*android:name="[^"]*TauriFirebaseMessagingService"[\s\S]*?<\/service>\r?\n/m, ''),
   'plugin AndroidManifest.xml');
 
-// A patched vendored crate no longer matches its own per-file checksums, and cargo
-// refuses to build it ("failed to calculate checksum of ..."). Cargo accepts an empty
-// files map, which drops the per-file checks while keeping the package hash — the
-// standard way to vendor and then patch.
-if (pluginDir === vendorDir) {
-  const sumFile = join(pluginDir, '.cargo-checksum.json');
-  if (existsSync(sumFile)) {
+// A vendored tree does not survive the build untouched, so cargo's per-file checksums
+// have to go: this script patches the notifications crate, and fdroidserver deletes
+// every `.gradle/` directory in the source tree before building (its scanner cannot read
+// Gradle caches). Either one alone makes cargo refuse the crate — "failed to calculate
+// checksum of …". An empty files map keeps the crate's package-hash check and drops the
+// per-file ones, which is the standard way to vendor and then patch.
+const vendorRoot = join(root, 'src-tauri', 'vendor');
+if (existsSync(vendorRoot)) {
+  for (const crate of readdirSync(vendorRoot)) {
+    const sumFile = join(vendorRoot, crate, '.cargo-checksum.json');
+    if (!existsSync(sumFile)) continue;
     const sum = JSON.parse(readFileSync(sumFile, 'utf8'));
     sum.files = {};
     writeFileSync(sumFile, JSON.stringify(sum));
-    touched.push('vendor .cargo-checksum.json (files cleared)');
   }
+  touched.push('vendor checksums cleared (all crates)');
 }
 
 // --- 3. prove it -----------------------------------------------------------
