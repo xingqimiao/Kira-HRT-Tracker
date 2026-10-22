@@ -22,20 +22,26 @@ Builds:
     commit: 7020c665179da46ccc848c6ffacd4fc483de3ec0
     sudo:
       - apt-get update
-      - apt-get install -y nodejs npm
+      - apt-get install -y nodejs npm rustup
     init:
       - npm ci
-      - npx @tauri-apps/cli android init
-    output: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
+      - export PATH="$HOME/.cargo/bin:$PATH"; rustup default stable; rustup target add aarch64-linux-android
+      - export PATH="$HOME/.cargo/bin:$PATH"; npx @tauri-apps/cli android init
+    output: 
+      src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
     prebuild:
       - export HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1
       - export VITE_API_ORIGIN=https://api.kiramyao.com/hrt VITE_PUBLIC_ORIGIN=https://hrt.kiramyao.com
       - npm ci
+      - (cd src-tauri && cargo vendor --locked vendor > .cargo/config.toml)
     build:
       - export HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1
       - export VITE_API_ORIGIN=https://api.kiramyao.com/hrt VITE_PUBLIC_ORIGIN=https://hrt.kiramyao.com
+      - export PATH="$HOME/.cargo/bin:$PATH"
       - node node_modules/@tauri-apps/cli/tauri.js android build --apk --target aarch64
-      - cp src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk /tmp/app.apk
+      - cp 
+        src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
+        /tmp/app.apk
 
 MaintainerNotes: |-
   Version metadata is Static, not Tags: checkupdates reads AndroidManifest.xml or
