@@ -1,14 +1,12 @@
-# DRAFT — not submitted.
+# DRAFT — the Merge Request body lives in SUBMISSION.md (§6).
 #
-# This is a starting point for an fdroiddata entry, written against the tree as it
-# stands. A Tauri/Android build is not one of F-Droid's common recipes, so expect to
-# iterate with their reviewers on the `Builds:` block — the parts below that are
-# guesses are marked TODO. Everything outside `Builds:` is straightforward.
+# A Tauri/Android build is not one of F-Droid's common recipes, so expect to iterate
+# with the reviewers on `Builds:` — the parts that are guesses are marked TODO. The
+# rest is final.
 #
 # Submit as: a merge request to https://gitlab.com/fdroid/fdroiddata adding
-# metadata/org.kiramyao.hrt.yml. The app's listing text, icon and screenshots come
-# from the `fastlane/metadata/android/` tree in the app repo, so they are not repeated
-# here.
+# metadata/org.kiramyao.hrt.yml on a branch (never on master). Listing text, icon and
+# screenshots come from `fastlane/metadata/android/` in the app repo.
 
 Categories:
   - Health & Fitness
@@ -17,38 +15,43 @@ License: GPL-3.0-or-later
 
 AutoName: Kira HRT
 
+Summary: HRT dose and level tracker. Local-first, encrypted sync, no ads or tracking.
+
 WebSite: https://hrt.kiramyao.com
 SourceCode: https://github.com/xingqimiao/Kira-HRT-Tracker
 IssueTracker: https://github.com/xingqimiao/Kira-HRT-Tracker/issues
-Changelog: https://github.com/xingqimiao/Kira-HRT-Tracker/blob/rewrite/CHANGELOG.md
+Changelog: https://github.com/xingqimiao/Kira-HRT-Tracker/releases
 
 RepoType: git
 Repo: https://github.com/xingqimiao/Kira-HRT-Tracker.git
 
-# The records sync server is part of the same repository and is optional: without an
-# account the app is fully local. Worth saying so in the MR description so a reviewer
-# does not read "sync server" as a hard dependency.
-#
-# Anti-features to discuss in the MR: the app offers optional sign-in with Google and
-# X, which are non-free network services. It works without them. If F-Droid's policy
-# team considers that enough for NonFreeNet, declare it rather than argue.
+# Optional sign-in with Google and X. Both are non-free network services, and the
+# sign-in is what makes the assistant/MCP and cross-device sync convenient — the app
+# itself is complete without it. Declared rather than argued; drop it if the reviewers
+# read the optionality differently.
+AntiFeatures:
+  - NonFreeNet
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 2.0.4
+CurrentVersionCode: 2000004
 
 Builds:
-  - versionName: 2.0.3-fdroid
-    versionCode: 2000003
-    commit: v2.0.3   # tag in the app repo; the store build's source
+  - versionName: 2.0.4
+    versionCode: 2000004
+    commit: v2.0.4   # tag in the app repo; the store build's source
     # `src-tauri/gen/` is gitignored — the Android Gradle project is generated. The
-    # recipe therefore has to run `tauri android init` itself (see `init`), which needs
-    # the Tauri CLI, the Android SDK/NDK and Rust on the buildserver.
+    # recipe therefore runs `tauri android init` itself, which needs the Tauri CLI, the
+    # Android SDK/NDK and Rust on the buildserver.
     subdir: src-tauri/gen/android
     sudo:
       - apt-get update
       - apt-get install -y nodejs npm
     # TODO: pin the Rust toolchain and the NDK to the versions the release APK used.
-    #   Rust: 1.8x (see src-tauri/rust-toolchain.toml if it is added)
-    #   NDK:  the version Tauri picked when gen/ was generated
+    #   Rust 1.90 (src-tauri/Cargo.toml `rust-version`), NDK 27.0.12077973.
     # TODO: the buildserver is offline during `build`, so crates must be vendored:
-    #   `cargo vendor --locked` in prebuild and a .cargo/config.toml that points at it.
+    #   `cargo vendor --locked` in prebuild plus a .cargo/config.toml pointing at it.
     init:
       - npm ci
       - npx @tauri-apps/cli android init
@@ -60,12 +63,12 @@ Builds:
       - export HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1
       - export VITE_API_ORIGIN=https://api.kiramyao.com/hrt VITE_PUBLIC_ORIGIN=https://hrt.kiramyao.com
       - npx @tauri-apps/cli android build --apk --target aarch64
-      - cp ../../../app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk /tmp/app.apk
+      - cp app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk /tmp/app.apk
     output: /tmp/app.apk
     # No google-services.json is needed: scripts/strip-fcm.mjs removes the
-    # google-services plugin and the Firebase deps before Gradle configures. The
-    # build is expected to run `npm run build:android` through Tauri's
-    # beforeBuildCommand, which is where that script is invoked.
+    # google-services plugin and the Firebase dependencies before Gradle configures.
+    # Tauri's beforeBuildCommand runs `npm run build:android`, which is where that
+    # script is invoked.
 
 MaintainerNotes: |-
   The F-Droid build must set HRT_NO_FCM=1 and VITE_NO_SELF_UPDATE=1. The first removes
@@ -73,3 +76,11 @@ MaintainerNotes: |-
   second folds the update manifest URL out of the bundle and hides the update item, so
   the app never checks for or installs its own updates. scripts/strip-fcm.mjs fails the
   build if only one of the two is set.
+
+  The pharmacokinetic model this app depends on
+  (LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test) is reused under a NON-COMMERCIAL
+  grant from its author: the upstream repository declares no licence file, and the
+  grant was given in correspondence on 2026-09-18. It is recorded in full in
+  THIRD-PARTY-LICENSES.md. The app's own code is GPL-3.0-or-later; the model is not,
+  and the two must not be collapsed. Flagging it here rather than leaving it for a
+  build-time discovery.

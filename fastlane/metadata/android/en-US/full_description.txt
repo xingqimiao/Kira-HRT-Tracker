@@ -15,7 +15,7 @@ PRIVACY
 No ads. No analytics. No third-party trackers. The optional sync server stores records encrypted with a per-account key, and holds no key material of its own.
 
 OPEN SOURCE
-MIT licensed. The app and the optional server are in the same repository, so you can audit exactly what leaves the device — or run the server yourself. This build contains no Firebase Cloud Messaging and does not check for or install updates; updates come from F-Droid.
+GPL-3.0 licensed. The app and the optional server are in the same repository, so you can audit exactly what leaves the device — or run the server yourself. This build contains no Firebase Cloud Messaging and does not check for or install updates; updates come from F-Droid.
 
 NOT MEDICAL ADVICE
 This is a personal record-keeping tool, not a medical device. It does not recommend doses. Those decisions belong to you and your prescriber.
