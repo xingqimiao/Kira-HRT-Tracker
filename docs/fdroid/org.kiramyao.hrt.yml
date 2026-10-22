@@ -22,7 +22,7 @@ Builds:
     commit: 9cdf06a2f1830b5a1a1d285ad5aa81ca5268373a
     sudo:
       - apt-get update
-      - apt-get install -y nodejs npm rustup
+      - apt-get install -y nodejs npm rustup gcc pkg-config
     init:
       - npm ci
       - rustup default stable
