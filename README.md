@@ -91,7 +91,7 @@ Web 应用、Android 应用、MCP 服务端共用一套「应用内核」，云�
 |---|---|
 | [网站](https://hrt.kiramyao.com) | Web 版可直接使用；Android 包与更新清单在同一目录 |
 | [GitHub Releases](https://github.com/xingqimiao/Kira-HRT-Tracker/releases) | 每个版本的标准包，带更新说明与 sha256 |
-| 商店渠道 | `2.0.2-fdroid`：无 Firebase、无自更新，更新由商店负责 |
+| 商店渠道 | `2.0.4-fdroid`：无 Firebase、无自更新，更新由商店负责 |
 
 两个 Android 包用同一把签名密钥，可以互相覆盖安装，不需要先卸载。
 
