@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { CalibrationHistoryMode, CalibrationMethod } from '../../logic';
+import { useTranslation } from '../contexts/LanguageContext';
 
 /**
  * The four calibration models, drawn as a hand-drawn animation.
@@ -57,6 +58,7 @@ export function CalibrationAnimation({
 }) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const dayRef = useRef(0);
+    const { t } = useTranslation();
 
     useEffect(() => {
         const canvases = canvasRef.current ? [canvasRef.current] : [];
@@ -461,24 +463,22 @@ export function CalibrationAnimation({
  
     // One panel, the one the chosen method maps to: the settings page already
     // has the four-way choice, so showing all four animations duplicated it.
-    const cap = {
-        off: ['不校准', '只看群体平均，血检全被无视'],
-        mipd: ['Hybrid-MIPD', '被血检拉向你，又被群体拉住；怪点挡掉'],
-        ekf: ['EKF', '每次血检都记住，怪点也一直拖着'],
-        ou_kalman: ['OU-Kalman', '只上下平移，旧血检慢慢淡出'],
-    }[method] ?? ['不校准', '只看群体平均，血检全被无视'];
+    // The caption is `cal.short.*`, the same sentence the settings rows use —
+    // this block used to be three hardcoded Chinese strings that stayed Chinese
+    // in every other language.
+    const cap = t(`cal.short.${method}`);
 
     return (
         <div className="calib-anim">
             <div className="calib-legend">
-                <span><i className="sw-line dashed" />真实曲线</span>
-                <span><i className="sw-line" />模型预测</span>
-                <span><i className="sw-drop" />一次血检</span>
+                <span><i className="sw-line dashed" />{t('cal.anim.actual')}</span>
+                <span><i className="sw-line" />{t('cal.anim.model')}</span>
+                <span><i className="sw-drop" />{t('cal.anim.lab')}</span>
             </div>
 
             <div className="calib-card">
                 <canvas ref={canvasRef} />
-                <p className="calib-cap">{cap[1]}</p>
+                <p className="calib-cap">{cap}</p>
             </div>
         </div>
     );

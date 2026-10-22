@@ -222,7 +222,9 @@ body.desktop .rail-logo.on{display:grid}
 .tile:hover{filter:brightness(1.02)}
 .tile.mo{transform:scale(.96)}
 .tile .n{font-size:38px;font-weight:800;line-height:1;letter-spacing:-.5px}
-.tile .l{font-size:13px;opacity:.88;white-space:nowrap}
+/* The label wraps rather than clips: a compound name is as long as the
+   language makes it, and a half-tile cannot promise one line. */
+.tile .l{font-size:13px;line-height:1.25;opacity:.88;min-width:0;overflow-wrap:break-word}
 .tile.a{background:var(--secc);color:var(--onsecc);border-radius:26px}
 .tile.b{background:var(--terc);color:var(--onterc);border-radius:44px 14px 44px 14px}
 .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}

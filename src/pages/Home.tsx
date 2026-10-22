@@ -145,11 +145,12 @@ const Home: React.FC<HomeProps> = ({
         () => antiandrogenReading(events, nowMs / 3_600_000, aaChartMode),
         [events, nowMs, aaChartMode],
     );
-    const aaHeading = antiandrogen.kind === 'grams'
-        ? t('ester.CPA')
-        : antiandrogen.kind === 'none'
-            ? t('label.cpa_chart')
-            : t(`ester.${antiandrogen.ester}`);
+    // The heading is the tile's own slot, not the drug's full name: half a tile
+    // cannot hold "Cyproterone Acetate (CPA)" in English, and the value below it
+    // is the reading anyway. `label.aa_short.*` is the abbreviated label.
+    const aaHeading = antiandrogen.kind === 'none'
+        ? t('label.cpa_chart')
+        : t(`label.aa_short.${antiandrogen.kind === 'grams' ? 'CPA' : antiandrogen.ester}`);
     const mgDecimals = (v: number) => (Number.isInteger(v) ? 0 : Number.isInteger(v * 10) ? 1 : 2);
     const nowSec = nowMs / 1000;
 
@@ -439,11 +440,11 @@ const Home: React.FC<HomeProps> = ({
                                             </span>
                                         ) : null}
                                     </div>
-                                    {patches.length > 0 ? (
-                                        <span className="l" style={{ whiteSpace: 'normal' }}>
-                                            {t('home.patch.wearing').replace('{drug}', t(`ester.${patches[0].ester}`))} {elapsedPatch(patches[0])}
-                                        </span>
-                                    ) : <span />}
+                                    {/* The worn patch is the strip below, never a third line
+                                        in this tile: "wearing … for 10 days" reflowed the
+                                        label and the reading into a block that no longer fit
+                                        half a tile, and the strip says it once already. */}
+                                    <span />
                                 </div>
                             )}
                         </div>
