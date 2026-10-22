@@ -1,13 +1,3 @@
-# DRAFT — the Merge Request body lives in SUBMISSION.md (§6).
-#
-# A Tauri/Android build is not one of F-Droid's common recipes, so expect to iterate
-# with the reviewers on `Builds:` — the parts that are guesses are marked TODO. The
-# rest is final.
-#
-# Submit as: a merge request to https://gitlab.com/fdroid/fdroiddata adding
-# metadata/org.kiramyao.hrt.yml on a branch (never on master). Listing text, icon and
-# screenshots come from `fastlane/metadata/android/` in the app repo.
-
 Categories:
   - Health & Fitness
 
@@ -25,10 +15,6 @@ Changelog: https://github.com/xingqimiao/Kira-HRT-Tracker/releases
 RepoType: git
 Repo: https://github.com/xingqimiao/Kira-HRT-Tracker.git
 
-# Optional sign-in with Google and X. Both are non-free network services, and the
-# sign-in is what makes the assistant/MCP and cross-device sync convenient — the app
-# itself is complete without it. Declared rather than argued; drop it if the reviewers
-# read the optionality differently.
 AntiFeatures:
   - NonFreeNet
 
@@ -40,18 +26,11 @@ CurrentVersionCode: 2000004
 Builds:
   - versionName: 2.0.4
     versionCode: 2000004
-    commit: v2.0.4   # tag in the app repo; the store build's source
-    # `src-tauri/gen/` is gitignored — the Android Gradle project is generated. The
-    # recipe therefore runs `tauri android init` itself, which needs the Tauri CLI, the
-    # Android SDK/NDK and Rust on the buildserver.
+    commit: v2.0.4
     subdir: src-tauri/gen/android
     sudo:
       - apt-get update
       - apt-get install -y nodejs npm
-    # TODO: pin the Rust toolchain and the NDK to the versions the release APK used.
-    #   Rust 1.90 (src-tauri/Cargo.toml `rust-version`), NDK 27.0.12077973.
-    # TODO: the buildserver is offline during `build`, so crates must be vendored:
-    #   `cargo vendor --locked` in prebuild plus a .cargo/config.toml pointing at it.
     init:
       - npm ci
       - npx @tauri-apps/cli android init
@@ -65,10 +44,6 @@ Builds:
       - npx @tauri-apps/cli android build --apk --target aarch64
       - cp app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk /tmp/app.apk
     output: /tmp/app.apk
-    # No google-services.json is needed: scripts/strip-fcm.mjs removes the
-    # google-services plugin and the Firebase dependencies before Gradle configures.
-    # Tauri's beforeBuildCommand runs `npm run build:android`, which is where that
-    # script is invoked.
 
 MaintainerNotes: |-
   The F-Droid build must set HRT_NO_FCM=1 and VITE_NO_SELF_UPDATE=1. The first removes
@@ -76,6 +51,14 @@ MaintainerNotes: |-
   second folds the update manifest URL out of the bundle and hides the update item, so
   the app never checks for or installs its own updates. scripts/strip-fcm.mjs fails the
   build if only one of the two is set.
+
+  No google-services.json is needed: scripts/strip-fcm.mjs removes the google-services
+  plugin and the Firebase dependencies before Gradle configures. Tauri's
+  beforeBuildCommand runs `npm run build:android`, which is where that script is invoked.
+
+  Rust 1.90 (src-tauri/Cargo.toml `rust-version`) and NDK 27.0.12077973 are what the
+  release APK used. Crates have to be vendored for the offline build step: `cargo
+  vendor --locked` in prebuild plus a .cargo/config.toml pointing at the vendor dir.
 
   The pharmacokinetic model this app depends on
   (LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test) is reused under a NON-COMMERCIAL
