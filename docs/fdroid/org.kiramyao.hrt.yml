@@ -22,14 +22,13 @@ Builds:
   - versionName: 2.0.4
     versionCode: 2000004
     commit: 7020c665179da46ccc848c6ffacd4fc483de3ec0
-    subdir: src-tauri/gen/android
     sudo:
       - apt-get update
       - apt-get install -y nodejs npm
     init:
       - npm ci
       - npx @tauri-apps/cli android init
-    output: /tmp/app.apk
+    output: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
     prebuild:
       - export HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1
       - export VITE_API_ORIGIN=https://api.kiramyao.com/hrt VITE_PUBLIC_ORIGIN=https://hrt.kiramyao.com
@@ -37,10 +36,17 @@ Builds:
     build:
       - export HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1
       - export VITE_API_ORIGIN=https://api.kiramyao.com/hrt VITE_PUBLIC_ORIGIN=https://hrt.kiramyao.com
-      - npx @tauri-apps/cli android build --apk --target aarch64
-      - cp app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk /tmp/app.apk
+      - node node_modules/@tauri-apps/cli/tauri.js android build --apk --target aarch64
+      - cp src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk /tmp/app.apk
 
 MaintainerNotes: |-
+  Version metadata is Static, not Tags: checkupdates reads AndroidManifest.xml or
+  build.gradle to learn versionName/versionCode, and a Tauri app has neither — the
+  version lives in src-tauri/tauri.conf.json and the versionCode is generated into
+  src-tauri/gen/android/app/tauri.properties at build time, so no committed file holds
+  the pair. CurrentVersion/CurrentVersionCode are bumped here on every release; v2.0.4
+  is commit 7020c665179da46ccc848c6ffacd4fc483de3ec0, tag v2.0.4.
+
   The F-Droid build must set HRT_NO_FCM=1 and VITE_NO_SELF_UPDATE=1. The first removes
   Firebase/FCM from the Android module and from the vendored notifications plugin; the
   second folds the update manifest URL out of the bundle and hides the update item, so
@@ -71,7 +77,7 @@ MaintainerNotes: |-
   and the two must not be collapsed. Flagging it here rather than leaving it for a
   build-time discovery.
 
-AutoUpdateMode: Version
-UpdateCheckMode: Tags ^v[0-9.]+$
+AutoUpdateMode: None
+UpdateCheckMode: Static
 CurrentVersion: 2.0.4
 CurrentVersionCode: 2000004
