@@ -148,6 +148,20 @@ edit(join(pluginAndroid, 'src/main/AndroidManifest.xml'), (s) =>
     .replace(/^[ \t]*<service\r?\n[ \t]*android:name="[^"]*TauriFirebaseMessagingService"[\s\S]*?<\/service>\r?\n/m, ''),
   'plugin AndroidManifest.xml');
 
+// A patched vendored crate no longer matches its own per-file checksums, and cargo
+// refuses to build it ("failed to calculate checksum of ..."). Cargo accepts an empty
+// files map, which drops the per-file checks while keeping the package hash — the
+// standard way to vendor and then patch.
+if (pluginDir === vendorDir) {
+  const sumFile = join(pluginDir, '.cargo-checksum.json');
+  if (existsSync(sumFile)) {
+    const sum = JSON.parse(readFileSync(sumFile, 'utf8'));
+    sum.files = {};
+    writeFileSync(sumFile, JSON.stringify(sum));
+    touched.push('vendor .cargo-checksum.json (files cleared)');
+  }
+}
+
 // --- 3. prove it -----------------------------------------------------------
 
 const leftovers = [];
