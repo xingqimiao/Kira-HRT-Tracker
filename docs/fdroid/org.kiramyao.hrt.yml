@@ -28,6 +28,8 @@ Builds:
       - rustup default stable
       - rustup target add aarch64-linux-android
       - export PATH="$HOME/.cargo/bin:$PATH"
+      - export ANDROID_HOME=/opt/android-sdk
+      - export ANDROID_SDK_ROOT=/opt/android-sdk
       - npx @tauri-apps/cli android init
     output: 
       src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
@@ -41,6 +43,8 @@ Builds:
       - export HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1
       - export VITE_API_ORIGIN=https://api.kiramyao.com/hrt VITE_PUBLIC_ORIGIN=https://hrt.kiramyao.com
       - export PATH="$HOME/.cargo/bin:$PATH"
+      - export ANDROID_HOME=/opt/android-sdk
+      - export ANDROID_SDK_ROOT=/opt/android-sdk
       - node node_modules/@tauri-apps/cli/tauri.js android build --apk --target aarch64
       - cp 
         src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
