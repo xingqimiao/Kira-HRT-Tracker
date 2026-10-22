@@ -114,6 +114,10 @@ function readPack(locale) {
 
 function escapeXml(value) {
     return value
+        // Backslashes first: Android's resource parser reads `\'` as an escaped
+        // apostrophe, so an input backslash must be doubled before the apostrophe
+        // is escaped — otherwise the two run together into a bare quote.
+        .replace(/\\/g, '\\\\')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -142,7 +146,7 @@ for (const locale of LOCALES) {
         lines.push(`    <string name="${androidKey}">${escapeXml(value)}</string>`);
     }
 
-    const dir = new URL(`../android/app/src/main/res/${locale.qualifier}/`, import.meta.url);
+    const dir = new URL(`../src-tauri/gen/android/app/src/main/res/${locale.qualifier}/`, import.meta.url);
     mkdirSync(dir, { recursive: true });
     const body = [
         '<?xml version="1.0" encoding="utf-8"?>',
