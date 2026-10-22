@@ -180,8 +180,10 @@ from the icon set, and do not recolour Google's.
 
 ## How this file is surfaced
 
-- [`LICENSE`](LICENSE) carries GPL-3.0 (version 3 or later), which is this project's own
-  licence, followed by the upstream notice summary.
+- [`LICENSE`](LICENSE) carries the verbatim GPL-3.0 text, which is this project's own
+  licence (version 3 or later). It is unmodified on purpose: GitHub and other scanners
+  identify a licence by its text, and a prefix turns GPL-3.0 into "NOASSERTION". The
+  project's copyright line is in [`README.md`](README.md) and in each release.
 - [`LICENSES/GPL-3.0.txt`](LICENSES/GPL-3.0.txt) carries the verbatim GPL-3.0 text; the
   licence applies to the whole repository and ships with it.
 - This file carries the model grant, which is **not** MIT and must not be collapsed
