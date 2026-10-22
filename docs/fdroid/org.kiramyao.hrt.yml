@@ -49,6 +49,7 @@ Builds:
       - cp 
         src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
         /tmp/app.apk
+    ndk: 27.0.12077973
 
 MaintainerNotes: |-
   Version metadata is Static, not Tags: checkupdates reads AndroidManifest.xml or
