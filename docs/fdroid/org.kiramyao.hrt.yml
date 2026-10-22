@@ -1,27 +1,22 @@
+AntiFeatures:
+  - NonFreeNet
+
 Categories:
-  - Health & Fitness
+  - Health Manager
+  - Medication
 
 License: GPL-3.0-or-later
-
-AutoName: Kira HRT
 AuthorName: KiraEqual
 AuthorEmail: kira@kiramyao.com
-
 WebSite: https://hrt.kiramyao.com
 SourceCode: https://github.com/xingqimiao/Kira-HRT-Tracker
 IssueTracker: https://github.com/xingqimiao/Kira-HRT-Tracker/issues
 Changelog: https://github.com/xingqimiao/Kira-HRT-Tracker/releases
 
+AutoName: Kira HRT
+
 RepoType: git
 Repo: https://github.com/xingqimiao/Kira-HRT-Tracker.git
-
-AntiFeatures:
-  - NonFreeNet
-
-AutoUpdateMode: Version
-UpdateCheckMode: Tags ^v[0-9.]+$
-CurrentVersion: 2.0.4
-CurrentVersionCode: 2000004
 
 Builds:
   - versionName: 2.0.4
@@ -34,6 +29,7 @@ Builds:
     init:
       - npm ci
       - npx @tauri-apps/cli android init
+    output: /tmp/app.apk
     prebuild:
       - export HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1
       - export VITE_API_ORIGIN=https://api.kiramyao.com/hrt VITE_PUBLIC_ORIGIN=https://hrt.kiramyao.com
@@ -43,7 +39,6 @@ Builds:
       - export VITE_API_ORIGIN=https://api.kiramyao.com/hrt VITE_PUBLIC_ORIGIN=https://hrt.kiramyao.com
       - npx @tauri-apps/cli android build --apk --target aarch64
       - cp app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk /tmp/app.apk
-    output: /tmp/app.apk
 
 MaintainerNotes: |-
   The F-Droid build must set HRT_NO_FCM=1 and VITE_NO_SELF_UPDATE=1. The first removes
@@ -75,3 +70,8 @@ MaintainerNotes: |-
   THIRD-PARTY-LICENSES.md. The app's own code is GPL-3.0-or-later; the model is not,
   and the two must not be collapsed. Flagging it here rather than leaving it for a
   build-time discovery.
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^v[0-9.]+$
+CurrentVersion: 2.0.4
+CurrentVersionCode: 2000004
