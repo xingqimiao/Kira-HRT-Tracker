@@ -1,253 +1,691 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Kira HRT Tracker · HRT dose log and level estimates</title>
-<meta name="description" content="Kira HRT Tracker: log HRT doses and blood tests, estimate the hormone curve with a population pharmacokinetic model, and refine it with your own results. Oral, sublingual, gel, injection and patches; local-first, optional encrypted sync, MIT." />
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Kira HRT Tracker — open-source HRT dose logging and level estimation</title>
+<meta name="description" content="Kira HRT Tracker is an open-source, privacy-first HRT (hormone replacement therapy) log. Record oral, sublingual, gel, injection and patch doses, estimate levels with two built-in pharmacokinetic engines, and fit them to your own blood tests with four calibration methods (MIPD/EKF/OU-Kalman). On-device lab-report OCR, HSM-encrypted sync and an AI assistant over MCP. Web (PWA) and Android." />
+<meta name="keywords" content="Kira HRT Tracker,HRT tracker,hormone replacement therapy,estradiol level estimate,pharmacokinetics,estradiol,anti-androgen,testosterone,Transmtf,transgender,dose reminder,open source" />
+<meta name="author" content="KiraMyao Equal" />
+<meta name="robots" content="index,follow" />
 <link rel="canonical" href="https://hrt.kiramyao.com/about/en/" />
 <link rel="alternate" hreflang="zh-CN" href="https://hrt.kiramyao.com/about/" />
 <link rel="alternate" hreflang="en" href="https://hrt.kiramyao.com/about/en/" />
 <link rel="alternate" hreflang="x-default" href="https://hrt.kiramyao.com/about/" />
-<link rel="icon" href="/pwa-192x192.png" />
-<link rel="stylesheet" href="/about/about.css" />
-<meta property="og:title" content="Kira HRT Tracker" />
-<meta property="og:description" content="Log doses and blood tests, estimate the curve, refine it with your own results. Local-first, encrypted sync, MIT." />
-<meta property="og:image" content="https://hrt.kiramyao.com/og-square.png" />
+<link rel="icon" href="../../brand/kira-app-icon.svg" type="image/svg+xml" />
+
+<!-- Open Graph / social share card -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Kira HRT Tracker" />
 <meta property="og:locale" content="en_US" />
 <meta property="og:locale:alternate" content="zh_CN" />
+<meta property="og:title" content="Kira HRT Tracker — an HRT log that records every dose and shows a curve that looks like yours" />
+<meta property="og:description" content="Oral, sublingual, gel, injection and patches; two pharmacokinetic engines, calibration from your own blood tests, on-device lab-report reading. Fully usable offline, no account needed." />
+<meta property="og:url" content="https://hrt.kiramyao.com/about/en/" />
+<meta property="og:image" content="https://hrt.kiramyao.com/brand/kira-app-icon.svg" />
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:site" content="@KiraMyao" />
+<meta name="twitter:title" content="Kira HRT Tracker — HRT dose logging and level estimation" />
+<meta name="twitter:description" content="An HRT log that records every dose and shows a curve that looks like yours. Open source, works offline, privacy first." />
+
+<!-- Structured data (JSON-LD) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Kira HRT Tracker",
+  "inLanguage": "en",
+  "operatingSystem": "Web, Android, iOS (PWA)",
+  "applicationCategory": "HealthApplication",
+  "description": "An open-source, privacy-first HRT (hormone replacement therapy) dose log and personal level estimator, with every route supported, calibration from your own blood tests, on-device lab-report OCR and an AI assistant over MCP.",
+  "url": "https://hrt.kiramyao.com",
+  "downloadUrl": "https://hrt.kiramyao.com/android/KiraHRT-2.0.4-release.apk",
+  "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  }
+}
+</script>
+
+<style>
+:root{
+  --bg:#fff8f8;--sc:#f9ecf0;--sch:#f2e3e9;--sch-h:#ead6de;
+  --pri:#a03d63;--onpri:#ffffff;--pric:#ffd9e3;--onpric:#3f001e;
+  --secc:#f6dbe5;--onsecc:#2b151e;--terc:#ffe3b0;--onterc:#261900;
+  --ok:#2f8458;--okc:#d6f2e2;
+  --on:#1d1619;--var:#57494f;--out:#8a7980;
+  --sh:0 28px 72px rgba(80,20,45,.14);
+}
+:root[data-theme="dark"]{
+  --bg:#141017;--sc:#1f1a23;--sch:#2b2430;--sch-h:#372e3d;
+  --pri:#ffb1c8;--onpri:#5d1133;--pric:#7a2c4a;--onpric:#ffd9e3;
+  --secc:#46333c;--onsecc:#fbdbe6;--terc:#4d3a14;--onterc:#ffdea8;
+  --ok:#7fe0a8;--okc:#1d3a2b;
+  --on:#f0e6ec;--var:#c9bac2;--out:#968890;
+  --sh:0 32px 84px rgba(0,0,0,.58);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth;background:var(--bg);color:var(--on);font:16px/1.58 -apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI","Helvetica Neue",Arial,sans-serif;transition:background .4s,color .4s;-webkit-font-smoothing:antialiased}
+body{overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+
+/* M3E press physics */
+[data-m]{transition:border-radius .5s cubic-bezier(.3,1.8,.5,1),transform .35s cubic-bezier(.3,1.7,.5,1),background .25s,color .25s}
+[data-m]:hover{transform:scale(1.02)}
+[data-m].mo,[data-m]:active{border-radius:var(--mo,16px)!important;transform:scale(.95)!important}
+
+@keyframes floatSlow{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes marqueeSlow{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+
+/* Controls shown only on the first screen: language, light/dark */
+.hero-theme-btn{position:absolute;top:28px;right:28px;width:48px;height:48px;border-radius:24px;background:var(--sch);color:var(--on);display:grid;place-items:center;z-index:20}
+.hero-theme-btn:hover{background:var(--sch-h)}
+.hero-lang-btn{position:absolute;top:28px;left:28px;height:48px;padding:0 20px;border-radius:24px;background:var(--sch);color:var(--on);display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:800;letter-spacing:.01em;z-index:20}
+.hero-lang-btn:hover{background:var(--sch-h)}
+
+/* ================= full-viewport immersive chapters ================= */
+.chapter{min-height:105dvh;width:100%;display:flex;align-items:center;justify-content:center;padding:104px 28px;position:relative;overflow:hidden}
+.chapter.alt{background:var(--sc)}
+.wrap{width:min(1180px,100%);margin:0 auto;position:relative;z-index:2}
+
+/* hero layout */
+.hero-wrap{display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:12px}
+.hero-logo-wrap{width:112px;height:112px;position:relative;display:grid;place-items:center;margin-bottom:26px;animation:floatSlow 4.5s ease-in-out infinite}
+.hero-logo-bg{position:absolute;inset:0;width:100%;height:100%;color:var(--pric)}
+.hero-logo-img{width:72px;height:72px;position:relative;z-index:2;display:block;image-rendering:pixelated}
+
+.h-hero{font-size:clamp(46px,7.2vw,88px);font-weight:900;letter-spacing:-.04em;line-height:1.04;margin-bottom:18px}
+.h-chapter{font-size:clamp(38px,5.2vw,64px);font-weight:900;letter-spacing:-.035em;line-height:1.1;margin-bottom:20px}
+.p-sub{font-size:clamp(19px,1.9vw,24px);font-weight:600;color:var(--var);line-height:1.55;max-width:580px}
+.hero-wrap .p-sub{max-width:680px;margin-bottom:38px}
+
+.cta-row{display:flex;flex-wrap:wrap;justify-content:center;gap:14px;margin-bottom:56px}
+.btn-giant{height:64px;padding:0 32px;border-radius:32px;font-size:17px;font-weight:800;display:inline-flex;align-items:center;gap:10px;white-space:nowrap}
+.btn-giant.pri{background:var(--pri);color:var(--onpri);box-shadow:0 16px 40px rgba(160,61,99,.26)}
+.btn-giant.terc{background:var(--terc);color:var(--onterc);border-radius:38px 14px 38px 14px}
+.btn-giant.tonal{background:var(--sch);color:var(--on)}
+
+/* two-column stage: copy and art never overlap */
+.stage-grid{display:grid;grid-template-columns:1fr 1fr;gap:68px;align-items:center}
+.stage-grid.rev .copy-col{order:2}
+.stage-grid.rev .art-col{order:1}
+.copy-col{display:flex;flex-direction:column;align-items:flex-start}
+
+/* ================= M3E morphing colour stage ================= */
+.art-col{display:flex;justify-content:center;align-items:center;position:relative}
+.m3e-stage{width:100%;max-width:530px;min-height:660px;background:var(--pric);color:var(--onpric);display:flex;align-items:center;justify-content:center;padding:44px 24px;position:relative;overflow:hidden;will-change:border-radius;transition:background .4s}
+.m3e-stage.terc{background:var(--terc);color:var(--onterc)}
+.m3e-stage.secc{background:var(--secc);color:var(--onsecc)}
+.m3e-stage.okc{background:var(--okc);color:var(--ok)}
+.m3e-stage.sch{background:var(--sch);color:var(--on)}
+.hero-stage{width:min(1000px,100%);min-height:710px;max-width:none;border-radius:76px 28px 76px 28px}
+.stage-cookie{position:absolute;width:480px;height:480px;opacity:.15;pointer-events:none}
+
+/* ================= upright 0° phone frame, no jaggies ================= */
+.pixel-phone{width:344px;aspect-ratio:1440/3200;background:#1b181d;border-radius:52px;padding:12px;box-shadow:0 36px 90px rgba(20,10,18,.28),inset 0 0 0 2px #4c434f,inset 0 0 0 4px #120f14;position:relative;z-index:3;flex-shrink:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;transform:translateZ(0)}
+.pixel-phone::before{content:"";position:absolute;right:-3.5px;top:23%;width:3.5px;height:48px;background:#3d3540;border-radius:0 3px 3px 0}
+.pixel-phone::after{content:"";position:absolute;right:-3.5px;top:32%;width:3.5px;height:86px;background:#3d3540;border-radius:0 3px 3px 0}
+.pixel-screen{width:100%;height:100%;border-radius:41px;overflow:hidden;position:relative;background:#fef8f8}
+.pixel-screen img{width:100%;height:100%;object-fit:cover;display:block;image-rendering:-webkit-optimize-contrast}
+/* covers the real status bar baked into the screenshots */
+.status-eraser{position:absolute;top:0;left:0;right:0;height:4.3%;background:#fef8f8;z-index:3;display:flex;align-items:center;justify-content:center}
+.status-eraser.dark{background:#151219}
+.status-eraser.scrim{background:#0a080d}
+.status-eraser.dark .pixel-cam,.status-eraser.scrim .pixel-cam{box-shadow:inset 0 0 0 2px #2e2833}
+.pixel-cam{width:12px;height:12px;border-radius:50%;background:#0d0b0f;box-shadow:inset 0 0 0 2px #252029;margin-top:2px}
+
+/* ================= MCP mascot and plain chat bubbles ================= */
+.mcp-stage{width:100%;max-width:530px;background:#010101;color:#f5eef2;border-radius:52px 22px 52px 22px;padding:42px 30px;display:flex;flex-direction:column;align-items:center;gap:24px;box-shadow:var(--sh);position:relative;overflow:hidden}
+.mcp-mascots{width:min(360px,90%);height:auto;display:block;animation:floatSlow 4.8s ease-in-out infinite}
+.mcp-chat-box{width:100%;display:flex;flex-direction:column;gap:12px}
+.mcp-bubble{padding:14px 20px;border-radius:24px;font-size:14.5px;font-weight:700;line-height:1.5}
+.mcp-bubble.user{align-self:flex-end;background:#2b2229;color:#ffd9e3;border-bottom-right-radius:6px}
+.mcp-bubble.ai{align-self:flex-start;background:#7a2c4a;color:#ffd9e3;border-bottom-left-radius:6px}
+
+/* ================= soft, groundless, slow compound marquee + collapsed list ================= */
+.marquee-wrap{width:100vw;margin-left:calc(50% - 50vw);overflow:hidden;padding:8px 0;background:transparent;margin:16px 0 36px;mask-image:linear-gradient(to right,transparent,#000 8%,#000 92%,transparent);-webkit-mask-image:linear-gradient(to right,transparent,#000 8%,#000 92%,transparent)}
+.marquee-track{display:flex;gap:12px;width:max-content;animation:marqueeSlow 85s linear infinite}
+.mq-pill{padding:11px 22px;border-radius:20px;background:var(--sch);color:var(--on);font-size:14.5px;font-weight:700;white-space:nowrap;display:inline-flex;align-items:center;gap:8px}
+.mq-pill b{color:var(--pri);font-weight:800}
+
+/* M3E segmented list of supported compounds (.list / .li), collapsed by default */
+.m3e-collapse-wrap{width:100%}
+.m3e-trigger{width:100%;background:var(--sch);padding:20px 26px;border-radius:28px;display:flex;align-items:center;justify-content:space-between;gap:16px;text-align:left;font-size:17px;font-weight:800;color:var(--on);transition:border-radius .4s cubic-bezier(.3,1.8,.5,1),background .2s}
+.m3e-trigger:hover{background:var(--sch-h)}
+.m3e-trigger.open{border-radius:28px 28px 8px 8px;background:var(--pric);color:var(--onpric)}
+.m3e-trigger .chev-ic{transition:transform .35s cubic-bezier(.2,.9,.2,1)}
+.m3e-trigger.open .chev-ic{transform:rotate(180deg)}
+
+.m3e-collapse-body{max-height:0;overflow:hidden;transition:max-height .5s cubic-bezier(.2,.9,.2,1)}
+.m3e-collapse-body.open{max-height:1400px}
+
+.list{display:flex;flex-direction:column;gap:3px;margin-top:3px}
+.li{background:var(--sch);padding:18px 24px;display:flex;flex-direction:column;gap:10px;border-radius:8px}
+.list>.li:last-child{border-radius:8px 8px 28px 28px}
+.li-head{font-size:15px;font-weight:800;color:var(--pri)}
+.li-tags{display:flex;flex-wrap:wrap;gap:8px}
+.li-tag{padding:7px 15px;border-radius:16px;background:var(--bg);color:var(--on);font-size:13.5px;font-weight:700}
+
+/* reveal on scroll */
+.reveal-text{opacity:0;transform:translateY(32px);transition:opacity .7s cubic-bezier(.16,1,.3,1),transform .7s cubic-bezier(.16,1,.3,1)}
+.reveal-text.in{opacity:1;transform:translateY(0)}
+
+/* ================= finale: full-bleed, with turning cookies ================= */
+.finale-chapter{min-height:92dvh;width:100%;background:linear-gradient(135deg,var(--pric),var(--secc));color:var(--onpric);position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:120px 28px}
+.finale-cookie-r{position:absolute;right:-140px;bottom:-140px;width:580px;height:580px;opacity:.15;pointer-events:none}
+.finale-cookie-l{position:absolute;left:-160px;top:-140px;width:460px;height:460px;opacity:.1;pointer-events:none}
+.h-finale{font-size:clamp(42px,6.4vw,82px);font-weight:900;letter-spacing:-.04em;line-height:1.14;margin-bottom:44px;position:relative;z-index:2}
+
+/* footer and the full-width trans flag under it */
+.site-footer{width:min(1180px,100%);margin:0 auto;padding:40px 28px 34px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:20px;font-size:14px;font-weight:700;color:var(--var)}
+.footer-links{display:flex;flex-wrap:wrap;gap:24px}
+.footer-links a{transition:color .2s}
+.footer-links a:hover{color:var(--pri)}
+
+.trans-ribbon-bottom{width:100%;height:26px;display:block}
+
+@media (max-width:960px){
+  .hero-theme-btn{top:18px;right:18px}
+  .hero-lang-btn{top:18px;left:18px;height:44px;padding:0 16px}
+  .chapter{padding:84px 20px;min-height:auto}
+  .stage-grid,.stage-grid.rev{grid-template-columns:1fr;gap:38px}
+  .stage-grid.rev .copy-col{order:1}
+  .stage-grid.rev .art-col{order:2}
+  .m3e-stage,.hero-stage{min-height:540px;padding:36px 16px}
+  .pixel-phone{width:296px;border-radius:45px;padding:10px}
+  .pixel-screen{border-radius:36px}
+  .finale-chapter{min-height:78dvh;padding:96px 20px}
+  .finale-cookie-r{width:380px;height:380px;right:-110px;bottom:-110px}
+  .finale-cookie-l{width:300px;height:300px;left:-110px;top:-100px}
+  .site-footer{flex-direction:column;text-align:center}
+}
+</style>
 </head>
 <body>
-<main>
-  <div class="brand">
-    <img src="/pwa-192x192.png" alt="" width="48" height="48" />
-    <div>
-      <h1>Kira HRT Tracker</h1>
-      <p class="tag">Dose log · level estimates · privacy first · open source</p>
-      <a class="lang" href="/about/" hreflang="zh-CN">中文</a>
+
+<svg width="0" height="0" style="position:absolute">
+<defs>
+  <symbol id="globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
+  <symbol id="download" viewBox="0 0 24 24"><path d="M12 4v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
+  <symbol id="code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></symbol>
+  <symbol id="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32 1.41-1.41"/></symbol>
+  <symbol id="down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+</defs>
+</svg>
+
+<!-- ================= PAGE 1 · hero ================= -->
+<section class="chapter" id="top">
+  <a class="hero-lang-btn" href="../" hreflang="zh-CN" lang="zh-CN" data-m style="--mo:14px" title="切换到中文">中文</a>
+  <button class="hero-theme-btn" data-m style="--mo:14px" onclick="toggleTheme()" title="Toggle light / dark">
+    <svg class="i"><use href="#sun"/></svg>
+  </button>
+
+  <div class="wrap hero-wrap">
+    <div class="hero-logo-wrap">
+      <svg class="hero-logo-bg"><path class="js-live-cookie" data-n="9" data-r="52" data-cx="56" data-cy="56" fill="currentColor"/></svg>
+      <img id="brandLogoImg" class="hero-logo-img" src="../../brand/kira-app-icon.svg" alt="Kira HRT Tracker logo" />
+    </div>
+
+    <h1 class="h-hero reveal-text in">Kira HRT Tracker</h1>
+    <p class="p-sub reveal-text in">An HRT log. Write down every dose, and see a curve that looks like yours.</p>
+
+    <div class="cta-row reveal-text in">
+      <a href="https://hrt.kiramyao.com" target="_blank" class="btn-giant pri" data-m style="--mo:18px">
+        <svg class="i"><use href="#globe"/></svg>
+        <span>Open the web app</span>
+      </a>
+      <a href="https://hrt.kiramyao.com/android/KiraHRT-2.0.4-release.apk" target="_blank" class="btn-giant terc" data-m style="--mo:28px">
+        <svg class="i"><use href="#download"/></svg>
+        <span>Download for Android</span>
+      </a>
+      <a href="https://github.com/xingqimiao/Kira-HRT-Tracker" target="_blank" class="btn-giant tonal" data-m style="--mo:18px">
+        <svg class="i"><use href="#code"/></svg>
+        <span>GitHub</span>
+      </a>
+    </div>
+
+    <div class="m3e-stage hero-stage js-scroll-stage" data-r1="84" data-r2="28">
+      <svg class="stage-cookie"><path class="js-live-cookie" data-n="8" data-r="220" data-cx="240" data-cy="240" fill="currentColor"/></svg>
+      <div class="pixel-phone js-phone">
+        <div class="pixel-screen">
+          <div class="status-eraser dark"><div class="pixel-cam"></div></div>
+          <img src="en-1-overview.jpg" alt="Overview: estradiol level, target band and the concentration curve" />
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PAGE 2 · calibration ================= -->
+<section class="chapter alt">
+  <div class="wrap stage-grid rev">
+    <div class="copy-col reveal-text">
+      <h2 class="h-chapter">The more you log,<br>the better it knows you.</h2>
+      <p class="p-sub">Everyone metabolises at their own pace. Enter a blood test result and the curve moves toward your real levels — and it knows to set aside the occasional reading that clearly missed.</p>
+    </div>
+
+    <div class="art-col">
+      <div class="m3e-stage js-scroll-stage" data-r1="96" data-r2="24">
+        <svg class="stage-cookie"><path class="js-live-cookie" data-n="9" data-r="210" data-cx="240" data-cy="240" fill="currentColor"/></svg>
+        <div class="pixel-phone js-phone">
+          <div class="pixel-screen">
+            <div class="status-eraser dark"><div class="pixel-cam"></div></div>
+            <img src="en-2-calibration.jpg" alt="Calibration settings, with the fitted curve and calibration multiplier" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PAGE 3 · logging a dose ================= -->
+<section class="chapter">
+  <div class="wrap stage-grid">
+    <div class="copy-col reveal-text">
+      <h2 class="h-chapter">Log it the way<br>you took it.</h2>
+      <p class="p-sub">Oral, sublingual, gel, injection, patch. How long you held it under your tongue, where the gel went, when you peeled the patch off — the small things that change absorption are all one tap away.</p>
+    </div>
+
+    <div class="art-col">
+      <div class="m3e-stage terc js-scroll-stage" data-r1="24" data-r2="96">
+        <svg class="stage-cookie"><path class="js-live-cookie" data-n="8" data-r="210" data-cx="240" data-cy="240" fill="currentColor"/></svg>
+        <div class="pixel-phone js-phone">
+          <div class="pixel-screen">
+            <div class="status-eraser dark"><div class="pixel-cam"></div></div>
+            <img src="en-3-add-dose.jpg" alt="Adding a dose: route, ester, dose and the route-specific details" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PAGE 4 · one-tap templates ================= -->
+<section class="chapter alt">
+  <div class="wrap stage-grid rev">
+    <div class="copy-col reveal-text">
+      <h2 class="h-chapter">The doses you take<br>every day, one tap.</h2>
+      <p class="p-sub">Save your regular doses as one-tap templates. No retyping each time, and with a schedule reminder set, checking in is a light press when the time comes.</p>
+    </div>
+
+    <div class="art-col">
+      <div class="m3e-stage secc js-scroll-stage" data-r1="96" data-r2="24">
+        <svg class="stage-cookie"><path class="js-live-cookie" data-n="6" data-r="210" data-cx="240" data-cy="240" fill="currentColor"/></svg>
+        <div class="pixel-phone js-phone">
+          <div class="pixel-screen">
+            <div class="status-eraser scrim"><div class="pixel-cam"></div></div>
+            <img src="en-4-quick-record.jpg" alt="Quick logging from saved dose templates" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PAGE 5 · labs and re-checks ================= -->
+<section class="chapter">
+  <div class="wrap stage-grid">
+    <div class="copy-col reveal-text">
+      <h2 class="h-chapter">The numbers on the report,<br>finally readable.</h2>
+      <p class="p-sub">Put your blood tests side by side and see how far the estimate drifts from what was measured. When it is time to re-check liver function or hormone levels, it reminds you.</p>
+    </div>
+
+    <div class="art-col">
+      <div class="m3e-stage okc js-scroll-stage" data-r1="24" data-r2="96">
+        <svg class="stage-cookie"><path class="js-live-cookie" data-n="10" data-r="210" data-cx="240" data-cy="240" fill="currentColor"/></svg>
+        <div class="pixel-phone js-phone">
+          <div class="pixel-screen">
+            <div class="status-eraser dark"><div class="pixel-cam"></div></div>
+            <img src="en-5-checkup.jpg" alt="Checkup: measured results beside the modelled curve" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PAGE 6 · on-device OCR ================= -->
+<section class="chapter alt">
+  <div class="wrap stage-grid rev">
+    <div class="copy-col reveal-text">
+      <h2 class="h-chapter">Photograph the report.<br>The photo stays on your phone.</h2>
+      <p class="p-sub">A local neural network reads the hormone values straight out of the image and fills the form in for you. The photo never leaves your device and is never uploaded.</p>
+    </div>
+
+    <div class="art-col">
+      <div class="m3e-stage js-scroll-stage" data-r1="96" data-r2="24">
+        <svg class="stage-cookie"><path class="js-live-cookie" data-n="8" data-r="210" data-cx="240" data-cy="240" fill="currentColor"/></svg>
+        <div class="pixel-phone js-phone">
+          <div class="pixel-screen">
+            <div class="status-eraser scrim"><div class="pixel-cam"></div></div>
+            <img src="en-6-add-lab.jpg" alt="Adding a lab result, with the numbers read from a photo on the device" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PAGE 7 · history ================= -->
+<section class="chapter">
+  <div class="wrap stage-grid">
+    <div class="copy-col reveal-text">
+      <h2 class="h-chapter">Hundreds of times,<br>kept clearly.</h2>
+      <p class="p-sub">Walk back through every day of dosing on a timeline. Whatever you used before — Oyama, Transmtf or Featherline — your old records import straight in.</p>
+    </div>
+
+    <div class="art-col">
+      <div class="m3e-stage sch js-scroll-stage" data-r1="24" data-r2="96">
+        <svg class="stage-cookie"><path class="js-live-cookie" data-n="9" data-r="210" data-cx="240" data-cy="240" fill="currentColor"/></svg>
+        <div class="pixel-phone js-phone">
+          <div class="pixel-screen">
+            <div class="status-eraser dark"><div class="pixel-cam"></div></div>
+            <img src="en-7-history.jpg" alt="Records: dose history grouped by day" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PAGE 8 · AI assistant ================= -->
+<section class="chapter alt">
+  <div class="wrap stage-grid rev">
+    <div class="copy-col reveal-text">
+      <h2 class="h-chapter">Talk to your AI assistant<br>directly.</h2>
+      <p class="p-sub">Once an assistant is connected there is no file to export. Tell it what you took today, or ask how your levels have been moving, and it will log it and walk through it with you.</p>
+    </div>
+
+    <div class="art-col">
+      <div class="mcp-stage">
+        <img src="../mcp.webp" alt="The AI assistant connected over MCP" class="mcp-mascots" />
+        <div class="mcp-chat-box">
+          <div class="mcp-bubble user">“Just applied 2.6 mg of estradiol gel — log it and check my level?”</div>
+          <div class="mcp-bubble ai">“Logged 2.60 mg of gel for you! The estimated level is 133.5 pg/mL, inside your target range.”</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PAGE 9 · anniversary and privacy ================= -->
+<section class="chapter">
+  <div class="wrap stage-grid">
+    <div class="copy-col reveal-text">
+      <h2 class="h-chapter">Every day it has<br>been with you, kept locked.</h2>
+      <p class="p-sub">Everything works offline without an account. Turn on cloud sync and your data is encrypted by both your password and a hardware security module — even a read-only link you share leaves no plaintext on the server.</p>
+    </div>
+
+    <div class="art-col">
+      <div class="m3e-stage terc js-scroll-stage" data-r1="96" data-r2="24">
+        <svg class="stage-cookie"><path class="js-live-cookie" data-n="12" data-r="210" data-cx="240" data-cy="240" fill="currentColor"/></svg>
+        <div class="pixel-phone js-phone">
+          <div class="pixel-screen">
+            <div class="status-eraser dark"><div class="pixel-cam"></div></div>
+            <img src="en-8-account.jpg" alt="Account page with the HRT anniversary card" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PAGE 10 · supported compounds ================= -->
+<section class="chapter alt" style="flex-direction:column;min-height:auto;padding:96px 28px">
+  <div class="wrap">
+    <h2 class="h-chapter reveal-text">Mainstream formulations, all covered.</h2>
+  </div>
+
+  <!-- slow marquee that sits in the background -->
+  <div class="marquee-wrap">
+    <div class="marquee-track">
+      <span class="mq-pill"><b>Oral / sublingual</b> Estradiol valerate (EV)</span>
+      <span class="mq-pill"><b>Oral / sublingual</b> 17β-estradiol (E2)</span>
+      <span class="mq-pill"><b>Gel</b> 17β-estradiol gel</span>
+      <span class="mq-pill"><b>Gel</b> Estradiol valerate gel</span>
+      <span class="mq-pill"><b>Injection</b> Estradiol valerate (EV)</span>
+      <span class="mq-pill"><b>Injection</b> Estradiol enanthate (EN)</span>
+      <span class="mq-pill"><b>Injection</b> Estradiol cypionate (EC)</span>
+      <span class="mq-pill"><b>Injection</b> Estradiol benzoate (EB)</span>
+      <span class="mq-pill"><b>Injection</b> Estradiol undecylate (EU)</span>
+      <span class="mq-pill"><b>Patch</b> Estradiol patches</span>
+      <span class="mq-pill"><b>Anti-androgen</b> Cyproterone acetate (CPA) · spironolactone · bicalutamide · GnRH</span>
+      <span class="mq-pill"><b>Progestin / SERM</b> Micronised progesterone · raloxifene</span>
+      <span class="mq-pill"><b>Testosterone</b> Testosterone gel · TC · TE · TU</span>
+      <span class="mq-pill"><b>Cyclical / hair</b> Medroxyprogesterone acetate · norethisterone · finasteride · dutasteride</span>
+      <!-- duplicated once for a seamless loop -->
+      <span class="mq-pill"><b>Oral / sublingual</b> Estradiol valerate (EV)</span>
+      <span class="mq-pill"><b>Oral / sublingual</b> 17β-estradiol (E2)</span>
+      <span class="mq-pill"><b>Gel</b> 17β-estradiol gel</span>
+      <span class="mq-pill"><b>Gel</b> Estradiol valerate gel</span>
+      <span class="mq-pill"><b>Injection</b> Estradiol valerate (EV)</span>
+      <span class="mq-pill"><b>Injection</b> Estradiol enanthate (EN)</span>
+      <span class="mq-pill"><b>Injection</b> Estradiol cypionate (EC)</span>
+      <span class="mq-pill"><b>Injection</b> Estradiol benzoate (EB)</span>
+      <span class="mq-pill"><b>Injection</b> Estradiol undecylate (EU)</span>
+      <span class="mq-pill"><b>Patch</b> Estradiol patches</span>
+      <span class="mq-pill"><b>Anti-androgen</b> Cyproterone acetate (CPA) · spironolactone · bicalutamide · GnRH</span>
+      <span class="mq-pill"><b>Progestin / SERM</b> Micronised progesterone · raloxifene</span>
+      <span class="mq-pill"><b>Testosterone</b> Testosterone gel · TC · TE · TU</span>
+      <span class="mq-pill"><b>Cyclical / hair</b> Medroxyprogesterone acetate · norethisterone · finasteride · dutasteride</span>
     </div>
   </div>
 
-  <p class="lead">
-    Record what you took and when, estimate the curve with a population pharmacokinetic model,
-    and feed your own blood tests back in so the model fits you. It is a record book, not a prescription.
-  </p>
+  <!-- collapsed M3E segmented list -->
+  <div class="wrap m3e-collapse-wrap">
+    <button class="m3e-trigger" id="drugToggleBtn" data-m style="--mo:18px" onclick="toggleDrugList()">
+      <span>See the full list of supported compounds (9 groups)</span>
+      <svg class="i chev-ic"><use href="#down"/></svg>
+    </button>
 
-  <div class="actions">
-    <a class="btn" href="/">Open the web app</a>
-    <a class="btn ghost" id="apk" href="/android/">Download for Android</a>
-  </div>
-  <p class="note" id="apk-note" style="margin-top:12px">About 14 MB, signed with the release key. Also on <a href="https://github.com/xingqimiao/Kira-HRT-Tracker/releases" rel="noopener">GitHub Releases</a>.</p>
-
-  <h2>Screens</h2>
-  <div class="shots">
-    <img src="/about/shots/1-overview.jpg" width="540" height="960" loading="lazy" alt="Overview: estradiol level, target band and the concentration curve" />
-    <img src="/about/shots/2-history.jpg" width="540" height="960" loading="lazy" alt="History: doses grouped by day" />
-    <img src="/about/shots/4-checkup.jpg" width="540" height="960" loading="lazy" alt="Checkup: entering a lab result" />
-  </div>
-  <p class="note" style="margin-top:12px">Phone and desktop are two layouts of the same screen: a bottom bar on a phone, a left rail with two columns on a wide window.</p>
-
-  <h2>Who it is for</h2>
-  <p>
-    People on injectable, gel, oral or patch HRT who want to answer "roughly where are my levels this
-    week", "was that dose too high", or "when should I get tested next" — without maintaining a
-    spreadsheet by hand.
-  </p>
-
-  <h2>Logging</h2>
-  <ul>
-    <li>Routes: oral, sublingual, gel, injection, patch, and patch removal.</li>
-    <li>
-      Sublingual takes an absorption tier, converting "how long you held it" into a fraction absorbed.
-      <p>Two minutes under the tongue and ten are not the same dose.</p>
-    </li>
-    <li>
-      Gel records the product, application site and area, co-applied sunscreen or moisturiser, and wash-off time.
-      <p>All of those change absorption; without them the curve is only an average.</p>
-    </li>
-    <li>Injections distinguish oil from aqueous vehicles — they release at different speeds.</li>
-    <li>Patches record the nominal release rate (µg/day) and wear hours; removal links to the patch that was worn.</li>
-    <li>Reusable one-tap templates, with undo.</li>
-    <li>Three schedule shapes (N times a day, every x hours, every x days); overdue doses are highlighted on the overview with one-tap catch-up.</li>
-    <li>Batch select and delete; table and timeline views.</li>
-  </ul>
-
-  <h2>Estimates</h2>
-  <ul>
-    <li>
-      Two engines: the built-in model (2026 literature parameters) and the Transmtf engine, giving two
-      comparable curves from one history.
-      <p>Switching changes the estimate only, never a record.</p>
-    </li>
-    <li>Line or candlestick (OHLC) chart, 7 / 30 / all windows, target band behind the curve.</li>
-    <li>Current level, time since the last dose and a dose-level reference, all on the first screen.</li>
-    <li>
-      Four calibrations: off, MIPD (MAP fit), EKF and OU-Kalman.
-      <p>Without labs the population model stands alone; with labs, calibration pulls it toward your own
-      metabolism. You can fit on the data before a test (forward) or on everything (retrospective).</p>
-    </li>
-    <li>Each curve shows its calibration multiplier, e.g. ×0.42 — the model's persistent overestimate of you,
-      quantified.</li>
-  </ul>
-
-  <h2>Labs and reminders</h2>
-  <ul>
-    <li>Estradiol (pg/mL, pmol/L) and testosterone (ng/dL, nmol/L); two values at one instant are saved separately and share a timestamp.</li>
-    <li>Monitoring items judged against reference thresholds — liver function, potassium and others — each notice naming its source and stating evidence rather than an instruction.</li>
-    <li>Re-check reminders on the intervals the community reference recommends.</li>
-    <li>Measured results sit beside the modelled curve: filled dot for the lab, hollow for the model.</li>
-  </ul>
-
-  <h2>Lab-report OCR</h2>
-  <p>
-    Photograph a report and it is read on the device (PP-OCR on onnxruntime-web) — the image is never
-    uploaded. The numbers are filled into the form for you to confirm before saving.
-  </p>
-
-  <h2>Data and privacy</h2>
-  <div class="card">
-    <ul>
-      <li>Fully usable without an account: everything is written locally first, and the web build is an
-        installable offline PWA.</li>
-      <li>An account adds sync between devices and the AI assistant. Sync is incremental: only cloud changes
-        are pulled, only local edits are pushed.</li>
-      <li>
-        Records are encrypted at rest with a per-account key, wrapped once by your password and once by a
-        master key held in an HSM.
-        <p>In other words: the database holds no plaintext, and a password change rewraps that key without
-        rewriting a single record. The service can unwrap it while you are signed in — which is what makes
-        sync, share links and the MCP assistant work.</p>
-      </li>
-      <li>Read-only share snapshots are sealed in the browser, with the key in the URL fragment — the server and its logs see ciphertext only.</li>
-      <li>App lock: fingerprint or face, re-locks in the background, and the lock screen never shows a drug name.</li>
-      <li>No ads, no analytics, no third-party trackers; without an account nothing leaves the device.</li>
-      <li>Export everything, or delete the account outright.</li>
-    </ul>
-  </div>
-
-  <h2>AI assistant</h2>
-  <p>
-    The app speaks MCP over Streamable HTTP: an assistant can read your records and write new doses or lab
-    results without a manual export. Authorisation is a separate token you can rotate or revoke.
-  </p>
-
-  <h2>Import / export</h2>
-  <ul>
-    <li>JSON and CSV, and an export can be imported straight back.</li>
-    <li>Also reads other trackers' data (Oyama, Transmtf, Featherline formats), with a count preview before importing.</li>
-    <li>On Android the export goes through the system save dialog, so no storage permission is needed.</li>
-  </ul>
-
-  <h2>Platforms</h2>
-  <ul>
-    <li>Web: any modern browser, installable as a PWA and usable offline.</li>
-    <li>Android: a Tauri 2 shell around the same front end, adding app lock, system export and predictive back.</li>
-    <li>Seven languages: Simplified Chinese, Traditional Chinese, Cantonese, English, Japanese, Korean, Turkish — loaded on demand.</li>
-    <li>Light, dark, or follow the system.</li>
-  </ul>
-
-  <h2>Supported compounds</h2>
-  <p class="note" style="margin:0 0 16px">Grouped the way the dose panel groups them. Unless noted, each records a dose and takes part in the estimate.</p>
-  <div class="drugs">
-    <div class="drug-group">
-      <h3>Estrogens · oral / sublingual</h3>
-      <p>Estradiol valerate (EV) · 17β-estradiol (E2)</p>
-    </div>
-    <div class="drug-group">
-      <h3>Estrogens · gel</h3>
-      <p>17β-estradiol gel · estradiol valerate gel</p>
-    </div>
-    <div class="drug-group">
-      <h3>Estrogens · injection</h3>
-      <p>EV · estradiol enanthate (EN) · estradiol cypionate (EC) · estradiol benzoate (EB) · estradiol undecylate (EU)</p>
-    </div>
-    <div class="drug-group">
-      <h3>Estrogens · patches</h3>
-      <p>Estradiol patches (50 / 100 / 150 / 200 µg/day) · removal records, linked to the patch worn</p>
-    </div>
-    <div class="drug-group">
-      <h3>Anti-androgens</h3>
-      <p>Cyproterone acetate (CPA) · spironolactone · bicalutamide · GnRH analogues (record only)</p>
-    </div>
-    <div class="drug-group">
-      <h3>Progestins / SERM</h3>
-      <p>Micronised progesterone · raloxifene</p>
-    </div>
-    <div class="drug-group">
-      <h3>Testosterone · gel / injection / capsules</h3>
-      <p>Unesterified testosterone gel · testosterone cypionate (TC) · testosterone enanthate (TE) · testosterone undecanoate injection · testosterone undecanoate capsules</p>
-    </div>
-    <div class="drug-group">
-      <h3>Cyclical</h3>
-      <p>Medroxyprogesterone acetate (MPA) · norethisterone</p>
-    </div>
-    <div class="drug-group">
-      <h3>Hair</h3>
-      <p>Finasteride · dutasteride</p>
+    <div class="m3e-collapse-body" id="drugCollapseBody">
+      <div class="list">
+        <div class="li">
+          <div class="li-head">Estrogens · oral / sublingual</div>
+          <div class="li-tags">
+            <span class="li-tag">Estradiol valerate (EV)</span>
+            <span class="li-tag">17β-estradiol (E2)</span>
+          </div>
+        </div>
+        <div class="li">
+          <div class="li-head">Estrogens · gel</div>
+          <div class="li-tags">
+            <span class="li-tag">17β-estradiol gel</span>
+            <span class="li-tag">Estradiol valerate gel</span>
+          </div>
+        </div>
+        <div class="li">
+          <div class="li-head">Estrogens · injection</div>
+          <div class="li-tags">
+            <span class="li-tag">Estradiol valerate (EV)</span>
+            <span class="li-tag">Estradiol enanthate (EN)</span>
+            <span class="li-tag">Estradiol cypionate (EC)</span>
+            <span class="li-tag">Estradiol benzoate (EB)</span>
+            <span class="li-tag">Estradiol undecylate (EU)</span>
+          </div>
+        </div>
+        <div class="li">
+          <div class="li-head">Estrogens · patches</div>
+          <div class="li-tags">
+            <span class="li-tag">Estradiol patches (50 / 100 / 150 / 200 µg/day)</span>
+            <span class="li-tag">Removal records, linked to the patch worn</span>
+          </div>
+        </div>
+        <div class="li">
+          <div class="li-head">Anti-androgens</div>
+          <div class="li-tags">
+            <span class="li-tag">Cyproterone acetate (CPA)</span>
+            <span class="li-tag">Spironolactone</span>
+            <span class="li-tag">Bicalutamide</span>
+            <span class="li-tag">GnRH analogues (record only)</span>
+          </div>
+        </div>
+        <div class="li">
+          <div class="li-head">Progestins / SERM</div>
+          <div class="li-tags">
+            <span class="li-tag">Micronised progesterone</span>
+            <span class="li-tag">Raloxifene</span>
+          </div>
+        </div>
+        <div class="li">
+          <div class="li-head">Testosterone · gel / injection / capsules</div>
+          <div class="li-tags">
+            <span class="li-tag">Unesterified testosterone gel</span>
+            <span class="li-tag">Testosterone cypionate (TC)</span>
+            <span class="li-tag">Testosterone enanthate (TE)</span>
+            <span class="li-tag">Testosterone undecanoate injection</span>
+            <span class="li-tag">Testosterone undecanoate capsules</span>
+          </div>
+        </div>
+        <div class="li">
+          <div class="li-head">Cyclical</div>
+          <div class="li-tags">
+            <span class="li-tag">Medroxyprogesterone acetate (MPA)</span>
+            <span class="li-tag">Norethisterone</span>
+          </div>
+        </div>
+        <div class="li">
+          <div class="li-head">Hair</div>
+          <div class="li-tags">
+            <span class="li-tag">Finasteride</span>
+            <span class="li-tag">Dutasteride</span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
-  <p class="note" style="margin-top:6px">This list follows the app version; what the app offers is authoritative.</p>
+</section>
 
-  <h2>Get it</h2>
-  <ul>
-    <li>Web: right here in the browser, with offline support.</li>
-    <li>Android: <a href="/android/" id="apk2">the APK from this site</a>, or <a href="https://github.com/xingqimiao/Kira-HRT-Tracker/releases" rel="noopener">GitHub Releases</a>.</li>
-    <li>Store channel: the F-Droid build ships without Firebase and without a self-updater; the store handles updates.</li>
-  </ul>
+<!-- ================= PAGE 11 · finale ================= -->
+<section class="finale-chapter">
+  <svg class="finale-cookie-l"><path class="js-live-cookie" data-n="9" data-r="210" data-cx="230" data-cy="230" fill="currentColor"/></svg>
+  <svg class="finale-cookie-r"><path class="js-live-cookie" data-n="12" data-r="260" data-cx="290" data-cy="290" fill="currentColor"/></svg>
 
-  <h2>Open source and self-hosting</h2>
-  <p>
-    The app and the optional sync server are MIT-licensed and live in the same repository. Sync is
-    optional: use it locally, run your own server, or skip accounts entirely. If you want to know what
-    leaves the device, read the source — that is the only reliable answer.
-  </p>
+  <h2 class="h-finale reveal-text">May the world be gentle with us,<br>and may we bloom free and bright.</h2>
 
-  <h2>FAQ</h2>
-  <dl class="faq">
-    <dt>Do I need an account?</dt>
-    <dd>No. Without one it is a complete offline record book; it simply will not sync between devices.</dd>
-    <dt>Is my data uploaded?</dt>
-    <dd>Only when you sign in and sync, and then encrypted. Photos and lab images never leave the device.</dd>
-    <dt>How accurate is the estimate?</dt>
-    <dd>
-      Population models are rough — individuals can differ by a factor of several. With lab results,
-      calibration pulls it toward you, but it stays an estimate and never becomes a measurement.
-    </dd>
-    <dt>What if I change phones?</dt>
-    <dd>Sign in to the same account and sync; without an account, move across with an export file.</dd>
-  </dl>
+  <div class="cta-row reveal-text" style="margin-bottom:0;position:relative;z-index:2">
+    <a href="https://hrt.kiramyao.com" target="_blank" class="btn-giant pri" data-m style="--mo:18px">Open the web app</a>
+    <a href="https://hrt.kiramyao.com/android/KiraHRT-2.0.4-release.apk" target="_blank" class="btn-giant tonal" style="background:rgba(255,255,255,.26);color:currentColor" data-m style="--mo:18px">Download for Android</a>
+  </div>
+</section>
 
-  <h2>Plain text</h2>
-  <p class="note">
-    The same description as Markdown: <a href="/about/about.en.md">/about/about.en.md</a>.
-  </p>
+<footer class="site-footer">
+  <div>© 2026 KiraMyao Equal</div>
+  <div class="footer-links">
+    <a href="../" hreflang="zh-CN" lang="zh-CN">中文</a>
+    <a href="https://kiramyao.com/" target="_blank" rel="noopener">About Us</a>
+    <a href="https://kiramyao.com/privacy" target="_blank" rel="noopener">Privacy Policy</a>
+    <a href="https://2345.lgbt/" target="_blank" rel="noopener">Project Trans</a>
+    <a href="https://x.com/KiraMyao" target="_blank" rel="noopener">Twitter</a>
+  </div>
+</footer>
 
-  <p class="warn">
-    Estimates come from a population pharmacokinetic model, not from a blood test, and must not be used to
-    decide a dose. Only a blood draw tells you the real level; always go by the laboratory report. This is
-    not a medical device and does not provide medical advice.
-  </p>
+<svg class="trans-ribbon-bottom" viewBox="0 0 100 25" preserveAspectRatio="none">
+  <rect x="0" y="0" width="100" height="5.5" fill="#5BCEFA"/>
+  <rect x="0" y="5" width="100" height="5.5" fill="#F5A9B8"/>
+  <rect x="0" y="10" width="100" height="5.5" fill="#FFFFFF"/>
+  <rect x="0" y="15" width="100" height="5.5" fill="#F5A9B8"/>
+  <rect x="0" y="20" width="100" height="5" fill="#5BCEFA"/>
+</svg>
 
-  <footer>
-    <a href="https://github.com/xingqimiao/Kira-HRT-Tracker" rel="noopener">Source (MIT)</a>
-    <a href="https://github.com/xingqimiao/Kira-HRT-Tracker/issues" rel="noopener">Issues</a>
-    <a href="https://kiramyao.com" rel="noopener">KiraEqual</a>
-    <a href="https://kiramyao.com/privacy" rel="noopener">Privacy policy</a>
-    <a href="https://status.kiramyao.com" rel="noopener">Service status</a>
-  </footer>
-</main>
 <script>
-  fetch('/android/latest.json', { cache: 'no-store' })
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (m) {
-      if (!m || typeof m.apk !== 'string') return;
-      var a = document.getElementById('apk');
-      var b = document.getElementById('apk2');
-      a.href = m.apk; b.href = m.apk;
-      document.getElementById('apk-note').textContent =
-        'Android ' + m.version + ' · about 14 MB · signed with the release key';
-    })
-    .catch(function () { /* keep the static fallback */ });
+// 1. Theme follows the system, and the logo swaps with it
+const darkMedia = window.matchMedia('(prefers-color-scheme: dark)');
+function applyTheme(isDark) {
+  if (isDark) document.documentElement.setAttribute('data-theme', 'dark');
+  else document.documentElement.removeAttribute('data-theme');
+  const logo = document.getElementById('brandLogoImg');
+  if (logo) {
+    logo.src = isDark ? '../../brand/kira-app-icon-dark.svg' : '../../brand/kira-app-icon.svg';
+  }
+}
+applyTheme(darkMedia.matches);
+darkMedia.addEventListener('change', e => applyTheme(e.matches));
+
+function toggleTheme() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  applyTheme(!isDark);
+}
+
+// 2. Expand / collapse the full compound list
+function toggleDrugList() {
+  const btn = document.getElementById('drugToggleBtn');
+  const body = document.getElementById('drugCollapseBody');
+  btn.classList.toggle('open');
+  body.classList.toggle('open');
+}
+
+// 3. Slowly breathing M3E cookie polygon backgrounds
+function cookiePath(cx, cy, r, n, a, ph) {
+  const pts = [];
+  for (let i = 0; i <= 100; i++) {
+    const t = (i / 100) * Math.PI * 2;
+    const rr = r * (1 + a * Math.cos(n * (t - ph)));
+    pts.push(`${i ? 'L' : 'M'}${(cx + rr * Math.cos(t)).toFixed(1)},${(cy + rr * Math.sin(t)).toFixed(1)}`);
+  }
+  return pts.join(' ') + 'Z';
+}
+const liveCookies = document.querySelectorAll('.js-live-cookie');
+let startTime = performance.now();
+function animateCookies(now) {
+  const sec = (now - startTime) * 0.001;
+  liveCookies.forEach((el, idx) => {
+    const n = parseInt(el.dataset.n) || 9;
+    const r = parseFloat(el.dataset.r) || 50;
+    const cx = parseFloat(el.dataset.cx) || 50;
+    const cy = parseFloat(el.dataset.cy) || 50;
+    const amp = 0.085 + 0.025 * Math.sin(sec * 1.1 + idx);
+    const ph = sec * 0.25 * (idx % 2 === 0 ? 1 : -1);
+    el.setAttribute('d', cookiePath(cx, cy, r, n, amp, ph));
+  });
+  requestAnimationFrame(animateCookies);
+}
+requestAnimationFrame(animateCookies);
+
+// 4. Scroll-driven stage morph and integer-pixel parallax
+const stages = document.querySelectorAll('.js-scroll-stage');
+function onScroll() {
+  const vh = window.innerHeight;
+  stages.forEach(st => {
+    const rect = st.getBoundingClientRect();
+    const rawP = 1 - (rect.top + rect.height * 0.5) / (vh + rect.height * 0.35);
+    const p = Math.max(0, Math.min(1, rawP));
+    const r1 = parseFloat(st.dataset.r1) || 88;
+    const r2 = parseFloat(st.dataset.r2) || 24;
+    const cA = Math.round(r1 + (r2 - r1) * p);
+    const cB = Math.round(r2 + (r1 - r2) * p);
+    st.style.borderRadius = `${cA}px ${cB}px ${cA}px ${cB}px`;
+
+    const phone = st.querySelector('.js-phone');
+    if (phone) {
+      const yOffset = Math.round((0.5 - p) * 38);
+      phone.style.transform = `translate3d(0, ${yOffset}px, 0)`;
+    }
+  });
+}
+window.addEventListener('scroll', () => requestAnimationFrame(onScroll), { passive: true });
+onScroll();
+
+// 5. Reveal copy as it enters the viewport
+const io = new IntersectionObserver(entries => {
+  entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('in'); });
+}, { threshold: 0.15 });
+document.querySelectorAll('.reveal-text').forEach(el => io.observe(el));
+
+// 6. Global press physics [data-m]
+document.addEventListener('pointerdown', e => {
+  const el = e.target.closest('[data-m]');
+  if (el) el.classList.add('mo');
+});
+['pointerup','pointercancel'].forEach(ev => document.addEventListener(ev, () => {
+  setTimeout(() => document.querySelectorAll('.mo').forEach(el => el.classList.remove('mo')), 250);
+}));
 </script>
 </body>
 </html>

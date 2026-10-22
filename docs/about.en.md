@@ -2,7 +2,7 @@
 
 # Kira HRT Tracker
 
-Dose log · level estimates · privacy first · open source (MIT)
+Dose log · level estimates · privacy first · open source (GPL-3.0)
 
 Record what you took and when, estimate the curve with a population pharmacokinetic model, and feed your own blood tests back in so the model fits you. It is a record book, not a prescription.
 
@@ -114,7 +114,7 @@ Finasteride · dutasteride
 
 ## Open source and self-hosting
 
-The app and the optional sync server are MIT-licensed and live in the same repository. Sync is optional: use it locally, run your own server, or skip accounts entirely. If you want to know what leaves the device, read the source — that is the only reliable answer.
+The app and the optional sync server are GPL-3.0-or-later and live in the same repository. Sync is optional: use it locally, run your own server, or skip accounts entirely. If you want to know what leaves the device, read the source — that is the only reliable answer.
 
 ## FAQ
 
