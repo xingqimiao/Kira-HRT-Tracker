@@ -99,7 +99,13 @@ edit(join(appDir, 'src/main/AndroidManifest.xml'), (s) =>
 const cargoHome = process.env.CARGO_HOME || join(process.env.USERPROFILE || process.env.HOME || '', '.cargo');
 const registryRoot = join(cargoHome, 'registry/src');
 let pluginDir = '';
-if (existsSync(registryRoot)) {
+// A vendored build (F-Droid vendors the crates for its offline phase) compiles the
+// copy under `src-tauri/vendor`, not the registry one. Patch that one when it exists,
+// or the store build silently links the Firebase half back in.
+const vendorDir = join(root, 'src-tauri', 'vendor', 'tauri-plugin-notifications');
+if (existsSync(vendorDir)) {
+  pluginDir = vendorDir;
+} else if (existsSync(registryRoot)) {
   for (const index of readdirSync(registryRoot)) {
     const candidate = join(registryRoot, index);
     if (!existsSync(candidate)) continue;

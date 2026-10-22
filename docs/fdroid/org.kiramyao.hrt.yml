@@ -40,6 +40,9 @@ Builds:
       - export PATH="$HOME/.cargo/bin:$PATH"
       - mkdir -p src-tauri/.cargo
       - (cd src-tauri && cargo vendor --locked vendor > .cargo/config.toml)
+    scanignore:
+      - node_modules
+      - src-tauri/vendor
     build:
       - export HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1
       - export VITE_API_ORIGIN=https://api.kiramyao.com/hrt VITE_PUBLIC_ORIGIN=https://hrt.kiramyao.com
@@ -59,6 +62,12 @@ MaintainerNotes: |-
   src-tauri/gen/android/app/tauri.properties at build time, so no committed file holds
   the pair. CurrentVersion/CurrentVersionCode are bumped here on every release; v2.0.4
   is commit 7020c665179da46ccc848c6ffacd4fc483de3ec0, tag v2.0.4.
+
+  scanignore covers node_modules and src-tauri/vendor: both are generated (npm ci,
+  cargo vendor) and both carry prebuilt binaries the scanner refuses (winapi .a,
+  onnxruntime wasm, sharp .so); nothing in them is committed. strip-fcm patches the
+  vendored notifications crate as well, so the APK links no Firebase even though the
+  vendored copy is what Gradle compiles.
 
   The F-Droid build must set HRT_NO_FCM=1 and VITE_NO_SELF_UPDATE=1. The first removes
   Firebase/FCM from the Android module and from the vendored notifications plugin; the
