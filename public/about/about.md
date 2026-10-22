@@ -134,26 +134,5 @@
 
 估算来自群体药代动力学模型，不是化验结果，不能作为用药依据。要知道真实血药浓度只能抽血，请始终以医院报告为准。本应用不是医疗器械，也不提供医疗建议；用药决定请遵循处方医师的意见。
 
----
+> English version: [about.en.md](about.en.md)
 
-# English
-
-Kira HRT Tracker — dose log, level estimates, privacy first, MIT.
-
-Record what you took and when, estimate the curve with a population pharmacokinetic model, and feed your own blood tests back in so the model fits you. It is a record book, not a prescription.
-
-**Who it is for.** People on injectable, gel, oral or patch HRT who want to answer "roughly where are my levels this week", "was that dose too high", or "when should I get tested next" — without maintaining a spreadsheet by hand.
-
-**Logging.** Oral, sublingual (absorption tiers), gel (product, site, area, co-applied sunscreen or moisturiser, wash-off), injection (oil vs aqueous), patches (release rate, wear hours) and patch removal. Reusable one-tap templates; three schedule shapes; overdue doses highlighted with one-tap catch-up.
-
-**Estimates.** Two engines (built-in 2026 literature model, Transmtf). Four calibrations: off, MIPD, EKF, OU-Kalman, forward-only or retrospective. Line or candlestick chart, 7 / 30 / all windows, target band, and a calibration multiplier.
-
-**Labs.** Estradiol (pg/mL, pmol/L) and testosterone (ng/dL, nmol/L), plus monitoring items such as liver function and potassium with the source of each threshold, and re-check reminders. Lab-report photos are read on the device; the image never leaves it.
-
-**Privacy.** Works fully offline without an account. Sync is optional and incremental; records are encrypted with a per-account key wrapped once by your password and once by a KMS-held master key, so the database holds no plaintext. Share links are sealed in the browser with the key in the URL fragment. No ads, no analytics, no trackers.
-
-**Compounds.** Estradiol valerate, 17β-estradiol, estradiol gel, EV gel, EV / EN / EC / EB / EU injections, estradiol patches, cyproterone acetate, spironolactone, bicalutamide, GnRH analogues (record only), micronised progesterone, raloxifene, testosterone gel, testosterone cypionate, testosterone enanthate, testosterone undecanoate injection and capsules, medroxyprogesterone acetate, norethisterone, finasteride, dutasteride.
-
-**Open source.** MIT; the app and the optional sync server share a repository.
-
-**Disclaimer.** Estimates come from a population model, not from a blood test. They are not a dosing guide. This is not a medical device and does not provide medical advice.
