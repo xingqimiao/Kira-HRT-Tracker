@@ -13,17 +13,25 @@
 import { existsSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-if (!process.env.HRT_NO_FCM) {
-  console.log('strip-store-assets: web build, keeping the download channel');
-  process.exit(0);
-}
-
 const dist = resolve(import.meta.dirname, '..', 'dist');
-const targets = [
+
+// The landing pages and brand icons are the website's, not the app's: nothing in
+// `src/` reads `/about` or `/brand`, and their screenshots alone were ~8 MB inside
+// every APK (7.9 MB in 2.0.4 before this). Removed for any Android build.
+const always = ['about', 'brand'];
+
+// The download channel is only meaningless in a store build: the site build is
+// where `/android/latest.json` and the Firebase worker are actually served from.
+const storeOnly = [
   'android',                  // latest.json + any staged APK
   'firebase',                 // the compat SDKs the FCM worker imports
   'firebase-messaging-sw.js', // the worker itself
 ];
+
+const targets = process.env.HRT_NO_FCM ? [...always, ...storeOnly] : always;
+if (!process.env.HRT_NO_FCM) {
+  console.log('strip-store-assets: keeping the download channel (site build)');
+}
 
 const removed = [];
 for (const name of targets) {
