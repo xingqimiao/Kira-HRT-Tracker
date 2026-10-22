@@ -1,7 +1,7 @@
 # F-Droid 上架准备清单
 
 > 状态：**物料已齐，MR 未开**。剩下的一步只能在 GitLab 上完成：把同目录的
-> `org.kiramyao.hrt.yml` 放进 `fdroiddata/metadata/`，开 MR（§6 有现成的正文）。
+> `com.kiramyao.hrt.yml` 放进 `fdroiddata/metadata/`，开 MR（§6 有现成的正文）。
 > 本机没有 GitLab 凭据，所以这一步需要你自己点。
 
 ## 1. 已经做了什么
@@ -15,7 +15,7 @@
 | 商店文案 | `fastlane/metadata/android/{en-US,zh-CN}/` | 标题、短描述、完整描述、`2000004.txt` 更新日志，许可说明已改为 GPL-3.0 |
 | 图标 | 同上 `images/icon.png` | 512×512，取自 `src-tauri/icons/icon.png` |
 | 截图 | 同上 `images/phoneScreenshots/` | 与介绍页同一批真机截图（英文 9 张、中文 8 张），1440×3200 |
-| 构建配方 | `docs/fdroid/org.kiramyao.hrt.yml` | 已填到 2.0.4/2000004、`AutoUpdateMode`/`UpdateCheckMode`/`Antifeatures`，`Builds:` 里仍是待评审确认的猜测 |
+| 构建配方 | `docs/fdroid/com.kiramyao.hrt.yml` | 已填到 2.0.4/2000004、`AutoUpdateMode`/`UpdateCheckMode`/`Antifeatures`，`Builds:` 里仍是待评审确认的猜测 |
 
 ## 2. 真正的阻碍（按严重程度）
 
@@ -55,8 +55,8 @@ F-Droid 要求至少 2 张手机截图，最短边 ≥ 320px，PNG/JPEG 均可�
 ## 5. 提交步骤（只有你能做）
 
 1. 在 GitLab 注册并 fork <https://gitlab.com/fdroid/fdroiddata>。
-2. 新建分支（用包名，别提交到 master）：`org.kiramyao.hrt`。
-3. 在 `metadata/` 下新建 `org.kiramyao.hrt.yml`，内容就是本目录的同名文件。
+2. 新建分支（用包名，别提交到 master）：`com.kiramyao.hrt`。
+3. 在 `metadata/` 下新建 `com.kiramyao.hrt.yml`，内容就是本目录的同名文件。
 4. 提交后看该分支的 CI pipeline；`fdroid readmeta` / `lint` 的报错直接照着改。
 5. 开 MR 到 `fdroid/fdroiddata`，正文用 §6。
 
