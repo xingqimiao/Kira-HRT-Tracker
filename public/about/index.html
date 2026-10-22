@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Kira HRT Tracker · 用药记录与血药浓度估算</title>
-<meta name="description" content="Kira HRT Tracker：记录 HRT 用药与化验，用群体药代动力学模型估算激素曲线，并用你自己的化验结果校准。本地优先、逐帐户加密、开源。" />
+<meta name="description" content="Kira HRT Tracker：记录 HRT 用药与化验，用群体药代动力学模型估算激素曲线，并用你自己的化验结果校准。支持口服、舌下、凝胶、注射、贴片；本地优先、可选加密同步、开源（MIT）。" />
 <link rel="canonical" href="https://hrt.kiramyao.com/about/" />
 <link rel="icon" href="/pwa-192x192.png" />
 <meta property="og:title" content="Kira HRT Tracker" />
@@ -26,20 +26,22 @@
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--bg); color: var(--on);
-    font: 16px/1.7 system-ui, -apple-system, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font: 16px/1.75 system-ui, -apple-system, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
     -webkit-font-smoothing: antialiased;
   }
-  main { max-width: 720px; margin: 0 auto; padding: 56px 24px 96px; }
+  main { max-width: 760px; margin: 0 auto; padding: 56px 24px 96px; }
   .brand { display: flex; align-items: center; gap: 14px; }
   .brand img { width: 48px; height: 48px; border-radius: 14px; }
   h1 { font-size: 30px; line-height: 1.2; margin: 0; letter-spacing: -.02em; }
   .tag { color: var(--var); margin: 6px 0 0; font-size: 15px; }
   .lead { font-size: 18px; line-height: 1.75; margin: 32px 0 0; }
-  h2 { font-size: 15px; letter-spacing: .08em; text-transform: uppercase; color: var(--out); margin: 44px 0 14px; }
+  h2 { font-size: 15px; letter-spacing: .08em; text-transform: uppercase; color: var(--out); margin: 48px 0 14px; }
+  h3 { font-size: 16px; margin: 26px 0 6px; }
   ul { margin: 0; padding: 0; list-style: none; }
-  li { position: relative; padding: 10px 0 10px 22px; border-bottom: 1px solid rgba(154,141,149,.16); }
+  li { position: relative; padding: 9px 0 9px 22px; border-bottom: 1px solid rgba(154,141,149,.16); }
   li:last-child { border-bottom: 0; }
-  li::before { content: ""; position: absolute; left: 0; top: 20px; width: 7px; height: 7px; border-radius: 4px; background: var(--pri); }
+  li::before { content: ""; position: absolute; left: 0; top: 19px; width: 7px; height: 7px; border-radius: 4px; background: var(--pri); }
+  li p { margin: 4px 0 0; color: var(--var); font-size: 15px; }
   .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 34px 0 0; }
   .btn {
     display: inline-flex; align-items: center; justify-content: center;
@@ -49,29 +51,27 @@
   }
   .btn:hover { transform: translateY(-1px); filter: brightness(1.06); }
   .btn.ghost { background: var(--sc); color: var(--on); box-shadow: inset 0 0 0 1px rgba(154,141,149,.3); }
-  .card { background: var(--sc); border-radius: 24px; padding: 22px 24px; margin: 0; }
+  .card { background: var(--sc); border-radius: 24px; padding: 20px 24px; margin: 0; }
+  .card ul li { border-bottom-color: rgba(154,141,149,.12); }
   .note { color: var(--var); font-size: 14px; }
   .warn { color: var(--var); font-size: 14px; border-left: 3px solid var(--out); padding-left: 14px; margin: 34px 0 0; }
   footer { margin-top: 56px; padding-top: 22px; border-top: 1px solid rgba(154,141,149,.16); color: var(--out); font-size: 13px; display: flex; flex-wrap: wrap; gap: 8px 18px; }
-  footer a { color: var(--out); }
+  footer a, .note a { color: var(--out); }
   a { color: var(--pri); }
   .en { margin-top: 64px; padding-top: 40px; border-top: 1px solid rgba(154,141,149,.16); }
   .en .lead { font-size: 16px; }
-  .shots {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0;
-  }
-  .shots img {
-    width: 100%; height: auto; display: block; border-radius: 20px;
-    box-shadow: 0 10px 28px rgba(0, 0, 0, .28);
-  }
+  .en h2 { margin-top: 34px; }
+  .shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0; }
+  .shots img { width: 100%; height: auto; display: block; border-radius: 20px; box-shadow: 0 10px 28px rgba(0,0,0,.28); }
   @media (max-width: 560px) { .shots { grid-template-columns: repeat(2, 1fr); } }
   .drugs { columns: 2; column-gap: 32px; }
   @media (max-width: 560px) { .drugs { columns: 1; } }
   .drug-group { break-inside: avoid; padding: 0 0 18px; }
-  .drug-group h3 {
-    font-size: 14px; margin: 0 0 6px; color: var(--pri); font-weight: 700;
-  }
+  .drug-group h3 { font-size: 14px; margin: 0 0 6px; color: var(--pri); font-weight: 700; }
   .drug-group p { margin: 0; font-size: 14px; line-height: 1.75; color: var(--var); }
+  .faq { margin: 0; }
+  .faq dt { font-weight: 700; margin: 20px 0 4px; }
+  .faq dd { margin: 0; color: var(--var); font-size: 15px; }
 </style>
 </head>
 <body>
@@ -80,19 +80,20 @@
     <img src="/pwa-192x192.png" alt="" width="48" height="48" />
     <div>
       <h1>Kira HRT Tracker</h1>
-      <p class="tag">用药记录 · 血药浓度估算 · 隐私优先</p>
+      <p class="tag">用药记录 · 血药浓度估算 · 隐私优先 · 开源</p>
     </div>
   </div>
 
   <p class="lead">
-    记下用了什么药、什么时候用的；用群体药代动力学模型估算激素曲线；抽血之后把结果填进去，让模型更贴近你自己。
+    记下用了什么药、什么时候用的；用群体药代动力学模型估算激素曲线；抽血之后把结果填进去，
+    让模型更贴近你自己。它是一本记录本，不是医嘱。
   </p>
 
   <div class="actions">
     <a class="btn" href="/">打开网页版</a>
     <a class="btn ghost" id="apk" href="/android/">下载 Android 版</a>
   </div>
-  <p class="note" id="apk-note" style="margin-top:12px">Android 包约 14 MB，用发布密钥签名。</p>
+  <p class="note" id="apk-note" style="margin-top:12px">Android 包约 14 MB，用发布密钥签名。也可以直接从 <a href="https://github.com/xingqimiao/Kira-HRT-Tracker/releases" rel="noopener">GitHub Releases</a> 下载。</p>
 
   <h2>界面</h2>
   <div class="shots">
@@ -100,15 +101,96 @@
     <img src="/about/shots/2-history.jpg" width="540" height="960" loading="lazy" alt="记录：按日期分组的给药历史" />
     <img src="/about/shots/4-checkup.jpg" width="540" height="960" loading="lazy" alt="体检：录入化验结果" />
   </div>
+  <p class="note" style="margin-top:12px">同一套界面在手机与桌面上是两套布局：手机上底部标签栏，桌面是左侧导航栏加双栏内容。</p>
 
-  <h2>能做什么</h2>
+  <h2>适合谁</h2>
+  <p>
+    正在用注射、凝胶、口服或贴片做激素治疗，想回答「这周血药浓度大概在什么水平」「上次那个剂量是不是偏高」
+    「下次该什么时候抽血」，并且希望这些记录不用手工整理成表格的人。
+  </p>
+
+  <h2>记录</h2>
   <ul>
-    <li>按途径与酯型记录用药，常用剂量存成一键模板</li>
-    <li>根据实际记录的用药推算雌二醇曲线，四种校准方式可选</li>
-    <li>记录化验结果，把实测值与模型曲线对照</li>
-    <li>拍照识别化验单——识别在设备本地完成，照片不出手机</li>
-    <li>用药计划与本地提醒，逾期在首页高亮并一键补记</li>
-    <li>导出 / 导入 JSON、CSV，兼容其他记录应用的数据</li>
+    <li>按途径记录：口服、舌下、凝胶、注射、贴片，以及「撕下」。</li>
+    <li>
+      舌下可选吸收档位，把「含服多久」换算成吸收比例。
+      <p>同一片药，压在舌下两分钟和十分钟，进血的量差一倍以上。</p>
+    </li>
+    <li>
+      凝胶可记录产品、涂抹部位与面积、是否与保湿/防晒同涂、多久后冲洗。
+      <p>这些都会改变吸收，否则曲线只是平均值。</p>
+    </li>
+    <li>注射区分油剂与水剂，两者释放速度不同。</li>
+    <li>贴片记录标称释放速率（µg/天）与佩戴时长；「撕下」会与佩戴中的贴片关联。</li>
+    <li>常用剂量存成模板，首页和记录页都能一键补记，并带撤销。</li>
+    <li>用药方案：每日 N 次、每 x 小时、每 x 天三种周期；逾期在首页高亮，可一键补记或整条跳过。</li>
+    <li>支持批量选择、批量删除；表格与时间线两种看法。</li>
+  </ul>
+
+  <h2>估算</h2>
+  <ul>
+    <li>
+      两套引擎：内置引擎（2026 文献参数）与 Transmtf 引擎，同一份记录给两条可对比的曲线。
+      <p>切换只影响估算，不影响任何一条记录。</p>
+    </li>
+    <li>曲线可切换折线与 K 线（OHLC）；7 天 / 30 天 / 全部三个时间窗；目标范围作为底色带。</li>
+    <li>当前水平、距上次用药多久、剂量级别参考，都在概览页第一屏。</li>
+    <li>
+      四种校准方式：关闭、MIPD（MAP 拟合）、EKF（扩展卡尔曼滤波）、OU-Kalman（动态校准）。
+      <p>没有化验时用群体模型；有化验之后，校准把模型往你自己的代谢上拉。可以只用化验之前的数据做前向推算，也可以用全部数据回顾。</p>
+    </li>
+    <li>每条曲线都标出校准倍率，例如 ×0.42——那是「模型一直高估你」这件事的量化。</li>
+  </ul>
+
+  <h2>化验与复查</h2>
+  <ul>
+    <li>雌二醇（pg/mL、pmol/L）与睾酮（ng/dL、nmol/L）；同一时间点的两项会分别保存、共享时间戳。</li>
+    <li>监测项按参考阈值判断：肝功能、钾等。每条提示都会注明出处，只陈述证据，不下指令。</li>
+    <li>复查提醒按 MtF.wiki 的建议周期提示肝功能、雌二醇等项目。</li>
+    <li>化验结果与模型曲线并排显示，实测是实心点，模型是空心圈。</li>
+  </ul>
+
+  <h2>化验单识别</h2>
+  <p>
+    拍一张化验单，识别在本机完成（PP-OCR，跑在 onnxruntime-web 上）——照片不会上传到任何服务器。
+    识别出来的数值会填进表单，由你确认之后再保存。
+  </p>
+
+  <h2>数据与隐私</h2>
+  <div class="card">
+    <ul>
+      <li>不登录也能完整使用：所有记录先写在本机，离线可用（网页版是 PWA，装到桌面后一样）。</li>
+      <li>账号只为跨设备同步与 AI 助手。同步是增量的：只拉取云端变更，只上传本机改动。</li>
+      <li>
+        记录以每个账号独立的密钥加密保存在服务器上；这把密钥同时被你的口令和一把 HSM 中的主密钥分别包裹。
+        <p>换句话说：数据库里没有明文，改密码只是重包这把钥匙、不重写任何一条记录。服务进程在你登录时能解开它——这是同步、分享链接和 MCP 助手能工作的前提。</p>
+      </li>
+      <li>只读分享链接的快照在浏览器里加密，钥匙放在链接的 <code>#</code> 之后——服务器和日志里只有密文。</li>
+      <li>应用锁：指纹或面容解锁，退到后台自动重锁，锁屏通知里不显示药名。</li>
+      <li>无广告、无统计、无第三方追踪组件；不用账号时没有任何数据离开设备。</li>
+      <li>可以一键导出全部数据，也可以彻底删除账号。</li>
+    </ul>
+  </div>
+
+  <h2>AI 助手</h2>
+  <p>
+    应用提供 MCP 接口（Streamable HTTP）。连接之后，助手可以读取你的记录、写下新的剂量或化验结果，
+    不需要你手动导出文件。授权是单独的 token，随时可以轮换或撤销。
+  </p>
+
+  <h2>导入 / 导出</h2>
+  <ul>
+    <li>JSON 与 CSV 两种格式，导出的文件可以直接再导入。</li>
+    <li>也能读入其他记录应用的数据（Oyama、Transmtf、Featherline 格式），导入前会先预览条数。</li>
+    <li>Android 端的「导出」走系统另存为对话框，不需要存储权限。</li>
+  </ul>
+
+  <h2>平台</h2>
+  <ul>
+    <li>网页版：任何现代浏览器，可安装为 PWA，离线可用。</li>
+    <li>Android：Tauri 2 外壳承载同一份前端，额外提供应用锁、系统导出、预测式返回。</li>
+    <li>七种语言：简体中文、正體中文、廣東話、English、日本語、한국어、Türkçe，按需加载。</li>
+    <li>浅色 / 深色 / 跟随系统。</li>
   </ul>
 
   <h2>支持的药物</h2>
@@ -153,49 +235,102 @@
   </div>
   <p class="note" style="margin-top:6px">这一列表随应用版本变化，以应用内实际可选的项目为准。</p>
 
-  <h2>隐私</h2>
-  <div class="card">
-    <ul>
-      <li>无广告、无统计、无第三方追踪组件</li>
-      <li>不登录也能完整离线使用；账号只为跨设备同步</li>
-      <li>同步的记录以每个账号独立的密钥加密，服务器不持有你的密钥</li>
-    </ul>
-  </div>
-  <p class="note" style="margin-top:14px">可选的同步服务器与应用在同一个开源仓库里，可以自行部署。</p>
-
   <h2>获取</h2>
   <ul>
-    <li>网页版：直接在浏览器中使用，支持离线（PWA）</li>
-    <li>Android：<a href="/android/" id="apk2">本站的 APK</a>，或 <a href="https://github.com/xingqimiao/Kira-HRT-Tracker/releases" rel="noopener">GitHub Releases</a></li>
-    <li>商店渠道：F-Droid 版不含 Firebase、不含自更新，更新由商店负责</li>
+    <li>网页版：直接在浏览器里用，支持离线。</li>
+    <li>Android：<a href="/android/" id="apk2">本站的 APK</a>，或 <a href="https://github.com/xingqimiao/Kira-HRT-Tracker/releases" rel="noopener">GitHub Releases</a>。</li>
+    <li>商店渠道：F-Droid 版不含 Firebase、不含自更新，更新由商店负责。</li>
   </ul>
+
+  <h2>开源与自托管</h2>
+  <p>
+    应用与服务端以 MIT 许可发布在同一个仓库里。同步是可选的：你可以只在本机用，也可以自己部署一套服务端，
+    或者完全不用账号。想知道数据都去了哪儿，读源码比读这份说明可靠。
+  </p>
+
+  <h2>常见问题</h2>
+  <dl class="faq">
+    <dt>必须注册账号吗？</dt>
+    <dd>不必。不登录时它是一本完整的离线记录本，只是不会跨设备同步。</dd>
+    <dt>我的数据会被上传吗？</dt>
+    <dd>只有在你登录并开启同步时，记录才会以加密形式传到服务器。照片、化验单图片始终留在设备上。</dd>
+    <dt>估算准吗？</dt>
+    <dd>
+      群体模型的误差本来就不小，个体之间可以差出几倍。有化验结果之后，校准会把它拉近你自己；
+      但仍然只是估算，不是化验值。
+    </dd>
+    <dt>换手机怎么办？</dt>
+    <dd>登录同一账号即可同步；没有账号时用导出文件迁移。</dd>
+  </dl>
+
+  <h2>纯文本版</h2>
+  <p class="note">
+    这份说明也有一份 Markdown：<a href="/about/about.md">/about/about.md</a>。
+  </p>
 
   <p class="warn">
     估算来自群体药代动力学模型，不是化验结果，不能作为用药依据。要知道真实血药浓度只能抽血，请始终以医院报告为准。
+    本应用不是医疗器械，也不提供医疗建议；用药决定请遵循处方医师的意见。
   </p>
 
   <footer>
     <a href="https://github.com/xingqimiao/Kira-HRT-Tracker" rel="noopener">源码（MIT）</a>
     <a href="https://github.com/xingqimiao/Kira-HRT-Tracker/issues" rel="noopener">反馈</a>
     <a href="https://kiramyao.com" rel="noopener">KiraEqual</a>
+    <a href="https://kiramyao.com/privacy" rel="noopener">隐私说明</a>
     <a href="https://status.kiramyao.com" rel="noopener">服务状态</a>
   </footer>
 
   <section class="en" lang="en">
     <h1 style="font-size:24px">Kira HRT Tracker</h1>
-    <p class="tag">Dose log, level estimates, privacy first</p>
+    <p class="tag">Dose log, level estimates, privacy first, MIT</p>
     <p class="lead">
       Record what you took and when, estimate the curve with a population pharmacokinetic model,
-      and feed your own blood tests back in so the model fits you.
+      and feed your own blood tests back in so the model fits you. It is a record book, not a prescription.
     </p>
+
+    <h2>Who it is for</h2>
+    <p>
+      People on injectable, gel, oral or patch HRT who want to answer "roughly where are my levels this
+      week", "was that dose too high", or "when should I get tested next" — without maintaining a
+      spreadsheet by hand.
+    </p>
+
+    <h2>Logging</h2>
     <ul>
-      <li>Doses by route and ester, with one-tap templates</li>
-      <li>Estradiol curve with four selectable calibration methods</li>
-      <li>Lab results compared against the modelled curve</li>
-      <li>Lab-report OCR runs on the device; the photo never leaves it</li>
-      <li>No ads, no analytics, no third-party trackers</li>
-      <li>Works fully offline; an account only adds encrypted sync between devices</li>
+      <li>Routes: oral, sublingual, gel, injection, patch, and patch removal.</li>
+      <li>Sublingual takes an absorption tier, converting "how long you held it" into a fraction absorbed.</li>
+      <li>Gel records the product, application site and area, co-applied sunscreen or moisturiser, and wash-off time.</li>
+      <li>Injections distinguish oil from aqueous vehicles; patches record the nominal release rate and wear hours.</li>
+      <li>Reusable one-tap templates, three schedule shapes, overdue doses highlighted with one-tap catch-up.</li>
     </ul>
+
+    <h2>Estimates</h2>
+    <ul>
+      <li>Two engines: the built-in model (2026 literature parameters) and the Transmtf engine, switchable per account.</li>
+      <li>Four calibrations: off, MIPD (MAP fit), EKF, and OU-Kalman; forward-only or retrospective.</li>
+      <li>Line or candlestick chart, 7 / 30 / all windows, target band behind the curve, and a calibration
+        multiplier showing how far the model has had to move toward your own results.</li>
+    </ul>
+
+    <h2>Labs and reminders</h2>
+    <ul>
+      <li>Estradiol (pg/mL, pmol/L) and testosterone (ng/dL, nmol/L), plus monitoring items such as liver
+        function and potassium, each with the source of its threshold.</li>
+      <li>Re-check reminders on the intervals the community reference recommends.</li>
+      <li>Lab-report photos are read on the device (PP-OCR on onnxruntime-web); the image is never uploaded.</li>
+    </ul>
+
+    <h2>Privacy</h2>
+    <ul>
+      <li>Works completely offline without an account; the web build is an installable PWA.</li>
+      <li>Sync is incremental and optional. Records are encrypted with a per-account key, wrapped once by
+        your password and once by a KMS-held master key — the database holds no plaintext, and a password
+        change rewraps the key without rewriting a single record.</li>
+      <li>Read-only share links are sealed in the browser, with the key in the URL fragment.</li>
+      <li>No ads, no analytics, no third-party trackers.</li>
+    </ul>
+
     <h2>Supported compounds</h2>
     <p class="note" style="margin:0">
       Estradiol valerate · 17β-estradiol · estradiol gel · EV gel · EV / EN / EC / EB / EU injections ·
@@ -204,8 +339,16 @@
       testosterone cypionate · testosterone enanthate · testosterone undecanoate injection and capsules ·
       medroxyprogesterone acetate · norethisterone · finasteride · dutasteride
     </p>
+
+    <h2>Open source</h2>
+    <p>
+      The app and the optional sync server are MIT-licensed and live in the same repository. Read the source
+      if you want to know what leaves the device — that is the only reliable answer.
+    </p>
+
     <p class="warn">
-      Estimates come from a population model, not from a blood test. They are not a dosing guide.
+      Estimates come from a population model, not from a blood test. They are not a dosing guide. This is
+      not a medical device and does not provide medical advice.
     </p>
   </section>
 </main>

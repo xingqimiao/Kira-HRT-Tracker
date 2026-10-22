@@ -1,0 +1,159 @@
+# Kira HRT Tracker
+
+用药记录 · 血药浓度估算 · 隐私优先 · 开源（MIT）
+
+记下用了什么药、什么时候用的；用群体药代动力学模型估算激素曲线；抽血之后把结果填进去，让模型更贴近你自己。它是一本记录本，不是医嘱。
+
+- 网页版：<https://hrt.kiramyao.com>
+- 介绍页：<https://hrt.kiramyao.com/about/>
+- 源码：<https://github.com/xingqimiao/Kira-HRT-Tracker>
+
+---
+
+## 适合谁
+
+正在用注射、凝胶、口服或贴片做激素治疗，想回答「这周血药浓度大概在什么水平」「上次那个剂量是不是偏高」「下次该什么时候抽血」，并且希望这些记录不用手工整理成表格的人。
+
+## 记录
+
+- 按途径记录：口服、舌下、凝胶、注射、贴片，以及「撕下」。
+- 舌下可选吸收档位，把「含服多久」换算成吸收比例。同一片药，压在舌下两分钟和十分钟，进血的量差一倍以上。
+- 凝胶可记录产品、涂抹部位与面积、是否与保湿/防晒同涂、多久后冲洗。这些都会改变吸收，否则曲线只是平均值。
+- 注射区分油剂与水剂，两者释放速度不同。
+- 贴片记录标称释放速率（µg/天）与佩戴时长；「撕下」会与佩戴中的贴片关联。
+- 常用剂量存成模板，首页和记录页都能一键补记，并带撤销。
+- 用药方案：每日 N 次、每 x 小时、每 x 天三种周期；逾期在首页高亮，可一键补记或整条跳过。
+- 支持批量选择、批量删除；表格与时间线两种看法。
+
+## 估算
+
+- 两套引擎：内置引擎（2026 文献参数）与 Transmtf 引擎，同一份记录给两条可对比的曲线。切换只影响估算，不影响任何一条记录。
+- 曲线可切换折线与 K 线（OHLC）；7 天 / 30 天 / 全部三个时间窗；目标范围作为底色带。
+- 当前水平、距上次用药多久、剂量级别参考，都在概览页第一屏。
+- 四种校准方式：关闭、MIPD（MAP 拟合）、EKF（扩展卡尔曼滤波）、OU-Kalman（动态校准）。没有化验时用群体模型；有化验之后，校准把模型往你自己的代谢上拉。可以只用化验之前的数据做前向推算，也可以用全部数据回顾。
+- 每条曲线都标出校准倍率，例如 ×0.42——那是「模型一直高估你」这件事的量化。
+
+## 化验与复查
+
+- 雌二醇（pg/mL、pmol/L）与睾酮（ng/dL、nmol/L）；同一时间点的两项会分别保存、共享时间戳。
+- 监测项按参考阈值判断：肝功能、钾等。每条提示都会注明出处，只陈述证据，不下指令。
+- 复查提醒按 MtF.wiki 的建议周期提示肝功能、雌二醇等项目。
+- 化验结果与模型曲线并排显示，实测是实心点，模型是空心圈。
+
+## 化验单识别
+
+拍一张化验单，识别在本机完成（PP-OCR，跑在 onnxruntime-web 上）——照片不会上传到任何服务器。识别出来的数值会填进表单，由你确认之后再保存。
+
+## 数据与隐私
+
+- 不登录也能完整使用：所有记录先写在本机，离线可用（网页版是 PWA，装到桌面后一样）。
+- 账号只为跨设备同步与 AI 助手。同步是增量的：只拉取云端变更，只上传本机改动。
+- 记录以每个账号独立的密钥加密保存在服务器上；这把密钥同时被你的口令和一把 HSM 中的主密钥分别包裹。换句话说：数据库里没有明文，改密码只是重包这把钥匙、不重写任何一条记录。服务进程在你登录时能解开它——这是同步、分享链接和 MCP 助手能工作的前提。
+- 只读分享链接的快照在浏览器里加密，钥匙放在链接的 `#` 之后——服务器和日志里只有密文。
+- 应用锁：指纹或面容解锁，退到后台自动重锁，锁屏通知里不显示药名。
+- 无广告、无统计、无第三方追踪组件；不用账号时没有任何数据离开设备。
+- 可以一键导出全部数据，也可以彻底删除账号。
+
+## AI 助手
+
+应用提供 MCP 接口（Streamable HTTP）。连接之后，助手可以读取你的记录、写下新的剂量或化验结果，不需要你手动导出文件。授权是单独的 token，随时可以轮换或撤销。
+
+## 导入 / 导出
+
+- JSON 与 CSV 两种格式，导出的文件可以直接再导入。
+- 也能读入其他记录应用的数据（Oyama、Transmtf、Featherline 格式），导入前会先预览条数。
+- Android 端的「导出」走系统另存为对话框，不需要存储权限。
+
+## 平台
+
+- 网页版：任何现代浏览器，可安装为 PWA，离线可用。
+- Android：Tauri 2 外壳承载同一份前端，额外提供应用锁、系统导出、预测式返回。
+- 七种语言：简体中文、正體中文、廣東話、English、日本語、한국어、Türkçe，按需加载。
+- 浅色 / 深色 / 跟随系统。
+
+## 支持的药物
+
+按下药面板的分类列出。除注明外都可记录剂量，并在曲线上参与推算。
+
+### 雌激素 · 口服 / 舌下
+戊酸雌二醇（EV）· 17β-雌二醇（E2）
+
+### 雌激素 · 凝胶
+17β-雌二醇凝胶 · 戊酸雌二醇凝胶
+
+### 雌激素 · 注射
+戊酸雌二醇（EV）· 庚酸雌二醇（EN）· 环戊丙酸雌二醇（EC）· 苯甲酸雌二醇（EB）· 十一酸雌二醇（EU）
+
+### 雌激素 · 贴片
+雌二醇贴片（50 / 100 / 150 / 200 µg/天）· 「撕下」记录，与佩戴中的贴片关联
+
+### 抗雄激素
+醋酸环丙孕酮（CPA）· 螺内酯 · 比卡鲁胺 · GnRH 类似物（仅记录）
+
+### 孕激素 / SERM
+微粉化黄体酮 · 雷洛昔芬
+
+### 睾酮 · 凝胶 / 注射 / 胶囊
+未酯化睾酮凝胶 · 环戊丙酸睾酮（TC）· 庚酸睾酮（TE）· 十一酸睾酮注射液 · 十一酸睾酮软胶囊
+
+### 周期用药
+醋酸甲羟孕酮（MPA）· 炔诺酮
+
+### 毛发
+非那雄胺 · 度他雄胺
+
+（这一列表随应用版本变化，以应用内实际可选的项目为准。）
+
+## 获取
+
+- 网页版：直接在浏览器里用，支持离线。
+- Android：<https://hrt.kiramyao.com/android/> 或 GitHub Releases。
+- 商店渠道：F-Droid 版不含 Firebase、不含自更新，更新由商店负责。
+
+## 开源与自托管
+
+应用与服务端以 MIT 许可发布在同一个仓库里。同步是可选的：你可以只在本机用，也可以自己部署一套服务端，或者完全不用账号。想知道数据都去了哪儿，读源码比读这份说明可靠。
+
+## 常见问题
+
+**必须注册账号吗？**
+不必。不登录时它是一本完整的离线记录本，只是不会跨设备同步。
+
+**我的数据会被上传吗？**
+只有在你登录并开启同步时，记录才会以加密形式传到服务器。照片、化验单图片始终留在设备上。
+
+**估算准吗？**
+群体模型的误差本来就不小，个体之间可以差出几倍。有化验结果之后，校准会把它拉近你自己；但仍然只是估算，不是化验值。
+
+**换手机怎么办？**
+登录同一账号即可同步；没有账号时用导出文件迁移。
+
+---
+
+## 免责声明
+
+估算来自群体药代动力学模型，不是化验结果，不能作为用药依据。要知道真实血药浓度只能抽血，请始终以医院报告为准。本应用不是医疗器械，也不提供医疗建议；用药决定请遵循处方医师的意见。
+
+---
+
+# English
+
+Kira HRT Tracker — dose log, level estimates, privacy first, MIT.
+
+Record what you took and when, estimate the curve with a population pharmacokinetic model, and feed your own blood tests back in so the model fits you. It is a record book, not a prescription.
+
+**Who it is for.** People on injectable, gel, oral or patch HRT who want to answer "roughly where are my levels this week", "was that dose too high", or "when should I get tested next" — without maintaining a spreadsheet by hand.
+
+**Logging.** Oral, sublingual (absorption tiers), gel (product, site, area, co-applied sunscreen or moisturiser, wash-off), injection (oil vs aqueous), patches (release rate, wear hours) and patch removal. Reusable one-tap templates; three schedule shapes; overdue doses highlighted with one-tap catch-up.
+
+**Estimates.** Two engines (built-in 2026 literature model, Transmtf). Four calibrations: off, MIPD, EKF, OU-Kalman, forward-only or retrospective. Line or candlestick chart, 7 / 30 / all windows, target band, and a calibration multiplier.
+
+**Labs.** Estradiol (pg/mL, pmol/L) and testosterone (ng/dL, nmol/L), plus monitoring items such as liver function and potassium with the source of each threshold, and re-check reminders. Lab-report photos are read on the device; the image never leaves it.
+
+**Privacy.** Works fully offline without an account. Sync is optional and incremental; records are encrypted with a per-account key wrapped once by your password and once by a KMS-held master key, so the database holds no plaintext. Share links are sealed in the browser with the key in the URL fragment. No ads, no analytics, no trackers.
+
+**Compounds.** Estradiol valerate, 17β-estradiol, estradiol gel, EV gel, EV / EN / EC / EB / EU injections, estradiol patches, cyproterone acetate, spironolactone, bicalutamide, GnRH analogues (record only), micronised progesterone, raloxifene, testosterone gel, testosterone cypionate, testosterone enanthate, testosterone undecanoate injection and capsules, medroxyprogesterone acetate, norethisterone, finasteride, dutasteride.
+
+**Open source.** MIT; the app and the optional sync server share a repository.
+
+**Disclaimer.** Estimates come from a population model, not from a blood test. They are not a dosing guide. This is not a medical device and does not provide medical advice.
