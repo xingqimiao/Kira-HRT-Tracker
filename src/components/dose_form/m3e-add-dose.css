@@ -643,3 +643,10 @@ input[type=number] {
         opacity: 1; pointer-events: auto;
     }
 }
+
+/* The time page opens as a fixed overlay, outside the app shell's own safe-area
+   padding, so on Android its header ran under the status bar. The overlay keeps
+   painting to the screen edge; only its content is pushed down. */
+.lab-time .sub-page {
+    padding-top: max(env(safe-area-inset-top, 0px), var(--app-safe-top, 0px));
+}

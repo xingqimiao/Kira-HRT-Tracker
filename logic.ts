@@ -1757,7 +1757,7 @@ export function getToE2Factor(ester: Ester): number {
 // Transmasculine (testosterone) PK parameters
 // -----------------------------------------------------------------------------
 //
-// These parameters follow the structure described in `transmasc_hrt_modeling_document.md`.
+// These parameters follow the structure described in `docs/transmasc-modeling.md`.
 // They are empirically tuned so the simplified 3-compartment analytical solver reproduces
 // broadly realistic steady-state total‑T concentrations:
 //   - TC 100 mg/week IM  → C_avg ≈ 600 ng/dL

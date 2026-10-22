@@ -16,6 +16,11 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 
 const LOCALES = [
+    // Default first: Android rejects a translation whose key does not exist in the
+    // default locale (lint `ExtraTranslation`, fatal for a release build), so the
+    // English pack has to land in `values/` and every other one is a translation
+    // of it.
+    { web: 'en', qualifier: 'values' },
     { web: 'zh', qualifier: 'values-zh' },
     { web: 'zh-TW', qualifier: 'values-zh-rTW' },
     { web: 'yue', qualifier: 'values-b+yue' },
@@ -157,7 +162,7 @@ for (const locale of LOCALES) {
         '</resources>',
         '',
     ].join('\n');
-    writeFileSync(new URL('strings.xml', dir), body);
+    writeFileSync(new URL('translations.xml', dir), body);
     written += 1;
     console.log(`${locale.qualifier}: ${lines.length} strings`);
 }

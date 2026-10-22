@@ -2,7 +2,7 @@
   "version": "2.0.2",
   "versionCode": 2000002,
   "apk": "https://hrt.kiramyao.com/android/KiraHRT-2.0.2-release.apk",
-  "sha256": "9A544A7AC3CD01FA63E5EB2FD0E6BBADB462AD04BBB9AA3FD4E47EB4726FC2C0",
+  "sha256": "8DD4D1468662B5807F70DE77EAE9A74C2709D73C6F59A406FA9EB26C1E822790",
   "notes": [
     "更新提示改为 M3E 底部抽屉：手机从底部弹出，桌面为居中对话框，更新说明与下载进度都在里面。",
     "修复设置里「检查更新 → 确定」没有任何反应的问题。",

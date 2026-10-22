@@ -208,6 +208,18 @@ if (!manifestXml.includes('android:allowBackup')) {
     );
 }
 
+// The WebView's soft keyboard. Without an explicit mode the activity is
+// `adjustUnspecified`, and in this shell tapping a text field focused it without
+// bringing the IME up — the time page's hour/minute boxes could be nudged with +/−
+// but never typed into. `adjustResize` is what a full-screen web app wants anyway:
+// the viewport shrinks instead of the keyboard covering the field.
+if (!manifestXml.includes('android:windowSoftInputMode')) {
+    manifestXml = manifestXml.replace(
+        'android:launchMode="singleTask"',
+        'android:launchMode="singleTask"\n            android:windowSoftInputMode="adjustResize"',
+    );
+}
+
 // OAuth returns through `kira-hrt://oauth/callback`. Without this filter the
 // browser cannot bring the app back — the redirect opens the browser's own
 // "unknown scheme" page instead (the 2.0 shell rebuild lost this filter that

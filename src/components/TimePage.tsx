@@ -322,7 +322,7 @@ export function TimePage({ open, initialDate, onClose, onConfirm, mode = 'dateti
                             </div>
                             <span className="tp-colon">:</span>
                             <div className="tp-col">
-                                <button type="button" className="tp-step" data-m style={{ ['--mo' as string]: '8px' }} onClick={() => nudgePart('m', 5)}>+</button>
+                                <button type="button" className="tp-step" data-m style={{ ['--mo' as string]: '8px' }} onClick={() => nudgePart('m', 1)}>+</button>
                                 <input
                                     className="tp-box tp-input"
                                     type="text"
@@ -340,7 +340,7 @@ export function TimePage({ open, initialDate, onClose, onConfirm, mode = 'dateti
                                     }}
                                     aria-label={t('time.minute')}
                                 />
-                                <button type="button" className="tp-step" data-m style={{ ['--mo' as string]: '8px' }} onClick={() => nudgePart('m', -5)}>−</button>
+                                <button type="button" className="tp-step" data-m style={{ ['--mo' as string]: '8px' }} onClick={() => nudgePart('m', -1)}>−</button>
                             </div>
                         </div>
                         <button
