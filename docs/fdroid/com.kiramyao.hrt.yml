@@ -17,9 +17,9 @@ RepoType: git
 Repo: https://github.com/xingqimiao/Kira-HRT-Tracker.git
 
 Builds:
-  - versionName: 2.0.4
-    versionCode: 2000004
-    commit: 3d5e247665383414669ddbb2d525a4bdac579f90
+  - versionName: 2.1.0
+    versionCode: 2001000
+    commit: 77bd7590acb3932e8450959cfc5216d396cac97d
     sudo:
       - apt-get update
       - apt-get install -y nodejs npm rustup build-essential pkg-config
@@ -60,8 +60,8 @@ MaintainerNotes: |-
   build.gradle to learn versionName/versionCode, and a Tauri app has neither — the
   version lives in src-tauri/tauri.conf.json and the versionCode is generated into
   src-tauri/gen/android/app/tauri.properties at build time, so no committed file holds
-  the pair. CurrentVersion/CurrentVersionCode are bumped here on every release; v2.0.4
-  is commit 7020c665179da46ccc848c6ffacd4fc483de3ec0, tag v2.0.4.
+  the pair. CurrentVersion/CurrentVersionCode are bumped here on every release; v2.1.0
+  is commit 77bd7590acb3932e8450959cfc5216d396cac97d, tag v2.1.0.
 
   scanignore covers node_modules and src-tauri/vendor: both are generated (npm ci,
   cargo vendor) and both carry prebuilt binaries the scanner refuses (winapi .a,
@@ -101,5 +101,5 @@ MaintainerNotes: |-
 
 AutoUpdateMode: None
 UpdateCheckMode: Static
-CurrentVersion: 2.0.4
-CurrentVersionCode: 2000004
+CurrentVersion: 2.1.0
+CurrentVersionCode: 2001000
