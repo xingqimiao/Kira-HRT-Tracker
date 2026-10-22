@@ -34,7 +34,7 @@
 - 许可证：MIT（`LICENSE`）
 - 网站：<https://hrt.kiramyao.com>
 - 源码：<https://github.com/xingqimiao/Kira-HRT-Tracker>
-- 商店包 sha256：`C2DC2F7417D997B0A03ADA557C33D32935296DF26D28F829B0FCBB5DDD29EA87`（arm64-v8a，14 MB）
+- 商店包 sha256：`80EDBA71A43CF1C85BCFCCA9A1FE3A93C7049E9762316251BA20432610332837`（arm64-v8a，14 MB）
 
 ## 4. 截图规格
 
