@@ -57,6 +57,21 @@
   a { color: var(--pri); }
   .en { margin-top: 64px; padding-top: 40px; border-top: 1px solid rgba(154,141,149,.16); }
   .en .lead { font-size: 16px; }
+  .shots {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0;
+  }
+  .shots img {
+    width: 100%; height: auto; display: block; border-radius: 20px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .28);
+  }
+  @media (max-width: 560px) { .shots { grid-template-columns: repeat(2, 1fr); } }
+  .drugs { columns: 2; column-gap: 32px; }
+  @media (max-width: 560px) { .drugs { columns: 1; } }
+  .drug-group { break-inside: avoid; padding: 0 0 18px; }
+  .drug-group h3 {
+    font-size: 14px; margin: 0 0 6px; color: var(--pri); font-weight: 700;
+  }
+  .drug-group p { margin: 0; font-size: 14px; line-height: 1.75; color: var(--var); }
 </style>
 </head>
 <body>
@@ -79,6 +94,13 @@
   </div>
   <p class="note" id="apk-note" style="margin-top:12px">Android 包约 14 MB，用发布密钥签名。</p>
 
+  <h2>界面</h2>
+  <div class="shots">
+    <img src="/about/shots/1-overview.jpg" width="540" height="960" loading="lazy" alt="概览：雌二醇水平、目标范围与浓度曲线" />
+    <img src="/about/shots/2-history.jpg" width="540" height="960" loading="lazy" alt="记录：按日期分组的给药历史" />
+    <img src="/about/shots/4-checkup.jpg" width="540" height="960" loading="lazy" alt="体检：录入化验结果" />
+  </div>
+
   <h2>能做什么</h2>
   <ul>
     <li>按途径与酯型记录用药，常用剂量存成一键模板</li>
@@ -88,6 +110,48 @@
     <li>用药计划与本地提醒，逾期在首页高亮并一键补记</li>
     <li>导出 / 导入 JSON、CSV，兼容其他记录应用的数据</li>
   </ul>
+
+  <h2>支持的药物</h2>
+  <p class="note" style="margin:0 0 16px">按下药面板的分类列出。除注明外都可记录剂量，并在曲线上参与推算。</p>
+  <div class="drugs">
+    <div class="drug-group">
+      <h3>雌激素 · 口服 / 舌下</h3>
+      <p>戊酸雌二醇（EV）· 17β-雌二醇（E2）</p>
+    </div>
+    <div class="drug-group">
+      <h3>雌激素 · 凝胶</h3>
+      <p>17β-雌二醇凝胶 · 戊酸雌二醇凝胶</p>
+    </div>
+    <div class="drug-group">
+      <h3>雌激素 · 注射</h3>
+      <p>戊酸雌二醇（EV）· 庚酸雌二醇（EN）· 环戊丙酸雌二醇（EC）· 苯甲酸雌二醇（EB）· 十一酸雌二醇（EU）</p>
+    </div>
+    <div class="drug-group">
+      <h3>雌激素 · 贴片</h3>
+      <p>雌二醇贴片（50 / 100 / 150 / 200 µg/天）· 「撕下」记录，与佩戴中的贴片关联</p>
+    </div>
+    <div class="drug-group">
+      <h3>抗雄激素</h3>
+      <p>醋酸环丙孕酮（CPA）· 螺内酯 · 比卡鲁胺 · GnRH 类似物（仅记录）</p>
+    </div>
+    <div class="drug-group">
+      <h3>孕激素 / SERM</h3>
+      <p>微粉化黄体酮 · 雷洛昔芬</p>
+    </div>
+    <div class="drug-group">
+      <h3>睾酮 · 凝胶 / 注射 / 胶囊</h3>
+      <p>未酯化睾酮凝胶 · 环戊丙酸睾酮（TC）· 庚酸睾酮（TE）· 十一酸睾酮注射液 · 十一酸睾酮软胶囊</p>
+    </div>
+    <div class="drug-group">
+      <h3>周期用药</h3>
+      <p>醋酸甲羟孕酮（MPA）· 炔诺酮</p>
+    </div>
+    <div class="drug-group">
+      <h3>毛发</h3>
+      <p>非那雄胺 · 度他雄胺</p>
+    </div>
+  </div>
+  <p class="note" style="margin-top:6px">这一列表随应用版本变化，以应用内实际可选的项目为准。</p>
 
   <h2>隐私</h2>
   <div class="card">
@@ -132,6 +196,14 @@
       <li>No ads, no analytics, no third-party trackers</li>
       <li>Works fully offline; an account only adds encrypted sync between devices</li>
     </ul>
+    <h2>Supported compounds</h2>
+    <p class="note" style="margin:0">
+      Estradiol valerate · 17β-estradiol · estradiol gel · EV gel · EV / EN / EC / EB / EU injections ·
+      estradiol patches (50–200 µg/day) · cyproterone acetate · spironolactone · bicalutamide ·
+      GnRH analogues (record only) · micronised progesterone · raloxifene · testosterone gel ·
+      testosterone cypionate · testosterone enanthate · testosterone undecanoate injection and capsules ·
+      medroxyprogesterone acetate · norethisterone · finasteride · dutasteride
+    </p>
     <p class="warn">
       Estimates come from a population model, not from a blood test. They are not a dosing guide.
     </p>
