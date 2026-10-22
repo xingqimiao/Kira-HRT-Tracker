@@ -1,10 +1,8 @@
 AntiFeatures:
   - NonFreeNet
-
 Categories:
   - Health Manager
   - Medication
-
 License: GPL-3.0-or-later
 AuthorName: KiraEqual
 AuthorEmail: kira@kiramyao.com
