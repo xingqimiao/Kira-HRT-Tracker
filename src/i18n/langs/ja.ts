@@ -82,7 +82,7 @@ const PACK: LangPack = {
     "ob2.finish": "Kira HRT Tracker をはじめる",
     "ob2.back": "戻る",
     "ob2.lang_title": "Kira HRT Tracker\nへようこそ",
-    "ob2.lang_sub": "表示言語を選択してください。設定からいつでも変更できます。",
+    "ob2.lang_sub": "HRT の投薬と検査を記録し、ホルモン濃度の推移を推定。自分の検査結果で補正できます。データは端末に保存され、暗号化同期は任意です。",
     "ob2.title_type": "HRT の種類を選択",
     "ob2.title_date": "HRT 開始日",
     "ob2.title_weight": "体重を設定",

@@ -219,6 +219,9 @@ export default defineConfig(({ mode }) => {
             /^\/sitemap\.xml$/,
             /^\/robots\.txt$/,
             /^\/android\//,
+            // The landing page is its own document: served as itself, never as the
+            // SPA shell, and deliberately outside the precache.
+            /^\/about(?:\/|$)/,
           ],
           // The OCR assets are ~23 MB and are only fetched when someone opens the
           // scan panel. Precaching them would put that download on every install —
@@ -254,6 +257,9 @@ export default defineConfig(({ mode }) => {
           // precache and the only symptom is a build that looks right.
           globIgnores: [
             '**/ocr/**',
+            // The landing page is a static document, not an app asset: precaching it
+            // would serve a stale copy from the worker forever.
+            '**/about/**',
             '**/ort-wasm*.wasm',
             'assets/{ja,ko,tr,yue,zh-TW}-*.js',
             // Firebase/FCM is opt-in and lazy: `import('firebase/messaging')` only

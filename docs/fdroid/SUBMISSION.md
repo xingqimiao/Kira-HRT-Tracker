@@ -30,7 +30,7 @@
 ## 3. 提交时用到的信息
 
 - 包名：`com.kiramyao.hrt`
-- 版本：`2.0.2-fdroid` / versionCode `2000002`（同一份 2.0.2 代码，只加后缀）
+- 版本：`2.0.3-fdroid` / versionCode `2000003`
 - 许可证：MIT（`LICENSE`）
 - 网站：<https://hrt.kiramyao.com>
 - 源码：<https://github.com/xingqimiao/Kira-HRT-Tracker>

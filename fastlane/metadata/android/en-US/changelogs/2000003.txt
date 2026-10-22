@@ -1,0 +1,4 @@
+• Level labels now name the target range instead of describing the user's body.
+• Time picker: minute stepper moves one minute; header respects the Android status bar; tapping a field opens the keyboard.
+• The update prompt is an M3E bottom sheet with download progress.
+• Sync is incremental: only changes are pulled, only edited records are pushed.

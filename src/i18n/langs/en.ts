@@ -1053,7 +1053,7 @@ const PACK: LangPack = {
     "ob2.finish": "Enter Kira HRT Tracker",
     "ob2.back": "Back",
     "ob2.lang_title": "Welcome to\nKira HRT Tracker",
-    "ob2.lang_sub": "Choose your display language. You can change it anytime in Settings.",
+    "ob2.lang_sub": "Log HRT doses and blood tests, estimate your hormone curve, and refine it with your own results. Stored on this device, with optional encrypted sync.",
     "ob2.title_type": "Which HRT?",
     "ob2.title_date": "When did it start?",
     "ob2.title_weight": "Your weight",

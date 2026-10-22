@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Kira HRT Tracker · 用药记录与血药浓度估算</title>
+<meta name="description" content="Kira HRT Tracker：记录 HRT 用药与化验，用群体药代动力学模型估算激素曲线，并用你自己的化验结果校准。本地优先、逐帐户加密、开源。" />
+<link rel="canonical" href="https://hrt.kiramyao.com/about/" />
+<link rel="icon" href="/pwa-192x192.png" />
+<meta property="og:title" content="Kira HRT Tracker" />
+<meta property="og:description" content="记录用药与化验，估算激素曲线，用你自己的化验结果校准。本地优先、加密同步、开源。" />
+<meta property="og:image" content="https://hrt.kiramyao.com/og-square.png" />
+<style>
+  :root {
+    --bg: #16121a; --sc: #211c25; --sch: #2c2630;
+    --pri: #ffb1c8; --pric: #7a2c4a; --onpric: #ffd9e3;
+    --on: #eadfe6; --var: #cfc0c9; --out: #9a8d95; --ok: #7fe0a8;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #fff8f8; --sc: #f9ecf0; --sch: #f2e3e9;
+      --pri: #a03d63; --pric: #ffd9e3; --onpric: #3f001e;
+      --on: #211a1d; --var: #4f4349; --out: #84757b; --ok: #2f8458;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--on);
+    font: 16px/1.7 system-ui, -apple-system, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 56px 24px 96px; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand img { width: 48px; height: 48px; border-radius: 14px; }
+  h1 { font-size: 30px; line-height: 1.2; margin: 0; letter-spacing: -.02em; }
+  .tag { color: var(--var); margin: 6px 0 0; font-size: 15px; }
+  .lead { font-size: 18px; line-height: 1.75; margin: 32px 0 0; }
+  h2 { font-size: 15px; letter-spacing: .08em; text-transform: uppercase; color: var(--out); margin: 44px 0 14px; }
+  ul { margin: 0; padding: 0; list-style: none; }
+  li { position: relative; padding: 10px 0 10px 22px; border-bottom: 1px solid rgba(154,141,149,.16); }
+  li:last-child { border-bottom: 0; }
+  li::before { content: ""; position: absolute; left: 0; top: 20px; width: 7px; height: 7px; border-radius: 4px; background: var(--pri); }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 34px 0 0; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 52px; padding: 0 26px; border-radius: 26px; border: 0;
+    font: inherit; font-weight: 700; text-decoration: none; cursor: pointer;
+    background: var(--pric); color: var(--onpric); transition: transform .2s ease, filter .2s ease;
+  }
+  .btn:hover { transform: translateY(-1px); filter: brightness(1.06); }
+  .btn.ghost { background: var(--sc); color: var(--on); box-shadow: inset 0 0 0 1px rgba(154,141,149,.3); }
+  .card { background: var(--sc); border-radius: 24px; padding: 22px 24px; margin: 0; }
+  .note { color: var(--var); font-size: 14px; }
+  .warn { color: var(--var); font-size: 14px; border-left: 3px solid var(--out); padding-left: 14px; margin: 34px 0 0; }
+  footer { margin-top: 56px; padding-top: 22px; border-top: 1px solid rgba(154,141,149,.16); color: var(--out); font-size: 13px; display: flex; flex-wrap: wrap; gap: 8px 18px; }
+  footer a { color: var(--out); }
+  a { color: var(--pri); }
+  .en { margin-top: 64px; padding-top: 40px; border-top: 1px solid rgba(154,141,149,.16); }
+  .en .lead { font-size: 16px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">
+    <img src="/pwa-192x192.png" alt="" width="48" height="48" />
+    <div>
+      <h1>Kira HRT Tracker</h1>
+      <p class="tag">用药记录 · 血药浓度估算 · 隐私优先</p>
+    </div>
+  </div>
+
+  <p class="lead">
+    记下用了什么药、什么时候用的；用群体药代动力学模型估算激素曲线；抽血之后把结果填进去，让模型更贴近你自己。
+  </p>
+
+  <div class="actions">
+    <a class="btn" href="/">打开网页版</a>
+    <a class="btn ghost" id="apk" href="/android/">下载 Android 版</a>
+  </div>
+  <p class="note" id="apk-note" style="margin-top:12px">Android 包约 14 MB，用发布密钥签名。</p>
+
+  <h2>能做什么</h2>
+  <ul>
+    <li>按途径与酯型记录用药，常用剂量存成一键模板</li>
+    <li>根据实际记录的用药推算雌二醇曲线，四种校准方式可选</li>
+    <li>记录化验结果，把实测值与模型曲线对照</li>
+    <li>拍照识别化验单——识别在设备本地完成，照片不出手机</li>
+    <li>用药计划与本地提醒，逾期在首页高亮并一键补记</li>
+    <li>导出 / 导入 JSON、CSV，兼容其他记录应用的数据</li>
+  </ul>
+
+  <h2>隐私</h2>
+  <div class="card">
+    <ul>
+      <li>无广告、无统计、无第三方追踪组件</li>
+      <li>不登录也能完整离线使用；账号只为跨设备同步</li>
+      <li>同步的记录以每个账号独立的密钥加密，服务器不持有你的密钥</li>
+    </ul>
+  </div>
+  <p class="note" style="margin-top:14px">可选的同步服务器与应用在同一个开源仓库里，可以自行部署。</p>
+
+  <h2>获取</h2>
+  <ul>
+    <li>网页版：直接在浏览器中使用，支持离线（PWA）</li>
+    <li>Android：<a href="/android/" id="apk2">本站的 APK</a>，或 <a href="https://github.com/xingqimiao/Kira-HRT-Tracker/releases" rel="noopener">GitHub Releases</a></li>
+    <li>商店渠道：F-Droid 版不含 Firebase、不含自更新，更新由商店负责</li>
+  </ul>
+
+  <p class="warn">
+    估算来自群体药代动力学模型，不是化验结果，不能作为用药依据。要知道真实血药浓度只能抽血，请始终以医院报告为准。
+  </p>
+
+  <footer>
+    <a href="https://github.com/xingqimiao/Kira-HRT-Tracker" rel="noopener">源码（MIT）</a>
+    <a href="https://github.com/xingqimiao/Kira-HRT-Tracker/issues" rel="noopener">反馈</a>
+    <a href="https://kiramyao.com" rel="noopener">KiraEqual</a>
+    <a href="https://status.kiramyao.com" rel="noopener">服务状态</a>
+  </footer>
+
+  <section class="en" lang="en">
+    <h1 style="font-size:24px">Kira HRT Tracker</h1>
+    <p class="tag">Dose log, level estimates, privacy first</p>
+    <p class="lead">
+      Record what you took and when, estimate the curve with a population pharmacokinetic model,
+      and feed your own blood tests back in so the model fits you.
+    </p>
+    <ul>
+      <li>Doses by route and ester, with one-tap templates</li>
+      <li>Estradiol curve with four selectable calibration methods</li>
+      <li>Lab results compared against the modelled curve</li>
+      <li>Lab-report OCR runs on the device; the photo never leaves it</li>
+      <li>No ads, no analytics, no third-party trackers</li>
+      <li>Works fully offline; an account only adds encrypted sync between devices</li>
+    </ul>
+    <p class="warn">
+      Estimates come from a population model, not from a blood test. They are not a dosing guide.
+    </p>
+  </section>
+</main>
+<script>
+  // The versioned APK name lives in the update manifest; read it so this page does
+  // not have to be edited on every release. No tracker, no cookie, one same-origin GET.
+  fetch('/android/latest.json', { cache: 'no-store' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (m) {
+      if (!m || typeof m.apk !== 'string') return;
+      var a = document.getElementById('apk');
+      var b = document.getElementById('apk2');
+      a.href = m.apk; b.href = m.apk;
+      document.getElementById('apk-note').textContent =
+        'Android ' + m.version + ' · 约 14 MB · 用发布密钥签名';
+    })
+    .catch(function () { /* keep the static fallback */ });
+</script>
+</body>
+</html>

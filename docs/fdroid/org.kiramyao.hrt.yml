@@ -34,9 +34,9 @@ Repo: https://github.com/xingqimiao/Kira-HRT-Tracker.git
 # team considers that enough for NonFreeNet, declare it rather than argue.
 
 Builds:
-  - versionName: 2.0.2-fdroid
-    versionCode: 2000002
-    commit: v2.0.2-fdroid   # tag in the app repo; the store build's source
+  - versionName: 2.0.3-fdroid
+    versionCode: 2000003
+    commit: v2.0.3   # tag in the app repo; the store build's source
     # `src-tauri/gen/` is gitignored — the Android Gradle project is generated. The
     # recipe therefore has to run `tauri android init` itself (see `init`), which needs
     # the Tauri CLI, the Android SDK/NDK and Rust on the buildserver.

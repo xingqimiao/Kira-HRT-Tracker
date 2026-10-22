@@ -785,7 +785,7 @@ const PACK: LangPack = {
     "ob2.finish": "入去 Kira HRT Tracker",
     "ob2.back": "返轉頭",
     "ob2.lang_title": "歡迎嚟到\nKira HRT Tracker",
-    "ob2.lang_sub": "請揀選你嘅介面語言，隨時可以喺設定度改。",
+    "ob2.lang_sub": "記錄 HRT 用藥同化驗，估算荷爾蒙曲線，再用你自己嘅化驗結果校正。資料留喺部機，可以揀加密同步。",
     "ob2.title_type": "揀 HRT 類型",
     "ob2.title_date": "HRT 開始日期",
     "ob2.title_weight": "設定你嘅體重",

@@ -82,7 +82,7 @@ const PACK: LangPack = {
     "ob2.finish": "Kira HRT Tracker 시작하기",
     "ob2.back": "뒤로",
     "ob2.lang_title": "Kira HRT Tracker에\n오신 것을 환영합니다",
-    "ob2.lang_sub": "표시 언어를 선택하세요. 설정에서 언제든 변경할 수 있습니다.",
+    "ob2.lang_sub": "HRT 투약과 검사 결과를 기록하고 호르몬 농도 곡선을 추정하며, 본인의 검사 결과로 보정합니다. 데이터는 기기에 저장되고 암호화 동기화는 선택 사항입니다.",
     "ob2.title_type": "HRT 유형 선택",
     "ob2.title_date": "HRT 시작일",
     "ob2.title_weight": "체중 설정",

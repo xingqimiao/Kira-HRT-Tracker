@@ -16,4 +16,10 @@
             <image:caption>HRT 记录工具：记录 HRT 激素治疗的用药与化验结果，云同步备份，并按药代动力学模型估算激素水平曲线</image:caption>
         </image:image>
     </url>
+    <url>
+        <loc>https://hrt.kiramyao.com/about/</loc>
+        <lastmod>2026-10-22</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+    </url>
 </urlset>

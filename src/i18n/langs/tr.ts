@@ -1039,7 +1039,7 @@ const PACK: LangPack = {
     "ob2.finish": "Kira HRT Tracker'a gir",
     "ob2.back": "Geri",
     "ob2.lang_title": "Kira HRT Tracker'a\nHoş Geldiniz",
-    "ob2.lang_sub": "Görüntüleme dilinizi seçin. Ayarlardan istediğiniz zaman değiştirebilirsiniz.",
+    "ob2.lang_sub": "HRT dozlarını ve tahlilleri kaydedin, hormon eğrinizi tahmin edin ve kendi sonuçlarınızla iyileştirin. Veriler cihazda kalır; şifreli eşitleme isteğe bağlıdır.",
     "ob2.title_type": "HRT türünü seç",
     "ob2.title_date": "HRT başlangıç tarihi",
     "ob2.title_weight": "Kilonu ayarla",
