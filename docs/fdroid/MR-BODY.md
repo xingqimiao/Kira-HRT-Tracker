@@ -24,10 +24,10 @@ connection to an AI assistant over MCP, and seven languages with phone and table
 layouts.
 
 Screenshots, also in `fastlane/metadata/android/{en-US,zh-CN}/images/phoneScreenshots`:
-[overview](https://raw.githubusercontent.com/xingqimiao/Kira-HRT-Tracker/v2.0.4/fastlane/metadata/android/en-US/images/phoneScreenshots/1-overview.jpg) ·
-[add dose](https://raw.githubusercontent.com/xingqimiao/Kira-HRT-Tracker/v2.0.4/fastlane/metadata/android/en-US/images/phoneScreenshots/2-add-dose.jpg) ·
-[history](https://raw.githubusercontent.com/xingqimiao/Kira-HRT-Tracker/v2.0.4/fastlane/metadata/android/en-US/images/phoneScreenshots/4-history.jpg) ·
-[calibration](https://raw.githubusercontent.com/xingqimiao/Kira-HRT-Tracker/v2.0.4/fastlane/metadata/android/en-US/images/phoneScreenshots/7-calibration.jpg)
+[overview](https://raw.githubusercontent.com/xingqimiao/Kira-HRT-Tracker/v2.1.0/fastlane/metadata/android/en-US/images/phoneScreenshots/1-overview.jpg) ·
+[add dose](https://raw.githubusercontent.com/xingqimiao/Kira-HRT-Tracker/v2.1.0/fastlane/metadata/android/en-US/images/phoneScreenshots/2-add-dose.jpg) ·
+[history](https://raw.githubusercontent.com/xingqimiao/Kira-HRT-Tracker/v2.1.0/fastlane/metadata/android/en-US/images/phoneScreenshots/4-history.jpg) ·
+[calibration](https://raw.githubusercontent.com/xingqimiao/Kira-HRT-Tracker/v2.1.0/fastlane/metadata/android/en-US/images/phoneScreenshots/7-calibration.jpg)
 
 ## Licence
 
@@ -77,13 +77,13 @@ own signed APK will need one reinstall, because the keys differ.
 ## Metadata
 
 `fastlane/metadata/android/` in the app repo at the pinned commit: `en-US` and `zh-CN`,
-9 / 8 phone screenshots, icon, and the `2000004.txt` changelog. The metadata file is the
+9 / 8 phone screenshots, icon, and the `2001000.txt` changelog. The metadata file is the
 only change in this MR.
 
 ## Version tracking
 
 `UpdateCheckMode` is `Static`, not `Tags`, and the template asks for a reason when auto
-update is off. Releases are tagged (`v2.0.4` is commit `7020c66…`), but `checkupdates`
+update is off. Releases are tagged (`v2.1.0` is commit `77bd759…`), but `checkupdates`
 learns versionName and versionCode by parsing `AndroidManifest.xml` or `build.gradle`,
 and a Tauri app has neither: the version lives in `src-tauri/tauri.conf.json`, and the
 versionCode is generated into `src-tauri/gen/android/app/tauri.properties` at build

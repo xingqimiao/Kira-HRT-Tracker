@@ -1,0 +1,8 @@
+2.1.0
+
+- Security: fixed key rotation breaking permanently after a password change; accounts already affected repair themselves on the next change.
+- Security: medication plans are now stored per account, so switching accounts no longer inherits the previous user's schedule or reminders.
+- Security: content security policy for web and app; share links no longer fall back to plaintext; update packages are verified by SHA-256.
+- New: "sign out and clear this device".
+- Fixed: the add-dose time picker steps minutes by one and accepts typed digits, like the other pickers.
+- Fixed: closing the new-plan panel with the system back gesture takes one swipe.
