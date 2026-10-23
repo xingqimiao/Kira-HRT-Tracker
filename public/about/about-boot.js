@@ -17,3 +17,17 @@ document.documentElement.classList.add('js');
 if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
   document.documentElement.setAttribute('data-theme', 'dark');
 }
+
+/**
+ * If the policy refuses a script again, hand the text back.
+ *
+ * `.js` exists only to arm the reveal animation — it is what makes the text
+ * start hidden. A blocked about.js would therefore blank the page a second
+ * time, so a `script-src` violation removes the class and everything shows.
+ * This is the one failure mode the 2026-10-23 outage had that no amount of
+ * build-time checking can rule out on the client.
+ */
+document.addEventListener('securitypolicyviolation', (e) => {
+  const directive = e.effectiveDirective || e.violatedDirective || '';
+  if (directive.startsWith('script-src')) document.documentElement.classList.remove('js');
+});

@@ -515,13 +515,17 @@ binary is fetched with `fetch()`, which `connect-src 'self'` covers. The `@asset
 above must keep matching `/ocr/*`: a model answered with the SPA shell instead of a
 404 is a 200 the client would otherwise cache *as* a model.
 
-**The avatar relies on the CSP being on this host, not on Cloudflare's default.** As of the
-`2026-09-21` check, `hrt.kiramyao.com` returns **no** `Content-Security-Policy` header at
-all — the block above is documented but not live. That was verified from a real browser:
-a cross-origin image loads fine on the deployed site today (`lh3.googleusercontent.com`
-answers 200 and the image paints), so the policy is not currently what blocks an avatar.
-It will start blocking one the moment this block is deployed, which is why the proxy and
-the `connect-src` entry above ship in the same change as the feature.
+**The avatar relies on the CSP being on this host, not on Cloudflare's default.** The
+policy is live: `curl -I https://hrt.kiramyao.com/` returns the `Content-Security-Policy`
+above, and every page under this host — the SPA *and* the static pages in `public/` — is
+enforced against it. Do not take an older copy of this document's "documented but not
+live" wording as current; that was the state on 2026-09-21, before 2.1.0 shipped the
+header, and leaving the claim in place is exactly how `/about/` came to be blanked by a
+policy nobody remembered was active (see the next section).
+
+The avatar still relies on the proxy: `img-src` allows `'self'` and the API origin, not
+`lh3.googleusercontent.com`, so a hotlinked picture would be blocked the moment this
+header is served.
 
 **What that means for the trade.** The plan is still to store the picture rather than
 hotlink it, for the reason that survives either way: a hotlinked avatar is a request to
@@ -533,6 +537,33 @@ proxy block above.
 
 `style-src 'unsafe-inline'` is there because Tailwind + React inject style
 attributes. Drop it if you can build without that.
+
+### Static pages: no inline script, and no cache
+
+`public/` is copied into `dist/` verbatim, so `/about/` is served by the same policy as
+the app. Two rules follow, and both were learned the hard way on 2026-10-23:
+
+1. **No inline `<script>` and no `on*=` attribute in any HTML under `public/`.** Both are
+   refused by `script-src 'self'`, silently. The about page kept its whole behaviour —
+   including the observer that reveals its text — in one inline block, so the day the
+   policy went live the page rendered as empty colour panels. `scripts/check-web-bundle.mjs`
+   now fails the build if a built HTML file carries either.
+2. **These filenames carry no content hash** (`about.js`, `about-boot.js`), so their cache
+   headers have to be explicit. Origin without `Cache-Control` gets Cloudflare's default
+   TTL, and then a fix does not reach the user who needs it:
+
+       # inside the site's `route { … }` block
+       @about_page path /about /about/ /about/index.html /about/en /about/en/ /about/en/index.html /about/*.js
+       header @about_page Cache-Control "no-cache, no-store, must-revalidate"
+       header @about_page Pragma "no-cache"
+       header @about_page Expires "0"
+
+   **`no-store` is the load-bearing word.** A plain `no-cache, must-revalidate` is
+   rewritten by the zone's Browser Cache TTL to `max-age=7200, must-revalidate` — verified
+   on the live site — so the edge keeps serving the old bytes. The same three headers on
+   the worker names get `cf-cache-status: BYPASS`; that is the signal to look for. Images
+   are deliberately outside the matcher: they are ~3.5 MB and should stay cached.
+
 
 If the comment service's block for `api.kiramyao.com` uses a bare `handle { ... }`
 catch-all, **you must merge rather than add**: Caddy refuses two blocks for the same
