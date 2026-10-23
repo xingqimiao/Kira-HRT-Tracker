@@ -28,6 +28,15 @@ const BACK_PARENT: Partial<Record<ViewKey, ViewKey>> = {
 };
 
 /**
+ * What a history entry carries.
+ *
+ * `hrtDepth` is the entry's position in the app's own stack, so a `popstate` can
+ * rebuild the stack without trusting a separate counter that a forward jump would
+ * leave wrong. Only these keys are ours; anything already in `state` is preserved.
+ */
+type HrtHistoryState = { hrtView?: ViewKey; hrtDepth?: number };
+
+/**
  * `initialView` exists for the X landing: it renders instead of the app shell, so it
  * cannot switch tabs itself and hands the destination over as the page reloads. Taking it
  * as an initial state rather than navigating in an effect means the very first paint is
@@ -43,8 +52,32 @@ export const useAppNavigation = (initialView: ViewKey = 'home') => {
 
     const viewOrder: ViewKey[] = ['home', 'share', 'history', 'lab', 'lab-calibration', 'settings', 'account', 'pk-params', 'settings-language', 'settings-appearance', 'settings-weight', 'settings-export', 'settings-import', 'settings-security', 'settings-mcp', 'settings-licences', 'settings-donate', 'settings-donate-supporters'];
 
+    // --- Browser history ---
+    //
+    // Every view change used to be in-memory only, so Back on the web left the app
+    // entirely — the reader lost the place they were in and had to navigate back
+    // from the start. Each change now pushes an entry carrying the view, and Back
+    // walks them. The path is never rewritten: `/auth/:provider/callback` and the
+    // share route are read from the URL, and a view name in it would collide with
+    // both.
+    // The depth of the entry the app is on. It is carried in the history state
+    // itself (below), so Back and Forward restore it rather than a counter that
+    // would drift; this ref is only the render-time copy.
+    const depthRef = useRef(0);
+
+    const writeEntry = (view: ViewKey, depth: number, replace: boolean) => {
+        try {
+            const state = { ...((window.history.state ?? {}) as Record<string, unknown>), hrtView: view, hrtDepth: depth };
+            if (replace) window.history.replaceState(state, '');
+            else window.history.pushState(state, '');
+        } catch {
+            // A WebView with history disabled: navigation still works in memory, it
+            // just cannot be walked with Back. Not worth failing a page over.
+        }
+    };
+
     // --- Actions ---
-    const handleViewChange = (view: ViewKey) => {
+    const applyView = (view: ViewKey) => {
         if (view === currentView) return;
         const go = () => {
             const currentIndex = viewOrder.indexOf(currentView);
@@ -68,7 +101,36 @@ export const useAppNavigation = (initialView: ViewKey = 'home') => {
         }
     };
 
+    const handleViewChange = (view: ViewKey) => {
+        if (view === currentView) return;
+        applyView(view);
+        // A forward move replaces whatever the reader had gone back from, which is
+        // also what `pushState` does to the browser's own forward entries.
+        depthRef.current += 1;
+        writeEntry(view, depthRef.current, false);
+    };
+
     // --- Effects ---
+    const viewRef = useRef({ currentView, handleViewChange, applyView });
+    viewRef.current = { currentView, handleViewChange, applyView };
+
+    // Mark the entry the app was opened on, then follow Back and Forward.
+    useEffect(() => {
+        writeEntry(initialView, 0, true);
+        const onPopState = (event: PopStateEvent) => {
+            const state = event.state as HrtHistoryState | null;
+            const view = state?.hrtView;
+            if (typeof view !== 'string' || !viewOrder.includes(view as ViewKey)) return;
+            const depth = typeof state?.hrtDepth === 'number' && state.hrtDepth >= 0 ? state.hrtDepth : 0;
+            depthRef.current = depth;
+            viewRef.current.applyView(view);
+        };
+        window.addEventListener('popstate', onPopState);
+        return () => window.removeEventListener('popstate', onPopState);
+        // `viewOrder` is a constant list, re-created by render only.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     // Reset scroll when switching tabs
     useEffect(() => {
         const el = mainScrollRef.current;
@@ -79,12 +141,24 @@ export const useAppNavigation = (initialView: ViewKey = 'home') => {
     // above this handler, so they pop first). Deregistered at home so an empty
     // stack tells Kotlin to let the system handle back there — that is what
     // plays the predictive back-to-home animation instead of eating the event.
-    const viewRef = useRef({ currentView, handleViewChange });
-    viewRef.current = { currentView, handleViewChange };
+    //
+    // Where the browser stack has an entry to pop, Back pops it instead of applying
+    // the parent directly: the two must agree, or a later browser Back would land on
+    // a view the app had already left. `applyView` is entered again through
+    // `popstate`, which does not push.
     useBackHandler(currentView !== 'home', () => {
         const { currentView: view, handleViewChange: change } = viewRef.current;
         if (view === 'home') return false;
-        change(BACK_PARENT[view] ?? 'home');
+        if (depthRef.current > 0) {
+            window.history.back();
+            return true;
+        }
+        // Opened straight onto a sub-page (a reload, or a deep link): there is no
+        // entry behind this one, so replace it with the parent rather than stack a
+        // second entry in front of a page the reader never visited.
+        const parent = BACK_PARENT[view] ?? 'home';
+        applyView(parent);
+        writeEntry(parent, 0, true);
         return true;
     });
 

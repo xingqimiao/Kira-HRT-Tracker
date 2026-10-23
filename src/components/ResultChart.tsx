@@ -186,6 +186,9 @@ const ResultChart = ({
     const [panOffset, setPanOffset] = useState(0); // ms the window is dragged from its centered base
     const [dragging, setDragging] = useState(false);
     const dragRef = useRef<{ startX: number; startY: number; startOffset: number; moved: boolean; pointerId: number } | null>(null);
+    // Where the current press went down, pan or no pan, so lifting can tell a tap
+    // from a swipe.
+    const pressRef = useRef<{ x: number; y: number } | null>(null);
 
     const selectRange = (r: RangeKey) => { setRange(r); setPanOffset(0); };
 
@@ -595,6 +598,7 @@ const ResultChart = ({
     };
 
     const onPointerDown = (e: React.PointerEvent) => {
+        pressRef.current = { x: e.clientX, y: e.clientY };
         if (!canPan) return;
         dragRef.current = { startX: e.clientX, startY: e.clientY, startOffset: panOffset, moved: false, pointerId: e.pointerId };
     };
@@ -635,7 +639,44 @@ const ResultChart = ({
         if (dragging) setDragging(false);
     };
 
-    const onPointerLeave = (e: React.PointerEvent) => { endDrag(e); setHover(null); };
+    const onPointerLeave = (e: React.PointerEvent) => {
+        endDrag(e);
+        // Only a mouse leaving means "done looking". A finger fires leave when it
+        // lifts, and clearing on that was what kept a tapped readout from ever
+        // staying on screen.
+        if (e.pointerType === 'mouse') setHover(null);
+    };
+
+    /**
+     * A finger has no hover, so a touch screen could only look at the chart: a
+     * press either turned into a pan or produced no pointermove at all, and the
+     * leave on lift cleared whatever was left. A tap that did not pan or scroll
+     * now puts the readout where it landed, and it stays until the next press
+     * outside the plot. A tap on a dose marker still only opens that dose.
+     */
+    const onPointerUp = (e: React.PointerEvent) => {
+        const press = pressRef.current;
+        const panned = !!dragRef.current?.moved;
+        endDrag(e);
+        pressRef.current = null;
+        if (e.pointerType === 'mouse' || !press || panned) return;
+        if (Math.abs(e.clientX - press.x) > 10 || Math.abs(e.clientY - press.y) > 10) return;
+        if ((e.target as Element).closest?.('[data-dose-marker]')) { setHover(null); return; }
+        updateHover(e.clientX);
+    };
+
+    // Dismiss a tapped readout on the next press anywhere outside the plot.
+    // Capture phase, so a press on the plot itself is seen here first and left
+    // alone for the tap above to move the readout.
+    const hovering = hover != null;
+    useEffect(() => {
+        if (!hovering || !plotEl) return;
+        const dismiss = (e: PointerEvent) => {
+            if (!plotEl.contains(e.target as Node)) setHover(null);
+        };
+        window.addEventListener('pointerdown', dismiss, true);
+        return () => window.removeEventListener('pointerdown', dismiss, true);
+    }, [hovering, plotEl]);
 
     const hoverPt = hover != null ? data[hover] : null;
     // In candle view the unit of reading is the candle, not the sample: the
@@ -730,7 +771,7 @@ const ResultChart = ({
                         className="block"
                         onPointerDown={onPointerDown}
                         onPointerMove={onPointerMove}
-                        onPointerUp={endDrag}
+                        onPointerUp={onPointerUp}
                         onPointerCancel={endDrag}
                         onPointerLeave={onPointerLeave}
                         style={{ touchAction: 'pan-y', cursor: canPan ? (dragging ? 'grabbing' : 'grab') : 'default' }}
@@ -895,6 +936,7 @@ const ResultChart = ({
                                 return (
                                     <g
                                         key={`m-${i}`}
+                                        data-dose-marker=""
                                         className={`chart-mark${onPointClick ? ' cursor-pointer' : ''}`}
                                         style={{ animationDelay: sweepDelay(cx) }}
                                         onClick={() => onPointClick?.(m.event)}
