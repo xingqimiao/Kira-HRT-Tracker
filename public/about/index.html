@@ -117,7 +117,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 /* ================= M3E 动态形变色块舞台 ================= */
 .art-col{display:flex;justify-content:center;align-items:center;position:relative}
-.m3e-stage{width:100%;max-width:530px;min-height:660px;background:var(--pric);color:var(--onpric);display:flex;align-items:center;justify-content:center;padding:44px 24px;position:relative;overflow:hidden;will-change:border-radius;transition:background .4s}
+.m3e-stage{width:100%;max-width:530px;min-height:660px;background:var(--pric);color:var(--onpric);display:flex;align-items:center;justify-content:center;padding:44px 24px;position:relative;overflow:hidden;will-change:border-radius;transition:background .4s;border-radius:88px 24px 88px 24px}
 .m3e-stage.terc{background:var(--terc);color:var(--onterc)}
 .m3e-stage.secc{background:var(--secc);color:var(--onsecc)}
 .m3e-stage.okc{background:var(--okc);color:var(--ok)}
@@ -168,9 +168,11 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .li-tags{display:flex;flex-wrap:wrap;gap:8px}
 .li-tag{padding:7px 15px;border-radius:16px;background:var(--bg);color:var(--on);font-size:13.5px;font-weight:700}
 
-/* 随滚动渐显 */
-.reveal-text{opacity:0;transform:translateY(32px);transition:opacity .7s cubic-bezier(.16,1,.3,1),transform .7s cubic-bezier(.16,1,.3,1)}
-.reveal-text.in{opacity:1;transform:translateY(0)}
+/* 随滚动渐显 — 限定在 .js 下：脚本没跑起来时文字应当可见，而不是永远停在
+   opacity:0。原来那段 innerHTML 里的内联脚本被 CSP 拦掉，整页正文就这样消失过
+   （2026-10-23）。 */
+.js .reveal-text{opacity:0;transform:translateY(32px);transition:opacity .7s cubic-bezier(.16,1,.3,1),transform .7s cubic-bezier(.16,1,.3,1)}
+.js .reveal-text.in{opacity:1;transform:translateY(0)}
 
 /* ================= 终章全屏铺满大视图（不缩成卡片，保留转动曲奇） ================= */
 .finale-chapter{min-height:92dvh;width:100%;background:linear-gradient(135deg,var(--pric),var(--secc));color:var(--onpric);position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:120px 28px}
@@ -202,6 +204,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   .site-footer{flex-direction:column;text-align:center}
 }
 </style>
+<script src="about-boot.js"></script>
 </head>
 <body>
 
@@ -219,7 +222,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 <section class="chapter" id="top">
   <a class="hero-lang-btn" href="en/" hreflang="en" lang="en" data-m style="--mo:14px" title="Switch to English">English</a>
   <!-- 仅第一页右上角可切换深浅色 -->
-  <button class="hero-theme-btn" data-m style="--mo:14px" onclick="toggleTheme()" title="切换深浅色">
+  <button class="hero-theme-btn" data-m style="--mo:14px" data-act="theme" aria-label="切换深浅色" title="切换深浅色">
     <svg class="i"><use href="#sun"/></svg>
   </button>
 
@@ -476,7 +479,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
   <!-- 默认折叠的 M3E 分段聚合药物列表 -->
   <div class="wrap m3e-collapse-wrap">
-    <button class="m3e-trigger" id="drugToggleBtn" data-m style="--mo:18px" onclick="toggleDrugList()">
+    <button class="m3e-trigger" id="drugToggleBtn" data-m style="--mo:18px" data-act="drugs" aria-controls="drugCollapseBody">
       <span>查看完整支持药物列表（共 9 大类）</span>
       <svg class="i chev-ic"><use href="#down"/></svg>
     </button>
@@ -593,98 +596,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   <rect x="0" y="20" width="100" height="5" fill="#5BCEFA"/>
 </svg>
 
-<script>
-// 1. 深浅色跟随系统 + 同步切换 ../brand/kira-app-icon.svg 与 ../brand/kira-app-icon-dark.svg
-const darkMedia = window.matchMedia('(prefers-color-scheme: dark)');
-function applyTheme(isDark) {
-  if (isDark) document.documentElement.setAttribute('data-theme', 'dark');
-  else document.documentElement.removeAttribute('data-theme');
-  const logo = document.getElementById('brandLogoImg');
-  if (logo) {
-    logo.src = isDark ? '../brand/kira-app-icon-dark.svg' : '../brand/kira-app-icon.svg';
-  }
-}
-applyTheme(darkMedia.matches);
-darkMedia.addEventListener('change', e => applyTheme(e.matches));
-
-function toggleTheme() {
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  applyTheme(!isDark);
-}
-
-// 2. 展开 / 收起 M3E 完整支持药物分段列表
-function toggleDrugList() {
-  const btn = document.getElementById('drugToggleBtn');
-  const body = document.getElementById('drugCollapseBody');
-  btn.classList.toggle('open');
-  body.classList.toggle('open');
-}
-
-// 3. 持续柔和呼吸旋转的 M3E 曲奇多边形背景
-function cookiePath(cx, cy, r, n, a, ph) {
-  const pts = [];
-  for (let i = 0; i <= 100; i++) {
-    const t = (i / 100) * Math.PI * 2;
-    const rr = r * (1 + a * Math.cos(n * (t - ph)));
-    pts.push(`${i ? 'L' : 'M'}${(cx + rr * Math.cos(t)).toFixed(1)},${(cy + rr * Math.sin(t)).toFixed(1)}`);
-  }
-  return pts.join(' ') + 'Z';
-}
-const liveCookies = document.querySelectorAll('.js-live-cookie');
-let startTime = performance.now();
-function animateCookies(now) {
-  const sec = (now - startTime) * 0.001;
-  liveCookies.forEach((el, idx) => {
-    const n = parseInt(el.dataset.n) || 9;
-    const r = parseFloat(el.dataset.r) || 50;
-    const cx = parseFloat(el.dataset.cx) || 50;
-    const cy = parseFloat(el.dataset.cy) || 50;
-    const amp = 0.085 + 0.025 * Math.sin(sec * 1.1 + idx);
-    const ph = sec * 0.25 * (idx % 2 === 0 ? 1 : -1);
-    el.setAttribute('d', cookiePath(cx, cy, r, n, amp, ph));
-  });
-  requestAnimationFrame(animateCookies);
-}
-requestAnimationFrame(animateCookies);
-
-// 4. 随鼠标滚动驱动的 M3E 舞台圆角形变与无锯齿整数像素视差
-const stages = document.querySelectorAll('.js-scroll-stage');
-function onScroll() {
-  const vh = window.innerHeight;
-  stages.forEach(st => {
-    const rect = st.getBoundingClientRect();
-    const rawP = 1 - (rect.top + rect.height * 0.5) / (vh + rect.height * 0.35);
-    const p = Math.max(0, Math.min(1, rawP));
-    const r1 = parseFloat(st.dataset.r1) || 88;
-    const r2 = parseFloat(st.dataset.r2) || 24;
-    const cA = Math.round(r1 + (r2 - r1) * p);
-    const cB = Math.round(r2 + (r1 - r2) * p);
-    st.style.borderRadius = `${cA}px ${cB}px ${cA}px ${cB}px`;
-
-    const phone = st.querySelector('.js-phone');
-    if (phone) {
-      const yOffset = Math.round((0.5 - p) * 38);
-      phone.style.transform = `translate3d(0, ${yOffset}px, 0)`;
-    }
-  });
-}
-window.addEventListener('scroll', () => requestAnimationFrame(onScroll), { passive: true });
-onScroll();
-
-// 5. 文字渐显观察器
-const io = new IntersectionObserver(entries => {
-  entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('in'); });
-}, { threshold: 0.15 });
-document.querySelectorAll('.reveal-text').forEach(el => io.observe(el));
-
-// 6. 全局按压物理形变 [data-m]
-document.addEventListener('pointerdown', e => {
-  const el = e.target.closest('[data-m]');
-  if (el) el.classList.add('mo');
-});
-['pointerup','pointercancel'].forEach(ev => document.addEventListener(ev, () => {
-  setTimeout(() => document.querySelectorAll('.mo').forEach(el => el.classList.remove('mo')), 250);
-}));
-</script>
+<script src="about.js" defer></script>
 </body>
 </html>
