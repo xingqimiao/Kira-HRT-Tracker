@@ -114,7 +114,7 @@ the image never leaves the device.
   (biometric gate, re-locks in the background), predictive back, system file export, and
   external links that open in the system browser.
 - **Two channels** — the website / GitHub build carries FCM catch-up push and an in-app
-  self-updater; the store build (`2.0.2-fdroid`, built with `HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1`)
+  self-updater; the store build (built with `HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1`)
   has no Firebase and never checks for or installs updates — the store owns that.
 - **Themes** — light / dark / follow system, with a themed launch transition.
 - **PWA** — works offline, backed by a service worker.
@@ -359,12 +359,12 @@ node_modules/.bin/tauri android build --apk --target aarch64
 ```
 
 Store channel (F-Droid): add two env vars and override the version name, so the repository
-version stays put.
+version stays put. The `2.1.0` below is an example — it follows the release being built.
 
 ```bash
 export HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1
-node_modules/.bin/tauri android build --apk --target aarch64 --config '{"version":"2.0.2-fdroid"}'
-# versionName=2.0.2-fdroid, versionCode=2000002
+node_modules/.bin/tauri android build --apk --target aarch64 --config '{"version":"2.1.0-fdroid"}'
+# versionName=2.1.0-fdroid, versionCode=2001000
 ```
 
 Signing and publishing: `server/DEPLOY.md` §4b.

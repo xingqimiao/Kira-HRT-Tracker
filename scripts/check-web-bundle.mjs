@@ -171,3 +171,37 @@ if (inlineOffenders.length > 0) {
   process.exit(1);
 }
 
+// --- Advertised Android build is the one latest.json points at --------------
+//
+// The app derives its own APK URL from `__APP_VERSION__` (`nativeUpdate.ts`), so it
+// cannot go stale. The hand-written pages can: `/about/` advertised 2.0.4 for a
+// whole release after 2.1.0 shipped, because the filename is a literal in three
+// places per page and nothing compared it with the manifest beside it.
+//
+// One source of truth, `public/android/latest.json`, and every served page has to
+// agree with it. A store build strips that file (`strip-store-assets.mjs`), which
+// is why a missing manifest skips the check instead of failing it.
+const manifestPath = path.join(root, 'dist', 'android', 'latest.json');
+if (existsSync(manifestPath)) {
+  const published = JSON.parse(readFileSync(manifestPath, 'utf8')).apk || '';
+  const publishedFile = published.split('/').pop();
+  const staleLinks = [];
+  for (const file of htmlFiles) {
+    const html = readFileSync(file, 'utf8');
+    const found = [...new Set(html.match(/KiraHRT-[^"'\s]+\.apk/g) || [])];
+    for (const name of found) {
+      if (name !== publishedFile) staleLinks.push(`${path.relative(root, file)}: ${name}`);
+    }
+  }
+  if (staleLinks.length > 0) {
+    console.error(
+      `check-web-bundle: a page advertises an APK that latest.json does not point at.\n` +
+        `  latest.json says: ${publishedFile}\n` +
+        staleLinks.map(line => `  ${line}\n`).join('') +
+        `  Update the link, or fix public/android/latest.json if the manifest is wrong.\n`,
+    );
+    process.exit(1);
+  }
+  console.log(`check-web-bundle: every page links ${publishedFile}, matching latest.json — ok`);
+}
+

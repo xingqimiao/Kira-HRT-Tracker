@@ -83,7 +83,7 @@ Web 应用、Android 应用、MCP 服务端共用一套「应用内核」，云�
 
 - **7 种语言**：简中、繁中、粤语、英、日、韩、土，按需加载。
 - **Android 应用**：Tauri 2 壳（`src-tauri/`，源码入库，`gen/` 与构建产物不入库）承载同一份 Web 前端，Kotlin 桥补齐原生能力：**应用锁**（生物识别 + 后台重锁）、预测式返回手势、系统文件导出、外部链接走系统浏览器。
-- **两个渠道**：官网 / GitHub 的标准包带 FCM 补推与**应用内自更新**；商店渠道（`2.0.2-fdroid`，用 `HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1` 构建）不含 Firebase，也不检查或安装更新——更新交给商店。
+- **两个渠道**：官网 / GitHub 的标准包带 FCM 补推与**应用内自更新**；商店渠道（用 `HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1` 构建）不含 Firebase，也不检查或安装更新——更新交给商店。
 - **主题**：浅色 / 深色 / 跟随系统；跟随主题的启动过渡。
 - **PWA**：离线可用，Service Worker 缓存。
 
@@ -93,7 +93,7 @@ Web 应用、Android 应用、MCP 服务端共用一套「应用内核」，云�
 |---|---|
 | [网站](https://hrt.kiramyao.com) | Web 版可直接使用；Android 包与更新清单在同一目录 |
 | [GitHub Releases](https://github.com/xingqimiao/Kira-HRT-Tracker/releases) | 每个版本的标准包，带更新说明与 sha256 |
-| 商店渠道 | `2.0.4-fdroid`：无 Firebase、无自更新，更新由商店负责 |
+| 商店渠道（F-Droid） | 无 Firebase、无自更新，更新由商店负责 |
 
 两个 Android 包用同一把签名密钥，可以互相覆盖安装，不需要先卸载。
 
@@ -303,12 +303,13 @@ node_modules/.bin/tauri android build --apk --target aarch64
 ```
 
 商店渠道（F-Droid）构建：在同样的命令前加两个环境变量，并用 `--config` 覆盖版本名，仓库里的版本号保持不变。
+下面的 `2.1.0` 是示例，跟着本次要发布的版本走。
 
 ```bash
 export HRT_NO_FCM=1 VITE_NO_SELF_UPDATE=1
 node_modules/.bin/tauri android build --apk --target aarch64 \
-  --config '{"version":"2.0.2-fdroid"}'
-# versionName=2.0.2-fdroid, versionCode=2000002
+  --config '{"version":"2.1.0-fdroid"}'
+# versionName=2.1.0-fdroid, versionCode=2001000
 ```
 
 签名与发布流程见 `server/DEPLOY.md` §4b。
