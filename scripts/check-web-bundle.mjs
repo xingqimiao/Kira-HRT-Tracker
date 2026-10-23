@@ -127,3 +127,47 @@ if (!lazyChunk) {
 console.log(
   `check-web-bundle: ${entry} carries VITE_API_ORIGIN; PK engine is the lazy ${lazyChunk} — ok`,
 );
+
+// --- No inline JavaScript in any served page -------------------------------
+//
+// The CSP is `script-src 'self'`: an inline `<script>` and an inline `onclick=`
+// are both refused, and refused *silently*. That is not theoretical — the about
+// page kept its entire behaviour in one inline block, and once the policy shipped
+// every section stayed at `opacity: 0` (the reveal observer was inside that
+// block), so the page rendered as empty colour panels.
+//
+// The SPA shell was migrated to `theme-init.js` when the policy landed; the
+// standalone pages under `public/` were missed, because nothing built them and
+// nothing looked at them. This is that look. A static page's script belongs in a
+// file next to it.
+const htmlFiles = [];
+(function walk(dir) {
+  for (const name of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, name.name);
+    if (name.isDirectory()) walk(full);
+    else if (name.name.endsWith('.html')) htmlFiles.push(full);
+  }
+})(path.join(root, 'dist'));
+
+const inlineOffenders = [];
+for (const file of htmlFiles) {
+  const html = readFileSync(file, 'utf8');
+  const rel = path.relative(root, file);
+  // `application/ld+json` is data, not script: `script-src` does not gate it.
+  const inline = [...html.matchAll(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)]
+    .filter(m => !/type\s*=\s*["']application\/ld\+json["']/i.test(m[0]))
+    .filter(m => m[1].trim().length > 0);
+  if (inline.length) inlineOffenders.push(`${rel}: ${inline.length} inline <script>`);
+  const handlers = html.match(/\son[a-z]+\s*=/gi) || [];
+  if (handlers.length) inlineOffenders.push(`${rel}: ${handlers.length} inline event handler(s)`);
+}
+if (inlineOffenders.length > 0) {
+  console.error(
+    `check-web-bundle: inline JavaScript in a served page, which the CSP refuses:\n` +
+      inlineOffenders.map(line => `  ${line}\n`).join('') +
+      `  Move it into a file next to the page and reference it with <script src="…">,\n` +
+      `  or read a data-* attribute in a delegated listener instead of on*=.\n`,
+  );
+  process.exit(1);
+}
+

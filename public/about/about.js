@@ -100,14 +100,29 @@
   onScroll();
 
   // --- 5. Text reveal ------------------------------------------------------
-  // `hidden` is only ever added here, next to the observer that removes it, so
-  // the two cannot drift apart and leave a section invisible for good.
+  // `hidden` is only ever added here, next to the code that removes it, so the
+  // two cannot drift apart and leave a section invisible for good.
   const io = new IntersectionObserver((entries) => {
     entries.forEach((e) => {
       if (e.isIntersecting) e.target.classList.add('in');
     });
   }, { threshold: 0.15 });
   document.querySelectorAll('.reveal-text').forEach((el) => io.observe(el));
+
+  // The observer is the animation; this sweep is the guarantee. A fast jump —
+  // a fragment link, a restored scroll position, a programmatic scrollTo — can
+  // move past a section between two frames, and the entry for it never arrives
+  // (seen live: one section stayed blank while the other thirteen revealed).
+  // Anyone at or above the fold is revealed unconditionally.
+  function revealInView() {
+    const fold = window.innerHeight * 0.92;
+    document.querySelectorAll('.reveal-text:not(.in)').forEach((el) => {
+      if (el.getBoundingClientRect().top < fold) el.classList.add('in');
+    });
+  }
+  revealInView();
+  window.addEventListener('scroll', revealInView, { passive: true });
+  window.addEventListener('resize', revealInView, { passive: true });
 
   // --- 6. Press physics on [data-m] ---------------------------------------
   document.addEventListener('pointerdown', (e) => {
