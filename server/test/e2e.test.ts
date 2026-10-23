@@ -162,7 +162,8 @@ test('validation rejects rather than silently clamps', async () => {
     body: JSON.stringify({ pk_params: { e2_kClear: -99 } }),
   });
   assert.equal(badParam.status, 400);
-  assert.match(badParam.body.error, /between/i);
+  assert.equal(badParam.body.code, 'INVALID_REQUEST', 'a rejected setting is a bad request, not a server fault');
+  assert.match(badParam.body.message, /between/i);
 
   // A misspelled parameter is an error, not silently ignored.
   const typo = await api('/api/settings', {
@@ -171,7 +172,8 @@ test('validation rejects rather than silently clamps', async () => {
     body: JSON.stringify({ pk_params: { e2_kclear: 0.4 } }),
   });
   assert.equal(typo.status, 400);
-  assert.match(typo.body.error, /unknown parameter/i);
+  assert.equal(typo.body.code, 'INVALID_REQUEST');
+  assert.match(typo.body.message, /unknown parameter/i);
 
   // The dose rules below are the Application Core's, and this is where both
   // interfaces reach them. The core is written through the *same* code the MCP

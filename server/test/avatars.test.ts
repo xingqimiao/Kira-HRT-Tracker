@@ -305,6 +305,26 @@ test('a stored avatar revalidates instead of re-downloading', async () => {
   }
 });
 
+test('the unauthenticated avatar route is rate-limited per address', async () => {
+  // This is the one route over account data that has no session to throttle, so a
+  // caller can walk ids as fast as the socket allows. The miss is counted on purpose:
+  // enumerating ids is cheap precisely because most of them do not exist.
+  resetRateLimits();
+  const missing = `${base}/auth/avatar/00000000-0000-4000-8000-000000000001`;
+  try {
+    for (let index = 0; index < 300; index++) {
+      const res = await fetch(missing);
+      assert.equal(res.status, 404, `request ${index} should still reach the route`);
+    }
+    const limited = await fetch(missing);
+    assert.equal(limited.status, 429, 'the bucket closes after the per-minute budget');
+    assert.equal(limited.headers.get('retry-after'), '60');
+  } finally {
+    // The bucket is process-wide; leaving it closed would make every later test 429.
+    resetRateLimits();
+  }
+});
+
 test('a URL the provider calls a picture is not trusted to be one', async () => {
   // The URL reaches `fetch` on the server. Anything that is not https, or not an image
   // once read, has to be dropped rather than copied into a column that is later served.

@@ -110,9 +110,9 @@ export const absoluteShareUrl = (url: string): string => {
 };
 
 const readError = async (response: Response): Promise<ShareApiError> => {
-    let body: { code?: string; message?: string; retryAfterSeconds?: number } | null = null;
+    let body: { code?: string; message?: string; error?: string; retryAfterSeconds?: number } | null = null;
     try {
-        body = await response.json() as { code?: string; message?: string; retryAfterSeconds?: number };
+        body = await response.json() as { code?: string; message?: string; error?: string; retryAfterSeconds?: number };
     } catch {
         // The worker also has plain-text error responses outside share routes.
     }
@@ -123,7 +123,9 @@ const readError = async (response: Response): Promise<ShareApiError> => {
     return new ShareApiError(
         response.status,
         body?.code ?? 'SHARE_REQUEST_FAILED',
-        body?.message ?? `Share request failed (${response.status})`,
+        // `message` is the contract; `error` is what a server that predates the
+        // code contract sends, and `code` may be absent on it as well.
+        body?.message ?? body?.error ?? `Share request failed (${response.status})`,
         typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0
             ? seconds * 1_000
             : null,

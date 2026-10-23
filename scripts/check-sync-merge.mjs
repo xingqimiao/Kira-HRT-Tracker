@@ -36,7 +36,7 @@ const {
   SYNC_SCALARS,
   RECORD_KINDS,
 } = await import('../src/utils/syncMerge.ts');
-const { payloadToRecords, recordsToPayload, changedRecords } = await import('../src/services/recordDocs.ts');
+const { payloadToRecords, recordsToPayload, changedRecords, remoteDiffers, identitiesOf } = await import('../src/services/recordDocs.ts');
 const { toLocalPayload, withRemoteTombstones } = await import('../src/services/coreSync.ts');
 const { sanitizeMedPlans } = await import('../src/utils/medPlan.ts');
 
@@ -631,6 +631,107 @@ check('the fingerprint notices a settings change', () => {
   const a = stateWith({ appSettings: { theme: 'light' } });
   const b = stateWith({ appSettings: { theme: 'dark' } });
   assert.notEqual(fingerprintState(a), fingerprintState(b));
+});
+
+// --- the medication plan: emptiness is not a deletion ------------------------
+//
+// The plan is the one scalar that is not plain last-write-wins, and the reason is a
+// real incident: a fresh device's "[] @ now" beat the account's plan, every device
+// accepted it, and the plan disappeared everywhere at once. These assertions pin the
+// rule that replaced it — an empty plan only counts when the user said so.
+
+const PLAN = SCALAR_SAMPLES.medPlan;
+const DAY = 86_400_000;
+const LATER = 1_767_225_600_000; // 2026-01-01T00:00:00Z
+const planState = (plans, updatedAt, clearedAt = 0) => stateWith({
+  medPlan: plans,
+  medPlanUpdatedAt: updatedAt,
+  medPlanClearedAt: clearedAt,
+});
+
+check('a device with no plan does not erase the account plan', () => {
+  // The exact shape the metadata migration produced on a fresh device: an empty plan
+  // carrying a brand-new stamp.
+  const local = planState([], LATER);
+  const remote = planState(PLAN, LATER - DAY);
+  const merged = mergeSyncStates(local, remote);
+  assert.equal(merged.merged.medPlan.length, PLAN.length, 'the empty plan won and deleted it');
+  assert.equal(merged.merged.medPlanClearedAt, 0, 'a plain empty copy invented a clear');
+  assert.ok(!merged.remoteStale, 'the account already holds the plan; nothing to repair');
+});
+
+check('a clear removes a plan that predates it', () => {
+  const local = planState([], 2000, 2000);
+  const remote = planState(PLAN, 1000);
+  const merged = mergeSyncStates(local, remote);
+  assert.equal(merged.merged.medPlan.length, 0, 'the user deleted the plan and it came back');
+  assert.equal(merged.merged.medPlanClearedAt, 2000);
+});
+
+check('a clear older than the plan it would remove loses', () => {
+  // The plan was re-created after the clear; the clear is history, not a standing order.
+  const local = planState([], 1000, 1000);
+  const remote = planState(PLAN, 2000);
+  const merged = mergeSyncStates(local, remote);
+  assert.equal(merged.merged.medPlan.length, PLAN.length);
+  assert.equal(merged.merged.medPlanClearedAt, 0, 'a stale clear marker outlived the plan');
+});
+
+check('two plans still resolve last-write-wins', () => {
+  const older = planState([{ ...PLAN[0], alias: 'old' }], 100);
+  const newer = planState([{ ...PLAN[0], alias: 'new' }], 200);
+  const merged = mergeSyncStates(older, newer);
+  assert.equal(merged.merged.medPlan[0].alias, 'new');
+});
+
+check('a device with no plan writes no plan record', () => {
+  // Not "writes an empty one": a record is an opinion, and this device has none.
+  const docs = payloadToRecords(toLocalPayload(planState([], 5000)));
+  assert.ok(!docs.some((d) => d.id === 'scalar:medPlan'), 'a stamped empty plan became a record');
+});
+
+check('a clear marker survives payload -> records -> payload', () => {
+  const back = normalizeSyncState(
+    recordsToPayload(payloadToRecords(toLocalPayload(planState([], 4000, 4000)))).payload,
+  );
+  assert.equal(back.medPlan.length, 0);
+  assert.equal(back.medPlanClearedAt, 4000, 'the marker was dropped and the clear became silence');
+});
+
+check('the fingerprint separates a clear from silence', () => {
+  assert.notEqual(
+    fingerprintState(planState([], 4000, 4000)),
+    fingerprintState(planState([], 4000, 0)),
+    'a clear that looks like silence never leaves the device',
+  );
+});
+
+check('a stale account copy is reported, so the device can repair it', () => {
+  // The account's row was emptied by the old bug while this device kept the plan, and
+  // this device has changed nothing since its last push — exactly the state the delta
+  // baseline used to keep quiet about forever. `remote` is built the way a read is:
+  // from the record the server holds, not from a payload this device produced.
+  const merged = toLocalPayload(planState(PLAN, LATER));
+  const remote = recordsToPayload([{
+    id: 'scalar:medPlan',
+    category: 'setting',
+    takenAt: LATER + DAY,
+    data: { value: [], stamp: LATER + DAY },
+  }]).payload;
+  assert.equal(
+    remoteDiffers(merged, remote, identitiesOf(merged)),
+    true,
+    'the repair signal was missed and the account would stay empty',
+  );
+});
+
+check('a local edit is not mistaken for a stale account', () => {
+  // The ordinary push covers a record this device changed; the repair path is only for
+  // the ones it has nothing new to say about, or every edit would pay for a full read.
+  const before = toLocalPayload(planState([PLAN[0]], LATER));
+  const edited = toLocalPayload(planState([{ ...PLAN[0], alias: 'edited' }], LATER + DAY));
+  const remote = toLocalPayload(planState([PLAN[0]], LATER));
+  assert.equal(remoteDiffers(edited, remote, identitiesOf(before)), false);
 });
 
 // --- report -----------------------------------------------------------------

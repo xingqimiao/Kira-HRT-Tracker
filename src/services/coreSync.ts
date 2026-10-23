@@ -290,8 +290,13 @@ async function readFullState(token: string): Promise<CoreStateRead> {
 /** The server's error text, when it sent one. */
 async function errorDetail(res: Response): Promise<string | undefined> {
   try {
-    const body = (await res.json()) as { error?: string };
-    return body?.error;
+    const body = (await res.json()) as { code?: string; message?: string; error?: string };
+    // The one condition this module branches on. Newer servers name it with a
+    // code; a server that predates the code contract sends the token as `error`,
+    // which is the same token `describe()` compares against. Both are normalised
+    // to that token here so the comparison stays in one place.
+    if (body?.code === 'ACCOUNT_INCOMPLETE') return 'account_incomplete';
+    return body?.message ?? body?.error;
   } catch {
     return undefined;
   }
@@ -486,6 +491,11 @@ export async function syncWithCore(
  * how the user cleared every override, and omitting it would resurrect them.
  */
 export function toLocalPayload(state: SyncState): SyncPayload {
+  // The plan travels only when this device has an opinion about it: a plan, or the
+  // user's own clear. An empty array with neither is "nothing to say" — sending it as
+  // `medPlan: []` made every fresh device a deletion candidate, which is how a wiped
+  // account stayed wiped.
+  const planOpinion = (state.medPlan?.length ?? 0) > 0 || state.medPlanClearedAt > 0;
   return {
     version: 3,
     ...(state.weight !== undefined
@@ -494,8 +504,12 @@ export function toLocalPayload(state: SyncState): SyncPayload {
     ...(state.pkParams !== undefined
       ? { pkParams: state.pkParams, pkParamsUpdatedAt: state.pkParamsUpdatedAt }
       : {}),
-    ...(state.medPlan !== undefined
-      ? { medPlan: state.medPlan, medPlanUpdatedAt: state.medPlanUpdatedAt }
+    ...(planOpinion
+      ? {
+          medPlan: state.medPlan ?? [],
+          medPlanUpdatedAt: state.medPlanUpdatedAt,
+          medPlanClearedAt: state.medPlanClearedAt,
+        }
       : {}),
     modes: state.modes,
     appState: toAppState(state),

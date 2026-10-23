@@ -19,6 +19,7 @@ import { get as secureGet, set as secureSet, remove as secureRemove } from '../u
  *     try to explain which part was wrong.
  */
 import { apiEndpoint, apiFetch } from './apiClient';
+import type { ApiCode, ApiErrorBody } from './apiCodes';
 
 /** What the server is willing to say about a failure. */
 export type CoreErrorKind =
@@ -60,9 +61,48 @@ export class CoreAuthError extends Error {
   }
 }
 
-/** Classification of the server's error strings. Kept in one place so the UI never
- *  string-matches after a rename. */
-function classify(body: { error?: string } | undefined, status: number): CoreErrorKind {
+/**
+ * The codes this build acts on.
+ *
+ * Deliberately a subset: every other code is a real condition with no branch in
+ * this client, and the server's `message` is the right thing to show for it. A
+ * code that is missing *here* but present in `apiCodes.ts` lands in the default
+ * arm below rather than becoming a compile error, which is what keeps an older web
+ * build talking to a newer server.
+ */
+const KIND_BY_CODE = new Map<ApiCode, CoreErrorKind>([
+  ['INVALID_CREDENTIALS', 'invalid_credentials'],
+  ['LOCKED', 'locked'],
+  ['RATE_LIMITED', 'rate_limited'],
+  ['NOT_CONFIGURED', 'not_configured'],
+  ['USERNAME_TAKEN', 'username_taken'],
+]);
+
+/** Codes already reported, so a poll that keeps failing does not spam the console. */
+const warnedCodes = new Set<string>();
+
+/**
+ * Which kind a failure is.
+ *
+ * `code` wins when the server sends one; the prose fallback is for a self-hosted
+ * server that predates the code contract and does not upgrade with this app. That
+ * fallback must outlive this change — deleting it in the same release would break
+ * exactly the deployments it exists for.
+ */
+function classify(body: ApiErrorBody | undefined, status: number): CoreErrorKind {
+  const code = body?.code;
+  if (typeof code === 'string' && code !== '') {
+    const known = KIND_BY_CODE.get(code as ApiCode);
+    if (known) return known;
+    // A code this build does not know means the server is newer. Log it once: an
+    // unreported new condition is how a branch silently stops being reachable.
+    if (!warnedCodes.has(code)) {
+      warnedCodes.add(code);
+      console.warn(`[coreAuth] unrecognised API error code: ${code}`);
+    }
+    return 'unknown';
+  }
+
   const raw = (body?.error ?? '').toLowerCase();
   if (raw.includes('too many failed attempts')) return 'locked';
   if (raw.includes('too many attempts')) return 'rate_limited';
@@ -105,9 +145,14 @@ async function request<T>(
   }
 
   if (!res.ok) {
-    const kind = classify(body as { error?: string }, res.status);
+    const failure = body as ApiErrorBody | undefined;
+    const kind = classify(failure, res.status);
+    // `message` is the contract; `error` is what a pre-code server sends. Both are
+    // English prose, so either is a usable last resort for the UI.
     const message =
-      (body as { error?: string })?.error ?? `Request failed (${res.status})`;
+      (typeof failure?.message === 'string' && failure.message !== '' ? failure.message : undefined)
+      ?? (typeof failure?.error === 'string' && failure.error !== '' ? failure.error : undefined)
+      ?? `Request failed (${res.status})`;
     throw new CoreAuthError(kind, message, res.status);
   }
 
@@ -255,6 +300,42 @@ function takeKeepSignedIn(): boolean {
   }
 }
 
+const DEVICE_PASS_KEY = 'hrt_core_device_pass';
+
+/**
+ * The device pass: the server's record that this browser has signed in to this
+ * account under its current password.
+ *
+ * It authenticates nothing — the password is still required — so it is not a
+ * credential that needs the keystore. Its one job is to keep a stranger who
+ * deliberately fails five sign-ins from locking the owner out. Keyed by account
+ * name so one browser can hold passes for more than one account; a password change
+ * retires the value server-side, and the next sign-in replaces it.
+ */
+function readDevicePass(username: string): string | null {
+  try {
+    const raw = secureGet(DEVICE_PASS_KEY);
+    if (!raw) return null;
+    const map = JSON.parse(raw) as Record<string, unknown> | null;
+    const pass = map?.[username.toLowerCase()];
+    return typeof pass === 'string' && pass.length > 0 ? pass : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberDevicePass(username: string, pass: unknown): void {
+  if (typeof pass !== 'string' || pass.length === 0) return;
+  try {
+    const raw = secureGet(DEVICE_PASS_KEY);
+    const map = (raw ? (JSON.parse(raw) as Record<string, unknown> | null) : null) ?? {};
+    secureSet(DEVICE_PASS_KEY, JSON.stringify({ ...map, [username.toLowerCase()]: pass }));
+  } catch {
+    // Private mode or a full quota: sign-in still works, the lockout exemption is
+    // simply not remembered. Not worth failing a login over.
+  }
+}
+
 export const coreAuth = {
   // --- Registration ---------------------------------------------------------
 
@@ -264,17 +345,17 @@ export const coreAuth = {
     password: string,
     opts: { turnstileToken?: string; persistent?: boolean } = {},
   ): Promise<SessionResponse> {
-    return toSession(
-      await request('/auth/register', {
-        method: 'POST',
-        body: JSON.stringify({
-          username,
-          password,
-          ...(opts.turnstileToken ? { turnstile_token: opts.turnstileToken } : {}),
-          ...(opts.persistent ? { persistent: true } : {}),
-        }),
+    const raw = await request<any>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        username,
+        password,
+        ...(opts.turnstileToken ? { turnstile_token: opts.turnstileToken } : {}),
+        ...(opts.persistent ? { persistent: true } : {}),
       }),
-    );
+    });
+    rememberDevicePass(username, raw?.device_pass);
+    return toSession(raw);
   },
 
   // --- Sign-in -------------------------------------------------------------
@@ -290,12 +371,18 @@ export const coreAuth = {
     password: string,
     opts: { persistent?: boolean } = {},
   ): Promise<SessionResponse> {
-    return toSession(
-      await request('/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ username, password, ...(opts.persistent ? { persistent: true } : {}) }),
+    const devicePass = readDevicePass(username);
+    const raw = await request<any>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        username,
+        password,
+        ...(opts.persistent ? { persistent: true } : {}),
+        ...(devicePass ? { device_pass: devicePass } : {}),
       }),
-    );
+    });
+    rememberDevicePass(username, raw?.device_pass);
+    return toSession(raw);
   },
 
   async logout(token: string): Promise<void> {

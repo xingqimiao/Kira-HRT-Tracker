@@ -54,7 +54,7 @@ import {
   resolveAfdianSponsorName,
 } from './supporters.ts';
 import { PushStore, startPushScanner } from './push.ts';
-import type { AuthContext } from './types.ts';
+import type { ApiCode, AuthContext } from './types.ts';
 import {
   lookupSession,
   closeSession,
@@ -151,6 +151,9 @@ const SECURITY_HEADERS: Record<string, string> = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
   'X-Frame-Options': 'DENY',
+  // This origin is only loaded as a page by the share viewer, and nothing embeds it,
+  // so it has no reason to share a browsing context with any opener.
+  'Cross-Origin-Opener-Policy': 'same-origin',
   'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
   'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
   'Cache-Control': 'no-store',
@@ -274,6 +277,196 @@ async function readBody(req: IncomingMessage, limitBytes = 1_000_000): Promise<u
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, JSON_HEADERS);
   res.end(JSON.stringify(body));
+}
+
+/**
+ * Service-layer message → API code, in one table at the HTTP boundary.
+ *
+ * The services return prose because their messages are also what a user reads, and
+ * pushing codes down into every `Result` would duplicate the same sentence in two
+ * shapes for 89 call sites. The mapping belongs here, where a response is actually
+ * built, and it is deliberately exhaustive over the strings the services can emit
+ * today — a miss falls back to a status-derived code rather than to nothing, so a
+ * new message can never produce a response without a code.
+ *
+ * When you add a message to a service, add it here too if it needs a code other
+ * than the one its status implies.
+ */
+const CODE_BY_MESSAGE: Record<string, ApiCode> = {
+  // --- Credentials and sessions --------------------------------------------
+  'invalid credentials': 'INVALID_CREDENTIALS',
+  'current password is incorrect': 'INVALID_CREDENTIALS',
+  'password is incorrect': 'INVALID_CREDENTIALS',
+  'the password does not open this account’s key': 'INVALID_CREDENTIALS',
+  'the password does not open this account’s current key': 'INVALID_CREDENTIALS',
+  'current password does not open the account key': 'INVALID_CREDENTIALS',
+  'too many failed attempts; try again later': 'LOCKED',
+  'too many attempts; try again shortly': 'RATE_LIMITED',
+  'too many attempts, try again later': 'RATE_LIMITED',
+  'too many requests; try again shortly': 'RATE_LIMITED',
+  'too many applications; try again later': 'RATE_LIMITED',
+  username_taken: 'USERNAME_TAKEN',
+  'username is already taken': 'USERNAME_TAKEN',
+  'authentication required': 'AUTH_REQUIRED',
+  'authentication required to link an account': 'AUTH_REQUIRED',
+  'missing or invalid credentials, or the account is locked': 'AUTH_REQUIRED',
+  unauthorized: 'AUTH_REQUIRED',
+  'linking requires a signed-in account': 'AUTH_REQUIRED',
+  account_incomplete: 'ACCOUNT_INCOMPLETE',
+  'X login is not configured on this instance': 'NOT_CONFIGURED',
+  'Google login is not configured on this instance': 'NOT_CONFIGURED',
+  'webhook not configured': 'NOT_CONFIGURED',
+  'key rotation requires the KMS master key': 'NOT_CONFIGURED',
+
+  // --- The account key itself ----------------------------------------------
+  'account key material is unreadable': 'KEY_UNREADABLE',
+  'account key material is unreadable; set a new password to re-key it': 'KEY_UNREADABLE',
+  'the key’s HSM half could not be opened': 'KEY_UNREADABLE',
+
+  // --- Request shape -------------------------------------------------------
+  'body is not JSON': 'INVALID_REQUEST',
+  'ids: required': 'INVALID_REQUEST',
+  'code: required': 'INVALID_REQUEST',
+  'data: required': 'INVALID_REQUEST',
+  'data: too large': 'PAYLOAD_TOO_LARGE',
+  'takenAt: must be a date or epoch milliseconds': 'INVALID_REQUEST',
+  'at: cannot be more than a day in the future': 'INVALID_REQUEST',
+  'records: must be an array': 'INVALID_REQUEST',
+  'before_id: requires `before` (the pair is the cursor)': 'INVALID_REQUEST',
+  'nothing to update': 'INVALID_REQUEST',
+  'unsupported provider': 'INVALID_REQUEST',
+  'a device token is required': 'INVALID_REQUEST',
+  'a name between 1 and 64 characters is required': 'INVALID_REQUEST',
+  'id: must be a string': 'INVALID_REQUEST',
+  'username: 3–30 characters, letters/digits/underscore/hyphen only': 'INVALID_REQUEST',
+  'password: must be 8–128 characters': 'INVALID_REQUEST',
+  'bind a password to this account before rotating its key': 'INVALID_REQUEST',
+  'hrt_mode: must be transfem or transmasc': 'INVALID_REQUEST',
+  'calibration_history: must be forward or retrospective': 'INVALID_REQUEST',
+  'timezone: must be a string of at most 64 characters': 'INVALID_REQUEST',
+  'body_weight_kg is not set for this account; a simulation needs it (20–400 kg)': 'INVALID_REQUEST',
+
+  // --- OAuth ---------------------------------------------------------------
+  'Google callback had no code': 'INVALID_REQUEST',
+  'Google callback had no state': 'INVALID_REQUEST',
+  'callback is missing code or state': 'INVALID_REQUEST',
+  'that sign-in link expired; try again': 'INVALID_REQUEST',
+  'this sign-in link expired or was already used': 'INVALID_REQUEST',
+  'this authorization has expired or was already used; start again': 'INVALID_REQUEST',
+  'that sign-in link was started for a different provider': 'INVALID_REQUEST',
+  'link authorization had no account': 'INVALID_REQUEST',
+  'linked account no longer exists': 'NOT_FOUND',
+  'that X account is already linked to a different account': 'CONFLICT',
+  'that Google account is already linked to a different account': 'CONFLICT',
+  'this is the only way into the account — set an account name and password first': 'CONFLICT',
+  'could not allocate a username; try signing in with a password instead': 'CONFLICT',
+
+  // --- Shares --------------------------------------------------------------
+  'a share password must be at least 8 characters': 'INVALID_REQUEST',
+  'a share password must be at most 128 characters': 'INVALID_REQUEST',
+  'sealed: must be a v1 AES-256-GCM envelope (iv, ct)': 'INVALID_REQUEST',
+  'expiresAt is required': 'INVALID_REQUEST',
+  'expiresAt must be in the future': 'INVALID_REQUEST',
+  'shareId is required for a sealed update': 'INVALID_REQUEST',
+  'missing token': 'INVALID_REQUEST',
+
+  // --- Human verification --------------------------------------------------
+  'human verification failed': 'TURNSTILE',
+  'human verification is required': 'TURNSTILE',
+
+  // --- Supporters ----------------------------------------------------------
+  invalid_name: 'INVALID_NAME',
+  invalid_tx_hash: 'INVALID_TX_HASH',
+  'that transaction hash was already submitted': 'DUPLICATE_TX',
+
+  // --- Transport -----------------------------------------------------------
+  'not found': 'NOT_FOUND',
+  not_found: 'NOT_FOUND',
+  'no avatar': 'NOT_FOUND',
+  'no such token': 'NOT_FOUND',
+  'no such share': 'NOT_FOUND',
+  'no such record': 'NOT_FOUND',
+  'no such supporter': 'NOT_FOUND',
+  'no such pending supporter': 'NOT_FOUND',
+  'method not allowed; POST only on a stateless MCP endpoint': 'METHOD_NOT_ALLOWED',
+  'method not allowed; GET on the MCP health route': 'METHOD_NOT_ALLOWED',
+  'method not allowed; webhooks are POST only': 'METHOD_NOT_ALLOWED',
+  'invalid signature': 'FORBIDDEN',
+  'internal error': 'INTERNAL',
+  'could not store the record': 'INTERNAL',
+};
+
+/**
+ * The code a bare status implies.
+ *
+ * Only reached for a message this table does not know — a dynamic one such as
+ * `X authorization was declined (…)`, or a new one nobody mapped. The status is
+ * always the coarser statement, so it is the safe answer.
+ */
+const CODE_BY_STATUS: Record<number, ApiCode> = {
+  400: 'INVALID_REQUEST',
+  401: 'AUTH_REQUIRED',
+  403: 'FORBIDDEN',
+  404: 'NOT_FOUND',
+  405: 'METHOD_NOT_ALLOWED',
+  409: 'CONFLICT',
+  413: 'PAYLOAD_TOO_LARGE',
+  422: 'INVALID_REQUEST',
+  429: 'RATE_LIMITED',
+  500: 'INTERNAL',
+  502: 'UNAVAILABLE',
+  503: 'UNAVAILABLE',
+};
+
+/** The code for a service message. Exported for the vocabulary tests. */
+export function apiCodeFor(message: string, status: number): ApiCode {
+  // `Object.hasOwn` rather than a bare index: a caller-influenced message could be
+  // `toString`, and an inherited member is not a code.
+  const mapped = Object.hasOwn(CODE_BY_MESSAGE, message) ? CODE_BY_MESSAGE[message] : undefined;
+  return mapped ?? CODE_BY_STATUS[status] ?? 'INTERNAL';
+}
+
+/**
+ * Supporters already name their failures with a token rather than a sentence
+ * (`ApplyError` in supporters.ts, `RenameResult`'s error), so these pass straight
+ * through instead of being matched as prose. Mapped explicitly rather than with
+ * `toUpperCase()` so a new member of that union cannot silently become a code the
+ * vocabulary does not contain.
+ */
+const SUPPORTER_CODES: Record<string, ApiCode> = {
+  duplicate_tx: 'DUPLICATE_TX',
+  invalid_name: 'INVALID_NAME',
+  invalid_tx_hash: 'INVALID_TX_HASH',
+  not_found: 'NOT_FOUND',
+  unconfirmed: 'UNCONFIRMED',
+  not_received: 'NOT_RECEIVED',
+  verify_unavailable: 'VERIFY_UNAVAILABLE',
+};
+
+/**
+ * Answer a failure: `{ code, message, error: message, ...extra }`.
+ *
+ * `error` is not dead weight. An installed Android build reads it and nothing
+ * else, and it cannot be upgraded in step with the server, so the alias outlives
+ * this refactor. `message` and `error` are always the same string, which is what
+ * keeps the two from disagreeing.
+ *
+ * `extra.code` overrides the table for the handful of routes that already own a
+ * code (shares, supporters); any other key is merged into the body as before.
+ */
+function fail(
+  res: ServerResponse,
+  status: number,
+  message: string,
+  extra: { code?: ApiCode } & Record<string, unknown> = {},
+): void {
+  const { code: explicit, ...rest } = extra;
+  send(res, status, {
+    code: explicit ?? apiCodeFor(message, status),
+    message,
+    error: message,
+    ...rest,
+  });
 }
 
 /**
@@ -413,7 +606,7 @@ export function createRequestHandler() {
       // through matters when a sibling service shares the host: serving `/health`
       // from this process would shadow the comment API's own health endpoint.
       if (path === null) {
-        send(res, 404, { error: 'not found' });
+        fail(res, 404, 'not found');
         return;
       }
 
@@ -438,7 +631,7 @@ export function createRequestHandler() {
       // --- MCP (Streamable HTTP) -------------------------------------------
       if (path === '/mcp') {
         if (req.method !== 'POST') {
-          send(res, 405, { error: 'method not allowed; POST only on a stateless MCP endpoint' });
+          fail(res, 405, 'method not allowed; POST only on a stateless MCP endpoint');
           return;
         }
         const token = bearer(req);
@@ -503,7 +696,7 @@ export function createRequestHandler() {
       // version it speaks. It says nothing about any account.
       if (path === '/mcp/health') {
         if (req.method !== 'GET') {
-          send(res, 405, { error: 'method not allowed; GET on the MCP health route' });
+          fail(res, 405, 'method not allowed; GET on the MCP health route');
           return;
         }
         probeHeaders(req, res);
@@ -525,7 +718,7 @@ export function createRequestHandler() {
         // every row in the table is a cheap way to load the database. Generous
         // enough that the status page's polling is nowhere near it.
         if (rateLimited(`stats:${clientIp(req)}`, 60, 60_000)) {
-          return send(res, 429, { error: 'too many requests; try again shortly' });
+          return fail(res, 429, 'too many requests; try again shortly');
         }
         // No identifiers leave this route — see `publicStats` for what is and is
         // not in the body. The short cache is what keeps a status page's polling
@@ -538,7 +731,7 @@ export function createRequestHandler() {
       if (path === '/auth/register' && req.method === 'POST') {
         const limits = getConfig().rateLimits;
         if (rateLimited(`register:${clientIp(req)}`, limits.register, limits.windowMs)) {
-          return send(res, 429, { error: 'too many attempts; try again shortly' });
+          return fail(res, 429, 'too many attempts; try again shortly');
         }
         const body = (await readBody(req)) as
           | { username?: unknown; password?: unknown; turnstile_token?: unknown; persistent?: unknown }
@@ -546,11 +739,11 @@ export function createRequestHandler() {
         // Human verification first: it is the cheapest rejection and it must gate
         // account creation, not sit after it.
         const human = await verifyTurnstile(body?.turnstile_token, 'register', clientIp(req));
-        if (!human.ok) return send(res, 403, { error: human.error });
+        if (!human.ok) return fail(res, 403, human.error);
         const result = await AccountService.register(body?.username, body?.password, {
           persistent: body?.persistent === true,
         });
-        if (!result.ok) return send(res, 400, { error: result.error });
+        if (!result.ok) return fail(res, 400, result.error);
         await AccountService.recordAuthEvent(result.value.userId, 'register', clientIp(req));
         // A session straight away, because there is nothing left to confirm: the
         // caller has just chosen the password, and the DEK was minted with it.
@@ -558,6 +751,7 @@ export function createRequestHandler() {
           user_id: result.value.userId,
           username: result.value.username,
           token: result.value.token,
+          device_pass: result.value.devicePass,
         });
       }
 
@@ -565,21 +759,23 @@ export function createRequestHandler() {
       if (path === '/auth/login' && req.method === 'POST') {
         const limits = getConfig().rateLimits;
         if (rateLimited(`login:${clientIp(req)}`, limits.login, limits.windowMs)) {
-          return send(res, 429, { error: 'too many attempts; try again shortly' });
+          return fail(res, 429, 'too many attempts; try again shortly');
         }
         const body = (await readBody(req)) as
-          | { username?: unknown; password?: unknown; persistent?: unknown }
+          | { username?: unknown; password?: unknown; persistent?: unknown; device_pass?: unknown }
           | undefined;
         const result = await AccountService.unlock(body?.username, body?.password, {
           persistent: body?.persistent === true,
+          devicePass: body?.device_pass,
         });
         if (!result.ok) {
-          return send(res, 401, { error: result.error });
+          return fail(res, 401, result.error);
         }
         return send(res, 200, {
           user_id: result.value.userId,
           username: result.value.username,
           token: result.value.token,
+          device_pass: result.value.devicePass,
         });
       }
 
@@ -592,10 +788,18 @@ export function createRequestHandler() {
       // --- Auth: password ---------------------------------------------------
       if (path === '/auth/password' && req.method === 'POST') {
         const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
+        if (!ctx) return fail(res, 401, 'authentication required');
+        // A session is not a licence to guess the password. This route bcrypt-checks
+        // `current_password`, so without a bucket a stolen token is a password oracle at
+        // whatever rate the socket allows. Keyed by account rather than address: the
+        // attacker can change address, and everyone behind one carrier NAT would share
+        // the address's budget.
+        if (rateLimited(`password:${ctx.userId}`, 10, 60_000)) {
+          return fail(res, 429, 'too many attempts, try again later');
+        }
         const body = (await readBody(req)) as { current_password?: unknown; new_password?: unknown } | undefined;
         const result = await AccountService.changePassword(ctx, body?.current_password, body?.new_password);
-        if (!result.ok) return send(res, 400, { error: result.error });
+        if (!result.ok) return fail(res, 400, result.error);
         return send(res, 200, { ok: true });
       }
 
@@ -608,13 +812,13 @@ export function createRequestHandler() {
       if (path === '/auth/keys/rotate' && req.method === 'POST') {
         const limits = getConfig().rateLimits;
         if (rateLimited(`rotate:${clientIp(req)}`, limits.login, limits.windowMs)) {
-          return send(res, 429, { error: 'too many attempts, try again later' });
+          return fail(res, 429, 'too many attempts, try again later');
         }
         const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
+        if (!ctx) return fail(res, 401, 'authentication required');
         const body = (await readBody(req)) as { password?: unknown } | undefined;
         const result = await AccountService.rotateKeys(ctx, body?.password);
-        if (!result.ok) return send(res, 400, { error: result.error });
+        if (!result.ok) return fail(res, 400, result.error);
         return send(res, 200, { ok: true, records: result.value.records, unreadable: result.value.unreadable });
       }
 
@@ -628,13 +832,13 @@ export function createRequestHandler() {
         // bucket rather than none at all.
         const startLimits = getConfig().rateLimits;
         if (rateLimited(`oauth-start:${clientIp(req)}`, startLimits.register, startLimits.windowMs)) {
-          return send(res, 429, { error: 'too many attempts; try again shortly' });
+          return fail(res, 429, 'too many attempts; try again shortly');
         }
         const wantsLink = url.searchParams.get('purpose') === 'link';
         let userId: string | undefined;
         if (wantsLink) {
           const ctx = await contextFor(req);
-          if (!ctx) return send(res, 401, { error: 'authentication required to link an account' });
+          if (!ctx) return fail(res, 401, 'authentication required to link an account');
           userId = ctx.userId;
         } else if (url.searchParams.get('intent') === 'register') {
           // Human verification, asked for only when the caller says it is signing up.
@@ -652,14 +856,14 @@ export function createRequestHandler() {
             ['oauth', 'register'],
             clientIp(req),
           );
-          if (!human.ok) return send(res, 403, { error: human.error });
+          if (!human.ok) return fail(res, 403, human.error);
         }
         const result = await AccountService.startGoogleAuthorization({
           purpose: wantsLink ? 'link' : 'login',
           userId,
           returnUri: oauthReturnUri(url.searchParams.get('return_uri')),
         });
-        if (!result.ok) return send(res, 400, { error: result.error });
+        if (!result.ok) return fail(res, 400, result.error);
         return send(res, 200, { authorize_url: result.value.authorizeUrl });
       }
 
@@ -686,7 +890,7 @@ export function createRequestHandler() {
         const result = await AccountService.completeProviderSignIn('google', body?.code, {
           persistent: (body as { persistent?: unknown } | undefined)?.persistent === true,
         });
-        if (!result.ok) return send(res, 400, { error: result.error });
+        if (!result.ok) return fail(res, 400, result.error);
         return send(res, 200, {
           user_id: result.value.userId,
           username: result.value.username,
@@ -700,13 +904,13 @@ export function createRequestHandler() {
         // row, so it rides the register bucket.
         const xStartLimits = getConfig().rateLimits;
         if (rateLimited(`oauth-start:${clientIp(req)}`, xStartLimits.register, xStartLimits.windowMs)) {
-          return send(res, 429, { error: 'too many attempts; try again shortly' });
+          return fail(res, 429, 'too many attempts; try again shortly');
         }
         const wantsLink = url.searchParams.get('purpose') === 'link';
         let userId: string | undefined;
         if (wantsLink) {
           const ctx = await contextFor(req);
-          if (!ctx) return send(res, 401, { error: 'authentication required to link an account' });
+          if (!ctx) return fail(res, 401, 'authentication required to link an account');
           userId = ctx.userId;
         } else if (url.searchParams.get('intent') === 'register') {
           // See the Google route above: same gate, same reason, and the same
@@ -716,14 +920,14 @@ export function createRequestHandler() {
             ['oauth', 'register'],
             clientIp(req),
           );
-          if (!human.ok) return send(res, 403, { error: human.error });
+          if (!human.ok) return fail(res, 403, human.error);
         }
         const result = await AccountService.startXAuthorization({
           purpose: wantsLink ? 'link' : 'login',
           userId,
           returnUri: oauthReturnUri(url.searchParams.get('return_uri')),
         });
-        if (!result.ok) return send(res, 400, { error: result.error });
+        if (!result.ok) return fail(res, 400, result.error);
         // JSON rather than a 302: the app decides how to present it, and a redirect
         // from an API host is awkward to recover from.
         return send(res, 200, { authorize_url: result.value.authorizeUrl });
@@ -753,7 +957,7 @@ export function createRequestHandler() {
         const result = await AccountService.completeProviderSignIn('x', body?.code, {
           persistent: (body as { persistent?: unknown } | undefined)?.persistent === true,
         });
-        if (!result.ok) return send(res, 400, { error: result.error });
+        if (!result.ok) return fail(res, 400, result.error);
         return send(res, 200, {
           user_id: result.value.userId,
           username: result.value.username,
@@ -768,13 +972,13 @@ export function createRequestHandler() {
       // not so anyone can resume it.
       if (path === '/auth/sessions' && req.method === 'GET') {
         const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
+        if (!ctx) return fail(res, 401, 'authentication required');
         return send(res, 200, { sessions: await listUserSessions(ctx.userId, bearer(req) ?? null) });
       }
 
       if (path === '/auth/sessions/revoke' && req.method === 'POST') {
         const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
+        if (!ctx) return fail(res, 401, 'authentication required');
         const token = bearer(req) ?? null;
         const body = (await readBody(req)) as { ids?: unknown; all_others?: unknown } | undefined;
 
@@ -787,7 +991,7 @@ export function createRequestHandler() {
         const ids = Array.isArray(body?.ids)
           ? body.ids.filter((id): id is string => typeof id === 'string' && id.length > 0)
           : [];
-        if (ids.length === 0) return send(res, 400, { error: 'ids: required' });
+        if (ids.length === 0) return fail(res, 400, 'ids: required');
         // Revoking the caller's own session is allowed rather than refused: a client that
         // asked for it is a client that is about to drop its token anyway.
         return send(res, 200, { revoked: await revokeSessions(ctx.userId, ids) });
@@ -797,10 +1001,10 @@ export function createRequestHandler() {
         // Rate limited like sign-in: guessing a password here is the same attack, and
         // the per-account lockout in `deleteAccount` is the other half of the pair.
         if (rateLimited(`delete:${clientIp(req)}`, getConfig().rateLimits.login, getConfig().rateLimits.windowMs)) {
-          return send(res, 429, { error: 'too many attempts; try again shortly' });
+          return fail(res, 429, 'too many attempts; try again shortly');
         }
         const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
+        if (!ctx) return fail(res, 401, 'authentication required');
         const body = (await readBody(req)) as
           | { password?: unknown; reason?: unknown }
           | undefined;
@@ -808,7 +1012,7 @@ export function createRequestHandler() {
           reason: body?.reason,
         });
         if (!result.ok) {
-          return send(res, 400, { error: result.error });
+          return fail(res, 400, result.error);
         }
         return send(res, 200, { deleted: true });
       }
@@ -820,7 +1024,7 @@ export function createRequestHandler() {
         // export and record endpoints, and this endpoint's job is to answer "is this
         // the account I think it is".
         const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
+        if (!ctx) return fail(res, 401, 'authentication required');
         const counts = await RecordService.countByCategory(ctx);
         // The row type is an alias rather than an inline `query<{ ... }>` literal, which
         // Node's type-stripper mis-reads across lines as a TSX element and then fails on
@@ -875,8 +1079,17 @@ export function createRequestHandler() {
       // that changes on a schedule and therefore of a request per expiry.
       const avatarMatch = path.match(/^\/auth\/avatar\/([0-9a-f-]{36})$/);
       if (avatarMatch && req.method === 'GET') {
+        // Unauthenticated by design (see above), which means it is the one account-data
+        // route with no natural brake: a caller can mint ids as fast as it likes. 300
+        // per minute is far more than a page of avatars costs — a browser revalidates
+        // one per image and the 304 is the common case — while still bounding a host
+        // that is walking the space or using us as a bandwidth amplifier.
+        if (rateLimited(`avatar:${clientIp(req)}`, 300, 60_000)) {
+          res.setHeader('Retry-After', '60');
+          return fail(res, 429, 'too many requests; try again shortly');
+        }
         const avatar = await avatarForUser(avatarMatch[1]);
-        if (!avatar) return send(res, 404, { error: 'no avatar' });
+        if (!avatar) return fail(res, 404, 'no avatar');
 
         // The id is the image's identity, so the URL can be cached; the revalidation is
         // what keeps a new picture from being shadowed by an old one, and a 304 is the
@@ -900,15 +1113,15 @@ export function createRequestHandler() {
 
       if (path === '/auth/x/links' && req.method === 'GET') {
         const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
+        if (!ctx) return fail(res, 401, 'authentication required');
         return send(res, 200, { links: await AccountService.listXLinks(ctx.userId) });
       }
 
       if (path === '/auth/x/unlink' && req.method === 'POST') {
         const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
+        if (!ctx) return fail(res, 401, 'authentication required');
         const result = await AccountService.unlinkX(ctx);
-        if (!result.ok) return send(res, 400, { error: result.error });
+        if (!result.ok) return fail(res, 400, result.error);
         return send(res, 200, { ok: true });
       }
 
@@ -922,21 +1135,21 @@ export function createRequestHandler() {
 
       if (path === '/auth/credentials/bind' && req.method === 'POST') {
         const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
+        if (!ctx) return fail(res, 401, 'authentication required');
         const body = (await readBody(req)) as { username?: unknown; password?: unknown } | undefined;
         const result = await AccountService.bindCredentials(ctx, body?.username, body?.password);
         if (!result.ok) {
           // A name another account holds is a conflict, not a bad request; the form
           // renders the two differently.
           const status = result.error === 'username_taken' ? 409 : 400;
-          return send(res, status, { error: result.error });
+          return fail(res, status, result.error);
         }
         return send(res, 200, { ok: true, username: result.value.username });
       }
 
       if (path === '/auth/login-methods' && req.method === 'GET') {
         const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
+        if (!ctx) return fail(res, 401, 'authentication required');
         const overview = await AccountService.loginOverview(ctx.userId);
         return send(res, 200, {
           username: overview.username,
@@ -951,9 +1164,9 @@ export function createRequestHandler() {
       if (path.startsWith('/auth/oauth/') && path.endsWith('/unlink') && req.method === 'POST') {
         const provider = path.slice('/auth/oauth/'.length, -'/unlink'.length);
         const ctx = await contextFor(req);
-        if (!ctx) return send(res, 401, { error: 'authentication required' });
+        if (!ctx) return fail(res, 401, 'authentication required');
         const result = await AccountService.unlinkProvider(ctx, provider);
-        if (!result.ok) return send(res, 400, { error: result.error });
+        if (!result.ok) return fail(res, 400, result.error);
         return send(res, 200, { ok: true });
       }
 
@@ -972,7 +1185,7 @@ export function createRequestHandler() {
       const requireCtx = async (): Promise<AuthContext | null> => {
         const resolved = await contextFor(req);
         if (!resolved) {
-          send(res, 401, { error: 'missing or invalid credentials, or the account is locked' });
+          fail(res, 401, 'missing or invalid credentials, or the account is locked');
           return null;
         }
         return resolved;
@@ -990,8 +1203,9 @@ export function createRequestHandler() {
         const resolved = await requireCtx();
         if (!resolved) return null;
         if (!(await AccountService.hasBoundCredentials(resolved.userId))) {
-          send(res, 403, {
-            error: 'account_incomplete',
+          // The message stays the machine token it has always been, because the
+          // installed client compares `error` to it. New clients read the code.
+          fail(res, 403, 'account_incomplete', {
             detail: 'bind an account name and password before using records',
           });
           return null;
@@ -1092,7 +1306,7 @@ export function createRequestHandler() {
         if (!ctx) return;
         const body = (await readBody(req)) as Record<string, unknown> | undefined;
         const result = await RecordService.put(ctx, body ?? {});
-        if (!result.ok) return send(res, 400, { error: result.error });
+        if (!result.ok) return fail(res, 400, result.error);
         return send(res, 201, { id: result.id });
       }
 
@@ -1109,7 +1323,7 @@ export function createRequestHandler() {
         const body = (await readBody(req, 8_000_000)) as
           { records?: unknown; echoState?: unknown } | undefined;
         const result = await RecordService.putMany(ctx, body?.records);
-        if (!result.ok) return send(res, 400, { error: result.error });
+        if (!result.ok) return fail(res, 400, result.error);
         if (body?.echoState === false) {
           return send(res, 200, { written: result.written, rejected: result.rejected });
         }
@@ -1132,7 +1346,11 @@ export function createRequestHandler() {
         const id = decodeURIComponent(recordMatch[1]);
         if (req.method === 'DELETE') {
           const removed = await RecordService.remove(ctx, id);
-          return send(res, removed ? 200 : 404, { removed });
+          // `removed` stays in the body on both answers: it is the route's own
+          // statement about what happened, not part of the error envelope.
+          return removed
+            ? send(res, 200, { removed })
+            : fail(res, 404, 'no such record', { removed });
         }
       }
 
@@ -1147,7 +1365,7 @@ export function createRequestHandler() {
         if (!ctx) return;
         const body = (await readBody(req)) as Record<string, unknown> | undefined;
         const result = await AccountService.updateSettings(ctx, body ?? {});
-        if (!result.ok) return send(res, 400, { error: result.error });
+        if (!result.ok) return fail(res, 400, result.error);
         return send(res, 200, { ok: true });
       }
 
@@ -1189,7 +1407,7 @@ export function createRequestHandler() {
         const ctx = await requireCtx();
         if (!ctx) return;
         const removed = await AccountService.revokeApiToken(ctx.userId, tokenRevoke[1]);
-        if (!removed) return send(res, 404, { error: 'no such token' });
+        if (!removed) return fail(res, 404, 'no such token');
         return send(res, 200, { ok: true });
       }
       // Rename a token. The name is a label with no security meaning, so it is the
@@ -1200,9 +1418,9 @@ export function createRequestHandler() {
         if (!ctx) return;
         const body = (await readBody(req)) as { name?: unknown } | undefined;
         const name = typeof body?.name === 'string' ? body.name.trim() : '';
-        if (name === '' || name.length > 64) return send(res, 400, { error: 'a name between 1 and 64 characters is required' });
+        if (name === '' || name.length > 64) return fail(res, 400, 'a name between 1 and 64 characters is required');
         const renamed = await AccountService.renameApiToken(ctx.userId, tokenRevoke[1], name);
-        if (!renamed) return send(res, 404, { error: 'no such token' });
+        if (!renamed) return fail(res, 404, 'no such token');
         return send(res, 200, { ok: true, name });
       }
 
@@ -1219,7 +1437,7 @@ export function createRequestHandler() {
         if (!ctx) return;
         const body = (await readBody(req)) as { token?: unknown; platform?: unknown } | undefined;
         const token = typeof body?.token === 'string' ? body.token.trim() : '';
-        if (token === '' || token.length > 4096) return send(res, 400, { error: 'a device token is required' });
+        if (token === '' || token.length > 4096) return fail(res, 400, 'a device token is required');
         const platform = typeof body?.platform === 'string' && body.platform.trim() !== ''
           ? body.platform.trim().slice(0, 32)
           : 'android';
@@ -1231,7 +1449,7 @@ export function createRequestHandler() {
         if (!ctx) return;
         const body = (await readBody(req)) as { token?: unknown } | undefined;
         const token = typeof body?.token === 'string' ? body.token.trim() : '';
-        if (token === '') return send(res, 400, { error: 'a device token is required' });
+        if (token === '') return fail(res, 400, 'a device token is required');
         await PushStore.unregister(ctx.userId, token);
         return send(res, 200, { ok: true });
       }
@@ -1248,7 +1466,7 @@ export function createRequestHandler() {
       if (path === '/api/shares/access' && req.method === 'POST') {
         const limits = getConfig().rateLimits;
         if (rateLimited(`share:${clientIp(req)}`, limits.login, limits.windowMs)) {
-          return send(res, 429, { error: 'too many attempts; try again shortly' });
+          return fail(res, 429, 'too many attempts; try again shortly');
         }
         const body = (await readBody(req, 16_384)) as
           | { token?: unknown; password?: unknown; viewerPass?: unknown }
@@ -1258,9 +1476,8 @@ export function createRequestHandler() {
           if (result.error === 'locked') {
             const retryAfter = (result as { retryAfterSeconds?: number }).retryAfterSeconds ?? 900;
             res.setHeader('Retry-After', String(retryAfter));
-            return send(res, 429, {
+            return fail(res, 429, 'too many wrong passwords; share is temporarily locked', {
               code: 'SHARE_LOCKED',
-              message: 'too many wrong passwords; share is temporarily locked',
               retryAfterSeconds: retryAfter,
             });
           }
@@ -1268,17 +1485,16 @@ export function createRequestHandler() {
           // copy for each of these. `SHARE_NOT_FOUND` covers both a token that never
           // existed and one that has expired, which is the pair a prober could otherwise
           // use to discover which links are real.
-          const codes: Record<string, [number, string]> = {
+          const codes: Record<string, [number, ApiCode]> = {
             password_required: [401, 'PASSWORD_REQUIRED'],
             invalid_password: [401, 'INVALID_PASSWORD'],
             expired: [410, 'SHARE_EXPIRED'],
             'not found': [404, 'SHARE_NOT_FOUND'],
           };
           const [status, code] = codes[result.error] ?? [404, 'SHARE_NOT_FOUND'];
-          return send(res, status, {
+          return fail(res, status, result.error, {
             code,
             ...(code === 'PASSWORD_REQUIRED' ? { passwordRequired: true } : {}),
-            message: result.error,
           });
         }
         return send(res, 200, result.value);
@@ -1304,7 +1520,7 @@ export function createRequestHandler() {
           expiresAt: body?.expiresAt,
           live: body?.live,
         });
-        if (!result.ok) return send(res, 400, { code: 'SHARE_REJECTED', message: result.error });
+        if (!result.ok) return fail(res, 400, result.error, { code: 'SHARE_REJECTED' });
         return send(res, 201, result.value);
       }
 
@@ -1320,7 +1536,7 @@ export function createRequestHandler() {
           mode: body?.mode,
           snapshot: body?.snapshot,
         });
-        if (!result.ok) return send(res, 400, { code: 'SHARE_REJECTED', message: result.error });
+        if (!result.ok) return fail(res, 400, result.error, { code: 'SHARE_REJECTED' });
         return send(res, 200, result.value);
       }
 
@@ -1329,7 +1545,7 @@ export function createRequestHandler() {
         const ctx = await requireCtx();
         if (!ctx) return;
         const removed = await ShareService.revoke(ctx.userId, shareRevoke[1]);
-        if (!removed) return send(res, 404, { error: 'no such share' });
+        if (!removed) return fail(res, 404, 'no such share');
         return send(res, 200, { ok: true });
       }
 
@@ -1354,10 +1570,7 @@ export function createRequestHandler() {
         // chain-verification budget.
         if (rateLimited(`supporters-burst:${ip}`, 3, 60_000)
           || rateLimited(`supporters:${ip}`, 10, 3_600_000)) {
-          return send(res, 429, {
-            code: 'RATE_LIMITED',
-            error: 'too many applications; try again later',
-          });
+          return fail(res, 429, 'too many applications; try again later', { code: 'RATE_LIMITED' });
         }
         const body = (await readBody(req, 8_192)) as
           | { txHash?: unknown; name?: unknown; turnstileToken?: unknown }
@@ -1367,7 +1580,7 @@ export function createRequestHandler() {
         // production, and a bot should not be able to spend the RPC budget.
         const human = await verifyTurnstile(body?.turnstileToken, 'donate', ip);
         if (!human.ok) {
-          return send(res, 403, { code: 'TURNSTILE', error: human.error });
+          return fail(res, 403, human.error, { code: 'TURNSTILE' });
         }
 
         const result = await applySupporter(body?.txHash, body?.name);
@@ -1379,9 +1592,8 @@ export function createRequestHandler() {
               : result.code === 'invalid_name' || result.code === 'invalid_tx_hash'
                 ? 400
                 : 422;
-          return send(res, status, {
-            code: result.code.toUpperCase(),
-            error: result.message,
+          return fail(res, status, result.message, {
+            code: SUPPORTER_CODES[result.code] ?? 'INVALID_REQUEST',
           });
         }
         return send(res, 201, result);
@@ -1390,7 +1602,7 @@ export function createRequestHandler() {
       // A browser GET on a webhook URL is a common way to "test" it. Answer with the
       // actual reason instead of the generic 404, which reads like the route is missing.
       if ((path === '/api/supporters/bmc' || path === '/api/supporters/afdian') && req.method !== 'POST') {
-        return send(res, 405, { error: 'method not allowed; webhooks are POST only' });
+        return fail(res, 405, 'method not allowed; webhooks are POST only');
       }
 
       if (path === '/api/supporters/bmc' && req.method === 'POST') {
@@ -1398,20 +1610,20 @@ export function createRequestHandler() {
         // No secret means the deployment has not finished setting the webhook up.
         // Refusing is the only safe answer: accepting unsigned deliveries would let
         // anyone write a name onto the public list.
-        if (!secret) return send(res, 503, { error: 'webhook not configured' });
+        if (!secret) return fail(res, 503, 'webhook not configured');
 
         const raw = await readRawBody(req, 64_000);
         const header = req.headers['x-signature-sha256'];
         const signature = Array.isArray(header) ? header[0] : header;
         if (!bmcSignatureMatches(raw, signature, secret)) {
-          return send(res, 401, { error: 'invalid signature' });
+          return fail(res, 401, 'invalid signature');
         }
 
         let event: Record<string, unknown>;
         try {
           event = JSON.parse(raw.toString('utf8')) as Record<string, unknown>;
         } catch {
-          return send(res, 400, { error: 'body is not JSON' });
+          return fail(res, 400, 'body is not JSON');
         }
 
         const type = typeof event.type === 'string' ? event.type : '';
@@ -1517,9 +1729,9 @@ export function createRequestHandler() {
       // from a browser, and a missing token means the feature is off.
       if (path.startsWith('/api/supporters/admin')) {
         const token = getConfig().supportersAdminToken ?? null;
-        if (!token) return send(res, 404, { error: 'not found' });
+        if (!token) return fail(res, 404, 'not found');
         if (!adminTokenMatches(req.headers.authorization, token)) {
-          return send(res, 401, { error: 'unauthorized' });
+          return fail(res, 401, 'unauthorized');
         }
 
         if (path === '/api/supporters/admin/pending' && req.method === 'GET') {
@@ -1531,7 +1743,7 @@ export function createRequestHandler() {
           const approved = await approveSupporter(approveMatch[1]);
           return approved
             ? send(res, 200, { ok: true })
-            : send(res, 404, { error: 'no such pending supporter' });
+            : fail(res, 404, 'no such pending supporter');
         }
 
         // Afdian orders arrive without a name and BMC names can be hostile; this is
@@ -1541,9 +1753,8 @@ export function createRequestHandler() {
           const body = (await readBody(req, 4_096)) as { name?: unknown } | undefined;
           const renamed = await renameSupporter(renameMatch[1], body?.name);
           if (!renamed.ok) {
-            return send(res, renamed.error === 'not_found' ? 404 : 400, {
-              code: renamed.error.toUpperCase(),
-              error: renamed.message,
+            return fail(res, renamed.error === 'not_found' ? 404 : 400, renamed.message, {
+              code: SUPPORTER_CODES[renamed.error] ?? 'INVALID_REQUEST',
             });
           }
           return send(res, 200, { ok: true, name: renamed.name });
@@ -1554,20 +1765,20 @@ export function createRequestHandler() {
           const removed = await removeSupporter(removeMatch[1]);
           return removed
             ? send(res, 200, { ok: true })
-            : send(res, 404, { error: 'no such supporter' });
+            : fail(res, 404, 'no such supporter');
         }
 
-        return send(res, 404, { error: 'not found' });
+        return fail(res, 404, 'not found');
       }
 
-      send(res, 404, { error: 'not found' });
+      fail(res, 404, 'not found');
     } catch (error) {
       // Log the whole thing, answer with nothing. A thrown driver or DNS error
       // carries hostnames, database names and query fragments — useful to us,
       // reconnaissance to a caller. The audit's example was a malformed uuid that
       // reached Postgres and echoed "invalid input syntax for type uuid" back.
       console.error('[hrt] unhandled request error:', error);
-      if (!res.headersSent) send(res, 500, { error: 'internal error' });
+      if (!res.headersSent) fail(res, 500, 'internal error');
     }
   };
 }

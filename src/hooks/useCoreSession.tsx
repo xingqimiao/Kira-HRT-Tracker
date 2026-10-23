@@ -3,7 +3,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { coreAuth, CoreAuthError } from '../services/coreAuth';
 import { unregisterPush } from '../utils/pushRegister';
 import { clearAccountData, flushSecureStore, get as secureGet, remove as secureRemove, set as secureSet } from '../utils/secureStore';
-import { writeMedPlans } from '../utils/medPlan';
+import { resetMedPlanStorage } from '../utils/medPlan';
 import { reschedulePlanNotifications } from '../utils/medPlanNotify';
 
 /**
@@ -237,9 +237,11 @@ function useCoreSessionState() {
       try {
         // Cancel first: a native ring embeds the title and body it was scheduled
         // with, so the previous account's drug name would otherwise still appear when
-        // it fires. Emptying the plan makes the reschedule cancel every owned id and
-        // schedule nothing; the wipe then removes the (now empty) plan and the records.
-        writeMedPlans([]);
+        // it fires. Dropping the plan keys (rather than writing an empty plan) makes
+        // the reschedule cancel every owned id and schedule nothing — and, unlike an
+        // empty write, it leaves no "cleared @ now" claim behind if the wipe fails
+        // partway through.
+        resetMedPlanStorage();
         void reschedulePlanNotifications().catch(() => undefined);
         await clearAccountData();
       } catch {

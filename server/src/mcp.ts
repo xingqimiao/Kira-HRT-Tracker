@@ -88,6 +88,17 @@ function toolError(message: string) {
 }
 
 /**
+ * MCP failures are prose, deliberately, and do not carry the REST `code`.
+ *
+ * A tool result is read by a model, which benefits from the sentence and would
+ * have to be told what each code means; and the text is already the interface
+ * those clients are built against. The REST contract (`{ code, message }`, see
+ * `types.ts`'s `API_CODES`) stops at the HTTP boundary. If codes are ever wanted
+ * here, add them as a *second* field and leave the text alone — changing the text
+ * changes what every agent prints to its user.
+ */
+
+/**
  * A paging cursor, converted to the epoch milliseconds the store pages by.
  *
  * `before` is documented as the oldest instant from the page just read, which is what

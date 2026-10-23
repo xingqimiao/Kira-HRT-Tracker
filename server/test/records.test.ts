@@ -108,10 +108,12 @@ test('records are refused until a fallback credential is bound', async () => {
   const blocked = await call(base, '/api/records', bearer(token));
   assert.equal(blocked.status, 403, 'an unbound account must not reach records');
   assert.equal(
-    blocked.body.error,
-    'account_incomplete',
-    'the app needs the code to route to the binding screen rather than to sign-in',
+    blocked.body.code,
+    'ACCOUNT_INCOMPLETE',
+    'the app routes to the binding screen on the code rather than on the prose',
   );
+  // Installed clients still compare this token, so it has to keep its exact value.
+  assert.equal(blocked.body.error, 'account_incomplete', 'the legacy token must survive the contract change');
 
   // The endpoints that let someone *become* complete must stay reachable, or the gate
   // would be a lockout rather than a prompt.
@@ -335,6 +337,117 @@ test('a payload that says nothing about weight leaves the setting alone', async 
 
   const after = await call(base, '/api/settings', bearer(token));
   assert.equal(after.body.bodyWeightKg, 70, 'a payload with no weight cleared the setting');
+});
+
+/**
+ * The medication plan: an empty copy must not erase the account's.
+ *
+ * `medPlan: []` is ambiguous — "this device has no plan" and "the user removed every
+ * plan" — so the app sends a clear marker (`clearedAt`) only for the second. A write
+ * with neither a plan nor a marker is silence, and the guard must treat it as such.
+ * Without it, a device that had never held a plan could empty the account just by
+ * carrying a newer timestamp, which is exactly how the plan disappeared from every
+ * device at once.
+ */
+const PLAN = [{
+  id: 'plan-1', ester: 'E2', hrtMode: 'transfem', route: 'oral', dose: '2mg',
+  mode: 'times', doseTimes: [{ hour: 20, minute: 0 }],
+  tzOffsetMinutes: -480, firstHour: 8, firstMinute: 0, enabled: true,
+}];
+
+async function storedPlan(token: string): Promise<{ value: unknown[]; stamp: number; clearedAt?: number } | undefined> {
+  const list = await call(base, '/api/records', bearer(token));
+  return (list.body.records as { id: string; data: { value: unknown[]; stamp: number; clearedAt?: number } }[])
+    .find((r) => r.id === 'scalar:medPlan')?.data;
+}
+
+test('an empty plan with no clear marker does not erase the stored one', async () => {
+  const { token } = await freshAccount();
+  const stamp = Date.now();
+  await call(base, '/api/records/batch', json({
+    records: [{ id: 'scalar:medPlan', takenAt: stamp, category: 'setting', data: { value: PLAN, stamp } }],
+  }, token));
+
+  // Exactly the write a device with no plan used to send.
+  const wipe = await call(base, '/api/records/batch', json({
+    records: [{
+      id: 'scalar:medPlan', takenAt: stamp + 1000, category: 'setting',
+      data: { value: [], stamp: stamp + 1000 },
+    }],
+  }, token));
+  assert.equal(wipe.status, 200, JSON.stringify(wipe.body));
+
+  const after = await storedPlan(token);
+  assert.equal(after?.value.length, PLAN.length, 'the empty plan replaced the stored one');
+  assert.equal(after?.stamp, stamp, 'the silent write moved the plan stamp');
+});
+
+test('a labelled clear does erase the stored plan', async () => {
+  const { token } = await freshAccount();
+  const stamp = Date.now();
+  await call(base, '/api/records/batch', json({
+    records: [{ id: 'scalar:medPlan', takenAt: stamp, category: 'setting', data: { value: PLAN, stamp } }],
+  }, token));
+
+  const clearAt = stamp + 1000;
+  await call(base, '/api/records/batch', json({
+    records: [{
+      id: 'scalar:medPlan', takenAt: clearAt, category: 'setting',
+      data: { value: [], stamp: clearAt, clearedAt: clearAt },
+    }],
+  }, token));
+
+  const after = await storedPlan(token);
+  assert.equal(after?.value.length, 0, 'a deliberate clear was ignored');
+});
+
+test('a silent empty write does not strip the clear marker', async () => {
+  // An older client keeps sending "[] @ now". It must not turn a deliberate clear
+  // back into silence: that marker is what keeps a device holding the old plan from
+  // resurrecting it.
+  const { token } = await freshAccount();
+  const stamp = Date.now();
+  await call(base, '/api/records/batch', json({
+    records: [{ id: 'scalar:medPlan', takenAt: stamp, category: 'setting', data: { value: PLAN, stamp } }],
+  }, token));
+  const clearAt = stamp + 1000;
+  await call(base, '/api/records/batch', json({
+    records: [{
+      id: 'scalar:medPlan', takenAt: clearAt, category: 'setting',
+      data: { value: [], stamp: clearAt, clearedAt: clearAt },
+    }],
+  }, token));
+
+  await call(base, '/api/records/batch', json({
+    records: [{
+      id: 'scalar:medPlan', takenAt: clearAt + 1000, category: 'setting',
+      data: { value: [], stamp: clearAt + 1000 },
+    }],
+  }, token));
+
+  const after = await storedPlan(token);
+  assert.equal(after?.value.length, 0);
+  assert.equal(after?.clearedAt, clearAt, 'the silent write stripped the clear marker');
+});
+
+test('an older-stamped plan still lands, so a poisoned account can be repaired', async () => {
+  // The guard must not be a blanket "newer stamp only" rule: the device that still
+  // holds the plan is precisely the one whose stamp may be older than the empty copy
+  // that erased it, and that write is the repair.
+  const { token } = await freshAccount();
+  const now = Date.now();
+  await call(base, '/api/records/batch', json({
+    records: [{ id: 'scalar:medPlan', takenAt: now, category: 'setting', data: { value: [], stamp: now } }],
+  }, token));
+
+  const repair = await call(base, '/api/records/batch', json({
+    records: [{ id: 'scalar:medPlan', takenAt: now - 5000, category: 'setting', data: { value: PLAN, stamp: now - 5000 } }],
+  }, token));
+  assert.equal(repair.status, 200, JSON.stringify(repair.body));
+
+  const after = await storedPlan(token);
+  assert.equal(after?.value.length, PLAN.length, 'the repair write was refused');
+  assert.equal(after?.stamp, now - 5000);
 });
 
 /**

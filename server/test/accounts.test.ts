@@ -116,7 +116,10 @@ test('a password alone is enough, and a wrong one is refused', async () => {
 
   const bad = await call(base, '/auth/login', json({ username: account.username, password: 'not-the-password' }));
   assert.equal(bad.status, 401);
-  assert.match(bad.body.error, /invalid credentials/i);
+  assert.equal(bad.body.code, 'INVALID_CREDENTIALS', 'a wrong password is a credential failure, not a generic 401');
+  assert.match(bad.body.message, /invalid credentials/i);
+  // The alias is what an installed client reads; it must agree with the message.
+  assert.equal(bad.body.error, bad.body.message, 'error must stay an alias of message');
 });
 
 test('repeated failures lock the account', async () => {
@@ -124,7 +127,8 @@ test('repeated failures lock the account', async () => {
   // Raised limits keep the per-IP limiter out of the way so this exercises the
   // per-account lockout. Both exist because they stop different attacks; this test
   // is about the per-account one.
-  let last: { status: number; body: { error: string } } = { status: 0, body: { error: '' } };
+  let last: { status: number; body: { code: string; error: string; message: string } } =
+    { status: 0, body: { code: '', error: '', message: '' } };
   for (let i = 0; i < 6; i++) {
     last = await call(
       base,
@@ -133,7 +137,8 @@ test('repeated failures lock the account', async () => {
     );
   }
   assert.equal(last.status, 401);
-  assert.match(last.body.error, /too many failed attempts/i, `got: ${last.body.error}`);
+  assert.equal(last.body.code, 'LOCKED', `the lockout must be its own code, got: ${last.body.code}`);
+  assert.match(last.body.message, /too many failed attempts/i, `got: ${last.body.message}`);
 
   // Even the correct credentials are refused while the lockout stands — that is the
   // point of a lockout rather than a hard failure on the attacker's request.
@@ -143,7 +148,68 @@ test('repeated failures lock the account', async () => {
     json({ username: account.username, password: account.password }),
   );
   assert.equal(correct.status, 401);
-  assert.match(correct.body.error, /too many failed attempts/i);
+  assert.equal(correct.body.code, 'LOCKED');
+  assert.match(correct.body.message, /too many failed attempts/i);
+});
+
+test('a device that has signed in before is not held out by the lockout', async () => {
+  // The lockout is account-wide, so anyone who knows a username can trip it. The
+  // device pass is what keeps that from being a way to lock the owner out: it was
+  // issued at a successful sign-in, so whoever trips the lock cannot have one.
+  const account = await createAccount();
+  const signedIn = await call(base, '/auth/login', json({ username: account.username, password: account.password }));
+  assert.equal(signedIn.status, 200, JSON.stringify(signedIn.body));
+  const devicePass = signedIn.body.device_pass as string;
+  assert.ok(devicePass, 'a successful sign-in hands the device its exemption');
+
+  for (let i = 0; i < 6; i++) {
+    await call(base, '/auth/login', json({ username: account.username, password: 'wrong-password-here' }));
+  }
+
+  // Without the pass the lock stands, exactly as before.
+  const stranger = await call(base, '/auth/login', json({ username: account.username, password: account.password }));
+  assert.equal(stranger.status, 401);
+
+  // With it, the owner's own device still gets in — the password is still required
+  // and still verified, so this is not a shortcut past the credential. A wrong
+  // password with a valid pass is refused as a wrong password, not let through and
+  // not reported as a lock.
+  const wrong = await call(
+    base,
+    '/auth/login',
+    json({ username: account.username, password: 'wrong-password-here', device_pass: devicePass }),
+  );
+  assert.equal(wrong.status, 401);
+  assert.equal(wrong.body.code, 'INVALID_CREDENTIALS', 'a pass exempts the lock, not the password check');
+  assert.match(wrong.body.message, /invalid credentials/i);
+
+  const owner = await call(
+    base,
+    '/auth/login',
+    json({ username: account.username, password: account.password, device_pass: devicePass }),
+  );
+  assert.equal(owner.status, 200, JSON.stringify(owner.body));
+
+  // Changing the password retires every pass with it: the value was keyed on the
+  // old hash, so the next lock cannot be skipped with it.
+  const changed = await call(
+    base,
+    '/auth/password',
+    json({ current_password: account.password, new_password: 'a-different-password-2' }, owner.body.token),
+  );
+  assert.equal(changed.status, 200, JSON.stringify(changed.body));
+
+  for (let i = 0; i < 6; i++) {
+    await call(base, '/auth/login', json({ username: account.username, password: 'wrong-password-here' }));
+  }
+  const stale = await call(
+    base,
+    '/auth/login',
+    json({ username: account.username, password: 'a-different-password-2', device_pass: devicePass }),
+  );
+  assert.equal(stale.status, 401, 'a pass from the old password is worth nothing under the new one');
+  assert.equal(stale.body.code, 'LOCKED');
+  assert.match(stale.body.message, /too many failed attempts/i);
 });
 
 // ---------------------------------------------------------------------------
@@ -648,6 +714,9 @@ test('security headers are present on API responses', async () => {
   assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(res.headers.get('referrer-policy'), 'no-referrer');
   assert.equal(res.headers.get('x-frame-options'), 'DENY');
+  // The share viewer is the only page this origin serves, and nothing opens it as a
+  // popup; without this the viewer's window could be left holding an opener.
+  assert.equal(res.headers.get('cross-origin-opener-policy'), 'same-origin');
   assert.match(res.headers.get('content-security-policy') ?? '', /frame-ancestors 'none'/);
   assert.match(res.headers.get('strict-transport-security') ?? '', /max-age=/);
 });

@@ -257,10 +257,11 @@ test('deletion honours the lockout, so it is not a way around the sign-in limit'
     '/auth/account/delete',
     json({ password: account.password }, account.token),
   );
+  assert.equal(locked.body.code, 'LOCKED', 'deleting an account is refused by the same lockout as signing in');
   assert.match(
-    locked.body.error,
+    locked.body.message,
     /too many failed attempts/i,
-    `the correct credentials must be refused while locked, got: ${locked.body.error}`,
+    `the correct credentials must be refused while locked, got: ${locked.body.message}`,
   );
 
   const n = (await pool.query<{ n: number }>('SELECT count(*)::int AS n FROM users WHERE id = $1', [userId])).rows[0].n;

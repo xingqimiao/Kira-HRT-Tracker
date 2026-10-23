@@ -25,7 +25,10 @@
  *     backup between them forever.
  *
  * Scalars that aren't records — body weight, PK overrides — carry their own
- * last-write timestamp and are resolved last-write-wins.
+ * last-write timestamp and are resolved last-write-wins. The medication plan is the
+ * one exception: an empty plan is not an opinion, only a marked clear is, because
+ * last-write-wins on an array lets any device with a fresh timestamp delete a plan
+ * it never had (see `resolvePlan`).
  */
 
 import { isTestosteroneEster, isT_LabUnit } from '../../logic';
@@ -176,6 +179,17 @@ export interface SyncState {
     medPlan?: MedPlan[];
     medPlanUpdatedAt: number;
     /**
+     * When the user deliberately removed every plan, or 0.
+     *
+     * Emptiness alone is not a deletion. `medPlan: []` also describes a device that
+     * has simply never held a plan — a new install, a cleared browser, a device whose
+     * one-time metadata migration ran before the account's copy arrived — and letting
+     * that win by timestamp is what erased the plan on every device at once. A clear
+     * is only a clear when this says so, and only when it postdates the plan it would
+     * remove (see `resolvePlan`).
+     */
+    medPlanClearedAt: number;
+    /**
      * App-only configuration, carried in `app_state.settings`.
      *
      * Resolved as a *whole bag* on its stamp, like the two scalars above, rather
@@ -202,7 +216,15 @@ export interface SyncState {
 export const SYNC_SCALARS = ['weight', 'pkParams', 'appSettings', 'medPlan'] as const;
 
 type SyncScalarField = (typeof SYNC_SCALARS)[number] | `${(typeof SYNC_SCALARS)[number]}UpdatedAt`;
-type UnaccountedSyncField = Exclude<keyof SyncState, 'modes' | SyncScalarField>;
+/**
+ * Scalar bookkeeping that is not `UpdatedAt`.
+ *
+ * The clear marker is not an edit stamp — it only exists on a plan that is empty —
+ * so it is named here rather than folded into the `UpdatedAt` pattern, which would
+ * also let a `weightClearedAt` through.
+ */
+type SyncScalarSidecar = 'medPlanClearedAt';
+type UnaccountedSyncField = Exclude<keyof SyncState, 'modes' | SyncScalarField | SyncScalarSidecar>;
 const _everySyncFieldIsAScalar: [UnaccountedSyncField] extends [never]
   ? true
   : ['SyncState field is not a declared scalar', UnaccountedSyncField] = true;
@@ -259,6 +281,7 @@ export function emptySyncState(): SyncState {
         pkParamsUpdatedAt: 0,
         appSettingsUpdatedAt: 0,
         medPlanUpdatedAt: 0,
+        medPlanClearedAt: 0,
     };
 }
 
@@ -434,6 +457,9 @@ export function normalizeSyncState(payload: unknown): SyncState {
         state.medPlan = sanitizeMedPlans(p.medPlan);
         state.medPlanUpdatedAt = asTimestamp(p.medPlanUpdatedAt) || 1;
     }
+    // No floor of 1 here: the clear marker means "the user deleted the plan at this
+    // instant", and 0 is exactly the absence of that claim.
+    state.medPlanClearedAt = asTimestamp(p.medPlanClearedAt);
 
     // App-only settings ride in the Core's `app_state.settings`, read here rather
     // than at the call site so every surface that consumes a payload — sync, a
@@ -623,6 +649,79 @@ function resolveScalar<T>(
         : { value: localValue, at: localAt };
 }
 
+interface PlanSide {
+    plans: MedPlan[] | undefined;
+    /** The last edit. */
+    updatedAt: number;
+    /** The user's own "remove every plan", 0 when there was none. */
+    clearedAt: number;
+}
+
+interface ResolvedPlan {
+    plans: MedPlan[] | undefined;
+    updatedAt: number;
+    clearedAt: number;
+}
+
+/**
+ * Which copy of the medication plan survives a merge.
+ *
+ * Deliberately **not** the plain last-write-wins rule the other scalars use. That
+ * rule treats an empty array as an opinion, so any device that can fabricate a newer
+ * stamp deletes the plan for everyone — and one did: the metadata migration rewrote
+ * the plan on first launch, including when it held nothing, and a fresh device's
+ * "[] @ now" beat the account's real plan on every device. The failure was reported
+ * as the plan silently disappearing everywhere at once.
+ *
+ * The rule here is that **emptiness alone carries no weight**:
+ *
+ *   - both sides hold plans → last write wins, as before (the tie is decided by
+ *     content so two devices agree, the same reason `resolveScalar` has one);
+ *   - one side is empty → it wins only if it carries a clear marker newer than the
+ *     other side's plan, i.e. the user deleted the plan after it was written;
+ *   - otherwise the non-empty side wins, whatever the stamps say. A device that has
+ *     never held a plan is simply silent, not a deletion.
+ *
+ * The returned `clearedAt` is dropped whenever a plan survives, so a stale marker can
+ * never outlive the plan it cleared.
+ */
+function resolvePlan(local: PlanSide, remote: PlanSide): ResolvedPlan {
+    const has = (side: PlanSide) => (side.plans?.length ?? 0) > 0;
+
+    if (!has(local) && !has(remote)) {
+        // Neither holds a plan. Keep whichever states more, so a clear still reaches
+        // the other devices and a plain empty copy never invents one.
+        const silent = (side: PlanSide) => side.plans === undefined && side.clearedAt === 0;
+        if (silent(local) && silent(remote)) return { plans: undefined, updatedAt: 0, clearedAt: 0 };
+        const winner = local.clearedAt !== remote.clearedAt
+            ? (local.clearedAt > remote.clearedAt ? local : remote)
+            : (local.updatedAt >= remote.updatedAt ? local : remote);
+        return { plans: [], updatedAt: winner.updatedAt, clearedAt: Math.max(local.clearedAt, remote.clearedAt) };
+    }
+
+    if (!has(remote)) {
+        const remoteCleared = remote.clearedAt > 0 && remote.clearedAt > local.updatedAt;
+        return remoteCleared
+            ? { plans: [], updatedAt: remote.updatedAt, clearedAt: remote.clearedAt }
+            : { plans: local.plans, updatedAt: local.updatedAt, clearedAt: 0 };
+    }
+
+    if (!has(local)) {
+        const localCleared = local.clearedAt > 0 && local.clearedAt > remote.updatedAt;
+        return localCleared
+            ? { plans: [], updatedAt: local.updatedAt, clearedAt: local.clearedAt }
+            : { plans: remote.plans, updatedAt: remote.updatedAt, clearedAt: 0 };
+    }
+
+    // Both hold plans: the original last-write-wins, with the same deterministic
+    // tiebreak so the two devices cannot keep overwriting each other.
+    const localWins = local.updatedAt !== remote.updatedAt
+        ? local.updatedAt > remote.updatedAt
+        : stableString(local.plans) >= stableString(remote.plans);
+    const winner = localWins ? local : remote;
+    return { plans: winner.plans, updatedAt: winner.updatedAt, clearedAt: 0 };
+}
+
 /**
  * Settings are resolved as one bag on their stamp, by the same rule and for the
  * same reason as the two scalars above (see `resolveScalar`) — hence the direct
@@ -715,9 +814,13 @@ export function mergeSyncStates(local: SyncState, remote: SyncState | null): Mer
     merged.appSettings = resolvedSettings;
     merged.appSettingsUpdatedAt = appSettings.at;
 
-    const medPlan = resolveScalar(local.medPlan, local.medPlanUpdatedAt, remote.medPlan, remote.medPlanUpdatedAt);
-    merged.medPlan = medPlan.value;
-    merged.medPlanUpdatedAt = medPlan.at;
+    const plan = resolvePlan(
+        { plans: local.medPlan, updatedAt: local.medPlanUpdatedAt, clearedAt: local.medPlanClearedAt },
+        { plans: remote.medPlan, updatedAt: remote.medPlanUpdatedAt, clearedAt: remote.medPlanClearedAt },
+    );
+    merged.medPlan = plan.plans;
+    merged.medPlanUpdatedAt = plan.updatedAt;
+    merged.medPlanClearedAt = plan.clearedAt;
 
     const mergedFp = fingerprintState(merged);
     return {
@@ -736,6 +839,11 @@ export function mergeSyncStates(local: SyncState, remote: SyncState | null): Mer
  * true the moment you sign in and mints a backup holding nothing but that
  * default. A scalar counts only once it has a real stamp — the floor stamp of 1
  * is what an unstamped payload gets, the untouched default included.
+ *
+ * The plan counts by what it holds, not by its stamp: a device whose plan is empty
+ * has nothing to contribute, and one that never edited it still carries a stamped
+ * empty copy from an older build. A deliberate clear is content — it is the only
+ * thing that may remove a plan elsewhere — so it keeps counting.
  */
 export function hasContent(state: SyncState): boolean {
     for (const m of MODE_KEYS) {
@@ -745,7 +853,10 @@ export function hasContent(state: SyncState): boolean {
             if (Object.keys(block.deletions[kind]).length > 0) return true;
         }
     }
-    return state.weightUpdatedAt > 1 || state.pkParamsUpdatedAt > 1 || state.medPlanUpdatedAt > 1;
+    return state.weightUpdatedAt > 1
+        || state.pkParamsUpdatedAt > 1
+        || (state.medPlan?.length ?? 0) > 0
+        || state.medPlanClearedAt > 0;
 }
 
 /**
@@ -786,5 +897,10 @@ export function fingerprintState(state: SyncState): string {
     // record edit happened to make the fingerprint differ.
     parts.push(`appSettings:${state.appSettings === undefined ? '' : stableString(state.appSettings)}`);
     parts.push(`medPlan:${state.medPlan === undefined ? '' : stableString(state.medPlan)}`);
+    // The marker is what tells an empty plan ("the user removed them") from an empty
+    // plan ("this device has nothing to say"), so it is part of the content: losing
+    // it would turn a clear into silence, and gaining one would turn silence into a
+    // deletion.
+    parts.push(`medPlanClearedAt:${state.medPlanClearedAt > 0 ? state.medPlanClearedAt : ''}`);
     return parts.join('\n');
 }

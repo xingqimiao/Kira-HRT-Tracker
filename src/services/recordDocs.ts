@@ -191,6 +191,15 @@ function payloadToDocs(payload: SyncPayload): PendingDoc[] {
     }
 
     // Scalars. Each keeps its own stamp, which is what `resolveScalar` compares.
+    //
+    // The plan also carries a clear marker, and the marker — not the emptiness — is
+    // the decisive part. An unmarked empty plan is still described here, because the
+    // *read* side has to see the account's stale row for a device that still holds
+    // the plan to notice it is behind. What keeps it from being written is the payload
+    // builders: `toLocalPayload` and `buildExportPayload` omit a plan this device has
+    // no opinion about, so no such doc is ever produced from local state.
+    const rawClearedAt = (payload as Record<string, unknown>).medPlanClearedAt;
+    const planClearedAt = typeof rawClearedAt === 'number' && Number.isFinite(rawClearedAt) ? rawClearedAt : 0;
     for (const [name, valueKey, stampKey] of [
         ['weight', 'weight', 'weightUpdatedAt'],
         ['pkParams', 'pkParams', 'pkParamsUpdatedAt'],
@@ -202,13 +211,19 @@ function payloadToDocs(payload: SyncPayload): PendingDoc[] {
         // writing an empty one would then win or lose a merge it should not enter.
         if (value === undefined && stamp === undefined) continue;
         const at = typeof stamp === 'number' ? stamp : 0;
+        const sidecar = name === 'medPlan' ? { clearedAt: planClearedAt } : {};
         // A scalar's whole content is its value, and its stamp is part of what makes it
         // "the server's copy" — a payload whose value is unchanged but whose stamp moved
         // is still an opinion worth landing (the server projects these into settings).
-        push(`scalar:${name}`, 'setting', at, {
-            value: value ?? null,
-            stamp: at,
-        }, `${stableString(value)}@${at}`);
+        // The plan's clear marker joins the identity for the same reason: an empty plan
+        // that turns into a clear is a different statement at the same value.
+        push(
+            `scalar:${name}`,
+            'setting',
+            at,
+            { value: value ?? null, stamp: at, ...sidecar },
+            `${stableString(value)}@${at}${name === 'medPlan' ? `#${planClearedAt}` : ''}`,
+        );
     }
 
     // App-only settings live in the payload's `appState`, the blob `toAppState` builds
@@ -326,6 +341,38 @@ function settingsCoveredBy(localData: unknown, remoteData: unknown): boolean {
 }
 
 /**
+ * Whether the account holds a *different* copy of something this device also holds
+ * and has not changed since its last push.
+ *
+ * The repair signal, and the reason it compares record by record rather than hashing
+ * both states: a delta read carries only recently changed rows, so comparing the whole
+ * payloads would always differ. `remote` here is whatever the read returned — a delta
+ * or a full page — and only its own rows are examined. A record the read did not
+ * mention cannot be evidence of disagreement.
+ *
+ * `known` is this device's own identity baseline. A record whose identity differs from
+ * it is one *this* device changed, and the ordinary delta push already covers it; only
+ * the records the device has nothing to say about can prove the account is behind.
+ * Equality is the delta's own rule (`changedRecords`), including the settings bag's
+ * special case, so a repair is never triggered by a difference the write half would
+ * consider nothing.
+ */
+export function remoteDiffers(
+    merged: SyncPayload,
+    remote: SyncPayload,
+    known: Record<string, string>,
+): boolean {
+    const mine = new Map(payloadToDocs(merged).map((doc) => [doc.id, doc]));
+    return payloadToDocs(remote).some((theirs) => {
+        const ours = mine.get(theirs.id);
+        if (!ours) return false;
+        if (known[theirs.id] !== ours.identity) return false;
+        if (theirs.id === 'scalar:appSettings') return !settingsCoveredBy(ours.data, theirs.data);
+        return ours.identity !== theirs.identity;
+    });
+}
+
+/**
  * Reassemble records into a payload shaped exactly like `buildPayload`'s output.
  *
  * Anything unrecognised is dropped rather than guessed at: a record id this version
@@ -367,10 +414,17 @@ export function recordsToPayload(records: RecordDoc[]): { payload: SyncPayload; 
 
         if (head === 'scalar') {
             const name = parts[1];
-            const body = record.data as { value?: unknown; stamp?: number } | undefined;
+            const body = record.data as { value?: unknown; stamp?: number; clearedAt?: number } | undefined;
             if (name === 'weight') { payload.weight = body?.value ?? undefined; payload.weightUpdatedAt = body?.stamp; continue; }
             if (name === 'pkParams') { payload.pkParams = body?.value ?? null; payload.pkParamsUpdatedAt = body?.stamp; continue; }
-            if (name === 'medPlan') { payload.medPlan = body?.value ?? []; payload.medPlanUpdatedAt = body?.stamp; continue; }
+            if (name === 'medPlan') {
+                payload.medPlan = body?.value ?? [];
+                payload.medPlanUpdatedAt = body?.stamp;
+                // 0 for a record written before the marker existed: an empty plan from
+                // that era is silence, not a deletion.
+                payload.medPlanClearedAt = typeof body?.clearedAt === 'number' ? body.clearedAt : 0;
+                continue;
+            }
             // The settings bag goes back under `appState`, the shape `normalizeSyncState`
             // reads. Reassembling it as a top-level `appSettings` was the read half of
             // the same name mismatch and dropped it just as silently.

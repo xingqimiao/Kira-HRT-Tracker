@@ -158,8 +158,15 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
 
     const commit = (next: MedPlan[]): void => {
         const clean = sanitizeMedPlans(next);
+        // Removing the last plan is the one action allowed to empty the account's
+        // copy, so it is the only one that carries the clear marker. An empty list
+        // that merely results from having had nothing is not a decision, and without
+        // this distinction a device with no plan deletes everyone else's (see
+        // `resolvePlan` in syncMerge.ts).
+        const clearing = clean.length === 0 && readMedPlans().length > 0;
+        const at = Date.now();
         setPlans(clean);
-        writeMedPlans(clean);
+        writeMedPlans(clean, at, clearing ? at : 0);
         void reschedulePlanNotifications(true).catch(() => undefined);
         // No explicit upload here: the plan is a synced scalar now (buildExportPayload
         // includes it, applySyncedState applies it), so the change fingerprint arms the

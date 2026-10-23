@@ -13,7 +13,8 @@
  * The dose source is registered by the app at startup (the events live in the
  * app's data layer, not here), so this module never reaches into React state.
  */
-import { Ester, Route, DoseEvent } from '../../logic';
+import { Ester, Route } from '../../logic';
+import type { DoseEvent, HRTMode } from '../../logic';
 import {
     cancel,
     createChannel,
@@ -26,8 +27,7 @@ import {
 } from '@choochmeque/tauri-plugin-notifications-api';
 import { isNativeApp } from './platform';
 import { applyNotifFallbacks, notifFallbacks, type NotifFallbacks } from './notifLocale';
-import { readMedPlans, writeMedPlans, sanitizeMedPlans, dueTimesToday, matchesPlan, planStatuses, plansForMode, localDateKey, isSavedTemplate, type MedPlan, type PlanStatus, type PlanTime } from './medPlan';
-import { HRTMode } from '../../logic';
+import { readMedPlans, writeMedPlans, medPlanUpdatedAt, medPlanClearedAt, sanitizeMedPlans, dueTimesToday, matchesPlan, planStatuses, plansForMode, localDateKey, isSavedTemplate, type MedPlan, type PlanStatus, type PlanTime } from './medPlan';
 import { get, set } from './secureStore';
 import { occurrenceKey, readLedger, serializeLedger, pruneLedger } from './medPlanNotifyLedger';
 
@@ -103,12 +103,22 @@ export function migrateOldRemindersToPlans(): void {
     try {
         let plans = readMedPlans();
         if (get(PLAN_METADATA_MIGRATED_KEY) !== '1') {
-            plans = plans.filter(plan => plan.route !== Route.patchRemove).map(plan => ({
+            const migrated = plans.filter(plan => plan.route !== Route.patchRemove).map(plan => ({
                 ...plan,
                 hrtMode: plan.hrtMode ?? currentMode(),
                 anchorDate: plan.mode === 'days' ? plan.anchorDate ?? localDateKey(new Date()) : plan.anchorDate,
             }));
-            writeMedPlans(plans);
+            // Enrichment is not an edit, and this used to be the destructive part of
+            // the bug: writing the list back unconditionally restamped it with "now",
+            // so on a device that held no plan it produced "[] @ now" — an empty plan
+            // claiming to be the newest, which the merge accepted and pushed to every
+            // device, erasing the real one everywhere. Only write when the migration
+            // actually changed something, and keep the plan's own stamp: this adds
+            // metadata to a local copy, it is not a new decision about the plan.
+            if (plans.length > 0 && JSON.stringify(migrated) !== JSON.stringify(plans)) {
+                writeMedPlans(migrated, medPlanUpdatedAt() || 1, medPlanClearedAt());
+            }
+            plans = migrated;
             set(PLAN_METADATA_MIGRATED_KEY, '1');
         }
         if (get(MIGRATED_KEY) === '1') return;

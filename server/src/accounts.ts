@@ -27,7 +27,7 @@
  *   - A password change rewraps the DEK and never re-encrypts a record, so it
  *     cannot half-fail and leave a corrupted history behind.
  */
-import { randomUUID, createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { randomUUID, createHash, createHmac, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 
 import { getPool, withTransaction } from './db.ts';
@@ -106,6 +106,35 @@ export interface RegistrationResult {
   username: string;
   /** Issued by registration itself: there is nothing left to confirm. */
   token: string;
+  /** This device's exemption from the sign-in lockout — see `devicePassFor`. */
+  devicePass: string | null;
+}
+
+/**
+ * Proof that this device has signed in to this account under its current password.
+ *
+ * It is **not** a credential: it authenticates nothing and grants nothing. Its only
+ * use is to say "the lockout was earned by somebody else", so whoever trips the
+ * lock cannot keep the owner out of their own account. That is why it can be handed
+ * to the client in a plain response body and kept in browser storage.
+ *
+ * Keyed on the stored password hash rather than a secret of its own: a password
+ * change retires every pass in existence with no table, no expiry field, and no
+ * cleanup job. An account without a password has no pass, and therefore no
+ * exemption — a provider sign-in is not password-guessing and never sets the lock.
+ */
+function devicePassFor(userId: string, passwordHash: string | null): string | null {
+  if (!passwordHash) return null;
+  return createHmac('sha256', passwordHash).update(`device:${userId}`).digest('base64url');
+}
+
+function devicePassValid(user: AccountRow, candidate: unknown): boolean {
+  if (typeof candidate !== 'string' || candidate.length === 0) return false;
+  const expected = devicePassFor(user.id, user.password_hash);
+  if (!expected) return false;
+  const given = Buffer.from(candidate);
+  const wanted = Buffer.from(expected);
+  return given.length === wanted.length && timingSafeEqual(given, wanted);
 }
 
 async function hashPassword(password: string): Promise<string> {
@@ -272,6 +301,8 @@ export interface UnlockedAccount {
   userId: string;
   username: string;
   token: string;
+  /** Null on an account with no password: there is no lock to be exempt from. */
+  devicePass: string | null;
 }
 
 /**
@@ -378,7 +409,7 @@ export const AccountService = {
 
     return {
       ok: true,
-      value: { userId, username: username.value, token },
+      value: { userId, username: username.value, token, devicePass: devicePassFor(userId, passwordHash) },
     };
   },
 
@@ -392,7 +423,7 @@ export const AccountService = {
   async unlock(
     usernameRaw: unknown,
     passwordRaw: unknown,
-    opts: { persistent?: boolean } = {},
+    opts: { persistent?: boolean; devicePass?: unknown } = {},
   ): Promise<Result<UnlockedAccount>> {
     const generic = { ok: false as const, error: 'invalid credentials' };
     const username = validateUsername(usernameRaw);
@@ -407,7 +438,12 @@ export const AccountService = {
     }
 
     if (user.locked_until && new Date(user.locked_until).getTime() > Date.now()) {
-      return { ok: false, error: 'too many failed attempts; try again later' };
+      // A pass from a device that has already signed in under this password is not a
+      // shortcut: the password is still verified below, under the same failure
+      // counting. It only stops whoever tripped the lock from holding the owner out.
+      if (!devicePassValid(user, opts.devicePass)) {
+        return { ok: false, error: 'too many failed attempts; try again later' };
+      }
     }
 
     if (!(await verifyPassword(password.value, user.password_hash))) {
@@ -438,7 +474,7 @@ export const AccountService = {
 
     return {
       ok: true,
-      value: { userId: user.id, username: user.username, token },
+      value: { userId: user.id, username: user.username, token, devicePass: devicePassFor(user.id, user.password_hash) },
     };
   },
 

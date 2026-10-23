@@ -70,6 +70,48 @@ function jsonObject(value: unknown): Record<string, unknown> | null {
 }
 
 /**
+ * Keep an empty medication plan from erasing the account's.
+ *
+ * `medPlan: []` is ambiguous on the wire: "this device has no plan" and "the user
+ * removed every plan" look identical. The app resolves that by sending a clear marker
+ * (`clearedAt`) only for the second, so a write carrying neither a plan nor a marker
+ * is silence — and silence must not delete. This is not hypothetical: a device with no
+ * plan used to send exactly that shape, and once a one-time migration stamped it "now"
+ * it won the client's last-write-wins and wiped the plan on every device.
+ *
+ * Enforced here as well as in the client because the server is the one place every
+ * build meets: an older client (or a future regression) cannot poison the account,
+ * and the client's merge already prefers the non-empty copy, so accepting this write
+ * would only create a divergence for the next device to inherit.
+ *
+ * The stored copy is kept wholesale — value, stamp and all — because a silent empty
+ * write says nothing about when the plan was edited, and letting its timestamp
+ * through could make a stale stored plan look newest.
+ */
+function mergeIncomingMedPlan(raw: unknown, prior: Record<string, unknown> | null): unknown {
+    const item = jsonObject(raw);
+    if (!item || item.id !== 'scalar:medPlan') return raw;
+    const data = jsonObject(item.data);
+    if (!data) return raw;
+    const clearedAt = typeof data.clearedAt === 'number' && Number.isFinite(data.clearedAt) ? data.clearedAt : 0;
+    const incoming = data.value;
+    // Not a plan and not a clear: the write says nothing, whatever its stamp. Keep the
+    // stored copy entire — including a clear marker, which a later old-client write
+    // would otherwise strip and let a stale plan resurrect.
+    if (!Array.isArray(incoming) || incoming.length > 0 || clearedAt > 0) return raw;
+    if (!prior || !Array.isArray(prior.value)) return raw;
+    const stamp = typeof prior.stamp === 'number' && Number.isFinite(prior.stamp) ? prior.stamp : 0;
+    const priorClearedAt = typeof prior.clearedAt === 'number' && Number.isFinite(prior.clearedAt) ? prior.clearedAt : 0;
+    return { ...item, takenAt: stamp, data: { value: prior.value, stamp, clearedAt: priorClearedAt } };
+}
+
+/** The plan record this account holds, as the guard above needs it. */
+async function readStoredMedPlan(ctx: AuthContext): Promise<Record<string, unknown> | null> {
+    const record = await RecordService.get(ctx, 'scalar:medPlan').catch(() => null);
+    return jsonObject(record?.data);
+}
+
+/**
  * The record-id prefix each tombstone kind covers.
  *
  * A tombstone map is keyed by the app's own id for a record (`cs-e1`), while the row
@@ -590,7 +632,12 @@ export const RecordService = {
         ctx: AuthContext,
         body: { id?: unknown; takenAt?: unknown; category?: unknown; data?: unknown },
     ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
-        const prepared = prepareRecord(ctx, body);
+        // Same guard as the batch path: an empty plan with no clear marker is silence,
+        // and silence must not erase the stored one.
+        const guarded = body?.id === 'scalar:medPlan'
+            ? mergeIncomingMedPlan(body, await readStoredMedPlan(ctx)) as typeof body
+            : body;
+        const prepared = prepareRecord(ctx, guarded);
         if (!prepared.ok) return { ok: false, error: prepared.error };
         const { id, takenAt, category, sealed } = prepared.value;
 
@@ -678,12 +725,19 @@ export const RecordService = {
         const priorAppSettings = jsonObject(
             (storedAppSettings?.data as { value?: unknown } | null)?.value,
         );
+        // The plan's stored copy, for the same reason: a batch may carry an empty plan
+        // that says nothing, and it must not replace a real one. Read before the loop,
+        // because the loop seals each item.
+        const priorMedPlan = await readStoredMedPlan(ctx);
         // The tombstone maps as they stand *before* this batch writes its own. Read here
         // because the sweep below runs after the write, when reading them back would
         // return the copy this batch just stored and the change would look like none.
         const priorTombstones = await readTombstoneMaps(ctx, items);
         for (const raw of items) {
-            const item = mergeIncomingAppState(raw, priorAppSettings);
+            const item = mergeIncomingMedPlan(
+                mergeIncomingAppState(raw, priorAppSettings),
+                priorMedPlan,
+            );
             const prepared = prepareRecord(ctx, item as { id?: unknown; takenAt?: unknown; category?: unknown; data?: unknown });
             if (prepared.ok) {
                 pending.set(prepared.value.id, prepared.value);
@@ -969,6 +1023,8 @@ export async function buildExportPayload(ctx: AuthContext): Promise<{
     pkParamsUpdatedAt?: number;
     medPlan?: unknown[];
     medPlanUpdatedAt?: number;
+    /** When the user deliberately removed every plan; absent/0 means it still stands. */
+    medPlanClearedAt?: number;
     modes: Record<Mode, {
         events: unknown[];
         labResults: unknown[];
@@ -1025,6 +1081,7 @@ export async function buildExportPayload(ctx: AuthContext): Promise<{
     let pkParamsUpdatedAt: number | undefined;
     let medPlan: unknown[] | undefined;
     let medPlanUpdatedAt: number | undefined;
+    let medPlanClearedAt: number | undefined;
     let unknown = 0;
 
     for (const record of all.records) {
@@ -1054,7 +1111,7 @@ export async function buildExportPayload(ctx: AuthContext): Promise<{
         }
 
         if (head === 'scalar') {
-            const body = record.data as { value?: unknown; stamp?: unknown } | null;
+            const body = record.data as { value?: unknown; stamp?: unknown; clearedAt?: unknown } | null;
             const stamp = typeof body?.stamp === 'number' && Number.isFinite(body.stamp) ? body.stamp : 0;
             if (parts[1] === 'weight') {
                 if (typeof body?.value === 'number') weight = body.value;
@@ -1074,6 +1131,12 @@ export async function buildExportPayload(ctx: AuthContext): Promise<{
                 if (Array.isArray(body?.value)) {
                     medPlan = body.value;
                     medPlanUpdatedAt = stamp;
+                    // Carried so an export can tell "the user removed every plan" from
+                    // "this account never had one" — the same distinction the client
+                    // merge relies on.
+                    medPlanClearedAt = typeof body?.clearedAt === 'number' && Number.isFinite(body.clearedAt)
+                        ? body.clearedAt
+                        : 0;
                 }
                 continue;
             }
@@ -1120,7 +1183,7 @@ export async function buildExportPayload(ctx: AuthContext): Promise<{
         ...(weight != null ? { weight } : {}),
         ...(weightUpdatedAt !== undefined ? { weightUpdatedAt } : {}),
         ...(pkParams !== undefined ? { pkParams, pkParamsUpdatedAt } : {}),
-        ...(medPlan !== undefined ? { medPlan, medPlanUpdatedAt } : {}),
+        ...(medPlan !== undefined ? { medPlan, medPlanUpdatedAt, medPlanClearedAt: medPlanClearedAt ?? 0 } : {}),
         modes,
         appState,
         unknown,

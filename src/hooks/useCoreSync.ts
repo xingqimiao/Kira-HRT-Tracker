@@ -15,10 +15,23 @@ import { get as secureGet, set as secureSet, remove as secureRemove } from '../u
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { readCoreState, syncWithCore, CoreSyncError, toLocalPayload } from '../services/coreSync';
-import { identitiesOf } from '../services/recordDocs';
+import { identitiesOf, remoteDiffers } from '../services/recordDocs';
 import { mergeSyncStates, fingerprintState, type SyncState } from '../utils/syncMerge';
 import { normalizeSyncState } from '../utils/syncMerge';
 import { readAppSettings } from '../utils/appSettings';
+
+/**
+ * Which merge protocol a cursor was written under.
+ *
+ * 2 introduced the medication plan's clear marker. A cursor from before it may hold
+ * an identity map claiming the account already has this device's plan, when in fact
+ * the account's copy was emptied by the old bug — and the baseline is exactly what
+ * stops that device from sending the plan again. Bumping the schema makes the first
+ * sync after the update diff against the whole account once, which is what lets a
+ * device that still holds the plan repair the cloud instead of leaving it empty for
+ * every device that follows.
+ */
+const SYNC_SCHEMA = 2;
 
 /**
  * The incremental-sync cursor: how far this device has read, and what it last pushed.
@@ -34,10 +47,12 @@ import { readAppSettings } from '../utils/appSettings';
 interface SyncCursor {
   version: number;
   identities: Record<string, string>;
+  /** 0/absent for a cursor written before `SYNC_SCHEMA` existed. */
+  schema: number;
 }
 
 /**
- * A cursor is only usable when both halves are present.
+ * A cursor is only usable when every half is present.
  *
  * A version without a baseline would let the pull be a delta while the push still
  * compared against nothing — `{}` is the safe reading of "no baseline", and it makes
@@ -51,7 +66,8 @@ function readSyncCursor(key: string): SyncCursor | null {
     if (typeof parsed.version !== 'number' || !Number.isFinite(parsed.version)) return null;
     const identities = parsed.identities;
     if (!identities || typeof identities !== 'object' || Array.isArray(identities)) return null;
-    return { version: parsed.version, identities: identities as Record<string, string> };
+    const schema = typeof parsed.schema === 'number' && Number.isFinite(parsed.schema) ? parsed.schema : 0;
+    return { version: parsed.version, identities: identities as Record<string, string>, schema };
   } catch {
     return null;
   }
@@ -303,6 +319,14 @@ export const useCoreSync = ({
       // the last successful push acknowledged, rather than against a full read.
       const cursorKey = `hrt-sync-cursor-${account}`;
       let cursor = readSyncCursor(cursorKey);
+      // A cursor from an older merge protocol cannot be trusted to describe what the
+      // account holds (see `SYNC_SCHEMA`). Dropping it forces a full read and, because
+      // the baseline goes with it, one diff-against-the-account push — the repair.
+      let repair = false;
+      if (cursor && cursor.schema !== SYNC_SCHEMA) {
+        cursor = null;
+        repair = true;
+      }
       let read = await readCoreState(authToken, cursor ? { since: cursor.version } : {});
       // Checked before building the local half, because that is the other side of the
       // crossover: `buildPayloadRef.current` now belongs to whoever is signed in, so
@@ -334,9 +358,19 @@ export const useCoreSync = ({
       // The read's watermark is about reads, not writes: storing it here is safe even
       // if the push below fails, because the rows it covers have already been merged
       // into local state. The identity map is only advanced after a push lands.
-      if (cursor) writeSyncCursor(cursorKey, { ...cursor, version: read.syncVersion });
-      else writeSyncCursor(cursorKey, { version: read.syncVersion, identities: {} });
+      if (cursor) writeSyncCursor(cursorKey, { ...cursor, version: read.syncVersion, schema: SYNC_SCHEMA });
+      else writeSyncCursor(cursorKey, { version: read.syncVersion, identities: {}, schema: SYNC_SCHEMA });
       const baseline = cursor?.identities;
+
+      // The merged picture, computed before the "nothing to send" check because that
+      // check now also has to answer "is the account holding something else?".
+      const mergedPayload = toLocalPayload(merged.merged);
+      // A record the read mentioned whose copy differs from what this device holds —
+      // and which this device has not changed itself — means the server is behind, and
+      // the delta baseline would keep it that way. Comparing against the read rather
+      // than the whole state is what makes this cheap on a delta: only the rows the
+      // read actually returned are evidence.
+      const remoteDisagrees = !repair && !!baseline && remoteDiffers(mergedPayload, remoteState, baseline);
 
       // Nothing to send when the merged picture is the one the server already
       // acknowledged. The read above runs every time, so a change made on another
@@ -345,14 +379,15 @@ export const useCoreSync = ({
       // had. It is also what makes "sync now" safe to press repeatedly: the pull
       // still happens, the write does not.
       const seen = fingerprintState(merged.merged);
-      if (seen === lastSeenRef.current) {
+      if (seen === lastSeenRef.current && !repair && !remoteDisagrees) {
         if (!stillMine()) return;
         // Nothing to send, so this device's picture is already what the server holds —
         // with no baseline yet, adopt it now. Safe because there was nothing
         // outstanding: a write that was pending would have changed `seen`.
         writeSyncCursor(cursorKey, {
           version: read.syncVersion,
-          identities: baseline ?? identitiesOf(toLocalPayload(merged.merged)),
+          identities: baseline ?? identitiesOf(mergedPayload),
+          schema: SYNC_SCHEMA,
         });
         bootstrappedForRef.current = account;
         markSynced();
@@ -363,19 +398,25 @@ export const useCoreSync = ({
         return;
       }
 
-      // Push the merged result. `updateExisting` is on because the merge has
-      // already decided what wins by `updatedAt`; a second, different rule
-      // server-side would fight it.
-      //
       // `known` is the identity baseline: with it the client sends only records whose
       // content it changed, and does not need the server's whole state to work that
       // out. Without it (first sync on this device) `syncWithCore` falls back to
       // comparing against `remote`, which is then a full read.
-      const mergedPayload = toLocalPayload(merged.merged);
+      //
+      // A repair deliberately drops the baseline, and a delta read cannot stand in for
+      // the full state it compares against — so the repair pays for one whole read and
+      // sends only the records that actually differ.
+      let pushRemote = remoteState;
+      let pushKnown = baseline;
+      if (remoteDisagrees) {
+        pushRemote = (await readCoreState(authToken)).payload;
+        if (!stillMine()) return;
+        pushKnown = undefined;
+      }
       const pushed = await syncWithCore(authToken, mergedPayload, {
         updateExisting: true,
-        remote: remoteState,
-        known: baseline,
+        remote: pushRemote,
+        known: pushKnown,
       });
 
 
@@ -404,6 +445,7 @@ export const useCoreSync = ({
       writeSyncCursor(cursorKey, {
         version: read.syncVersion,
         identities: identitiesOf(mergedPayload),
+        schema: SYNC_SCHEMA,
       });
       bootstrappedForRef.current = account;
       markSynced();

@@ -126,6 +126,33 @@ test('M-5: a password change drops the account\'s device tokens', async () => {
   );
 });
 
+test('a session cannot use password change as an unbounded password oracle', async () => {
+  // The route verifies `current_password` with bcrypt, so the account password is only
+  // as safe as the number of attempts a stolen session gets. The bucket is per account,
+  // which is what a stolen token cannot rotate.
+  // A dedicated source address: the M-3 cases above deliberately exhaust the register
+  // bucket for the default one.
+  const reg = await call(base, '/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.77' },
+    body: JSON.stringify({ username: `oracle${Date.now().toString(36)}`, password: 'a-good-password-1' }),
+  });
+  assert.equal(reg.status, 201, `register failed: ${JSON.stringify(reg.body)}`);
+  const token = reg.body.token as string;
+
+  const attempt = () =>
+    call(base, '/auth/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ current_password: 'not-the-password-1', new_password: 'another-password-3' }),
+    });
+
+  for (let index = 0; index < 10; index++) {
+    assert.equal((await attempt()).status, 400, `attempt ${index} should reach the password check`);
+  }
+  assert.equal((await attempt()).status, 429, 'the eleventh attempt is refused without a bcrypt compare');
+});
+
 test('L-2: a database error answers with a generic message', async () => {
   // 36 dashes pass the route's `[0-9a-f-]{36}` shape check and then fail Postgres's
   // uuid cast. That is the request from the audit: it used to come back with
@@ -145,12 +172,15 @@ test('L-2: a database error answers with a generic message', async () => {
     headers: { Authorization: `Bearer ${reg.body.token}` },
   });
   assert.ok(res.status >= 400, `the request must be refused, got ${res.status}`);
+  const body = res.body as { code?: string; message?: string; error?: string } | undefined;
   assert.doesNotMatch(
-    String(res.body?.error ?? ''),
+    String(body?.message ?? ''),
     /invalid input syntax|uuid|postgres|relation|column|pg_/i,
-    `internal text leaked: ${String(res.body?.error ?? '')}`,
+    `internal text leaked: ${String(body?.message ?? '')}`,
   );
   if (res.status >= 500) {
-    assert.equal(res.body?.error, 'internal error', 'a 500 must not describe the failure');
+    assert.equal(body?.code, 'INTERNAL', 'a 500 is the generic internal code');
+    assert.equal(body?.message, 'internal error', 'a 500 must not describe the failure');
+    assert.equal(body?.error, 'internal error', 'the legacy alias must not describe it either');
   }
 });

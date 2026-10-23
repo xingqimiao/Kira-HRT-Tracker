@@ -20,7 +20,7 @@ import { hrtDaysSince, normalizeHrtStartDate } from '../utils/hrtStart';
 import { milestoneFor } from '../utils/hrtMilestone';
 import { isThirdDayStreak } from '../utils/hrtStreak';
 import { get as secureGet, set as secureSet, remove as secureRemove } from '../utils/secureStore';
-import { readMedPlans, writeMedPlans, medPlanUpdatedAt, setMedPlanOwner, MED_PLAN_CHANGED_EVENT } from '../utils/medPlan';
+import { readMedPlans, readMedPlanState, writeMedPlans, setMedPlanOwner, MED_PLAN_CHANGED_EVENT } from '../utils/medPlan';
 
 /** Namespace used while signed out. Its keys are the original, un-prefixed ones. */
 const LOCAL_OWNER = 'local';
@@ -82,7 +82,11 @@ function adoptSignedOutData(owner: string): void {
     // stored globally until then, so every existing signed-in user has *other*
     // account data and the all-or-nothing rule would have made their plan vanish on
     // upgrade. The move still only happens when the account has no plan of its own.
-    const ADOPT_IF_EMPTY = ['-hrt-start', '-med-plan', '-med-plan-at'];
+    //
+    // The clear marker travels with the plan for the same reason its stamp does: a
+    // clear recorded while signed out is a real decision, and splitting the pair
+    // would land the plan in one namespace and the marker in the other.
+    const ADOPT_IF_EMPTY = ['-hrt-start', '-med-plan', '-med-plan-at', '-med-plan-cleared-at'];
     const hasTargetData = moves.some(([, to]) => secureGet(to) !== null);
     for (const [from, to] of moves) {
         const value = secureGet(from);
@@ -1519,6 +1523,14 @@ export const useAppData = (
             events, labResults, doseTemplates, quickDoses, journal,
             deletions: readTombstones(mode),
         };
+        // The plan travels only when this device has an opinion: a plan, or the user's
+        // own clear. An empty list alone is "nothing to say" — sending it as
+        // `medPlan: []` made every device that had never held a plan a deletion
+        // candidate for the account's copy.
+        const plan = readMedPlanState();
+        const planFields = plan.plans.length > 0 || plan.clearedAt > 0
+            ? { medPlan: plan.plans, medPlanUpdatedAt: plan.updatedAt, medPlanClearedAt: plan.clearedAt }
+            : {};
 
         return {
             /**
@@ -1555,9 +1567,10 @@ export const useAppData = (
             // The medication plan (用药方案) as a synced scalar, next to weight and PK
             // overrides. It lives in its own account-scoped key (see medPlan.ts), read
             // here through the module so the scope and the value cannot disagree; the
-            // stamp makes the merge's last-write-wins work across devices.
-            medPlan: readMedPlans(),
-            medPlanUpdatedAt: medPlanUpdatedAt() || undefined,
+            // stamp makes the merge's last-write-wins work across devices, and the
+            // clear marker is what lets an empty plan mean "the user removed it"
+            // rather than "this device has never heard of one".
+            ...planFields,
             // App-only collections. The Core stores this verbatim in
             // `user_settings.app_state` and is the *only* place templates and
             // quick doses persist — it does not read them out of `modes` — so
@@ -1709,10 +1722,11 @@ export const useAppData = (
             else secureRemove(sharedKey('pk-params'));
             if (state.pkParamsUpdatedAt > 0) secureSet(sharedKey('pk-params-at'), String(state.pkParamsUpdatedAt));
         }
-        // The plan's own stamp travels with it, so adopting the account's copy is not
-        // restamped as a fresh local edit — see `writeMedPlans`.
+        // The plan's own stamps travel with it, so adopting the account's copy is not
+        // restamped as a fresh local edit, and a clear marker is written (or removed)
+        // exactly as the merge decided — see `writeMedPlans`.
         if (state.medPlan !== undefined) {
-            writeMedPlans(state.medPlan, state.medPlanUpdatedAt);
+            writeMedPlans(state.medPlan, state.medPlanUpdatedAt, state.medPlanClearedAt);
         }
     };
 

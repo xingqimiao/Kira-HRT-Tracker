@@ -28,7 +28,14 @@ import {
   availablePlanRoutesForEster,
   activePatches,
   patchRemovalEvent,
+  readMedPlans,
+  writeMedPlans,
+  resetMedPlanStorage,
+  setMedPlanOwner,
+  medPlanUpdatedAt,
+  medPlanClearedAt,
 } from '../src/utils/medPlan.ts';
+import { migrateOldRemindersToPlans } from '../src/utils/medPlanNotify.ts';
 import { Ester, Route } from '../logic.ts';
 
 const HOUR = 3_600_000;
@@ -154,6 +161,69 @@ const plan = (over = {}) => ({
   // saved templates are. This is what keeps the import row from listing the plan.
   assert.equal(isSavedTemplate(entries[0].id), false, 'a plan-generated entry is not a saved template');
   assert.equal(isSavedTemplate(crypto.randomUUID()), true, 'a saved template (uuid) is importable');
+}
+
+// ── Writes that decide which copy wins ───────────────────────────────────────
+//
+// The plan's stamp is the only thing the sync merge compares, so a writer that is not
+// an edit must leave it alone. Run against an in-memory localStorage: outside the
+// native app the secure store reads and writes it directly, which is the web build.
+{
+  const store = new Map();
+  globalThis.localStorage = {
+    get length() { return store.size; },
+    key: (i) => [...store.keys()][i] ?? null,
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => { store.set(k, String(v)); },
+    removeItem: (k) => { store.delete(k); },
+  };
+
+  const planKey = (owner) => `hrt-u${owner}-med-plan`;
+  const atKey = (owner) => `hrt-u${owner}-med-plan-at`;
+  const clearedKey = (owner) => `hrt-u${owner}-med-plan-cleared-at`;
+
+  // An unchanged save must not move the stamp. Every non-edit writer goes through this
+  // guard; without it they hand a stale or empty copy an artificial "newest" claim.
+  setMedPlanOwner('w1');
+  writeMedPlans([plan()], 1000);
+  assert.equal(medPlanUpdatedAt(), 1000);
+  writeMedPlans([plan()], 5000);
+  assert.equal(medPlanUpdatedAt(), 1000, 'an unchanged save restamped the plan');
+
+  // A real edit does claim to be newer.
+  writeMedPlans([plan({ dose: '3mg' })], 6000);
+  assert.equal(medPlanUpdatedAt(), 6000, 'a real edit did not claim to be newer');
+
+  // A clear is a decision and carries the marker; any later plan drops it.
+  writeMedPlans([], 7000, 7000);
+  assert.equal(medPlanClearedAt(), 7000, 'a deliberate clear recorded no marker');
+  writeMedPlans([plan()], 8000);
+  assert.equal(medPlanClearedAt(), 0, 'the clear marker outlived the plan');
+
+  // Signing out drops the keys rather than writing "empty @ now".
+  setMedPlanOwner('w2');
+  writeMedPlans([plan()], 9000);
+  resetMedPlanStorage();
+  assert.equal(store.get(planKey('w2')), undefined, 'the plan survived a local wipe');
+  assert.equal(store.get(atKey('w2')), undefined, 'the stamp survived a local wipe');
+  assert.equal(store.get(clearedKey('w2')), undefined, 'the marker survived a local wipe');
+
+  // The metadata migration on a device that holds no plan must write nothing at all.
+  // Before this it wrote `[]` stamped "now", which is what erased the account's plan
+  // on every device.
+  setMedPlanOwner('w3');
+  migrateOldRemindersToPlans();
+  assert.equal(store.get(planKey('w3')), undefined, 'the migration invented an empty plan');
+  assert.equal(store.get(atKey('w3')), undefined, 'the migration invented a stamp');
+
+  // On a device that does hold a plan the migration may enrich it, but it keeps the
+  // plan's own stamp: adding hrtMode is not a new decision about the plan.
+  setMedPlanOwner('w4');
+  store.delete('hrt-med-plan-metadata-migrated');
+  writeMedPlans([plan()], 12_345);
+  migrateOldRemindersToPlans();
+  assert.equal(medPlanUpdatedAt(), 12_345, 'the migration restamped the plan');
+  assert.equal(readMedPlans()[0].hrtMode, 'transfem', 'the migration did not enrich the plan');
 }
 
 console.log('med-plan: all checks passed');

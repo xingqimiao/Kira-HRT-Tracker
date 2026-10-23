@@ -84,6 +84,21 @@ export const medPlanKey = (): string =>
  *  exactly what the UI edits. */
 export const medPlanAtKey = (): string => `${medPlanKey()}-at`;
 
+/**
+ * When the user deliberately removed every plan — and nothing else may empty it.
+ *
+ * An empty array is ambiguous on the wire: "this device has no plan" and "the user
+ * deleted all of them" look identical, and a device that never held a plan would
+ * otherwise be able to erase the account's with any timestamp it likes. That is not
+ * hypothetical: the one-time metadata migration used to rewrite the plan on every
+ * device, so a fresh device's empty copy beat the real plan and wiped it everywhere.
+ *
+ * So emptiness alone carries no weight. Only a clear marker does, and only when it is
+ * newer than the plan it would remove (see `resolvePlan` in syncMerge.ts). The key is
+ * account-scoped like the plan itself, and removed as soon as a plan exists again.
+ */
+export const medPlanClearedAtKey = (): string => `${medPlanKey()}-cleared-at`;
+
 const isEster = (v: unknown): v is Ester => Object.values(Ester).includes(v as Ester);
 const isRoute = (v: unknown): v is Route => Object.values(Route).includes(v as Route);
 
@@ -144,6 +159,28 @@ export function medPlanUpdatedAt(): number {
     try { return Number(secureGet(medPlanAtKey())) || 0; } catch { return 0; }
 }
 
+/** When the user cleared the plan, or 0 when they never did. See `medPlanClearedAtKey`. */
+export function medPlanClearedAt(): number {
+    try { return Number(secureGet(medPlanClearedAtKey())) || 0; } catch { return 0; }
+}
+
+export interface MedPlanState {
+    plans: MedPlan[];
+    updatedAt: number;
+    clearedAt: number;
+}
+
+/**
+ * The three values sync decides with, read together.
+ *
+ * Reading them separately would let a write land between two reads and produce a
+ * payload whose value and stamps describe different moments — the exact shape the
+ * merge cannot reason about.
+ */
+export function readMedPlanState(): MedPlanState {
+    return { plans: readMedPlans(), updatedAt: medPlanUpdatedAt(), clearedAt: medPlanClearedAt() };
+}
+
 /** Dispatched on every plan write, so a listener can re-read and re-render. The
  *  plan's home is storage (Home reads it directly), so without this an edit would
  *  not re-render the tree that arms a sync. */
@@ -156,12 +193,48 @@ export const MED_PLAN_CHANGED_EVENT = 'hrt-med-plan-changed';
  * applying the account's copy passes the *merge's* stamp, so adopting a remote plan
  * does not look like a fresh local edit and bounce straight back (the same rule the
  * weight and app-settings writes follow).
+ *
+ * A write that changes nothing is dropped rather than restamped. The stamp is the
+ * only thing that decides which copy wins, so a caller that merely re-saves the same
+ * plan (the metadata migration, a toggle that lands on the same value) would
+ * otherwise hand this device an artificial "newest" claim over every other one.
+ *
+ * `clearedAt` is set only by the user's own "remove every plan" action. An empty
+ * array without it is "nothing to say", never a deletion — see `medPlanClearedAtKey`.
  */
-export function writeMedPlans(plans: MedPlan[], at: number = Date.now()): void {
+export function writeMedPlans(plans: MedPlan[], at: number = Date.now(), clearedAt: number = 0): void {
+    const next = sanitizeMedPlans(plans);
+    const serialized = JSON.stringify(next);
+    const cleared = next.length > 0 ? 0 : (clearedAt > 0 ? clearedAt : 0);
+    let current: string | null = null;
+    try { current = JSON.stringify(readMedPlans()); } catch { /* storage unavailable */ }
+    // Same plan and same marker: nothing to say. The `at` is deliberately ignored —
+    // a caller re-saving the same plan is not an edit, and honouring its stamp is
+    // exactly how a stale or empty copy came to look newest.
+    if (current === serialized && cleared === medPlanClearedAt()) return;
+
     try {
-        secureSet(medPlanKey(), JSON.stringify(sanitizeMedPlans(plans)));
+        secureSet(medPlanKey(), serialized);
         if (at > 0) secureSet(medPlanAtKey(), String(at));
+        if (cleared > 0) secureSet(medPlanClearedAtKey(), String(cleared));
+        else secureRemove(medPlanClearedAtKey());
     } catch { /* private mode: the plan stays in memory for this session */ }
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event(MED_PLAN_CHANGED_EVENT));
+}
+
+/**
+ * Drop this device's copy of the plan, stamps included.
+ *
+ * Signing out is not an edit, so it must not write an empty plan with a timestamp: a
+ * half-finished wipe would otherwise leave "cleared @ now" behind and take the
+ * account's plan with it on the next sign-in. The keys simply go.
+ */
+export function resetMedPlanStorage(): void {
+    try {
+        secureRemove(medPlanKey());
+        secureRemove(medPlanAtKey());
+        secureRemove(medPlanClearedAtKey());
+    } catch { /* storage unavailable: nothing was kept locally */ }
     if (typeof window !== 'undefined') window.dispatchEvent(new Event(MED_PLAN_CHANGED_EVENT));
 }
 

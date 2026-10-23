@@ -255,7 +255,9 @@ export async function clearAccountData(): Promise<void> {
     // notification ids, the "reminders off" switch, migration flags, the dedup
     // ledger — deliberately survives: it carries no health data, and dropping the id
     // list would leave already-scheduled rings uncancellable.
-    const isPlanData = key === 'hrt-med-plan' || key === 'hrt-med-plan-at';
+    const isPlanData = key === 'hrt-med-plan'
+      || key === 'hrt-med-plan-at'
+      || key === 'hrt-med-plan-cleared-at';
     if (
       key.startsWith('hrt-u')
       || isPlanData

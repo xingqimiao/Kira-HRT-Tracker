@@ -110,7 +110,8 @@ test('the bare mount prefix resolves to the mount root', async () => {
   // mismatch — treating it as one makes the prefix awkward to probe.
   const bare = await call(host, MOUNT);
   assert.equal(bare.status, 404, 'the mount root has no route, but it IS routed (404, not a prefix miss)');
-  assert.equal(bare.body.error, 'not found');
+  assert.equal(bare.body.code, 'NOT_FOUND');
+  assert.equal(bare.body.message, 'not found');
 });
 
 test('a near-miss prefix is not accepted', async () => {
