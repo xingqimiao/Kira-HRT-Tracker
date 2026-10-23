@@ -11,6 +11,8 @@ export type { DoseTemplate, QuickDose };
 interface DoseFormModalProps {
     isOpen: boolean;
     onClose: () => void;
+    /** Put `isOpen` back while the surface is still shrinking — see ContainerTransform. */
+    onReopen?: () => void;
     eventToEdit?: any;
     onSave?: any;
     onDelete?: any;
@@ -33,6 +35,7 @@ interface DoseFormModalProps {
 const DoseFormModal: React.FC<DoseFormModalProps> = ({
     isOpen,
     onClose,
+    onReopen,
     eventToEdit,
     onSave,
     onDelete,
@@ -67,9 +70,9 @@ const DoseFormModal: React.FC<DoseFormModalProps> = ({
         <ContainerTransform
             open={isOpen}
             onClose={handleClose}
+            onReopen={onReopen}
             title={eventToEdit ? t('modal.dose.edit_title') : t('timeline.add_title')}
             bare
-            ghostIcon="plus"
         >
             <DoseForm
                 eventToEdit={eventToEdit}

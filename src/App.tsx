@@ -1198,6 +1198,7 @@ const AppContent = () => {
             <DoseFormModal
                 isOpen={isFormOpen}
                 onClose={() => setIsFormOpen(false)}
+                onReopen={() => setIsFormOpen(true)}
                 eventToEdit={editingEvent}
                 onSave={(e: DoseEvent) => {
                     if (events.find(p => p.id === e.id)) updateEvent(e);

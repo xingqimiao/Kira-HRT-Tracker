@@ -307,7 +307,10 @@ const DoseForm: React.FC<DoseFormProps> = ({
     const clampWith = useCallback((value: number, step: number, max?: number): number => {
         const ceiling = max ?? Number.POSITIVE_INFINITY;
         if (!Number.isFinite(value)) return step;
-        return Math.min(ceiling, Math.max(step, roundToStep(value, step)));
+        // No floor above zero: the step is how far the +/- buttons travel, not the
+        // smallest dose that may be typed. Writing 0 used to be rewritten to the
+        // step on blur, which silently changed a value the user had entered.
+        return Math.min(ceiling, Math.max(0, roundToStep(value, step)));
     }, []);
 
     /** Write a dose using the step/max of the *next* selection, not the old one. */

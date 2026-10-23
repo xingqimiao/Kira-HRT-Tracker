@@ -95,7 +95,8 @@ the image never leaves the device.
 ### Accounts, sharing and sync
 
 - **Accounts** — username + password; X (Twitter) and Google sign-in that complement and can bind
-  to each other.
+  to each other. Each linked row shows **that provider's own picture**: the server keeps one
+  copy per provider, and the app fetches it and renders it as a data URL (`img-src 'self'`).
 - **Device session list** — see and revoke each signed-in device.
 - **Cloud sync** — records and settings across devices, medication plans included. Sync is
   **incremental**: the server stamps each write with a change version, so a client pulls only
@@ -299,9 +300,10 @@ deletion and token management are web-only and have no MCP tool. The full tool t
 - **[Featherline](https://github.com/mkx173/Featherline)** `.hrtbackup` files (enter the backup
   password).
 
-Doses and labs both come across. Featherline's custom gel-product catalogue has no equivalent
-here, so it is skipped and the user is told how many entries were skipped — the records
-themselves keep their dose, route and site.
+Doses and labs both come across, along with **saved dose templates, quick-dose buttons and
+the journal**. A custom gel-product catalogue now travels too: it is merged into the local
+catalogue and persisted (product ids ≥1000), so a record keeps its product name as well as
+its dose, route and site.
 
 **Exporting**: JSON, in a format that is published and stable.
 

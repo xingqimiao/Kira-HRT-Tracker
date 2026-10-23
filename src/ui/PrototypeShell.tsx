@@ -100,15 +100,24 @@ export function PrototypeShell({
 
             {fab ? (
                 <button
-                    className={`fab on${hasMenu && menuOpen ? ' open' : ''}`}
+                    className={`fab on${hasMenu ? ' fab-morph' : ''}${hasMenu && menuOpen ? ' open' : ''}`}
                     data-m
-                    style={{ '--mo': '16px', gap: hasMenu && menuOpen ? 0 : undefined } as never}
+                    style={{ '--mo': '16px' } as never}
                     onClick={onFabClick}
                     aria-label={fab.label}
                     aria-expanded={hasMenu ? menuOpen : undefined}
                 >
-                    <Icon id={hasMenu && menuOpen ? 'x' : fab.icon} />
-                    {!(hasMenu && menuOpen) ? <span className="fab-txt">{fab.label}</span> : null}
+                    {/* Both glyphs stay mounted so the crossfade can run: the plus
+                        turns into the close mark rather than being swapped. */}
+                    <span className="fab-ico" aria-hidden="true">
+                        <Icon id={fab.icon} />
+                        {hasMenu ? <Icon id="x" /> : null}
+                    </span>
+                    {/* The label collapses to its own width through a grid track,
+                        so the pill shrinks to a 56px square without a magic number. */}
+                    <span className="fab-txt-wrap">
+                        <span className="fab-txt">{fab.label}</span>
+                    </span>
                 </button>
             ) : null}
 

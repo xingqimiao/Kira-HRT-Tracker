@@ -39,6 +39,12 @@ function localize(url: string): string {
   return base + new URL(url).pathname;
 }
 
+/** `localize`, keeping the query — the per-provider avatar URL carries `?p=`. */
+function localizeWithQuery(url: string): string {
+  const parsed = new URL(url);
+  return base + parsed.pathname + parsed.search;
+}
+
 const PUBLIC_ORIGIN = 'https://hrt.test';
 const API_ORIGIN = 'https://api.hrt.test';
 const GOOGLE_CLIENT_ID = 'test-google-client-id.apps.googleusercontent.com';
@@ -215,6 +221,54 @@ test('a Google picture is copied at sign-in and served from our own origin', asy
 
     // The provider URL is kept, but only as the record of where the copy came from.
     assert.equal(summary.body.avatar_url.includes('cdn.example.test'), false);
+  } finally {
+    signIn.cdn.restore();
+  }
+});
+
+test('each linked provider is addressable for its own picture', async () => {
+  // The settings page lists X and Google as separate rows, and the same person does
+  // not look the same on both. The account-wide URL answers "newest picture"; a row
+  // asking for one provider must get *that* provider's, or nothing — never the other
+  // one's face, which is what shipping the account-wide URL to both rows would do.
+  resetRateLimits();
+  const signIn = await googleSignIn({
+    sub: `goog-per-provider-${Date.now()}`,
+    picture: 'https://cdn.example.test/row.png',
+  });
+  try {
+    const methods = await call(base, '/auth/login-methods', {
+      headers: { Authorization: `Bearer ${signIn.token}` },
+    });
+    assert.equal(methods.status, 200, JSON.stringify(methods.body));
+    const google = (methods.body.accounts as any[]).find((row) => row.provider === 'google');
+    assert.ok(google, 'the linked provider is listed');
+    assert.equal(google.hasAvatar, true, 'the row knows a picture exists');
+    assert.ok(
+      String(google.proxiedAvatarUrl).startsWith(`${API_ORIGIN}/auth/avatar/`),
+      `the row points at our own copy, got ${google.proxiedAvatarUrl}`,
+    );
+    assert.equal(new URL(google.proxiedAvatarUrl).searchParams.get('p'), 'google');
+
+    const own = await fetch(localizeWithQuery(google.proxiedAvatarUrl));
+    assert.equal(own.status, 200, 'and it resolves');
+    assert.deepEqual(Buffer.from(await own.arrayBuffer()), AVATAR_BYTES);
+
+    // The provider it is *not* must not fall back to the newest image.
+    const wrongProvider = await fetch(`${localize(google.proxiedAvatarUrl)}?p=x`);
+    assert.equal(wrongProvider.status, 404, 'X has no picture here, and gets none');
+    // An unknown selector is a miss rather than a silent default.
+    const bogus = await fetch(`${localize(google.proxiedAvatarUrl)}?p=github`);
+    assert.equal(bogus.status, 404, 'unknown providers are refused');
+    // And the account-wide URL still answers, for the header.
+    const summary = await call(base, '/auth/account', {
+      headers: { Authorization: `Bearer ${signIn.token}` },
+    });
+    const accountWide = await fetch(localize(summary.body.avatar_url as string));
+    assert.equal(accountWide.status, 200, 'the header keeps its account-wide picture');
+
+    // One fetch to the provider in total: the per-provider route serves the copy.
+    assert.equal(signIn.cdn.calls.length, 1);
   } finally {
     signIn.cdn.restore();
   }

@@ -95,7 +95,7 @@ mistake when writing a converter — a millisecond value silently imports as a d
 | `route` | string | yes | One of the route values in §5. Unrecognised → the row is skipped. |
 | `ester` | string | recommended | One of the ester values in §5. Unrecognised → coerced to `"E2"`. |
 | `doseMG` | number | yes | Milligrams of **the substance named in `ester`** — the ester itself, or the anti-androgen. See §7. |
-| `extras` | object | no | Route-specific numeric detail; see §4.3. |
+| `extras` | object | no | Route-specific detail; see §4.3. |
 
 ### 4.2 `labResults[]` — a blood test
 
@@ -115,23 +115,26 @@ monitoring values and no hormone reading should also set `"monitoringOnly": true
 
 ### 4.3 `extras` — route detail
 
-A numeric bag. Send only the keys that apply to the route:
+A bag of route-specific values. Send only the keys that apply. Almost all of them are
+numbers; the two patch-identity keys are strings.
 
-| key | route | meaning |
-|---|---|---|
-| `sublingualTier` | sublingual | 0–3 = quick / casual / standard / strict |
-| `sublingualTheta` | sublingual | absorbed fraction 0–1 (overrides `sublingualTier`) |
-| `releaseRateUGPerDay` | patchApply | patch release rate, µg/day |
-| `patchWearH` | patchApply | planned wear, hours |
-| `gelSite` | gel | 0–3 = arm / thigh / scrotal / abdomen |
-| `gelProductId` | gel | 1–5 for the presets, ≥1000 for a user product (§8) |
-| `gelCoverage` | gel | 0–6 = product / palm1 / palm2 / palm3 / thigh / arm / arms2 |
-| `gelCoApplied` | gel | 0–2 = none / sunscreen / moisturizer |
-| `gelWashAfterH` | gel | hours after application the site was washed |
-| `concentrationMGmL` | gel | product concentration, mg/mL |
-| `areaCM2` | gel | application area, cm² |
+| key | type | route | meaning |
+|---|---|---|---|
+| `sublingualTier` | number | sublingual | 0–3 = quick / casual / standard / strict |
+| `sublingualTheta` | number | sublingual | absorbed fraction 0–1 (overrides `sublingualTier`) |
+| `releaseRateUGPerDay` | number | patchApply | patch release rate, µg/day |
+| `patchWearH` | number | patchApply | planned wear, hours |
+| `gelSite` | number | gel | 0–3 = arm / thigh / scrotal / abdomen |
+| `gelProductId` | number | gel | 1–5 for the presets, ≥1000 for a user product (§8) |
+| `gelCoverage` | number | gel | 0–6 = product / palm1 / palm2 / palm3 / thigh / arm / arms2 |
+| `gelCoApplied` | number | gel | 0–2 = none / sunscreen / moisturizer |
+| `gelWashAfterH` | number | gel | hours after application the site was washed |
+| `concentrationMGmL` | number | gel | product concentration, mg/mL |
+| `areaCM2` | number | gel | application area, cm² |
+| `patchInstanceId` | **string** | patchApply | the identity of this patch, for pairing with a removal; the record's own `id` when omitted |
+| `patchRemovalFor` | **string** | patchRemove | the `id` of the `patchApply` this removal ends |
 
-Unknown keys are ignored. Values are numbers — never strings.
+Unknown keys are ignored.
 
 ---
 
@@ -162,10 +165,19 @@ sublingual  injection  patchApply  patchRemove  gel  oral
 | `TC`  | testosterone cypionate |
 | `TE`  | testosterone enanthate |
 | `TU`  | testosterone undecanoate |
+| `P4`  | micronised progesterone |
+| `MPA` | medroxyprogesterone acetate |
+| `NET` | norethisterone |
+| `RALOX` | raloxifene (a SERM) |
+| `FIN` | finasteride |
+| `DUT` | dutasteride |
+| `GNRH` | a GnRH analogue |
 
-`CPA`, `SPIRO` and `BICAL` are anti-androgens: they are carried in the `ester` field
-because a record has to name its substance somehow, but they are **not** estrogens and
-**not** modelled. Send them as-is; do not convert them to an estradiol equivalent.
+`CPA`, `SPIRO`, `BICAL`, `P4`, `MPA`, `NET`, `RALOX`, `FIN`, `DUT` and `GNRH` are
+**recorded but not modelled**: the record is stored, synced and exported exactly like any
+other, and the PK engine simply draws no curve for it. They are carried in the `ester`
+field because a record has to name its substance somehow. Send them as-is; do not convert
+them to an estradiol or testosterone equivalent.
 
 ---
 
@@ -213,13 +225,16 @@ Identical rules to §4, for a fuller transfer:
 ### Gel products
 
 `gelProductId` addresses a **catalogue**: ids 1–5 are the built-in presets (oestrogel,
-estreva, estrogel, divigel, and a DIY entry) and ids ≥1000 are user-defined. This app does
-not currently persist a user catalogue, so **a custom product's name and concentration do
-not survive the trip** — the record keeps its dose, route, site and id, and the id
-resolves to nothing until the same product exists here. Built-in presets transfer whole.
+estreva, estrogel, divigel, and a DIY entry) and ids ≥1000 are user-defined. The catalogue
+is persisted, so a custom product's name, concentration and absorption constants travel
+with the file and survive the import:
 
-If you send a `gelProducts[]` array, we skip it and report how many entries were skipped,
-rather than importing a catalogue we cannot represent.
+- a `gelProducts[]` array at the top level is merged into the account's catalogue;
+- our own export carries the same list at `appState.settings.gelProducts`.
+
+One limitation remains: ids 1–5 are **ours**. A file that uses a preset id for a product
+that is not that preset will resolve to our preset. A custom product should therefore be
+given an id ≥1000, not a preset id.
 
 ---
 

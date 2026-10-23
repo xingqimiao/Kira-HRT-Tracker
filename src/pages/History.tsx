@@ -75,6 +75,7 @@ const HistoryRow: React.FC<HistoryRowProps> = ({
             <div
                 role="button"
                 tabIndex={0}
+                aria-pressed={selectMode ? isSelected : undefined}
                 onClick={(event) => {
                     rememberTransformSource(event.currentTarget);
                     onToggle(ev.id);
@@ -95,15 +96,18 @@ const HistoryRow: React.FC<HistoryRowProps> = ({
                     color: isSelected && selectMode ? 'var(--onpric)' : undefined,
                 }}
             >
-                {selectMode ? (
-                    <span className={`sel-box${isSelected ? ' on' : ''}`} aria-hidden="true">
-                        {isSelected ? <Icon icon={Check} size={15} strokeWidth={2.8} /> : null}
-                    </span>
-                ) : (
-                    <span className={`ic ${iconTone}`} aria-hidden="true" style={{ width: 50, height: 50 }}>
+                {/* The leading slot keeps the route glyph's 50px box in both
+                    modes, so entering selection never shortens the row. The glyph
+                    and the checkbox cross-fade inside it instead of one replacing
+                    the other. */}
+                <span className={`lead${selectMode ? ' sel' : ''}`} aria-hidden="true">
+                    <span className={`ic ${iconTone}`}>
                         <SpriteIcon id={ROUTE_ICON_ID[ev.route] ?? 'pill'} />
                     </span>
-                )}
+                    <span className={`sel-box${isSelected ? ' on' : ''}`}>
+                        {isSelected ? <Icon icon={Check} size={22} strokeWidth={2.6} /> : null}
+                    </span>
+                </span>
                 <div className="t">
                     <b>
                         {title}
@@ -295,7 +299,7 @@ const History: React.FC<HistoryProps> = ({
 
     return (
         <div className="pg on long relative" id="p1" ref={rootRef}>
-            <FullScreenSheet bare open={isQuickAddOpen} onClose={() => setIsQuickAddOpen(false)} title={t('timeline.add_title')}>
+            <FullScreenSheet bare open={isQuickAddOpen} onClose={() => setIsQuickAddOpen(false)} onReopen={() => setIsQuickAddOpen(true)} title={t('timeline.add_title')}>
                 <DoseForm
                     key={isQuickAddOpen ? 'open' : 'closed'}
                     eventToEdit={null}
@@ -310,7 +314,7 @@ const History: React.FC<HistoryProps> = ({
                 />
             </FullScreenSheet>
 
-            <FullScreenSheet bare open={!!editingEvent} onClose={() => setEditingId(null)} title={t('modal.dose.edit_title')}>
+            <FullScreenSheet bare open={!!editingEvent} onClose={() => setEditingId(null)} onReopen={() => setEditingId(sheetEvent?.id ?? null)} title={t('modal.dose.edit_title')}>
                 {sheetEvent && (
                     <DoseForm
                         key={sheetEvent.id}

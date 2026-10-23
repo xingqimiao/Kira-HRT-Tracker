@@ -12,13 +12,15 @@ import { ContainerTransform } from './ContainerTransform';
 export function FullScreenSheet({
     open,
     onClose,
+    onReopen,
     title,
     children,
     bare = false,
-    ghostIcon,
 }: {
     open: boolean;
     onClose: () => void;
+    /** Reverse a close that is still animating — see `ContainerTransform`. */
+    onReopen?: () => void;
     title: string;
     children: ReactNode;
     /**
@@ -27,15 +29,14 @@ export function FullScreenSheet({
      * does not stack a second title bar above it.
      */
     bare?: boolean;
-    ghostIcon?: string;
 }) {
     return (
         <ContainerTransform
             open={open}
             onClose={onClose}
+            onReopen={onReopen}
             title={title}
             bare={bare}
-            ghostIcon={ghostIcon}
         >
             {children}
         </ContainerTransform>

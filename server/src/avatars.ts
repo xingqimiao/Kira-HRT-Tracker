@@ -188,13 +188,17 @@ export interface StoredAvatar {
 }
 
 /**
- * The avatar of whichever provider has one, newest first.
+ * The avatar of whichever provider has one, newest first — or one provider's own.
  *
  * Scoped to the owner in the query itself rather than filtered afterwards: this
  * identifies an account from a URL, so the `user_id` predicate is what stops one account
  * reading another's picture.
+ *
+ * The optional `provider` exists because a person has a different picture on X and on
+ * Google. The account header wants "whichever is newest" (one face for the account); the
+ * settings list, where each linked provider is its own row, wants that provider's own.
  */
-export async function avatarForUser(userId: string): Promise<StoredAvatar | null> {
+export async function avatarForUser(userId: string, provider?: string): Promise<StoredAvatar | null> {
   const { rows } = await getPool().query<{
     avatar_image: Buffer | null;
     avatar_content_type: string | null;
@@ -204,9 +208,10 @@ export async function avatarForUser(userId: string): Promise<StoredAvatar | null
     `SELECT avatar_image, avatar_content_type, avatar_url, avatar_fetched_at
        FROM oauth_accounts
       WHERE user_id = $1 AND avatar_image IS NOT NULL
+        AND ($2::text IS NULL OR provider = $2)
       ORDER BY avatar_fetched_at DESC NULLS LAST, linked_at ASC
       LIMIT 1`,
-    [userId],
+    [userId, provider ?? null],
   );
   const row = rows[0];
   if (!row?.avatar_image || !row.avatar_content_type) return null;

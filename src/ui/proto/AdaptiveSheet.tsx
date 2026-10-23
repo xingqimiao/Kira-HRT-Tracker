@@ -34,6 +34,16 @@ export interface AdaptiveSheetProps {
 
 const CLOSE_MS = 420;
 
+/** Everything the panel draws, captured as one value so it can be frozen. */
+interface SheetView {
+    title: React.ReactNode;
+    ariaLabel?: string;
+    children: React.ReactNode;
+    footer?: React.ReactNode;
+    wide: boolean;
+    closeLabel: string;
+}
+
 export function AdaptiveSheet({
     open,
     onClose,
@@ -53,6 +63,23 @@ export function AdaptiveSheet({
     const [tall, setTall] = useState(defaultTall);
     const panelRef = useRef<HTMLDivElement>(null);
     const rafRef = useRef<number | null>(null);
+
+    /**
+     * What the panel shows — which is not always what the caller currently
+     * passes.
+     *
+     * The panel stays mounted for CLOSE_MS after `open` goes false, and it used
+     * to render the live `children` throughout. Any caller that clears its
+     * selection on close therefore animated the *next* surface out: opening a lab
+     * record and closing it played the add form (two hormone heroes, a wider
+     * panel, an "add" title) for a fifth of a second, however small the record
+     * was. Freezing the last open view keeps the exit showing the thing that is
+     * leaving.
+     */
+    const currentView: SheetView = { title, ariaLabel, children, footer, wide, closeLabel };
+    const lastView = useRef<SheetView>(currentView);
+    if (open) lastView.current = currentView;
+    const view = open ? currentView : lastView.current;
 
     useEscape(onClose, open);
 
@@ -78,7 +105,10 @@ export function AdaptiveSheet({
         };
     }, [open, mounted]);
 
-    useEffect(() => {
+    // Closing is a layout effect, not a passive one: a passive effect let the
+    // commit that clears `open` paint once more with `.on` still applied, which
+    // was a fully-open frame of whatever the caller had just replaced.
+    useLayoutEffect(() => {
         if (open) return;
         setShown(false);
         if (!mounted) return;
@@ -110,18 +140,18 @@ export function AdaptiveSheet({
             <div className={`scrim${shown ? ' on' : ''}`} onClick={onClose} aria-hidden="true" style={zIndex !== undefined ? { zIndex } : undefined} />
             <div
                 ref={panelRef}
-                className={`sheet${shown ? ' on' : ''}${tall ? ' tall' : ''}${wide ? ' wide' : ''}`}
+                className={`sheet${shown ? ' on' : ''}${tall ? ' tall' : ''}${view.wide ? ' wide' : ''}`}
                 role="dialog"
                 aria-modal="true"
-                aria-label={ariaLabel ?? (typeof title === 'string' ? title : undefined)}
+                aria-label={view.ariaLabel ?? (typeof view.title === 'string' ? view.title : undefined)}
                 tabIndex={-1}
                 style={{ display: 'flex', flexDirection: 'column', ...(zIndex !== undefined ? { zIndex: zIndex + 1 } : {}) }}
             >
                 <button type="button" className="sh-handle" onClick={() => setTall(value => !value)} aria-label={tall ? 'Collapse' : 'Expand'} aria-expanded={tall} />
                 {!bare ? (
                     <div className="hrow" style={{ padding: '2px 0 8px' }}>
-                        {title !== undefined ? <b style={{ fontSize: 18 }}>{title}</b> : <span />}
-                        <button type="button" className="ic-btn" onClick={onClose} aria-label={closeLabel} style={{ width: 38, height: 38 }}>
+                        {view.title !== undefined ? <b style={{ fontSize: 18 }}>{view.title}</b> : <span />}
+                        <button type="button" className="ic-btn" onClick={onClose} aria-label={view.closeLabel} style={{ width: 38, height: 38 }}>
                             <Icon id="x" />
                         </button>
                     </div>
@@ -129,8 +159,8 @@ export function AdaptiveSheet({
                 {/* Natural height by default; only the explicitly tall sheet
                     fills the remaining space. `flex:1` on an auto-height parent
                     still reserved empty space below a one-paragraph notice. */}
-                <div className="sheet-body" style={{ overflow: 'auto', flex: tall ? 1 : '0 1 auto', minHeight: 0 }}>{children}</div>
-                {footer ? <div style={{ flex: 'none', paddingTop: 10 }}>{footer}</div> : null}
+                <div className="sheet-body" style={{ overflow: 'auto', flex: tall ? 1 : '0 1 auto', minHeight: 0 }}>{view.children}</div>
+                {view.footer ? <div style={{ flex: 'none', paddingTop: 10 }}>{view.footer}</div> : null}
             </div>
         </>,
         document.body,

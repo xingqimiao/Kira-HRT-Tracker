@@ -10,6 +10,7 @@ import { GoogleBrand, XBrand } from '../icons/brand';
 
 import { coreAuth, CoreAuthError, PROVIDER_NAMES, type AccountSummary, type LoginMethods, type OAuthLink, type SessionInfo } from '../services/coreAuth';
 import type { CoreSession } from '../hooks/useCoreSession';
+import { getCachedAvatar, refreshCachedAvatar } from '../utils/avatarCache';
 import { openExternalUrl } from '../utils/externalLinks';
 import { forgetLocalPushToken, syncPushRegistration } from '../utils/pushRegister';
 import { isPlanNotificationGranted } from '../utils/medPlanNotify';
@@ -126,6 +127,8 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
   const [dialog, setDialog] = useState<Dialog>(null);
   const [unlinkTarget, setUnlinkTarget] = useState<'x' | 'google' | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Each linked provider's own picture, as a data URL: `provider -> src`. */
+  const [providerAvatars, setProviderAvatars] = useState<Record<string, string | null>>({});
 
   const token = session.token;
 
@@ -155,6 +158,68 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  /**
+   * Each linked row draws **its own** provider picture.
+   *
+   * The server serves it from a URL on the API host, and `img-src 'self' data:
+   * blob:` blocks an `<img>` pointed at it — the same reason the account header
+   * goes through this cache — so the bytes are fetched once and kept as a data
+   * URL. The key is per user *and* provider: the same person is not the same
+   * picture on X and on Google, and two accounts on one browser must never share.
+   */
+  const userId = session.user?.userId ?? null;
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    const rows = [...links, ...(methods?.links ?? [])];
+    const seen = new Set<string>();
+    const next: Record<string, string | null> = {};
+    const pending: { provider: string; url: string }[] = [];
+    for (const row of rows) {
+      if (!row.provider || seen.has(row.provider)) continue;
+      seen.add(row.provider);
+      if (!row.proxiedAvatarUrl) continue;
+      const key = `${userId}:${row.provider}`;
+      const cached = getCachedAvatar(key);
+      next[row.provider] = cached?.url === row.proxiedAvatarUrl ? cached.dataUrl : null;
+      pending.push({ provider: row.provider, url: row.proxiedAvatarUrl });
+    }
+    setProviderAvatars(next);
+    for (const { provider, url } of pending) {
+      void refreshCachedAvatar(`${userId}:${provider}`, url).then((dataUrl) => {
+        if (cancelled || !dataUrl) return;
+        setProviderAvatars((prev) => ({ ...prev, [provider]: dataUrl }));
+      });
+    }
+    return () => { cancelled = true; };
+  }, [userId, links, methods]);
+
+  /**
+   * A linked provider's picture, or its brand mark until one arrives.
+   *
+   * The image is our copy of *that* provider's avatar (`proxiedAvatarUrl`); the
+   * provider's own CDN address on the row is metadata and cannot be rendered
+   * under `img-src 'self'`. A provider that left no picture keeps the brand mark
+   * rather than an empty slot.
+   */
+  const providerAvatar = (provider: string, fallback: React.ReactNode) => {
+    const src = providerAvatars[provider];
+    if (src) {
+      return (
+        <img
+          src={src}
+          alt=""
+          style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', flex: 'none' }}
+        />
+      );
+    }
+    return (
+      <span style={{ width: 42, height: 42, display: 'grid', placeItems: 'center', flex: 'none' }}>
+        {fallback}
+      </span>
+    );
+  };
 
   const createdDate = formatDate(summary?.createdAt);
 
@@ -262,18 +327,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
               ) : (
                 links.map((l) => (
                   <div key={l.handle ?? l.linkedAt} className="li no-hover">
-                    {l.avatarUrl ? (
-                      <img
-                        src={l.avatarUrl}
-                        alt=""
-                        style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', flex: 'none' }}
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                      />
-                    ) : (
-                      <span style={{ width: 42, height: 42, display: 'grid', placeItems: 'center', flex: 'none' }}>
-                        <XBrand size={42} />
-                      </span>
-                    )}
+                    {providerAvatar(l.provider, <XBrand size={42} />)}
                     <div className="t">
                       <b>{l.handle ? `@${l.handle}` : t('core.acct.x_section')}</b>
                       <span className="s">{linkSubtitle(t, l, t('core.acct.x_section'))}</span>
@@ -306,9 +360,7 @@ const CoreAccountSettings: React.FC<CoreAccountSettingsProps> = ({ session, onBa
             <div className="list">
               {methods?.providers.includes('google') ? (
                 <div className="li no-hover">
-                  <span style={{ width: 42, height: 42, display: 'grid', placeItems: 'center', flex: 'none' }}>
-                    <GoogleBrand size={42} />
-                  </span>
+                  {providerAvatar('google', <GoogleBrand size={42} />)}
                   <div className="t">
                     <b>{t('core.acct.google_section')}</b>
                     <span className="s">{linkSubtitle(t, methods.links.find((l) => l.provider === 'google'), t('core.acct.google_section'))}</span>

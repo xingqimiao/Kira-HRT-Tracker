@@ -573,12 +573,35 @@ function appUrl(path: string, params?: Record<string, string>): string {
  * A relative URL only works when the API is same-origin with the app, and these two are
  * deliberately on different hosts.
  *
- * The shape of the URL is what keeps the picture from becoming a beacon, so it is worth
- * stating: the id is the image's ETag, so the URL changes whenever the picture does, and
- * a browser that already holds the bytes revalidates instead of downloading them again.
+ * The shape of the URL is what keeps the picture from becoming a beacon: it carries no
+ * session and no query the browser has to invent, and the response is revalidated with an
+ * ETag, so a browser that already holds the bytes asks for a 304 instead of the image.
  */
-function avatarPath(userId: string, etag?: string): string {
-  return `${getConfig().apiBaseUrl}/auth/avatar/${encodeURIComponent(userId)}${etag ?? ''}`;
+function avatarPath(userId: string, provider?: string): string {
+  const base = `${getConfig().apiBaseUrl}/auth/avatar/${encodeURIComponent(userId)}`;
+  // One picture per account by default — that is what the header shows. The
+  // settings list asks per provider, because the same person looks different on
+  // X and on Google and each row is its own account.
+  return provider ? `${base}?p=${encodeURIComponent(provider)}` : base;
+}
+
+/**
+ * Add the URL each row's own picture is served from, beside the provider's URL.
+ *
+ * `avatarUrl` on these rows is the provider's own CDN address — kept as the
+ * record of where the copy came from, and deliberately not renderable (`avatars.ts`
+ * says why). What the app can draw is our copy, and each row has to get *its own*:
+ * a person's X picture and Google picture are not the same image, so the account-wide
+ * avatar would show one face on two rows.
+ */
+function withProviderAvatarPaths<T extends { provider: string; hasAvatar: boolean }>(
+  userId: string,
+  links: T[],
+): (T & { proxiedAvatarUrl: string | null })[] {
+  return links.map((link) => ({
+    ...link,
+    proxiedAvatarUrl: link.hasAvatar ? avatarPath(userId, link.provider) : null,
+  }));
 }
 
 /**
@@ -1088,7 +1111,14 @@ export function createRequestHandler() {
           res.setHeader('Retry-After', '60');
           return fail(res, 429, 'too many requests; try again shortly');
         }
-        const avatar = await avatarForUser(avatarMatch[1]);
+        // `?p=` picks one provider's picture. An unknown value is a 404 rather
+        // than a silent fall back to the account's newest image, which would
+        // answer a question nobody asked.
+        const requested = url.searchParams.get('p');
+        if (requested !== null && requested !== 'x' && requested !== 'google') {
+          return fail(res, 404, 'no avatar');
+        }
+        const avatar = await avatarForUser(avatarMatch[1], requested ?? undefined);
         if (!avatar) return fail(res, 404, 'no avatar');
 
         // The id is the image's identity, so the URL can be cached; the revalidation is
@@ -1114,7 +1144,8 @@ export function createRequestHandler() {
       if (path === '/auth/x/links' && req.method === 'GET') {
         const ctx = await contextFor(req);
         if (!ctx) return fail(res, 401, 'authentication required');
-        return send(res, 200, { links: await AccountService.listXLinks(ctx.userId) });
+        const links = await AccountService.listXLinks(ctx.userId);
+        return send(res, 200, { links: withProviderAvatarPaths(ctx.userId, links) });
       }
 
       if (path === '/auth/x/unlink' && req.method === 'POST') {
@@ -1157,7 +1188,7 @@ export function createRequestHandler() {
           providers: overview.providers,
           // True when losing the linked provider would lose the account.
           recovery_risk: overview.recoveryRisk,
-          accounts: await AccountService.listOAuthLinks(ctx.userId),
+          accounts: withProviderAvatarPaths(ctx.userId, await AccountService.listOAuthLinks(ctx.userId)),
         });
       }
 

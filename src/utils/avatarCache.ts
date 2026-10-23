@@ -8,42 +8,44 @@ import { get as secureGet, set as secureSet, remove as secureRemove } from './se
  * the identity block paints twice. A data URL in localStorage paints with the
  * first render, on the same frame as the text, with no request at all.
  *
- * Keyed by username, not by device: two accounts on one browser must never see
- * each other's picture, even for a frame. Refresh happens in the background on
- * every page load — a conditional-GET against our own copy — so a changed
+ * Keyed by the caller's own scope, not by device: two accounts on one browser
+ * must never see each other's picture, even for a frame. The account page scopes
+ * by username; the security page scopes by `userId:provider`, because one person
+ * has a different picture on X and on Google. Refresh happens in the background
+ * on every page load — a conditional-GET against our own copy — so a changed
  * provider picture swaps in without ever blanking the avatar.
  */
 
-const keyFor = (username: string): string => `avatar-cache-v1:${username}`;
+const keyFor = (cacheKey: string): string => `avatar-cache-v1:${cacheKey}`;
 
 export interface CachedAvatar {
-  url: string;
-  dataUrl: string;
+    url: string;
+    dataUrl: string;
 }
 
-export function getCachedAvatar(username: string): CachedAvatar | null {
-  try {
-    const raw = secureGet(keyFor(username));
-    return raw ? (JSON.parse(raw) as CachedAvatar) : null;
-  } catch {
-    return null;
-  }
+export function getCachedAvatar(cacheKey: string): CachedAvatar | null {
+    try {
+        const raw = secureGet(keyFor(cacheKey));
+        return raw ? (JSON.parse(raw) as CachedAvatar) : null;
+    } catch {
+        return null;
+    }
 }
 
-function store(username: string, avatar: CachedAvatar): void {
-  try {
-    secureSet(keyFor(username), JSON.stringify(avatar));
-  } catch {
-    // Quota is best-effort: an uncached avatar paints the old way.
-  }
+function store(cacheKey: string, avatar: CachedAvatar): void {
+    try {
+        secureSet(keyFor(cacheKey), JSON.stringify(avatar));
+    } catch {
+        // Quota is best-effort: an uncached avatar paints the old way.
+    }
 }
 
-export function clearCachedAvatar(username: string): void {
-  try {
-    secureRemove(keyFor(username));
-  } catch {
-    // Nothing to clear is fine.
-  }
+export function clearCachedAvatar(cacheKey: string): void {
+    try {
+        secureRemove(keyFor(cacheKey));
+    } catch {
+        // Nothing to clear is fine.
+    }
 }
 
 /**
@@ -51,21 +53,21 @@ export function clearCachedAvatar(username: string): void {
  * unchanged picture is answered from the browser's own cache; a changed one swaps
  * into the cache and the caller's state.
  */
-export async function refreshCachedAvatar(username: string, url: string): Promise<string | null> {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    if (blob.size > 512 * 1024) return null; // above the display size we ship; skip caching
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(blob);
-    });
-    store(username, { url, dataUrl });
-    return dataUrl;
-  } catch {
-    return null;
-  }
+export async function refreshCachedAvatar(cacheKey: string, url: string): Promise<string | null> {
+    try {
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const blob = await res.blob();
+        if (blob.size > 512 * 1024) return null; // above the display size we ship; skip caching
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(blob);
+        });
+        store(cacheKey, { url, dataUrl });
+        return dataUrl;
+    } catch {
+        return null;
+    }
 }

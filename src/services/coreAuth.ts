@@ -196,10 +196,19 @@ export interface OAuthLink {
    * The URL the provider served the avatar from, recorded when it was copied.
    *
    * This is metadata, **not** something to render: the app's `img-src` forbids it, and
-   * loading it would tell the provider every time this list was shown. The picture the
-   * page draws comes from `AccountSummary.avatarUrl`.
+   * loading it would tell the provider every time this list was shown. What the row
+   * draws comes from `proxiedAvatarUrl`.
    */
   avatarUrl: string | null;
+  /**
+   * Our own copy of *this provider's* avatar, or null when the copy failed.
+   *
+   * A URL on the API host, so it has to be fetched and turned into a data URL before
+   * an `<img>` can show it — `img-src 'self' data: blob:` is what the app is served
+   * with. `AccountSummary.avatarUrl` is the account's newest picture; this one is the
+   * provider's own, because the same person is not the same image on X and Google.
+   */
+  proxiedAvatarUrl: string | null;
   linkedAt: string | null;
   lastLoginAt: string | null;
 }
@@ -267,6 +276,7 @@ const toOAuthLink = (raw: any): OAuthLink => ({
   provider: String(raw.provider ?? ''),
   handle: raw.handle ?? null,
   avatarUrl: raw.avatarUrl ?? null,
+  proxiedAvatarUrl: raw.proxiedAvatarUrl ?? null,
   linkedAt: raw.linkedAt ?? null,
   lastLoginAt: raw.lastLoginAt ?? null,
 });

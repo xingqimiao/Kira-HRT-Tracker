@@ -1479,21 +1479,27 @@ export const AccountService = {
   },
 
   async listXLinks(userId: string): Promise<{
-    handle: string | null; avatarUrl: string | null; linkedAt: string; lastLoginAt: string | null;
+    handle: string | null; avatarUrl: string | null; hasAvatar: boolean;
+    linkedAt: string; lastLoginAt: string | null;
   }[]> {
     return await this.listOAuthLinks(userId, 'x');
   },
 
   /** Every linked social account, or one provider's. Newest link first. */
   async listOAuthLinks(userId: string, provider?: string): Promise<{
-    provider: string; handle: string | null; avatarUrl: string | null;
+    provider: string; handle: string | null; avatarUrl: string | null; hasAvatar: boolean;
     linkedAt: string; lastLoginAt: string | null;
   }[]> {
     const { rows } = await getPool().query<{
       provider: string; handle: string | null; avatar_url: string | null;
-      linked_at: Date; last_login_at: Date | null;
+      has_avatar: boolean; linked_at: Date; last_login_at: Date | null;
     }>(
-      `SELECT provider, handle, avatar_url, linked_at, last_login_at
+      // `hasAvatar` rather than the bytes: the caller builds a URL to our own copy,
+      // and only needs to know whether this provider left one. Reporting it here is
+      // what lets each row show its own picture instead of the account's newest.
+      `SELECT provider, handle, avatar_url,
+              avatar_image IS NOT NULL AS has_avatar,
+              linked_at, last_login_at
          FROM oauth_accounts
         WHERE user_id = $1 AND ($2::text IS NULL OR provider = $2)
         ORDER BY linked_at DESC`,
@@ -1503,6 +1509,7 @@ export const AccountService = {
       provider: r.provider,
       handle: r.handle,
       avatarUrl: r.avatar_url,
+      hasAvatar: r.has_avatar === true,
       linkedAt: r.linked_at.toISOString(),
       lastLoginAt: r.last_login_at ? r.last_login_at.toISOString() : null,
     }));

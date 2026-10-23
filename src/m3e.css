@@ -182,9 +182,25 @@ body.desktop .exam-text-desktop{display:flex;flex-direction:column;gap:12px}
 .btn.danger-wide:hover{filter:brightness(1.08)}
 .btn.danger-wide svg.i{width:22px;height:22px;stroke:var(--err)}
 
-/* FAB (Mobile bottom-right, Desktop top of Navigation Rail) */
-.fab{position:absolute;right:16px;bottom:92px;display:none;align-items:center;gap:10px;height:56px;padding:0 22px;border:0;border-radius:22px;background:var(--pric);color:var(--onpric);font:inherit;font-weight:700;font-size:15px;box-shadow:0 6px 18px rgba(0,0,0,.32);cursor:pointer;z-index:6}
+/* FAB (Mobile bottom-right, Desktop top of Navigation Rail)
+   The mobile FAB is a labelled pill that morphs into a 56px square: the label
+   collapses through a grid track (its real width, no magic number), the ground
+   changes to the primary role, and the plus rotates into the close mark. Every
+   one of those is transitioned here rather than by `[data-m]`, which only knows
+   about the press squash. */
+.fab{position:absolute;right:16px;bottom:92px;display:none;align-items:center;height:56px;padding:0 22px;border:0;border-radius:22px;background:var(--pric);color:var(--onpric);font:inherit;font-weight:700;font-size:15px;box-shadow:0 6px 18px rgba(0,0,0,.32);cursor:pointer;z-index:6;overflow:hidden;transition:padding .42s cubic-bezier(.05,.7,.1,1),border-radius .5s cubic-bezier(.3,1.8,.5,1),transform .35s cubic-bezier(.3,1.7,.5,1),background-color .3s ease,color .3s ease}
 .fab.on{display:flex}
+.fab-ico{position:relative;width:22px;height:22px;flex:none;display:grid;place-items:center}
+.fab-ico svg.i{position:absolute;inset:0;margin:auto;transition:opacity .16s ease,transform .42s cubic-bezier(.34,1.28,.64,1)}
+/* Closed: the close mark is parked a quarter-turn away, scaled down, invisible. */
+.fab-morph .fab-ico svg.i:last-child{opacity:0;transform:rotate(-90deg) scale(.5)}
+/* Open: the two swap, and each one travels a quarter turn — which is exactly
+   what turns a plus into a cross. */
+.fab-morph.open .fab-ico svg.i:first-child{opacity:0;transform:rotate(90deg) scale(.5)}
+.fab-morph.open .fab-ico svg.i:last-child{opacity:1;transform:none}
+.fab-txt-wrap{display:grid;grid-template-columns:1fr;overflow:hidden;margin-left:10px;opacity:1;transition:grid-template-columns .42s cubic-bezier(.05,.7,.1,1),margin-left .42s cubic-bezier(.05,.7,.1,1),opacity .18s ease}
+.fab.open .fab-txt-wrap{grid-template-columns:0fr;margin-left:0;opacity:0}
+.fab-txt{min-width:0;overflow:hidden;white-space:nowrap}
 body.desktop .fab{
   position:absolute;
   left:18px;
@@ -198,7 +214,7 @@ body.desktop .fab{
   border-radius:18px;
   box-shadow:0 4px 12px rgba(0,0,0,.22);
 }
-body.desktop .fab .fab-txt{display:none}
+body.desktop .fab .fab-txt-wrap{display:none}
 
 /* Desktop Rail Logo (替代 FAB 出现在导航栏顶部) */
 .rail-logo{
@@ -267,11 +283,19 @@ body.desktop .li.active-nav .ic{background:rgba(255,255,255,.18);color:var(--onp
 .li .r b{font-size:15px;color:var(--on);justify-content:flex-end}
 .li>svg.i:last-child{color:var(--out);width:20px;height:20px}
 
-/* Batch-selection checkbox: an M3 square (8px) that slides in where the route
-   glyph was, not an empty 50px circle. */
-.sel-box{width:24px;height:24px;border-radius:8px;border:2px solid var(--out);display:grid;place-items:center;flex:none;color:var(--pric);transition:background .18s ease,border-color .18s ease,transform .25s cubic-bezier(.3,1.7,.5,1)}
-.sel-box.on{background:var(--onpric);border-color:var(--onpric);color:var(--pric);transform:scale(1.04)}
-.sel-box svg{width:15px;height:15px}
+/* The leading slot of a History row. It is 50px in both modes — the route glyph
+   and the batch checkbox share it — so entering selection does not shorten the
+   row, and the two cross-fade rather than one popping in where the other was. */
+.li .lead{position:relative;width:50px;height:50px;flex:none}
+.li .lead .ic{position:absolute;inset:0;width:50px;height:50px;transition:opacity .18s ease,transform .3s cubic-bezier(.3,1.7,.5,1)}
+.li .lead.sel .ic{opacity:0;transform:scale(.72)}
+
+/* Batch-selection checkbox: an M3 circle the size of the route glyph it replaces,
+   so the two are the same object in the same place. */
+.li .sel-box{position:absolute;inset:0;width:50px;height:50px;border-radius:50%;border:2px solid var(--out);display:grid;place-items:center;flex:none;color:var(--pric);background:transparent;opacity:0;transform:scale(.72);transition:opacity .18s ease,transform .3s cubic-bezier(.3,1.7,.5,1),background .18s ease,border-color .18s ease}
+.li .lead.sel .sel-box{opacity:1;transform:none}
+.li .sel-box.on{background:var(--onpric);border-color:var(--onpric);color:var(--pric)}
+.li .sel-box svg{width:22px;height:22px}
 
 /* Destructive / Danger List Item */
 .li.danger{color:var(--err)}
@@ -474,7 +498,8 @@ body.desktop .nav{
 .list.bigic .ic svg.i{width:25px;height:25px}
 
 /* Sheets, Menus & Fullscreen/Modal Overlays */
-.fab.open{padding:0;width:56px;justify-content:center;z-index:13;background:var(--pri);color:var(--onpri)}
+/* 22px glyph + 17px each side = the 56px square the pill shrinks into. */
+.fab.open{padding:0 17px;justify-content:center;z-index:13;background:var(--pri);color:var(--onpri)}
 .scrim{position:absolute;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .3s;z-index:10}
 .scrim.on{opacity:1;pointer-events:auto}
 
@@ -528,9 +553,16 @@ body.desktop #fm{
   bottom:auto;
   align-items:flex-start;
 }
-.fmi{display:flex;align-items:center;gap:10px;height:52px;padding:0 20px;border:0;border-radius:26px;background:var(--sch);color:var(--on);font:inherit;font-weight:700;font-size:15px;box-shadow:0 6px 16px rgba(0,0,0,.3);opacity:0;transform:translateY(14px) scale(.85);transition:opacity .25s,transform .38s cubic-bezier(.3,1.5,.5,1);cursor:pointer}
+/* The stack grows out of the FAB's corner: the origin sits on the button, the
+   item starts small and close to it, and the spring overshoots on the way out.
+   The nearest item leaves first so the two read as one unfolding motion. */
+.fmi{display:flex;align-items:center;gap:10px;height:52px;padding:0 20px;border:0;border-radius:26px;background:var(--sch);color:var(--on);font:inherit;font-weight:700;font-size:15px;box-shadow:0 6px 16px rgba(0,0,0,.3);opacity:0;transform:translate(4px,18px) scale(.62);transform-origin:right bottom;transition:opacity .16s ease,transform .36s cubic-bezier(.34,1.56,.64,1);cursor:pointer}
 #fm.on .fmi{opacity:1;transform:none}
-#fm.on .fmi:nth-child(1){transition-delay:.05s}
+#fm.on .fmi:nth-child(2){transition-delay:.03s}
+#fm.on .fmi:nth-child(1){transition-delay:.09s}
+/* Closing is a retreat, not an entrance: no stagger, no overshoot. */
+#fm:not(.on) .fmi{transition-duration:.14s,.2s;transition-delay:0s}
+body.desktop .fmi{transform:translate(-6px,10px) scale(.62);transform-origin:left top}
 
 .fld{
   display:flex;
@@ -633,10 +665,14 @@ m3e-snackbar::part(container){background:var(--sch);color:var(--on);border-radiu
 
 
 /* ── M3E Container Transform ────────────────────────────────────────────────
-   The trigger's exact box is the start and end clip-path. Four layers move
-   together: the clipped frame, the trigger ghost, the inner content, and (on
-   desktop) the scrim. Geometry is written by ContainerTransform.tsx; this is
-   only the choreography, copied from docs/m3e-prototype.html. */
+   The trigger's exact box is the start and end clip-path. Three layers move
+   together: the clipped frame, the inner content, and (on desktop) the scrim.
+   Geometry is written by ContainerTransform.tsx; this is only the choreography.
+
+   Closing is not the entrance played backwards. The content goes first, quickly,
+   leaving a solid block of the trigger's own colour — that block is what
+   travels back — and the trigger itself fades in underneath as the block lands
+   on it, so the last frame and the resting page are the same picture. */
 .m3e-ct-scrim{position:fixed;inset:0;z-index:29;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .3s ease}
 .m3e-ct-scrim.on{opacity:1;pointer-events:auto}
 /* The mobile surface covers the viewport by itself; the prototype's mobile
@@ -650,23 +686,22 @@ body:not(.desktop) .m3e-ct-scrim{display:none}
   padding:max(env(safe-area-inset-top,0px),var(--app-safe-top,0px)) 0 max(env(safe-area-inset-bottom,0px),var(--app-safe-bottom,0px));
   background:var(--ct-bg,var(--pric));color:var(--on);
   clip-path:var(--ct,inset(0px round 0px));
-  transition:clip-path .72s cubic-bezier(.16,.84,.24,1),background-color .4s ease .08s;
+  /* Emphasized decelerate: fast away from the trigger, a long soft landing. */
+  transition:clip-path .72s cubic-bezier(.05,.7,.1,1),background-color .4s ease .08s;
   will-change:clip-path;
 }
 .m3e-ct.open{background:var(--bg);clip-path:inset(0px round 0px)}
 .m3e-ct.out{
   background:var(--ct-bg,var(--pric));clip-path:var(--ct,inset(0px round 0px));
-  transition:clip-path .5s cubic-bezier(.4,0,.2,1),background-color .25s ease .25s,opacity .18s ease .34s;
+  /* Emphasized accelerate, the mirror of the entrance. The colour change is
+     delayed just past the content fade so the screen never turns a flat colour
+     while it still fills the viewport. */
+  transition:clip-path .52s cubic-bezier(.3,0,.8,.15),background-color .16s ease .12s;
   pointer-events:none;
 }
-.m3e-ct-ghost{
-  position:absolute;z-index:2;display:flex;align-items:center;justify-content:center;
-  font-size:15px;font-weight:700;pointer-events:none;
-  opacity:1;transition:opacity .18s ease;
-}
-.m3e-ct.open .m3e-ct-ghost{opacity:0}
-.m3e-ct.out .m3e-ct-ghost{opacity:1;transition:opacity .22s ease .18s}
-.m3e-ct-ghost svg.i{width:22px;height:22px}
+/* An invisible target over the trigger's own rect while the block is on its way
+   back, so a second tap on the place that opened this cancels the close. */
+.m3e-ct-return-hit{position:fixed;z-index:31;border:0;padding:0;background:transparent;cursor:pointer}
 .m3e-ct-inner{
   position:relative;z-index:1;flex:1;min-height:0;display:flex;flex-direction:column;
   background:transparent;height:100%;
@@ -679,8 +714,9 @@ body:not(.desktop) .m3e-ct-scrim{display:none}
   transition:opacity .38s ease .12s,transform .38s ease .12s,background-color .4s ease .08s;
 }
 .m3e-ct.out .m3e-ct-inner{
+  background:transparent;
   opacity:0;transform:scale(.96);
-  transition:opacity .15s ease,transform .15s ease;
+  transition:opacity .14s ease,transform .14s ease,background-color .14s ease;
 }
 .ct-bar{display:flex;align-items:center;gap:10px;flex:none;padding:18px 18px 8px}
 .ct-bar b{font-size:22px;font-weight:800;letter-spacing:-.4px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -697,18 +733,13 @@ body.desktop .m3e-ct{
   clip-path:var(--ct,inset(0px round 0px));
   background:var(--ct-bg,var(--pric));
   opacity:1;transform:none;
-  transition:clip-path .72s cubic-bezier(.16,.84,.24,1),background-color .4s ease .08s;
+  transition:clip-path .72s cubic-bezier(.05,.7,.1,1),background-color .4s ease .08s;
 }
 body.desktop .m3e-ct.open{clip-path:inset(0px round 0px);background:var(--bg);transform:none;opacity:1}
 body.desktop .m3e-ct.out{
   clip-path:var(--ct,inset(0px round 0px));background:var(--ct-bg,var(--pric));opacity:1;transform:none;
-  transition:clip-path .5s cubic-bezier(.4,0,.2,1),background-color .25s ease .25s,opacity .18s ease .34s;
+  transition:clip-path .52s cubic-bezier(.3,0,.8,.15),background-color .16s ease .12s;
 }
-body.ct-active .fab{opacity:0;visibility:hidden;pointer-events:none}
-@keyframes fabReturn{from{opacity:0;transform:scale(.88)}to{opacity:1;transform:none}}
-body.ct-returning .fab{animation:fabReturn .28s cubic-bezier(.2,.9,.2,1) both}
-@media (prefers-reduced-motion: reduce){body.ct-returning .fab{animation:none}}
-body.desktop .m3e-ct-ghost{display:flex}
 body.desktop .m3e-ct-inner{height:100%}
 
 /* The signed-out account cookie is a continuously turning shape, not a
@@ -717,9 +748,11 @@ body.desktop .m3e-ct-inner{height:100%}
 @keyframes cookieSpin{to{transform:rotate(360deg)}}
 .cookie-spin{transform-origin:50% 50%;animation:cookieSpin 9s linear infinite}
 @media (prefers-reduced-motion: reduce){
-  .m3e-ct{transition:opacity .2s ease!important;clip-path:none!important}
+  .m3e-ct,body.desktop .m3e-ct{transition:opacity .2s ease!important;clip-path:none!important}
+  /* `!important` because the desktop rules above keep `opacity:1` at a higher
+     specificity; without it the surface would cut out instead of fading. */
+  .m3e-ct.out,body.desktop .m3e-ct.out{opacity:0!important}
   .m3e-ct-scrim{transition:opacity .2s ease}
-  .m3e-ct-ghost{display:none}
   .m3e-ct-inner{transform:none!important}
   .cookie-spin{animation:none}
 }
@@ -764,8 +797,8 @@ body.desktop .m3e-ct-inner{height:100%}
 /* Motion is decoration here: the pressed shape, the page slide and the
    selected-pill spring all drop to a plain state change when the OS asks. */
 @media (prefers-reduced-motion: reduce){
-  [data-m],[data-m].mo,.li,.cg button,.chip,.card,.tile,.btn,.sheet,.snack{transition:none!important;transform:none!important}
-  .pg.on,.m3e-rise{animation:none}
+  [data-m],[data-m].mo,.li,.cg button,.chip,.card,.tile,.btn,.sheet,.snack,.fmi,.m3e-swap{transition:none!important;transform:none!important}
+  .pg.on,.m3e-rise,.m3e-swap{animation:none}
   ::view-transition-old(root),::view-transition-new(root){animation:none}
 }
 

@@ -43,7 +43,8 @@
 ```
 
 - `format` — 固定字符串 `"kira-hrt"`。**这是最重要的一个字段**，见 §4.1。
-- `version` — 协议版本，当前写 `1`。
+- `version` — 传输协议的版本，写 `1`。本应用自己导出的**完整备份**把版本写在
+  `meta.version`（当前是 `3`，见 §2.8）；两种写法导入时都接受。
 - `events` — 用药记录（可为空，也可省略）。
 - `labResults` — 化验记录（可为空，也可省略）。
 - `weight` — 体重，单位**公斤**（可省略）。
@@ -88,7 +89,7 @@ timeH: new Date(record.takenAt).getTime()
 | `route` | 字符串 | **是** | 取值见 §2.4。不认识的值 → **该行被跳过** |
 | `ester` | 字符串 | 建议填 | 取值见 §2.5。不认识的值 → 会被当成 `"E2"` |
 | `doseMG` | 数字 | **是** | 毫克，指的是**药物本身**，不是雌二醇当量。见 §4.3 |
-| `extras` | 对象 | 否 | 途径相关的数字细节，见 §2.6 |
+| `extras` | 对象 | 否 | 途径相关的细节，见 §2.6 |
 
 ### 2.3 `labResults[]` — 一条化验记录
 
@@ -122,44 +123,97 @@ oral         口服
 
 ### 2.5 `ester` 的取值（只能这些）
 
-| 值 | 药物 |
-|---|---|
-| `E2` | 雌二醇（未酯化，凝胶 / 贴片的基准） |
-| `EB` | 苯甲酸雌二醇 |
-| `EV` | 戊酸雌二醇 |
-| `EC` | 环戊丙酸雌二醇 |
-| `EN` | 庚酸雌二醇 |
-| `EU` | 十一酸雌二醇 |
-| `CPA` | 醋酸环丙孕酮 |
-| `SPIRO` | 螺内酯 |
-| `BICAL` | 比卡鲁胺 |
-| `T` | 睾酮（未酯化） |
-| `TC` | 环戊丙酸睾酮 |
-| `TE` | 庚酸睾酮 |
-| `TU` | 十一酸睾酮 |
-
-> `CPA` / `SPIRO` / `BICAL` 是**抗雄激素**，不是雌激素、也不参与建模。它们借用
-> `ester` 这个字段是因为一条记录总得说明自己是什么药。请原样传，**不要**换算成雌二醇当量。
-
-### 2.6 `extras` — 途径细节（都是数字）
-
-只填与 `route` 相关的项，其余省略：
-
-| 键 | 适用途径 | 含义 |
+| 值 | 药物 | 参与建模 |
 |---|---|---|
-| `sublingualTier` | 舌下 | 0–3 = 快速 / 随意 / 标准 / 严格 |
-| `sublingualTheta` | 舌下 | 吸收比例 0–1（填了它会覆盖 `sublingualTier`） |
-| `releaseRateUGPerDay` | patchApply | 贴片释放速率，µg/天 |
-| `patchWearH` | patchApply | 计划佩戴小时数 |
-| `gelSite` | 凝胶 | 0–3 = 手臂 / 大腿 / 阴囊 / 腹部 |
-| `gelProductId` | 凝胶 | 1–5 为内置产品，≥1000 为用户自定义产品（见 §7） |
-| `gelCoverage` | 凝胶 | 0–6 = 产品默认 / 掌1 / 掌2 / 掌3 / 大腿 / 手臂 / 双臂 |
-| `gelCoApplied` | 凝胶 | 0–2 = 无 / 防晒 / 保湿 |
-| `gelWashAfterH` | 凝胶 | 涂抹后几小时洗掉 |
-| `concentrationMGmL` | 凝胶 | 浓度 mg/mL |
-| `areaCM2` | 凝胶 | 涂抹面积 cm² |
+| `E2` | 雌二醇（未酯化，凝胶 / 贴片的基准） | 是 |
+| `EB` | 苯甲酸雌二醇 | 是 |
+| `EV` | 戊酸雌二醇 | 是 |
+| `EC` | 环戊丙酸雌二醇 | 是 |
+| `EN` | 庚酸雌二醇 | 是 |
+| `EU` | 十一酸雌二醇 | 是 |
+| `CPA` | 醋酸环丙孕酮 | 否 |
+| `SPIRO` | 螺内酯 | 否 |
+| `BICAL` | 比卡鲁胺 | 否 |
+| `T` | 睾酮（未酯化） | 是 |
+| `TC` | 环戊丙酸睾酮 | 是 |
+| `TE` | 庚酸睾酮 | 是 |
+| `TU` | 十一酸睾酮 | 是 |
+| `P4` | 微粉化黄体酮 | 否 |
+| `MPA` | 醋酸甲羟孕酮 | 否 |
+| `NET` | 炔诺酮 | 否 |
+| `RALOX` | 雷洛昔芬（SERM） | 否 |
+| `FIN` | 非那雄胺 | 否 |
+| `DUT` | 度他雄胺 | 否 |
+| `GNRH` | GnRH 类似物 | 否 |
+
+> 「不参与建模」只影响曲线：这些记录照样会存下来、同步、导出，只是药代动力学引擎
+> 不给它们画浓度。请**原样传**，**不要**把它们换算成雌二醇或睾酮当量。
+>
+> `CPA` / `SPIRO` / `BICAL` / `P4` / `MPA` / `NET` / `RALOX` / `FIN` / `DUT` / `GNRH`
+> 借用 `ester` 这个字段，是因为一条记录总得说明自己是什么药。
+
+### 2.6 `extras` — 途径细节
+
+只填与 `route` 相关的项，其余省略。**几乎都是数字，只有最后两项是字符串**：
+
+| 键 | 类型 | 适用途径 | 含义 |
+|---|---|---|---|
+| `sublingualTier` | 数字 | 舌下 | 0–3 = 快速 / 随意 / 标准 / 严格 |
+| `sublingualTheta` | 数字 | 舌下 | 吸收比例 0–1（填了它会覆盖 `sublingualTier`） |
+| `releaseRateUGPerDay` | 数字 | patchApply | 贴片释放速率，µg/天 |
+| `patchWearH` | 数字 | patchApply | 计划佩戴小时数 |
+| `gelSite` | 数字 | 凝胶 | 0–3 = 手臂 / 大腿 / 阴囊 / 腹部 |
+| `gelProductId` | 数字 | 凝胶 | 1–5 为内置产品，≥1000 为用户自定义产品（见 §7） |
+| `gelCoverage` | 数字 | 凝胶 | 0–6 = 产品默认 / 掌1 / 掌2 / 掌3 / 大腿 / 手臂 / 双臂 |
+| `gelCoApplied` | 数字 | 凝胶 | 0–2 = 无 / 防晒 / 保湿 |
+| `gelWashAfterH` | 数字 | 凝胶 | 涂抹后几小时洗掉 |
+| `concentrationMGmL` | 数字 | 凝胶 | 浓度 mg/mL |
+| `areaCM2` | 数字 | 凝胶 | 涂抹面积 cm² |
+| `patchInstanceId` | **字符串** | patchApply | 这一片的身份，供「撕下」配对；省略时用该记录自己的 `id` |
+| `patchRemovalFor` | **字符串** | patchRemove | 「撕下」终止的是哪一次 `patchApply` 的 `id` |
 
 认不出的键会被忽略，不会报错。
+
+### 2.7 可选集合
+
+除了用药与化验，下面这些也能一起搬。规则与 §4.2 相同：**省略 = 不动对方的数据，
+传 `[]` = 清空**。
+
+| 集合 | 字段 | 说明 |
+|---|---|---|
+| `doseTemplates[]` | `id`、`name`、`route`、`ester`、`doseMG`、`extras`、`createdAt`（毫秒）、可选 `label` / `drugId` / `mode` | 保存好的剂量模板，就是首页那一排一键按钮的来源 |
+| `journal[]` | `id`、`timeH`、`note`（≤2000 字符） | 体感日记。没有文字的条目不会存 |
+| `quickDoses[]` | `id`、`route`、`ester`、`value`、`createdAt`（毫秒） | 快捷剂量按钮，按模式分开 |
+| `pkParams` | 对象或 `null` | 用户自定义的药代动力学参数。**`null` 表示「明确清空」**，省略才是「不涉及」 |
+| `pkParamsUpdatedAt` | 数字（毫秒） | 上面那项的写入时间戳 |
+| `weightUpdatedAt` | 数字（毫秒） | 体重的写入时间戳 |
+
+### 2.8 多模式文件（本应用自己的导出）
+
+本应用可以同时保存「女性化」与「男性化」两套记录，所以自己的完整备份是**多模式**的：
+
+```json
+{
+  "format": "kira-hrt",
+  "meta": { "version": 3, "exportedAt": "2026-10-24T12:00:00.000Z" },
+  "mode": "transfem",
+  "weight": 62,
+  "modes": {
+    "transfem": { "events": [], "labResults": [], "doseTemplates": [], "quickDoses": [], "journal": [] },
+    "transmasc": { "events": [], "labResults": [], "doseTemplates": [], "quickDoses": [], "journal": [] }
+  },
+  "events": [],
+  "labResults": [],
+  "doseTemplates": []
+}
+```
+
+- `meta.version` 是载荷版本，当前 `3`（加 `journal` 时从 2 升到 3）。
+- 顶层的 `events` / `labResults` / `doseTemplates` 是**当前模式**的镜像，方便只读扁平
+  结构的一方照样拿到数据。
+- 最外层还有 `appState`（设置、自定义凝胶产品目录等），那是本应用自用的，外部作者
+  可以整块忽略。
+- 写入本应用时两种都行：区分两种模式就用 `modes`，不区分就直接用扁平字段。
 
 ---
 
@@ -317,11 +371,14 @@ https://github.com/xingqimiao/Kira-HRT-Tracker/blob/HEAD/docs/hrt-import-export-
 
 ---
 
-## 7. 已知不做转换的部分
+## 7. 已知的差异与限制
 
-- **自定义凝胶产品目录**：Kira 目前只存一个数字 `gelProductId`，没有产品目录。
-  如果你的导出里有 `gelProducts` 之类的自定义产品列表，我们**会跳过并告知用户跳过了几条**。
-  记录本身的剂量、途径、部位都会保留，只是那个自定义产品的名称与浓度拿不过来。
+- **自定义凝胶产品目录**：现在**能带过来**。凝胶记录用 `gelProductId` 指向一个产品：
+  `1–5` 是内置预设，`≥1000` 是用户自定义。导入时如果对方文件里带 `gelProducts[]`
+  （或者本应用自己导出的 `appState.settings.gelProducts`），我们会合并进本机目录并
+  持久化，记录里的 `id` 因此仍然指得到产品名与浓度。
+  仍然保留的差异只有一处：**内置预设的 id 是固定的**，如果对方用了 `1–5` 却是另一个
+  产品，那条记录会被解析成我们的预设——请让对方把自定义产品写到 `≥1000`。
 - **Oyama 的云备份**（形如 `{"cloud":1,...}`）：它的密钥需要账号的用户 ID 参与，
   任何拿不到该 ID 的人都打不开。请引导用户改用**密码加密导出**的文件。
 
@@ -331,6 +388,11 @@ https://github.com/xingqimiao/Kira-HRT-Tracker/blob/HEAD/docs/hrt-import-export-
 
 **Q：必须用密码加密吗？**
 不必。加密是可选的，见英文规范 §10。明文 JSON 我们直接读。
+
+**Q：`version` 该写几？**
+传输文件写 `1` 就行；本应用自己导出的完整备份把版本写在 `meta.version`，当前是 `3`
+（见 §2.8）。导入时不靠版本号判断格式——`format` 与字段形状才是依据，所以写 `1`
+不会丢东西。
 
 **Q：可以只导出一部分记录吗？**
 可以。但请注意 §4.2——只导出用药时，**省略** `labResults` 字段，不要写 `[]`。

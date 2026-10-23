@@ -244,8 +244,12 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
         setFormOpen(true);
     };
 
+    /**
+     * Closing keeps the draft: the surface is still shrinking for half a second
+     * and an interrupted close has to find the form it left. `emptyForm` runs
+     * where a *new* plan begins instead — the add button below.
+     */
     const closeForm = (): void => {
-        emptyForm();
         setFormOpen(false);
         setOpenPicker(null);
     };
@@ -615,7 +619,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
             {/* The editor is its own full-screen page. It used to grow inline under
                 the list, which made a long scheduling form share a scroll with the
                 plans and left the drug picker in the old picture-rail style. */}
-            <FullScreenSheet bare open={formOpen} onClose={closeForm} title={editingId ? t('plan.edit_title') : t('plan.add_title')}>
+            <FullScreenSheet bare open={formOpen} onClose={closeForm} onReopen={() => setFormOpen(true)} title={editingId ? t('plan.edit_title') : t('plan.add_title')}>
                 <div className="dose-panel">
                     <div className="hdr">
                         <div className="hdr-l">

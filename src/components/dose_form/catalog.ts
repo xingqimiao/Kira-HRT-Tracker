@@ -80,8 +80,11 @@ export const DRUGS: Record<DoseMode, DrugDef[]> = {
         // ——— 雌激素 ———
         { id: 'EV_ORAL', cat: 'hrt', route: Route.oral, ester: Ester.EV, nameKey: 'pill.ester.EV', abbr: 'EV', presets: [1, 2, 4], step: 1, def: 2, curve: true },
         { id: 'E2_ORAL', cat: 'hrt', route: Route.oral, ester: Ester.E2, nameKey: 'm3e.drug.E2', abbr: 'E2', presets: [1, 2, 4], step: 1, def: 2, curve: true },
-        { id: 'EV_SUB', cat: 'hrt', route: Route.sublingual, ester: Ester.EV, nameKey: 'pill.ester.EV', abbr: 'EV', presets: [1, 2, 4], step: 0.5, def: 2, curve: true },
-        { id: 'E2_SUB', cat: 'hrt', route: Route.sublingual, ester: Ester.E2, nameKey: 'm3e.drug.E2', abbr: 'E2', presets: [1, 2, 4], step: 0.5, def: 2, curve: true },
+        // The step is only how far one press of +/- travels. Sublingual shares the
+        // oral tablets' 1 mg increment; a smaller dose can still be typed, because
+        // `step` no longer doubles as a floor or a snapping grid.
+        { id: 'EV_SUB', cat: 'hrt', route: Route.sublingual, ester: Ester.EV, nameKey: 'pill.ester.EV', abbr: 'EV', presets: [1, 2, 4], step: 1, def: 2, curve: true },
+        { id: 'E2_SUB', cat: 'hrt', route: Route.sublingual, ester: Ester.E2, nameKey: 'm3e.drug.E2', abbr: 'E2', presets: [1, 2, 4], step: 1, def: 2, curve: true },
         { id: 'E2_GEL', cat: 'hrt', route: Route.gel, ester: Ester.E2, nameKey: 'm3e.drug.E2_GEL', presets: [0.75, 1.5, 3], step: 0.75, def: 1.5, curve: true },
         { id: 'EV_INJ', cat: 'hrt', route: Route.injection, ester: Ester.EV, nameKey: 'pill.ester.EV', abbr: 'EV', presets: [5, 10], step: 5, def: 5, equiv: 'e2', curve: true },
         { id: 'EN', cat: 'hrt', route: Route.injection, ester: Ester.EN, nameKey: 'pill.ester.EN', abbr: 'EN', presets: [10, 50], step: 5, def: 10, curve: true },
