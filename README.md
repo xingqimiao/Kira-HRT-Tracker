@@ -2,13 +2,13 @@
 
 [English](README.en.md) · **中文**
 
-![Kira HRT Tracker — 用药记录、药代动力学估算、隐私优先](public/og.png)
+![Kira HRT Tracker — 概览、新增用药与校准三个界面](docs/screenshots/zh-hero.png)
 
 **记录 HRT 用药与化验 → 用群体药代动力学模型估算激素曲线 → 用你自己的化验结果校准 → 让 AI 助手经 MCP 读写同一份记录。**
 
 Web 应用、Android 应用、MCP 服务端共用一套「应用内核」，云端同步、逐帐户加密。
 
-出品 **[KiraEqual](https://kiramyao.com)** · 服务状态 <https://status.kiramyao.com>
+出品 **[KiraEqual](https://kiramyao.com)** · [介绍页](https://hrt.kiramyao.com/about/) · 服务状态 <https://status.kiramyao.com>
 
 > ⚠️ 估算来自**群体药代动力学模型**，不是化验结果，**不能作为用药依据**。要知道真实血药浓度只能抽血，请始终以医院报告为准。
 
@@ -18,6 +18,8 @@ Web 应用、Android 应用、MCP 服务端共用一套「应用内核」，云�
 
 - [这是什么](#这是什么)
 - [功能](#功能)
+- [截图](#截图)
+- [关于](#关于)
 - [架构](#架构)
 - [两套药代动力学模型与校准](#两套药代动力学模型与校准)
 - [AI 助手（MCP）](#ai-助手mcp)
@@ -94,6 +96,61 @@ Web 应用、Android 应用、MCP 服务端共用一套「应用内核」，云�
 | 商店渠道 | `2.0.4-fdroid`：无 Firebase、无自更新，更新由商店负责 |
 
 两个 Android 包用同一把签名密钥，可以互相覆盖安装，不需要先卸载。
+
+---
+
+## 截图
+
+界面取自 Android 端的实际运行画面，与应用商店里的那套截图是同一批原图。图片由
+`node scripts/generate-readme-shots.mjs` 从 `fastlane/metadata/android/` 合成，重新截图后重跑一次即可。
+
+| | | |
+|---|---|---|
+| <img src="docs/screenshots/zh-1-overview.png" width="240" alt="概览"><br><sub>**概览** — 当前水平、目标范围、7 天 / 30 天 / 全部曲线</sub> | <img src="docs/screenshots/zh-2-add-dose.png" width="240" alt="新增用药"><br><sub>**新增用药** — 途径、药物、剂量，以及这次给药后的峰值预估</sub> | <img src="docs/screenshots/zh-4-history.png" width="240" alt="用药记录"><br><sub>**用药记录** — 按天分组的完整时间线</sub> |
+| <img src="docs/screenshots/zh-5-checkup.png" width="240" alt="体检与化验"><br><sub>**体检与化验** — 实测值与模型误差倍率、复查提醒</sub> | <img src="docs/screenshots/zh-7-calibration.png" width="240" alt="校准"><br><sub>**校准** — 四种估计器，以及「前向 / 回顾」两种应用方式</sub> | <img src="docs/screenshots/zh-8-account.png" width="240" alt="账户与同步"><br><sub>**账户与同步** — 同步状态、AI 助手令牌、账号安全</sub> |
+
+---
+
+## 关于
+
+面向使用者的完整说明在介绍页：**[中文](https://hrt.kiramyao.com/about/)** · **[English](https://hrt.kiramyao.com/about/en/)**，
+同一份文字也收在仓库里（[`docs/about.md`](docs/about.md) / [`docs/about.en.md`](docs/about.en.md)）。
+那份说明比这份 README 少讲实现、多讲「它怎么用、能回答什么问题」。
+
+### 适合谁
+
+正在用注射、凝胶、口服或贴片做激素治疗，想回答「这周血药浓度大概在什么水平」「上次那个剂量是不是偏高」
+「下次该什么时候抽血」，并且希望这些记录不用手工整理成表格的人。
+
+### 支持的药物
+
+| 分类 | 可记录 |
+|---|---|
+| 雌激素 · 口服 / 舌下 | 戊酸雌二醇（EV）· 17β-雌二醇（E2） |
+| 雌激素 · 凝胶 | 17β-雌二醇凝胶 · 戊酸雌二醇凝胶 |
+| 雌激素 · 注射 | EV · 庚酸雌二醇（EN）· 环戊丙酸雌二醇（EC）· 苯甲酸雌二醇（EB）· 十一酸雌二醇（EU） |
+| 雌激素 · 贴片 | 50 / 100 / 150 / 200 µg/天，以及「撕下」 |
+| 抗雄激素 | 醋酸环丙孕酮（CPA）· 螺内酯 · 比卡鲁胺 · GnRH 类似物（仅记录） |
+| 孕激素 / SERM | 微粉化黄体酮 · 雷洛昔芬 |
+| 睾酮 · 凝胶 / 注射 / 胶囊 | 未酯化睾酮凝胶 · 环戊丙酸睾酮（TC）· 庚酸睾酮（TE）· 十一酸睾酮注射液 · 十一酸睾酮软胶囊 |
+| 周期用药 | 醋酸甲羟孕酮（MPA）· 炔诺酮 |
+| 毛发 | 非那雄胺 · 度他雄胺 |
+
+这份列表随版本变化，以应用内实际可选的项目为准。
+
+### 常见问题
+
+**必须注册账号吗？**
+不必。不登录时它是一本完整的离线记录本，只是不会跨设备同步。
+
+**我的数据会被上传吗？**
+只有在你登录并开启同步时，记录才会以加密形式传到服务器。照片、化验单图片始终留在设备上。
+
+**估算准吗？**
+群体模型的误差本来就不小，个体之间可以差出几倍。有化验结果之后，校准会把它拉近你自己；但仍然只是估算，不是化验值。
+
+**换手机怎么办？**
+登录同一账号即可同步；没有账号时用导出文件迁移。
 
 ---
 

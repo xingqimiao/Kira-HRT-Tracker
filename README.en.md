@@ -2,7 +2,7 @@
 
 **English** · [中文](README.md)
 
-![Kira HRT Tracker — dose logging, pharmacokinetic estimates, private by default](public/og.png)
+![Kira HRT Tracker — the overview, add-a-dose and history screens](docs/screenshots/en-hero.png)
 
 **Log HRT doses and blood tests → estimate a hormone-level curve with a population
 pharmacokinetic model → calibrate it to your own lab results → let an AI assistant read
@@ -11,7 +11,7 @@ and write the same records over MCP.**
 One Application Core behind a web app, an Android app and an MCP server, with cloud sync
 and per-account encryption.
 
-Built by **[KiraEqual](https://kiramyao.com)** · Service status <https://status.kiramyao.com>
+Built by **[KiraEqual](https://kiramyao.com)** · [About](https://hrt.kiramyao.com/about/en/) · Service status <https://status.kiramyao.com>
 
 > ⚠️ The estimates come from a **population pharmacokinetic model**, not from a blood test, and
 > **must not be used to decide a dose**. The only way to know your actual level is to have blood
@@ -23,6 +23,8 @@ Built by **[KiraEqual](https://kiramyao.com)** · Service status <https://status
 
 - [What it is](#what-it-is)
 - [Features](#features)
+- [Screenshots](#screenshots)
+- [About](#about)
 - [Architecture](#architecture)
 - [Two pharmacokinetic models and calibration](#two-pharmacokinetic-models-and-calibration)
 - [AI assistants (MCP)](#ai-assistants-mcp)
@@ -116,6 +118,65 @@ the image never leaves the device.
   has no Firebase and never checks for or installs updates — the store owns that.
 - **Themes** — light / dark / follow system, with a themed launch transition.
 - **PWA** — works offline, backed by a service worker.
+
+---
+
+## Screenshots
+
+Captured on the Android build, from the same source set the app stores use. The images are
+composed by `node scripts/generate-readme-shots.mjs` out of `fastlane/metadata/android/`, so
+recapturing means re-running that one command.
+
+| | | |
+|---|---|---|
+| <img src="docs/screenshots/en-1-overview.png" width="240" alt="Overview"><br><sub>**Overview** — current level, target range, 7-day / 30-day / all-time curve</sub> | <img src="docs/screenshots/en-2-add-dose.png" width="240" alt="Add a dose"><br><sub>**Add a dose** — route, drug and amount, with the peak this dose is expected to add</sub> | <img src="docs/screenshots/en-4-history.png" width="240" alt="History"><br><sub>**History** — the full timeline, grouped by day</sub> |
+| <img src="docs/screenshots/en-5-checkup.png" width="240" alt="Checkup"><br><sub>**Checkup** — measured values, model error factor, re-check reminders</sub> | <img src="docs/screenshots/en-6-add-lab.png" width="240" alt="Add a lab result"><br><sub>**Add a lab result** — estradiol and testosterone, or monitoring bloods only</sub> | <img src="docs/screenshots/en-9-settings.png" width="240" alt="Settings"><br><sub>**Settings** — the model, the plan, reminders, data, and the licences</sub> |
+
+---
+
+## About
+
+The full user-facing description lives on the about page: **[English](https://hrt.kiramyao.com/about/en/)** · **[中文](https://hrt.kiramyao.com/about/)**.
+The same text is in the repository ([`docs/about.en.md`](docs/about.en.md) / [`docs/about.md`](docs/about.md)).
+It is written for the person using the app rather than the person reading the code: what it does, and
+which questions it answers.
+
+### Who it is for
+
+Someone on injections, gel, tablets or patches who wants to know "roughly where is my level this
+week", "was that dose too high", "when should I get the next blood test" — and who would rather not
+keep those records in a spreadsheet by hand.
+
+### Supported medication
+
+| Class | What can be recorded |
+|---|---|
+| Estrogen · oral / sublingual | Estradiol valerate (EV) · 17β-estradiol (E2) |
+| Estrogen · gel | 17β-estradiol gel · estradiol valerate gel |
+| Estrogen · injection | EV · estradiol enanthate (EN) · estradiol cypionate (EC) · estradiol benzoate (EB) · estradiol undecylate (EU) |
+| Estrogen · patch | 50 / 100 / 150 / 200 µg/day, plus a "remove" record |
+| Anti-androgen | Cyproterone acetate (CPA) · spironolactone · bicalutamide · GnRH analogues (recorded only) |
+| Progestogen / SERM | Micronised progesterone · raloxifene |
+| Testosterone · gel / injection / capsule | Unesterified testosterone gel · TC · TE · testosterone undecanoate injection · testosterone undecanoate capsules |
+| Cyclic | Medroxyprogesterone acetate (MPA) · norethisterone |
+| Hair | Finasteride · dutasteride |
+
+This list moves with the version; what the app actually offers is the authority.
+
+### FAQ
+
+**Do I have to register?**
+No. Signed out it is a complete offline logbook — it just does not sync between devices.
+
+**Does my data get uploaded?**
+Only when you sign in and sync, and then encrypted. Photos and lab-report images never leave the device.
+
+**How accurate is the estimate?**
+A population model is not tight — individuals can differ by a factor of several. Once you have lab
+results, calibration pulls it toward you; it is still an estimate, not a measurement.
+
+**I am changing phones.**
+Sign in to the same account and it syncs; without an account, migrate with an export file.
 
 ---
 
