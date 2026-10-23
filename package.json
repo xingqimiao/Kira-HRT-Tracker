@@ -9,10 +9,10 @@
     "prebuild": "node scripts/sync-ocr-assets.mjs && node scripts/sync-firebase-messaging-sw.mjs",
     "build": "vite build",
     "build:release": "npm run build && node scripts/prepare-android-release.mjs --require",
-    "build:android": "node scripts/sync-ocr-assets.mjs && node scripts/sync-firebase-messaging-sw.mjs && node scripts/patch-android-theme.mjs && node scripts/gen-android-i18n.mjs && node scripts/strip-fcm.mjs && node scripts/check-local-storage.mjs && vite build --mode android && node scripts/strip-store-assets.mjs && node scripts/check-web-bundle.mjs",
+    "build:android": "node scripts/sync-ocr-assets.mjs && node scripts/sync-firebase-messaging-sw.mjs && node scripts/patch-android-theme.mjs && node scripts/gen-android-i18n.mjs && node scripts/strip-fcm.mjs && node scripts/check-local-storage.mjs && node scripts/check-dependency-floors.mjs && vite build --mode android && node scripts/strip-store-assets.mjs && node scripts/check-web-bundle.mjs",
     "build:watch": "vite build --watch",
     "preview": "vite preview",
-    "postbuild": "node scripts/check-web-bundle.mjs && node scripts/check-local-storage.mjs && node scripts/prepare-android-release.mjs"
+    "postbuild": "node scripts/check-web-bundle.mjs && node scripts/check-local-storage.mjs && node scripts/check-dependency-floors.mjs && node scripts/prepare-android-release.mjs"
   },
   "dependencies": {
     "@alerix/m3-loading-indicator": "^1.0.5",
