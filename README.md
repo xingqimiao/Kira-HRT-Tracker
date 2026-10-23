@@ -190,11 +190,11 @@ Web 应用、Android 应用、MCP 服务端共用一套「应用内核」，云�
 
 ## 两套药代动力学模型与校准
 
-曲线来自模型，而模型是**别人**的贡献。本应用提供两套，在「设置 → 常规设置」里随时切换：
+曲线来自模型，而模型设计源自**别人**的贡献。本应用提供两套，在「设置 → 常规设置」里随时切换：
 
 | 模型 | 来源 | 说明 |
 |---|---|---|
-| **内置（原有）** | [@LaoZhong-Mihari](https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test) 的 `PKcore.swift` / `PKparameter.swift`，**原样移植、不改动** | 雌二醇 + 睾酮 + 抗雄激素 |
+| **内置（原有）** | 模型设计源自 [@LaoZhong-Mihari](https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test)；代码是本项目按隔室微分方程独立实现的（`src/pk/kernels.ts`），**未沿用上游代码** | 雌二醇 + 睾酮 + 抗雄激素 |
 | **Transmtf** | [Transmtf Team](https://github.com/TransmtfTeam/Transmtf-HRT-Tracker)（MIT），在同一套算法上扩展 | 只建模雌二醇与两种抗雄激素，**无睾酮模型** |
 
 两套模型对同一份记录**算出不同的曲线**——这不是 bug，正是提供选择的原因。注射类往往一致，凝胶与舌下差异明显。Transmtf 引擎只建模雌二醇，所以在男性化模式下不可选。
@@ -336,7 +336,7 @@ node_modules/.bin/tauri android build --apk --target aarch64 \
 
 本项目的界面与思路**分叉自 [Oyama's HRT Tracker](https://github.com/xunxunProjects/Oyama-s-HRT-Tracker)**，在此致谢。那是一个很完整的作品——有账号、有后端、有分享链接、也有多语言，本项目是在它的基础上继续往前走的一支。
 
-感谢 [@LaoZhong-Mihari](https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test)：药代动力学算法、模型与参数是他的工作，本应用只是把它移植到 Web 上并继续维护。这份署名是许可要求，更是应该做的事。
+感谢 [@LaoZhong-Mihari](https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test)：药代动力学模型的设计来自他的工作。曲线的闭式解现在由本项目按隔室微分方程独立实现，参数改为直接取自公开文献；模型设计上的署名仍然应该保留，也仍然是荣誉性的。
 
 也感谢 [Transmtf Team](https://github.com/TransmtfTeam/Transmtf-HRT-Tracker) 在算法上的扩展，以及 [MtF.wiki](https://mtf.wiki/)（CC BY-SA 4.0）与 [Transfeminine Science](https://transfemscience.org/) 提供的剂量与监测参考——**引用其公开的结论与数字，未转载其内容**。
 
@@ -344,6 +344,6 @@ node_modules/.bin/tauri android build --apk --target aarch64 \
 
 ## 许可
 
-本仓库以 **GPL-3.0 或更新版本**发布，完整文本在 [`LICENSE`](LICENSE)。之所以是 GPL：本应用的备份格式读取器派生自 Featherline（GPL-3.0），且引擎跟随其最新的药代动力学参数修正。各来源的原始声明（Oyama MIT、Transmtf MIT、Mihari 的非商业授权）逐条保留在 [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md)。
+本仓库以 **GPL-3.0 或更新版本**发布，完整文本在 [`LICENSE`](LICENSE)。之所以是 GPL：本应用的备份格式读取器派生自 Featherline（GPL-3.0）。各来源的原始声明（Oyama MIT、Transmtf MIT）逐条保留在 [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md)。
 
-**但请注意上游模型的非商业限制**：GPL-3.0 不会取消这条限制——所依赖的药代动力学模型带有**非商业条款**，这限制了*整个应用*可以怎么用。若要用于收费产品，需先与版权持有人重新协商。详见 [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md)。
+药代动力学模型不再带有上游的非商业限制：出厂代码是独立实现，参数引用公开文献。F-Droid 重新提交的前提由此满足。

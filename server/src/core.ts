@@ -798,8 +798,8 @@ export const PKSimulationService = {
         // engine emits about -2.3e-13 in the idle stretch before the first event, and
         // it surfaced as `"trough": -2.3377478232268943e-13` — a number an agent would
         // faithfully repeat to a user. Clamped here, at the boundary that presents
-        // values, rather than inside the engine: the model's arithmetic is upstream's
-        // to own, and leaving `logic.ts` untouched keeps upstream pulls clean.
+        // values, rather than inside the engine: the arithmetic belongs to
+        // `src/pk/kernels.ts`, and a presentation clamp there would be the wrong layer.
         series = series.map((v) => (v > 0 ? v : 0));
 
         // Window for display only. Events outside it stay in the simulation — a depot
@@ -818,10 +818,10 @@ export const PKSimulationService = {
         // ~24h. Two calls with identical arguments then return different horizons, and a
         // comparison between them is wrong without ever saying so.
         //
-        // The grid is `logic.ts`'s to size and that file must not change (it is a strict
-        // port of PKcore.swift), so the clamp is not removed here — it is *disclosed*.
-        // `window` reports what was actually covered, which is the honest answer a caller
-        // can act on, and `endTruncated` is the flag to check before trusting the far end.
+        // The grid is `logic.ts`'s to size, so the clamp is not removed here — it is
+        // *disclosed*. `window` reports what was actually covered, which is the honest
+        // answer a caller can act on, and `endTruncated` is the flag to check before
+        // trusting the far end.
         //
         // "Truncated" is judged against the grid's own resolution, not an epsilon: the
         // lattice is `(end - start) / steps`, so `max(lastDose + 14d, now + 24h)` is

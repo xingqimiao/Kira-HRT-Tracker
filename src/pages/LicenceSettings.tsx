@@ -17,17 +17,18 @@ interface LicenceSettingsProps {
  * Two distinct things are acknowledged here, and the difference matters:
  *
  *   1. **The upstream works this app is built from or advises with** — the
- *      pharmacokinetic algorithms, the web app it was forked from, and
- *      Featherline's parameter advice (no code from it is copied).
+ *      pharmacokinetic model design, the web app it was forked from, and
+ *      Featherline's parameter advice (no code from either is copied).
  *   2. **The runtime dependencies.** Generated from `package.json`, never typed.
  *
  * ── The honest part ──────────────────────────────────────────────────────────
  *
- * The original algorithm repository declares no licence of its own; the
- * copyright holder granted this project non-commercial use separately. That is
- * stated plainly rather than glossed as "MIT" or omitted. `licence.granted_note`
- * carries the limit, and `licence.no_licence_note` remains for the unlicensed
- * upstream fork. See `server/DEPLOY.md` before deploying publicly.
+ * The original algorithm repository declares no licence of its own, and no code
+ * from it ships: the pharmacokinetic kernels were reimplemented from the
+ * compartment ODEs, so that entry is a design credit rather than a permission.
+ * `licence.no_licence_note` remains for the unlicensed upstream fork, which the
+ * app does still descend from. See `THIRD-PARTY-LICENSES.md` before deploying
+ * publicly.
  */
 import { UPSTREAM_WORKS, RUNTIME_LICENCES, GENERATED_AT } from '../licences.generated';
 
@@ -82,11 +83,6 @@ const LicenceSettings: React.FC<LicenceSettingsProps> = ({ onBack, appVersion })
                                 )}
                                 {work.referenceOnly && (
                                     <p className="sub" style={{ margin: 0, fontSize: 12.5 }}>{t('licence.reference_note')}</p>
-                                )}
-                                {work.granted && (
-                                    <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55, color: 'var(--ok)' }}>
-                                        {t('licence.granted_note')}
-                                    </p>
                                 )}
                                 {work.copyright && (
                                     <p className="sub" style={{ margin: 0, fontSize: 11.5 }}>{work.copyright}</p>

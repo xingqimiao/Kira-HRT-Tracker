@@ -16,9 +16,10 @@ results instead of showing a population curve. The trackers I looked at were eit
 web-only, required an account for basic use, or showed a dose list with no estimation
 at all.
 
-**What is unique here.** There is no HRT tracker in F-Droid. Beyond a dose log this app
-carries: two selectable pharmacokinetic engines, four calibration methods fitted to your
-own blood tests, on-device OCR of lab reports (PP-OCRv6 through ONNX Runtime), optional
+**What is unique here.** F-Droid already carries one HRT tracker — Featherline
+(`com.mkx.hrttracker`) — so this is not a first. What this one adds: two selectable
+pharmacokinetic engines, four calibration methods fitted to your own blood tests,
+on-device OCR of lab reports (PP-OCRv6 through ONNX Runtime), optional
 end-to-end-encrypted sync (the server holds no key material of its own), optional
 connection to an AI assistant over MCP, and seven languages with phone and tablet
 layouts.
@@ -34,7 +35,12 @@ Screenshots, also in `fastlane/metadata/android/{en-US,zh-CN}/images/phoneScreen
 GPL-3.0-or-later since 2.0.4. The repository was MIT before that; GPL applies because
 the `.hrtbackup` reader derives from Featherline's GPL-3.0 container code. Upstream
 notices are preserved item by item in `THIRD-PARTY-LICENSES.md`: Oyama (MIT),
-Transmtf (MIT), the Mihari model grant, Featherline (GPL-3.0).
+Transmtf (MIT), Featherline (GPL-3.0).
+
+The pharmacokinetic model carries no non-commercial clause. Its design is credited to
+Mihari, but the closed-form kernels are this project's own implementation from the
+compartment equations (`src/pk/kernels.ts`), and the parameter values cite the primary
+literature. No source from the unlicensed upstream repository is distributed.
 
 ## Build, and what the store flavour strips
 
@@ -51,19 +57,13 @@ Tauri 2 (Rust) + Vite front end. The store build sets `HRT_NO_FCM=1` and
 build, and crates need `cargo vendor` for the offline step. The `Builds:` block is the
 part I expect to iterate on with you.
 
-## Two things worth your judgement
+## One thing worth your judgement
 
-1. **The pharmacokinetic model is non-commercial.** `LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test`
-   declares no licence file; its author granted this project non-commercial use in
-   correspondence on 2026-09-18, recorded in full in `THIRD-PARTY-LICENSES.md`. The
-   app's own code is GPL-3.0-or-later, the model is not. Flagging it now rather than
-   leaving it to be found at build time — if it makes the app ineligible for the main
-   repository, say so and I will withdraw the MR.
-2. **The scanner downloads its assets on first use.** About 23 MB — PP-OCRv6 detector and
-   recogniser (Apache-2.0) plus the ONNX Runtime wasm (MIT) — from our own origin,
-   triggered by the user opening the scan feature, cached afterwards, no CDN, nothing at
-   start-up. Happy to bundle them into the APK (about +44 MB) if that is required
-   instead.
+**The scanner downloads its assets on first use.** About 23 MB — PP-OCRv6 detector and
+recogniser (Apache-2.0) plus the ONNX Runtime wasm (MIT) — from our own origin,
+triggered by the user opening the scan feature, cached afterwards, no CDN, nothing at
+start-up. Happy to bundle them into the APK (about +44 MB) if that is required
+instead.
 
 ## Reproducible builds
 

@@ -30,10 +30,9 @@ const ROOT = process.cwd();
  *     README states no terms. Verified against the GitHub API, where `/license`
  *     returns 404 and the `license` field is null. Writing a permissive licence
  *     here would assert a permission nobody granted.
- *   - **`granted: true`** — permission exists, but by correspondence with the
- *     copyright holder rather than by a file in their repository. The grant is
- *     narrower than a public licence (non-commercial) and its evidence is the
- *     exchange, not a file anyone can read. Say both.
+ *   - **`licence: 'no code copied'`** — the work is credited (its design, or a
+ *     published format) but no source from it ships. Nothing needs a licence from
+ *     it, and the entry must not imply one.
  *   - **a named licence** — a file in the upstream repository.
  *
  * A work is never both: a grant supersedes "none declared" for that work, because
@@ -44,14 +43,14 @@ const UPSTREAM_WORKS = [
         name: 'HRT-Recorder-PKcomponent-Test',
         url: 'https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test',
         roleKey: 'licence.upstream_algorithm',
-        // Non-commercial, by permission of the copyright holder (2026-09-18). The
-        // repository still has no LICENCE file — hence `granted` — but permission
-        // exists, so "none declared" would now understate the position rather than
-        // state it honestly.
-        licence: 'non-commercial, granted',
+        // Model design only. The kernels were reimplemented from the compartment
+        // ODEs on 2026-10-23 (src/pk/kernels.ts), so this entry is a credit, not a
+        // licence: the repository still has no LICENCE file, but nothing from it
+        // ships any more. The non-commercial grant of 2026-09-18 is no longer
+        // relied on and is not recorded as a permission here.
+        licence: 'no code copied',
         noLicence: false,
-        granted: true,
-        copyright: 'Copyright © Mihari.',
+        copyright: 'Model design: Mihari.',
     },
     {
         name: 'HRT-Recorder-online',
@@ -120,14 +119,16 @@ const UPSTREAM_WORKS = [
         name: 'Transmtf-HRT-Tracker',
         url: 'https://github.com/TransmtfTeam/Transmtf-HRT-Tracker',
         roleKey: 'licence.upstream_pk_model',
-        // MIT, with the licence file in the upstream tree — unlike the model above,
-        // whose permission is a private grant. Verified against the GitHub API on
-        // 2026-09-22 (`/repos/.../license` reports "MIT License"; `/repos/.../contents/
-        // LICENSE` returns the text with "Copyright (c) 2025 Transmtf Team").
+        // MIT, with the licence file in the upstream tree. Verified against the
+        // GitHub API on 2026-09-22 (`/repos/.../license` reports "MIT License";
+        // `/repos/.../contents/LICENSE` returns the text with "Copyright (c) 2025
+        // Transmtf Team").
         //
         // Second upstream model rather than a replacement: it descends from the same
-        // `HRT-Recorder-PKcomponent-Test` logic and extends it, so this app now carries
-        // two engines the reader can choose between.
+        // `HRT-Recorder-PKcomponent-Test` design and extends it, so this app carries
+        // two engines the reader can choose between. Its closed-form kernels were
+        // replaced with `src/pk/kernels.ts` on 2026-10-23; that is a local
+        // modification to MIT code, recorded in THIRD-PARTY-LICENSES.md.
         licence: 'MIT',
         noLicence: false,
         copyright: 'Copyright (c) 2025 Transmtf Team',
@@ -201,12 +202,6 @@ const out = [
     '     * reference is neither licensed nor unlicensed — see `referenceOnly`.',
     '     */',
     '    noLicence?: boolean;',
-    '    /**',
-    '     * Permission exists by correspondence rather than by a file in the upstream',
-    '     * repository. Rendered as a note explaining the grant and its non-commercial',
-    '     * limit, because neither is visible from that repository.',
-    '     */',
-    '    granted?: boolean;',
     '    /**',
     '     * A cited reference, not a repository whose code was reused. Its own flag so the',
     '     * "no LICENCE file in the repository" sentence is not applied to a website.',

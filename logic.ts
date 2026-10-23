@@ -1,3 +1,9 @@
+import {
+    absorbedThenEliminated,
+    patchAmount,
+    sequentialChainAmount,
+} from './src/pk/kernels.ts';
+
 // --- Types & Enums ---
 
 export enum Route {
@@ -1767,14 +1773,14 @@ export function getToE2Factor(ester: Ester): number {
 //   - Androderm 5 mg/day patch → C_avg ≈ 500–700 ng/dL
 // These are research/teaching estimates; they are NOT for individual dosing decisions.
 //
-const T_CorePK = {
+export const T_CorePK = {
     vdPerKG: 1.0,          // L/kg for total testosterone (apparent)
     kClear: 0.5,           // h⁻¹ — fast native T clearance (gel / patch / oral)
     kClearInjection: 0.035 // h⁻¹ — effective clearance used with the flip‑flop depot model
 };
 
 // Two-part depot absorption (fast + slow library), analogous to the E2 injection model.
-const T_DepotPK = {
+export const T_DepotPK = {
     Frac_fast: { [Ester.TC]: 0.35, [Ester.TE]: 0.40, [Ester.TU]: 0.10 },
     // Fast library k1 (h⁻¹) — controls Tmax/Cmax
     k1_fast:   { [Ester.TC]: 0.025, [Ester.TE]: 0.035, [Ester.TU]: 0.008 },
@@ -1784,7 +1790,7 @@ const T_DepotPK = {
 
 // Hydrolysis rate (k2) for T esters in the 3-compartment analytical path.
 // Kept much larger than the slow‑library k1 so terminal kinetics are flip‑flop.
-const T_EsterPK = {
+export const T_EsterPK = {
     k2: { [Ester.TC]: 0.20, [Ester.TE]: 0.20, [Ester.TU]: 0.20 }
 };
 
@@ -2304,63 +2310,10 @@ function resolveParams(event: DoseEvent): PKParams {
     return { Frac_fast: 0, k1_fast: 0, k1_slow: 0, k2: 0, k3: defaultK3, F: 0, rateMGh: 0, F_fast: 0, F_slow: 0 };
 }
 
-/**
- * Separate near-coincident first-order rate constants by a sub-permille amount so
- * the triple-exponential kernel below stays clear of its removable singularities.
- * The kernel is analytic in (k1, k2, k3): evaluated at a nudge of ~1e-6·max(k) it
- * equals the exact l'Hôpital limit to full display precision, while the tiny offset
- * avoids the catastrophic cancellation that appears as two rates collide. k1
- * (absorption) is held fixed; k2 and k3 are moved minimally and deterministically.
- * A few passes suffice to pull all three apart, even when all three coincide.
- */
-function _separateRates(k1: number, k2: number, k3: number): [number, number, number] {
-    const eps = 1e-6 * Math.max(k1, k2, k3);
-    if (!(eps > 0)) return [k1, k2, k3];
-    if (Math.abs(k2 - k1) < eps) k2 = k1 + eps;
-    for (let i = 0; i < 6; i++) {
-        let moved = false;
-        if (Math.abs(k3 - k1) < eps) { k3 = k1 + (k3 >= k1 ? eps : -eps); moved = true; }
-        if (Math.abs(k3 - k2) < eps) { k3 = k2 + (k3 >= k2 ? eps : -eps); moved = true; }
-        if (!moved) break;
-    }
-    return [k1, k2, k3];
-}
-
-// 3-Compartment Analytical Solution (sequential first-order: absorption k1 → ester
-// hydrolysis k2 → central-compartment elimination k3). Returns the central-compartment
-// amount for a unit bolus, scaled by dose·F. Coincident rates are separated first so
-// the closed form reproduces the correct removable-singularity limit instead of a
-// zero dropout or a numerically unstable value.
-// 2-Compartment (Bateman) solution: absorption k_a → elimination k_e, no
-// hydrolysis step. Used wherever there is no ester to cleave — the 3C form is
-// multiplied by k2 throughout, so feeding it k2 = 0 returns a flat zero.
-function _analytic2C(tau: number, doseMG: number, F: number, ka: number, ke: number): number {
-    if (ka <= 0 || doseMG <= 0) return 0;
-    if (Math.abs(ka - ke) < 1e-9) return doseMG * F * ka * tau * Math.exp(-ke * tau);
-    return doseMG * F * ka / (ka - ke) * (Math.exp(-ke * tau) - Math.exp(-ka * tau));
-}
-
-function _analytic3C(tau: number, doseMG: number, F: number, k1: number, k2: number, k3: number): number {
-    if (k1 <= 0 || doseMG <= 0) return 0;
-    [k1, k2, k3] = _separateRates(k1, k2, k3);
-    const k1_k2 = k1 - k2;
-    const k1_k3 = k1 - k3;
-    const k2_k3 = k2 - k3;
-
-    const term1 = Math.exp(-k1 * tau) / (k1_k2 * k1_k3);
-    const term2 = Math.exp(-k2 * tau) / (-k1_k2 * k2_k3);
-    const term3 = Math.exp(-k3 * tau) / (k1_k3 * k2_k3);
-
-    return doseMG * F * k1 * k2 * (term1 + term2 + term3);
-}
-
-function oneCompAmount(tau: number, doseMG: number, p: PKParams): number {
-    const k1 = p.k1_fast;
-    if (Math.abs(k1 - p.k3) < 1e-9) {
-        return doseMG * p.F * k1 * tau * Math.exp(-p.k3 * tau);
-    }
-    return doseMG * p.F * k1 / (k1 - p.k3) * (Math.exp(-p.k3 * tau) - Math.exp(-k1 * tau));
-}
+// The closed-form kernels live in `src/pk/kernels.ts`, shared with the vendored
+// engine. They are solved from the compartment ODEs rather than transcribed as a
+// partial fraction, so a repeated rate is an exact confluent basis instead of an
+// epsilon nudge. Call sites use them directly — no wrapper keeps the old names.
 
 /**
  * Pair each patch application with its own removal.
@@ -2434,11 +2387,11 @@ class PrecomputedEventModel {
                     // silently. Fall back to the two-compartment form, matching
                     // what the sublingual branch already does for the same case.
                     if (params.k2 > 0) {
-                        return _analytic3C(tau, doseFast, params.F, params.k1_fast, params.k2, params.k3) +
-                            _analytic3C(tau, doseSlow, params.F, params.k1_slow, params.k2, params.k3);
+                        return sequentialChainAmount(tau, doseFast, params.F, params.k1_fast, params.k2, params.k3) +
+                            sequentialChainAmount(tau, doseSlow, params.F, params.k1_slow, params.k2, params.k3);
                     }
-                    return _analytic2C(tau, doseFast, params.F, params.k1_fast, params.k3) +
-                        _analytic2C(tau, doseSlow, params.F, params.k1_slow, params.k3);
+                    return absorbedThenEliminated(tau, doseFast, params.F, params.k1_fast, params.k3) +
+                        absorbedThenEliminated(tau, doseSlow, params.F, params.k1_slow, params.k3);
                 };
                 break;
             case Route.gel:
@@ -2446,7 +2399,7 @@ class PrecomputedEventModel {
                 this.model = (timeH: number) => {
                     const tau = timeH - startTime;
                     if (tau < 0) return 0;
-                    return oneCompAmount(tau, dose, params);
+                    return absorbedThenEliminated(tau, dose, params.F, params.k1_fast, params.k3);
                 };
                 break;
             case Route.sublingual:
@@ -2460,11 +2413,11 @@ class PrecomputedEventModel {
                     // Mucosal rapid absorption phase clears at k3_fast (kElimSL = 1.2/h)
                     const fastElim = params.k3_fast ?? params.k3;
                     const fastAmount = params.k2 > 0
-                        ? _analytic3C(tau, doseF, params.F_fast, params.k1_fast, params.k2, fastElim)
-                        : _analytic2C(tau, doseF, params.F_fast, params.k1_fast, fastElim);
+                        ? sequentialChainAmount(tau, doseF, params.F_fast, params.k1_fast, params.k2, fastElim)
+                        : absorbedThenEliminated(tau, doseF, params.F_fast, params.k1_fast, fastElim);
 
                     // Swallowed (gut) fraction follows oral slow absorption (ka = 0.045/h) and systemic clearance (ke = params.k3)
-                    const slowAmount = _analytic2C(tau, doseS, params.F_slow, params.k1_slow, params.k3);
+                    const slowAmount = absorbedThenEliminated(tau, doseS, params.F_slow, params.k1_slow, params.k3);
 
                     return fastAmount + slowAmount;
                 };
@@ -2475,23 +2428,7 @@ class PrecomputedEventModel {
                 this.model = (timeH: number) => {
                     const tau = timeH - startTime;
                     if (tau < 0) return 0;
-
-                    // Zero Order
-                    if (params.rateMGh > 0) {
-                        if (tau <= wearH) {
-                            return params.rateMGh / params.k3 * (1 - Math.exp(-params.k3 * tau));
-                        } else {
-                            const amtRemoval = params.rateMGh / params.k3 * (1 - Math.exp(-params.k3 * wearH));
-                            return amtRemoval * Math.exp(-params.k3 * (tau - wearH));
-                        }
-                    }
-                    // First order legacy
-                    const amtUnderPatch = oneCompAmount(tau, dose, params);
-                    if (tau > wearH) {
-                        const amtAtRemoval = oneCompAmount(wearH, dose, params);
-                        return amtAtRemoval * Math.exp(-params.k3 * (tau - wearH));
-                    }
-                    return amtUnderPatch;
+                    return patchAmount(tau, dose, params.F, params.rateMGh, params.k1_fast, params.k3, wearH);
                 };
                 break;
             default:

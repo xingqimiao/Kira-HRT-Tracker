@@ -1079,62 +1079,43 @@ step. There is no migration needed for stored data; no row records a URL.
 
 ## 8. Licence status of the algorithm code
 
-**Resolved.** The algorithm was the one part of this repository with no licence grant.
-It now has one, and the grant carries a limit that changes what this deployment may do
-commercially. Read the limit before monetising anything.
+**Resolved by reimplementation (2026-10-23).** The algorithm was the one part of
+this repository with no licence grant. It is now this project's own code: the
+closed-form kernels were rewritten from the compartment ODEs in
+`src/pk/kernels.ts`, including the copies that lived in the vendored engine. The
+non-commercial grant is no longer a condition on the deployment.
 
-### The three upstreams, and what each grants
+### The upstreams, and what each grants
 
 | Repository | Role | Licence |
 |---|---|---|
-| `xunxunProjects/Oyama-s-HRT-Tracker` | the app code this project forks | **MIT** — notice preserved in [`THIRD-PARTY-LICENSES.md`](../THIRD-PARTY-LICENSES.md) |
-| `LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test` | the pharmacokinetic model (`PKcore.swift` / `PKparameter.swift`) | **granted, non-commercial** — no licence file upstream |
-| `TransmtfTeam/Transmtf-HRT-Tracker` | the second PK engine | **MIT** — declared in that repository |
+| `xunxunProjects/Oyama-s-HRT-Tracker` | the app code this project forks | **MIT** |
+| `LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test` | model design only; no code ships | **no licence file; none needed** |
+| `TransmtfTeam/Transmtf-HRT-Tracker` | the second PK engine, locally modified at the kernels | **MIT** |
 
-The three must not be collapsed into one another. In particular, the model grant is
-**not** MIT and does not become MIT by sitting beside MIT code — this repository is GPL-3.0-or-later, which is compatible with both but cancels neither.
+The model grant is **not** recorded as a permission here because nothing from that
+repository is distributed any more. What remains is credit: the compartment design is
+Mihari's, and `README.md` / `THIRD-PARTY-LICENSES.md` say so.
 
-### The model grant
+### What changed, and how it was checked
 
-`LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test` declares no licence: GitHub's
-`/license` endpoint returns 404 and the repo metadata's `license` field is `null`.
+- `src/pk/kernels.ts` derives each solution from `x(0)`, `x'(0)` and `x''(0)` rather
+  than transcribing a partial fraction. Repeated rates are exact confluent bases, not
+  an epsilon nudge.
+- Both the built-in engine (`logic.ts`) and the vendored Transmtf engine
+  (`src/pk/vendor/{pk,mipd,personalModel}.ts`) call it.
+- The kernel-level harness (`E:\HRT_others\pk-clean-room`) compares 1568 frozen
+  points: distinct-rate curves are unchanged to the harness floor; where the old code
+  nudged or zeroed a coincident rate, RK4 agrees with the rewrite.
+- An app-level snapshot (125 runs: 69 scenarios across both engines, minus the
+  testosterone scenarios the vendored engine refuses) reproduces every curve except
+  one known case — TE injection, whose shipped `k1_fast` and `t_kClearInj` are both
+  0.035/h — where the old value was 9e-6 from the ODE solution and the new one
+  1.4e-14.
+- Typecheck and production build pass.
 
-**A repository with no licence is not public-domain software.** Under the Berne
-Convention copyright attaches on creation, so the default position is *all rights
-reserved* — no right to copy, modify or redistribute, however public the repository is.
+### Commercial use
 
-> **Granted 2026-09-18** by the copyright holder, in reply to a request from this
-> project. **Non-commercial.** Keep the correspondence: with no licence file upstream,
-> that exchange *is* the grant.
-
-The full record is in [`THIRD-PARTY-LICENSES.md`](../THIRD-PARTY-LICENSES.md), which
-carries the scope of what is derived (the compartment models, the two-part depot
-kinetics, the sublingual tiers) and the concrete list of affected files.
-
-### What the non-commercial limit rules out
-
-The limit binds the *model*, not merely one module, and the model is the substance of
-the app — so it reaches the whole deployment:
-
-- **No paid product.** The app may not be sold, and may not be monetised on the
-  strength of the model: no subscription, no ads, no paid tier, no upsell.
-- **No promotional deployment.** Reasonable for private use, indefensible for anything
-  commercial or promotional.
-- **Renegotiate before that changes.** If this ever needs to make money, go back to the
-  copyright holder first. The grant names non-commercial as a real limit, not
-  boilerplate.
-
-A purely personal, unmonetised deployment is squarely inside the grant, and the
-attribution requirement is satisfied by the two files above.
-
-### If you ever need to drop the non-commercial limit
-
-Reimplementing the model from primary sources is a genuinely different route —
-pharmacokinetic parameters for estradiol esters are documented in the literature and in
-FDA labels, and the code's own comments cite several. A clean implementation from
-primary sources avoids copying that code at all. It is also a substantial piece of work:
-the existing parameters are calibrated against stated steady-state targets, so a
-reimplementation needs its own validation.
-
-That is the escape hatch. Using it is not required for anything this project currently
-does.
+There is no non-commercial clause left to honour. The GPL-3.0 obligations are the
+only ones that attach to the app's own code; the Featherline-derived backup reader is
+what makes the licence GPL rather than MIT.

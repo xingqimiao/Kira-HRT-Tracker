@@ -1,9 +1,9 @@
 /**
  * The server's only door to the pharmacokinetic model.
  *
- * All PK maths lives in the upstream `logic.ts` at the repo root — the same file
- * the web app imports. This module solves exactly two problems that file was
- * never written to face, and nothing else.
+ * All PK maths lives in `logic.ts` at the repo root — the same file the web app
+ * imports — with the closed forms themselves in `src/pk/kernels.ts`. This module
+ * solves exactly two problems that file was never written to face, and nothing else.
  *
  * 1. It expects a browser. Only the cloud-backup crypto helpers do — they call
  *    `window.crypto.subtle`. Node has WebCrypto as `globalThis.crypto`, so an

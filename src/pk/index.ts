@@ -1,10 +1,13 @@
 /**
  * Adapter: the Transmtf pharmacokinetic engine, wearing this app's interface.
  *
- * The engine itself is vendored verbatim under `./vendor/` (MIT — see
- * THIRD-PARTY-LICENSES.md). This file is the only place that knows the two sides
- * differ, and it exists so no consumer has to: it exposes the same four functions
- * `logic.ts` does, with the same arguments, and returns this app's shapes.
+ * The engine itself is vendored under `./vendor/` (MIT — see
+ * THIRD-PARTY-LICENSES.md), with one deliberate local change: its closed-form
+ * kernels now call `./kernels.ts` instead of carrying the unlicensed upstream
+ * expressions. Everything else is upstream's code. This file is the only place
+ * that knows the two sides differ, and it exists so no consumer has to: it exposes
+ * the same four functions `logic.ts` does, with the same arguments, and returns
+ * this app's shapes.
  *
  * What actually differs, and how it is bridged:
  *

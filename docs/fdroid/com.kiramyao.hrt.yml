@@ -91,13 +91,11 @@ MaintainerNotes: |-
   release APK used. Crates have to be vendored for the offline build step: `cargo
   vendor --locked` in prebuild plus a .cargo/config.toml pointing at the vendor dir.
 
-  The pharmacokinetic model this app depends on
-  (LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test) is reused under a NON-COMMERCIAL
-  grant from its author: the upstream repository declares no licence file, and the
-  grant was given in correspondence on 2026-09-18. It is recorded in full in
-  THIRD-PARTY-LICENSES.md. The app's own code is GPL-3.0-or-later; the model is not,
-  and the two must not be collapsed. Flagging it here rather than leaving it for a
-  build-time discovery.
+  The pharmacokinetic model is credited to
+  LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test, but no code from that repository is
+  distributed. The closed-form kernels are an independent implementation in
+  src/pk/kernels.ts, and the parameters cite the primary literature; the upstream
+  non-commercial grant is therefore not a dependency. See THIRD-PARTY-LICENSES.md.
 
 AutoUpdateMode: None
 UpdateCheckMode: Static

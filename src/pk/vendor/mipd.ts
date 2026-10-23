@@ -50,6 +50,7 @@ import {
     findPatchRemovalForApply,
 } from './pk';
 import { convertToPgMl } from './calibration';
+import { absorbedThenEliminated, patchAmount } from '../kernels.ts';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -171,12 +172,8 @@ function eventDrugAmountScaled(
                 return _analytic3C(tau, doseFast, params.F_fast, k1f, params.k2, k3) +
                        _analytic3C(tau, doseSlow, params.F_slow, k1s, params.k2, k3);
             }
-            const branch = (dose: number, F: number, ka: number, ke: number, t: number): number => {
-                if (Math.abs(ka - ke) < 1e-9) return dose * F * ka * t * Math.exp(-ke * t);
-                return dose * F * ka / (ka - ke) * (Math.exp(-ke * t) - Math.exp(-ka * t));
-            };
-            return branch(doseFast, params.F_fast, k1f, k3, tau) +
-                   branch(doseSlow, params.F_slow, k1s, k3, tau);
+            return absorbedThenEliminated(tau, doseFast, params.F_fast, k1f, k3) +
+                   absorbedThenEliminated(tau, doseSlow, params.F_slow, k1s, k3);
         }
         case Route.patchApply: {
             // F22: pair with the removal that TARGETS this physical patch;
@@ -184,22 +181,8 @@ function eventDrugAmountScaled(
             // rule (shared helper, identical to pk.ts / personalModel.ts).
             const remove = findPatchRemovalForApply(event, allEvents);
             const wearH = (remove?.timeH ?? Number.MAX_VALUE) - event.timeH;
-            if (params.rateMGh > 0) {
-                // Zero-order input: there is no first-order absorption rate, so
-                // the absorption scale does not apply; only clearance is scaled.
-                if (tau <= wearH) {
-                    return params.rateMGh / k3 * (1 - Math.exp(-k3 * tau));
-                }
-                const amtAtRemoval = params.rateMGh / k3 * (1 - Math.exp(-k3 * wearH));
-                return amtAtRemoval * Math.exp(-k3 * (tau - wearH));
-            }
-            const p = { ...params, k1_fast: k1f, k3 };
-            const amtUnder = oneCompAmount(tau, event.doseMG, p);
-            if (tau > wearH) {
-                const amtAtRemoval = oneCompAmount(wearH, event.doseMG, p);
-                return amtAtRemoval * Math.exp(-k3 * (tau - wearH));
-            }
-            return amtUnder;
+            // Zero-order input has no absorption rate; only clearance is scaled.
+            return patchAmount(tau, event.doseMG, params.F, params.rateMGh, k1f, k3, wearH);
         }
         default:
             return 0;

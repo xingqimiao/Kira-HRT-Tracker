@@ -3,7 +3,7 @@ import {
     Ester,
     ExtraKey,
     VehicleType,
-    DoseEvent,
+    type DoseEvent,
     runSimulation,
     DEFAULT_PK_PARAMS
 } from '../logic.ts';

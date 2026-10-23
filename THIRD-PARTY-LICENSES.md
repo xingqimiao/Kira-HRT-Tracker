@@ -5,33 +5,55 @@ under. The full text of each is reproduced or linked below.
 
 ---
 
-## HRT Pharmacokinetic Model
+## HRT pharmacokinetic model
 
-This project incorporates the pharmacokinetic model
-developed by Mihari.
+The compartment model behind this app's curves was designed by Mihari
+(`HRT-Recorder-PKcomponent-Test`): the sequential absorption → hydrolysis →
+elimination chain for esterified estradiol, two-part depot release, the sublingual
+absorption tiers, and the matching parameter set. That design is credited here, in
+[`README.md`](README.md), and on the app's About page.
 
 Source:
 https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test
 
-The model is reused under a non-commercial license granted
-by the copyright holder.
+**No code from that repository ships in this app.** The closed-form kernels are an
+independent implementation in [`src/pk/kernels.ts`](src/pk/kernels.ts), written on
+2026-10-23 from the compartment initial-value problem: the coefficients are solved
+from `x(0)`, `x'(0)` and `x''(0)`, and repeated rates are handled as exact confluent
+bases (`t·e^{-μt}`, `t²·e^{-μt}`) rather than by nudging the rates apart. The same
+module replaced the copies that had lived in `logic.ts` and in
+`src/pk/vendor/{pk,mipd,personalModel}.ts`. The rewrite is checked against the
+previous numbers and against RK4 integration of the same ODEs; the harness lives in
+`E:\HRT_others\pk-clean-room`.
 
-Copyright © Mihari.
+The upstream repository declares no licence of its own. Nothing in this distribution
+depends on a permission from it: what is used is the model design, which is published
+in the peer-reviewed literature, and parameter values taken from that literature. The
+non-commercial grant of 2026-09-18 recorded in earlier versions of this file is
+therefore no longer a condition on this distribution.
 
-**Granted:** 2026-09-18, by the copyright holder, in reply to a request from this
-project. The upstream repository declares no licence file of its own, so the
-permission rests on that exchange rather than on a file in the upstream tree. Keep
-the correspondence; it is the evidence this section refers to.
+### Parameter sources
 
-**Non-commercial is a real limit, not boilerplate.** The model may not be used in a
-paid product, and this project may not be sold or monetised on the strength of it. If
-that ever changes, the grant must be renegotiated with the copyright holder first.
+The defaults in `logic.ts` (`DEFAULT_PK_PARAMS`, the depot and absorption tables, and
+the gel/patch priors) are calibrated so the model reproduces published measurements —
+the rate constants are modelling choices, the concentrations and exposure figures
+they are fitted to are not. The anchors:
 
-What is derived from it, concretely — the algorithms, the mathematical models and the
-parameters, following the logic of that project's `PKcore.swift` and
-`PKparameter.swift`: the three-compartment models, the two-part depot kinetics, and
-the sublingual absorption tiers. See `README.md` and the implementation in
-`src/utils/vialLevel.ts` and `logic/`.
+- **Sublingual** — Casper & Yen 1981 (PMID 7454177); Doll et al. 2022
+  (PMID 34781041); Cirrincione et al. 2021 (PMID 33306447).
+- **Oral estradiol and estradiol valerate** — Kuhnz et al. 1993; Aedo et al. 1990;
+  Cattani et al. 2023.
+- **Injectable esters** — Oriowo et al. 1980 (head-to-head EB/EV/EC exposure);
+  Zhou et al. 1998 and Rahimy et al. 1999 (aqueous EC suspension).
+- **Gel and patch** — Oestrogel UK summary of product characteristics; the Japanese
+  Estrana tape label; Maggacis et al. 2025.
+
+Full citations, and the reasoning for each value, are in
+[`docs/pk-literature-anchors.md`](docs/pk-literature-anchors.md). Where a number is a
+modelling prior rather than a measured constant, the code says so where it is
+declared.
+
+Model design: Mihari.
 
 ---
 
@@ -101,8 +123,19 @@ Copyright (c) 2025 Transmtf Team
 ```
 
 MIT permits reuse with attribution, which this section records. Unlike the model
-below it, this one declares its licence in the repository itself, so the permission
+above it, this one declares its licence in the repository itself, so the permission
 rests on that file rather than on a private exchange.
+
+**Local modification.** The engine is no longer byte-for-byte upstream. On 2026-10-23
+the closed-form kernels inside `src/pk/vendor/pk.ts`, `mipd.ts` and
+`personalModel.ts` were replaced with calls into
+[`src/pk/kernels.ts`](src/pk/kernels.ts), for the licensing reason given above. The
+replaced expressions were the only part of the vendored tree that came from the
+unlicensed upstream model; everything else is Transmtf's MIT code. The public names
+`_analytic3C` and `oneCompAmount` are kept as thin wrappers so upstream call sites
+did not have to change. Two small numeric differences follow: at coincident rates the
+kernels now return the exact limit instead of zero, and at nearly-coincident rates
+they solve the confluent case instead of nudging the rates apart.
 
 The engine is a **lazy-loaded** module, so it is not part of the first visit's
 download; it is fetched when a reader selects it.
@@ -186,12 +219,13 @@ from the icon set, and do not recolour Google's.
   project's copyright line is in [`README.md`](README.md) and in each release.
 - [`LICENSES/GPL-3.0.txt`](LICENSES/GPL-3.0.txt) carries the verbatim GPL-3.0 text; the
   licence applies to the whole repository and ships with it.
-- This file carries the model grant, which is **not** MIT and must not be collapsed
-  into it — a reader who assumed one licence covered the repository would be wrong in
-  a way that matters commercially.
+- The pharmacokinetic model is **credited, not licensed**: the shipped kernels are
+  this project's own implementation, so no upstream model licence travels with the
+  bundle. A reader who assumed otherwise would be reading an older version of this
+  file.
 - The in-app 开源许可 page (`src/pages/LicenceSettings.tsx`) lists the dependencies
   that ship in the bundle, generated by `scripts/gen-licences.mjs`. It covers npm
   packages mechanically, reicon included; this file carries the entries that need
-  prose — the model grant, which is **not** MIT, reicon's grant, whose package ships
-  no licence text to quote, and the two brand marks, which are trademarks rather than
+  prose — the model and parameter sources, reicon's grant, whose package ships no
+  licence text to quote, and the two brand marks, which are trademarks rather than
   licensed work.

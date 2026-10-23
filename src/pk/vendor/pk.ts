@@ -1,4 +1,5 @@
 import { Route, Ester, ExtraKey, VehicleType, type DoseEvent, type DoseEventExtras, type SimulationResult, type ConcUnit } from './types';
+import { absorbedThenEliminated, patchAmount, sequentialChainAmount } from '../kernels.ts';
 
 /**
  * Route-specific metadata for transdermal gel absorption.
@@ -894,10 +895,7 @@ export function compute2CompCPACentralAmount(doseMG: number, tau: number): numbe
 export function computeBicalutamideAmount(doseMG: number, tau: number): number {
     if (tau < 0 || doseMG <= 0) return 0;
     const { ka, ke } = BICA_PK;
-    if (Math.abs(ka - ke) < 1e-9) {
-        return Math.max(0, doseMG * ka * tau * Math.exp(-ke * tau));
-    }
-    return Math.max(0, doseMG * ka / (ka - ke) * (Math.exp(-ke * tau) - Math.exp(-ka * tau)));
+    return Math.max(0, absorbedThenEliminated(tau, doseMG, 1.0, ka, ke));
 }
 
 /**
@@ -918,31 +916,20 @@ export function bicalutamideConcNgML(events: DoseEvent[], timeH: number): number
 
 /**
  * Closed-form 3-compartment amount model used by the injectable and EV routes.
+ *
+ * Kept as a named re-export because the individualisation layers import it by this
+ * name; the mathematics lives in `../kernels.ts` and is solved from the ODEs there.
  */
 export function _analytic3C(tau: number, doseMG: number, F: number, k1: number, k2: number, k3: number): number {
-    if (k1 <= 0 || doseMG <= 0) return 0;
-    const k1_k2 = k1 - k2;
-    const k1_k3 = k1 - k3;
-    const k2_k3 = k2 - k3;
-
-    if (Math.abs(k1_k2) < 1e-9 || Math.abs(k1_k3) < 1e-9 || Math.abs(k2_k3) < 1e-9) return 0;
-
-    const term1 = Math.exp(-k1 * tau) / (k1_k2 * k1_k3);
-    const term2 = Math.exp(-k2 * tau) / (-k1_k2 * k2_k3);
-    const term3 = Math.exp(-k3 * tau) / (k1_k3 * k2_k3);
-
-    return doseMG * F * k1 * k2 * (term1 + term2 + term3);
+    return sequentialChainAmount(tau, doseMG, F, k1, k2, k3);
 }
 
 /**
  * Standard one-compartment first-order absorption / elimination solution.
+ * See `../kernels.ts` for the derivation.
  */
 export function oneCompAmount(tau: number, doseMG: number, p: PKParams): number {
-    const k1 = p.k1_fast;
-    if (Math.abs(k1 - p.k3) < 1e-9) {
-        return doseMG * p.F * k1 * tau * Math.exp(-p.k3 * tau);
-    }
-    return doseMG * p.F * k1 / (k1 - p.k3) * (Math.exp(-p.k3 * tau) - Math.exp(-k1 * tau));
+    return absorbedThenEliminated(tau, doseMG, p.F, p.k1_fast, p.k3);
 }
 
 /**
@@ -1058,13 +1045,8 @@ class PrecomputedEventModel {
                     const doseF = dose * params.Frac_fast;
                     const doseS = dose * (1.0 - params.Frac_fast);
                     const fastElim = params.k3_fast ?? params.k3;
-
-                    const branch = (d: number, F: number, ka: number, ke: number, t: number) => {
-                        if (Math.abs(ka - ke) < 1e-9) return d * F * ka * t * Math.exp(-ke * t);
-                        return d * F * ka / (ka - ke) * (Math.exp(-ke * t) - Math.exp(-ka * t));
-                    };
-                    return branch(doseF, params.F_fast, params.k1_fast, fastElim, tau) +
-                        branch(doseS, params.F_slow, params.k1_slow, params.k3, tau);
+                    return absorbedThenEliminated(tau, doseF, params.F_fast, params.k1_fast, fastElim) +
+                        absorbedThenEliminated(tau, doseS, params.F_slow, params.k1_slow, params.k3);
                 };
                 break;
             case Route.patchApply: {
@@ -1077,22 +1059,7 @@ class PrecomputedEventModel {
                 this.model = (timeH: number) => {
                     const tau = timeH - startTime;
                     if (tau < 0) return 0;
-
-                    if (params.rateMGh > 0) {
-                        if (tau <= wearH) {
-                            return params.rateMGh / params.k3 * (1 - Math.exp(-params.k3 * tau));
-                        } else {
-                            const amtRemoval = params.rateMGh / params.k3 * (1 - Math.exp(-params.k3 * wearH));
-                            return amtRemoval * Math.exp(-params.k3 * (tau - wearH));
-                        }
-                    }
-
-                    const amtUnderPatch = oneCompAmount(tau, dose, params);
-                    if (tau > wearH) {
-                        const amtAtRemoval = oneCompAmount(wearH, dose, params);
-                        return amtAtRemoval * Math.exp(-params.k3 * (tau - wearH));
-                    }
-                    return amtUnderPatch;
+                    return patchAmount(tau, dose, params.F, params.rateMGh, params.k1_fast, params.k3, wearH);
                 };
                 break;
             }

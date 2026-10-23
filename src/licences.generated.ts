@@ -19,12 +19,6 @@ export interface UpstreamWork {
      */
     noLicence?: boolean;
     /**
-     * Permission exists by correspondence rather than by a file in the upstream
-     * repository. Rendered as a note explaining the grant and its non-commercial
-     * limit, because neither is visible from that repository.
-     */
-    granted?: boolean;
-    /**
      * A cited reference, not a repository whose code was reused. Its own flag so the
      * "no LICENCE file in the repository" sentence is not applied to a website.
      */
@@ -37,17 +31,16 @@ export interface RuntimeLicence {
     licence: string;
 }
 
-export const GENERATED_AT = "2026-10-22";
+export const GENERATED_AT = "2026-10-23";
 
 export const UPSTREAM_WORKS: UpstreamWork[] = [
     {
         "name": "HRT-Recorder-PKcomponent-Test",
         "url": "https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test",
         "roleKey": "licence.upstream_algorithm",
-        "licence": "non-commercial, granted",
+        "licence": "no code copied",
         "noLicence": false,
-        "granted": true,
-        "copyright": "Copyright © Mihari."
+        "copyright": "Model design: Mihari."
     },
     {
         "name": "HRT-Recorder-online",

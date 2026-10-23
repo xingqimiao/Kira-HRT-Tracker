@@ -20,6 +20,7 @@ import {
     type CalibrationModel,
     type CalibrationMode,
 } from './calibration';
+import { absorbedThenEliminated, patchAmount } from '../kernels.ts';
 import {
     fitMipd,
     fitMipdTimeline,
@@ -148,12 +149,8 @@ function computeEventAmountWithKScale(
                        _analytic3C(tau, doseSlow, params.F_slow, params.k1_slow, params.k2, k3);
             }
 
-            const branch = (dose: number, bioavailability: number, ka: number, ke: number, t: number): number => {
-                if (Math.abs(ka - ke) < 1e-9) return dose * bioavailability * ka * t * Math.exp(-ke * t);
-                return dose * bioavailability * ka / (ka - ke) * (Math.exp(-ke * t) - Math.exp(-ka * t));
-            };
-            return branch(doseFast, params.F_fast, params.k1_fast, k3, tau) +
-                   branch(doseSlow, params.F_slow, params.k1_slow, k3, tau);
+            return absorbedThenEliminated(tau, doseFast, params.F_fast, params.k1_fast, k3) +
+                   absorbedThenEliminated(tau, doseSlow, params.F_slow, params.k1_slow, k3);
         }
         case Route.patchApply: {
             // F22: pair with the removal that TARGETS this physical patch;
@@ -161,21 +158,7 @@ function computeEventAmountWithKScale(
             // rule (shared helper, identical to pk.ts / mipd.ts).
             const remove = findPatchRemovalForApply(event, allEvents);
             const wearH = (remove?.timeH ?? Number.MAX_VALUE) - event.timeH;
-            if (params.rateMGh > 0) {
-                if (tau <= wearH) {
-                    return params.rateMGh / k3 * (1 - Math.exp(-k3 * tau));
-                }
-                const amtAtRemoval = params.rateMGh / k3 * (1 - Math.exp(-k3 * wearH));
-                return amtAtRemoval * Math.exp(-k3 * (tau - wearH));
-            }
-
-            const paramsK = { ...params, k3 };
-            const amtUnder = oneCompAmount(tau, event.doseMG, paramsK);
-            if (tau > wearH) {
-                const amtAtRemoval = oneCompAmount(wearH, event.doseMG, paramsK);
-                return amtAtRemoval * Math.exp(-k3 * (tau - wearH));
-            }
-            return amtUnder;
+            return patchAmount(tau, event.doseMG, params.F, params.rateMGh, params.k1_fast, k3, wearH);
         }
         default:
             return 0;

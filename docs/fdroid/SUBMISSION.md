@@ -19,19 +19,19 @@
 
 ## 2. 真正的阻碍（按严重程度）
 
-1. **模型是非商业授权，不是自由许可。** `LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test`
-   没有 LICENSE 文件，2026-09-18 由作者私下授予非商业使用权。包含策略要求
-   「所有应用必须是 FLOSS」，这一条会让评审为难——它可能被记为 `NonFreeDep`，也可能直接
-   被拒。这不是我们能在代码里修的：要么拿到作者的自由许可，要么接受评审结论。
-   MR 里已经主动写明（见 §6），不要藏。
-2. **`src-tauri/gen/` 由 Tauri 生成**（仓库里只有壳源码，`gen/` 与构建产物不入库）。
+**已解决：模型授权。** 内置引擎的闭式解已按隔室方程独立重写（`src/pk/kernels.ts`，
+2026-10-23），参数改为引用公开文献；上游仓库的代码、以及它 2026-09-18 的非商业授权，
+都不再构成本分发的依赖。仓库里不再有会被记为 `NonFreeDep` 的模型代码。评审若仍按旧
+版本提问，以 `THIRD-PARTY-LICENSES.md` 为准。
+
+1. **`src-tauri/gen/` 由 Tauri 生成**（仓库里只有壳源码，`gen/` 与构建产物不入库）。
    配方里需要跑 `tauri android init` 之后再构建。
-3. **构建服务器要能跑 Rust + Node + Android NDK**。这是 Tauri 应用进 F-Droid 的主要成本；
+2. **构建服务器要能跑 Rust + Node + Android NDK**。这是 Tauri 应用进 F-Droid 的主要成本；
    `Builds:` 里的 Rust/NDK 版本必须和出包时一致（Rust 1.90、NDK 27.0.12077973），
    crates 需要 `cargo vendor` 离线化。首轮大概率要来回改。
-4. 仓库公开可匿名克隆（`xingqimiao/Kira-HRT-Tracker`，满足）；tag `v2.0.4` 已推。
-5. 反特性：可选的 Google / X 登录已在配方里声明为 `NonFreeNet`；不登录也能完整使用。
-6. **OCR 是运行时下载**（首次扫描时从我们站点拉 ~23 MB 模型 + ORT wasm，之后走缓存）。
+3. 仓库公开可匿名克隆（`xingqimiao/Kira-HRT-Tracker`，满足）；tag `v2.0.4` 已推。
+4. 反特性：可选的 Google / X 登录已在配方里声明为 `NonFreeNet`；不登录也能完整使用。
+5. **OCR 是运行时下载**（首次扫描时从我们站点拉 ~23 MB 模型 + ORT wasm，之后走缓存）。
    这属于「运行时下载可执行文件」，可能被要求改为打进 APK（+44 MB）或加显式同意弹窗。
    已在 `MaintainerNotes` 与 MR 正文里写明，等他们表态。
 
