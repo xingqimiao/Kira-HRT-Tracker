@@ -487,6 +487,10 @@ hrt.kiramyao.com {
         # fetched from this origin and nowhere else. Do not substitute the broader
         # keyword for it.
         #
+        # Cloudflare appears twice for two reasons: Turnstile (the register form) and
+        # Web Analytics, which the zone injects into proxied HTML. The analytics
+        # beacon is wanted here — do not "tighten" it away without asking the owner.
+        #
         # Turnstile is the one third-party origin and it needs three slots: the loader
         # script, the challenge iframe, and its own connect calls. `worker-src blob:`
         # and `media-src blob:` cover ONNX Runtime and the OCR preview respectively.
@@ -495,7 +499,7 @@ hrt.kiramyao.com {
         # class before first paint now lives in `/theme-init.js` (it is a classic,
         # blocking file, so it still beats the first paint). Inline `application/ld+json`
         # is not a JavaScript type and is not restricted by `script-src`.
-        Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://hrt.kiramyao.com https://api.kiramyao.com https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://hrt.kiramyao.com https://api.kiramyao.com https://challenges.cloudflare.com https://cloudflareinsights.com; frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'"
         -Server
     }
 }
