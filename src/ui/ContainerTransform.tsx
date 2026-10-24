@@ -127,7 +127,7 @@ function restingSnapshot(el: HTMLElement): Snapshot | null {
     };
 }
 
-const EXIT_MS = 520;
+const EXIT_MS = 400;
 /** How long before the end the trigger fades back in under the surfacing frame. */
 const EXIT_FADE_AT = 160;
 /** The shorter exit when there is no trigger to return into — a fade, not a morph. */

@@ -693,10 +693,11 @@ body:not(.desktop) .m3e-ct-scrim{display:none}
 .m3e-ct.open{background:var(--bg);clip-path:inset(0px round 0px)}
 .m3e-ct.out{
   background:var(--ct-bg,var(--pric));clip-path:var(--ct,inset(0px round 0px));
-  /* Emphasized accelerate, the mirror of the entrance. The colour change is
-     delayed just past the content fade so the screen never turns a flat colour
-     while it still fills the viewport. */
-  transition:clip-path .52s cubic-bezier(.3,0,.8,.15),background-color .16s ease .12s;
+  /* Emphasized decelerate, the same easing as the entrance: the surface
+     leaves full screen at full speed and lands softly on its trigger. The
+     colour change is delayed just past the content fade so the screen never
+     turns a flat colour while it still fills the viewport. */
+  transition:clip-path .4s cubic-bezier(.05,.7,.1,1),background-color .16s ease .12s;
   pointer-events:none;
 }
 /* An invisible target over the trigger's own rect while the block is on its way
@@ -738,7 +739,7 @@ body.desktop .m3e-ct{
 body.desktop .m3e-ct.open{clip-path:inset(0px round 0px);background:var(--bg);transform:none;opacity:1}
 body.desktop .m3e-ct.out{
   clip-path:var(--ct,inset(0px round 0px));background:var(--ct-bg,var(--pric));opacity:1;transform:none;
-  transition:clip-path .52s cubic-bezier(.3,0,.8,.15),background-color .16s ease .12s;
+  transition:clip-path .4s cubic-bezier(.05,.7,.1,1),background-color .16s ease .12s;
 }
 body.desktop .m3e-ct-inner{height:100%}
 
