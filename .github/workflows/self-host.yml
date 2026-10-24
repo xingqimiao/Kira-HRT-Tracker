@@ -61,7 +61,7 @@ jobs:
         shell: bash
         run: |
           docker run -d -p 5000:5000 --name hrt-test-registry registry:3
-          curl --retry 10 --retry-connrefused --retry-delay 1 -fsS http://localhost:5000/v2/
+          curl --retry 10 --retry-all-errors --retry-delay 1 --connect-timeout 3 --max-time 5 -fsS http://localhost:5000/v2/
           LOCAL_PREFIX=localhost:5000/kira-hrt
           for SERVICE in api web; do
             docker tag "$IMAGE_PREFIX-$SERVICE:$VERSION" "$LOCAL_PREFIX-$SERVICE:0.0.0"
