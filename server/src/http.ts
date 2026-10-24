@@ -617,6 +617,23 @@ function googleLoginAvailable(): boolean {
 
 export function createRequestHandler() {
   return async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    // Live-web-session credential gate (hoisted): identity and destructive operations
+    // are documented web-only (server/MCP.md) — a durable agent token must not reach
+    // them, or it could mint successors, replace the password, or lock its owner out.
+    async function requireSessionCtx(): Promise<AuthContext | null> {
+      const token = bearer(req);
+      if (!token || !token.startsWith('ks_')) {
+        fail(res, 403, 'this operation requires signing in through the web app');
+        return null;
+      }
+      const resolved = await contextFor(req);
+      if (!resolved) {
+        fail(res, 401, 'missing or invalid credentials, or the account is locked');
+        return null;
+      }
+      return resolved;
+    }
+
     const url = new URL(req.url ?? '/', 'http://localhost');
     // Route matching happens on the path *inside* the mount, so every comparison
     // below stays a plain absolute path and no route has to know it is mounted.
@@ -810,7 +827,7 @@ export function createRequestHandler() {
 
       // --- Auth: password ---------------------------------------------------
       if (path === '/auth/password' && req.method === 'POST') {
-        const ctx = await contextFor(req);
+        const ctx = await requireSessionCtx();
         if (!ctx) return fail(res, 401, 'authentication required');
         // A session is not a licence to guess the password. This route bcrypt-checks
         // `current_password`, so without a bucket a stolen token is a password oracle at
@@ -834,7 +851,7 @@ export function createRequestHandler() {
       // rides the login rate bucket, not an unbounded one.
       if (path === '/auth/keys/rotate' && req.method === 'POST') {
         const limits = getConfig().rateLimits;
-        if (rateLimited(`rotate:${clientIp(req)}`, limits.login, limits.windowMs)) {
+        if (rateLimited(`rotate:${bearer(req) ?? clientIp(req)}`, limits.login, limits.windowMs)) {
           return fail(res, 429, 'too many attempts, try again later');
         }
         const ctx = await contextFor(req);
@@ -994,13 +1011,13 @@ export function createRequestHandler() {
       // returns a token or a key: the list names devices so a person can *end* access,
       // not so anyone can resume it.
       if (path === '/auth/sessions' && req.method === 'GET') {
-        const ctx = await contextFor(req);
+        const ctx = await requireSessionCtx();
         if (!ctx) return fail(res, 401, 'authentication required');
         return send(res, 200, { sessions: await listUserSessions(ctx.userId, bearer(req) ?? null) });
       }
 
       if (path === '/auth/sessions/revoke' && req.method === 'POST') {
-        const ctx = await contextFor(req);
+        const ctx = await requireSessionCtx();
         if (!ctx) return fail(res, 401, 'authentication required');
         const token = bearer(req) ?? null;
         const body = (await readBody(req)) as { ids?: unknown; all_others?: unknown } | undefined;
@@ -1026,7 +1043,7 @@ export function createRequestHandler() {
         if (rateLimited(`delete:${clientIp(req)}`, getConfig().rateLimits.login, getConfig().rateLimits.windowMs)) {
           return fail(res, 429, 'too many attempts; try again shortly');
         }
-        const ctx = await contextFor(req);
+        const ctx = await requireSessionCtx();
         if (!ctx) return fail(res, 401, 'authentication required');
         const body = (await readBody(req)) as
           | { password?: unknown; reason?: unknown }
@@ -1149,7 +1166,7 @@ export function createRequestHandler() {
       }
 
       if (path === '/auth/x/unlink' && req.method === 'POST') {
-        const ctx = await contextFor(req);
+        const ctx = await requireSessionCtx();
         if (!ctx) return fail(res, 401, 'authentication required');
         const result = await AccountService.unlinkX(ctx);
         if (!result.ok) return fail(res, 400, result.error);
@@ -1165,10 +1182,10 @@ export function createRequestHandler() {
       // unlink later without ever being stranded.
 
       if (path === '/auth/credentials/bind' && req.method === 'POST') {
-        const ctx = await contextFor(req);
+        const ctx = await requireSessionCtx();
         if (!ctx) return fail(res, 401, 'authentication required');
         const body = (await readBody(req)) as { username?: unknown; password?: unknown } | undefined;
-        const result = await AccountService.bindCredentials(ctx, body?.username, body?.password);
+        const result = await AccountService.bindCredentials(ctx, body?.username, body?.password, body?.current_password);
         if (!result.ok) {
           // A name another account holds is a conflict, not a bad request; the form
           // renders the two differently.
@@ -1221,6 +1238,7 @@ export function createRequestHandler() {
         }
         return resolved;
       };
+
 
       /**
        * Resolve the caller, and require that they have bound a fallback credential.
@@ -1417,12 +1435,12 @@ export function createRequestHandler() {
       // waiting for an expiry. See `mintApiToken` for why an expiry is the wrong
       // default for a credential pasted into an agent's config.
       if (path === '/api/tokens' && req.method === 'GET') {
-        const ctx = await requireCtx();
+        const ctx = await requireSessionCtx();
         if (!ctx) return;
         return send(res, 200, { tokens: await AccountService.listApiTokens(ctx.userId) });
       }
       if (path === '/api/tokens' && req.method === 'POST') {
-        const ctx = await requireCtx();
+        const ctx = await requireSessionCtx();
         if (!ctx) return;
         const body = (await readBody(req)) as { name?: unknown } | undefined;
         const name = typeof body?.name === 'string' && body.name.trim() !== '' && body.name.length <= 64
@@ -1435,7 +1453,7 @@ export function createRequestHandler() {
       }
       const tokenRevoke = path.match(/^\/api\/tokens\/([0-9a-f-]{36})$/);
       if (tokenRevoke && req.method === 'DELETE') {
-        const ctx = await requireCtx();
+        const ctx = await requireSessionCtx();
         if (!ctx) return;
         const removed = await AccountService.revokeApiToken(ctx.userId, tokenRevoke[1]);
         if (!removed) return fail(res, 404, 'no such token');
@@ -1445,7 +1463,7 @@ export function createRequestHandler() {
       // one thing about an issued credential the user can still change after the
       // plaintext is gone.
       if (tokenRevoke && req.method === 'PATCH') {
-        const ctx = await requireCtx();
+        const ctx = await requireSessionCtx();
         if (!ctx) return;
         const body = (await readBody(req)) as { name?: unknown } | undefined;
         const name = typeof body?.name === 'string' ? body.name.trim() : '';

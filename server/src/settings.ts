@@ -263,11 +263,13 @@ export const settings = {
     const stored = jsonObject(appState);
     if (!stored) return;
     const columns = columnsFromBag(stored);
-    // Filter the bag before it is written, not after: the unlisted preferences are
-    // still in the sealed `scalar:appSettings` record, so this column keeps only what a
-    // server-side reader needs. `modes` (templates and quick doses) is carried as it
-    // arrives — those are read back by the export path.
-    const bag: Record<string, unknown> = { ...stored };
+    // Column contract: {settings, settingsUpdatedAt} only. This is a plaintext
+    // projection, not a store — `modes` (templates and quick doses, which name drugs
+    // and doses) and any unknown top-level key stay out of it and travel sealed inside
+    // the scalar:appSettings record, which is what the app and the export read. The
+    // nested settings object is whole: it carries display preferences, not health data.
+    const bag: Record<string, unknown> = {};
+    if (stored.settingsUpdatedAt !== undefined) bag.settingsUpdatedAt = stored.settingsUpdatedAt;
     const incoming = jsonObject(stored.settings);
     if (incoming) {
       // The projection merges against what this column already holds, so a write that

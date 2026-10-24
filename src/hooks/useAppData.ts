@@ -996,12 +996,18 @@ export const useAppData = (
      */
     // Derived from the enum, not a hand list, so a new extra cannot be silently
     // dropped here (an import that loses the gel product would change the curve).
-    const IMPORT_EXTRA_KEYS = new Set<string>(Object.values(ExtraKey));
-    const importExtras = (raw: unknown): Record<string, number> => {
+    const IMPORT_EXTRA_STRING_KEYS = new Set<string>(['patchInstanceId', 'patchRemovalFor']);
+const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT_EXTRA_STRING_KEYS]);
+    const importExtras = (raw: unknown): Record<string, number | string> => {
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-        const out: Record<string, number> = {};
+        const out: Record<string, number | string> = {};
         for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
             if (!IMPORT_EXTRA_KEYS.has(key)) continue;
+            if (IMPORT_EXTRA_STRING_KEYS.has(key)) {
+                // patch identity keys are strings and must not be Number()-coerced
+                if (typeof value === 'string' && value) out[key] = value.slice(0, 200);
+                continue;
+            }
             const n = Number(value);
             if (Number.isFinite(n)) out[key] = n;
         }

@@ -219,8 +219,10 @@ function adaptEvents(events: readonly DoseEvent[], weightKG: number): VDoseEvent
         // it is looking for, addressed to this application's id.
         if (event.route === ('patchApply' as Route)) {
             const wearH = event.extras?.['patchWearH' as ExtraKeyType];
+            const applyInstanceId = String(event.extras?.patchInstanceId ?? event.id);
             const hasExplicitRemovalLater = events.some(
-                e => e.route === ('patchRemove' as Route) && e.timeH > event.timeH,
+                e => e.route === ('patchRemove' as Route) && e.timeH > event.timeH
+                    && (!e.extras?.patchRemovalFor || String(e.extras.patchRemovalFor) === applyInstanceId),
             );
             if (typeof wearH === 'number' && Number.isFinite(wearH) && wearH > 0 && !hasExplicitRemovalLater) {
                 out.push({
@@ -272,6 +274,9 @@ function adaptLabs(results: readonly LabResult[]): VLabResult[] {
  * never read.
  */
 export function runSimulation(events: DoseEvent[], bodyWeightKG: number): SimulationResult | null {
+    // Same contract as the built-in engine: an implausible weight must yield the null
+    // fallback, never a NaN series (a corrupted stored weight can be NaN here).
+    if (!Number.isFinite(bodyWeightKG) || bodyWeightKG <= 0) return null;
     if (events.length === 0) return null;
     const adapted = adaptEvents(events, bodyWeightKG);
     if (adapted === null) return null;

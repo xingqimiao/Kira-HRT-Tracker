@@ -1576,8 +1576,15 @@ function ouCalibrate(points: CalibrationPoint[], historyMode: CalibrationHistory
             let j = 0;
             for (let i = 0; i < n - 1; i++) { if (labTimes[i] <= t) j = i; else break; }
             const D = labTimes[j + 1] - labTimes[j], s = t - labTimes[j];
-            const sh = Math.sinh(theta * D) || 1;        // OU bridge conditional mean
-            z = (Math.sinh(theta * (D - s)) * zs[j] + Math.sinh(theta * s) * zs[j + 1]) / sh;
+            const sh = Math.sinh(theta * D);
+            if (Number.isFinite(sh) && sh !== 0) {
+                z = (Math.sinh(theta * (D - s)) * zs[j] + Math.sinh(theta * s) * zs[j + 1]) / sh;
+            } else {
+                // |theta*D| beyond the sinh overflow point (~709.8): the two labs are
+                // decades apart and the bridge degenerates to the nearer endpoint's decay.
+                z = Math.exp(-theta * Math.min(Math.abs(t - labTimes[j]), Math.abs(labTimes[j + 1] - t))) *
+                    (t - labTimes[j] <= labTimes[j + 1] - t ? zs[j] : zs[j + 1]);
+            }
         }
         return clampFactor(Math.exp(z));
     };
@@ -2336,9 +2343,22 @@ function patchRemovalTimes(allEvents: DoseEvent[]): Map<DoseEvent, number> {
     if (cached) return cached;
     const pairs = new Map<DoseEvent, number>();
     const onSkin: DoseEvent[] = []; // applications awaiting a removal, oldest first
+    const used = new Set<DoseEvent>();
+    // First pass: a removal that names its patch (extras.patchRemovalFor, written by
+    // the dose form) removes THAT patch, not whoever happens to be oldest.
+    for (const e of allEvents) {
+        if (e.route !== Route.patchRemove) continue;
+        const target = e.extras?.patchRemovalFor;
+        if (!target) continue;
+        const apply = allEvents.find((a) => a.route === Route.patchApply && !used.has(a)
+            && String(a.extras?.patchInstanceId ?? a.id) === String(target));
+        if (apply) { pairs.set(apply, e.timeH); used.add(apply); }
+    }
+    // Second pass: untargeted removals keep the legacy FIFO pairing, oldest first.
     for (const e of allEvents) {
         if (e.route === Route.patchApply) onSkin.push(e);
         else if (e.route === Route.patchRemove) {
+            if (e.extras?.patchRemovalFor) continue;
             const apply = onSkin.shift();
             if (apply) pairs.set(apply, e.timeH);
         }
@@ -2478,7 +2498,7 @@ function computeMaxLifetimeH(params: PKParams, route: Route, allEvents: DoseEven
 }
 
 export function runSimulation(events: DoseEvent[], bodyWeightKG: number): SimulationResult | null {
-    if (events.length === 0 || bodyWeightKG <= 0) return null;
+    if (events.length === 0 || !Number.isFinite(bodyWeightKG) || bodyWeightKG <= 0) return null;
 
     const sortedEvents = [...events].sort((a, b) => a.timeH - b.timeH);
     const precomputed = sortedEvents

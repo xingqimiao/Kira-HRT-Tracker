@@ -114,7 +114,7 @@ test('a share round-trips, and publicly readable fields carry no identity', asyn
   assert.ok(!raw.includes(created.body.token), 'nor the token echoed back');
 });
 
-test('a snapshot carrying a lab result or a weight is refused', async () => {
+test('a share snapshot is projected to the dose/curve shape before it is stored', async () => {
   const account = await registerAccount(base, { username: 'sharer_two' });
 
   // Built in the browser, so the server cannot assume the client behaved. Each of
@@ -128,8 +128,18 @@ test('a snapshot carrying a lab result or a weight is refused', async () => {
       snapshot: snapshot(forbidden),
       expiresAt: inFuture(DAY),
     }, account.token));
-    assert.equal(res.status, 400, `should refuse ${JSON.stringify(forbidden)}`);
-    assert.match(res.body.message, /must not be included/);
+    // Audit contract (KHT-SEC-013): the snapshot is projected to the dose/curve
+    // shape before storage, so sensitive collections are dropped, never stored —
+    // and the anonymous reader can never see them.
+    assert.equal(res.status, 201, `create should succeed (projected): ${JSON.stringify(forbidden)}`);
+    const view = await call(base, '/api/shares/access', json({ token: res.body.token }));
+    assert.equal(view.status, 200);
+    const served = view.body.snapshot ?? view.body;
+    assert.equal(served.labResults, undefined, 'lab results leaked');
+    assert.equal(served.weight, undefined, 'weight leaked');
+    assert.equal(served.events?.[0]?.note, undefined, 'event note leaked');
+    assert.equal(served.events?.[0]?.nested, undefined, 'nested metadata leaked');
+    assert.equal(served.events?.[0]?.id, 'e1', 'the dose event itself survives the projection');
   }
 
   // And the guard is not just a top-level name check.

@@ -165,7 +165,9 @@ function useCoreSessionState() {
         // means we cannot tell, so the token is kept and the app stays signed in
         // until a request actually says otherwise.
         const network = error instanceof CoreAuthError && error.kind === 'network';
-        if (!cancelled && !network) void persist(null, null);
+        if (!cancelled && !network) void // BUG-001 guard: a session adopted while this check was in flight must survive.
+                    const storedNow = readStored();
+                    if (storedNow?.token === token) persist(null, null);
         else if (!cancelled) setState(s => ({ ...s, restoring: false }));
       }
     })();

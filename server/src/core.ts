@@ -703,6 +703,18 @@ async function doseHistory(ctx: AuthContext): Promise<DoseRecord[]> {
     return records.map((r) => r.data);
 }
 
+/** Spread-argument-safe max/min: a series can exceed V8's argument limit (~125k). */
+function boundedMax(values: number[]): number {
+    let m = -Infinity;
+    for (const v of values) if (v > m) m = v;
+    return m;
+}
+function boundedMin(values: number[]): number {
+    let m = Infinity;
+    for (const v of values) if (v < m) m = v;
+    return m;
+}
+
 export const PKSimulationService = {
     /** Resolve the parameters a user's simulations run under. */
     async resolveParams(ctx: AuthContext): Promise<PKCustomParams> {
@@ -880,8 +892,8 @@ export const PKSimulationService = {
                 engine,
                 points,
                 stats: {
-                    peak: Math.max(...windowedValues),
-                    trough: Math.min(...windowedValues),
+                    peak: boundedMax(windowedValues),
+                    trough: boundedMin(windowedValues),
                     latest: series[nowIdx] ?? series[series.length - 1],
                 },
                 downsampled,

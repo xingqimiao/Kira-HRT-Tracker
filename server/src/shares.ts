@@ -247,6 +247,37 @@ export function verifyViewerPass(pass: unknown, tokenHash: string, passwordHash:
   }
 }
 
+/**
+ * The snapshot an anonymous share reader may receive: dose events and the modelled
+ * curve only. Everything else — journal, plans, templates, quick doses, settings,
+ * labs under any key name — is dropped here, before the denylist walk: a blocklist
+ * can never keep up with the collections an account carries, so the published shape
+ * is an allow-list projection instead.
+ */
+function projectShareable(snapshot: unknown): Record<string, unknown> | null {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return null;
+  const src = snapshot as Record<string, unknown>;
+  const events = Array.isArray(src.events)
+    ? src.events.map((e) => {
+        if (!e || typeof e !== 'object' || Array.isArray(e)) return null;
+        const out: Record<string, unknown> = {};
+        for (const f of ['id', 'type', 'route', 'ester', 'doseMG', 'timeH', 'at'] as const) {
+          if ((e as Record<string, unknown>)[f] !== undefined) out[f] = (e as Record<string, unknown>)[f];
+        }
+        return out;
+      }).filter(Boolean)
+    : [];
+  const projected: Record<string, unknown> = {
+    version: typeof src.version === 'number' ? src.version : 1,
+    events,
+  };
+  if (typeof src.mode === 'string') projected.mode = src.mode;
+  if (typeof src.timezone === 'string') projected.timezone = src.timezone;
+  if (typeof src.createdAt === 'number') projected.createdAt = src.createdAt;
+  if (src.simulation !== undefined) projected.simulation = src.simulation;
+  return projected;
+}
+
 export const ShareService = {
   /**
    * Create a share for an account.
@@ -276,9 +307,10 @@ export const ShareService = {
       if (!sealed.ok) return sealed;
       stored = { sealed: sealed.value, mode: shareMode(input.mode) };
     } else {
-      const shareable = assertShareable(input.snapshot);
+      const projected = projectShareable(input.snapshot);
+      const shareable = assertShareable(projected);
       if (!shareable.ok) return shareable;
-      stored = input.snapshot;
+      stored = projected;
     }
 
     const requested = Number(input.expiresAt);
@@ -470,14 +502,16 @@ export const ShareService = {
       return { ok: true, value: { updated: rowCount ?? 0, updatedAt } };
     }
 
-    const shareable = assertShareable(input.snapshot);
+    const projected = projectShareable(input.snapshot);
+    const shareable = assertShareable(projected);
     if (!shareable.ok) return shareable;
 
+    // store the projection: a plaintext live refresh publishes the same allow-listed shape
     const { rowCount } = await getPool().query(
       `UPDATE shares SET snapshot = $2, updated_at = to_timestamp($3 / 1000.0)
         WHERE user_id = $1 AND live = true AND expires_at > now()
           AND NOT (snapshot ? 'sealed')`,
-      [userId, JSON.stringify(input.snapshot), updatedAt],
+      [userId, JSON.stringify(projected), updatedAt],
     );
     return { ok: true, value: { updated: rowCount ?? 0, updatedAt } };
   },

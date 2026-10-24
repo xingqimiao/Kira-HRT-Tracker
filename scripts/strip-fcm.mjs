@@ -77,9 +77,31 @@ edit(join(javaDir, 'MainActivity.kt'), (s) => {
     if (next < 0) throw new Error('strip-fcm: could not find the end of PushBridge');
     s = s.slice(0, start) + s.slice(next);
   }
+  // Store builds must not self-update at all — not just without JS callers
+  // (audit KHT-SEC-008): cut the UpdateBridge class and registration too.
+  const updateAt = s.indexOf('  inner class UpdateBridge {');
+  if (updateAt >= 0) {
+    let start = updateAt;
+    const doc = s.lastIndexOf('  /**', updateAt);
+    if (doc >= 0 && s.slice(doc, updateAt).trim().endsWith('*/')) start = doc;
+    const next = s.indexOf('  inner class ', updateAt + 1);
+    if (next < 0) throw new Error('strip-fcm: could not find the end of UpdateBridge');
+    s = s.slice(0, start) + s.slice(next);
+  }
+  s = s.replace(/^[ \t]*webView\.addJavascriptInterface\(UpdateBridge\(\), "HrtUpdate"\)\r?\n/m, '');
   // The JS half already treats a missing bridge as "no push token".
   return s.replace(/^[ \t]*webView\.addJavascriptInterface\(PushBridge\(\), "HrtPush"\)\r?\n/m, '');
 }, 'MainActivity.kt');
+
+{
+  // Drop the installer permission the updater was the only user of.
+  const mf = join(javaDir, '../../app/src/main/AndroidManifest.xml');
+  if (existsSync(mf)) {
+    const before = readFileSync(mf, 'utf8');
+    const after = before.replace(/^[ \t]*<uses-permission android:name="android\.permission\.REQUEST_INSTALL_PACKAGES"[^>]*>\r?\n/m, '');
+    if (after !== before) writeFileSync(mf, after);
+  }
+}
 
 const service = join(javaDir, 'HrtMessagingService.kt');
 if (existsSync(service)) {

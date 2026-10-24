@@ -262,6 +262,7 @@ export async function clearAccountData(): Promise<void> {
       key.startsWith('hrt-u')
       || isPlanData
       || key.startsWith('hrt-share-key-')
+      || key.startsWith('avatar-cache-v1:')
       || key === 'hrt-med-reminders'
       || key === 'hrt-fcm-token'
       || key === 'hrt-push-unregister-pending'

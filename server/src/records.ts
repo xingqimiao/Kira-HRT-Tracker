@@ -611,8 +611,8 @@ export const RecordService = {
                     continue;
                 }
                 await client.query(
-                    `UPDATE records SET payload_encrypted = $1 WHERE id = $2`,
-                    [sealPayload(plain, newDek), row.id],
+                    `UPDATE records SET payload_encrypted = $1 WHERE user_id = $3 AND id = $2`,
+                    [sealPayload(plain, newDek), row.id, userId],
                 );
                 reencrypted++;
             }
@@ -895,6 +895,11 @@ export const RecordService = {
 
     /** True when a row was removed. Records a tombstone if it is a deletable item so sync does not resurrect it. */
     async remove(ctx: AuthContext, id: string): Promise<boolean> {
+        if (id.startsWith('del:')) {
+            // A tombstone map is the only record of what was deleted; removing it would
+            // let a lagging device resurrect those records on the next sync.
+            return false;
+        }
         const { rowCount } = await getPool().query(
             `DELETE FROM records WHERE user_id = $1 AND id = $2`,
             [ctx.userId, id],
@@ -963,9 +968,10 @@ export const RecordService = {
         const records: StoredRecord[] = [];
         let unreadable = 0;
         let before: number | undefined;
+        let beforeId: string | undefined;
 
         for (let page = 0; page < 100; page++) {
-            const listed = await RecordService.list(ctx, { limit: pageSize, category, before });
+            const listed = await RecordService.list(ctx, { limit: pageSize, category, before, beforeId });
             records.push(...listed.records);
             unreadable += listed.unreadable;
             if (listed.records.length < pageSize) break;

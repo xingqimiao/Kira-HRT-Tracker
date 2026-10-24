@@ -666,12 +666,20 @@ export const AccountService = {
       }
       const newH = randomBytes(32).toString('base64');
       const newR = xorKeys(dekPlain, newH);
+      // All fallible KMS work happens BEFORE the committed re-encryption: if the wrap
+      // fails here, nothing has been written and the account stays fully on the old key.
+      const pad = await wrapWithKms(newH, ctx.userId, kms);
       const { reencrypted, unreadable } = await RecordService.reencryptAll(
         ctx.userId,
         Buffer.from(oldR, 'base64'),
         Buffer.from(newR, 'base64'),
       );
-      const pad = await wrapWithKms(newH, ctx.userId, kms);
+      if (unreadable > 0) {
+        // Rows the rotation could not open would become permanently unreadable once the
+        // pad swap commits. Refuse instead of swapping: the caller can investigate while
+        // every readable row stays readable under the current key.
+        return { ok: false, error: 'rotation found unreadable records; key material unchanged' };
+      }
       await saveMetadata(ctx.userId, { ...metadata, pad });
       await this.recordAuthEvent(ctx.userId, 'key_rotation');
       return { ok: true, value: { records: reencrypted, unreadable } };
@@ -1375,6 +1383,7 @@ export const AccountService = {
     ctx: AuthContext,
     usernameRaw: unknown,
     passwordRaw: unknown,
+    currentPasswordRaw: unknown = undefined,
   ): Promise<Result<{ username: string }>> {
     const username = validateUsername(usernameRaw);
     if (!username.ok) return username;
@@ -1383,6 +1392,19 @@ export const AccountService = {
 
     const user = await loadUser({ id: ctx.userId });
     if (!user) return { ok: false, error: 'account not found' };
+
+    // A session (or an agent token) is not a licence to replace an existing
+    // credential: when the account already has a password, require and verify it.
+    // First-bind on a passwordless OAuth account is unchanged.
+    if (user.password_hash) {
+      const okCurrent = await verifyPassword(String(currentPasswordRaw ?? ''), user.password_hash);
+      if (!okCurrent) return { ok: false as const, error: 'current password is incorrect' };
+      // A replaced master credential ends every credential derived from the old one,
+      // exactly as changePassword does (the stolen-token holder must not keep access).
+      await closeUserSessions(ctx.userId);
+      await getPool().query(`DELETE FROM api_tokens WHERE user_id = $1`, [ctx.userId]);
+      await getPool().query(`DELETE FROM device_tokens WHERE user_id = $1`, [ctx.userId]);
+    }
 
     // Renaming to a name another account holds must fail loudly rather than as a
     // constraint violation: the handler maps this to a 409 the form can render.

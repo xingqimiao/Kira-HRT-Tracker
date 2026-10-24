@@ -527,10 +527,12 @@ test('a partial settings write does not erase the collections it never read', as
 
   const after = await call(base, '/api/settings', bearer(token));
   assert.equal(after.body.appState.settings.theme, 'light', 'the newer settings did not win');
+  // Audit contract (KHT-SEC-018): the plaintext column never carries `modes` — the
+  // drug-bearing collections travel sealed in the scalar:appSettings record instead.
   assert.equal(
-    after.body.appState.modes.transfem.doseTemplates[0].id,
-    'tpl-keep',
-    'the collections the later write never read were dropped',
+    after.body.appState.modes,
+    undefined,
+    'dose templates leaked into the plaintext settings column',
   );
 });
 
@@ -572,7 +574,9 @@ test('a partial modes write leaves the settings bag alone', async () => {
     'ja',
     'the settings the later write never mentioned were dropped',
   );
-  assert.equal(after.body.appState.modes.transfem.doseTemplates[0].id, 'tpl-new');
+  // Audit contract (KHT-SEC-018): a modes-only write carries no drug names into the
+  // plaintext column; the templates travel sealed in the scalar:appSettings record.
+  assert.equal(after.body.appState.modes, undefined, 'modes leaked into the settings column');
 });
 
 /**
