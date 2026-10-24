@@ -318,15 +318,17 @@ node_modules/.bin/tauri android build --apk --target aarch64 \
 
 提供独立的 **Web/PWA 自部署发行包**，与主线共用业务代码，保留多账号、同步、分享、MCP 和离线化验单识别。只需 Docker Compose v2，无需注册 Oracle、Firebase 或第三方登录平台账号；支持 Linux amd64、arm64 的公网服务器和 NAS。
 
-从 [自部署 2.2.2 Release](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/tag/self-host-v2.2.2) 下载 `kira-hrt-self-host-2.2.2.tar.gz`，解压后进入目录，将地址替换为自己的域名：
+**第一次部署请按 [从下载到打开网页的逐步教程](deploy/self-host/README.md) 操作**：安装 Docker → 选访问地址 → 下载并解压部署包 → 运行一条安装命令 → 局域网设备信任证书。教程分别写了 Windows、Linux/macOS、NAS 的操作位置、预期输出和报错处理。
+
+下载 [2.2.2 setup.1 部署包](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.2.2/kira-hrt-self-host-2.2.2-setup.1.tar.gz)，解压并进入包含 `hrt.sh` 的目录后，使用自己的真实域名或固定局域网 IP：
 
 ```sh
-sh hrt.sh init https://hrt.example.com
-sh hrt.sh start
-sh hrt.sh check
+sh hrt.sh install https://192.168.1.20
 ```
 
-Windows PowerShell 对应使用 `./hrt.ps1 init 地址`、`./hrt.ps1 start`、`./hrt.ps1 check`。公网域名需解析到服务器并开放 80/443，Caddy 自动申请 HTTPS；NAS 可填写固定局域网 IP 或域名，启动后执行 `cert` 导出本地 CA，并在设备上安装信任后使用 PWA。API 和 PostgreSQL 仅在内部网络开放。
+Windows PowerShell 对应 `./hrt.ps1 install https://192.168.1.20`。命令自动生成配置、下载镜像、启动并等待健康检查，局域网自动导出 `local-root.crt`。公网域名需先解析并放行 80/443；局域网证书仍需按教程在每台设备上信任。
+
+GitHub 的两个 Packages 是 `kira-hrt-web`（网页及 HTTPS）和 `kira-hrt-api`（后端），**不用二选一或分别下载**；安装命令会自动拉取这两个镜像及 PostgreSQL。setup.1 只修订安装脚本和教程，应用仍为 2.2.2，原发布文件保留。旧包没有 `install` 时使用原有 `init` / `start`；已有实例不要重新初始化。
 
 初始化生成本地加密主密钥与数据库密码，重复执行不会覆盖。默认关闭 OAuth、验证码、FCM 和官网更新入口；Android 官网 APK 仍连接官网，自部署在手机上使用浏览器/PWA。迁移请使用应用导出、导入功能，不能直接复制 OCI 数据库后切换密钥提供方。
 

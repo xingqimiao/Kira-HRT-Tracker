@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, existsSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { initialize, deploymentAddress, prepareBackup, finishBackup, verifyBackup, restoreFiles, setVersion, caddyfile } from './manage.mjs';
+import { initialize, deploymentAddress, prepareBackup, finishBackup, verifyBackup, restoreFiles, setVersion, caddyfile, completeInstallation } from './manage.mjs';
 
 function directory(t) {
   const root = mkdtempSync(join(tmpdir(), 'hrt-deploy-'));
@@ -27,6 +27,22 @@ test('initialization needs only an address and never overwrites secrets', t => {
   setVersion(root, '2.2.2');
   assert.match(readFileSync(join(root, '.env'), 'utf8'), /^HRT_VERSION=2.2.2$/m);
   assert.deepEqual(readFileSync(join(root, 'secrets/master.key')), original);
+});
+test('installation exports the LAN trust certificate and identifies the next step', t => {
+  const root = directory(t);
+  initialize(root, 'https://192.168.1.20');
+  const ca = join(root, 'caddy');
+  mkdirSync(join(ca, 'caddy/pki/authorities/local'), { recursive: true });
+  writeFileSync(join(ca, 'caddy/pki/authorities/local/root.crt'), 'public CA certificate');
+  assert.deepEqual(completeInstallation(root, ca), {
+    origin: 'https://192.168.1.20', local: true, certificate: 'local-root.crt',
+  });
+  assert.equal(readFileSync(join(root, 'local-root.crt'), 'utf8'), 'public CA certificate');
+  const publicRoot = directory(t);
+  initialize(publicRoot, 'https://hrt.example.com');
+  assert.deepEqual(completeInstallation(publicRoot, join(root, 'absent')), {
+    origin: 'https://hrt.example.com', local: false, certificate: null,
+  });
 });
 test('public and LAN HTTPS are classified without accepting injected config', () => {
   assert.equal(deploymentAddress('192.168.1.20').local, true);

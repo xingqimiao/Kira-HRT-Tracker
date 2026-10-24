@@ -2,7 +2,8 @@
 set -eu
 cd "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 dc() { docker compose -f compose.yaml "$@"; }
-tool() { docker compose -f tools.yaml run --rm -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" tools "$@"; }
+# The management model intentionally omits the three running app services.
+tool() { COMPOSE_IGNORE_ORPHANS=true docker compose -f tools.yaml run --rm -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" tools "$@"; }
 backup() {
   name="$(date -u +%Y%m%dT%H%M%SZ)"
   dc stop web api
@@ -18,6 +19,17 @@ backup() {
 }
 command="${1:-help}"
 case "$command" in
+  install)
+    address="${2:?Supply https://domain or https://fixed-IP}"
+    docker info >/dev/null || { echo 'Docker is not running or this user cannot access it. See README.md.' >&2; exit 1; }
+    docker compose version >/dev/null
+    echo '[1/3] Creating configuration and encryption key...'
+    tool init "$address"
+    echo '[2/3] Downloading images and starting services (first run may take several minutes)...'
+    dc up -d --wait --wait-timeout 180
+    echo '[3/3] Preparing your access instructions...'
+    tool installed
+    ;;
   init) tool init "${2:?Supply https://domain or https://fixed-IP}" ;;
   start) dc up -d --wait --wait-timeout 180 ;;
   stop) dc stop ;;
@@ -51,5 +63,6 @@ case "$command" in
     echo "Upgrade healthy: $version"
     ;;
   build) docker compose -f compose.yaml -f compose.build.yaml build ;;
-  *) echo 'Usage: sh hrt.sh init URL | start | stop | status | check | logs | cert | backup | restore NAME | upgrade VERSION | build'; exit 1 ;;
+  help) echo 'First installation: sh hrt.sh install https://YOUR-DOMAIN-OR-IP'; echo 'Maintenance: sh hrt.sh start | stop | status | check | logs | cert | backup | restore NAME | upgrade VERSION'; echo 'Advanced: sh hrt.sh init URL | build' ;;
+  *) echo 'Unknown command. Run: sh hrt.sh help' >&2; exit 1 ;;
 esac

@@ -2,6 +2,16 @@
 
 The self-hosted edition shares the current application code, including the latest navigation/back fixes. Local acceptance and the tagged native release jobs passed.
 
+This file records checks; installation instructions are in the [beginner guide](README.en.md) / [中文教程](README.md).
+
+## setup.1 installation revision
+
+- The archive keeps application image tags at 2.2.2 and uses a distinct `-setup.1.tar.gz` asset name. Original release assets, application tags and database format are unchanged.
+- Six focused deployment/package tests passed, including certificate export, refusal to overwrite keys, backup/restore pairing, a separate revision asset name and exclusion of secrets from the archive. Shell syntax and PowerShell parsing passed.
+- From a clean extracted directory, the new Shell `install` command started all three published services using an empty Docker authentication configuration. It exported the public LAN CA automatically; trusted HTTPS, SPA/API routing and registration/write/read passed. A second installation was refused with the configuration and master-key checksums unchanged.
+- Native Windows PowerShell ran the same installation command against a real WSL Docker daemon; health, certificate export and the HTTPS/account/record smoke check passed. This validates command sequencing, not Docker Desktop's Windows filesystem/ACL behavior. Tests remapped only fixture ports to loopback to avoid existing host listeners, and stopped their containers afterwards.
+- The release workflow now exercises `install` on future native dual-architecture runs. This installer revision was tested locally on AMD64; ARM64 application image acceptance below belongs to the original tagged release. Public ACME and real-phone certificate/PWA acceptance remain outside these local checks.
+
 ## Published release acceptance
 
 - [Native release workflow 40116998904](https://github.com/xingqimiao/Kira-HRT-Tracker/actions/runs/40116998904) passed on both native AMD64 and ARM64 runners, including HTTPS, account/record checks, upgrade tooling, real backup/restore and publication. The first run exposed a temporary registry connection-reset race; the readiness probe now retries that error as well.
@@ -28,4 +38,4 @@ The self-hosted edition shares the current application code, including the lates
 
 Native ARM64 GitHub-runner results are recorded by the successful tagged release workflow above. Public ACME issuance and phone CA/PWA installation are not established by local-CA container tests.
 
-The full existing backend suite previously stopped at a `deltaSync.test.ts` process that did not exit; the passing count above is the selected suite, not the complete repository suite. Backend TypeScript checking still reports three pre-existing errors in the avatar projection, credentials body type and `unlinkToctou.test.ts`; this change introduced no additional reported type errors.
+The full existing backend suite previously stopped at a `deltaSync.test.ts` process that did not exit; the passing count above is the selected suite, not the complete repository suite. The original release's backend TypeScript check reported three pre-existing errors. A later CodeQL fixture correction removed the `unlinkToctou.test.ts` type error; two existing `http.ts` errors remain in the avatar projection and credentials body type. The setup.1 revision changes no backend runtime code.

@@ -80,6 +80,24 @@ export function initialize(root, input) {
   privateWrite(join(root, '.env'), `COMPOSE_PROJECT_NAME=kira-hrt-${randomBytes(5).toString('hex')}\nHRT_VERSION=${version}\nPUBLIC_ORIGIN=${address.origin}\nPOSTGRES_PASSWORD=${randomBytes(32).toString('hex')}\n`);
   console.log(`Initialized ${address.origin}; HTTPS: ${address.local ? 'local CA (install root certificate on each device)' : 'public certificate (DNS and ports 80/443 required)'}`);
 }
+function exportCertificate(root, ca = '/caddy') {
+  const source = join(ca, 'caddy/pki/authorities/local/root.crt');
+  copyFileSync(source, join(root, 'local-root.crt'));
+  chmodSync(join(root, 'local-root.crt'), 0o644);
+  hostOwner(join(root, 'local-root.crt'));
+}
+export function completeInstallation(root, ca = '/caddy') {
+  const config = readFileSync(join(root, '.env'), 'utf8');
+  const origin = /^PUBLIC_ORIGIN=(.+)$/m.exec(config)?.[1].trim();
+  if (!origin) throw new Error('Missing PUBLIC_ORIGIN; initialization has not completed');
+  const address = deploymentAddress(origin);
+  if (address.local) exportCertificate(root, ca);
+  console.log(`Services are running. Open ${address.origin}`);
+  console.log(address.local
+    ? 'Next: trust local-root.crt on each device, then open the address and register. See README.md / README.en.md.'
+    : 'Next: open the address, confirm HTTPS works, then register. Certificate issuance may still be in progress; see README.md / README.en.md.');
+  return { origin: address.origin, local: address.local, certificate: address.local ? 'local-root.crt' : null };
+}
 function requireVersion(value) {
   if (!/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/.test(value)) throw new Error('Use an explicit release version such as 2.2.0; latest is not accepted');
 }
@@ -168,6 +186,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const [command, value] = process.argv.slice(2);
     const root = process.cwd();
     if (command === 'init') initialize(root, value ?? '');
+    else if (command === 'installed') completeInstallation(root);
     else if (command === 'backup-prepare') prepareBackup(root, value);
     else if (command === 'backup-finish') finishBackup(root, value);
     else if (command === 'backup-verify') verifyBackup(root, value);
@@ -179,9 +198,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     } else if (command === 'version') setVersion(root, value);
     else if (command === 'validate-version') requireVersion(value);
     else if (command === 'cert') {
-      const source = '/caddy/caddy/pki/authorities/local/root.crt';
-      copyFileSync(source, join(root, 'local-root.crt'));
-      chmodSync(join(root, 'local-root.crt'), 0o644);
+      exportCertificate(root);
       console.log('Exported local-root.crt (public certificate only)');
     } else throw new Error('Unknown management command');
   } catch (error) { console.error(error.message); process.exitCode = 1; }

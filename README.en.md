@@ -375,15 +375,17 @@ Signing and publishing: `server/DEPLOY.md` §4b.
 
 A separate **Web/PWA self-hosting distribution** shares the main application's code and includes multiple accounts, sync, sharing, MCP and offline lab-report recognition. Install Docker Compose v2; no Oracle, Firebase or third-party sign-in account is required. Linux amd64 and arm64 images support public servers and home NAS devices.
 
-Download `kira-hrt-self-host-2.2.2.tar.gz` from the [self-hosting 2.2.2 Release](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/tag/self-host-v2.2.2), extract it, enter the directory and substitute your own address:
+**First installation: follow the [step-by-step beginner guide](deploy/self-host/README.en.md)**: install Docker → choose an address → download/extract → run one command → trust the LAN certificate. It explains where to type commands, expected output and troubleshooting for Windows, Linux/macOS and NAS devices.
+
+Download the [2.2.2 setup.1 archive](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.2.2/kira-hrt-self-host-2.2.2-setup.1.tar.gz), extract it, enter the directory containing `hrt.sh` and substitute your actual domain or fixed LAN IP:
 
 ```sh
-sh hrt.sh init https://hrt.example.com
-sh hrt.sh start
-sh hrt.sh check
+sh hrt.sh install https://192.168.1.20
 ```
 
-On Windows PowerShell use `./hrt.ps1 init ADDRESS`, `./hrt.ps1 start` and `./hrt.ps1 check`. Point a public domain at the server and open ports 80/443 for Caddy's automatic HTTPS. For a NAS, enter a fixed LAN IP or domain, run `cert` after startup, and install the exported local CA on your devices before using the PWA. The API and PostgreSQL are accessible only on the internal network.
+On Windows PowerShell use `./hrt.ps1 install https://192.168.1.20`. The command generates configuration, downloads images, starts services, waits for health checks and exports `local-root.crt` for LAN use. Public domains require DNS and ports 80/443 first. LAN clients still need to trust their certificate using the guide.
+
+The two GitHub Packages are `kira-hrt-web` (website/HTTPS) and `kira-hrt-api` (backend). **Do not choose one or download them individually**: installation pulls both and PostgreSQL automatically. setup.1 revises scripts/docs while retaining application 2.2.2 and the original release assets. Older archives use `init` / `start`; existing instances must not be reinitialized.
 
 Initialization generates the local master key and database password and refuses to overwrite existing configuration. OAuth, CAPTCHA, FCM and official-site updates are disabled by default. The official Android APK continues to use the official service; use a browser/PWA on mobile for self-hosting. Migrate through the application's export/import flow; copying an OCI database and switching key providers is unsupported.
 

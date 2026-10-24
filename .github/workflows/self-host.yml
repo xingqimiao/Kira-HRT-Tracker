@@ -40,12 +40,11 @@ jobs:
         run: |
           docker build -f deploy/self-host/Dockerfile.api -t "$IMAGE_PREFIX-api:$VERSION" .
           docker build -f deploy/self-host/Dockerfile.web -t "$IMAGE_PREFIX-web:$VERSION" .
-      - name: Initialize and validate Compose
+      - name: Install with the beginner command and validate Compose
         working-directory: deploy/self-host
         run: |
-          sh hrt.sh init https://hrt.test
+          sh hrt.sh install https://hrt.test
           docker compose config --quiet
-          docker compose up -d --wait --wait-timeout 180
           docker compose exec -T web caddy validate --config /etc/caddy/Caddyfile
       - name: Verify trusted HTTPS and account roundtrip
         working-directory: deploy/self-host

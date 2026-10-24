@@ -6,8 +6,16 @@ function Dc {
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose failed ($LASTEXITCODE)" }
 }
 function Tool {
-    & docker compose -f tools.yaml run --rm tools @args
-    if ($LASTEXITCODE -ne 0) { throw "Management command failed ($LASTEXITCODE)" }
+    # The management model intentionally omits the three running app services.
+    $previous = $env:COMPOSE_IGNORE_ORPHANS
+    try {
+        $env:COMPOSE_IGNORE_ORPHANS = 'true'
+        & docker compose -f tools.yaml run --rm tools @args
+        if ($LASTEXITCODE -ne 0) { throw "Management command failed ($LASTEXITCODE)" }
+    } finally {
+        if ($null -eq $previous) { Remove-Item Env:COMPOSE_IGNORE_ORPHANS -ErrorAction SilentlyContinue }
+        else { $env:COMPOSE_IGNORE_ORPHANS = $previous }
+    }
 }
 function Backup {
     $backupName = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ')
@@ -21,6 +29,19 @@ function Backup {
     } finally { Dc start api web }
 }
 switch ($Command) {
+    'install' {
+        if (!$Value) { throw 'Supply https://domain or https://fixed-IP' }
+        & docker info *> $null
+        if ($LASTEXITCODE -ne 0) { throw 'Docker is not running or this user cannot access it. See README.md.' }
+        & docker compose version
+        if ($LASTEXITCODE -ne 0) { throw 'Docker Compose v2 is required. See README.md.' }
+        Write-Output '[1/3] Creating configuration and encryption key...'
+        Tool init $Value
+        Write-Output '[2/3] Downloading images and starting services (first run may take several minutes)...'
+        Dc up -d --wait --wait-timeout 180
+        Write-Output '[3/3] Preparing your access instructions...'
+        Tool installed
+    }
     'init' { if (!$Value) { throw 'Supply https://domain or https://fixed-IP' }; Tool init $Value }
     'start' { Dc up -d --wait --wait-timeout 180 }
     'stop' { Dc stop }
@@ -60,5 +81,10 @@ switch ($Command) {
         & docker compose -f compose.yaml -f compose.build.yaml build
         if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
     }
-    default { throw 'Usage: ./hrt.ps1 init URL | start | stop | status | check | logs | cert | backup | restore NAME | upgrade VERSION | build' }
+    'help' {
+        Write-Output 'First installation: ./hrt.ps1 install https://YOUR-DOMAIN-OR-IP'
+        Write-Output 'Maintenance: ./hrt.ps1 start | stop | status | check | logs | cert | backup | restore NAME | upgrade VERSION'
+        Write-Output 'Advanced: ./hrt.ps1 init URL | build'
+    }
+    default { throw 'Unknown command. Run: ./hrt.ps1 help' }
 }
