@@ -212,9 +212,9 @@ that validate and compute differently would drift until a bug exists on one side
 
 - `server/src/http.ts` and `server/src/mcp.ts` contain **no business rules**; anything that
   knows how a record is validated or how a curve is computed belongs in `core.ts`.
-- The **React SPA** and the **Android app** (native Compose) each implement their own UI against
-  the same business semantics: the protocol, the encryption envelope and the PK models all carry
-  tests that pin the two builds to each other.
+- **Android shares the web's React UI** (a Tauri 2 WebView hosting the same bundle), branching only at the
+  native bridges (app lock, notifications, export); the protocol, the encryption envelope and the PK models
+  all carry tests that pin the build together.
 - **Encryption happens at the write layer**: records land as ciphertext, and `user_id` and
   `occurred_at` are the only cleartext columns — everything clinical is inside the envelope.
 
@@ -260,7 +260,7 @@ it in your client's config:
 }
 ```
 
-**21 tools**, covering both read and write:
+**20 tools**, covering both read and write:
 
 | Read | Write / manage |
 |---|---|
@@ -327,7 +327,7 @@ a minimal example.
 | Back end | Node.js · PostgreSQL · plain `pg` (no ORM) |
 | Protocols | REST + [MCP](https://modelcontextprotocol.io) (Streamable HTTP) |
 | Crypto | per-account DEK; wrapped by a password KEK and an OCI KMS master key (HSM) |
-| PK engines | upstream `logic.ts` (unmodified) · the Transmtf engine in `src/pk/` (lazy-loaded) |
+| PK engines | built-in: `logic.ts` + `src/pk/kernels.ts` (parameters from published literature) · the Transmtf engine in `src/pk/` (lazy-loaded) |
 | Recognition | PP-OCR on onnxruntime-web (detection + recognition), **entirely on-device** |
 | Push | exact local alarms (`AlarmManager`) + FCM catch-up (HTTP v1, JWT signed with `node:crypto`), sharing one de-duplication ledger |
 | PWA | vite-plugin-pwa (Workbox) |

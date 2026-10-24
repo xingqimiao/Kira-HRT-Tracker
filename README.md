@@ -93,7 +93,7 @@ Web 应用、Android 应用、MCP 服务端共用一套「应用内核」，云�
 |---|---|
 | [网站](https://hrt.kiramyao.com) | Web 版可直接使用；Android 包与更新清单在同一目录 |
 | [GitHub Releases](https://github.com/xingqimiao/Kira-HRT-Tracker/releases) | 每个版本的标准包，带更新说明与 sha256 |
-| 商店渠道（F-Droid） | 无 Firebase、无自更新，更新由商店负责 |
+| 商店渠道（F-Droid） | 无 Firebase、无自更新，更新由商店负责（**上架审核中**，暂请用前两个渠道） |
 
 两个 Android 包用同一把签名密钥，可以互相覆盖安装，不需要先卸载。
 
@@ -181,7 +181,7 @@ Web 应用、Android 应用、MCP 服务端共用一套「应用内核」，云�
 **核心原则：MCP 不是后端，它和 REST 一样，都是应用内核之上的一层适配器。** 两条路径都把凭证解析成 `AuthContext`，再调用同一批服务函数——「记录一次用药」这件事只有一个实现。这样就不会出现 Web 路径和助手路径各自校验、各自计算、慢慢漂移，最后只在一侧有 bug 的情况。
 
 - `server/src/http.ts` 与 `server/src/mcp.ts` **不含业务规则**；任何「记录如何校验」「曲线如何计算」的逻辑都属于 `core.ts`。
-- **前端**（React SPA）与 **Android**（原生 Compose）各自实现界面，共享同一份业务语义：协议、加密信封与 PK 模型都有双端对齐的测试。
+- **Android 与 Web 共用同一份 React 界面**（Tauri 2 WebView 承载），只在原生桥（应用锁、通知、导出）处分叉；协议、加密信封与 PK 模型都有对齐的测试。
 - **加密在写入层**：记录以密文入库，`user_id` 与 `occurred_at` 是仅有的明文列，其余临床内容都在信封里。
 
 更完整的设计说明见 **[`server/ARCHITECTURE.md`](server/ARCHITECTURE.md)**。
@@ -219,7 +219,7 @@ Web 应用、Android 应用、MCP 服务端共用一套「应用内核」，云�
 }
 ```
 
-**21 个工具**，覆盖读写两侧：
+**20 个工具**，覆盖读写两侧：
 
 | 读取 | 写入 / 管理 |
 |---|---|
@@ -270,7 +270,7 @@ Web 应用、Android 应用、MCP 服务端共用一套「应用内核」，云�
 | 后端 | Node.js · PostgreSQL · 原生 `pg`（无 ORM） |
 | 协议 | REST + [MCP](https://modelcontextprotocol.io)（Streamable HTTP） |
 | 加密 | 逐帐户 DEK；口令 KEK + OCI KMS 主密钥（HSM）双重包裹 |
-| PK 引擎 | 上游 `logic.ts`（原样）· `src/pk/` 内的 Transmtf 引擎（懒加载） |
+| PK 引擎 | 内置引擎：`logic.ts` + `src/pk/kernels.ts`（参数取自公开文献）· Transmtf 引擎：`src/pk/`（懒加载） |
 | 识别 | PP-OCR（onnxruntime-web，检测 + 识别），**全部在本机** |
 | 推送 | 本地精准闹钟（`AlarmManager`）+ FCM 补推（HTTP v1，`node:crypto` 签 JWT），两端去重共用一条账本 |
 | PWA | vite-plugin-pwa（Workbox）|
