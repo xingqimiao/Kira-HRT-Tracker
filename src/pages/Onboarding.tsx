@@ -31,7 +31,7 @@ const ONBOARDING_KEY = 'app-onboarded';
 /** The signed Android APK the update manifest serves, at this build's version.
  *  Built from `APP_VERSION` rather than written out, so a version bump cannot
  *  leave this link pointing at the previous release. */
-const ANDROID_APK_URL = `https://hrt.kiramyao.com/android/KiraHRT-${APP_VERSION.replace(/^v/, '')}-release.apk`;
+const ANDROID_APK_URL = import.meta.env.VITE_SELF_HOST === '1' ? '' : `https://hrt.kiramyao.com/android/KiraHRT-${APP_VERSION.replace(/^v/, '')}-release.apk`;
 
 /**
  * Anyone with records on this device has been using the app since before there
@@ -627,7 +627,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
 
     const appPanel = (
         <div className="list">
-            <a
+            {apkUrl && <a
                 className="li"
                 href={apkUrl}
                 download
@@ -641,7 +641,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
                     <span className="s">{t('ob2.app_download_desc')}</span>
                 </span>
                 <Icon icon={ChevronRight} size={20} className="chev" />
-            </a>
+            </a>}
             <button
                 type="button"
                 className="li"

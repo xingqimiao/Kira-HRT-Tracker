@@ -2,8 +2,9 @@
   "version": "2.2.2",
   "versionCode": 2002002,
   "apk": "https://hrt.kiramyao.com/android/KiraHRT-2.2.2-release.apk",
-  "sha256": "0142D162C88503EF46133DF8939C2D39F619FC476F053727A06343A3FF2A147D",
+  "sha256": "8E134842EE0E1E25B25855EF5BE8FF42568261E0D176CEC6389552A5D1AD8C42",
   "notes": [
+    "修复：Android 返回键由应用统一处理，关闭记录、体检、设置里的弹层时不再被 WebView 抢先跳回总览。",
     "修复：Android 打开「扫描化验单」报 no available backend 的问题——应用自身的 CSP 不再拦自己的 OCR 运行时源站。",
     "修复：Android「退出并清除本机数据」的说明不再写「本浏览器」（应用内没有浏览器，数据在本机加密存储）。",
     "修复：手机浏览器（PWA）的侧边返回全面修复——全屏面板、悬浮按钮菜单、多选模式、时间选择器都能被返回键正确关闭，不再连跳两级。",

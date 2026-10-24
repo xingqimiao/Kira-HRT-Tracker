@@ -18,6 +18,7 @@ import { startPushScanner } from './push.ts';
 import { startAfdianSync } from './afdianSync.ts';
 import { buildServer } from './mcp.ts';
 import { AccountService } from './accounts.ts';
+import { verifyDeploymentKey } from './keyProvider.ts';
 
 const USAGE = `hrt-server — multi-user HRT record service
 
@@ -54,6 +55,8 @@ async function main(): Promise<void> {
   // loudly rather than discovering at the first unlock.
   if (config.kms) {
     process.stdout.write(`hrt-server: data keys wrapped under the KMS master key (${config.kms.cryptoEndpoint})\n`);
+  } else if (config.localMasterKey) {
+    process.stdout.write('hrt-server: local master key provider (self-hosted; no HSM isolation)\n');
   } else if (command === 'http' || command === 'migrate') {
     process.stdout.write('hrt-server: no KMS configured — accounts minted now carry no server wrapper\n');
   }
@@ -90,7 +93,9 @@ async function main(): Promise<void> {
   }
 
   if (command === 'migrate') {
+    await verifyDeploymentKey(false);
     await migrate();
+    await verifyDeploymentKey();
     process.stdout.write('schema applied\n');
     await getPool().end();
     return;
@@ -100,7 +105,9 @@ async function main(): Promise<void> {
     // Fail loudly at boot rather than on the first request: a missing
     // DATABASE_URL should not look like a working server with broken endpoints.
     getPool();
+    await verifyDeploymentKey(false);
     await migrate();
+    await verifyDeploymentKey();
     process.stdout.write(
       `hrt-server: public=${config.publicOrigin} api=${config.apiOrigin} x_login=${config.x ? 'on' : 'off'}
 `,
@@ -129,6 +136,7 @@ async function main(): Promise<void> {
 
   if (command === 'stdio') {
     getPool();
+    await verifyDeploymentKey(false);
     // `config` was already validated above and is only needed by the HTTP paths;
     // the stdio transport reads no origin or CORS setting.
     void config;

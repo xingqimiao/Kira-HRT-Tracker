@@ -1,0 +1,66 @@
+services:
+  web:
+    image: ${IMAGE_PREFIX:-ghcr.io/xingqimiao/kira-hrt}-web:${HRT_VERSION:?Run initialization first}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge, backend]
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+  api:
+    image: ${IMAGE_PREFIX:-ghcr.io/xingqimiao/kira-hrt}-api:${HRT_VERSION:?Run initialization first}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN}
+      API_ORIGIN: ${PUBLIC_ORIGIN}
+      BASE_PATH: ""
+      BIND_HOST: 0.0.0.0
+      PORT: 8788
+      DATABASE_URL: postgres://hrt:${POSTGRES_PASSWORD}@db:5432/hrt
+      KEY_PROVIDER: local
+      LOCAL_MASTER_KEY_FILE: /run/secrets/master.key
+    volumes:
+      - ./secrets/master.key:/run/secrets/master.key:ro
+    networks: [backend]
+    depends_on:
+      db: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8788/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hrt
+      POSTGRES_DB: hrt
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - database:/var/lib/postgresql
+    networks: [backend]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U hrt -d hrt"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+networks:
+  edge: {}
+  backend:
+    internal: true
+volumes:
+  database: {}
+  caddy_data: {}
+  caddy_config: {}

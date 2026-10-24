@@ -671,3 +671,9 @@ CREATE TABLE IF NOT EXISTS supporter_sync_state (
 CREATE INDEX IF NOT EXISTS idx_supporters_public
     ON supporters (status, approved_at DESC NULLS LAST, created_at DESC);
 
+-- Binds a self-hosted database to its original master key; contains no plaintext key.
+CREATE TABLE IF NOT EXISTS deployment_key_guard (
+  id integer PRIMARY KEY CHECK (id = 1),
+  envelope jsonb NOT NULL
+);
+

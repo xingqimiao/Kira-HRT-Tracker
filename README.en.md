@@ -373,6 +373,8 @@ Signing and publishing: `server/DEPLOY.md` §4b.
 
 ## Self-hosting
 
+**Simplified deployment: [`deploy/self-host/README.en.md`](deploy/self-host/README.en.md)**. Docker Compose, local encryption keys, automatic HTTPS, LAN certificates and backup/restore/versioned upgrade tooling, without Oracle/Firebase accounts.
+
 The front end is a static build; the back end is the Node service in `server/`, which needs a
 Postgres.
 

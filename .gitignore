@@ -20,6 +20,7 @@ public/firebase/
 tmp-*.png
 hrt-start.mp4
 dist
+/dist-self-host/
 dist-ssr
 *.local
 
@@ -51,6 +52,7 @@ client_secret*
 # documented the same variables by hand.
 .env
 .env.*
+!.env.production
 !.env.example
 data/
 
@@ -128,3 +130,11 @@ AGENTS.md
 .agents/
 .workbuddy-ai/
 skills-lock.json
+
+# Private self-hosted deployment state. Only templates and tooling belong in Git.
+/deploy/self-host/.env
+/deploy/self-host/Caddyfile
+/deploy/self-host/secrets/
+/deploy/self-host/backups/
+/deploy/self-host/local-root.crt
+/deploy/self-host/smoke-state.json

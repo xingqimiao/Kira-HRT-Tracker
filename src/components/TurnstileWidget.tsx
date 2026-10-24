@@ -23,7 +23,7 @@ import React, { useEffect, useRef } from 'react';
 
 const SITE_KEY =
   ((import.meta as unknown as { env?: Record<string, string | undefined> }).env
-    ?.VITE_TURNSTILE_SITE_KEY) ?? '0x4AAAAAAE7AY8cxIQH4Q71c';
+    ?.VITE_TURNSTILE_SITE_KEY) ?? '';
 
 /**
  * Whether this deployment asks for human verification at all.

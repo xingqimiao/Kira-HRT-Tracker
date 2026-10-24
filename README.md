@@ -316,6 +316,8 @@ node_modules/.bin/tauri android build --apk --target aarch64 \
 
 ## 自行托管
 
+**简化部署入口：[`deploy/self-host/README.md`](deploy/self-host/README.md)**。提供 Docker Compose、本地加密密钥、自动 HTTPS、NAS 局域网证书，以及备份、恢复和固定版本升级命令；无需 Oracle/Firebase 账号。
+
 前端是静态构建，后端是 `server/` 里的 Node 服务，只需要一个 PostgreSQL。
 
 完整手册见 **[`server/DEPLOY.md`](server/DEPLOY.md)**（数据库、systemd、Caddy 反向代理、KMS 配置、云端密钥、部署前检查、Android 发布流程）。

@@ -123,6 +123,7 @@ export default defineConfig(({ mode }) => {
   });
 
   return {
+    envDir: process.env.HRT_SELF_HOST === '1' ? false : undefined,
     base: isAndroid ? './' : '/',
     define: {
       __APP_VERSION__: JSON.stringify(`v${pkg.version}`),
@@ -159,6 +160,18 @@ export default defineConfig(({ mode }) => {
       }
     },
     plugins: [
+      {
+        name: 'self-host-html',
+        transformIndexHtml: {
+          order: 'pre',
+          handler: (html) => process.env.HRT_SELF_HOST === '1' ? html
+            .replace(/<script[^>]+src="https:\/\/challenges\.cloudflare\.com\/[^\"]+"[^>]*><\/script>/g, '')
+            .replace(/<link rel="canonical"[^>]*>/g, '')
+            .replace(/<meta (?:property="og:(?:url|image)"|name="twitter:image")[^>]*>/g, '')
+            .replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/g, '')
+            .replace('content="index, follow"', 'content="noindex, nofollow"') : html,
+        },
+      },
       ocrOrtGlue(),
       ...(isAndroid ? [stripOcrForNative()] : []),
       react(),
@@ -209,7 +222,7 @@ export default defineConfig(({ mode }) => {
           // firebase-messaging-sw.js would fight this worker for the root scope. The
           // file sets up `onBackgroundMessage` and a notificationclick handler; its
           // firebase compat imports are copied to public/firebase/ at build time.
-          importScripts: ['/firebase-messaging-sw.js'],
+          importScripts: process.env.HRT_SELF_HOST === '1' ? [] : ['/firebase-messaging-sw.js'],
           // Navigations that must reach the network instead of the precached app
           // shell. Workbox's NavigationRoute answers *every* in-scope navigation
           // with `index.html`, so a person who has the app installed and then opens
@@ -223,6 +236,8 @@ export default defineConfig(({ mode }) => {
           // browser looked fine, which is why it took a browser to catch). Googlebot
           // runs no service worker, so this is not a crawl fix.
           navigateFallbackDenylist: [
+            /^\/(?:api|auth|mcp)(?:\/|$)/,
+            /^\/(?:health|stats)$/,
             /^\/share(?:\/|$)/,
             /^\/sitemap\.xml$/,
             /^\/robots\.txt$/,

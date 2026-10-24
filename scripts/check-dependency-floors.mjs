@@ -41,6 +41,7 @@ const FLOORS = {
   'server/package-lock.json': {
     pg: ['8.23.1', 'the only database client; drives every query'],
     express: ['5.3.0', 'HTTP server for the API'],
+    'body-parser': ['2.4.0', 'compressed request decoder crash fixed in GHSA-27r3-jxmh-p828'],
     esbuild: ['0.28.2', 'bundles the shipped server'],
     'oci-common': ['2.144.0', 'OCI SDK shared layer, including the KMS calls'],
     'oci-keymanagement': ['2.144.0', 'KMS client that unwraps account keys'],

@@ -1,0 +1,5 @@
+# Deployment scripts must also work when checked out on Windows.
+deploy/self-host/*.sh text eol=lf
+deploy/self-host/*.mjs text eol=lf
+deploy/self-host/*.yaml text eol=lf
+.github/workflows/self-host.yml text eol=lf

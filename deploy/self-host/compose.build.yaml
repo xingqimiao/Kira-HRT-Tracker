@@ -1,0 +1,9 @@
+services:
+  web:
+    build:
+      context: ../..
+      dockerfile: deploy/self-host/Dockerfile.web
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/self-host/Dockerfile.api

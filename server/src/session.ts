@@ -5,8 +5,8 @@
  * read a record from a stolen database dump, because every payload is sealed under the
  * account's own DEK, and that DEK is stored only as a ciphertext. It is **not** the
  * stronger claim that the server can never read a record — the deployment opens every
- * account's DEK without the user being present, by asking the KMS master key in its
- * HSM (`kms.ts`), and decrypts on read. `payloadCrypto.ts` states the same bound; a
+ * account's DEK without the user being present, using the configured deployment
+ * provider (OCI HSM or the explicit self-hosted local key), and decrypts on read. A
  * comment here that promises more is the defect that keeps getting reintroduced.
  *
  * So this is what each party holds:
@@ -33,7 +33,7 @@
 import { createHash, createHmac } from 'node:crypto';
 import { getConfig } from './config.ts';
 import { getPool } from './db.ts';
-import { KMS_SCHEME, unwrapWithKms, wrapWithKms, type KmsWrapped } from './kms.ts';
+import { wrapKey, unwrapKey, type KeyEnvelope } from './keyProvider.ts';
 import { deriveCloudKey, encryptCloudPayload, decryptCloudPayload, isCloudEncrypted } from './engine.ts';
 
 /** A wrapped DEK as stored server-side. Identical envelope to a cloud backup. */
@@ -134,12 +134,12 @@ export interface EncryptionMetadata {
     server?: WrapperEnvelope;
   };
   /**
-   * The HSM-held half of the record key, under key splitting: records are sealed
-   * under R = DEK ⊕ H, where this field carries H as KMS ciphertext and the DEK
+   * The provider-wrapped half of the record key: records are sealed
+   * under R = DEK ⊕ H, where this field carries the wrapped H and the DEK
    * keeps its own wrappers. Neither half alone opens a record. Absent on accounts
    * minted before the split — they seal under the bare DEK until migrated.
    */
-  pad?: KmsWrapped;
+  pad?: KeyEnvelope;
 }
 
 export const ENCRYPTION_VERSION = 2;
@@ -213,8 +213,8 @@ export async function unwrapWithPassword(
 /**
  * Recover the DEK from the server wrapper.
  *
- * Every wrapper is sealed by the KMS master key (`kms.ts`); a null here means KMS
- * unreachable, the master key disabled, or the wrapper is not this user's — "locked"
+ * Every server wrapper is sealed by its named provider; a null here means the
+ * provider is unavailable or the wrapper does not authenticate for this user. "Locked"
  * is the right report for all three, because no key is better than a wrong one.
  */
 export async function unwrapWithServer(
@@ -223,21 +223,17 @@ export async function unwrapWithServer(
 ): Promise<string | null> {
   const wrapper = metadata.wrappers.server;
   if (!wrapper) return null;
-  const kms = getConfig().kms;
-  if (!kms) return null;
-  return await unwrapWithKms(wrapper, userId, kms);
+  return await unwrapKey(wrapper, userId, 'dek');
 }
 
 /**
  * Mint the server wrapper: the deployment's copy of the account's DEK, sealed by
- * the KMS master key in its HSM (`kms.ts`). Returns null when no KMS is configured,
+ * the configured deployment provider. Returns null when no provider is configured,
  * which leaves the account with no server wrapper at all — one nobody but the
  * password can open — rather than one sealed under something weaker.
  */
 async function mintServerWrapper(dek: string, userId: string): Promise<WrapperEnvelope | null> {
-  const kms = getConfig().kms;
-  if (!kms) return null;
-  return await wrapWithKms(dek, userId, kms);
+  return await wrapKey(dek, userId, 'dek');
 }
 
 /** Add the server wrapper, so the deployment's own key can open this account's DEK. */
@@ -278,12 +274,12 @@ export async function createKeyMaterial(
   // Key splitting: records are sealed under R = DEK ⊕ H, so neither the DEK (which
   // the wrappers protect) nor the KMS half alone opens anything. The returned dek is
   // R — the effective record key the caller's session will carry.
-  const kms = getConfig().kms;
+  const configured = getConfig();
   let recordKey = dek;
-  let pad: KmsWrapped | undefined;
-  if (kms) {
+  let pad: KeyEnvelope | undefined;
+  if (configured.kms || configured.localMasterKey) {
     const h = randomKeyB64();
-    pad = await wrapWithKms(h, userId, kms);
+    pad = (await wrapKey(h, userId, 'pad'))!;
     recordKey = xorKeys(dek, h);
   }
   return {
@@ -331,12 +327,12 @@ export async function createPasswordlessKeyMaterial(
 
   // The same split as the password path: the KMS half (the only half a passwordless
   // account has) wraps the DEK, the pad wraps H, and the records seal under DEK ⊕ H.
-  const kms = getConfig().kms;
+  const configured = getConfig();
   let recordKey = dek;
-  let pad: KmsWrapped | undefined;
-  if (kms) {
+  let pad: KeyEnvelope | undefined;
+  if (configured.kms || configured.localMasterKey) {
     const h = randomKeyB64();
-    pad = await wrapWithKms(h, userId, kms);
+    pad = (await wrapKey(h, userId, 'pad'))!;
     recordKey = xorKeys(dek, h);
   }
   return {

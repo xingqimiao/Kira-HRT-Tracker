@@ -108,6 +108,8 @@ export interface Config {
    * would be lying.
    */
   kms: KmsConfig | null;
+  /** Explicit self-hosted provider; never inferred from a missing cloud key. */
+  localMasterKey?: Buffer;
   /** Human-verification on the register and X-setup entry points. Absent = off. */
   turnstile: TurnstileConfig | null;
   /** FCM supplementary push. Absent = no push is sent (local notifications still run). */
@@ -311,10 +313,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     kms = { keyId: kmsKeyIdRaw, cryptoEndpoint: kmsEndpointRaw };
   }
 
-  // The deployment must be able to open every account's data key, and since the
-  // per-account KMS cutover the ONLY mechanism is the KMS master key: production
-  // without it could mint accounts it could never open again.
-  if (env.NODE_ENV === 'production' && !kms) {
+  // Production always requires an explicit, durable deployment key provider.
+  // The official service defaults to OCI; local keys require a separate opt-in.
+  const keyProvider = env.KEY_PROVIDER?.trim() || 'oci';
+  if (keyProvider !== 'oci' && keyProvider !== 'local') throw new ConfigError('KEY_PROVIDER must be oci or local');
+  let localMasterKey: Buffer | undefined;
+  if (keyProvider === 'local') {
+    if (kms) throw new ConfigError('local and OCI key settings cannot be combined');
+    if (!env.LOCAL_MASTER_KEY_FILE) throw new ConfigError('LOCAL_MASTER_KEY_FILE is required');
+    localMasterKey = readFileSync(env.LOCAL_MASTER_KEY_FILE);
+    if (localMasterKey.length !== 32) throw new ConfigError('LOCAL_MASTER_KEY_FILE must contain exactly 32 raw bytes');
+  } else if (env.LOCAL_MASTER_KEY_FILE) {
+    throw new ConfigError('LOCAL_MASTER_KEY_FILE requires KEY_PROVIDER=local');
+  }
+  if (env.NODE_ENV === 'production' && !kms && !localMasterKey) {
     throw new ConfigError(
       'KMS_KEY_OCID + KMS_CRYPTO_ENDPOINT are required in production: every account\'s '
         + 'data key is wrapped by the KMS master key, so a deployment without it cannot '
@@ -402,6 +414,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     x,
     google,
     kms,
+    localMasterKey,
     turnstile,
     fcm,
     bmcWebhookSecret,

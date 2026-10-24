@@ -1,0 +1,11 @@
+# Bootstrap requires no .env, application images or host Node installation.
+services:
+  tools:
+    image: node:24-alpine
+    working_dir: /workspace
+    entrypoint: [node, manage.mjs]
+    volumes:
+      - .:/workspace
+      - caddy_data:/caddy
+volumes:
+  caddy_data: {}

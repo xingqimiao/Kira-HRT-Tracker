@@ -28,7 +28,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const assetsDir = path.join(root, 'dist', 'assets');
+const buildDir = path.resolve(root, process.env.HRT_BUILD_DIR || 'dist');
+const assetsDir = path.join(buildDir, 'assets');
 
 const entry = readdirSync(assetsDir).find((f) => /^index-.*\.js$/.test(f));
 if (!entry) {
@@ -46,14 +47,14 @@ const bundle = readFileSync(path.join(assetsDir, entry), 'utf8');
 // half silently reintroduces the 2026-10-11 bug (SEO text dragged into every screen by
 // chained scroll) or the 2026-10-08 one (footer gone from the served page). Both
 // halves ship in the build output, so both are asserted here.
-const indexHtml = readFileSync(path.join(root, 'dist', 'index.html'), 'utf8');
+const indexHtml = readFileSync(path.join(buildDir, 'index.html'), 'utf8');
 const cssEntry = readdirSync(assetsDir).find((f) => /^index-.*\.css$/.test(f));
 const css = cssEntry ? readFileSync(path.join(assetsDir, cssEntry), 'utf8') : '';
 // The class is added by /theme-init.js now (it moved out of index.html so the CSP
 // needs no 'unsafe-inline'). Asserting the string in index.html kept passing on a
 // prose comment, which is the sort of check that outlives what it checked.
-const themeInit = existsSync(path.join(root, 'dist', 'theme-init.js'))
-  ? readFileSync(path.join(root, 'dist', 'theme-init.js'), 'utf8')
+const themeInit = existsSync(path.join(buildDir, 'theme-init.js'))
+  ? readFileSync(path.join(buildDir, 'theme-init.js'), 'utf8')
   : '';
 for (const [what, present] of [
   ['the site-about crawler footer in dist/index.html', indexHtml.includes('site-about')],
@@ -125,7 +126,7 @@ if (!lazyChunk) {
 }
 
 console.log(
-  `check-web-bundle: ${entry} carries VITE_API_ORIGIN; PK engine is the lazy ${lazyChunk} — ok`,
+  `check-web-bundle: ${entry} uses ${sameOrigin ? 'same-origin API requests' : 'VITE_API_ORIGIN'}; PK engine is the lazy ${lazyChunk} — ok`,
 );
 
 // --- No inline JavaScript in any served page -------------------------------
@@ -147,7 +148,7 @@ const htmlFiles = [];
     if (name.isDirectory()) walk(full);
     else if (name.name.endsWith('.html')) htmlFiles.push(full);
   }
-})(path.join(root, 'dist'));
+})(buildDir);
 
 const inlineOffenders = [];
 for (const file of htmlFiles) {
@@ -181,7 +182,7 @@ if (inlineOffenders.length > 0) {
 // One source of truth, `public/android/latest.json`, and every served page has to
 // agree with it. A store build strips that file (`strip-store-assets.mjs`), which
 // is why a missing manifest skips the check instead of failing it.
-const manifestPath = path.join(root, 'dist', 'android', 'latest.json');
+const manifestPath = path.join(buildDir, 'android', 'latest.json');
 if (existsSync(manifestPath)) {
   const published = JSON.parse(readFileSync(manifestPath, 'utf8')).apk || '';
   const publishedFile = published.split('/').pop();

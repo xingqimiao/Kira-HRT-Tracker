@@ -1,0 +1,141 @@
+name: Self-hosted release
+on:
+  workflow_dispatch:
+  push:
+    tags: ['self-host-v*']
+permissions:
+  contents: read
+jobs:
+  containers:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Version and release identity
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "self-host-v$VERSION" ]]; then exit 1; fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "IMAGE_PREFIX=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/kira-hrt" >> "$GITHUB_ENV"
+      - run: npm ci --prefix server
+      - name: Key and configuration regression tests
+        working-directory: server
+        run: node --experimental-transform-types --import ./resolve-hook.mjs --test test/localKeys.test.ts test/credentials.test.ts
+      - run: node --test deploy/self-host/manage.test.mjs
+      - name: Build native images
+        run: |
+          docker build -f deploy/self-host/Dockerfile.api -t "$IMAGE_PREFIX-api:$VERSION" .
+          docker build -f deploy/self-host/Dockerfile.web -t "$IMAGE_PREFIX-web:$VERSION" .
+      - name: Initialize and validate Compose
+        working-directory: deploy/self-host
+        run: |
+          sh hrt.sh init https://hrt.test
+          docker compose config --quiet
+          docker compose up -d --wait --wait-timeout 180
+          docker compose exec -T web caddy validate --config /etc/caddy/Caddyfile
+      - name: Verify trusted HTTPS and account roundtrip
+        working-directory: deploy/self-host
+        run: |
+          sh hrt.sh cert
+          docker compose cp ./local-root.crt api:/tmp/hrt-root.crt
+          docker compose cp ./smoke.mjs api:/tmp/smoke.mjs
+          docker compose exec -T --user root api chmod 644 /tmp/hrt-root.crt /tmp/smoke.mjs
+          docker compose exec -T api node /tmp/smoke.mjs
+          docker compose cp api:/tmp/smoke-state.json ./smoke-state.json
+      - name: Exercise versioned upgrade tooling with a synthetic baseline
+        working-directory: deploy/self-host
+        shell: bash
+        run: |
+          docker run -d -p 5000:5000 --name hrt-test-registry registry:3
+          curl --retry 10 --retry-connrefused --retry-delay 1 -fsS http://localhost:5000/v2/
+          LOCAL_PREFIX=localhost:5000/kira-hrt
+          for SERVICE in api web; do
+            docker tag "$IMAGE_PREFIX-$SERVICE:$VERSION" "$LOCAL_PREFIX-$SERVICE:0.0.0"
+            docker tag "$IMAGE_PREFIX-$SERVICE:$VERSION" "$LOCAL_PREFIX-$SERVICE:$VERSION"
+            docker push "$LOCAL_PREFIX-$SERVICE:$VERSION"
+          done
+          docker compose -f tools.yaml run --rm -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" tools version 0.0.0
+          IMAGE_PREFIX="$LOCAL_PREFIX" sh hrt.sh start
+          IMAGE_PREFIX="$LOCAL_PREFIX" sh hrt.sh upgrade "$VERSION"
+      - name: Backup, restore into fresh volumes and check again
+        working-directory: deploy/self-host
+        run: |
+          sh hrt.sh backup
+          NAME=$(find backups -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | tail -1)
+          docker compose stop
+          mkdir /tmp/hrt-recovery
+          cp compose.yaml tools.yaml manage.mjs hrt.sh VERSION /tmp/hrt-recovery/
+          sudo cp -a backups /tmp/hrt-recovery/
+          cd /tmp/hrt-recovery
+          sh hrt.sh restore "$NAME"
+          sh hrt.sh check
+          docker compose cp "$GITHUB_WORKSPACE/deploy/self-host/smoke.mjs" api:/tmp/smoke.mjs
+          docker compose cp "$GITHUB_WORKSPACE/deploy/self-host/smoke-state.json" api:/tmp/smoke-state.json
+          docker compose exec -T --user root api chown node:node /tmp/smoke-state.json
+          docker compose cp "$GITHUB_WORKSPACE/deploy/self-host/local-root.crt" api:/tmp/hrt-root.crt
+          docker compose exec -T --user root api chmod 644 /tmp/hrt-root.crt /tmp/smoke.mjs
+          docker compose exec -T api node /tmp/smoke.mjs --recover
+      - name: Diagnostics
+        if: failure()
+        working-directory: deploy/self-host
+        run: docker compose logs --tail 100
+      - uses: docker/login-action@v3
+        if: startsWith(github.ref, 'refs/tags/self-host-v')
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish tested architecture
+        if: startsWith(github.ref, 'refs/tags/self-host-v')
+        run: |
+          for SERVICE in api web; do
+            docker tag "$IMAGE_PREFIX-$SERVICE:$VERSION" "$IMAGE_PREFIX-$SERVICE:$VERSION-${{ matrix.arch }}"
+            docker push "$IMAGE_PREFIX-$SERVICE:$VERSION-${{ matrix.arch }}"
+          done
+  release:
+    needs: containers
+    if: startsWith(github.ref, 'refs/tags/self-host-v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish multi-architecture manifests
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          PREFIX="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/kira-hrt"
+          for SERVICE in api web; do
+            docker buildx imagetools create -t "$PREFIX-$SERVICE:$VERSION" "$PREFIX-$SERVICE:$VERSION-amd64" "$PREFIX-$SERVICE:$VERSION-arm64"
+          done
+      - run: node scripts/package-self-host.mjs
+      - name: Publish deployment archive
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist-self-host/releases/*.tar.gz dist-self-host/releases/*.sha256 --verify-tag --latest=false --title "Kira HRT self-hosted ${GITHUB_REF_NAME#self-host-v}" --notes "Web/PWA self-hosted distribution. Read the bundled deployment and key-backup instructions before starting."

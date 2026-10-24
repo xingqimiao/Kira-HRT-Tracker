@@ -15,7 +15,11 @@ export const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__
  * need the same string — `McpSettings` and the onboarding step — and one settings
  * screen importing from another is how a shared constant ends up with two copies.
  */
-export const MCP_ENDPOINT = 'https://api.kiramyao.com/hrt/mcp';
+export const MCP_ENDPOINT = (() => {
+    const env = (import.meta as unknown as { env?: Record<string, string> }).env;
+    const origin = env?.VITE_API_ORIGIN?.replace(/\/+$/, '');
+    return origin ? `${origin}/mcp` : typeof location !== 'undefined' ? `${location.origin}/mcp` : '/mcp';
+})();
 
 export type AppTheme = 'light' | 'dark' | 'system';
 

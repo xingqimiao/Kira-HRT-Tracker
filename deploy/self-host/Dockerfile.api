@@ -1,0 +1,21 @@
+FROM --platform=$BUILDPLATFORM node:24-alpine AS build
+WORKDIR /app
+# The server bundles shared frontend modules, whose imports resolve from /app/src.
+COPY package*.json ./
+RUN npm ci
+COPY server/package*.json ./server/
+RUN cd server && npm ci
+COPY server ./server
+COPY src ./src
+COPY logic.ts ./
+RUN cd server && npm run build
+
+FROM node:24-alpine
+LABEL org.opencontainers.image.source="https://github.com/xingqimiao/Kira-HRT-Tracker" org.opencontainers.image.licenses="GPL-3.0-or-later"
+ENV NODE_ENV=production
+WORKDIR /app/server
+COPY --from=build /app/server/dist ./dist
+COPY server/schema.sql ./schema.sql
+USER node
+EXPOSE 8788
+CMD ["node", "dist/index.cjs", "http"]

@@ -1,0 +1,12 @@
+FROM --platform=$BUILDPLATFORM node:24-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+ENV NODE_USE_ENV_PROXY=1
+RUN npm run build:self-host
+
+FROM caddy:2-alpine
+LABEL org.opencontainers.image.source="https://github.com/xingqimiao/Kira-HRT-Tracker" org.opencontainers.image.licenses="GPL-3.0-or-later"
+COPY --from=build /app/dist-self-host/web /srv
+EXPOSE 80 443

@@ -35,7 +35,7 @@ import type { PoolClient } from 'pg';
 import { getConfig } from './config.ts';
 import { settings, APP_SETTING_BY_COLUMN, type UserSettings } from './settings.ts';
 import { RecordService } from './records.ts';
-import { unwrapWithKms, wrapWithKms } from './kms.ts';
+import { unwrapKey, wrapKey } from './keyProvider.ts';
 import {
   createUserKeyMaterial,
   rewrapForNewPassword,
@@ -281,9 +281,9 @@ async function repairBareDek(
   userId: string,
 ): Promise<string> {
   if (opened !== recordKey || !metadata.pad) return opened;
-  const kms = getConfig().kms;
-  if (!kms) return opened;
-  const h = await unwrapWithKms(metadata.pad, userId, kms);
+  const provider = getConfig();
+  if (!provider.kms && !provider.localMasterKey) return opened;
+  const h = await unwrapKey(metadata.pad, userId, 'pad');
   if (!h) return opened;
   return xorKeys(opened, h);
 }
@@ -303,9 +303,9 @@ async function recordKeyFor(user: AccountRow): Promise<string | null> {
   if (!dekPlain) return null;
   const metadata = metadataFor(user);
   if (!metadata.pad) return dekPlain;
-  const kms = getConfig().kms;
-  if (!kms) return null;
-  const h = await unwrapWithKms(metadata.pad, user.id, kms);
+  const provider = getConfig();
+  if (!provider.kms && !provider.localMasterKey) return null;
+  const h = await unwrapKey(metadata.pad, user.id, 'pad');
   if (!h) return null;
   return xorKeys(dekPlain, h);
 }
@@ -671,14 +671,14 @@ export const AccountService = {
     if (!dekPlain) {
       return { ok: false, error: 'the password does not open this account’s key' };
     }
-    const kms = getConfig().kms;
-    if (!kms) return { ok: false, error: 'key rotation requires the KMS master key' };
+    const provider = getConfig();
+    if (!provider.kms && !provider.localMasterKey) return { ok: false, error: 'key rotation requires a deployment master key' };
 
     if (metadata.pad) {
       // Split account: rotate the pad. The old R is re-derived and checked against
       // the session's own key first, so a drifted row is caught before any write.
-      const h = await unwrapWithKms(metadata.pad, ctx.userId, kms);
-      if (!h) return { ok: false, error: 'the key’s HSM half could not be opened' };
+      const h = await unwrapKey(metadata.pad, ctx.userId, 'pad');
+      if (!h) return { ok: false, error: 'the deployment key half could not be opened' };
       const oldR = xorKeys(dekPlain, h);
       if (oldR !== ctx.recordKey) {
         return { ok: false, error: 'the password does not open this account’s current key' };
@@ -687,7 +687,7 @@ export const AccountService = {
       const newR = xorKeys(dekPlain, newH);
       // All fallible KMS work happens BEFORE the transaction: if the wrap fails here,
       // nothing has been written and the account stays fully on the old key.
-      const pad = await wrapWithKms(newH, ctx.userId, kms);
+      const pad = (await wrapKey(newH, ctx.userId, 'pad'))!;
       // The re-encryption and the pad swap share one commit. Reordering alone still
       // left a window: a crash after the rows moved to the new key but before the
       // metadata named the new pad would brick the account, and the earlier refusal
@@ -722,7 +722,7 @@ export const AccountService = {
       return { ok: false, error: 'the password does not open this account’s current key' };
     }
     const newDek = randomBytes(32).toString('base64');
-    const next = addServerWrapper(
+    const next = await addServerWrapper(
       await setPasswordWrapper(metadata, newDek, password.value, ctx.userId),
       newDek,
       ctx.userId,
