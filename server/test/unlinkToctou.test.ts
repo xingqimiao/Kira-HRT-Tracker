@@ -62,7 +62,7 @@ const json = (body: unknown, token?: string): RequestInit => ({
 });
 
 /** A passwordless account with exactly two provider rows, via the storage seam. */
-async function oauthAccountWithTwoProviders() {
+async function accountWithTwoProviders() {
   const account = await registerAccount(base, {});
   const pool = await getPool();
   const { rows } = await pool.query<{ id: string }>(`SELECT id FROM users WHERE username = $1`, [account.username]);
@@ -77,7 +77,7 @@ async function oauthAccountWithTwoProviders() {
 }
 
 test('concurrent unlinks leave exactly one way in', async () => {
-  const { token, userId } = await oauthAccountWithTwoProviders();
+  const { token, userId } = await accountWithTwoProviders();
 
   const [viaX, viaGoogle] = await Promise.all([
     call(base, '/auth/x/unlink', json({}, token)),
@@ -95,7 +95,7 @@ test('concurrent unlinks leave exactly one way in', async () => {
 });
 
 test('the last remaining provider is refused sequentially too', async () => {
-  const { token, userId } = await oauthAccountWithTwoProviders();
+  const { token, userId } = await accountWithTwoProviders();
   const pool = await getPool();
   await pool.query(`DELETE FROM oauth_accounts WHERE user_id = $1 AND provider = 'google'`, [userId]);
 
@@ -116,7 +116,7 @@ test('the unlink serializes behind the users row and re-reads the guard under it
   // the guard under the lock, and refuses — under the old read-then-delete flow it
   // decided from its pre-lock snapshot, deleted anyway, and the account below
   // would be left with zero ways in.
-  const { token, userId } = await oauthAccountWithTwoProviders();
+  const { token, userId } = await accountWithTwoProviders();
   const ctx = await AccountService.resolveApiContext(token);
   assert.ok(ctx && !('denied' in ctx), 'the session resolves');
 
