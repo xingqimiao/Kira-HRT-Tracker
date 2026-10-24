@@ -1,6 +1,6 @@
 # Deployment
 
-> **Want to run your own instance? Start with [the step-by-step self-hosting guide](../deploy/self-host/README.en.md) / [中文新手教程](../deploy/self-host/README.md).** It uses Docker and a local key; no Oracle, OAuth or Firebase account is required. The two GHCR packages are pulled automatically by Compose. This document describes the official service's custom OCI/systemd deployment and Android release operations; its domain, `/hrt` prefix and developer-portal setup are not prerequisites for the self-hosted package.
+> **Want to run your own instance? Choose [public server](../deploy/self-host/SERVER.en.md) or [LAN / NAS](../deploy/self-host/LAN.en.md); 中文：[公网服务器](../deploy/self-host/SERVER.md) / [局域网与 NAS](../deploy/self-host/LAN.md).** [Maintenance](../deploy/self-host/MAINTENANCE.en.md) covers backups, upgrades and recovery. These guides use Docker and a local key; no Oracle, OAuth or Firebase account is required. The two GHCR packages are pulled automatically. This document describes the official service's custom OCI/systemd deployment and Android releases; its domain, `/hrt` prefix and developer-portal setup are not prerequisites for self-hosting.
 
 Target: the web app at `hrt.kiramyao.com`, this service on `api.kiramyao.com`
 **under the `/hrt` prefix**, alongside an existing comment service that owns

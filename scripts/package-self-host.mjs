@@ -15,7 +15,7 @@ const stage = mkdtempSync(join(output, '.stage-'));
 const name = `kira-hrt-self-host-${version}`;
 const dir = join(stage, name);
 mkdirSync(dir);
-for (const file of ['compose.yaml', 'tools.yaml', 'manage.mjs', 'hrt.sh', 'hrt.ps1', 'README.md', 'README.en.md']) {
+for (const file of ['compose.yaml', 'tools.yaml', 'manage.mjs', 'hrt.sh', 'hrt.ps1', 'README.md', 'README.en.md', 'SERVER.md', 'SERVER.en.md', 'LAN.md', 'LAN.en.md', 'MAINTENANCE.md', 'MAINTENANCE.en.md']) {
   copyFileSync(join(root, 'deploy/self-host', file), join(dir, file));
 }
 copyFileSync(join(root, 'LICENSE'), join(dir, 'LICENSE'));

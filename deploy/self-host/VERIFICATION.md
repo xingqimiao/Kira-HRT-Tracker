@@ -4,6 +4,10 @@ The self-hosted edition shares the current application code, including the lates
 
 This file records checks; installation instructions are in the [beginner guide](README.en.md) / [中文教程](README.md).
 
+## setup.2 documentation revision
+
+Public-server and LAN/NAS instructions are separate files in English and Chinese: [server](SERVER.en.md) / [LAN](LAN.en.md), [公网服务器](SERVER.md) / [局域网](LAN.md). Shared backup, recovery, upgrade and troubleshooting instructions moved to [maintenance](MAINTENANCE.en.md). Repository READMEs, the deployment index and release notes point to the separate routes. The package allowlist and archive regression test include all eight guide/index files. Application images, runtime scripts and database format are unchanged from setup.1; its native acceptance below still applies. This is documentation/package validation, not a new public ACME or real-phone acceptance result.
+
 ## setup.1 installation revision
 
 - The archive keeps application image tags at 2.2.2 and uses a distinct `-setup.1.tar.gz` asset name. Original release assets, application tags and database format are unchanged.

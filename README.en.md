@@ -373,25 +373,21 @@ Signing and publishing: `server/DEPLOY.md` §4b.
 
 ## Self-hosting
 
-A separate **Web/PWA self-hosting distribution** shares the main application's code and includes multiple accounts, sync, sharing, MCP and offline lab-report recognition. Install Docker Compose v2; no Oracle, Firebase or third-party sign-in account is required. Linux amd64 and arm64 images support public servers and home NAS devices.
+The independent **Web/PWA distribution** retains multiple accounts, sync, sharing, MCP and offline lab recognition. It needs Docker Compose v2 and supports Linux amd64/arm64 without Oracle, Firebase or third-party sign-in accounts.
 
-**First installation: follow the [step-by-step beginner guide](deploy/self-host/README.en.md)**: install Docker → choose an address → download/extract → run one command → trust the LAN certificate. It explains where to type commands, expected output and troubleshooting for Windows, Linux/macOS and NAS devices.
+**Public-server and LAN instructions are now separate. Choose one guide:**
 
-Download the [2.2.2 setup.1 archive](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.2.2/kira-hrt-self-host-2.2.2-setup.1.tar.gz), extract it, enter the directory containing `hrt.sh` and substitute your actual domain or fixed LAN IP:
+- **[Public-server deployment](deploy/self-host/SERVER.en.md)**: your domain → DNS/80/443 → server terminal → install → automatic public HTTPS, without manual CA installation.
+- **[LAN / NAS deployment](deploy/self-host/LAN.en.md)**: fixed IP → Windows/macOS/NAS preparation → install → trust the local certificate on each device.
+- [Backup, upgrade, recovery and troubleshooting](deploy/self-host/MAINTENANCE.en.md): after installation.
 
-```sh
-sh hrt.sh install https://192.168.1.20
-```
+[Download the 2.2.2 setup.2 archive](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.2.2/kira-hrt-self-host-2.2.2-setup.2.tar.gz). One archive includes both routes and maintenance in English/Chinese; exact commands are in the matching guide. The [deployment index](deploy/self-host/README.en.md) helps select your scenario.
 
-On Windows PowerShell use `./hrt.ps1 install https://192.168.1.20`. The command generates configuration, downloads images, starts services, waits for health checks and exports `local-root.crt` for LAN use. Public domains require DNS and ports 80/443 first. LAN clients still need to trust their certificate using the guide.
+The two GitHub Packages are kira-hrt-web (website/HTTPS) and kira-hrt-api (backend). Both and PostgreSQL are pulled automatically; do not choose between them. setup.2 only splits/bundles documentation. Images remain at 2.2.2, old assets are retained and existing instances need no reinstall/reinitialization.
 
-The two GitHub Packages are `kira-hrt-web` (website/HTTPS) and `kira-hrt-api` (backend). **Do not choose one or download them individually**: installation pulls both and PostgreSQL automatically. setup.1 revises scripts/docs while retaining application 2.2.2 and the original release assets. Older archives use `init` / `start`; existing instances must not be reinitialized.
+OAuth, CAPTCHA, FCM and official-site updates are disabled by default. Official Android APKs use the official service; use Web/PWA for self-hosting. Migrate via export/import rather than copying an OCI database and switching key providers. Back up keys and database, keeping key copies separately.
 
-Initialization generates the local master key and database password and refuses to overwrite existing configuration. OAuth, CAPTCHA, FCM and official-site updates are disabled by default. The official Android APK continues to use the official service; use a browser/PWA on mobile for self-hosting. Migrate through the application's export/import flow; copying an OCI database and switching key providers is unsupported.
-
-The **[full self-hosting guide](deploy/self-host/README.en.md)** covers certificate trust, `backup`, `restore` into an empty instance, fixed-version `upgrade` and source builds. Back up the database, configuration, master key and local CA before upgrading, and store key backups separately from database backups. Losing the master key makes recovery impossible. Images do not track `latest`. See the [verification record](deploy/self-host/VERIFICATION.md) for the scope of public-certificate and mobile PWA validation.
-
-For systemd, OCI KMS or customized deployments, see **[`server/DEPLOY.md`](server/DEPLOY.md)**.
+See [verification](deploy/self-host/VERIFICATION.md) for acceptance scope. OCI/systemd operators may consult the [custom deployment manual](server/DEPLOY.md).
 
 ---
 
