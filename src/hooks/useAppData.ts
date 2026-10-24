@@ -982,10 +982,31 @@ export const useAppData = (
      * `[A-Za-z0-9_.:-]`. An id is a storage key, a tombstone key and a sync
      * identity, so a hand-edited backup could otherwise plant a multi-kilobyte id
      * that every device then carries around forever.
+     *
+     * An id outside that shape is remapped **deterministically** — a digest of what
+     * the file said, not a fresh draw. Re-minting a uuid per import made re-importing
+     * the same backup through the merge path duplicate every row that carried a
+     * non-conforming id; a stable remap gives the same file the same ids, so the
+     * merge dedups it. FNV-1a is enough: the id needs to be stable and collision-
+     * free for dedup, not unguessable.
      */
     const IMPORT_ID_SHAPE = /^[A-Za-z0-9_.:-]{1,200}$/;
-    const importId = (raw: unknown): string =>
-        typeof raw === 'string' && IMPORT_ID_SHAPE.test(raw) ? raw : uuidv4();
+    /** 64-bit FNV-1a as two position-salted 32-bit lanes, 16 hex chars. */
+    const fnv1a64Hex = (input: string): string => {
+        let hi = 0x811c9dc5;
+        let lo = 0x811c9dc5;
+        for (let i = 0; i < input.length; i++) {
+            const c = input.charCodeAt(i);
+            hi = Math.imul(hi ^ c, 0x01000193);
+            lo = Math.imul(lo ^ (c + i), 0x01000193);
+        }
+        return (hi >>> 0).toString(16).padStart(8, '0') + (lo >>> 0).toString(16).padStart(8, '0');
+    };
+    const importId = (raw: unknown): string => {
+        if (typeof raw === 'string' && IMPORT_ID_SHAPE.test(raw)) return raw;
+        if (typeof raw === 'string' && raw.length > 0) return `imp-${fnv1a64Hex(raw)}`;
+        return uuidv4();
+    };
 
     /**
      * Extras survive as numbers only.
@@ -1126,6 +1147,18 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
 
     const processImportedData = (parsed: any): boolean => {
         try {
+            // Protocol §2: "a reader that does not understand a higher number should
+            // refuse rather than guess." The check runs before any sanitiser, so a
+            // file from a future version is refused whole instead of half-applied.
+            // Two fields version this format: the root `version` (the flat era, the
+            // protocol doc's §2) and `meta.version` (the multi-mode payload, currently
+            // 3). An absent field is silence, not zero — foreign formats converted on
+            // the way in carry neither.
+            const NEWER_FILE = 'This backup was written by a newer version of the app — update the app, then import it again';
+            const declaredMeta = Number(parsed?.meta?.version);
+            if (Number.isFinite(declaredMeta) && declaredMeta > 3) throw new Error(NEWER_FILE);
+            const declaredRoot = Number(parsed?.version);
+            if (Number.isFinite(declaredRoot) && declaredRoot > 1) throw new Error(NEWER_FILE);
             let newEvents: DoseEvent[] = [];
             let newWeight: number | undefined = undefined;
             let newLabs: LabResult[] = [];
@@ -1162,47 +1195,78 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
             // New multi-mode payload: { modes: { transfem: {...}, transmasc: {...} } }
             if (parsed && typeof parsed === 'object' && parsed.modes && typeof parsed.modes === 'object') {
                 const modesBlock = parsed.modes as Record<string, any>;
+                // Both modes are sanitised in full before anything is written — the
+                // same shape applySyncedState uses. Sanitising the other mode's
+                // journal only when its loop iteration reached it used to leave the
+                // same iteration's events, labs and templates already written to the
+                // store — tombstones for the pre-existing records included — when the
+                // journal threw, and those tombstones would have propagated the
+                // deletion to the cloud on the next sync.
+                const sanitized = new Map<'transfem' | 'transmasc', {
+                    block: Record<string, any>;
+                    evs: DoseEvent[];
+                    ls: LabResult[];
+                    tmps: DoseTemplate[];
+                    jour: JournalEntry[];
+                }>();
                 for (const m of ['transfem', 'transmasc'] as const) {
                     const block = modesBlock[m];
                     if (!block || typeof block !== 'object') continue;
-                    const evs = Array.isArray(block.events) ? sanitizeImportedEvents(block.events) : [];
-                    const ls = Array.isArray(block.labResults) ? sanitizeImportedLabResults(block.labResults) : [];
-                    const tmps = Array.isArray(block.doseTemplates) ? sanitizeImportedTemplates(block.doseTemplates) : [];
-                    if (m === mode) {
-                        if (Array.isArray(block.events)) { newEvents = evs; replaced.events = true; }
-                        if (Array.isArray(block.labResults)) { newLabs = ls; replaced.labResults = true; }
-                        if (Array.isArray(block.doseTemplates)) { newTemplates = tmps; replaced.doseTemplates = true; }
-                        if (Array.isArray(block.journal)) { newJournal = sanitizeJournalEntries(block.journal); replaced.journal = true; }
-                    } else {
-                        // Write the other mode's data through the secure store.
-                        // Restored records are restamped with the import time, so the
-                        // merge can tell them from a copy that merely predates its own
-                        // deletion — see `reconcileReplacement`.
-                        if (Array.isArray(block.events)) {
-                            const revived = reconcileReplacement(m, 'events', loadJSON<DoseEvent[]>(keyFor(m, 'events'), []), evs);
-                            const out = evs.map(e => (revived.has(e.id) ? { ...e, updatedAt: Date.now() } : e));
-                            secureSet(keyFor(m, 'events'), JSON.stringify(out));
-                            importedOtherMode = true;
-                        }
-                        if (Array.isArray(block.labResults)) {
-                            const revived = reconcileReplacement(m, 'labResults', loadJSON<LabResult[]>(keyFor(m, 'lab-results'), []), ls);
-                            const out = ls.map(r => (revived.has(r.id) ? { ...r, updatedAt: Date.now() } : r));
-                            secureSet(keyFor(m, 'lab-results'), JSON.stringify(out));
-                            importedOtherMode = true;
-                        }
-                        if (Array.isArray(block.doseTemplates)) {
-                            const revived = reconcileReplacement(m, 'doseTemplates', loadJSON<DoseTemplate[]>(keyFor(m, 'dose-templates'), []), tmps);
-                            const out = tmps.map(r => (revived.has(r.id) ? { ...r, updatedAt: Date.now() } : r));
-                            secureSet(keyFor(m, 'dose-templates'), JSON.stringify(out));
-                            importedOtherMode = true;
-                        }
-                        if (Array.isArray(block.journal)) {
-                            const jour = sanitizeJournalEntries(block.journal);
-                            const revived = reconcileReplacement(m, 'journal', loadJSON<JournalEntry[]>(keyFor(m, 'journal'), []), jour);
-                            const out = jour.map(r => (revived.has(r.id) ? { ...r, updatedAt: Date.now() } : r));
-                            secureSet(keyFor(m, 'journal'), JSON.stringify(out));
-                            importedOtherMode = true;
-                        }
+                    sanitized.set(m, {
+                        block,
+                        evs: Array.isArray(block.events) ? sanitizeImportedEvents(block.events) : [],
+                        ls: Array.isArray(block.labResults) ? sanitizeImportedLabResults(block.labResults) : [],
+                        tmps: Array.isArray(block.doseTemplates) ? sanitizeImportedTemplates(block.doseTemplates) : [],
+                        jour: Array.isArray(block.journal) ? sanitizeJournalEntries(block.journal) : [],
+                    });
+                }
+                for (const [m, s] of sanitized) {
+                    if (m !== mode) continue;
+                    if (Array.isArray(s.block.events)) { newEvents = s.evs; replaced.events = true; }
+                    if (Array.isArray(s.block.labResults)) { newLabs = s.ls; replaced.labResults = true; }
+                    if (Array.isArray(s.block.doseTemplates)) { newTemplates = s.tmps; replaced.doseTemplates = true; }
+                    if (Array.isArray(s.block.journal)) { newJournal = s.jour; replaced.journal = true; }
+                }
+                // Write the other modes' data through the secure store — only after
+                // every mode sanitised clean. Restored records are restamped with the
+                // import time, so the merge can tell them from a copy that merely
+                // predates its own deletion — see `reconcileReplacement`.
+                for (const [m, s] of sanitized) {
+                    if (m === mode) continue;
+                    if (Array.isArray(s.block.events)) {
+                        const revived = reconcileReplacement(m, 'events', loadJSON<DoseEvent[]>(keyFor(m, 'events'), []), s.evs);
+                        const out = s.evs.map(e => (revived.has(e.id) ? { ...e, updatedAt: Date.now() } : e));
+                        secureSet(keyFor(m, 'events'), JSON.stringify(out));
+                        importedOtherMode = true;
+                    }
+                    if (Array.isArray(s.block.labResults)) {
+                        const revived = reconcileReplacement(m, 'labResults', loadJSON<LabResult[]>(keyFor(m, 'lab-results'), []), s.ls);
+                        const out = s.ls.map(r => (revived.has(r.id) ? { ...r, updatedAt: Date.now() } : r));
+                        secureSet(keyFor(m, 'lab-results'), JSON.stringify(out));
+                        importedOtherMode = true;
+                    }
+                    if (Array.isArray(s.block.doseTemplates)) {
+                        const revived = reconcileReplacement(m, 'doseTemplates', loadJSON<DoseTemplate[]>(keyFor(m, 'dose-templates'), []), s.tmps);
+                        const out = s.tmps.map(r => (revived.has(r.id) ? { ...r, updatedAt: Date.now() } : r));
+                        secureSet(keyFor(m, 'dose-templates'), JSON.stringify(out));
+                        importedOtherMode = true;
+                    }
+                    if (Array.isArray(s.block.journal)) {
+                        const revived = reconcileReplacement(m, 'journal', loadJSON<JournalEntry[]>(keyFor(m, 'journal'), []), s.jour);
+                        const out = s.jour.map(r => (revived.has(r.id) ? { ...r, updatedAt: Date.now() } : r));
+                        secureSet(keyFor(m, 'journal'), JSON.stringify(out));
+                        importedOtherMode = true;
+                    }
+                    // The export writes both modes' quick doses, and the sync path
+                    // installs both — the import used to read only the active block's,
+                    // so a file restore on a device without cloud sync silently
+                    // dropped the inactive mode's one-tap buttons.
+                    if (Array.isArray(s.block.quickDoses)) {
+                        const qds = sanitizeImportedQuickDoses(s.block.quickDoses);
+                        const revived = reconcileReplacement(m, 'quickDoses', loadJSON<QuickDose[]>(keyFor(m, 'quick-doses'), []), qds);
+                        const out = qds.map(r => (revived.has(r.id) ? { ...r, updatedAt: Date.now() } : r));
+                        secureSet(keyFor(m, 'quick-doses'), JSON.stringify(out));
+                        importedOtherMode = true;
                     }
                 }
                 if (typeof parsed.weight === 'number' && Number.isFinite(parsed.weight) && parsed.weight > 0) {

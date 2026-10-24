@@ -1,4 +1,4 @@
-import { isPlausibleBodyWeightKG } from '../logic';
+import { isPlausibleBodyWeightKG } from '../../logic';
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useDialog } from '../contexts/DialogContext';

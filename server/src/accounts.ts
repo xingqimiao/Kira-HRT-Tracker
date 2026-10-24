@@ -31,6 +31,7 @@ import { randomUUID, createHash, createHmac, randomBytes, scrypt, timingSafeEqua
 import { promisify } from 'node:util';
 
 import { getPool, withTransaction } from './db.ts';
+import type { PoolClient } from 'pg';
 import { getConfig } from './config.ts';
 import { settings, APP_SETTING_BY_COLUMN, type UserSettings } from './settings.ts';
 import { RecordService } from './records.ts';
@@ -226,14 +227,30 @@ function metadataFor(user: AccountRow): EncryptionMetadata {
  * Persist a new metadata document, mirroring the password wrapper into `wrapped_dek`.
  *
  * One write rather than two columns drifting apart: the legacy column is derived
- * from the document every time, so it cannot disagree with it.
+ * from the document every time, so it cannot disagree with it. A caller inside a
+ * transaction (`rotateKeys` commits this together with the re-encryption) passes
+ * its client so both writes share one commit.
  */
-async function saveMetadata(userId: string, metadata: EncryptionMetadata): Promise<void> {
+async function saveMetadata(userId: string, metadata: EncryptionMetadata, client?: PoolClient): Promise<void> {
   const legacy = passwordEnvelopeOf(metadata);
-  await getPool().query(
-    `UPDATE users SET encryption_metadata = $2, wrapped_dek = $3, updated_at = now() WHERE id = $1`,
-    [userId, JSON.stringify(metadata), legacy ? JSON.stringify(legacy) : null],
-  );
+  const query = `UPDATE users SET encryption_metadata = $2, wrapped_dek = $3, updated_at = now() WHERE id = $1`;
+  const params = [userId, JSON.stringify(metadata), legacy ? JSON.stringify(legacy) : null];
+  if (client) {
+    await client.query(query, params);
+    return;
+  }
+  await getPool().query(query, params);
+}
+
+/**
+ * Thrown inside the rotation transaction to roll it back when unreadable rows turn
+ * up. Committing anything after that discovery would seal rows under a key the
+ * account's metadata does not know — the brick the whole ordering exists to avoid.
+ */
+class RotationRefusedError extends Error {
+  constructor() {
+    super('rotation found unreadable records');
+  }
 }
 
 /**
@@ -625,11 +642,13 @@ export const AccountService = {
    * rotate itself out of validity. Pre-split accounts rotate the DEK itself instead,
    * re-issuing both wrappers, exactly as before the split existed.
    *
-   * Order matters in both branches: records are re-encrypted inside one transaction
-   * first, and the pad or wrappers swap only after every row is under the new key —
-   * a failure leaves the account exactly as it was rather than half-migrated.
-   * Sessions and API tokens survive: no row holds a key, so the next request
-   * re-resolves the record key with no sign-out.
+   * Both branches commit as one transaction: the re-encryption and the pad or
+   * wrapper swap land together, so a crash or a refusal leaves the account exactly
+   * as it was rather than half-migrated. All fallible KMS work runs before the
+   * transaction opens, and the users row is locked first so concurrent unlinks and
+   * rotations on the same account serialize behind it. Sessions and API tokens
+   * survive: no row holds a key, so the next request re-resolves the record key
+   * with no sign-out.
    */
   async rotateKeys(
     ctx: AuthContext,
@@ -666,23 +685,35 @@ export const AccountService = {
       }
       const newH = randomBytes(32).toString('base64');
       const newR = xorKeys(dekPlain, newH);
-      // All fallible KMS work happens BEFORE the committed re-encryption: if the wrap
-      // fails here, nothing has been written and the account stays fully on the old key.
+      // All fallible KMS work happens BEFORE the transaction: if the wrap fails here,
+      // nothing has been written and the account stays fully on the old key.
       const pad = await wrapWithKms(newH, ctx.userId, kms);
-      const { reencrypted, unreadable } = await RecordService.reencryptAll(
-        ctx.userId,
-        Buffer.from(oldR, 'base64'),
-        Buffer.from(newR, 'base64'),
-      );
-      if (unreadable > 0) {
-        // Rows the rotation could not open would become permanently unreadable once the
-        // pad swap commits. Refuse instead of swapping: the caller can investigate while
-        // every readable row stays readable under the current key.
+      // The re-encryption and the pad swap share one commit. Reordering alone still
+      // left a window: a crash after the rows moved to the new key but before the
+      // metadata named the new pad would brick the account, and the earlier refusal
+      // on unreadable rows committed the re-encryption it was refusing. Taking the
+      // users row first also serializes this against concurrent unlinks and a second
+      // rotation on the same account.
+      const reencrypted = await withTransaction(async (client) => {
+        await client.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [ctx.userId]);
+        const { reencrypted: count, unreadable } = await RecordService.reencryptAll(
+          ctx.userId,
+          Buffer.from(oldR, 'base64'),
+          Buffer.from(newR, 'base64'),
+          client,
+        );
+        if (unreadable > 0) throw new RotationRefusedError();
+        await saveMetadata(ctx.userId, { ...metadata, pad }, client);
+        return count;
+      }).catch((error) => {
+        if (error instanceof RotationRefusedError) return null;
+        throw error;
+      });
+      if (reencrypted === null) {
         return { ok: false, error: 'rotation found unreadable records; key material unchanged' };
       }
-      await saveMetadata(ctx.userId, { ...metadata, pad });
       await this.recordAuthEvent(ctx.userId, 'key_rotation');
-      return { ok: true, value: { records: reencrypted, unreadable } };
+      return { ok: true, value: { records: reencrypted, unreadable: 0 } };
     }
 
     // Pre-split account: the records are sealed under the bare DEK, so the rotation
@@ -691,17 +722,31 @@ export const AccountService = {
       return { ok: false, error: 'the password does not open this account’s current key' };
     }
     const newDek = randomBytes(32).toString('base64');
-    const { reencrypted, unreadable } = await RecordService.reencryptAll(
+    const next = addServerWrapper(
+      await setPasswordWrapper(metadata, newDek, password.value, ctx.userId),
+      newDek,
       ctx.userId,
-      Buffer.from(dekPlain, 'base64'),
-      Buffer.from(newDek, 'base64'),
     );
-
-    let next = await setPasswordWrapper(metadata, newDek, password.value, ctx.userId);
-    next = await addServerWrapper(next, newDek, ctx.userId);
-    await saveMetadata(ctx.userId, next);
+    const reencrypted = await withTransaction(async (client) => {
+      await client.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [ctx.userId]);
+      const { reencrypted: count, unreadable } = await RecordService.reencryptAll(
+        ctx.userId,
+        Buffer.from(dekPlain, 'base64'),
+        Buffer.from(newDek, 'base64'),
+        client,
+      );
+      if (unreadable > 0) throw new RotationRefusedError();
+      await saveMetadata(ctx.userId, next, client);
+      return count;
+    }).catch((error) => {
+      if (error instanceof RotationRefusedError) return null;
+      throw error;
+    });
+    if (reencrypted === null) {
+      return { ok: false, error: 'rotation found unreadable records; key material unchanged' };
+    }
     await this.recordAuthEvent(ctx.userId, 'key_rotation');
-    return { ok: true, value: { records: reencrypted, unreadable } };
+    return { ok: true, value: { records: reencrypted, unreadable: 0 } };
   },
 
   /**
@@ -1475,24 +1520,43 @@ export const AccountService = {
       return { ok: false, error: 'unsupported provider' };
     }
 
-    const user = await loadUser({ id: ctx.userId });
-    if (!user) return { ok: false, error: 'account not found' };
-
-    const { hasPassword, providers } = await this.loginMethodsFor(ctx.userId);
-    const others = providers.filter((p) => p !== provider);
-    if (!hasPassword && others.length === 0) {
-      return {
-        ok: false,
-        error: 'this is the only way into the account — set an account name and password first',
-      };
+    // The guard and the delete run in one transaction that takes the users row
+    // first. Read-then-delete in separate statements let two concurrent unlinks
+    // both observe "the other provider is still there" and both delete, stranding
+    // a passwordless account with zero ways in — records unreachable, username
+    // unreleased. The row lock serializes them, so the second unlink reads the
+    // first one's committed state and hits the guard.
+    let unlinked = false;
+    const outcome = await withTransaction(async (client) => {
+      const locked = await client.query<{ has_password: boolean }>(
+        `SELECT password_hash IS NOT NULL AS has_password FROM users WHERE id = $1 FOR UPDATE`,
+        [ctx.userId],
+      );
+      if (locked.rowCount === 0) return { ok: false as const, error: 'account not found' };
+      const { rows } = await client.query<{ provider: string }>(
+        `SELECT DISTINCT provider FROM oauth_accounts WHERE user_id = $1`,
+        [ctx.userId],
+      );
+      const others = rows.map((r) => r.provider).filter((p) => p !== provider);
+      if (!locked.rows[0].has_password && others.length === 0) {
+        return {
+          ok: false as const,
+          error: 'this is the only way into the account — set an account name and password first',
+        };
+      }
+      const { rowCount } = await client.query(
+        `DELETE FROM oauth_accounts WHERE user_id = $1 AND provider = $2`,
+        [ctx.userId, provider],
+      );
+      unlinked = Boolean(rowCount);
+      return { ok: true as const, value: undefined };
+    });
+    // Recorded after the commit, and only on success — a refusal (the last-way-in
+    // guard, or a missing account) is not an unlink and left no trail before.
+    if (outcome.ok) {
+      await this.recordAuthEvent(ctx.userId, unlinked ? `${provider}_unlinked` : `${provider}_unlink_noop`);
     }
-
-    const { rowCount } = await getPool().query(
-      `DELETE FROM oauth_accounts WHERE user_id = $1 AND provider = $2`,
-      [ctx.userId, provider],
-    );
-    await this.recordAuthEvent(ctx.userId, rowCount ? `${provider}_unlinked` : `${provider}_unlink_noop`);
-    return { ok: true, value: undefined };
+    return outcome;
   },
 
   /** Unlink X. Kept as a named alias so existing callers and tests keep working. */

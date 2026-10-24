@@ -22,9 +22,11 @@ import { isNativeApp } from './platform';
  *     between messages, so a module variable would be lost — the cache is the durable
  *     slot.
  *
- * The **fallbacks** and a per-plan label map travel. The FCM payload no longer
- * carries the alias or dose — those are composed here from this account's own plans,
- * so a stale token cannot print another account's drug name.
+ * The **fallbacks** and a per-plan label map travel to the native transport; the web
+ * transport receives the fallback lines only. The FCM payload carries no alias or
+ * dose either way — those are composed here from this account's own plans, so a
+ * stale token cannot print another account's drug name, and the web tray (which has
+ * no private/redacted variant) never carries them at all.
  */
 export interface NotifFallbacks {
     title: string;
@@ -68,10 +70,34 @@ export function applyNotifFallbacks(fallbacks: NotifFallbacks): void {
         return;
     }
     if (typeof navigator === 'undefined' || !navigator.serviceWorker) return;
+    // The web tray is generic-only (the browser notification has no private/redacted
+    // variant, so anything sent here is what a lock screen shows), which means the
+    // per-plan labels never reach the worker — and never sit in its cache.
+    const generic = { title: fallbacks.title, body: fallbacks.body, hidden: fallbacks.hidden };
     // `ready` waits for a controlling worker; `.active` can be null only before then.
     navigator.serviceWorker.ready
         .then((registration) => {
-            registration.active?.postMessage({ type: 'hrt-notif-fallbacks', fallbacks });
+            registration.active?.postMessage({ type: 'hrt-notif-fallbacks', fallbacks: generic });
+        })
+        .catch(() => undefined);
+}
+
+/**
+ * Drop everything the worker kept for this account's notifications.
+ *
+ * Sent on sign-out. The worker's cache holds this account's resolved fallback lines
+ * and its dedup ledger (plan ids and due instants) — both describe the account that
+ * just left, and both would outlive the session in Cache Storage: the labels could
+ * print for a nudge that arrives after sign-out, and a stale ledger entry could
+ * swallow the next account's reminder for the same plan id. The next sign-in
+ * re-posts the fallbacks on launch, so the only cost is one re-resolve.
+ */
+export function clearWebNotificationCache(): void {
+    if (isNativeApp()) return;
+    if (typeof navigator === 'undefined' || !navigator.serviceWorker) return;
+    navigator.serviceWorker.ready
+        .then((registration) => {
+            registration.active?.postMessage({ type: 'hrt-notif-clear' });
         })
         .catch(() => undefined);
 }

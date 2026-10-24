@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 
 import { coreAuth, CoreAuthError } from '../services/coreAuth';
 import { unregisterPush } from '../utils/pushRegister';
+import { clearWebNotificationCache } from '../utils/notifLocale';
 import { clearAccountData, flushSecureStore, get as secureGet, remove as secureRemove, set as secureSet } from '../utils/secureStore';
 import { resetMedPlanStorage } from '../utils/medPlan';
 import { reschedulePlanNotifications } from '../utils/medPlanNotify';
@@ -165,10 +166,13 @@ function useCoreSessionState() {
         // means we cannot tell, so the token is kept and the app stays signed in
         // until a request actually says otherwise.
         const network = error instanceof CoreAuthError && error.kind === 'network';
-        if (!cancelled && !network) void // BUG-001 guard: a session adopted while this check was in flight must survive.
-                    const storedNow = readStored();
-                    if (storedNow?.token === token) persist(null, null);
-        else if (!cancelled) setState(s => ({ ...s, restoring: false }));
+        if (!cancelled && !network) {
+          // BUG-001 guard: a session adopted while this check was in flight must
+          // survive — clear the stored session only when it is still the one this
+          // check set out to verify, not one a concurrent sign-in has since landed.
+          const storedNow = readStored();
+          if (storedNow?.token === token) void persist(null, null);
+        } else if (!cancelled) setState(s => ({ ...s, restoring: false }));
       }
     })();
     return () => {
@@ -230,6 +234,11 @@ function useCoreSessionState() {
   const signOut = useCallback(async (opts: { clearLocal?: boolean } = {}) => {
     const token = state.token;
     void persist(null, null);
+    // The worker's cache holds this account's notification fallback lines and its
+    // dedup ledger; both describe the account that is leaving. Cleared on every
+    // sign-out — not just the wiping one — because the next user of this browser
+    // may sign into a different account.
+    clearWebNotificationCache();
     if (token) {
       await unregisterPush(token, { retryable: true }).catch(() => undefined);
     } else {

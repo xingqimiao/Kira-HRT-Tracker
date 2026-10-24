@@ -359,10 +359,14 @@ export function startPlanWebNotifications(): void {
                     // Persist before dispatch: at-most-once beats a duplicate ring on
                     // every reload, so a failed post must not leave the key unrecorded.
                     set(WEB_LEDGER_KEY, serializeLedger([...seen]));
-                    const label = reminderTitle(st.plan);
-                    const body = reminderBody(st.plan);
+                    // Generic text only: a browser notification has no private/redacted
+                    // variant, so whatever is posted here ends up on the lock screen of
+                    // a device the user walks away from. The alias and dose stay inside
+                    // the app — which is open in front of the user whenever this tick
+                    // fires, and whose own UI already names the missed dose. The APK
+                    // keeps the specific text through its Private channel instead.
                     try {
-                        new Notification(label, { body, tag: key });
+                        new Notification(notifFallback.title, { body: notifFallback.hidden, tag: key });
                     } catch {
                         // Some browsers require the SW constructor; a silent skip is
                         // better than a crash inside a timer.

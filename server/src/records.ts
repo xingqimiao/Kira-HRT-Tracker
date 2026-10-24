@@ -33,6 +33,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
+import type { PoolClient } from 'pg';
 import { getPool, withTransaction } from './db.ts';
 import { openPayload, sealPayload } from './payloadCrypto.ts';
 import {
@@ -591,12 +592,13 @@ export const RecordService = {
         userId: string,
         oldDek: Buffer,
         newDek: Buffer,
+        client?: PoolClient,
     ): Promise<{ reencrypted: number; unreadable: number }> {
         if (oldDek.length !== 32 || newDek.length !== 32) {
             throw new Error('key rotation needs two 32-byte keys');
         }
-        return await withTransaction(async (client) => {
-            const { rows } = await client.query<{ id: string; payload_encrypted: string }>(
+        const run = async (db: PoolClient) => {
+            const { rows } = await db.query<{ id: string; payload_encrypted: string }>(
                 `SELECT id, payload_encrypted FROM records WHERE user_id = $1 ORDER BY id FOR UPDATE`,
                 [userId],
             );
@@ -610,14 +612,19 @@ export const RecordService = {
                     unreadable++;
                     continue;
                 }
-                await client.query(
+                await db.query(
                     `UPDATE records SET payload_encrypted = $1 WHERE user_id = $3 AND id = $2`,
                     [sealPayload(plain, newDek), row.id, userId],
                 );
                 reencrypted++;
             }
             return { reencrypted, unreadable };
-        });
+        };
+        // A caller that folds the re-encryption into a larger transaction (rotateKeys
+        // commits the metadata swap with it) passes its client in; opening a second
+        // connection for a nested transaction would deadlock against this one's row
+        // locks.
+        return client ? await run(client) : await withTransaction(run);
     },
 
     /**

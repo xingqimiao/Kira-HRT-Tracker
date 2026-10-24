@@ -92,23 +92,43 @@ function persistShown() {
 }
 
 /**
- * Localized fallback title/body, following the app's language setting.
+ * Localized generic fallback lines, following the app's language setting.
  *
- * A plan with no alias and no dose would otherwise show a hardcoded default in one
- * language. The app resolves the two strings from its own packs and posts them here
- * (`hrt-notif-fallbacks`) whenever the language changes or the packs load. The worker
- * can be killed between messages, so a module variable would be lost — the Cache API
- * is the durable slot both the page and the worker can reach.
+ * A notification with no specific text available would otherwise show a hardcoded
+ * default in one language. The app resolves three generic lines from its own packs
+ * and posts them here (`hrt-notif-fallbacks`) whenever the language changes or the
+ * packs load. The worker can be killed between messages, so a module variable would
+ * be lost — the Cache API is the durable slot both the page and the worker can
+ * reach. The web tray shows the generic lines only: the per-plan labels (drug names
+ * and doses) stay with the native transport, whose Private channel redacts them on
+ * the lock screen — a browser notification has no such variant, so nothing
+ * identifying is sent here at all. Sign-out clears the slot (`hrt-notif-clear`).
  */
 const FALLBACKS_CACHE = 'hrt-notif-v1';
 const FALLBACKS_URL = '/__hrt-notif-fallbacks';
-let fallbacks = { title: 'Medication reminder', body: '' };
+let fallbacks = { title: 'Medication reminder', body: '', hidden: 'You have a reminder' };
+
+/** Accept only the generic lines: the stored blob may predate the redaction rule. */
+function sanitizeFallbacks(value) {
+    if (!value || typeof value !== 'object') return null;
+    return {
+        title: typeof value.title === 'string' ? value.title : 'Medication reminder',
+        body: typeof value.body === 'string' ? value.body : '',
+        // `hidden` postdates older cached blobs; the generic body stands in for it.
+        hidden: typeof value.hidden === 'string' && value.hidden ? value.hidden : (typeof value.body === 'string' ? value.body : ''),
+        // `plans` is deliberately dropped: the web tray is generic-only, so the
+        // per-plan labels (drug names and doses) are neither shown nor kept here.
+    };
+}
 
 (async () => {
     try {
         const cache = await caches.open(FALLBACKS_CACHE);
         const res = await cache.match(FALLBACKS_URL);
-        if (res) fallbacks = await res.json();
+        if (res) {
+            const clean = sanitizeFallbacks(await res.json());
+            if (clean) fallbacks = clean;
+        }
     } catch {
         // Cache unavailable (private mode) — keep the default; the page's own
         // in-app reminder is unaffected.
@@ -117,11 +137,32 @@ let fallbacks = { title: 'Medication reminder', body: '' };
 
 self.addEventListener('message', (event) => {
     const data = event.data;
+    if (data && data.type === 'hrt-notif-clear') {
+        // Sign-out: the cached fallback lines and the dedup ledger describe the
+        // account that just left. Forgetting them keeps its plan ids from
+        // suppressing the next account's reminders and keeps its data out of Cache
+        // Storage on a shared browser. The next sign-in re-posts the fallbacks.
+        fallbacks = { title: 'Medication reminder', body: '', hidden: 'You have a reminder' };
+        shown = new Set();
+        hydrationPromise = null;
+        event.waitUntil((async () => {
+            try {
+                const cache = await caches.open(FALLBACKS_CACHE);
+                await cache.delete(FALLBACKS_URL);
+                await cache.delete(SHOWN_URL);
+            } catch {
+                // Cache unavailable — nothing to clear.
+            }
+        })());
+        return;
+    }
     if (!data || data.type !== 'hrt-notif-fallbacks' || !data.fallbacks) return;
-    fallbacks = data.fallbacks;
+    const clean = sanitizeFallbacks(data.fallbacks);
+    if (!clean) return;
+    fallbacks = clean;
     event.waitUntil(
         caches.open(FALLBACKS_CACHE)
-            .then((cache) => cache.put(FALLBACKS_URL, new Response(JSON.stringify(fallbacks), {
+            .then((cache) => cache.put(FALLBACKS_URL, new Response(JSON.stringify(clean), {
                 headers: { 'Content-Type': 'application/json' },
             })))
             .catch(() => undefined),
@@ -139,13 +180,11 @@ firebase.messaging().onBackgroundMessage(async (payload) => {
     // life, and the SDK keeps the push event alive long enough for the cache put.
     await persistShown();
 
-    // The payload carries only the plan id; the text comes from the map the page
-    // pushed for this account, so a nudge never prints another account's drug.
-    const label = (fallbacks.plans && fallbacks.plans[data.planId]) || null;
-    const title = label ? label.title : fallbacks.title;
-    const body = label ? label.body : fallbacks.body;
-    await self.registration.showNotification(title, {
-        body,
+    // Generic text only. A browser notification has no private/redacted variant, so
+    // whatever this posts is what a lock screen shows — never the drug name or dose.
+    // The plan id in the payload is the dedup key, not a label.
+    await self.registration.showNotification(fallbacks.title, {
+        body: fallbacks.hidden || fallbacks.body,
         tag: key,
         data: { url: '/' },
     });
