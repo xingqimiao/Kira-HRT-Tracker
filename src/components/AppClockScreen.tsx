@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { clockLocale } from '../utils/lockCopy';
 import { setSecureScreen } from '../utils/appLock';
+import { suspendBack } from '../utils/nativeBack';
 
 interface AppClockScreenProps {
     /** Try the biometric prompt again (a tap anywhere on the clock). */
@@ -30,7 +31,10 @@ const AppClockScreen: React.FC<AppClockScreenProps> = ({ onRetry }) => {
 
     useEffect(() => {
         setSecureScreen(true);
-        (window as unknown as { HrtBack?: { setCanPop: (v: boolean) => void } }).HrtBack?.setCanPop(false);
+        // The clock owns back entirely — a gesture here must exit, not reveal the
+        // app underneath.
+        suspendBack(true);
+        return () => suspendBack(false);
     }, []);
 
     const locale = clockLocale();

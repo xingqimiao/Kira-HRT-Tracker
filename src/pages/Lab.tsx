@@ -285,22 +285,17 @@ const Lab: React.FC<LabProps> = ({
     const [journalNote, setJournalNote] = useState('');
     const [journalPickerOpen, setJournalPickerOpen] = useState(false);
 
-    // System back closes the drilled-in journal page and the containers before it
-    // leaves 体检. App already handles `isQuickAddLabOpen`; these cover the rest.
-    useBackHandler(editingLabId !== null, () => {
-        setEditingLabId(null);
-        return true;
-    });
-    useBackHandler(journalSheetOpen, () => {
-        setJournalSheetOpen(false);
-        return true;
-    });
+    // The lab sheet (add *and* edit), the scan sheet, the journal sheet and the
+    // dialog all register themselves — they are AdaptiveSheets. Only the phone
+    // journal drill-in is page state with no primitive of its own, so it is the
+    // one handler this page owns.
+    //
+    // The add sheet used to have no handler at all: the comment here claimed App
+    // covered `isQuickAddLabOpen` while App never did, so back on the FAB-opened
+    // sheet fell through to the view layer and jumped to Home, leaving the sheet
+    // flagged open in state for the next visit.
     useBackHandler(examSubOpen, () => {
         switchExamSub(false);
-        return true;
-    });
-    useBackHandler(isScanOpen, () => {
-        setIsScanOpen(false);
         return true;
     });
 

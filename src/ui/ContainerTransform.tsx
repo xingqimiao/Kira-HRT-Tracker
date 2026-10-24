@@ -200,15 +200,16 @@ export function ContainerTransform({
 
     /**
      * The overlay is a modal, so system back must close it rather than reach the
-     * page underneath. While the surface is animating out, back consumes and lets
-     * the exit finish — reversing it here is what made the sheet unclosable: the
-     * close and the gesture raced, the next back reopened the just-dismissed
-     * surface, and with the caller's own handler above it the two fought until
-     * back could no longer dismiss anything. (`onReopen` stays for Escape and the
-     * return-hit tap, where reversing is the point.)
+     * page underneath. Registered from `open`, not from `mounted`: the surface is
+     * live from the frame it appears, and while it animates *out* (400ms after
+     * `open` is already false) back must fall through to the page rather than be
+     * swallowed by a surface that is on its way off screen.
+     *
+     * Reversing the exit is deliberately not offered here: it raced the close and
+     * made the next back reopen the just-dismissed surface. `onReopen` stays for
+     * Escape and the return-hit tap, where reversing is the point.
      */
-    useBackHandler(mounted, () => {
-        if (!open) return true;
+    useBackHandler(open, () => {
         onClose();
         return true;
     });

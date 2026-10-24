@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import { Home, ListTodo, Settings as SettingsIcon, UserCircle, CalibrationCurve } from '../icons';
 import { useTranslation } from '../contexts/LanguageContext';
-import { useBackHandler } from '../utils/nativeBack';
+import { useBackHandler, setWebPopStateFallback } from '../utils/nativeBack';
+import { isNativeApp } from '../utils/platform';
 
 export type ViewKey = 'home' | 'share' | 'history' | 'lab' | 'lab-calibration' | 'settings' | 'account' | 'pk-params' | 'settings-language' | 'settings-appearance' | 'settings-weight' | 'settings-export' | 'settings-import' | 'settings-security' | 'settings-mcp' | 'settings-licences' | 'settings-donate' | 'settings-donate-supporters';
 
@@ -115,6 +116,13 @@ export const useAppNavigation = (initialView: ViewKey = 'home') => {
     viewRef.current = { currentView, handleViewChange, applyView };
 
     // Mark the entry the app was opened on, then follow Back and Forward.
+    //
+    // The popstate handler closes one overlay first (the browser's back gesture
+    // pops the entry an open sheet pushed — see nativeBack) and only applies a
+    // view when no overlay was up. On web the listener lives in nativeBack (so
+    // the overlay-close runs before this logic and the two can never disagree);
+    // the native WebView keeps its own listener here, because its back path goes
+    // through Kotlin's `hrt-back` and never pushes overlay entries.
     useEffect(() => {
         writeEntry(initialView, 0, true);
         const onPopState = (event: PopStateEvent) => {
@@ -125,6 +133,10 @@ export const useAppNavigation = (initialView: ViewKey = 'home') => {
             depthRef.current = depth;
             viewRef.current.applyView(view);
         };
+        if (!isNativeApp()) {
+            setWebPopStateFallback(onPopState);
+            return () => setWebPopStateFallback(null);
+        }
         window.addEventListener('popstate', onPopState);
         return () => window.removeEventListener('popstate', onPopState);
         // `viewOrder` is a constant list, re-created by render only.

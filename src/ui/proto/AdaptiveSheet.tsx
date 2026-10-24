@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../SvgDefs';
 import { useEscape } from '../../hooks/useEscape';
+import { useBackHandler } from '../../utils/nativeBack';
 
 /**
  * The prototype's bottom sheet / centred dialog.
@@ -82,6 +83,14 @@ export function AdaptiveSheet({
     const view = open ? currentView : lastView.current;
 
     useEscape(onClose, open);
+
+    // Every sheet is dismissible by system back, and it says so itself: a caller
+    // that had to remember this made the surface unclosable when it forgot, and
+    // two that both remembered made two handlers fight over one gesture.
+    useBackHandler(open, () => {
+        onClose();
+        return true;
+    });
 
     // Mount and start the entrance in layout, with a forced style read between
     // the off-screen pose and `.on`. Without that read the browser occasionally

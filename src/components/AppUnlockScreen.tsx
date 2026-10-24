@@ -9,6 +9,7 @@ import {
     resetLockStorage,
     setSecureScreen,
 } from '../utils/appLock';
+import { suspendBack } from '../utils/nativeBack';
 import { removeDataKeyBase64 } from '../utils/secureStore';
 
 interface AppUnlockScreenProps {
@@ -69,6 +70,14 @@ const AppUnlockScreen: React.FC<AppUnlockScreenProps> = ({ onUnlocked, onLockout
 
     useEffect(() => {
         setSecureScreen(true);
+        // Back exits while this surface owns the screen — the app is still mounted
+        // behind it and must not unwind invisibly. The reset sheet inside is
+        // dismissed by its own buttons.
+        suspendBack(true);
+        return () => suspendBack(false);
+    }, []);
+
+    useEffect(() => {
         if (!autoStart || started.current) return;
         started.current = true;
         // A tick after paint: the native prompt is a window of its own, and

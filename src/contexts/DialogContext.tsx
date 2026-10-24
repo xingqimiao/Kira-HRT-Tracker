@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from './LanguageContext';
-import { useBackHandler } from '../utils/nativeBack';
 import { AdaptiveSheet } from '../ui/proto';
 
 type DialogType = 'alert' | 'confirm';
@@ -49,12 +48,8 @@ export const DialogProvider = ({ children }: { children: React.ReactNode }) => {
     const contextValue = useMemo(() => ({ showDialog }), [showDialog]);
 
     // System back dismisses the dialog instead of leaving the page beneath it.
-    // The provider mounts above AppContent, so this registers after the page
-    // handler and takes the top of the back stack while a dialog is open.
-    useBackHandler(isOpen, () => {
-        setIsOpen(false);
-        return true;
-    });
+    // `AdaptiveSheet` registers that itself from its `open` prop; doing it here
+    // too put two handlers on one gesture.
 
     const handleConfirm = () => {
         // Close first. A callback that opens its own dialog (a confirm whose action

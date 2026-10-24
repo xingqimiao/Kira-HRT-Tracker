@@ -509,18 +509,13 @@ const AppContent = () => {
         return () => { document.body.style.overflow = ''; };
     }, [isPasswordInputOpen, isWeightModalOpen, isFormOpen, isDisclaimerOpen]);
 
-    // Android system back closes the topmost overlay. The container-transform
-    // sheets (quick add on either mode, the edit sheets) register themselves in
-    // their own component — a handler here AND there made the two fight over one
-    // gesture, closing and reopening until back could dismiss nothing. What
-    // still needs a handler here is what does not self-register: the
-    // AdaptiveSheet surfaces and the plain modals.
-    useBackHandler(quickRecordOpen, () => { setQuickRecordOpen(false); return true; });
+    // Android system back closes the topmost overlay. Only the surfaces that are
+    // *not* built on a modal primitive register here: `AdaptiveSheet` and
+    // `ContainerTransform` register themselves from their own `open` prop, and a
+    // second handler for the same surface is what used to make one gesture close
+    // and reopen until back could dismiss nothing.
     useBackHandler(isPasswordInputOpen, () => { setIsPasswordInputOpen(false); return true; });
     useBackHandler(isWeightModalOpen, () => { setIsWeightModalOpen(false); return true; });
-    useBackHandler(isFormOpen, () => { setIsFormOpen(false); return true; });
-    useBackHandler(isDisclaimerOpen, () => { setIsDisclaimerOpen(false); return true; });
-    useBackHandler(isCoreAuthOpen, () => { setIsCoreAuthOpen(false); setPrefillUsername(''); return true; });
 
     // The overlay states above live one level up from the pages that render
     // them, so they survive a view switch — and a reader who navigates away from
