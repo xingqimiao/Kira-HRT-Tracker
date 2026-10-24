@@ -67,6 +67,28 @@ async function main(): Promise<void> {
       : 'hrt-server: no FCM service account — supplementary push is off\n');
   }
 
+  // Every production guard is keyed on NODE_ENV: https-only origins, the required
+  // KMS, and — the dangerous one — a CORS allowance for development origins. A
+  // deployment that forgets the flag loses all of them silently, and a plain
+  // https reverse proxy hides every symptom until the day one matters. If this
+  // boot looks like a real deployment while the flag says otherwise, refuse to
+  // pass quietly.
+  if (command === 'http' && process.env.NODE_ENV !== 'production') {
+    const bindHost = process.env.BIND_HOST ?? '127.0.0.1';
+    const loopback = /^(127\.0\.0\.1|localhost|\[::1\]|::1)$/.test(bindHost);
+    const looksProduction =
+      config.publicOrigin.startsWith('https://') || config.apiOrigin.startsWith('https://') || !loopback;
+    if (looksProduction) {
+      process.stderr.write(
+        `hrt-server: WARNING — NODE_ENV is ${JSON.stringify(process.env.NODE_ENV ?? null)}, not "production", ` +
+        `but this boot looks like a real deployment\n` +
+        `  (public=${config.publicOrigin} api=${config.apiOrigin}${loopback ? '' : `, bound to ${bindHost}`}).\n` +
+        `  Production-only guards are OFF: https origins are not enforced, KMS is optional, and\n` +
+        `  development origins are allowed by CORS. Set NODE_ENV=production on this unit.\n`,
+      );
+    }
+  }
+
   if (command === 'migrate') {
     await migrate();
     process.stdout.write('schema applied\n');

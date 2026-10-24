@@ -33,7 +33,7 @@ const FLOORS = {
     vite: ['8.3.5', 'dev server and the production build; recurring advisory target'],
     'vite-plugin-pwa': ['2.0.0', 'pulls the workbox tree the service worker ships from'],
     'workbox-build': ['7.4.1', 'transitive serialize-javascript advisory was fixed here'],
-    'serialize-javascript': ['7.1.2', 'the advisory itself; workbox resolves this copy'],
+    'serialize-javascript': ['7.1.3', 'the advisory itself; workbox resolves this copy (advisory fixed in 7.1.3)'],
     sharp: ['0.35.5', 'native image decoding of provider avatars and OCR assets'],
     tailwindcss: ['4.3.3', 'postcss plugin runs over every stylesheet'],
     '@tauri-apps/cli': ['2.12.4', 'builds the Android shell'],
