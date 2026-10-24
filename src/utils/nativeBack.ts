@@ -38,8 +38,6 @@ const viewStack: BackHandler[] = [];
 
 export type BackLayer = 'overlay' | 'view';
 
-};
-
 /** Tell Kotlin whether there is anything to pop. */
 const syncCapacity = () => {
     const bridge = (window as unknown as { HrtBack?: { setCanPop: (v: boolean) => void } }).HrtBack;
