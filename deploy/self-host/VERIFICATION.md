@@ -1,6 +1,12 @@
 # Verification record — 2026-10-25, application 2.2.2
 
-The self-hosted edition shares the current application code, including the latest navigation/back fixes. This records local acceptance before the native GitHub release jobs; those jobs must pass before publishing the multi-architecture image manifests.
+The self-hosted edition shares the current application code, including the latest navigation/back fixes. Local acceptance and the tagged native release jobs passed.
+
+## Published release acceptance
+
+- [Native release workflow 40116998904](https://github.com/xingqimiao/Kira-HRT-Tracker/actions/runs/40116998904) passed on both native AMD64 and ARM64 runners, including HTTPS, account/record checks, upgrade tooling, real backup/restore and publication. The first run exposed a temporary registry connection-reset race; the readiness probe now retries that error as well.
+- The [self-hosted 2.2.2 archive](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/tag/self-host-v2.2.2) was downloaded again and its checksum verified. From a fresh directory, the downloaded scripts initialized and started a new deployment using the published GHCR images; trusted HTTPS and registration/write/read passed.
+- Both published images were pulled with an empty Docker authentication configuration. Users do not need to sign in to GitHub to deploy the default package. The standard [2.2.2 Android release](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/tag/v2.2.2) remains the repository's latest release.
 
 ## Passed locally
 
@@ -20,6 +26,6 @@ The self-hosted edition shares the current application code, including the lates
 
 ## Boundaries
 
-Native ARM64 GitHub-runner results are recorded by the tagged release workflow. Public ACME issuance and phone CA/PWA installation are not established by local-CA container tests.
+Native ARM64 GitHub-runner results are recorded by the successful tagged release workflow above. Public ACME issuance and phone CA/PWA installation are not established by local-CA container tests.
 
 The full existing backend suite previously stopped at a `deltaSync.test.ts` process that did not exit; the passing count above is the selected suite, not the complete repository suite. Backend TypeScript checking still reports three pre-existing errors in the avatar projection, credentials body type and `unlinkToctou.test.ts`; this change introduced no additional reported type errors.
