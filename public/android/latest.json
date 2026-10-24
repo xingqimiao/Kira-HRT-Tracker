@@ -2,7 +2,7 @@
   "version": "2.2.1",
   "versionCode": 2002001,
   "apk": "https://hrt.kiramyao.com/android/KiraHRT-2.2.1-release.apk",
-  "sha256": "02650FC281493DFAA6D48EE2C3697CFC193590D96E17BE16094A806C6FF444A4",
+  "sha256": "49889A6C074BFC43A1FA918ECE425EBEA68ED40A603B8D1C7AA0951555B0A1F5",
   "notes": [
     "修复：Android 侧边返回全面修复——全屏面板、悬浮按钮菜单、时间选择器、记录页多选模式都能被返回键正确关闭，不再连跳两级或落到别的页面。",
     "安全：代理令牌（MCP）不再能执行改密码、解绑账号、销户等仅限网页登录的操作。",
