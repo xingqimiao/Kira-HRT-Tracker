@@ -195,6 +195,7 @@ const PACK: LangPack = {
     "core.acct.sign_out_confirm": "Sign out of this device? You will need your password to get back in.",
     "core.acct.sign_out_clear": "Sign out and clear this device",
     "core.acct.sign_out_clear_hint": "Also delete the records kept in this browser",
+"core.acct.sign_out_clear_hint_native": "Also delete the records kept on this device",
     "core.acct.sign_out_clear_confirm": "Delete this account's records from this device? They stay in your cloud copy and come back when you sign in with network access.",
     "core.acct.sign_out_clear_confirm_2": "This cannot be undone on this device. Sign out and delete now?",
     "core.acct.notice_pw_changed": "Password changed.",

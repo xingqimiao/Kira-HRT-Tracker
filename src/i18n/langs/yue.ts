@@ -1088,6 +1088,7 @@ const PACK: LangPack = {
     "core.acct.sign_out_confirm": "要登出咩？登出之後要再入密碼。",
     "core.acct.sign_out_clear": "登出並清除本機資料",
     "core.acct.sign_out_clear_hint": "同時刪咗呢個瀏覽器存嘅紀錄",
+"core.acct.sign_out_clear_hint_native": "同時刪除呢部機存嘅紀錄",
     "core.acct.sign_out_clear_confirm": "要刪除本機上呢個帳號嘅紀錄咩？雲端副本仲喺，連網再登入就會返嚟。",
     "core.acct.sign_out_clear_confirm_2": "本機刪咗就冇得復原。而家登出並刪除？",
     "core.acct.notice_pw_changed": "密碼改咗。",

@@ -1,4 +1,5 @@
 import { get as secureGet, set as secureSet, remove as secureRemove } from '../utils/secureStore';
+import { isNativeApp } from '../utils/platform';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Icon from '../components/Icon';
 import {
@@ -497,7 +498,7 @@ const Account: React.FC<AccountProps> = ({
                                 <span className="ic err"><Icon icon={Trash2} size={22} /></span>
                                 <div className="t">
                                     <b>{t('core.acct.sign_out_clear')}</b>
-                                    <span className="s">{t('core.acct.sign_out_clear_hint')}</span>
+                                    <span className="s">{t(isNativeApp() ? 'core.acct.sign_out_clear_hint_native' : 'core.acct.sign_out_clear_hint')}</span>
                                 </div>
                             </div>
                         </div>

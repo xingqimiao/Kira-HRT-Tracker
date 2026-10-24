@@ -293,6 +293,7 @@ const PACK: LangPack = {
     "core.acct.sign_out_confirm": "ログアウトしますか？ 再び入るにはパスワードが必要です。",
     "core.acct.sign_out_clear": "ログアウトしてこの端末のデータを消去",
     "core.acct.sign_out_clear_hint": "このブラウザに保存された記録も削除します",
+"core.acct.sign_out_clear_hint_native": "この端末に保存された記録も削除します",
     "core.acct.sign_out_clear_confirm": "この端末にあるこのアカウントの記録を削除しますか？クラウドの控えは残り、ネットワークにつないで再ログインすると戻ります。",
     "core.acct.sign_out_clear_confirm_2": "この端末では元に戻せません。今すぐログアウトして削除しますか？",
     "core.acct.notice_pw_changed": "パスワードを変更しました。",

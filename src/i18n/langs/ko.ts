@@ -293,6 +293,7 @@ const PACK: LangPack = {
     "core.acct.sign_out_confirm": "로그아웃할까요? 다시 들어오려면 비밀번호가 필요합니다.",
     "core.acct.sign_out_clear": "로그아웃하고 이 기기 데이터 삭제",
     "core.acct.sign_out_clear_hint": "이 브라우저에 저장된 기록도 삭제합니다",
+"core.acct.sign_out_clear_hint_native": "이 기기에 저장된 기록도 삭제합니다",
     "core.acct.sign_out_clear_confirm": "이 기기에 있는 이 계정의 기록을 삭제할까요? 클라우드 사본은 남아 있으며, 네트워크에 연결해 다시 로그인하면 복원됩니다.",
     "core.acct.sign_out_clear_confirm_2": "이 기기에서는 되돌릴 수 없습니다. 지금 로그아웃하고 삭제할까요?",
     "core.acct.notice_pw_changed": "비밀번호를 변경했습니다.",

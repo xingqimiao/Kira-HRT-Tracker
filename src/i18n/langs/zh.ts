@@ -196,6 +196,7 @@ const PACK: LangPack = {
     "core.acct.sign_out_confirm": "要退出登录吗？退出后需要重新输入密码。",
     "core.acct.sign_out_clear": "退出并清除本机数据",
     "core.acct.sign_out_clear_hint": "同时删除本浏览器保存的记录",
+"core.acct.sign_out_clear_hint_native": "同时删除本机保存的记录",
     "core.acct.sign_out_clear_confirm": "要删除本机上该账号的记录吗？云端副本仍在，联网重新登录后会恢复。",
     "core.acct.sign_out_clear_confirm_2": "本机删除后无法撤销。现在退出并删除吗？",
     "core.acct.notice_pw_changed": "密码已修改。",

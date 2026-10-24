@@ -195,6 +195,7 @@ const PACK: LangPack = {
     "core.acct.sign_out_confirm": "Sign out of this device? You will need your password to get back in.",
     "core.acct.sign_out_clear": "Çıkış yap ve bu cihazı temizle",
     "core.acct.sign_out_clear_hint": "Bu tarayıcıda tutulan kayıtları da siler",
+"core.acct.sign_out_clear_hint_native": "Bu cihazda tutulan kayıtları da siler",
     "core.acct.sign_out_clear_confirm": "Bu hesabın kayıtları bu cihazdan silinsin mi? Bulut kopyası kalır ve ağ bağlantısıyla yeniden giriş yaptığınızda geri gelir.",
     "core.acct.sign_out_clear_confirm_2": "Bu cihazda geri alınamaz. Şimdi çıkış yapıp silinsin mi?",
     "core.acct.notice_pw_changed": "Parola değiştirildi.",
