@@ -2,7 +2,7 @@
   "version": "2.2.0",
   "versionCode": 2002000,
   "apk": "https://hrt.kiramyao.com/android/KiraHRT-2.2.0-release.apk",
-  "sha256": "B97919D2A5F2438D4C1A6C6090AF4D8545EE698D1B2CE68F027E68B77A60708E",
+  "sha256": "02650FC281493DFAA6D48EE2C3697CFC193590D96E17BE16094A806C6FF444A4",
   "notes": [
     "安全：代理令牌（MCP）不再能执行改密码、解绑账号、销户等仅限网页登录的操作；相关接口全部收紧。",
     "安全：修复密钥轮换遇到损坏记录时会让全部记录无法读取的问题；轮换现在要么完整成功、要么完全不变。",
