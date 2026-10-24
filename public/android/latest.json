@@ -2,7 +2,7 @@
   "version": "2.2.2",
   "versionCode": 2002002,
   "apk": "https://hrt.kiramyao.com/android/KiraHRT-2.2.2-release.apk",
-  "sha256": "49889A6C074BFC43A1FA918ECE425EBEA68ED40A603B8D1C7AA0951555B0A1F5",
+  "sha256": "0142D162C88503EF46133DF8939C2D39F619FC476F053727A06343A3FF2A147D",
   "notes": [
     "修复：Android 打开「扫描化验单」报 no available backend 的问题——应用自身的 CSP 不再拦自己的 OCR 运行时源站。",
     "修复：Android「退出并清除本机数据」的说明不再写「本浏览器」（应用内没有浏览器，数据在本机加密存储）。",
