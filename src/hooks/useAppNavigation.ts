@@ -61,12 +61,22 @@ export const useAppNavigation = (initialView: ViewKey = 'home') => {
     // walks them. The path is never rewritten: `/auth/:provider/callback` and the
     // share route are read from the URL, and a view name in it would collide with
     // both.
+    //
+    // The APK gets none of this. Android's WebView *consumes the back key itself*
+    // whenever `history.canGoBack()` is true — it pops its own history before any
+    // `OnBackPressedCallback` is consulted, so the Kotlin→`hrt-back` path never
+    // ran and every gesture on a tab surfaced as "jumped back to the overview".
+    // The APK has no browser chrome and no address bar, so its history entries
+    // bought nothing; here they actively cost the gesture. Native views therefore
+    // live only in React state, and the Kotlin callback is the single entry point.
+    //
     // The depth of the entry the app is on. It is carried in the history state
     // itself (below), so Back and Forward restore it rather than a counter that
     // would drift; this ref is only the render-time copy.
     const depthRef = useRef(0);
 
     const writeEntry = (view: ViewKey, depth: number, replace: boolean) => {
+        if (isNativeApp()) return;
         try {
             const state = { ...((window.history.state ?? {}) as Record<string, unknown>), hrtView: view, hrtDepth: depth };
             if (replace) window.history.replaceState(state, '');
@@ -119,12 +129,13 @@ export const useAppNavigation = (initialView: ViewKey = 'home') => {
     //
     // The popstate handler closes one overlay first (the browser's back gesture
     // pops the entry an open sheet pushed — see nativeBack) and only applies a
-    // view when no overlay was up. On web the listener lives in nativeBack (so
-    // the overlay-close runs before this logic and the two can never disagree);
-    // the native WebView keeps its own listener here, because its back path goes
-    // through Kotlin's `hrt-back` and never pushes overlay entries.
+    // view when no overlay was up. The listener lives in nativeBack so the
+    // overlay-close always runs before this logic and the two can never disagree.
+    // The APK has no history of its own: its back is Kotlin's `hrt-back`, which
+    // never produces a popstate.
     useEffect(() => {
         writeEntry(initialView, 0, true);
+        if (isNativeApp()) return;
         const onPopState = (event: PopStateEvent) => {
             const state = event.state as HrtHistoryState | null;
             const view = state?.hrtView;
@@ -133,12 +144,8 @@ export const useAppNavigation = (initialView: ViewKey = 'home') => {
             depthRef.current = depth;
             viewRef.current.applyView(view);
         };
-        if (!isNativeApp()) {
-            setWebPopStateFallback(onPopState);
-            return () => setWebPopStateFallback(null);
-        }
-        window.addEventListener('popstate', onPopState);
-        return () => window.removeEventListener('popstate', onPopState);
+        setWebPopStateFallback(onPopState);
+        return () => setWebPopStateFallback(null);
         // `viewOrder` is a constant list, re-created by render only.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -158,16 +165,20 @@ export const useAppNavigation = (initialView: ViewKey = 'home') => {
     // the parent directly: the two must agree, or a later browser Back would land on
     // a view the app had already left. `applyView` is entered again through
     // `popstate`, which does not push.
+    //
+    // The APK has no history entries at all (see `writeEntry`), so Back applies the
+    // parent directly — `history.back()` there would be a no-op and the gesture
+    // would read as dead.
     useBackHandler(currentView !== 'home', () => {
-        const { currentView: view, handleViewChange: change } = viewRef.current;
+        const { currentView: view } = viewRef.current;
         if (view === 'home') return false;
-        if (depthRef.current > 0) {
+        if (!isNativeApp() && depthRef.current > 0) {
             window.history.back();
             return true;
         }
-        // Opened straight onto a sub-page (a reload, or a deep link): there is no
-        // entry behind this one, so replace it with the parent rather than stack a
-        // second entry in front of a page the reader never visited.
+        // Native, or opened straight onto a sub-page (a reload, or a deep link):
+        // there is no entry behind this one, so apply the parent rather than stack
+        // a second entry in front of a page the reader never visited.
         const parent = BACK_PARENT[view] ?? 'home';
         applyView(parent);
         writeEntry(parent, 0, true);

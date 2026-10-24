@@ -68,6 +68,31 @@ class MainActivity : TauriActivity() {
     }
   }
 
+  /**
+   * Take back before the WebView does.
+   *
+   * Android's WebView consumes the back key itself whenever its own history can
+   * go back, popping it before any `OnBackPressedCallback` is consulted. The SPA
+   * used to push a history entry per view, so on every tab the WebView ate the
+   * gesture and the callback above never ran — which is exactly the reported
+   * "side-back jumps to the overview, and the sheet is still open when I return".
+   * The SPA no longer writes history on the APK, but this is the guarantee that
+   * the gesture belongs to the SPA and not to a WebView history that has no
+   * meaning here: while the stack has something to pop, back goes straight to
+   * the dispatcher (the same path that bridges to the predictive-back callback).
+   * With nothing to pop it falls through, so back at the root still plays the
+   * system's back-to-home animation and finishes the activity.
+   */
+  override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+    if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK && backCallback.isEnabled) {
+      if (event.action == android.view.KeyEvent.ACTION_UP) {
+        onBackPressedDispatcher.onBackPressed()
+      }
+      return true
+    }
+    return super.dispatchKeyEvent(event)
+  }
+
   inner class SafeArea {
     @JavascriptInterface fun top(): Float = topInset
     @JavascriptInterface fun bottom(): Float = bottomInset
