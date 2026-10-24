@@ -13,27 +13,48 @@ import { isNativeApp } from './platform';
  * itself, nothing intercepts the gesture, and the system plays its predictive
  * back-to-home animation instead of the app trying to consume it.
  *
- * Registration order decides precedence: dialogs sit above modals, which sit
- * above the page/view handler — the provider tree mounts children first, so a
- * parent's effect (DialogProvider) registers later and wins the top slot.
+ * Registration order inside one layer decides precedence: dialogs sit above
+ * modals, which sit above the other overlays — the provider tree mounts children
+ * first, so a parent's effect (DialogProvider) registers later and wins the top
+ * slot. Across layers the layer decides: overlays always dismiss before the
+ * view layer navigates, whatever mounted when.
  */
 
 type BackHandler = () => boolean;
 
-const stack: BackHandler[] = [];
+/**
+ * Two layers, dispatched overlay-first.
+ *
+ * Registration order alone cannot decide precedence: a sheet that opens in the
+ * same commit that mounts (or re-activates) its page has its child effect run
+ * *before* the page-level handler's, so on a plain LIFO the page handler would
+ * sit on top and every back would navigate instead of dismissing the sheet the
+ * user is looking at. Layering makes it deterministic — overlays (sheets,
+ * dialogs, menus, pickers) always get the gesture before the page/view layer,
+ * and the view layer only runs when no overlay is up.
+ */
+const overlayStack: BackHandler[] = [];
+const viewStack: BackHandler[] = [];
+
+export type BackLayer = 'overlay' | 'view';
+
+};
 
 /** Tell Kotlin whether there is anything to pop. */
 const syncCapacity = () => {
     const bridge = (window as unknown as { HrtBack?: { setCanPop: (v: boolean) => void } }).HrtBack;
-    if (isNativeApp() && bridge) bridge.setCanPop(stack.length > 0);
+    if (isNativeApp() && bridge) bridge.setCanPop(overlayStack.length > 0 || viewStack.length > 0);
 };
 
 /** Dispatches `hrt-back` through the handler stack. Installed once in App. */
 export const installNativeBack = (): (() => void) => {
     if (!isNativeApp()) return () => {};
     const onBack = () => {
-        for (let i = stack.length - 1; i >= 0; i--) {
-            if (stack[i]()) return;
+        for (let i = overlayStack.length - 1; i >= 0; i--) {
+            if (overlayStack[i]()) return;
+        }
+        for (let i = viewStack.length - 1; i >= 0; i--) {
+            if (viewStack[i]()) return;
         }
     };
     window.addEventListener('hrt-back', onBack);
@@ -48,19 +69,28 @@ export const installNativeBack = (): (() => void) => {
  * Consume back while `active`. The handler is kept in a ref so opening a
  * dialog/modal does not churn the native registration — only the active flag
  * does.
+ *
+ * `layer` decides who is asked first, whatever the registration order turned
+ * out to be: overlays dismiss before the view layer navigates. The view-level
+ * handler in `useAppNavigation` is the one `'view'` registration.
  */
-export const useBackHandler = (active: boolean, handler: BackHandler) => {
+export const useBackHandler = (
+    active: boolean,
+    handler: BackHandler,
+    layer: BackLayer = 'overlay',
+) => {
     const ref = useRef(handler);
     ref.current = handler;
     useEffect(() => {
         if (!active) return;
         const h = () => ref.current();
-        stack.push(h);
+        const target = layer === 'view' ? viewStack : overlayStack;
+        target.push(h);
         syncCapacity();
         return () => {
-            const i = stack.lastIndexOf(h);
-            if (i >= 0) stack.splice(i, 1);
+            const i = target.lastIndexOf(h);
+            if (i >= 0) target.splice(i, 1);
             syncCapacity();
         };
-    }, [active]);
+    }, [active, layer]);
 };

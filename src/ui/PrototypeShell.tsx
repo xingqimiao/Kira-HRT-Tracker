@@ -1,7 +1,8 @@
 import type { MouseEvent, ReactNode, RefObject } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Icon } from './SvgDefs';
 import { rememberTransformSource } from './ContainerTransform';
+import { useBackHandler } from '../utils/nativeBack';
 
 /** The prototype's five tabs, in its order. */
 export type ShellTab = 'home' | 'history' | 'lab' | 'settings' | 'account';
@@ -53,6 +54,19 @@ export function PrototypeShell({
 }) {
     const [menuOpen, setMenuOpen] = useState(false);
     const hasMenu = Boolean(fab?.menu?.length);
+
+    // System back closes the speed-dial. Without this the gesture fell through
+    // to the view handler and navigated with the menu still floating — and since
+    // the shell outlives every page, the expanded menu survived the navigation
+    // and re-appeared on the page the user came back to. Closing it on navigation
+    // covers the same surprise for every other path (a nav tap, the rail logo).
+    useBackHandler(menuOpen, () => {
+        setMenuOpen(false);
+        return true;
+    });
+    useEffect(() => {
+        setMenuOpen(false);
+    }, [activeId]);
 
     const onFabClick = (e: MouseEvent<HTMLButtonElement>) => {
         // The surface it opens measures this exact button. Recorded even for the

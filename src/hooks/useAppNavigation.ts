@@ -160,7 +160,7 @@ export const useAppNavigation = (initialView: ViewKey = 'home') => {
         applyView(parent);
         writeEntry(parent, 0, true);
         return true;
-    });
+    }, 'view');
 
     // --- Derived Data ---
     const navItems = [

@@ -509,17 +509,32 @@ const AppContent = () => {
         return () => { document.body.style.overflow = ''; };
     }, [isPasswordInputOpen, isWeightModalOpen, isFormOpen, isDisclaimerOpen]);
 
-    // Android system back closes the topmost overlay. Registered after the
-    // navigation handler (declared later wins the top of the stack), and the
-    // dialog provider above this closes dialogs before modals.
-    useBackHandler(isQuickAddOpen, () => { setIsQuickAddOpen(false); return true; });
-    useBackHandler(isQuickAddLabOpen, () => { setIsQuickAddLabOpen(false); return true; });
+    // Android system back closes the topmost overlay. The container-transform
+    // sheets (quick add on either mode, the edit sheets) register themselves in
+    // their own component — a handler here AND there made the two fight over one
+    // gesture, closing and reopening until back could dismiss nothing. What
+    // still needs a handler here is what does not self-register: the
+    // AdaptiveSheet surfaces and the plain modals.
     useBackHandler(quickRecordOpen, () => { setQuickRecordOpen(false); return true; });
     useBackHandler(isPasswordInputOpen, () => { setIsPasswordInputOpen(false); return true; });
     useBackHandler(isWeightModalOpen, () => { setIsWeightModalOpen(false); return true; });
     useBackHandler(isFormOpen, () => { setIsFormOpen(false); return true; });
     useBackHandler(isDisclaimerOpen, () => { setIsDisclaimerOpen(false); return true; });
     useBackHandler(isCoreAuthOpen, () => { setIsCoreAuthOpen(false); setPrefillUsername(''); return true; });
+
+    // The overlay states above live one level up from the pages that render
+    // them, so they survive a view switch — and a reader who navigates away from
+    // an open sheet and comes back would find it still standing, unreachable by
+    // back (its component unmounted with the page). Leaving a view closes what
+    // was open on it. The FAB opens these states without navigating, so a plain
+    // "open" cycle never runs this effect with a live sheet.
+    useEffect(() => {
+        setIsQuickAddOpen(false);
+        setIsQuickAddLabOpen(false);
+        setIsLabScanOpen(false);
+        setEditingEvent(null);
+        setQuickRecordOpen(false);
+    }, [currentView]);
 
     // Native shell wiring: system back dispatch and system-browser links.
     useEffect(() => installNativeBack(), []);

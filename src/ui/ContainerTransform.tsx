@@ -200,14 +200,16 @@ export function ContainerTransform({
 
     /**
      * The overlay is a modal, so system back must close it rather than reach the
-     * page underneath — and it must keep doing so during the return, where a
-     * cancel instead reverses the animation. Without this the med-plan editor
-     * stayed open while back tore the settings category down; one swipe flashed
-     * the page behind the sheet, a second one left settings altogether.
+     * page underneath. While the surface is animating out, back consumes and lets
+     * the exit finish — reversing it here is what made the sheet unclosable: the
+     * close and the gesture raced, the next back reopened the just-dismissed
+     * surface, and with the caller's own handler above it the two fought until
+     * back could no longer dismiss anything. (`onReopen` stays for Escape and the
+     * return-hit tap, where reversing is the point.)
      */
     useBackHandler(mounted, () => {
-        if (!open) onReopen?.();
-        else onClose();
+        if (!open) return true;
+        onClose();
         return true;
     });
 

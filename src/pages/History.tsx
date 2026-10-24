@@ -11,6 +11,7 @@ import { Icon as SpriteIcon } from '../ui/SvgDefs';
 import BloodVial from '../components/BloodVial';
 import { useHRTMode } from '../contexts/HRTModeContext';
 import { FullScreenSheet } from '../ui/FullScreenSheet';
+import { useBackHandler } from '../utils/nativeBack';
 import { DoseTemplate } from '../components/DoseFormModal';
 import { DoseDayGroup } from '../hooks/useAppData';
 import { useScrollParent } from '../hooks/useScrollParent';
@@ -281,6 +282,14 @@ const History: React.FC<HistoryProps> = ({
         setSelectMode(false);
         setSelectedIds(new Set());
     };
+
+    // System back leaves selection mode instead of navigating away with the
+    // selection still lit — the rows stay highlighted and the view the gesture
+    // lands on is not where the reader was heading.
+    useBackHandler(selectMode, () => {
+        exitSelectMode();
+        return true;
+    });
 
     const toggleSelectAll = () => {
         setSelectedIds(prev =>
