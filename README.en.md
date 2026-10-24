@@ -373,21 +373,32 @@ Signing and publishing: `server/DEPLOY.md` §4b.
 
 ## Self-hosting
 
-**Simplified deployment: [`deploy/self-host/README.en.md`](deploy/self-host/README.en.md)**. Docker Compose, local encryption keys, automatic HTTPS, LAN certificates and backup/restore/versioned upgrade tooling, without Oracle/Firebase accounts.
+A separate **Web/PWA self-hosting distribution** shares the main application's code and includes multiple accounts, sync, sharing, MCP and offline lab-report recognition. Install Docker Compose v2; no Oracle, Firebase or third-party sign-in account is required. Linux amd64 and arm64 images support public servers and home NAS devices.
 
-The front end is a static build; the back end is the Node service in `server/`, which needs a
-Postgres.
+Download `kira-hrt-self-host-2.2.2.tar.gz` from the [self-hosting 2.2.2 Release](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/tag/self-host-v2.2.2), extract it, enter the directory and substitute your own address:
 
-The full manual is **[`server/DEPLOY.md`](server/DEPLOY.md)** (database, systemd, Caddy reverse
-proxy, KMS setup, cloud keys, pre-deployment checks, and the Android release flow).
+```sh
+sh hrt.sh init https://hrt.example.com
+sh hrt.sh start
+sh hrt.sh check
+```
+
+On Windows PowerShell use `./hrt.ps1 init ADDRESS`, `./hrt.ps1 start` and `./hrt.ps1 check`. Point a public domain at the server and open ports 80/443 for Caddy's automatic HTTPS. For a NAS, enter a fixed LAN IP or domain, run `cert` after startup, and install the exported local CA on your devices before using the PWA. The API and PostgreSQL are accessible only on the internal network.
+
+Initialization generates the local master key and database password and refuses to overwrite existing configuration. OAuth, CAPTCHA, FCM and official-site updates are disabled by default. The official Android APK continues to use the official service; use a browser/PWA on mobile for self-hosting. Migrate through the application's export/import flow; copying an OCI database and switching key providers is unsupported.
+
+The **[full self-hosting guide](deploy/self-host/README.en.md)** covers certificate trust, `backup`, `restore` into an empty instance, fixed-version `upgrade` and source builds. Back up the database, configuration, master key and local CA before upgrading, and store key backups separately from database backups. Losing the master key makes recovery impossible. Images do not track `latest`. See the [verification record](deploy/self-host/VERIFICATION.md) for the scope of public-certificate and mobile PWA validation.
+
+For systemd, OCI KMS or customized deployments, see **[`server/DEPLOY.md`](server/DEPLOY.md)**.
 
 ---
 
 ## Security and privacy
 
 - **Per-account encryption**: every record is sealed under its account's own data key (DEK);
-  the DEK is wrapped both by a KEK derived from the password and by the deployment's OCI KMS
-  master key (held in an HSM — no key material lives on the box).
+  the DEK is wrapped both by a KEK derived from the password and by the deployment's master
+  key. The official service uses OCI KMS/HSM. Self-hosting defaults to a local AES-256-GCM
+  master-key file in the server's administrative boundary, without cloud HSM isolation.
 - **A stolen dump is unreadable**: without the deployment's key material, a database dump is
   just ciphertext.
 - **An honest boundary**: this is not a "the server never sees the data" zero-knowledge design.

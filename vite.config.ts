@@ -161,15 +161,38 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       {
-        name: 'self-host-html',
+        name: 'distribution-html',
         transformIndexHtml: {
           order: 'pre',
-          handler: (html) => process.env.HRT_SELF_HOST === '1' ? html
-            .replace(/<script[^>]+src="https:\/\/challenges\.cloudflare\.com\/[^\"]+"[^>]*><\/script>/g, '')
-            .replace(/<link rel="canonical"[^>]*>/g, '')
-            .replace(/<meta (?:property="og:(?:url|image)"|name="twitter:image")[^>]*>/g, '')
-            .replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/g, '')
-            .replace('content="index, follow"', 'content="noindex, nofollow"') : html,
+          // Build known tags through Vite's HTML API. Do not sanitize HTML by
+          // deleting substrings: removal can join fragments into new markup.
+          handler: () => process.env.HRT_SELF_HOST === '1'
+            ? [{ tag: 'meta', attrs: { name: 'robots', content: 'noindex, nofollow' } }]
+            : [
+              { tag: 'meta', attrs: { name: 'robots', content: 'index, follow' } },
+              { tag: 'link', attrs: { rel: 'canonical', href: 'https://hrt.kiramyao.com/' } },
+              { tag: 'meta', attrs: { property: 'og:url', content: 'https://hrt.kiramyao.com/' } },
+              { tag: 'meta', attrs: { property: 'og:image', content: 'https://hrt.kiramyao.com/og.png' } },
+              { tag: 'meta', attrs: { name: 'twitter:image', content: 'https://hrt.kiramyao.com/og.png' } },
+              { tag: 'script', attrs: { src: 'https://challenges.cloudflare.com/turnstile/v0/api.js', async: true, defer: true } },
+              {
+                tag: 'script', attrs: { type: 'application/ld+json' },
+                children: JSON.stringify({
+                  '@context': 'https://schema.org',
+                  '@type': 'WebApplication',
+                  name: 'Kira HRT Tracker',
+                  alternateName: ['HRT 记录', 'Kira HRT', 'HRT 记录工具', 'HRT Records'],
+                  url: 'https://hrt.kiramyao.com/',
+                  image: 'https://hrt.kiramyao.com/og.png',
+                  applicationCategory: 'HealthApplication',
+                  operatingSystem: 'Web, iOS, Android, Windows, macOS',
+                  description: 'HRT 记录工具：记录激素替代治疗（HRT）的用药与化验结果，云同步备份，并按药代动力学模型估算激素水平曲线。',
+                  inLanguage: ['zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'ru', 'uk'],
+                  author: { '@type': 'Organization', name: 'KiraEqual', url: 'https://kiramyao.com' },
+                  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+                }),
+              },
+            ],
         },
       },
       ocrOrtGlue(),

@@ -62,7 +62,7 @@ const json = (body: unknown, token?: string): RequestInit => ({
 });
 
 /** A passwordless account with exactly two provider rows, via the storage seam. */
-async function passwordlessAccountWithTwoProviders() {
+async function oauthAccountWithTwoProviders() {
   const account = await registerAccount(base, {});
   const pool = await getPool();
   const { rows } = await pool.query<{ id: string }>(`SELECT id FROM users WHERE username = $1`, [account.username]);
@@ -72,15 +72,16 @@ async function passwordlessAccountWithTwoProviders() {
     `INSERT INTO oauth_accounts (user_id, provider, provider_user_id, handle) VALUES ($1, 'x', $2, 'racer'), ($1, 'google', $3, 'racer')`,
     [userId, `x-${userId}`, `g-${userId}`],
   );
-  return { account, userId };
+  // Callers only need the bearer credential, never the discarded password.
+  return { token: account.token, userId };
 }
 
 test('concurrent unlinks leave exactly one way in', async () => {
-  const { account, userId } = await passwordlessAccountWithTwoProviders();
+  const { token, userId } = await oauthAccountWithTwoProviders();
 
   const [viaX, viaGoogle] = await Promise.all([
-    call(base, '/auth/x/unlink', json({}, account.token)),
-    call(base, '/auth/oauth/google/unlink', json({}, account.token)),
+    call(base, '/auth/x/unlink', json({}, token)),
+    call(base, '/auth/oauth/google/unlink', json({}, token)),
   ]);
 
   const succeeded = [viaX, viaGoogle].filter((r) => r.status === 200).length;
@@ -94,11 +95,11 @@ test('concurrent unlinks leave exactly one way in', async () => {
 });
 
 test('the last remaining provider is refused sequentially too', async () => {
-  const { account, userId } = await passwordlessAccountWithTwoProviders();
+  const { token, userId } = await oauthAccountWithTwoProviders();
   const pool = await getPool();
   await pool.query(`DELETE FROM oauth_accounts WHERE user_id = $1 AND provider = 'google'`, [userId]);
 
-  const refused = await call(base, '/auth/x/unlink', json({}, account.token));
+  const refused = await call(base, '/auth/x/unlink', json({}, token));
   assert.notEqual(refused.status, 200);
   assert.match(String(refused.body?.error), /only way into the account/);
 
@@ -115,9 +116,9 @@ test('the unlink serializes behind the users row and re-reads the guard under it
   // the guard under the lock, and refuses — under the old read-then-delete flow it
   // decided from its pre-lock snapshot, deleted anyway, and the account below
   // would be left with zero ways in.
-  const { account, userId } = await passwordlessAccountWithTwoProviders();
-  const ctx = await AccountService.resolveApiContext(account.token);
-  assert.ok(ctx, 'the session resolves');
+  const { token, userId } = await oauthAccountWithTwoProviders();
+  const ctx = await AccountService.resolveApiContext(token);
+  assert.ok(ctx && !('denied' in ctx), 'the session resolves');
 
   const pool = await getPool();
   const client = await pool.connect();

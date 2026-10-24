@@ -316,17 +316,29 @@ node_modules/.bin/tauri android build --apk --target aarch64 \
 
 ## 自行托管
 
-**简化部署入口：[`deploy/self-host/README.md`](deploy/self-host/README.md)**。提供 Docker Compose、本地加密密钥、自动 HTTPS、NAS 局域网证书，以及备份、恢复和固定版本升级命令；无需 Oracle/Firebase 账号。
+提供独立的 **Web/PWA 自部署发行包**，与主线共用业务代码，保留多账号、同步、分享、MCP 和离线化验单识别。只需 Docker Compose v2，无需注册 Oracle、Firebase 或第三方登录平台账号；支持 Linux amd64、arm64 的公网服务器和 NAS。
 
-前端是静态构建，后端是 `server/` 里的 Node 服务，只需要一个 PostgreSQL。
+从 [自部署 2.2.2 Release](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/tag/self-host-v2.2.2) 下载 `kira-hrt-self-host-2.2.2.tar.gz`，解压后进入目录，将地址替换为自己的域名：
 
-完整手册见 **[`server/DEPLOY.md`](server/DEPLOY.md)**（数据库、systemd、Caddy 反向代理、KMS 配置、云端密钥、部署前检查、Android 发布流程）。
+```sh
+sh hrt.sh init https://hrt.example.com
+sh hrt.sh start
+sh hrt.sh check
+```
+
+Windows PowerShell 对应使用 `./hrt.ps1 init 地址`、`./hrt.ps1 start`、`./hrt.ps1 check`。公网域名需解析到服务器并开放 80/443，Caddy 自动申请 HTTPS；NAS 可填写固定局域网 IP 或域名，启动后执行 `cert` 导出本地 CA，并在设备上安装信任后使用 PWA。API 和 PostgreSQL 仅在内部网络开放。
+
+初始化生成本地加密主密钥与数据库密码，重复执行不会覆盖。默认关闭 OAuth、验证码、FCM 和官网更新入口；Android 官网 APK 仍连接官网，自部署在手机上使用浏览器/PWA。迁移请使用应用导出、导入功能，不能直接复制 OCI 数据库后切换密钥提供方。
+
+**[完整自部署指南](deploy/self-host/README.md)** 包含证书信任、`backup`、空实例 `restore`、固定版本 `upgrade` 和源码构建。升级前备份数据库、配置、主密钥及本地 CA，并将密钥与数据库备份分开保管；丢失主密钥无法恢复数据。镜像不追踪 `latest`。公网证书与手机 PWA 的实际验收范围见 [验证记录](deploy/self-host/VERIFICATION.md)。
+
+采用 systemd、OCI KMS 或定制部署的维护者，可参考 **[`server/DEPLOY.md`](server/DEPLOY.md)**。
 
 ---
 
 ## 安全与隐私
 
-- **逐帐户加密**：每条记录由该帐户自己的数据密钥（DEK）加密；DEK 由口令派生的 KEK 与服务端 OCI KMS 主密钥（存于 HSM，机箱上不落密钥材料）分别包裹。
+- **逐帐户加密**：每条记录由该帐户自己的数据密钥（DEK）加密；DEK 由口令派生的 KEK 与部署主密钥分别包裹。官网使用 OCI KMS/HSM；自部署默认使用本地 AES-256-GCM 主密钥文件，与服务器处于同一管理边界，不具备云 HSM 的隔离能力。
 - **失窃数据库不可读**：没有部署的密钥材料，数据库转储只是一堆密文。
 - **诚实边界**：这不是「服务端永远看不到数据」的零知识方案。一旦 AI 助手进入数据路径，明文就会进入模型提供商的上下文——严格的端到端加密无法穿过一个助手，本项目不作此承诺。
 - **无 SQL 级统计**：服务端无法从密文里聚合剂量或化验；唯一公开的聚合是 `/stats`（只有计数，无标识）。
