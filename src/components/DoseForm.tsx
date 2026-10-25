@@ -234,6 +234,14 @@ const DoseForm: React.FC<DoseFormProps> = ({
      *  template (delete) from one the user then edited (modify). */
     const [tplSnapPending, setTplSnapPending] = useState(false);
     const tplBaselineRef = useRef<string | null>(null);
+    /** The form as it was before a template was applied, so tapping the same chip
+     *  again can put everything back. */
+    const preTplRef = useRef<{
+        cat: CatId; route: Route; drugId: string; patchMode: PatchMode;
+        dose: number; doseText: string;
+        gelSite: number; gelProductId: number; gelCoverage: number; gelCoApplied: number; gelWashHours: number;
+        slTier: number; patchWearDays: string;
+    } | null>(null);
     const [snack, setSnack] = useState('');
     const [showInjectionGuide, setShowInjectionGuide] = useState(false);
     const [customGels, setCustomGels] = useState<GelProduct[]>(() => readGelProducts());
@@ -416,6 +424,7 @@ const DoseForm: React.FC<DoseFormProps> = ({
         setVehicle(record?.extras?.[ExtraKey.vehicle] === VehicleType.aqueous ? VehicleType.aqueous : VehicleType.oil);
         setSelectedPatchId(null);
         setActiveTplId(null);
+        preTplRef.current = null;
         setShowTimePage(false);
         setShowTplSheet(false);
         setTemplateName('');
@@ -497,8 +506,7 @@ const DoseForm: React.FC<DoseFormProps> = ({
         return `${name} · ${trimNumber(amount.value)} ${amount.unit}`;
     };
 
-    const applyTemplate = (tpl: DoseTemplate) => {
-        const d = (tpl.drugId ? findDrug(mode, tpl.drugId) : undefined)
+    const applyTemplate = (tpl: DoseTemplate) => {        const d = (tpl.drugId ? findDrug(mode, tpl.drugId) : undefined)
             ?? matchDrug(mode, tpl.route, tpl.ester)
             ?? DRUGS[mode][0];
         setCat(d.cat);
@@ -535,6 +543,54 @@ const DoseForm: React.FC<DoseFormProps> = ({
         setAnimTick(k => k + 1);
         setPopKey(k => k + 1);
         toast(t('template.loaded'));
+    };
+
+    /**
+     * Put the form back the way it was before a template was applied.
+     *
+     * The snapshot is taken once, on the first chip press, so switching from one
+     * template to another and then tapping again still returns to the form the
+     * user actually opened rather than to the previous template.
+     */
+    const restorePreTemplate = () => {
+        const snap = preTplRef.current;
+        if (snap) {
+            setCat(snap.cat);
+            setRoute(snap.route);
+            setDrugId(snap.drugId);
+            setPatchMode(snap.patchMode);
+            setDose(snap.dose);
+            setDoseText(snap.doseText);
+            setGelSite(snap.gelSite);
+            setGelProductId(snap.gelProductId);
+            setGelCoverage(snap.gelCoverage);
+            setGelCoApplied(snap.gelCoApplied);
+            setGelWashHours(snap.gelWashHours);
+            setSlTier(snap.slTier);
+            setPatchWearDays(snap.patchWearDays);
+        }
+        preTplRef.current = null;
+        tplBaselineRef.current = null;
+        setTplSnapPending(false);
+        setActiveTplId(null);
+        setAnimTick(k => k + 1);
+        setPopKey(k => k + 1);
+    };
+
+    /** A chip selects its template; pressing the selected one again clears it. */
+    const toggleTemplate = (tpl: DoseTemplate) => {
+        if (activeTplId === tpl.id) {
+            restorePreTemplate();
+            return;
+        }
+        if (!preTplRef.current) {
+            preTplRef.current = {
+                cat, route, drugId, patchMode, dose, doseText,
+                gelSite, gelProductId, gelCoverage, gelCoApplied, gelWashHours,
+                slTier, patchWearDays,
+            };
+        }
+        applyTemplate(tpl);
     };
 
     // ——— Values written back ———
@@ -752,7 +808,10 @@ const DoseForm: React.FC<DoseFormProps> = ({
     const deleteTemplate = (tpl: DoseTemplate) => {
         showDialog('confirm', t('template.delete_confirm'), () => {
             onDeleteTemplate(tpl.id);
-            if (activeTplId === tpl.id) setActiveTplId(null);
+            if (activeTplId === tpl.id) {
+                setActiveTplId(null);
+                tplBaselineRef.current = null;
+            }
         });
     };
 
@@ -1270,7 +1329,7 @@ const DoseForm: React.FC<DoseFormProps> = ({
                             onPointerCancel={endLongPress}
                             onClick={() => {
                                 if (consumeSuppressedClick()) return;
-                                applyTemplate(tpl);
+                                toggleTemplate(tpl);
                             }}
                         >
                             <Icon id="bolt" />
