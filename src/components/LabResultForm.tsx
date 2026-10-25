@@ -233,7 +233,13 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
             ? (!!prlValue || !!altValue || !!astValue || !!kValue)
             : !!editValue)
         : (!!e2Value || !!tValue || !!prlValue || !!altValue || !!astValue || !!kValue);
-    const editIsT = resultToEdit?.analyte ? resultToEdit.analyte === 'T' : isT_LabUnit(editUnit);
+    // Editing a record whose type was never established: the unit is the only
+    // evidence there is, and saving the form without it would quietly rewrite a
+    // testosterone reading (ng/dl) as E2. An explicit E2 still wins.
+    const editIsT = resultToEdit
+        ? resultToEdit.analyte === 'T'
+            || (resultToEdit.analyte !== 'E2' && isT_LabUnit(editUnit))
+        : isT_LabUnit(editUnit);
 
     const dateLabel = dateStr
         ? new Date(dateStr).toLocaleDateString(LOCALE_MAP[lang] || 'en-US', { month: 'short', day: 'numeric', year: 'numeric' })
