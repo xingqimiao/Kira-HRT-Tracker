@@ -493,7 +493,10 @@ const CONTENT_FIELDS: Record<RecordKind, readonly string[]> = {
     // Monitoring bloods are part of the record, so a later edit to prolactin/ALT/K
     // has to show up as a content change; omitting them made the merge treat the two
     // versions as the same record and keep whichever copy it already held.
-    labResults: ['unit', 'concValue', 'timeH', 'monitoringOnly', 'prolactin', 'prolactinUln', 'alt', 'altUln', 'ast', 'potassium'],
+    // `analyte` belongs here for the same reason: the upgrade migration writes it
+    // onto legacy rows, and without it that write is invisible to the transport
+    // (never uploaded) and a pull can hand the untyped copy straight back.
+    labResults: ['analyte', 'unit', 'concValue', 'timeH', 'monitoringOnly', 'prolactin', 'prolactinUln', 'alt', 'altUln', 'ast', 'potassium'],
     doseTemplates: ['name', 'route', 'ester', 'doseMG', 'extras'],
     // Everything a check-in holds. The scales may be absent ("not answered"),
     // which stableString renders as an empty slot, so one answered scale is

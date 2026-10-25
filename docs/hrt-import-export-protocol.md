@@ -124,11 +124,19 @@ monitoring values and no hormone reading should also set `"monitoringOnly": true
 ### 4.2.1 Legacy backups without `analyte`
 
 Backups written before the field existed carry only `unit` + `concValue`. On import Kira
-keeps every record but labels the labs `unknown`; they are visible and exported, but not
-used for calibration.
+keeps every record; without the compatibility option below they are stored as `unknown` —
+visible and exported, but not used for calibration.
 
-The import **preview** therefore offers a one-time, user-confirmed compatibility option
-when it detects such rows:
+Records already **stored** by a build older than 2.3.0 are different: the app classifies
+them once at load, from the unit, using the same two rules. That migration exists because
+2.3.0 made an explicit analyte the entry ticket to calibration, so an upgraded account
+whose whole history predated the field would otherwise lose its entire fit and silently
+draw the raw population curve. It only ever fills a *missing* field — an explicit `E2`,
+`T` or `unknown` is never overwritten, monitoring-only records stay untyped, and the
+pass is idempotent.
+
+The import **preview** offers the same mapping as a one-time, user-confirmed option when
+it detects such rows:
 
 ```
 pg/ml, pmol/l -> E2

@@ -19,7 +19,7 @@ import { JournalEntry, sanitizeJournalEntries } from '../utils/bodyJournal';
 import { hrtDaysSince, normalizeHrtStartDate } from '../utils/hrtStart';
 import { milestoneFor } from '../utils/hrtMilestone';
 import { isThirdDayStreak } from '../utils/hrtStreak';
-import { normalizeImportedAnalyte } from '../utils/labAnalyteImport';
+import { backfillLegacyLabAnalyte, normalizeImportedAnalyte } from '../utils/labAnalyteImport';
 import { get as secureGet, set as secureSet, remove as secureRemove } from '../utils/secureStore';
 import { readMedPlans, readMedPlanState, writeMedPlans, setMedPlanOwner, MED_PLAN_CHANGED_EVENT } from '../utils/medPlan';
 
@@ -626,6 +626,26 @@ export const useAppData = (
             secureRemove(sharedKey('pk-params'));
         }
     }, [pkParams, scope]);
+    useEffect(() => {
+        if (loadedScopeRef.current !== scope) return;
+        // Every hormone lab stored before the analyte field existed gets the type its
+        // unit has always implied. Without this an upgraded account loses its whole
+        // calibration and the drawn level becomes the raw population curve.
+        //
+        // The first pass for a device also rescues rows 2.3.0 froze as `unknown`
+        // before writing them back: that release's sync path sanitised a legacy row
+        // into an explicit `unknown`, so "no field at all" is not the only shape the
+        // damage takes. One pass, marked, and afterwards an explicit `unknown` is
+        // honoured — an agent's lab with no stated type must stay uncalibrated.
+        const marker = sharedKey('analyte-backfill');
+        const oneTime = secureGet(marker) !== '1';
+        const { labs, changed } = backfillLegacyLabAnalyte(labResults, { includeUnknown: oneTime });
+        if (changed > 0) setLabResults(labs);
+        // Close the window only once this device has actually seen records: a device
+        // that starts empty and receives its history from the cloud on the next pull
+        // must still get the same one-time rescue.
+        if (oneTime && labResults.length > 0) secureSet(marker, '1');
+    }, [labResults, scope]);
     useEffect(() => {
         if (loadedScopeRef.current !== scope) return;
         secureSet(keyFor(mode, 'lab-results'), JSON.stringify(labResults));
@@ -1710,7 +1730,10 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
         const clean = MODE_KEYS.map(m => ({
             m,
             events: sanitizeImportedEvents(state.modes[m].events),
-            labResults: sanitizeImportedLabResults(state.modes[m].labResults),
+            // Classify a legacy row *before* the sanitiser, which would otherwise
+            // stamp a server copy with no analyte field as an explicit `unknown` and
+            // hide it from the one-time rescue above.
+            labResults: sanitizeImportedLabResults(backfillLegacyLabAnalyte(state.modes[m].labResults ?? []).labs),
             doseTemplates: sanitizeImportedTemplates(state.modes[m].doseTemplates),
             quickDoses: state.modes[m].quickDoses ?? [],
             journal: sanitizeJournalEntries(state.modes[m].journal ?? []),

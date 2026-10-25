@@ -554,6 +554,20 @@ check('a lab monitoring value edit is uploaded', () => {
   assert.deepEqual(ids(changedRecords(pushPayload(local), pushPayload(remote))), ['lab:transfem:l1']);
 });
 
+check('an analyte backfill is uploaded, not lost to a pull', () => {
+  // The upgrade migration adds `analyte` to a record stored by an older build. If the
+  // field is not content, the transport cannot see the change and the next pull hands
+  // the untyped copy back — the migration would be undone on every device start.
+  const remote = modeWith('transfem', {
+    labResults: [{ id: 'l1', concValue: 190, unit: 'pg/ml', timeH: 100, updatedAt: 5 }],
+  });
+  const local = modeWith('transfem', {
+    labResults: [{ id: 'l1', concValue: 190, unit: 'pg/ml', timeH: 100, analyte: 'E2', updatedAt: 5 }],
+  });
+  assert.deepEqual(ids(changedRecords(pushPayload(local), pushPayload(remote))), ['lab:transfem:l1']);
+  assert.deepEqual(ids(changedRecords(pushPayload(local), pushPayload(local))), []);
+});
+
 check('a deletion tombstone still travels', () => {
   // Deletions merge as a union, so a local map that has gained an entry must be written
   // or the other device resurrects the record.
