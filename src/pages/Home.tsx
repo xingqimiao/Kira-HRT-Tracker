@@ -351,13 +351,6 @@ const Home: React.FC<HomeProps> = ({
                                         }
                                         logTemplate(template);
                                     }}
-                                    onKeyDown={(e) => {
-                                        // Keyboard equivalent of the second × tap.
-                                        if (deletable && (e.key === 'Delete' || e.key === 'Backspace')) {
-                                            e.preventDefault();
-                                            armTemplateDelete(template.id);
-                                        }
-                                    }}
                                 />
                             );
                         })}
