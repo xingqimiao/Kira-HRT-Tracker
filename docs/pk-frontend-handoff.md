@@ -1,6 +1,8 @@
 # Kira HRT Tracker — 2026 药代动力学模型升级前端团队交接文档
 *(PK Model Upgrade 2026 — Frontend Integration Guide)*
 
+> **历史文档（2026-10-26 注）：** 本文写于“单一模型升级”时期。当前产品有两套可切换引擎、两套都支持估计背景 E2、化验带 `analyte`/unknown 路由，并且后续审计确认 F/V 等参数不能被单条曲线唯一识别。文中“黄金基准/唯一模型”等表述不再是当前承诺。当前行为以 README、`docs/hrt-import-export-protocol.md` 和 `research/pk-continuation-20261025-2324/` 下的验收记录为准。
+
 ---
 
 ## 1. 概述与核心变更

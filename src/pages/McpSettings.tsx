@@ -31,7 +31,6 @@ const MCP_TOOLS: { name: string }[] = [
     { name: 'hrt_check_advisories' },
     { name: 'hrt_med_plan_status' },
     { name: 'hrt_get_settings' },
-    { name: 'hrt_sync_state' },
     { name: 'hrt_reference' },
     { name: 'hrt_add_medication' },
     { name: 'hrt_add_lab_result' },

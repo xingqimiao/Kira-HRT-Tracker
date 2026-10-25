@@ -90,4 +90,4 @@ OAuth、Turnstile、FCM、赞助集成及官网更新默认关闭，不影响基
 
 保留 GPL 和上游署名。默认运行无需官网 API、验证码或 Firebase；主动点击署名、源码等外部链接仍会访问相应站点。
 
-维护者：`node scripts/package-self-host.mjs` 生成标准包；本次修订包用 `node scripts/package-self-host.mjs setup.2`。应用版本取自 `package.json`，修订后缀不改变镜像版本。完整版本发布使用匹配的 `self-host-v版本号` 标签触发双架构流水线；fork 需发布自己的公开镜像并配置 `IMAGE_PREFIX`。实际公网 ACME、手机证书/PWA 验收范围见 [验证记录](https://github.com/xingqimiao/Kira-HRT-Tracker/blob/rewrite/deploy/self-host/VERIFICATION.md)。
+维护者：`node scripts/package-self-host.mjs` 生成标准包；仅修改脚本或文档时可加 `setup.N` 生成修订包。应用版本取自 `package.json`，修订后缀不改变镜像版本。完整版本发布使用匹配的 `self-host-v版本号` 标签触发双架构流水线；fork 需发布自己的公开镜像并配置 `IMAGE_PREFIX`。实际公网 ACME、手机证书/PWA 验收范围见 [验证记录](https://github.com/xingqimiao/Kira-HRT-Tracker/blob/rewrite/deploy/self-host/VERIFICATION.md)。

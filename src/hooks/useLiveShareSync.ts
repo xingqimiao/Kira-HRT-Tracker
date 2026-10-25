@@ -9,6 +9,7 @@ interface LiveShareSyncOptions {
     events: DoseEvent[];
     simulation: SimulationResult | null;
     calibrationFn: (timeH: number) => number;
+    calibrationOffsetFn?: (timeH: number) => number;
 }
 
 /**
@@ -25,6 +26,7 @@ export const useLiveShareSync = ({
     events,
     simulation,
     calibrationFn,
+    calibrationOffsetFn,
 }: LiveShareSyncOptions): void => {
     const [liveShareIds, setLiveShareIds] = useState<Array<{ id: string; legacy: boolean }>>([]);
     const [refreshTick, setRefreshTick] = useState(0);
@@ -33,8 +35,8 @@ export const useLiveShareSync = ({
     const dataReady = events.length === 0 || simulation !== null;
 
     const snapshot = useMemo(
-        () => buildSharedDosageSnapshot({ mode, events, simulation, calibrationFn }),
-        [mode, events, simulation, calibrationFn],
+        () => buildSharedDosageSnapshot({ mode, events, simulation, calibrationFn, offsetFn: calibrationOffsetFn }),
+        [mode, events, simulation, calibrationFn, calibrationOffsetFn],
     );
     const latestSnapshotRef = useRef(snapshot);
     latestSnapshotRef.current = snapshot;

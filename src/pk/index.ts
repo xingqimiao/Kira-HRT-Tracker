@@ -53,7 +53,6 @@ import type {
     SimulationResult as VSimulationResult,
     LabResult as VLabResult,
 } from './vendor/types';
-import { buildOUKalmanCalibration, OU_DEFAULT_PARAMS } from './vendor/calibration';
 import type { CalibrationModel, CalibrationMode } from './vendor/calibration';
 import { replayPersonalModel, computeSimulationWithCI } from './vendor/personalModel';
 
@@ -232,7 +231,11 @@ function adaptEvents(events: readonly DoseEvent[], weightKG: number): VDoseEvent
                     doseMG: 0,
                     ester,
                     weightKG,
-                    extras: { [VExtraKey.patchRemovalFor]: event.id } as VDoseEventExtras,
+                    // The vendor identifies an application as
+                    // `patchInstanceId ?? id`. Addressing the removal to `event.id`
+                    // misses an imported application that carries a custom instance id,
+                    // and the patch then delivers until the end of the grid.
+                    extras: { [VExtraKey.patchRemovalFor]: applyInstanceId } as VDoseEventExtras,
                 });
             }
         }
@@ -241,21 +244,22 @@ function adaptEvents(events: readonly DoseEvent[], weightKG: number): VDoseEvent
     return out;
 }
 
-function adaptLabs(results: readonly LabResult[]): VLabResult[] {
-    // The engine's LabResult carries the same fields; only pg/mL is understood by
-    // its calibration, so a pmol/L lab is converted on the way in (its own
-    // `convertToPgMl` divides by 3.671, which is the same constant this app uses).
-    return results.map(r => ({
-        id: r.id,
-        timeH: r.timeH,
-        concValue: r.concValue,
-        unit: (r.unit === 'pmol/l' ? 'pmol/l' : 'pg/ml') as 'pg/ml' | 'pmol/l',
-    }));
-}
-
 // ---------------------------------------------------------------------------
 // The four functions this app calls
 // ---------------------------------------------------------------------------
+
+/**
+ * The hour the vendor grid must reach.
+ *
+ * The vendored `runSimulation` stops 14 days after the last recorded dose unless
+ * given `endTimeH`. The app asks for "now" (and for a calibrated curve over the
+ * whole history), so without this the endpoint is frozen: a dose 90 days ago is
+ * reported at its day-14 value forever. This is the same horizon the built-in
+ * engine already uses (`max(lastEvent + 14d, now + 24h)`).
+ */
+function simulationEndTimeH(): number {
+    return Date.now() / 3600000 + 24;
+}
 
 /**
  * Simulate with the vendor engine.
@@ -281,7 +285,7 @@ export function runSimulation(events: DoseEvent[], bodyWeightKG: number): Simula
     const adapted = adaptEvents(events, bodyWeightKG);
     if (adapted === null) return null;
 
-    const sim = vendorRunSimulation(adapted);
+    const sim = vendorRunSimulation(adapted, { endTimeH: simulationEndTimeH() });
     if (!sim) return null;
 
     return { ...sim, concNGdL_T: new Array<number>(sim.timeH.length).fill(0) } as unknown as SimulationResult;
@@ -359,6 +363,18 @@ const toPgMl = (value: number, unit: string) => (unit === 'pmol/l' ? value / PGM
  * against the *population* curve — they describe how far the person's labs sit from
  * the model, which is exactly what those readouts have always meant.
  */
+type CalibrationResultWithBaseline = CalibrationResult & {
+    nBaseline: number;
+    nUnknown: number;
+    /**
+     * Additive endogenous baseline in pg/mL. The calibrated curve is
+     * `population × factorFn(t) + offsetFn(t)`, NOT a bare multiplier: a
+     * multiplier cannot represent a non-zero concentration before the first
+     * dose or at a near-zero trough.
+     */
+    offsetFn: (timeH: number) => number;
+};
+
 export function computeCalibration(
     baselineSim: SimulationResult | null,
     events: DoseEvent[],
@@ -366,51 +382,83 @@ export function computeCalibration(
     results: LabResult[],
     method: CalibrationMethod = 'mipd',
     historyMode: CalibrationHistoryMode = 'retrospective',
-): CalibrationResult {
+): CalibrationResultWithBaseline {
     const points = calibrationPoints(baselineSim, results);
-    const identity: CalibrationResult = {
-        method, factorFn: () => 1, scale: 1, kMul: 1, halfLifeDeltaPct: 0,
-        n: points.length, fitErrPct: null, points,
+    const nUnknown = results.filter(r =>
+        r.monitoringOnly !== true && r.analyte !== 'E2' && r.analyte !== 'T').length;
+    const identity: CalibrationResultWithBaseline = {
+        method, factorFn: () => 1, offsetFn: () => 0, scale: 1, kMul: 1, halfLifeDeltaPct: 0,
+        n: points.length, nBaseline: 0, nUnknown, fitErrPct: null, points,
+        baselinePGmL: 0, baselineOnly: false,
     };
-    if (method === 'off' || !baselineSim || events.length === 0) return identity;
+    if (method === 'off' || !baselineSim || events.length === 0 || points.length === 0) return identity;
 
     const adapted = adaptEvents(events, bodyWeightKG);
     if (adapted === null) return identity;
     const model = toVendorModel(method);
     if (model === null) return identity;
 
-    const vendorSim = vendorRunSimulation(adapted);
+    // The same horizon the baseline simulation used: a shorter grid here would
+    // compare labs against a frozen tail and recover a factor from it.
+    const vendorSim = vendorRunSimulation(adapted, { endTimeH: simulationEndTimeH() });
     if (!vendorSim) return identity;
-    const labs = adaptLabs(results);
+    // Pre-dose draws are the only input that may set the endogenous baseline.
+    // They must reach the EKF so it subtracts the baseline from post-dose
+    // observations; adding a baseline to the output afterwards without that
+    // subtraction would count it twice. The vendor's `hasDoseBeforeLab` routes
+    // these observations to the baseline branch and leaves theta untouched.
+    const baselineLabs: VLabResult[] = results
+        .filter(r => isE2Lab(r) && Number.isFinite(r.concValue) && r.concValue > 0)
+        .filter(r => !events.some(ev =>
+            String(ev.route) !== 'patchRemove'
+            && !['CPA', 'SPIRO', 'BICAL'].includes(String(ev.ester))
+            && ev.timeH <= r.timeH))
+        .map(r => ({
+            id: r.id,
+            timeH: r.timeH,
+            concValue: toPgMl(r.concValue, r.unit),
+            unit: 'pg/ml' as const,
+        }));
+
+    // Post-dose observations are exactly the reported points: same filter, so
+    // `n` and the observations that drive theta cannot drift apart.
+    const baselineIds = new Set(baselineLabs.map(l => l.id));
+    const labs: VLabResult[] = [
+        ...baselineLabs,
+        ...points
+            .filter(p => !baselineIds.has(p.id))
+            .map(p => ({ id: p.id, timeH: p.timeH, concValue: p.obs, unit: 'pg/ml' as const })),
+    ];
     const theirMode: CalibrationMode = historyMode === 'forward' ? 'causal' : 'retrospective';
 
-    // The recovered multiplier, per simulation point. Populated by whichever
-    // estimator ran; left as 1 when the data cannot support one.
-    let ratios: number[] | null = null;
+    // Split the vendor's adjusted curve into the two terms it is made of:
+    // `e2Adjusted = baseline + populationDrug × exp(theta)`. The multiplier stays
+    // the smooth drug ratio (never a baseline-inflated hundreds/thousands near a
+    // trough), and the baseline travels through an explicit additive term.
+    let factorSeries: number[] | null = null;
+    let baselineSeries: number[] | null = null;
 
     try {
-        if (model === 'ou-kalman') {
-            // The OU filter returns the log-ratio correction on the grid directly.
-            const { m } = buildOUKalmanCalibration(
-                vendorSim, labs, OU_DEFAULT_PARAMS,
-                historyMode === 'forward' ? 'forward' : 'smooth',
-            );
-            if (m.length === vendorSim.timeH.length && m.some(x => x !== 0)) {
-                ratios = m.map(x => Math.exp(x));
-            }
-        } else {
-            // EKF and hybrid-MIPD share the corrected-curve entry point: it replays
-            // the personal model from the labs and returns the adjusted E2 series.
-            const state = replayPersonalModel(adapted, labs);
-            const out = computeSimulationWithCI(
-                vendorSim, adapted, state, true, labs, model, false, theirMode,
-            );
-            if (out.e2Adjusted.length === vendorSim.timeH.length) {
-                ratios = out.e2Adjusted.map((adj, i) => {
-                    const base = vendorSim.concPGmL_E2[i];
-                    return base > 0.01 ? adj / base : 1;
-                });
-            }
+        // One entry point for all three estimators. OU used to call the low-level
+        // filter here, which skipped two things the vendor's own pipeline does:
+        // it subtracts the endogenous baseline before learning and adds it back
+        // on output, and it applies the log-normal Jensen term. With a pre-dose
+        // lab the hand-rolled call learned a ratio from total E2 (including
+        // baseline) and then under-corrected the drug curve by 18-25%; at a
+        // trough it lost the baseline entirely.
+        const state = replayPersonalModel(adapted, labs);
+        const out = computeSimulationWithCI(
+            vendorSim, adapted, state, true, labs, model, false, theirMode,
+        );
+        if (out.e2Adjusted.length === vendorSim.timeH.length) {
+            baselineSeries = out.baseline.length === vendorSim.timeH.length
+                ? out.baseline
+                : out.e2Adjusted.map(() => 0);
+            factorSeries = out.e2Adjusted.map((adj, i) => {
+                const base = vendorSim.concPGmL_E2[i];
+                const drug = Math.max(0, adj - baselineSeries![i]);
+                return base > 1e-9 ? drug / base : 1;
+            });
         }
     } catch {
         // A calibration that cannot be estimated is not a failure of the curve: the
@@ -418,10 +466,14 @@ export function computeCalibration(
         return identity;
     }
 
-    if (!ratios) return identity;
+    if (!factorSeries || !baselineSeries) return identity;
 
-    const clamped = ratios.map(r => (Number.isFinite(r) && r > 0 ? Math.min(100, Math.max(0.01, r)) : 1));
+    // The drug ratio is now well behaved: it is exp(theta), not
+    // (baseline + drug × exp(theta)) / drug, so it no longer needs the 1e6
+    // window that the multiplier-only interface used.
+    const clamped = factorSeries.map(r => (Number.isFinite(r) && r > 0 ? Math.min(1e6, Math.max(1e-6, r)) : 1));
     const factorFn = (t: number) => gridAt(vendorSim.timeH, clamped, t) ?? 1;
+    const offsetFn = (t: number) => gridAt(vendorSim.timeH, baselineSeries!, t) ?? 0;
 
     // Amplitude: the ratio at the lab times, geometric-meaned — the same summary
     // this app's own `scale` reports.
@@ -433,7 +485,7 @@ export function computeCalibration(
     // Fit error: log-space RMSE between each lab and the calibrated prediction.
     const errs: number[] = [];
     for (const p of points) {
-        const calibrated = p.pred * factorFn(p.timeH);
+        const calibrated = p.pred * factorFn(p.timeH) + offsetFn(p.timeH);
         if (calibrated > 0.01 && p.obs > 0) errs.push(Math.log(p.obs / calibrated));
     }
     const fitErrPct = errs.length >= 2
@@ -443,6 +495,7 @@ export function computeCalibration(
     return {
         method,
         factorFn,
+        offsetFn,
         scale,
         // Clearance and half-life are not identified separately by the way the
         // multiplier is recovered here, so they stay at the neutral value rather
@@ -450,6 +503,12 @@ export function computeCalibration(
         kMul: 1,
         halfLifeDeltaPct: 0,
         n: points.length,
+        nBaseline: baselineLabs.length,
+        nUnknown,
+        baselinePGmL: baselineSeries.length
+            ? baselineSeries[baselineSeries.length - 1]
+            : 0,
+        baselineOnly: false,
         fitErrPct,
         points,
     };
@@ -463,6 +522,16 @@ export function computeCalibration(
  * documents: E2 labs only, and a lab is skipped when the model predicts ~nothing
  * there (a baseline draw before any dose), because its ratio would be meaningless.
  */
+function isE2Lab(r: LabResult): boolean {
+    // `monitoringOnly` records carry a placeholder E2 unit and a zero value;
+    // excluding them by unit alone is not enough to keep them out of the fit.
+    if (r.monitoringOnly === true) return false;
+    // Only an explicit E2 analyte enters the E2 fit. `unknown` (and a legacy row
+    // with no analyte) is deliberately excluded: guessing from the unit is how a
+    // testosterone reading labelled pg/mL silently contaminated the fit.
+    return r.analyte === 'E2';
+}
+
 function calibrationPoints(
     sim: SimulationResult | null,
     results: readonly LabResult[],
@@ -470,7 +539,7 @@ function calibrationPoints(
     if (!sim) return [];
     const out: CalibrationPoint[] = [];
     for (const r of results) {
-        if (r.unit !== 'pg/ml' && r.unit !== 'pmol/l') continue; // testosterone units
+        if (!isE2Lab(r)) continue; // testosterone units carry no E2 information
         const obs = toPgMl(r.concValue, r.unit);
         const pred = vendorInterpE2(sim as unknown as VSimulationResult, r.timeH);
         if (pred === null || !Number.isFinite(pred) || pred <= 0.01 || obs <= 0) continue;

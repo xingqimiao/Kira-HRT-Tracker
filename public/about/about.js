@@ -1,7 +1,6 @@
 /**
- * The about page's behaviour. Shared verbatim by /about/ and /about/en/ — every
- * path it touches is relative to the logo <img>, so the two depths (../brand vs
- * ../../brand) do not need two files.
+ * The about page's behaviour. Shared verbatim by /about/ and /about/en/ — it
+ * touches no asset path of its own, so the two depths need only one file.
  *
  * Loaded with `defer` and referenced with a relative path, because the CSP is
  * `script-src 'self'`: an inline script is blocked outright, and so is an inline
@@ -12,17 +11,13 @@
   'use strict';
 
   // --- 1. Theme: follow the system, and toggle from the top-right button -----
+  // The mark itself is not part of the theme: it keeps the light-background
+  // artwork in both modes, so there is one logo on this page rather than two.
   const darkMedia = window.matchMedia('(prefers-color-scheme: dark)');
 
   function applyTheme(isDark) {
     if (isDark) document.documentElement.setAttribute('data-theme', 'dark');
     else document.documentElement.removeAttribute('data-theme');
-
-    // Derived from the current src rather than written out: the zh page is one
-    // directory deep and the en page two, and a hardcoded path would be wrong in
-    // exactly one of them.
-    const logo = document.getElementById('brandLogoImg');
-    if (logo) logo.src = logo.src.replace(/kira-app-icon(-dark)?\.svg$/, isDark ? 'kira-app-icon-dark.svg' : 'kira-app-icon.svg');
   }
 
   applyTheme(darkMedia.matches);

@@ -33,7 +33,7 @@ People on injectable, gel, oral or patch HRT who want to answer "roughly where a
 - Line or candlestick (OHLC) chart, 7 / 30 / all windows, target band behind the curve.
 - Current level, time since the last dose and a dose-level reference, all on the first screen.
 - Four calibrations: off, MIPD (MAP fit), EKF and OU-Kalman. Without labs the population model stands alone; with labs, calibration pulls it toward your own metabolism. You can fit on the data before a test (forward) or on everything (retrospective).
-- Each curve shows its calibration multiplier, e.g. ×0.42 — the model's persistent overestimate of you, quantified.
+- A calibration can have both a **multiplier** and an **estimated background E2** (the median of trusted pre-dose E2 draws); the UI shows them separately rather than pretending the whole curve is one multiplier. With no usable lab the curve is a population estimate and may be inaccurate; labs with an unconfirmed hormone type do not enter the fit.
 
 ## Labs and reminders
 

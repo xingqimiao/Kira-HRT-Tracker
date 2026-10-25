@@ -62,10 +62,13 @@ no advertising.
 - **Patch-wearing tracking** — after applying, the overview shows how long a patch has been
   worn, with a one-tap "remove" that ties the removal to the matching patch.
 - **Blood tests** — value, unit (pg/mL, pmol/L, ng/dL, nmol/L), and monitoring-only entries
-  (liver function, potassium, …).
+  (liver function, potassium, …). Every reading carries a **hormone type** (E2 / T / unknown);
+  unconfirmed legacy rows are kept but excluded from calibration, and a legacy import can confirm
+  them from their units once.
 - **Medication plans** — route, first time, extra doses, interval, drug and amount, on one of
   three cadences ("N times a day", "every x hours", "every x days"); overdue doses highlight on
-  the home screen with one-tap logging.
+  the home screen with one-tap logging. The list and the editor show the **next and next-next
+  reminder time**.
 - **A private body journal** — subjective notes read alongside the dose timeline.
 - **Quick templates** — save a common dose and log it in one tap from the home screen, with undo.
 - **Batch add**, **import and export**.
@@ -75,17 +78,23 @@ no advertising.
 - **Concentration curve** — line or candlestick (OHLC); current level; dose-level reference.
 - **Individual calibration** — four estimators: off / MIPD (MAP fitting) / EKF (extended Kalman
   filter) / OU-Kalman (Ornstein–Uhlenbeck dynamic calibration), each with a live preview animation.
+- **Estimated background E2** — trusted pre-dose E2 draws estimate a background (median), which is
+  subtracted during fitting and added back once. With no pre-dose draw the background is 0; it is
+  never assumed. The UI labels it as an estimate that may include residual from earlier doses.
+- **Unknown-analyte labs never enter a fit** — a legacy import can confirm them from their units
+  once; otherwise they stay excluded.
 - **Two engines**, switchable: the built-in engine and the Transmtf engine draw different curves
-  from the same records.
+  from the same records; both support estimated background E2.
 
 ### Reminders
 
 - **Re-check reminders** — prompts for liver function, potassium and estradiol on the cadence
   MtF.wiki recommends.
 - **Anti-androgen cumulative tracking**.
-- **Medication reminders** — a local, scheduled notification is the on-time ring; a server-side
-  FCM push is the catch-up (with **double deduplication**). Notification language follows the
-  in-app language setting.
+- **Medication reminders** — the web transport checks every 60 seconds while the page is visible;
+  the APK uses system scheduling five days ahead (the two transports are mutually exclusive). A
+  server-side FCM push is the catch-up (with **double deduplication**). Notification language
+  follows the in-app language setting.
 
 ### Lab-report scanning
 
@@ -238,8 +247,10 @@ engine models estradiol only, so it is unavailable in transmasc mode.
 
 **Calibration** uses your lab values to adjust the model's parameters, with a separate
 implementation per estimator (MAP fitting, an extended Kalman filter, Ornstein–Uhlenbeck dynamic
-calibration). The engine choice, and the rule that a transmasc account is pinned to the built-in
-engine, live in one place: `src/engine/registry.ts`.
+calibration). Both engines estimate a **background E2** from trusted pre-dose E2 draws (median),
+subtract it during fitting and add it back once; with no such draw it stays 0. Labs with an
+unknown hormone type are excluded from every fit. The engine choice, and the rule that a
+transmasc account is pinned to the built-in engine, live in one place: `src/engine/registry.ts`.
 
 ---
 
@@ -260,7 +271,7 @@ it in your client's config:
 }
 ```
 
-**20 tools**, covering both read and write:
+**19 tools**, covering both read and write; raw dose/lab reads are limited to the last 7 days, with full history in the web app:
 
 | Read | Write / manage |
 |---|---|
@@ -273,7 +284,7 @@ it in your client's config:
 | `hrt_check_advisories` | `hrt_create_share` |
 | `hrt_med_plan_status` | `hrt_list_shares` |
 | `hrt_get_settings` | `hrt_revoke_share` |
-| `hrt_sync_state` / `hrt_reference` | |
+| `hrt_reference` | |
 
 The **tool list** is readable anonymously (schemas only); **calling** any tool requires a token.
 Tokens are revocable and expirable, and changing your password ends all of them.
@@ -305,16 +316,23 @@ the journal**. A custom gel-product catalogue now travels too: it is merged into
 catalogue and persisted (product ids ≥1000), so a record keeps its product name as well as
 its dose, route and site.
 
-**Exporting**: JSON, in a format that is published and stable.
+Every lab carries a hormone type (`analyte`: E2 / T). **Older backups do not have that field**;
+the import preview then offers a one-time, user-confirmed unit mapping
+(`pg/ml` + `pmol/l` → E2; `ng/dl` + `nmol/l` → T). It affects only that import. Left unchecked,
+the rows stay `unknown` and are excluded from calibration until you confirm the type. The mapping
+is a convenience, not proof that the old units were right.
+
+**Exporting**: JSON, in a format that is published and stable; labs with a known type include
+`analyte`.
 
 **For the authors of other trackers**: start with the
 **[Chinese how-to](docs/hrt-import-export-protocol.zh-CN.md)** — field tables, working example
 code, a self-test checklist and a prompt you can hand an AI assistant. The authoritative field
 definitions are in the English
-**[spec](docs/hrt-import-export-protocol.md)**: the minimum required fields, the full tables,
-the `route`/`Ester` enumerations, the unit conventions (`timeH` is hours since 1970; `doseMG` is
-the mass of the substance, not its estradiol equivalent), the optional encryption envelope, and
-a minimal example.
+**[spec](docs/hrt-import-export-protocol.md)**: the minimum required fields, the full tables
+(including `analyte` and the legacy-import rule), the `route`/`Ester` enumerations, the unit
+conventions (`timeH` is hours since 1970; `doseMG` is the mass of the substance, not its
+estradiol equivalent), the optional encryption envelope, and a minimal example.
 
 ---
 
@@ -381,9 +399,9 @@ The independent **Web/PWA distribution** retains multiple accounts, sync, sharin
 - **[LAN / NAS deployment](deploy/self-host/LAN.en.md)**: fixed IP → Windows/macOS/NAS preparation → install → trust the local certificate on each device.
 - [Backup, upgrade, recovery and troubleshooting](deploy/self-host/MAINTENANCE.en.md): after installation.
 
-[Download the 2.2.2 setup.2 archive](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.2.2/kira-hrt-self-host-2.2.2-setup.2.tar.gz). One archive includes both routes and maintenance in English/Chinese; exact commands are in the matching guide. The [deployment index](deploy/self-host/README.en.md) helps select your scenario.
+[Download the 2.3.0 archive](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.0/kira-hrt-self-host-2.3.0.tar.gz). One archive includes both routes and maintenance in English/Chinese; exact commands are in the matching guide. The [deployment index](deploy/self-host/README.en.md) helps select your scenario.
 
-The two GitHub Packages are kira-hrt-web (website/HTTPS) and kira-hrt-api (backend). Both and PostgreSQL are pulled automatically; do not choose between them. setup.2 only splits/bundles documentation. Images remain at 2.2.2, old assets are retained and existing instances need no reinstall/reinitialization.
+The two GitHub Packages are kira-hrt-web (website/HTTPS) and kira-hrt-api (backend). Both and PostgreSQL are pulled automatically; do not choose between them. Existing instances upgrade to 2.3.0 with the commands in the [maintenance guide](deploy/self-host/MAINTENANCE.en.md); no reinitialization is needed and the previous archives remain available.
 
 OAuth, CAPTCHA, FCM and official-site updates are disabled by default. Official Android APKs use the official service; use Web/PWA for self-hosting. Migrate via export/import rather than copying an OCI database and switching key providers. Back up keys and database, keeping key copies separately.
 

@@ -112,6 +112,15 @@ const PACK: LangPack = {
 
     "plan.sum.days": "每 {d} 天 · {time}",
 
+
+    "plan.next": "下次",
+
+
+    "plan.next_next": "再下次",
+
+
+    "plan.next_preview": "按当前设定：下次 {first}；再下次 {second}",
+
     "plan.mode.times": "每日 N 次",
 
     "plan.mode.hours": "每 x 小时",
@@ -193,7 +202,7 @@ const PACK: LangPack = {
     "core.acct.delete_sub": "会移除 {doses} 条用药记录、{labs} 条化验结果以及全部其他内容。不可恢复。",
     "core.acct.delete_sub_basic": "会移除全部记录。不可恢复。",
     "core.acct.sign_out": "退出登录",
-    "core.acct.sign_out_confirm": "要退出登录吗？退出后需要重新输入密码。",
+    "core.acct.sign_out_confirm": "要退出登录吗？退出后需要重新输入密码。",
     "core.acct.sign_out_clear": "退出并清除本机数据",
     "core.acct.sign_out_clear_hint": "同时删除本浏览器保存的记录",
 "core.acct.sign_out_clear_hint_native": "同时删除本机保存的记录",
@@ -297,7 +306,7 @@ const PACK: LangPack = {
     "status.level.t_high": "高于目标范围",
     "chart.title": "激素浓度变化",
     "chart.reset": "重置视图",
-    "chart.range_7d": "7天",
+    "chart.range_3d": "3天",
     "chart.k.day": "日K",
     "chart.k.hour4": "4小时K",
     "chart.k.days": "{n}日K",
@@ -309,6 +318,7 @@ const PACK: LangPack = {
     "chart.k.close": "收",
     "chart.range_30d": "30天",
     "chart.range_all": "全部",
+    "chart.scrub": "时间窗",
     "chart.target": "目标范围",
     "orderbook.title": "近期剂量",
     "orderbook.empty": "暂无剂量记录",
@@ -317,7 +327,7 @@ const PACK: LangPack = {
     "advisory.t.body": "最近睾酮用量似乎偏高。长期偏高主要让血液变稠，并无额外好处。估测可能有偏差，可查激素六项校准，并留意最近剂量。",
     "advisory.cpa.body": "最近 CPA 用量似乎偏高。加量并不会更好地抑制睾酮，风险却会累积。估测可能有偏差，可查激素六项校准，并留意最近剂量。",
     "advisory.e2_cpa.body": "最近雌二醇和 CPA 用量都似乎偏高。雌二醇主要关联血栓风险，CPA 的风险则随时间累积。估测可能有偏差，可查激素六项校准，并留意最近剂量。",
-    "advisory.calibrate.text": "这是模型的估算值。",
+    "advisory.calibrate.text": "还没有可用于校准的血检，这条曲线只是估算，可能不准确。",
     "advisory.calibrate.cta": "添加血检结果来校准",
     "advisory.hormone_both_low.body": "最近的雌二醇和睾酮化验值都偏低，两项性激素同时不足，长期可能影响骨密度、情绪和血管舒缩症状（比如潮热）。这也可能只是抽血时间点的问题，建议结合最近的用药情况和医生讨论一下。",
     "advisory.hormone_both_high.body": "最近的雌二醇和睾酮化验值都偏高，这种组合并不常见，值得留意。也可能是抽血时间点或单位填写有误，建议和医生确认一下检查结果。",
@@ -360,6 +370,10 @@ const PACK: LangPack = {
     "drawer.qr": "二维码导入 / 导出",
     "drawer.qr_hint": "通过二维码分享或恢复数据。",
     "import.title": "导入数据",
+
+    "import.legacy_analyte": "这份旧备份没有激素类型标记（{n} 条化验）",
+
+    "import.legacy_analyte_hint": "仅本次导入按单位推断：pg/ml、pmol/l → E2；ng/dl、nmol/l → T。请先确认单位本身正确。",
     "export.title": "导出数据",
     "import.text": "粘贴 JSON 文本",
     "import.paste_hint": "在此处粘贴 JSON 内容...",
@@ -794,6 +808,15 @@ const PACK: LangPack = {
     "cal.halflife": "半衰期",
     "cal.fit": "拟合",
     "cal.labs": "次血检",
+    "cal.baseline_labs": "次基线化验",
+
+    "cal.baseline_estimate": "估计背景 E2",
+
+    "cal.baseline_note": "可能包含历史给药残留；不能据此证明长期稳定基线。",
+
+    "cal.baseline_only": "仅估计背景 E2，未完成药代参数拟合。",
+
+    "cal.unknown_labs": "条类型未确认",
     "cal.model": "模型",
     "lab.add_title": "添加检查结果",
     "lab.edit_title": "编辑检查结果",
@@ -1021,10 +1044,7 @@ const PACK: LangPack = {
 
     "mcp.tool.hrt_med_plan_status": "今天的用药方案，以及还差哪几剂",
 
-    "mcp.tool.hrt_get_settings": "体重、模式、校准与药代参数覆盖",
-
-    "mcp.tool.hrt_sync_state": "一次性取回全部记录（可能很大，建议用分页的读取工具）",
-
+    "mcp.tool.hrt_get_settings": "体重、模式、校准与药代参数覆盖",
     "mcp.tool.hrt_reference": "可用的给药途径、酯类、单位，以及工具清单本身",
 
     "mcp.tool.hrt_add_medication": "记录一次用药",

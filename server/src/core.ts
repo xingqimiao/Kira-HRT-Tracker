@@ -32,7 +32,7 @@ import {
   doseAdvisory,
   hormoneLevelAdvisory,
   DEFAULT_PK_PARAMS,
-  isT_LabUnit,
+  isEstradiolLab,
   Ester,
   Route,
 } from './engine.ts';
@@ -93,6 +93,7 @@ export interface LabRecord {
   timeH: number;
   concValue: number;
   unit: string;
+  analyte?: 'E2' | 'T' | 'unknown';
   updatedAt?: number;
 }
 
@@ -410,7 +411,7 @@ export const LabService = {
  *
  * It travels as `journal:<mode>:<id>` (see `payloadToRecords`), and the app merges
  * it with the same union-plus-tombstone rules as everything else. Until there was a
- * service here it was reachable only by parsing `hrt_sync_state` — read-only at
+ * service here it was reachable only by parsing the web export — read-only at
  * best, and the whole point of the tool surface is that an agent should not have to
  * page a 76 KB export to add one line of text.
  */
@@ -666,7 +667,19 @@ export interface Prediction {
     /** The grid ended before the requested end — the forecast stops short of `to_days`. */
     endTruncated: boolean;
   };
-  calibration: { method: string; scale: number; labs: number; fitErrorPct: number | null };
+  calibration: {
+    method: string;
+    scale: number;
+    /** Post-dose calibration points used for the fit. */
+    labs: number;
+    fitErrorPct: number | null;
+    /** Pre-dose draws used only to estimate the additive background. */
+    nBaseline: number;
+    /** Labs whose hormone type is unconfirmed; kept but excluded from every fit. */
+    nUnknown: number;
+    /** Estimated background E2 added once to the calibrated curve (pg/mL). */
+    baselinePGmL: number;
+  };
 }
 
 /**
@@ -778,7 +791,10 @@ export const PKSimulationService = {
         // measure estradiol, so calibrating a testosterone curve against them would be
         // meaningless.
         let series: number[];
-        let calibrationInfo = { method: 'off', scale: 1, labs: 0, fitErrorPct: null as number | null };
+        let calibrationInfo = {
+            method: 'off', scale: 1, labs: 0, fitErrorPct: null as number | null,
+            nBaseline: 0, nUnknown: 0, baselinePGmL: 0,
+        };
 
         if (analyte === 't') {
             series = sim.concNGdL_T;
@@ -787,19 +803,37 @@ export const PKSimulationService = {
         } else {
             const { records: labRecords } = await listKind<LabRecord>(ctx, 'lab', { limit: 500 });
             const labValues = labRecords.map((r) => toLabResult(r.data));
-            const e2Labs = labValues.filter((l) => !isT_LabUnit(l.unit));
+            // Only explicitly E2 labs enter the fit. Unknown/T rows are kept but
+            // excluded, so a mislabelled historical record cannot contaminate
+            // the individualised parameters.
+            const e2Labs = labValues.filter((l) => isEstradiolLab(l));
+            // Reported independently of the fit: a lab with no known type is kept
+            // but never reaches the estimator, so its count cannot come from `cal`.
+            const nUnknownLabs = labValues.filter(
+                (l) => l.analyte !== 'E2' && l.analyte !== 'T',
+            ).length;
+            calibrationInfo = { ...calibrationInfo, nUnknown: nUnknownLabs };
             if (e2Labs.length > 0) {
                 const cal = withGelProductCatalogue(gelProducts, () => calibrateForEngine(
                     engine,
                     sim,
                     events,
                     weight,
-                    labValues,
+                    e2Labs,
                     (userSettings.calibrationMethod as never) ?? 'mipd',
                     (userSettings.calibrationHistory as never) ?? 'retrospective',
                 ));
-                calibrationInfo = { method: cal.method, scale: cal.scale, labs: cal.n, fitErrorPct: cal.fitErrPct };
-                series = sim.concPGmL_E2.map((v, i) => v * cal.factorFn(sim.timeH[i]));
+                calibrationInfo = {
+                    method: cal.method,
+                    scale: cal.scale,
+                    labs: cal.n,
+                    fitErrorPct: cal.fitErrPct,
+                    nBaseline: cal.nBaseline ?? 0,
+                    nUnknown: nUnknownLabs,
+                    baselinePGmL: cal.baselinePGmL ?? 0,
+                };
+                series = sim.concPGmL_E2.map((v, i) =>
+                    v * cal.factorFn(sim.timeH[i]) + (cal.offsetFn?.(sim.timeH[i]) ?? 0));
             } else {
                 series = sim.concPGmL_E2;
             }
@@ -939,6 +973,7 @@ function toLabResult(record: LabRecord): LabResult {
         timeH: record.timeH,
         concValue: record.concValue,
         unit: record.unit as LabResult['unit'],
+        ...(record.analyte ? { analyte: record.analyte } : {}),
     };
 }
 

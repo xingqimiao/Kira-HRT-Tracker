@@ -10,6 +10,8 @@ export interface ImportPreview {
     source: string;
     doses: number;
     labs: number;
+    /** Labs with no analyte (a backup from before the field existed). */
+    legacyLabs?: number;
 }
 
 interface ImportSectionProps {
@@ -17,7 +19,10 @@ interface ImportSectionProps {
      * Imports a file's contents. Accepts bytes as well as text because one supported
      * source (Featherline) exports a binary container rather than JSON.
      */
-    onImportJson: (data: string | ArrayBuffer) => boolean | Promise<boolean>;
+    onImportJson: (
+        data: string | ArrayBuffer,
+        opts?: { legacyAnalyteFromUnit?: boolean },
+    ) => boolean | Promise<boolean>;
     /** Counts the payload without applying it. */
     onPreview?: (data: string | ArrayBuffer) => Promise<ImportPreview | null>;
 }
@@ -33,6 +38,7 @@ const ImportSection: React.FC<ImportSectionProps> = ({ onImportJson, onPreview }
     const [preview, setPreview] = useState<ImportPreview | null>(null);
     const [pending, setPending] = useState<string | ArrayBuffer | null>(null);
     const [busy, setBusy] = useState(false);
+    const [legacyCompat, setLegacyCompat] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const begin = async (data: string | ArrayBuffer) => {
@@ -47,6 +53,7 @@ const ImportSection: React.FC<ImportSectionProps> = ({ onImportJson, onPreview }
             await onImportJson(data);
             return;
         }
+        setLegacyCompat((counted.legacyLabs ?? 0) > 0);
         setPreview(counted);
         setPending(data);
     };
@@ -56,7 +63,8 @@ const ImportSection: React.FC<ImportSectionProps> = ({ onImportJson, onPreview }
         const data = pending;
         setPreview(null);
         setPending(null);
-        await onImportJson(data);
+        await onImportJson(data, { legacyAnalyteFromUnit: legacyCompat });
+        setLegacyCompat(false);
         setText('');
         setShowPaste(false);
     };
@@ -80,10 +88,31 @@ const ImportSection: React.FC<ImportSectionProps> = ({ onImportJson, onPreview }
                     <SegmentedListItem sprite="db" title={`${preview.doses}`} subtitle={t('timeline.records')} />
                     <SegmentedListItem sprite="tube" title={`${preview.labs}`} subtitle={t('lab.title')} />
                 </SegmentedList>
+                {(preview.legacyLabs ?? 0) > 0 && (
+                    <label
+                        className="card"
+                        style={{ display: 'flex', gap: 10, padding: 12, alignItems: 'flex-start', cursor: 'pointer' }}
+                    >
+                        <input
+                            type="checkbox"
+                            checked={legacyCompat}
+                            onChange={e => setLegacyCompat(e.target.checked)}
+                            style={{ marginTop: 3, flex: 'none' }}
+                        />
+                        <span>
+                            <b style={{ display: 'block' }}>
+                                {t('import.legacy_analyte').replace('{n}', String(preview.legacyLabs))}
+                            </b>
+                            <span className="sub" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                                {t('import.legacy_analyte_hint')}
+                            </span>
+                        </span>
+                    </label>
+                )}
                 <div style={{ display: 'flex', gap: 8 }}>
                     <button
                         type="button"
-                        onClick={() => { setPreview(null); setPending(null); }}
+                        onClick={() => { setPreview(null); setPending(null); setLegacyCompat(false); }}
                         className="btn t"
                         style={{ flex: 1 }}
                     >

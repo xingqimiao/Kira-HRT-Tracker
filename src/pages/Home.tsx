@@ -1,7 +1,7 @@
 import React from 'react';
 import Icon from '../components/Icon';
 import { Info, Share2, AlertTriangle, TriangleWarning, X, Bookmark } from '../icons';
-import { DoseEvent, SimulationResult, LabResult, AntiandrogenChartMode, Route, getDoseAdvisory, getHormoneLevelAdvisory, isT_LabUnit, isMonitoringOnlyLab, modelledEvents, antiandrogenReading } from '../../logic';
+import { DoseEvent, SimulationResult, LabResult, AntiandrogenChartMode, Route, getDoseAdvisory, getHormoneLevelAdvisory, isTestosteroneLab, isEstradiolLab, isMonitoringOnlyLab, modelledEvents, antiandrogenReading } from '../../logic';
 import ResultChart from '../components/ResultChart';
 import FitText from '../components/FitText';
 import EstimateInfoModal from '../components/EstimateInfoModal';
@@ -37,6 +37,8 @@ interface HomeProps {
     labResults: LabResult[];
     onEditEvent: (e: DoseEvent) => void;
     calibrationFn: (timeH: number) => number;
+    /** Additive endogenous baseline in pg/mL, when the engine estimates one. */
+    calibrationOffsetFn?: (timeH: number) => number;
     theme: AppTheme;
     onNavigateToHistory: () => void;
     onNavigateToLab: () => void;
@@ -97,6 +99,7 @@ const Home: React.FC<HomeProps> = ({
     labResults,
     onEditEvent,
     calibrationFn,
+    calibrationOffsetFn,
     theme,
     onNavigateToHistory,
     onNavigateToLab,
@@ -126,7 +129,7 @@ const Home: React.FC<HomeProps> = ({
     const hormoneAdvisory = React.useMemo(() => getHormoneLevelAdvisory(labResults), [labResults]);
     const chartEvents = React.useMemo(() => modelledEvents(events), [events]);
     const hormoneLabs = React.useMemo(() => labResults.filter(l => !isMonitoringOnlyLab(l)), [labResults]);
-    const hasLabForMode = hormoneLabs.some(l => (isTransmasc ? isT_LabUnit(l.unit) : !isT_LabUnit(l.unit)));
+    const hasLabForMode = hormoneLabs.some(l => (isTransmasc ? isTestosteroneLab(l) : isEstradiolLab(l)));
     const showCalibrate = events.length > 0 && !hasLabForMode;
 
     const absurdLevel = isTransmasc ? currentT : currentLevel;
@@ -494,6 +497,7 @@ const Home: React.FC<HomeProps> = ({
                                 onPointClick={onEditEvent}
                                 labResults={hormoneLabs}
                                 calibrationFn={calibrationFn}
+                                calibrationOffsetFn={calibrationOffsetFn}
                                 isDarkMode={isDarkMode}
                                 chartStyle={chartStyle}
                                 tall
@@ -526,7 +530,7 @@ const Home: React.FC<HomeProps> = ({
                                         <span className={`ic ${tone}`}><SpriteIcon id={ROUTE_ICON_ID[event.route] ?? 'pill'} /></span>
                                         <div className="t">
                                             <b>{t(`ester.${event.ester}`)}</b>
-                                            <span className="s">{t(`route.${event.route}`)} · {timeLabel(event.timeH)}</span>
+                                            <span className="s">{t(`route.${event.route}`)}</span>
                                         </div>
                                         <div className="r"><b>{event.doseMG.toFixed(2)} mg</b><br />{timeLabel(event.timeH)}</div>
                                     </button>

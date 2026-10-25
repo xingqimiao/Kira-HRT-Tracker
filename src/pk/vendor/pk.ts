@@ -678,6 +678,9 @@ export const SublingualTierParams = {
     strict: { theta: 0.15, hold: 15 }
 };
 
+/** Highest mucosal fraction the tier table supports; custom theta is clamped here. */
+const SL_THETA_MAX = SublingualTierParams.strict.theta;
+
 /**
  * Route-specific bioavailability multiplier used to map recorded dose to
  * systemically available hormone amount.
@@ -704,7 +707,7 @@ export function getBioavailabilityMultiplier(
             if (extras[ExtraKey.sublingualTheta] !== undefined) {
                 const customTheta = extras[ExtraKey.sublingualTheta];
                 if (typeof customTheta === 'number' && Number.isFinite(customTheta)) {
-                    theta = Math.min(1, Math.max(0, customTheta));
+                    theta = Math.min(SL_THETA_MAX, Math.max(0, customTheta));
                 }
             } else if (extras[ExtraKey.sublingualTier] !== undefined) {
                 const tierIdx = Math.min(SL_TIER_ORDER.length - 1, Math.max(0, Math.round(extras[ExtraKey.sublingualTier]!)));
@@ -790,7 +793,7 @@ export function resolveParams(event: DoseEvent): PKParams {
             if (extras[ExtraKey.sublingualTheta] !== undefined) {
                 const customTheta = extras[ExtraKey.sublingualTheta];
                 if (typeof customTheta === 'number' && Number.isFinite(customTheta)) {
-                    theta = Math.min(1, Math.max(0, customTheta));
+                    theta = Math.min(SL_THETA_MAX, Math.max(0, customTheta));
                 }
             } else if (extras[ExtraKey.sublingualTier] !== undefined) {
                 const tierRaw = extras[ExtraKey.sublingualTier];
@@ -1018,8 +1021,18 @@ class PrecomputedEventModel {
                     const doseFast = dose * params.Frac_fast;
                     const doseSlow = dose * (1.0 - params.Frac_fast);
 
-                    return _analytic3C(tau, doseFast, params.F, params.k1_fast, params.k2, params.k3) +
-                        _analytic3C(tau, doseSlow, params.F, params.k1_slow, params.k2, params.k3);
+                    // Unesterified E2 has no ester to hydrolyse (k2 = 0); the
+                    // 3C kernel multiplies by k2 and would return zero forever.
+                    // Same fallback the sublingual branch already documents. An
+                    // anti-androgen on the injection route has no model at all, so
+                    // it stays zero rather than growing a fabricated depot curve.
+                    if (params.k2 > 0) {
+                        return _analytic3C(tau, doseFast, params.F, params.k1_fast, params.k2, params.k3) +
+                            _analytic3C(tau, doseSlow, params.F, params.k1_slow, params.k2, params.k3);
+                    }
+                    if (isAntiandrogen(event.ester)) return 0;
+                    return absorbedThenEliminated(tau, doseFast, params.F, params.k1_fast, params.k3) +
+                        absorbedThenEliminated(tau, doseSlow, params.F, params.k1_slow, params.k3);
                 };
                 break;
             case Route.gel:
@@ -1119,10 +1132,13 @@ export function runSimulation(
         .map(e => ({ model: new PrecomputedEventModel(e, sortedEvents), ester: e.ester }));
 
     const startTime = sortedEvents[0].timeH - 24;
+    // Ignore a non-finite caller horizon rather than letting it poison the grid.
+    const requestedEndTimeH = Number.isFinite(opts?.endTimeH) ? opts!.endTimeH! : -Infinity;
     const endTime = Math.max(
         sortedEvents[sortedEvents.length - 1].timeH + (24 * 14),
-        opts?.endTimeH ?? -Infinity
+        requestedEndTimeH
     );
+    if (!Number.isFinite(startTime) || !Number.isFinite(endTime)) return null;
 
     // Determine the finest time resolution needed based on the routes present.
     // Sublingual peaks are narrow (~1–2 h wide) and need a small step to be
@@ -1132,7 +1148,12 @@ export function runSimulation(
         : routes.has(Route.oral) ? 0.5
         : routes.has(Route.gel) ? 1.0
         : 2.0;
-    const steps = Math.max(1000, Math.ceil((endTime - startTime) / maxStepH) + 1);
+    // Same absolute cap as the built-in engine. Without it a corrupt far-future
+    // timestamp plus an old dose can size the grid from an arbitrarily long
+    // span; at the 2 h step a 171-year span is ~750k points. The cap trades
+    // resolution for a bounded allocation, and only a span longer than ~2.8
+    // years at the finest step (0.25 h) is affected.
+    const steps = Math.min(100_000, Math.max(1000, Math.ceil((endTime - startTime) / maxStepH) + 1));
 
     const timeH: number[] = [];
     const concPGmL: number[] = [];

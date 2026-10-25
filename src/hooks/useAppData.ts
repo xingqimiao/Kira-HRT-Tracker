@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { DoseEvent, Route, Ester, SimulationResult, runSimulation, interpolateConcentration_E2, interpolateConcentration_T, LabResult, computeCalibration, CalibrationMethod, CalibrationHistoryMode, normalizeCalibrationMethod, AntiandrogenChartMode, normalizeAntiandrogenChartMode, isTestosteroneEster, isEstradiolEster, isAntiandrogen, isT_LabUnit, PKCustomParams, applyPKOverrides, sanitizePKParams, isPlausibleBodyWeightKG,
+import { DoseEvent, Route, Ester, SimulationResult, runSimulation, interpolateConcentration_E2, interpolateConcentration_T, LabResult, computeCalibration, CalibrationMethod, CalibrationHistoryMode, normalizeCalibrationMethod, AntiandrogenChartMode, normalizeAntiandrogenChartMode, isTestosteroneEster, isEstradiolEster, isAntiandrogen, isTestosteroneLab, isEstradiolLab, PKCustomParams, applyPKOverrides, sanitizePKParams, isPlausibleBodyWeightKG,
          RecheckIntervals, normalizeRecheckIntervals,
          OcrModelTier, normalizeOcrModelTier,
          PkEngineId, normalizePkEngine, DEFAULT_PK_ENGINE,
@@ -19,6 +19,7 @@ import { JournalEntry, sanitizeJournalEntries } from '../utils/bodyJournal';
 import { hrtDaysSince, normalizeHrtStartDate } from '../utils/hrtStart';
 import { milestoneFor } from '../utils/hrtMilestone';
 import { isThirdDayStreak } from '../utils/hrtStreak';
+import { normalizeImportedAnalyte } from '../utils/labAnalyteImport';
 import { get as secureGet, set as secureSet, remove as secureRemove } from '../utils/secureStore';
 import { readMedPlans, readMedPlanState, writeMedPlans, setMedPlanOwner, MED_PLAN_CHANGED_EVENT } from '../utils/medPlan';
 
@@ -677,6 +678,7 @@ export const useAppData = (
         return activeEngine.computeCalibration(simulation, events, weight, labResults, calibrationMethod, calibrationHistoryMode);
     }, [simulation, events, weight, labResults, calibrationMethod, calibrationHistoryMode, activeEngine]);
     const calibrationFn = calibration.factorFn;
+    const calibrationOffsetFn = calibration.offsetFn;
 
     /**
      * Fit one (method, historyMode) on demand, with the engine in use and the data in
@@ -723,8 +725,8 @@ export const useAppData = (
         if (!simulation) return 0;
         const h = currentTime.getTime() / 3600000;
         const baseE2 = activeEngine.interpolateConcentration_E2(simulation, h) || 0;
-        return baseE2 * calibrationFn(h);
-    }, [simulation, currentTime, calibrationFn, activeEngine]);
+        return baseE2 * calibrationFn(h) + (calibrationOffsetFn?.(h) ?? 0);
+    }, [simulation, currentTime, calibrationFn, calibrationOffsetFn, activeEngine]);
 
     // Total testosterone (ng/dL) at the current time — only meaningful in transmasc mode.
     const currentT = useMemo(() => {
@@ -1074,7 +1076,10 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
         }).filter((item): item is DoseEvent => item !== null);
     };
 
-    const sanitizeImportedLabResults = (raw: any): LabResult[] => {
+    const sanitizeImportedLabResults = (
+        raw: any,
+        opts?: { legacyAnalyteFromUnit?: boolean },
+    ): LabResult[] => {
         if (!Array.isArray(raw)) return [];
         if (raw.length > MAX_IMPORT_ENTRIES) throw new Error('Too many entries');
         // A record may carry an estradiol/testosterone reading, monitoring bloods,
@@ -1101,6 +1106,12 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
             // monitoring-only by construction.
             const monitoringOnly = item.monitoringOnly === true || valNum === undefined;
             const unitVal = (item.unit === 'pg/ml' || item.unit === 'pmol/l' || item.unit === 'ng/dl' || item.unit === 'nmol/l') ? item.unit : 'pmol/l';
+            // Never infer from the unit: a missing/unknown analyte is the safe
+            // state, and calibration excludes it until the user confirms it.
+            const analyteVal = normalizeImportedAnalyte(item.analyte, monitoringOnly, {
+                ...opts,
+                unit: unitVal,
+            });
             const prolactinUln = num(item.prolactinUln);
             const altUln = num(item.altUln);
             return {
@@ -1116,7 +1127,7 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
                 ...(alt !== undefined && altUln !== undefined ? { altUln } : {}),
                 ...(ast !== undefined ? { ast } : {}),
                 ...(potassium !== undefined ? { potassium } : {}),
-                ...(monitoringOnly ? { monitoringOnly: true } : {}),
+                ...(monitoringOnly ? { monitoringOnly: true } : { analyte: analyteVal }),
                 updatedAt: keepStamp(item)
             } as LabResult;
         }).filter((item): item is LabResult => item !== null);
@@ -1145,7 +1156,7 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
         }).filter((item): item is DoseTemplate => item !== null);
     };
 
-    const processImportedData = (parsed: any): boolean => {
+    const processImportedData = (parsed: any, opts?: { legacyAnalyteFromUnit?: boolean }): boolean => {
         try {
             // Protocol §2: "a reader that does not understand a higher number should
             // refuse rather than guess." The check runs before any sanitiser, so a
@@ -1215,7 +1226,7 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
                     sanitized.set(m, {
                         block,
                         evs: Array.isArray(block.events) ? sanitizeImportedEvents(block.events) : [],
-                        ls: Array.isArray(block.labResults) ? sanitizeImportedLabResults(block.labResults) : [],
+                        ls: Array.isArray(block.labResults) ? sanitizeImportedLabResults(block.labResults, opts) : [],
                         tmps: Array.isArray(block.doseTemplates) ? sanitizeImportedTemplates(block.doseTemplates) : [],
                         jour: Array.isArray(block.journal) ? sanitizeJournalEntries(block.journal) : [],
                     });
@@ -1298,7 +1309,7 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
                     newWeight = Math.min(BODY_WEIGHT_KG_MAX, Math.max(BODY_WEIGHT_KG_MIN, parsed.weight));
                 }
                 if (Array.isArray(parsed.labResults)) {
-                    newLabs = sanitizeImportedLabResults(parsed.labResults);
+                    newLabs = sanitizeImportedLabResults(parsed.labResults, opts);
                     replaced.labResults = true;
                 }
                 if (Array.isArray(parsed.doseTemplates)) {
@@ -1351,7 +1362,7 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
                     newEvents = keepEvs;
                 }
                 const labBelongs = (l: LabResult) =>
-                    mode === 'transmasc' ? isT_LabUnit(l.unit) : !isT_LabUnit(l.unit);
+                    mode === 'transmasc' ? isTestosteroneLab(l) : isEstradiolLab(l);
                 const keepLs: LabResult[] = [];
                 const otherLs: LabResult[] = [];
                 for (const l of newLabs) (labBelongs(l) ? keepLs : otherLs).push(l);
@@ -1417,7 +1428,7 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
         }
     };
 
-    const mergeImportedData = (parsed: any): boolean => {
+    const mergeImportedData = (parsed: any, opts?: { legacyAnalyteFromUnit?: boolean }): boolean => {
         try {
             let incomingEvents: DoseEvent[] = [];
             let incomingWeight: number | undefined = undefined;
@@ -1432,7 +1443,7 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
                     const block = modesBlock[m];
                     if (!block || typeof block !== 'object') continue;
                     const evs = Array.isArray(block.events) ? sanitizeImportedEvents(block.events) : [];
-                    const ls = Array.isArray(block.labResults) ? sanitizeImportedLabResults(block.labResults) : [];
+                    const ls = Array.isArray(block.labResults) ? sanitizeImportedLabResults(block.labResults, opts) : [];
                     const tmps = Array.isArray(block.doseTemplates) ? sanitizeImportedTemplates(block.doseTemplates) : [];
                     if (m === mode) {
                         incomingEvents = evs;
@@ -1473,7 +1484,7 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
             } else if (typeof parsed === 'object' && parsed !== null) {
                 if (Array.isArray(parsed.events)) incomingEvents = sanitizeImportedEvents(parsed.events);
                 if (typeof parsed.weight === 'number' && parsed.weight > 0) incomingWeight = parsed.weight;
-                if (Array.isArray(parsed.labResults)) incomingLabs = sanitizeImportedLabResults(parsed.labResults);
+                if (Array.isArray(parsed.labResults)) incomingLabs = sanitizeImportedLabResults(parsed.labResults, opts);
                 if (Array.isArray(parsed.doseTemplates)) incomingTemplates = sanitizeImportedTemplates(parsed.doseTemplates);
                 if (Array.isArray(parsed.journal)) incomingJournal = sanitizeJournalEntries(parsed.journal);
             }
@@ -1505,7 +1516,7 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
                     incomingEvents = keepEvs;
                 }
                 const labBelongs = (l: LabResult) =>
-                    mode === 'transmasc' ? isT_LabUnit(l.unit) : !isT_LabUnit(l.unit);
+                    mode === 'transmasc' ? isTestosteroneLab(l) : isEstradiolLab(l);
                 const keepLs: LabResult[] = [];
                 const otherLs: LabResult[] = [];
                 for (const l of incomingLabs) (labBelongs(l) ? keepLs : otherLs).push(l);
@@ -1815,6 +1826,7 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
         simulation,
         currentTime,
         calibrationFn,
+        calibrationOffsetFn,
         calibrationMethod, setCalibrationMethod,
         calibrationHistoryMode, setCalibrationHistoryMode,
         aaChartMode, setAaChartMode,

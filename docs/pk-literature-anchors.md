@@ -1,6 +1,8 @@
 # Kira HRT Tracker: 药代动力学模型文献溯源与现代标定白皮书
 *(Pharmacokinetic Literature Anchors & Modern Calibration Reference)*
 
+> **历史文档（2026-10-26 注）：** 这是文献与参数溯源笔记，不是当前模型的验收证明。当前产品有两套可切换引擎、背景 E2 校准、`analyte`/unknown 化验路由；后续审计确认部分 F/V/ka/ke 不能被单条曲线唯一识别，文中“唯一基准/黄金基准”等表述不应作为临床或数值保证。当前行为见 README 与 `research/pk-continuation-20261025-2324/`。
+
 ---
 
 ## 1. 概述与核心改进

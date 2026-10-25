@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { autoTable } from 'jspdf-autotable';
-import { DoseEvent, LabResult, Ester, isTestosteroneEster, isT_LabUnit, isMonitoringOnlyLab, monitoringValues, MONITORING_UNIT } from '../../logic';
+import { DoseEvent, LabResult, Ester, isTestosteroneEster, isTestosteroneLab, isEstradiolLab, isMonitoringOnlyLab, monitoringValues, MONITORING_UNIT } from '../../logic';
 
 /**
  * The compound a record names, for the CSV's "item" column.
@@ -84,7 +84,7 @@ export const exportToCSV = (data: ExportData): string => {
             rows.push([
                 t('export.val.lab'),
                 date,
-                isT_LabUnit(l.unit) ? 'Testosterone' : 'Estradiol',
+                isTestosteroneLab(l) ? 'Testosterone' : isEstradiolLab(l) ? 'Estradiol' : 'Unknown',
                 l.concValue,
                 l.unit,
                 '-'
@@ -111,8 +111,8 @@ const sortByDateDescending = <T extends { timeH: number }>(items: T[]): T[] =>
         .sort((a, b) => b.item.timeH - a.item.timeH || a.index - b.index)
         .map(({ item }) => item);
 
-export const getLabTestLabel = (labResult: LabResult): 'E2' | 'T' =>
-    isT_LabUnit(labResult.unit) ? 'T' : 'E2';
+export const getLabTestLabel = (labResult: LabResult): 'E2' | 'T' | 'unknown' =>
+    isTestosteroneLab(labResult) ? 'T' : isEstradiolLab(labResult) ? 'E2' : 'unknown';
 
 export const buildPDFDocument = (data: ExportData, generatedAt = new Date()) => {
     const { events, labResults } = data;

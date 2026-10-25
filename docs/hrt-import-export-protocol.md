@@ -105,13 +105,43 @@ mistake when writing a converter — a millisecond value silently imports as a d
 | `timeH` | number | yes | Hours since epoch. |
 | `concValue` | number | yes | The concentration, in `unit`. |
 | `unit` | string | yes | `"pg/ml"`, `"pmol/l"`, `"ng/dl"` or `"nmol/l"`. |
+| `analyte` | string | recommended | `"E2"`, `"T"` or `"unknown"`. The hormone this reading measures. **Send it**; when absent Kira stores `unknown` rather than guessing from the unit. |
 
 The first two units are estradiol units; the last two are testosterone units. A record
 carrying neither a hormone value nor any monitoring field is skipped.
 
+**`analyte` is authoritative.** `"T"` with `"pg/ml"` is a testosterone reading that was
+mislabelled — it is routed as T, never as E2. `"E2"` with `"ng/dl"` is the reverse.
+A missing or invalid value is stored as `"unknown"`, and unknown labs are kept but
+**excluded from every calibration fit** (E2, T and background E2) until the user confirms
+the type. This is deliberate: inferring from the unit is how a mislabelled T result used
+to contaminate an E2 fit.
+
 Optional monitoring values may ride on the same record: `prolactin`, `prolactinUln`,
 `alt`, `altUln`, `ast`, `potassium`. Send them only if you have them — a record with
 monitoring values and no hormone reading should also set `"monitoringOnly": true`.
+
+### 4.2.1 Legacy backups without `analyte`
+
+Backups written before the field existed carry only `unit` + `concValue`. On import Kira
+keeps every record but labels the labs `unknown`; they are visible and exported, but not
+used for calibration.
+
+The import **preview** therefore offers a one-time, user-confirmed compatibility option
+when it detects such rows:
+
+```
+pg/ml, pmol/l -> E2
+ng/dl, nmol/l -> T
+```
+
+The checkbox is on by default for a legacy file and can be cleared before confirming.
+It applies only to that import; it is never applied to an explicit `"unknown"`, and never
+used for live API/MCP writes. Without it, the labs stay unknown until the user edits each
+one and chooses E2/T.
+
+Users upgrading from an old backup should be told that the unit mapping is a convenience,
+not proof: a unit that was wrong in the old data will still be wrong after the import.
 
 ### 4.3 `extras` — route detail
 
@@ -265,6 +295,10 @@ The flat keys mirror the **currently active mode**, so a reader that ignores `mo
 still gets that mode's data. A reader that wants both reads `modes`. When writing *to* us,
 use whichever suits you: `modes` if you distinguish transfeminine and transmasculine
 records, flat `events`/`labResults` if you do not.
+
+Our export carries `analyte` on every lab where it is known. Exports written before that
+field existed do not; they import as `unknown` unless the user accepts the one-time legacy
+unit mapping described in §4.2.1.
 
 ---
 

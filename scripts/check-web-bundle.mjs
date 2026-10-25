@@ -172,6 +172,44 @@ if (inlineOffenders.length > 0) {
   process.exit(1);
 }
 
+// --- Static pages reference their assets root-absolutely ---------------------
+//
+// Caddy reaches `/about` through `try_files {path} {path}/index.html /index.html`,
+// so the document is served *under* the URL `/about`; the browser's base URL stays
+// `/about`, not `/about/`. Every relative reference then resolves one segment up:
+// `src="about.js"` asked for `/about.js`, `src="mcp.webp"` for `/mcp.webp`, and
+// `/about` arrived as a 34 KB page with no scripts and no screenshots (2026-10-25)
+// while `/about/` was fine. Root-absolute paths make the same bytes work for both
+// forms, which is the point of the middle term in `try_files`.
+//
+// Fragments (`#sun`), full URLs, protocol-relative and root-absolute paths are
+// skipped; anything else in `public/` is a bug at one of the two URLs.
+//
+// The SPA shell is the exception: Vite emits `./assets/…` for it, it lives at the
+// root, and a relative URL there resolves against `/` for every form that reaches
+// it (`/`, `/index.html`, and the `/index` fallback). Only nested pages are wrong.
+const spaShell = path.join(buildDir, 'index.html');
+const relativeRefs = [];
+for (const file of htmlFiles) {
+  if (file === spaShell) continue;
+  const html = readFileSync(file, 'utf8');
+  for (const match of html.matchAll(/\s(?:src|href)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
+    const value = match[1] ?? match[2] ?? '';
+    if (!value || /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(value)) continue;
+    relativeRefs.push(`${path.relative(root, file)}: ${value}`);
+  }
+}
+if (relativeRefs.length > 0) {
+  console.error(
+    `check-web-bundle: relative URL in a static page, so /<page> loads broken assets:\n` +
+      relativeRefs.map(line => `  ${line}\n`).join('') +
+      `  Pages under public/ are served at both /<page> and /<page>/; a relative path\n` +
+      `  resolves one directory up in the first form. Write /about/about.js, /brand/…,\n` +
+      `  /about/en/ — root-absolute — and both URLs load the same files.\n`,
+  );
+  process.exit(1);
+}
+
 // --- Advertised Android build is the one latest.json points at --------------
 //
 // The app derives its own APK URL from `__APP_VERSION__` (`nativeUpdate.ts`), so it

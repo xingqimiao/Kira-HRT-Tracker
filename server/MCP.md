@@ -103,7 +103,7 @@ Config file locations, for reference: `claude_desktop_config.json` (Claude Deskt
 
 ## The tools
 
-Twenty, grouped by what they touch. Every one is described for an agent to choose from,
+Nineteen, grouped by what they touch. Every one is described for an agent to choose from,
 and `hrt_reference` exists so an agent can learn the vocabulary — and the whole surface,
 because it returns its own catalogue — before writing anything.
 
@@ -114,13 +114,13 @@ deliberately cannot reach is the list under [Identity and destructive operations
 ### Reads
 
 Every read that can return a history paginates. `limit` bounds one page and `before`
-(the oldest instant from the page just read) steps back through it; no read returns an
-unbounded history.
+(the oldest instant from the page just read) steps back through it. **Dose history is
+capped at the last 7 days**; the full export is not an MCP tool.
 
 | Tool | Input | Returns |
 |---|---|---|
-| `hrt_get_timeline` | `limit?, before?` | Doses and labs merged, newest first. Start here. |
-| `hrt_list_medications` | `limit?, before?` | Logged doses only |
+| `hrt_get_timeline` | `limit?, before?` | Doses and labs merged, newest first, last 7 days only. Start here. |
+| `hrt_list_medications` | `limit?, before?` | Logged doses, last 7 days only |
 | `hrt_list_labs` | `limit?, before?` | Lab results only |
 | `hrt_list_journal` | `limit?, before?` | Private journal entries — one free-text note each, newest first |
 | `hrt_list_dose_templates` | `limit?, before?` | Saved dose templates — the shapes the app offers as one-tap buttons |
@@ -128,23 +128,35 @@ unbounded history.
 | `hrt_check_advisories` | — | Any dosage advisory the app would show |
 | `hrt_med_plan_status` | — | The user's own medication schedule and whether today's doses have kept up — the plans, and any due time with no matching dose logged. The plan is the user's schedule, not medical advice. |
 | `hrt_get_settings` | — | Body weight, mode, calibration, PK overrides, and the app's opaque `appState` |
-| `hrt_sync_state` | — | The full record state in one call. This is the whole export (~76 KB) and can be truncated by the result budget — read history with the paginated tools above instead. |
 | `hrt_reference` | — | Routes, esters, units, parameter ranges, and the tool catalogue. Static: it reads no records, so it needs no key at all. |
 
-An agent reading history should use the paginated tools, not `hrt_sync_state`: that one
-returns the whole export (~76 KB) and can be truncated by the result budget, so a
-truncated read looks exactly like missing data.
+**The full record export is deliberately not exposed over MCP.** A durable token must not
+be able to pull an entire history in one call; use the recent paginated reads above, or the
+signed-in web app for a full export. Derived reads (`hrt_predict_levels`, advisories) still
+use the complete history internally.
+
+`hrt_predict_levels` reports calibration context, not just a curve: `calibration.labs` is
+the number of post-dose points used for the fit, `nBaseline` is the number of pre-dose draws
+used only to estimate the additive background E2, `nUnknown` is the number of labs whose
+hormone type is unconfirmed (kept but excluded from every fit), and `baselinePGmL` is the
+estimated background added once to the curve. `hrt_list_labs` returns each lab's `analyte`
+(`E2`, `T` or `unknown`).
 
 ### Writes
 
 | Tool | Input | Returns |
 |---|---|---|
 | `hrt_add_medication` | `route, ester, dose_mg, at, extras?` | The created dose |
-| `hrt_add_lab_result` | `value, unit, at` | The created lab result |
+| `hrt_add_lab_result` | `value, unit, at, analyte?` | The created lab result |
 | `hrt_add_journal_entry` | `note, at, id?` | The created journal entry |
 | `hrt_add_dose_template` | `name, route, ester, dose_mg, extras?` | The saved template |
 | `hrt_update_settings` | any setting field | The updated settings |
 | `hrt_delete_record` | `kind, id` | Confirmation |
+
+**A lab result carries an analyte, not just a unit.** Send `analyte: "E2"` or `"T"` whenever
+you know it. Omitting it stores the record as `unknown`: it is kept, but excluded from every
+calibration fit (E2, T and background E2) until the user confirms the type. A unit alone is
+not treated as proof — a testosterone reading labelled `pg/ml` must not enter an E2 fit.
 
 **A journal entry is the user's own words.** `hrt_add_journal_entry` is for text they wrote
 or dictated; an agent must never compose an entry or infer how someone felt.

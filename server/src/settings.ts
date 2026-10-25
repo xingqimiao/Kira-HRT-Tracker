@@ -238,8 +238,7 @@ export const settings = {
    * Fold an app-state blob synced from a device into the setting the app reads back.
    *
    * The record store carries it as `scalar:appSettings` — the counterpart of the
-   * `scalar:weight` record — but `hrt_get_settings`, `hrt_sync_state` and
-   * `/api/export` read `user_settings.app_state`, so the two have to meet. Nothing
+   * `scalar:weight` record — but `hrt_get_settings` and `/api/export` read `user_settings.app_state`, so the two have to meet. Nothing
    * wrote it at all after the legacy `/api/sync` import went, which is why an
    * app-only setting changed on one device never appeared in the account.
    *

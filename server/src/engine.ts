@@ -248,6 +248,8 @@ export {
   SublingualTierParams,
   isTestosteroneEster,
   isT_LabUnit,
+  isTestosteroneLab,
+  isEstradiolLab,
   isPlausibleBodyWeightKG,
   convertToPgMl,
   convertToNgDl,

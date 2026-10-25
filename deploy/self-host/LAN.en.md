@@ -39,11 +39,11 @@ Host ports 80/443 must be free. Resolve NAS web-server/proxy/container conflicts
 
 ## Step 3: download, extract and enter the script directory
 
-This guide uses **2.2.2 setup revision setup.2**. Application images remain pinned to 2.2.2; the suffix only identifies updated scripts and documentation. Existing installations do not need reinitialization.
+This guide uses the **2.3.0 archive**. Existing installations need no reinitialization; use the [maintenance guide](MAINTENANCE.en.md) to upgrade.
 
-**[Download kira-hrt-self-host-2.2.2-setup.2.tar.gz](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.2.2/kira-hrt-self-host-2.2.2-setup.2.tar.gz)**
+**[Download kira-hrt-self-host-2.3.0.tar.gz](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.0/kira-hrt-self-host-2.3.0.tar.gz)**
 
-Alternatively open the [self-hosted Release](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/tag/self-host-v2.2.2), expand Assets and select that file. Do not select an APK, Source code or a Packages image. A `.sha256` file contains optional checksum information, not the installer.
+Alternatively open the [self-hosted Release](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/tag/self-host-v2.3.0), expand Assets and select that file. Do not select an APK, Source code or a Packages image. A `.sha256` file contains optional checksum information, not the installer.
 
 ### Windows
 
@@ -51,8 +51,8 @@ Save the file to Downloads, open PowerShell and run these lines one at a time:
 
 ```powershell
 cd "$HOME\Downloads"
-tar -xzf .\kira-hrt-self-host-2.2.2-setup.2.tar.gz
-cd .\kira-hrt-self-host-2.2.2
+tar -xzf .\kira-hrt-self-host-2.3.0.tar.gz
+cd .\kira-hrt-self-host-2.3.0
 Get-ChildItem
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
@@ -64,9 +64,9 @@ You should see `hrt.ps1`, `hrt.sh`, `compose.yaml`, `manage.mjs` and `VERSION`. 
 First enter a writable directory that you will keep. A NAS Docker shared folder is suitable; **do not use a temporary directory erased on reboot**. Run:
 
 ```sh
-curl -fL --retry 3 -o kira-hrt-self-host-2.2.2-setup.2.tar.gz https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.2.2/kira-hrt-self-host-2.2.2-setup.2.tar.gz
-tar -xzf kira-hrt-self-host-2.2.2-setup.2.tar.gz
-cd kira-hrt-self-host-2.2.2
+curl -fL --retry 3 -o kira-hrt-self-host-2.3.0.tar.gz https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.0/kira-hrt-self-host-2.3.0.tar.gz
+tar -xzf kira-hrt-self-host-2.3.0.tar.gz
+cd kira-hrt-self-host-2.3.0
 ls
 ```
 
@@ -94,7 +94,7 @@ The script generates configuration/keys, pulls images, creates the database and 
 
 Expect `[1/3]`, `[2/3]`, `[3/3]`, then `Services are running. Open https://192.168.1.20`, and a `local-root.crt` file. Continue to step 5 instead of bypassing browser warnings.
 
-For existing configuration, keep the key and run `sh hrt.sh start` (Windows: `./hrt.ps1 start`), then `cert`. New installations can use setup.2 if an old archive lacks install; existing instances must not be reinitialized.
+For existing configuration, keep the key and run `sh hrt.sh start` (Windows: `./hrt.ps1 start`), then `cert`. New installations use the current archive; existing instances must never be reinitialized.
 
 ## Step 5: trust the LAN certificate, then open the website
 

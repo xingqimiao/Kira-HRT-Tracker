@@ -455,7 +455,7 @@ test('an older-stamped plan still lands, so a poisoned account can be repaired',
  * copies.
  *
  * The app travels its whole `appState` blob as a `scalar:appSettings` record (see
- * `payloadToRecords` in src/services/recordDocs.ts); `hrt_get_settings`, `hrt_sync_state`
+ * `payloadToRecords` in src/services/recordDocs.ts); `hrt_get_settings` and `/api/export`
  * and `/api/export` read `user_settings.app_state`. These assertions pin the bridge —
  * without it a setting changed on one device never reaches the account at all, which is
  * how the display preferences came to persist nowhere but the browser that set them.

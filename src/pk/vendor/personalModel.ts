@@ -60,6 +60,12 @@ export interface PersonalModelState {
      * sits on top of the individual's background level rather than zero.
      */
     baselinePGmL?: number;
+    /**
+     * Raw pre-dose observations behind `baselinePGmL`. The baseline is their
+     * median, not their mean, so one bad draw (e.g. 300 pg/mL among 30 and 32)
+     * does not move a long-horizon curve by an order of magnitude.
+     */
+    baselineSamples?: number[];
 }
 
 export interface EKFDiagnostics {
@@ -88,6 +94,14 @@ export const PERSONAL_E2_CEILING_PGML = EKF_CI_MAX_E2;
 const EKF_SIGMA_RESIDUAL_LOG = 0.27;
 const EKF_Q_REF_PERIOD_H = 30 * 24;
 
+/** Median of the samples seen so far; even counts average the middle pair. */
+function medianOf(values: readonly number[]): number {
+    if (values.length === 0) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
 const CPA_E2_INHIBITION = {
     Emax: 0.20,
     IC50: 50.0,
@@ -105,6 +119,7 @@ export function initPersonalModel(): PersonalModelState {
         anchors: [],
         observationCount: 0,
         postDoseObservationCount: 0,
+        baselineSamples: [],
         updatedAt: new Date().toISOString(),
     };
 }
@@ -130,8 +145,13 @@ function computeEventAmountWithKScale(
         case Route.injection: {
             const doseFast = event.doseMG * params.Frac_fast;
             const doseSlow = event.doseMG * (1.0 - params.Frac_fast);
-            return _analytic3C(tau, doseFast, params.F, params.k1_fast, params.k2, k3) +
-                   _analytic3C(tau, doseSlow, params.F, params.k1_slow, params.k2, k3);
+            // k2 = 0 (unesterified E2): the 3C kernel is identically zero.
+            if (params.k2 > 0) {
+                return _analytic3C(tau, doseFast, params.F, params.k1_fast, params.k2, k3) +
+                    _analytic3C(tau, doseSlow, params.F, params.k1_slow, params.k2, k3);
+            }
+            return absorbedThenEliminated(tau, doseFast, params.F, params.k1_fast, k3) +
+                absorbedThenEliminated(tau, doseSlow, params.F, params.k1_slow, k3);
         }
         case Route.gel:
             // Layered transdermal model, resolved from the gel product registry;
@@ -268,18 +288,18 @@ export function ekfUpdatePersonalModel(
         const currentTrace = state.thetaCov[0][0] + state.thetaCov[1][1];
         const convergenceScore = Math.max(0, Math.min(1, 1 - currentTrace / initialTrace));
 
-        // Accumulate baseline estimates using an online mean so multiple pre-dose
-        // labs all contribute. Use observationCount (total, not post-dose) as the
-        // running count of pre-dose observations already accumulated.
-        const prevBaseline = state.baselinePGmL ?? 0;
-        const prevCount = state.observationCount;
-        const newBaselinePGmL = prevCount === 0
-            ? obsPGmL
-            : (prevBaseline * prevCount + obsPGmL) / (prevCount + 1);
+        // Robust baseline: the median of the pre-dose draws seen so far. A running
+        // mean lets a single implausible pre-dose result (e.g. 300 pg/mL among 30
+        // and 32) shift the whole long-horizon curve; the median ignores it. The
+        // sample list lives on the state, so causal snapshots only use draws that
+        // had already happened at that point.
+        const baselineSamples = [...(state.baselineSamples ?? []), obsPGmL];
+        const newBaselinePGmL = medianOf(baselineSamples);
 
         const baselineState: PersonalModelState = {
             ...state,
             baselinePGmL: newBaselinePGmL,
+            baselineSamples,
             observationCount: state.observationCount + 1,
             // postDoseObservationCount intentionally NOT incremented:
             // pre-dose labs carry no PK information and must not unlock CI bands.
@@ -511,6 +531,8 @@ export function computeSimulationWithCI(
 ): {
     timeH: number[];
     e2Adjusted: number[];
+    /** Per-point endogenous baseline actually added into e2Adjusted. */
+    baseline: number[];
     ci95Low: number[];
     ci95High: number[];
     ci68Low: number[];
@@ -522,6 +544,7 @@ export function computeSimulationWithCI(
         return {
             timeH: [],
             e2Adjusted: [],
+            baseline: [],
             ci95Low: [],
             ci95High: [],
             ci68Low: [],
@@ -552,6 +575,7 @@ export function computeSimulationWithCI(
     };
 
     const e2Adjusted = new Array<number>(n);
+    const baseline = new Array<number>(n);
     const ci95Low = new Array<number>(n);
     const ci95High = new Array<number>(n);
     const ci68Low = new Array<number>(n);
@@ -574,6 +598,7 @@ export function computeSimulationWithCI(
 
         for (let i = 0; i < n; i++) {
             const baselinePGmL = baselineOf(resolveState(sim.timeH[i]));
+            baseline[i] = baselinePGmL;
             const c0 = Math.max(sim.concPGmL_E2[i], EKF_EPS);
             const mean = ou.m[i];
             const std = Math.sqrt(Math.max(0, ou.P[i]));
@@ -614,6 +639,7 @@ export function computeSimulationWithCI(
             const fit = resolveMipd(timeH);
             const pred = mipdPredict(sortedEvents, timeH, fit, GP_RESIDUAL_DEFAULT);
             const baselinePGmL = Math.max(0, fit.baselinePGmL || 0);
+            baseline[i] = baselinePGmL;
             // Central line = GP-corrected MAP point prediction (the posterior
             // mode/median), the standard MIPD choice — uncertainty lives in the
             // bands, not in an upward Jensen shift of the line. This makes the
@@ -652,6 +678,7 @@ export function computeSimulationWithCI(
             const theta = st.thetaMean;
             const P = st.thetaCov;
             const baselinePGmL = baselineOf(st);
+            baseline[i] = baselinePGmL;
             const e2Base = e2AtTimeWithThetaSorted(sortedEvents, timeH, theta);
             const yhat = Math.log(Math.max(e2Base, EKF_EPS));
             const thetaKPlus: [number, number] = [theta[0], theta[1] + EKF_DELTA_K];
@@ -737,6 +764,7 @@ export function computeSimulationWithCI(
     return {
         timeH: sim.timeH,
         e2Adjusted,
+        baseline,
         ci95Low,
         ci95High,
         ci68Low,

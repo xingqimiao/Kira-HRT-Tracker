@@ -5,6 +5,8 @@
      scripts/HrtMessagingService.kt, public/firebase-messaging-sw.js. -->
 # Android 推送设计：本地排程为主，FCM 补推为辅
 
+> **2026-10-26 更新：** 网页与 APK 的提醒传输是互斥的：网页只在页面可见时每 60 秒检查；APK 用系统排程未来 5 天，页面关闭也响。云端同步到的用药方案现在会在 App 的 `medPlan` 变化时触发原生重排（此前只在启动/聚焦/本地编辑时重排，导致网页新建的方案在手机上不响）。详见 `research/pk-continuation-20261025-2324/review/ui-medplan-notifications.md`。
+
 状态：**服务端 + Android 原生 + Web Push 均已实现**（`server/src/push.ts`、
 `server/test/push.test.ts`、`src/utils/pushRegister.ts`、`scripts/HrtMessagingService.kt`、
 `public/firebase-messaging-sw.js`）。唯一未落地的是把服务账号凭据放上生产机（见文末），

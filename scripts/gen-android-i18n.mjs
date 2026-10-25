@@ -53,7 +53,7 @@ const MAP = {
     overview_e2: 'label.e2',
     overview_recent: 'orderbook.title',
     overview_chart: 'chart.title',
-    range_7d: 'chart.range_7d',
+    range_3d: 'chart.range_3d',
     range_30d: 'chart.range_30d',
     range_all: 'chart.range_all',
     chart_curve: 'settings.chart_style.line',

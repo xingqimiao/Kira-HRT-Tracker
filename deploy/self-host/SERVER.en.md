@@ -49,15 +49,15 @@ For permission denied, follow [Docker user permissions](https://docs.docker.com/
 
 ## Step 4: download, extract and install
 
-This guide downloads **2.2.2 setup.2**. Images remain at 2.2.2; the suffix identifies deployment documentation changes. Existing instances do not need reinstalling.
+This guide downloads the **2.3.0 archive**. Existing instances need no reinstall; use the [maintenance guide](MAINTENANCE.en.md) to upgrade.
 
 Use a writable persistent directory, such as your home. If the extraction directory exists, first check whether it is an old instance; do not overwrite it. Execute one line at a time in the server terminal. **Stop and resolve any error before proceeding.**
 
 ```sh
 cd ~
-curl -fL --retry 3 -o kira-hrt-self-host-2.2.2-setup.2.tar.gz https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.2.2/kira-hrt-self-host-2.2.2-setup.2.tar.gz
-tar -xzf kira-hrt-self-host-2.2.2-setup.2.tar.gz
-cd kira-hrt-self-host-2.2.2
+curl -fL --retry 3 -o kira-hrt-self-host-2.3.0.tar.gz https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.0/kira-hrt-self-host-2.3.0.tar.gz
+tar -xzf kira-hrt-self-host-2.3.0.tar.gz
+cd kira-hrt-self-host-2.3.0
 ls
 ```
 

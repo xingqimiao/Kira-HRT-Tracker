@@ -19,7 +19,7 @@ import {
     isPlanNotificationGranted, requestPlanNotificationPermission, openNativeNotificationSettings,
     arePlanNotificationsMuted, resumePlanNotifications, stopPlanWebNotifications,
 } from '../utils/medPlanNotify';
-import { plansForMode, localDateKey } from '../utils/medPlan';
+import { plansForMode, localDateKey, nextPlanOccurrences } from '../utils/medPlan';
 import {
     categoriesOf,
     categoryForEster,
@@ -54,7 +54,7 @@ const hhmmOf = (t: PlanTime) => `${String(t.hour).padStart(2, '0')}:${String(t.m
  * data or the sync engine.
  */
 const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: DoseTemplate[] }> = ({ muted, on, doseTemplates = [] }) => {
-    const { t } = useTranslation();
+    const { t, lang } = useTranslation();
     const session = useCoreSession();
     const { isTransmasc, mode: hrtMode } = useHRTMode();
     // Only the user's own saved templates — never a plan's auto-generated entry.
@@ -124,6 +124,44 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
     /** Whether the add/edit form is open. Collapsed by default so an account with a
      *  plan or two is not staring at the whole scheduling form. */
     const [formOpen, setFormOpen] = useState(false);
+    /** A minute clock for "next reminder" labels, so they do not go stale while
+     *  the section stays open across a due time. */
+    const [nowMs, setNowMs] = useState(() => Date.now());
+    useEffect(() => {
+        const id = setInterval(() => setNowMs(Date.now()), 60_000);
+        return () => clearInterval(id);
+    }, []);
+    const nextLocale = lang === 'yue' ? 'zh-HK' : lang;
+    const nextFormatter = useMemo(
+        () => new Intl.DateTimeFormat(nextLocale, {
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+        }),
+        [nextLocale],
+    );
+    const formatNext = (ms: number): string => nextFormatter.format(new Date(ms));
+
+    /** The schedule currently in the form, for the next/next-next preview. */
+    const draftPlan = useMemo<MedPlan>(() => ({
+        id: 'preview',
+        ester,
+        route,
+        hrtMode,
+        dose: '',
+        mode,
+        anchorDate: mode === 'days'
+            ? (editingId ? plans.find(p => p.id === editingId)?.anchorDate : undefined) ?? localDateKey(new Date())
+            : undefined,
+        doseTimes: mode === 'times'
+            ? extraTimes.map(e => ({ hour: e.date.getHours(), minute: e.date.getMinutes() }))
+            : undefined,
+        intervalHours: mode === 'hours' ? intervalHours : undefined,
+        everyDays: mode === 'days' ? everyDays : undefined,
+        tzOffsetMinutes: new Date().getTimezoneOffset(),
+        firstHour: firstTime.getHours(),
+        firstMinute: firstTime.getMinutes(),
+        enabled: true,
+    }), [ester, route, hrtMode, mode, editingId, plans, extraTimes, intervalHours, everyDays, firstTime]);
+    const preview = nextPlanOccurrences(draftPlan, nowMs, new Date().getTimezoneOffset(), 2);
 
     // Read the current permission on mount (async: the native check hits the plugin).
     useEffect(() => {
@@ -568,11 +606,12 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
             ) : (
                 <SegmentedList label={t('plan.title')}>
                     {visiblePlans.map(p => {
+                        const next = nextPlanOccurrences(p, nowMs, new Date().getTimezoneOffset(), 2);
                         return (
                             <div key={p.id} className="li" style={{ alignItems: 'flex-start', cursor: 'default' }}>
                                 <button
                                     type="button"
-                                    onClick={() => editPlan(p)}
+                                    onClick={(e) => { rememberTransformSource(e.currentTarget); editPlan(p); }}
                                     aria-expanded={editingId === p.id}
                                     style={{ flex: 1, minWidth: 0, textAlign: 'left', border: 0, background: 'none', font: 'inherit', color: 'inherit', padding: 0 }}
                                 >
@@ -586,6 +625,8 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                                             ? ` · ${p.extras[ExtraKey.releaseRateUGPerDay]} µg/day`
                                             : p.dose ? ` · ${p.dose}` : ''}
                                         {` · ${scheduleSummary(p)}`}
+                                        {next[0] ? ` · ${t('plan.next')}: ${formatNext(next[0])}` : ''}
+                                        {next[1] ? ` · ${t('plan.next_next')}: ${formatNext(next[1])}` : ''}
                                     </span>
                                 </button>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none' }}>
@@ -840,6 +881,14 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                             </div>
                         </div>
                     </div>
+
+                    {preview.length > 0 && (
+                        <p className="text-xs" style={{ padding: '0 18px 8px', color: 'var(--var)' }}>
+                            {t('plan.next_preview')
+                                .replace('{first}', formatNext(preview[0]))
+                                .replace('{second}', preview[1] ? formatNext(preview[1]) : '—')}
+                        </p>
+                    )}
 
                     <div className="bot-bar">
                         <button type="button" onClick={closeForm} className="tpl-toggle" data-m style={{ ['--mo' as string]: '14px' }}>

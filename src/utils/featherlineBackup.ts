@@ -486,7 +486,11 @@ export function mapFeatherlineSnapshot(json: string): FeatherlineImport {
             // the placeholder is neutral and `monitoringOnly` keeps it unplotted.
             concValue: hormone?.value ?? 0,
             unit: hormone?.unit ?? 'pg/ml',
-            ...(hormone === null ? { monitoringOnly: true } : {}),
+            // Featherline knows the analyte separately from the unit snapshot; keep
+            // that fact instead of re-deriving it from a possibly mislabelled unit.
+            ...(hormone === null
+                ? { monitoringOnly: true }
+                : { analyte: hormone.kind === 'e2' ? 'E2' : 'T' }),
             ...monitoring,
         });
     }

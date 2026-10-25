@@ -100,19 +100,22 @@ test('an MCP client can list and call tools', async () => {
   const names = tools.map((t) => t.name).sort();
   assert.ok(names.includes('hrt_predict_levels'), `expected predict tool, got ${names}`);
   assert.ok(names.includes('hrt_add_medication'), 'expected add_medication tool');
+  // The full export is deliberately not exposed: a durable token must not be able to
+  // pull an entire history in one call.
+  assert.ok(!names.includes('hrt_sync_state'), 'hrt_sync_state must not be an MCP tool');
   // The share tools, named rather than counted: they are the only ones whose effect is
   // visible to someone without an account, so their absence should fail loudly.
   for (const required of ['hrt_create_share', 'hrt_list_shares', 'hrt_revoke_share']) {
     assert.ok(names.includes(required), `expected ${required}, got ${names}`);
   }
   // The record collections an agent must be able to reach as records, rather than by
-  // parsing the whole export out of `hrt_sync_state`.
+  // parsing a whole export out of one call.
   for (const required of ['hrt_list_journal', 'hrt_add_journal_entry', 'hrt_list_dose_templates', 'hrt_add_dose_template']) {
     assert.ok(names.includes(required), `expected ${required}, got ${names}`);
   }
   // Exact, not a floor: the documented count is derived from this surface, so a tool
   // added without updating the count has to fail here rather than in a doc.
-  assert.equal(names.length, 20, `expected the full tool surface, got ${names.length}: ${names}`);
+  assert.equal(names.length, 19, `expected the full tool surface, got ${names.length}: ${names}`);
 
   // Every tool must describe itself — an agent picks tools from descriptions.
   for (const tool of tools) {

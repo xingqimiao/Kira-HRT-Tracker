@@ -1184,7 +1184,11 @@ export function createRequestHandler() {
       if (path === '/auth/credentials/bind' && req.method === 'POST') {
         const ctx = await requireSessionCtx();
         if (!ctx) return fail(res, 401, 'authentication required');
-        const body = (await readBody(req)) as { username?: unknown; password?: unknown } | undefined;
+        const body = (await readBody(req)) as {
+          username?: unknown;
+          password?: unknown;
+          current_password?: unknown;
+        } | undefined;
         const result = await AccountService.bindCredentials(ctx, body?.username, body?.password, body?.current_password);
         if (!result.ok) {
           // A name another account holds is a conflict, not a bad request; the form

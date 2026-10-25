@@ -3,9 +3,10 @@
  * the right, and nothing else.
  *
  * The mark is the app icon — the 1:2 vial with its two glints — read from
- * `public/brand/kira-app-icon-dark.svg` rather than redrawn here. A copy of the
- * drawing inside this script is a second source of truth, and the two drift the
- * first time either changes.
+ * `public/brand/kira-app-icon.svg` rather than redrawn here. That is the
+ * light-background artwork, used on this card too: the mark has one appearance
+ * and does not change with a theme. A copy of the drawing inside this script is
+ * a second source of truth, and the two drift the first time either changes.
  *
  *   node scripts/generate-og-black.mjs
  *
@@ -73,7 +74,7 @@ async function main() {
   // The icon SVG is a square canvas with the 1:2 mark centred in it, so render
   // it square at the mark's height and take the middle half — the result is the
   // vial alone, at its own aspect, with no side padding to skew the lockup.
-  const square = await sharp('public/brand/kira-app-icon-dark.svg', {
+  const square = await sharp('public/brand/kira-app-icon.svg', {
     density: (72 * LOGO_H) / 512,
   }).png().toBuffer();
 

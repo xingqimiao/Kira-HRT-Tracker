@@ -108,8 +108,15 @@ export function buildRealData(
  * output *of that model* rather than the population curve. `factorFn` comes straight
  * from `computeCalibration`.
  */
-export function applyFactor(base: Pt[], factorFn: (timeH: number) => number): Pt[] {
-    return base.map((p) => ({ ...p, y: p.y * factorFn(p.x * DAY) }));
+export function applyFactor(
+    base: Pt[],
+    factorFn: (timeH: number) => number,
+    offsetFn?: (timeH: number) => number,
+): Pt[] {
+    return base.map((p) => ({
+        ...p,
+        y: p.y * factorFn(p.x * DAY) + (offsetFn?.(p.x * DAY) ?? 0),
+    }));
 }
 
 // ---------------------------------------------------------------------------

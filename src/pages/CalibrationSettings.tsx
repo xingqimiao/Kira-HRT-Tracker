@@ -94,7 +94,9 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({
 }) => {
     const { t } = useTranslation();
 
-    const showFit = method !== 'off' && calibration.points.length > 0;
+    const hasFit = method !== 'off' && calibration.points.length > 0;
+    const background = calibration.baselinePGmL ?? 0;
+    const showStats = hasFit || background > 0;
     const signedPct = (p: number) => `${p >= 0 ? '+' : ''}${p.toFixed(0)}%`;
 
     /** A model's identity hue as a CSS value, for the card name and border. */
@@ -105,16 +107,29 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({
     const [playTick, setPlayTick] = useState<Record<string, number>>({});
     const replay = (k: string): void => setPlayTick((p) => ({ ...p, [k]: (p[k] ?? 0) + 1 }));
 
-    const stats: { label: string; value: string }[] = showFit
+    const stats: { label: string; value: string }[] = showStats
         ? [
-            { label: t('cal.amplitude'), value: `×${calibration.scale.toFixed(2)}` },
-            ...(fitsClearance(method)
-                ? [{ label: t('cal.halflife'), value: signedPct(calibration.halfLifeDeltaPct) }]
+            ...(background > 0
+                ? [{ label: t('cal.baseline_estimate'), value: `${background.toFixed(1)} pg/mL` }]
                 : []),
-            ...(calibration.fitErrPct !== null
-                ? [{ label: t('cal.fit'), value: `±${calibration.fitErrPct.toFixed(0)}%` }]
+            ...(hasFit
+                ? [
+                    { label: t('cal.amplitude'), value: `×${calibration.scale.toFixed(2)}` },
+                    ...(fitsClearance(method)
+                        ? [{ label: t('cal.halflife'), value: signedPct(calibration.halfLifeDeltaPct) }]
+                        : []),
+                    ...(calibration.fitErrPct !== null
+                        ? [{ label: t('cal.fit'), value: `±${calibration.fitErrPct.toFixed(0)}%` }]
+                        : []),
+                    { label: t('cal.labs'), value: String(calibration.n) },
+                ]
                 : []),
-            { label: t('cal.labs'), value: String(calibration.n) },
+            ...(calibration.nBaseline
+                ? [{ label: t('cal.baseline_labs'), value: String(calibration.nBaseline) }]
+                : []),
+            ...(calibration.nUnknown
+                ? [{ label: t('cal.unknown_labs'), value: String(calibration.nUnknown) }]
+                : []),
         ]
         : [];
 
@@ -186,7 +201,7 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({
                 )}
 
                 {/* Current fit */}
-                {showFit && (
+                {showStats && (
                     <div className="mt-8">
             <p className={`text-m3-title-small ${muted} mb-1`}>
                             {t('cal.current')}
@@ -197,6 +212,12 @@ const CalibrationSettings: React.FC<CalibrationSettingsProps> = ({
                                 <span className={`text-sm font-medium tabular-nums ${on}`}>{value}</span>
                             </div>
                         ))}
+                        {background > 0 && (
+                            <p className={`text-xs ${muted} mt-2`}>{t('cal.baseline_note')}</p>
+                        )}
+                        {calibration.baselineOnly && (
+                            <p className={`text-xs ${muted} mt-1`}>{t('cal.baseline_only')}</p>
+                        )}
                     </div>
                 )}
 

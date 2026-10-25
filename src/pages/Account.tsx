@@ -349,7 +349,7 @@ const Account: React.FC<AccountProps> = ({
         : t('account.hrt_start_set');
 
     return (
-        <div className="pg on long" id="p4" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <div className="pg on" id="p4" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             <h1>{t('account.title')}</h1>
 
             {session.restoring ? (
@@ -505,17 +505,11 @@ const Account: React.FC<AccountProps> = ({
                     </div>
                 </div>
             ) : (
+                // The page heading above already says "Account"; the card here
+                // used to repeat it with an avatar, which cost a screenful of
+                // vertical space for no information. The form is the body.
                 <div className="d-col" style={{ width: '100%', maxWidth: 460, marginInline: 'auto' }}>
-                    <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                        <div style={{ color: 'var(--pri)', flex: 'none' }}>
-                            <CookieAvatar size={64} spin />
-                        </div>
-                        <div style={{ minWidth: 0 }}>
-                            <h2 style={{ fontSize: 20, lineHeight: 1.3 }}>{t('account.title')}</h2>
-                            <p className="sub" style={{ margin: '4px 0 0' }}>{t('onboarding.signin_subtitle')}</p>
-                        </div>
-                    </div>
-                    <div className="card">
+                    <div className="card" style={{ padding: 16 }}>
                         <CoreAuthForm session={session} initialUsername={initialUsername} />
                     </div>
                 </div>
@@ -525,6 +519,8 @@ const Account: React.FC<AccountProps> = ({
                 the account content. The mark links to the project's site. */}
             <footer className="foot" style={{ marginTop: 'auto', paddingTop: 24 }}>
                 <a href="https://kiramyao.com" target="_blank" rel="noopener noreferrer">Powered by KiraEqual</a>
+                <span aria-hidden="true"> · </span>
+                <a href="https://status.kiramyao.com/" target="_blank" rel="noopener noreferrer">Status</a>
             </footer>
         </div>
     );

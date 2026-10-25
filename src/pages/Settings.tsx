@@ -366,7 +366,7 @@ const Settings: React.FC<SettingsProps> = ({
     };
 
     const cats: { id: SettingsCat; label: string; icon: IconComponent; hint: string }[] = [
-        { id: 'general', label: t('settings.group.general'), icon: Settings2, hint: [t('settings.app_lock.title'), t('drawer.lang'), t('settings.theme')].join(' · ') },
+        { id: 'general', label: t('settings.group.general'), icon: Settings2, hint: [...(lockAvailable() ? [t('settings.app_lock.title')] : []), t('drawer.lang'), t('settings.theme')].join(' · ') },
         { id: 'algo', label: t('settings.group.algorithm'), icon: Gauge, hint: [t('cal.settings'), t('settings.pk_engine')].join(' · ') },
         { id: 'plans', label: t('plan.title'), icon: Clock3, hint: t('plan.hint') },
         { id: 'reminders', label: t('settings.group.reminders'), icon: CalendarDays, hint: [t('settings.reminders.liver'), t('settings.reminders.estradiol')].join(' · ') },

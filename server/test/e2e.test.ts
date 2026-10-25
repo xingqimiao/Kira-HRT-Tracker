@@ -75,7 +75,9 @@ const labRecord = (id: string, at: number, concValue = 180) => ({
   id: `lab:transfem:${id}`,
   takenAt: at,
   category: 'lab',
-  data: { id, timeH: at / HOUR, concValue, unit: 'pg/ml' },
+  // The analyte is explicit: a lab without one is stored as unknown and never
+  // enters calibration, so omitting it here would make the fit assertion vacuous.
+  data: { id, timeH: at / HOUR, concValue, unit: 'pg/ml', analyte: 'E2' },
 });
 
 test('full agent path: register, log, predict, timeline', async () => {

@@ -1018,7 +1018,7 @@ export const RecordService = {
 /**
  * Rebuild the app's own payload from the account's records.
  *
- * This is what the browser merges against and what `hrt_sync_state` returns, so it
+ * This is what the browser merges against and what the web export returns, so it
  * has to be the shape the app already knows how to read: `version`, the two mode
  * blocks with their collections and tombstone maps, and the scalars that travel
  * beside them.
@@ -1110,8 +1110,8 @@ export async function buildExportPayload(ctx: AuthContext): Promise<{
             if (head === 'lab') { block.labResults.push(record.data); continue; }
             if (head === 'tpl') { block.doseTemplates.push(record.data); continue; }
             if (head === 'quick') { block.quickDoses.push(record.data); continue; }
-            // A body/mood check-in. Its own collection so it survives export and
-            // hrt_sync_state — without this head every entry is counted into
+            // A body/mood check-in. Its own collection so it survives export —
+            // without this head every entry is counted into
             // unknown and silently never leaves the server.
             if (head === 'journal') { block.journal.push(record.data); continue; }
             if (head === 'del') {

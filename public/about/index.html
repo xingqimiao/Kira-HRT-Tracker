@@ -12,7 +12,7 @@
 <link rel="alternate" hreflang="zh-CN" href="https://hrt.kiramyao.com/about/" />
 <link rel="alternate" hreflang="en" href="https://hrt.kiramyao.com/about/en/" />
 <link rel="alternate" hreflang="x-default" href="https://hrt.kiramyao.com/about/" />
-<link rel="icon" href="../brand/kira-app-icon.svg" type="image/svg+xml" />
+<link rel="icon" href="/brand/kira-app-icon.svg" type="image/svg+xml" />
 
 <!-- Open Graph / 社交媒体分享卡片 -->
 <meta property="og:type" content="website" />
@@ -39,7 +39,7 @@
   "applicationCategory": "HealthApplication",
   "description": "一个开源、隐私优先的 HRT（激素替代疗法）用药记录与个人血药浓度估算软件，支持全途径记录、血检校准、本机化验单 OCR 识别与 AI 助手 MCP 互联。",
   "url": "https://hrt.kiramyao.com",
-  "downloadUrl": "https://hrt.kiramyao.com/android/KiraHRT-2.2.2-release.apk",
+  "downloadUrl": "https://hrt.kiramyao.com/android/KiraHRT-2.3.0-release.apk",
   "license": "https://www.gnu.org/licenses/gpl-3.0.html",
   "offers": {
     "@type": "Offer",
@@ -53,6 +53,10 @@
 :root{
   --bg:#fff8f8;--sc:#f9ecf0;--sch:#f2e3e9;--sch-h:#ead6de;
   --pri:#a03d63;--onpri:#ffffff;--pric:#ffd9e3;--onpric:#3f001e;
+  /* The hero mark's own backing, and deliberately not a theme token: the logo
+     keeps its light-background artwork in dark mode, so it keeps its light
+     backing too. There is no dark override for this one. */
+  --logoc:#ffd9e3;
   --secc:#f6dbe5;--onsecc:#2b151e;--terc:#ffe3b0;--onterc:#261900;
   --ok:#2f8458;--okc:#d6f2e2;
   --on:#1d1619;--var:#57494f;--out:#8a7980;
@@ -95,7 +99,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 /* 首屏布局 */
 .hero-wrap{display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:12px}
 .hero-logo-wrap{width:112px;height:112px;position:relative;display:grid;place-items:center;margin-bottom:26px;animation:floatSlow 4.5s ease-in-out infinite}
-.hero-logo-bg{position:absolute;inset:0;width:100%;height:100%;color:var(--pric)}
+.hero-logo-bg{position:absolute;inset:0;width:100%;height:100%;color:var(--logoc)}
 .hero-logo-img{width:72px;height:72px;position:relative;z-index:2;display:block;image-rendering:pixelated}
 
 .h-hero{font-size:clamp(46px,7.2vw,88px);font-weight:900;letter-spacing:-.04em;line-height:1.04;margin-bottom:18px}
@@ -209,7 +213,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
   .site-footer{flex-direction:column;text-align:center}
 }
 </style>
-<script src="about-boot.js"></script>
+<script src="/about/about-boot.js"></script>
 </head>
 <body>
 
@@ -225,7 +229,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
 
 <!-- ================= PAGE 1 · 首屏 ================= -->
 <section class="chapter" id="top">
-  <a class="hero-lang-btn" href="en/" hreflang="en" lang="en" data-m style="--mo:14px" title="Switch to English">English</a>
+  <a class="hero-lang-btn" href="/about/en/" hreflang="en" lang="en" data-m style="--mo:14px" title="Switch to English">English</a>
   <!-- 仅第一页右上角可切换深浅色 -->
   <button class="hero-theme-btn" data-m style="--mo:14px" data-act="theme" aria-label="切换深浅色" title="切换深浅色">
     <svg class="i"><use href="#sun"/></svg>
@@ -234,7 +238,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
   <div class="wrap hero-wrap">
     <div class="hero-logo-wrap">
       <svg class="hero-logo-bg"><path class="js-live-cookie" data-n="9" data-r="52" data-cx="56" data-cy="56" fill="currentColor"/></svg>
-      <img id="brandLogoImg" class="hero-logo-img" src="../brand/kira-app-icon.svg" alt="Kira HRT Tracker Logo" />
+      <img id="brandLogoImg" class="hero-logo-img" src="/brand/kira-app-icon.svg" alt="Kira HRT Tracker Logo" />
     </div>
 
     <h1 class="h-hero reveal-text in">Kira HRT Tracker</h1>
@@ -245,7 +249,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
         <svg class="i"><use href="#globe"/></svg>
         <span>打开网页版</span>
       </a>
-      <a href="https://hrt.kiramyao.com/android/KiraHRT-2.2.2-release.apk" target="_blank" class="btn-giant terc" data-m style="--mo:28px">
+      <a href="https://hrt.kiramyao.com/android/KiraHRT-2.3.0-release.apk" target="_blank" class="btn-giant terc" data-m style="--mo:28px">
         <svg class="i"><use href="#download"/></svg>
         <span>下载 Android 版</span>
       </a>
@@ -260,7 +264,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
       <div class="pixel-phone js-phone">
         <div class="pixel-screen">
           <div class="status-eraser"><div class="pixel-cam"></div></div>
-          <img src="Screenshot_2026-10-22-14-59-08-852_com.kiramyao..jpg" alt="概览" />
+          <img src="/about/Screenshot_2026-10-22-14-59-08-852_com.kiramyao..jpg" alt="概览" />
         </div>
       </div>
     </div>
@@ -281,7 +285,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
         <div class="pixel-phone js-phone">
           <div class="pixel-screen">
             <div class="status-eraser"><div class="pixel-cam"></div></div>
-            <img src="Screenshot_2026-10-22-17-07-49-985_com.kiramyao..jpg" alt="校准设置" />
+            <img src="/about/Screenshot_2026-10-22-17-07-49-985_com.kiramyao..jpg" alt="校准设置" />
           </div>
         </div>
       </div>
@@ -303,7 +307,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
         <div class="pixel-phone js-phone">
           <div class="pixel-screen">
             <div class="status-eraser"><div class="pixel-cam"></div></div>
-            <img src="Screenshot_2026-10-22-14-59-13-386_com.kiramyao..jpg" alt="新增用药记录" />
+            <img src="/about/Screenshot_2026-10-22-14-59-13-386_com.kiramyao..jpg" alt="新增用药记录" />
           </div>
         </div>
       </div>
@@ -325,7 +329,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
         <div class="pixel-phone js-phone">
           <div class="pixel-screen">
             <div class="status-eraser dim"><div class="pixel-cam"></div></div>
-            <img src="Screenshot_2026-10-22-14-59-19-555_com.kiramyao..jpg" alt="快捷记录" />
+            <img src="/about/Screenshot_2026-10-22-14-59-19-555_com.kiramyao..jpg" alt="快捷记录" />
           </div>
         </div>
       </div>
@@ -347,7 +351,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
         <div class="pixel-phone js-phone">
           <div class="pixel-screen">
             <div class="status-eraser"><div class="pixel-cam"></div></div>
-            <img src="Screenshot_2026-10-22-14-58-54-893_com.kiramyao..jpg" alt="体检" />
+            <img src="/about/Screenshot_2026-10-22-14-58-54-893_com.kiramyao..jpg" alt="体检" />
           </div>
         </div>
       </div>
@@ -369,7 +373,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
         <div class="pixel-phone js-phone">
           <div class="pixel-screen">
             <div class="status-eraser dim"><div class="pixel-cam"></div></div>
-            <img src="Screenshot_2026-10-22-14-58-58-958_com.kiramyao..jpg" alt="添加检查结果" />
+            <img src="/about/Screenshot_2026-10-22-14-58-58-958_com.kiramyao..jpg" alt="添加检查结果" />
           </div>
         </div>
       </div>
@@ -391,7 +395,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
         <div class="pixel-phone js-phone">
           <div class="pixel-screen">
             <div class="status-eraser"><div class="pixel-cam"></div></div>
-            <img src="Screenshot_2026-10-22-14-59-05-411_com.kiramyao..jpg" alt="记录" />
+            <img src="/about/Screenshot_2026-10-22-14-59-05-411_com.kiramyao..jpg" alt="记录" />
           </div>
         </div>
       </div>
@@ -409,7 +413,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
 
     <div class="art-col">
       <div class="mcp-stage">
-        <img src="mcp.webp" alt="AI 助手互联" class="mcp-mascots" />
+        <img src="/about/mcp.webp" alt="AI 助手互联" class="mcp-mascots" />
         <div class="mcp-chat-box">
           <div class="mcp-bubble user">「刚涂了 2.6mg 雌二醇凝胶，帮我记一下并看看现在浓度？」</div>
           <div class="mcp-bubble ai">「已为你记下 2.60 mg 凝胶！当前估算浓度 133.5 pg/mL，处于目标范围。」</div>
@@ -433,7 +437,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
         <div class="pixel-phone js-phone">
           <div class="pixel-screen">
             <div class="status-eraser"><div class="pixel-cam"></div></div>
-            <img src="Screenshot_2026-10-22-14-58-50-433_com.kiramyao..jpg" alt="账户与纪念日" />
+            <img src="/about/Screenshot_2026-10-22-14-58-50-433_com.kiramyao..jpg" alt="账户与纪念日" />
           </div>
         </div>
       </div>
@@ -576,7 +580,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
 
   <div class="cta-row reveal-text" style="margin-bottom:0;position:relative;z-index:2">
     <a href="https://hrt.kiramyao.com" target="_blank" class="btn-giant pri" data-m style="--mo:18px">打开网页版</a>
-    <a href="https://hrt.kiramyao.com/android/KiraHRT-2.2.2-release.apk" target="_blank" class="btn-giant tonal" style="background:rgba(255,255,255,.26);color:currentColor" data-m style="--mo:18px">下载 Android 版</a>
+    <a href="https://hrt.kiramyao.com/android/KiraHRT-2.3.0-release.apk" target="_blank" class="btn-giant tonal" style="background:rgba(255,255,255,.26);color:currentColor" data-m style="--mo:18px">下载 Android 版</a>
   </div>
 </section>
 
@@ -584,7 +588,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
 <footer class="site-footer">
   <div>© 2026 KiraMyao Equal</div>
   <div class="footer-links">
-    <a href="en/" hreflang="en" lang="en">English</a>
+    <a href="/about/en/" hreflang="en" lang="en">English</a>
     <a href="https://kiramyao.com/" target="_blank" rel="noopener">About Us</a>
     <a href="https://kiramyao.com/privacy" target="_blank" rel="noopener">Privacy Policy</a>
     <a href="https://2345.lgbt/zh-cn/" target="_blank" rel="noopener">Project Trans</a>
@@ -601,6 +605,6 @@ html:not(.js) .m3e-collapse-body{max-height:none}
   <rect x="0" y="20" width="100" height="5" fill="#5BCEFA"/>
 </svg>
 
-<script src="about.js" defer></script>
+<script src="/about/about.js" defer></script>
 </body>
 </html>

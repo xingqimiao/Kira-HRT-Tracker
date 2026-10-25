@@ -1565,7 +1565,7 @@ export const AccountService = {
   },
 
   async listXLinks(userId: string): Promise<{
-    handle: string | null; avatarUrl: string | null; hasAvatar: boolean;
+    provider: string; handle: string | null; avatarUrl: string | null; hasAvatar: boolean;
     linkedAt: string; lastLoginAt: string | null;
   }[]> {
     return await this.listOAuthLinks(userId, 'x');

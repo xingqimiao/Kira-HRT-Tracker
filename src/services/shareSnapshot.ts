@@ -57,6 +57,8 @@ interface BuildShareSnapshotOptions {
     events: DoseEvent[];
     simulation: SimulationResult | null;
     calibrationFn: (timeH: number) => number;
+    /** Additive endogenous baseline; final = simulation × calibrationFn + offsetFn. */
+    offsetFn?: (timeH: number) => number;
 }
 
 export const buildSharedDosageSnapshot = ({
@@ -64,6 +66,7 @@ export const buildSharedDosageSnapshot = ({
     events,
     simulation,
     calibrationFn,
+    offsetFn,
 }: BuildShareSnapshotOptions): SharedDosageSnapshot => {
     let sharedSimulation: SimulationResult | null = null;
     // useAppData clears the previous simulation one effect after the final
@@ -75,6 +78,7 @@ export const buildSharedDosageSnapshot = ({
         // values or weight used to calibrate it.
         const calibratedE2 = indexes.map(sourceIndex =>
             simulation.concPGmL_E2[sourceIndex] * calibrationFn(simulation.timeH[sourceIndex])
+            + (offsetFn?.(simulation.timeH[sourceIndex]) ?? 0)
         );
         sharedSimulation = {
             timeH: indexes.map(index => simulation.timeH[index]),

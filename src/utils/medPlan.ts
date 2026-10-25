@@ -292,6 +292,69 @@ export function dueTimesToday(plan: MedPlan, nowMs: number, tzOffsetMinutes: num
     return dayTimes.map(t => t + off).filter(t => t <= nowMs);
 }
 
+/**
+ * The next `count` reminders for a plan, strictly after `nowMs`, in true epoch ms.
+ *
+ * `dueTimesToday` answers "what is due/overdue today"; this answers "when will it
+ * next ring", across day boundaries and for the every-N-days mode. Same wall-clock
+ * arithmetic: local fields carried in UTC, offset added back.
+ */
+export function nextPlanOccurrences(
+    plan: MedPlan,
+    nowMs: number,
+    tzOffsetMinutes: number,
+    count = 2,
+): number[] {
+    if (!plan.enabled || count <= 0) return [];
+    const off = tzOffsetMinutes * 60_000;
+    const localNow = nowMs - off;
+    const localMidnight = Math.floor(localNow / DAY_MS) * DAY_MS;
+    const out: number[] = [];
+    const push = (epoch: number) => {
+        if (!Number.isFinite(epoch) || epoch <= nowMs || out.includes(epoch)) return;
+        out.push(epoch);
+    };
+
+    if (plan.mode === 'days') {
+        const cycle = Math.max(1, plan.everyDays ?? 1);
+        const anchorKey = plan.anchorDate ?? localDateKey(new Date(nowMs));
+        const [y, m, d] = anchorKey.split('-').map(Number);
+        let anchor = Date.UTC(y, m - 1, d);
+        if (anchor < localMidnight) {
+            const steps = Math.ceil((localMidnight - anchor) / DAY_MS / cycle);
+            anchor += steps * cycle * DAY_MS;
+        }
+        for (let i = 0; i < 400 && out.length < count; i++) {
+            const local = anchor + plan.firstHour * 3_600_000 + plan.firstMinute * 60_000;
+            push(local + off);
+            anchor += cycle * DAY_MS;
+        }
+        return out.slice(0, count);
+    }
+
+    const timesForDay = (dayOffset: number): number[] => {
+        const base = localMidnight + dayOffset * DAY_MS;
+        if (plan.mode === 'times') {
+            return [
+                base + plan.firstHour * 3_600_000 + plan.firstMinute * 60_000,
+                ...(plan.doseTimes ?? []).map(t => base + t.hour * 3_600_000 + t.minute * 60_000),
+            ];
+        }
+        const gap = Math.max(1, plan.intervalHours ?? 24);
+        const perDay = Math.ceil(24 / gap);
+        return Array.from({ length: perDay }, (_, i) =>
+            base + plan.firstHour * 3_600_000 + plan.firstMinute * 60_000 + i * gap * 3_600_000);
+    };
+
+    for (let day = 0; day < 400 && out.length < count; day++) {
+        timesForDay(day)
+            .map(t => t + off)
+            .sort((a, b) => a - b)
+            .forEach(push);
+    }
+    return out.slice(0, count);
+}
+
 export interface PlanDoseRef {
     ester: Ester;
     route: Route;

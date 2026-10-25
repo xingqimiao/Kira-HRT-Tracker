@@ -111,6 +111,15 @@ const PACK: LangPack = {
 
     "plan.sum.days": "every {d} days · {time}",
 
+
+    "plan.next": "Next",
+
+
+    "plan.next_next": "Then",
+
+
+    "plan.next_preview": "With this schedule: next {first}; then {second}",
+
     "plan.mode.times": "N per day",
 
     "plan.mode.hours": "Every x hours",
@@ -192,7 +201,7 @@ const PACK: LangPack = {
     "core.acct.delete_sub": "Removes {doses} dose record(s), {labs} lab result(s) and everything else. Not reversible.",
     "core.acct.delete_sub_basic": "Removes every record. Not reversible.",
     "core.acct.sign_out": "Sign out",
-    "core.acct.sign_out_confirm": "Sign out of this device? You will need your password to get back in.",
+    "core.acct.sign_out_confirm": "Sign out of this device? You will need your password to get back in.",
     "core.acct.sign_out_clear": "Sign out and clear this device",
     "core.acct.sign_out_clear_hint": "Also delete the records kept in this browser",
 "core.acct.sign_out_clear_hint_native": "Also delete the records kept on this device",
@@ -297,7 +306,7 @@ const PACK: LangPack = {
     "status.level.t_high": "Above target range",
     "chart.title": "Hormone level timeline",
     "chart.reset": "Reset view",
-    "chart.range_7d": "7d",
+    "chart.range_3d": "3d",
     "chart.k.day": "Daily",
     "chart.k.hour4": "4h",
     "chart.k.days": "{n}-day candles",
@@ -309,6 +318,7 @@ const PACK: LangPack = {
     "chart.k.close": "Close",
     "chart.range_30d": "30d",
     "chart.range_all": "All",
+    "chart.scrub": "Time window",
     "chart.target": "Target",
     "orderbook.title": "Recent doses",
     "orderbook.empty": "No doses logged yet",
@@ -317,7 +327,7 @@ const PACK: LangPack = {
     "advisory.t.body": "Your recent testosterone dose looks a bit high. Staying up there mostly just thickens the blood, without extra benefit. The estimate can be off — a hormone panel can calibrate it, and it's worth reviewing your recent dosing.",
     "advisory.cpa.body": "Your recent cyproterone dose looks a bit high. More doesn't block testosterone any better, and the risk builds gradually. The estimate can be off — a hormone panel can calibrate it, and it's worth reviewing your recent dosing.",
     "advisory.e2_cpa.body": "Your recent estradiol and cyproterone doses both look a bit high. Estradiol adds some clotting risk, while cyproterone's risk builds over time. The estimate can be off — a hormone panel can calibrate it, and it's worth reviewing your recent dosing.",
-    "advisory.calibrate.text": "This is a model estimate.",
+    "advisory.calibrate.text": "No usable blood test yet — this curve is an estimate and may be inaccurate.",
     "advisory.calibrate.cta": "Add a blood test to calibrate",
     "advisory.hormone_both_low.body": "Your most recent estradiol and testosterone labs are both running low. Having both sex hormones low at once, over time, can affect bone density, mood, and vasomotor symptoms like hot flashes. This could just be draw timing, so it's worth discussing your recent dosing with a doctor.",
     "advisory.hormone_both_high.body": "Your most recent estradiol and testosterone labs are both running high at once, an unusual combination worth a second look. It could be draw timing or a unit mix-up, so it's worth confirming the results with a doctor.",
@@ -360,6 +370,10 @@ const PACK: LangPack = {
     "drawer.qr": "QR Import / Export",
     "drawer.qr_hint": "Share or restore data via QR code.",
     "import.title": "Import Data",
+
+    "import.legacy_analyte": "This backup has no hormone-type labels ({n} labs)",
+
+    "import.legacy_analyte_hint": "Assign by unit for this import only: pg/ml + pmol/l → E2; ng/dl + nmol/l → T. Only if the units are correct.",
     "export.title": "Export Data",
     "import.text": "Paste JSON Text",
     "import.paste_hint": "Paste JSON content here...",
@@ -794,6 +808,15 @@ const PACK: LangPack = {
     "cal.halflife": "half-life",
     "cal.fit": "fit",
     "cal.labs": "labs",
+    "cal.baseline_labs": "baseline labs",
+
+    "cal.baseline_estimate": "Estimated background E2",
+
+    "cal.baseline_note": "May include residual from earlier doses; not proof of a stable long-term baseline.",
+
+    "cal.baseline_only": "Background E2 only — PK parameters were not fitted.",
+
+    "cal.unknown_labs": "unconfirmed labs",
     "cal.model": "model",
     "lab.add_title": "Add Lab Result",
     "lab.edit_title": "Edit Lab Result",
@@ -1021,10 +1044,7 @@ const PACK: LangPack = {
 
     "mcp.tool.hrt_med_plan_status": "Today's medication plan and any doses still due",
 
-    "mcp.tool.hrt_get_settings": "Body weight, mode, calibration and PK overrides",
-
-    "mcp.tool.hrt_sync_state": "The whole record state in one call — can be large; prefer the paged reads",
-
+    "mcp.tool.hrt_get_settings": "Body weight, mode, calibration and PK overrides",
     "mcp.tool.hrt_reference": "The valid routes, esters and units, and the tool list itself",
 
     "mcp.tool.hrt_add_medication": "Log a dose",

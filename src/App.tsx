@@ -130,6 +130,7 @@ const AppContent = () => {
         doseTemplates,
         simulation,
         calibrationFn,
+        calibrationOffsetFn,
         calibrationMethod, setCalibrationMethod,
         calibrationHistoryMode, setCalibrationHistoryMode,
         aaChartMode, setAaChartMode,
@@ -231,6 +232,18 @@ const AppContent = () => {
         void reschedulePlanNotifications().catch(() => undefined);
     }, [coreSession.user?.userId]);
 
+    /**
+     * A plan that arrives from another device (cloud sync) must arm the native
+     * scheduler. The web transport re-reads plans on every 60-second tick, so it
+     * picks the change up by itself; the native transport only reschedules on an
+     * explicit event, and without this a plan created on the web never rang on the
+     * phone until the app was relaunched or a local edit happened.
+     */
+    useEffect(() => {
+        if (!isNativeApp()) return;
+        void reschedulePlanNotifications().catch(e => console.error('[med-plan] reschedule after plan change failed', e));
+    }, [medPlan]);
+
     // Notifications that draw outside React (a scheduled native ring, an FCM nudge
     // the OS hands to the native service or the worker) must follow the app's
     // language setting. Bind the translator and push the resolved fallbacks to each
@@ -270,6 +283,7 @@ const AppContent = () => {
         events,
         simulation,
         calibrationFn,
+        calibrationOffsetFn,
     });
 
     const initialView = landingIntent?.view || (new URLSearchParams(window.location.search).get('view') as ViewKey | null) || 'home';
@@ -545,9 +559,13 @@ const AppContent = () => {
      * transformation (the fork means the shapes already agree), a Transmtf file needs
      * its unsupported `gelProducts` dropped and reported.
      */
-    const applyImportedPayload = (parsed: unknown, source: ForeignSource | null): boolean => {
+    const applyImportedPayload = (
+        parsed: unknown,
+        source: ForeignSource | null,
+        opts?: { legacyAnalyteFromUnit?: boolean },
+    ): boolean => {
         const { payload, gelProducts } = convertForeignPayload(parsed, source ?? 'kira');
-        const ok = processImportedData(payload);
+        const ok = processImportedData(payload, opts);
         // The custom gel catalogue is account data in its own right — merged after
         // the records so a product can never be imported "for" a record that then
         // failed to land.
@@ -568,7 +586,7 @@ const AppContent = () => {
      * not knowable yet — a password-protected or binary backup — and the modal
      * then imports directly rather than promising a preview it cannot produce.
      */
-    const previewImport = async (input: string | ArrayBuffer): Promise<{ source: string; doses: number; labs: number } | null> => {
+    const previewImport = async (input: string | ArrayBuffer): Promise<{ source: string; doses: number; labs: number; legacyLabs: number } | null> => {
         try {
             const detection = detectForeignFormat(input);
             if (detection.source === 'featherline' || detection.problem === 'unreadable') return null;
@@ -581,18 +599,38 @@ const AppContent = () => {
 
             const source = detection.source ?? detectForeignFormat(JSON.stringify(parsed)).source;
             const { payload } = convertForeignPayload(parsed, source ?? 'kira');
-            const counted = payload as { events?: unknown[]; labResults?: unknown[] };
+            const counted = payload as {
+                events?: unknown[];
+                labResults?: unknown[];
+                modes?: Record<string, { labResults?: unknown[] }>;
+            };
+            const labs = counted.modes
+                ? Object.values(counted.modes).flatMap(b => Array.isArray(b?.labResults) ? b.labResults : [])
+                : Array.isArray(counted.labResults) ? counted.labResults : [];
+            // A legacy backup has neither `analyte` nor the newer `format` marker;
+            // the import preview offers a user-confirmed unit mapping for exactly
+            // these rows. Explicit unknown is left alone.
+            const legacyLabs = labs.filter((raw): boolean => {
+                if (!raw || typeof raw !== 'object') return false;
+                const l = raw as { analyte?: unknown; monitoringOnly?: unknown };
+                if (l.monitoringOnly === true) return false;
+                return l.analyte !== 'E2' && l.analyte !== 'T' && l.analyte !== 'unknown';
+            }).length;
             return {
                 source: source ?? 'kira',
                 doses: counted.events?.length ?? 0,
-                labs: counted.labResults?.length ?? 0,
+                labs: labs.length,
+                legacyLabs,
             };
         } catch {
             return null;
         }
     };
 
-    const importEventsFromJson = async (input: string | ArrayBuffer): Promise<boolean> => {
+    const importEventsFromJson = async (
+        input: string | ArrayBuffer,
+        opts?: { legacyAnalyteFromUnit?: boolean },
+    ): Promise<boolean> => {
         try {
             const detection = detectForeignFormat(input);
 
@@ -631,7 +669,7 @@ const AppContent = () => {
             // Re-detect on the decompressed object: a compressed envelope hid the
             // real shape from the first pass.
             const source = detection.source ?? detectForeignFormat(JSON.stringify(parsed)).source;
-            return applyImportedPayload(parsed, source);
+            return applyImportedPayload(parsed, source, opts);
         } catch (err) {
             console.error(err);
             showDialog('alert', t('drawer.import_error'));
@@ -927,6 +965,7 @@ const AppContent = () => {
                             labResults={labResults}
                             onEditEvent={handleEditEvent}
                             calibrationFn={calibrationFn}
+                            calibrationOffsetFn={calibrationOffsetFn}
                             theme={theme}
                             onNavigateToHistory={() => handleViewChange('history')}
                             onNavigateToLab={() => handleViewChange('lab')}
@@ -957,6 +996,7 @@ const AppContent = () => {
                             events={events}
                             simulation={simulation}
                             calibrationFn={calibrationFn}
+                            calibrationOffsetFn={calibrationOffsetFn}
                         />
                     )}
 

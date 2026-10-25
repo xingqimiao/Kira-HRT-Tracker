@@ -153,8 +153,12 @@ function eventDrugAmountScaled(
         case Route.injection: {
             const doseFast = event.doseMG * params.Frac_fast;
             const doseSlow = event.doseMG * (1.0 - params.Frac_fast);
-            return _analytic3C(tau, doseFast, params.F, k1f, params.k2, k3) +
-                   _analytic3C(tau, doseSlow, params.F, k1s, params.k2, k3);
+            if (params.k2 > 0) {
+                return _analytic3C(tau, doseFast, params.F, k1f, params.k2, k3) +
+                    _analytic3C(tau, doseSlow, params.F, k1s, params.k2, k3);
+            }
+            return absorbedThenEliminated(tau, doseFast, params.F, k1f, k3) +
+                absorbedThenEliminated(tau, doseSlow, params.F, k1s, k3);
         }
         case Route.gel:
             // The gel's layered transdermal absorption cascade is internal to

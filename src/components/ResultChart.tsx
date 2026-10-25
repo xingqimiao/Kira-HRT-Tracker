@@ -5,7 +5,7 @@ import { formatDate, formatTime } from '../utils/helpers';
 import {
     SimulationResult, DoseEvent, LabResult, HRTMode,
     interpolateConcentration_E2, interpolateConcentration_CPA, interpolateConcentration_T,
-    convertToPgMl, convertToNgDl, isT_LabUnit, T_ESTERS,
+    convertToPgMl, convertToNgDl, isTestosteroneLab, isEstradiolLab, T_ESTERS,
 } from '../../logic';
 import { Activity } from '../icons';
 import { ConnectedButtonGroup } from '../ui/proto';
@@ -17,7 +17,33 @@ import type { ChartStyle } from '../constants';
 const HOUR = 3600000;
 const DAY = 24 * HOUR;
 
-type RangeKey = '7d' | '30d' | 'all';
+type RangeKey = '3d' | '30d' | 'all';
+
+/** How long a bounded range shows, in ms. */
+const RANGE_SPAN_MS: Record<Exclude<RangeKey, 'all'>, number> = {
+    '3d': 3 * DAY,
+    '30d': 30 * DAY,
+};
+
+/** The vertical display scale a reader can set on the left axis. Session-only:
+ *  it lives in a module variable so it survives the chart remounting as the tabs
+ *  change, and resets to the default when the app or the page is reopened. */
+const Y_SCALE_MIN = 0.5;
+const Y_SCALE_MAX = 4;
+const clampYScale = (v: number) => Math.min(Y_SCALE_MAX, Math.max(Y_SCALE_MIN, v));
+let sessionYScale = 1;
+
+const useSessionYScale = (): [number, React.Dispatch<React.SetStateAction<number>>] => {
+    const [scale, setScale] = useState(sessionYScale);
+    const update: React.Dispatch<React.SetStateAction<number>> = (value) => {
+        setScale(prev => {
+            const next = typeof value === 'function' ? (value as (p: number) => number)(prev) : value;
+            sessionYScale = next;
+            return next;
+        });
+    };
+    return [scale, update];
+};
 
 // Pick a "nice" rounding step (1/2/5 × 10^n) near the requested magnitude.
 const niceStep = (raw: number): number => {
@@ -44,6 +70,38 @@ const ticksFor = ([lo, hi]: [number, number]): number[] => {
     const step = niceStep((hi - lo) / 4);
     const out: number[] = [];
     for (let v = lo; v <= hi + step * 0.5; v += step) out.push(Math.round(v / step) * step);
+    return out;
+};
+
+type SeriesPoint = { t: number; p: number; s: number | null };
+
+/** Min/max decimation: keeps the peaks and troughs of each time bucket, so a
+ *  multi-year "all" window draws a few thousand points instead of every
+ *  simulation sample, without inventing a curve smoother than the data. */
+const decimateSeries = (pts: SeriesPoint[], budget: number, key: 'p' | 's'): SeriesPoint[] => {
+    if (budget <= 0 || pts.length <= budget) return pts;
+    const out: SeriesPoint[] = [];
+    const step = pts.length / budget;
+    let i = 0;
+    while (i < pts.length) {
+        const end = Math.min(pts.length, Math.max(i + 1, Math.ceil(i + step)));
+        let lo = -1, hi = -1, loV = Infinity, hiV = -Infinity;
+        for (let j = i; j < end; j++) {
+            const v = pts[j][key];
+            if (v == null || !Number.isFinite(v)) continue;
+            if (v < loV) { loV = v; lo = j; }
+            if (v > hiV) { hiV = v; hi = j; }
+        }
+        if (lo < 0) {
+            // A gap: keep one point so the line still breaks where the series is absent.
+            out.push(pts[i]);
+        } else {
+            const a = Math.min(lo, hi), b = Math.max(lo, hi);
+            out.push(pts[a]);
+            if (b !== a) out.push(pts[b]);
+        }
+        i = end;
+    }
     return out;
 };
 
@@ -147,6 +205,7 @@ const ResultChart = ({
     events,
     labResults = [],
     calibrationFn = (_t: number) => 1,
+    calibrationOffsetFn,
     onPointClick,
     isDarkMode = false,
     mode,
@@ -159,6 +218,8 @@ const ResultChart = ({
     events: DoseEvent[];
     labResults?: LabResult[];
     calibrationFn?: (timeH: number) => number;
+    /** Additive endogenous baseline in pg/mL; see CalibrationResult.offsetFn. */
+    calibrationOffsetFn?: (timeH: number) => number;
     onPointClick?: (e: DoseEvent) => void;
     isDarkMode?: boolean;
     mode?: HRTMode;
@@ -181,11 +242,16 @@ const ResultChart = ({
     const [plotEl, setPlotEl] = useState<HTMLDivElement | null>(null);
     const { width, height } = useElementSize(plotEl);
 
-    const [range, setRange] = useState<RangeKey>('7d');
+    const [range, setRange] = useState<RangeKey>('3d');
+    const [yScale, setYScale] = useSessionYScale();
     const [hover, setHover] = useState<number | null>(null);
     const [panOffset, setPanOffset] = useState(0); // ms the window is dragged from its centered base
     const [dragging, setDragging] = useState(false);
     const dragRef = useRef<{ startX: number; startY: number; startOffset: number; moved: boolean; pointerId: number } | null>(null);
+    // A finger on the plot scrubs the readout; the axis gutter and the time
+    // slider are the only drag targets, so a press never moves the curve.
+    const scrubRef = useRef<{ startX: number; startY: number; active: boolean } | null>(null);
+    const yDragRef = useRef<{ startY: number; startScale: number; pointerId: number } | null>(null);
     // Where the current press went down, pan or no pan, so lifting can tell a tap
     // from a swipe.
     const pressRef = useRef<{ x: number; y: number } | null>(null);
@@ -271,11 +337,11 @@ const ResultChart = ({
         return sim.timeH.map((h, i) => {
             const time = h * HOUR;
             if (isTransmasc) return { t: time, p: sim.concNGdL_T?.[i] ?? 0, s: null };
-            const e2 = sim.concPGmL_E2[i] * calibrationFn(h);
+            const e2 = sim.concPGmL_E2[i] * calibrationFn(h) + (calibrationOffsetFn?.(h) ?? 0);
             const cpa = sim.concPGmL_CPA[i];
             return { t: time, p: primaryIsCPA ? cpa : e2, s: hasSecondary ? cpa : null };
         });
-    }, [sim, calibrationFn, isTransmasc, primaryIsCPA, hasSecondary]);
+    }, [sim, calibrationFn, calibrationOffsetFn, isTransmasc, primaryIsCPA, hasSecondary]);
 
     // A clock that ticks, not one that is read on every render. `now` anchors the
     // visible window, the "now" marker and the calibration read-off; taking it
@@ -298,37 +364,35 @@ const ResultChart = ({
     // draws daily (or weekly past 120 days). The header chip discloses what
     // actually ran rather than silently drawing something else.
     const isCandle = chartStyle !== 'line';
-    const candleBaseH: CandleBaseH = range === '7d' ? 4 : 24;
+    const candleBaseH: CandleBaseH = range === '3d' ? 4 : 24;
     // The span the range will show, before any future cap — enough to pick the
     // interval without depending on the window we are about to compute from it.
-    const candleSpanMs = range === 'all'
-        ? Math.max(DAY, fullMax - fullMin)
-        : range === '7d' ? 7 * DAY : 30 * DAY;
+    const candleSpanMs = range === 'all' ? Math.max(DAY, fullMax - fullMin) : RANGE_SPAN_MS[range];
     const candleIntervalH = isCandle ? resolveCandleIntervalH(candleBaseH, candleSpanMs) : 24;
     // Candle view never shows more than two candles of empty future. The
     // simulation runs on past "now" (to the last dose plus its lifetime), so
     // without this the plot is mostly candles that have not happened yet.
     const futureCap = now + 2 * candleIntervalH * HOUR;
 
-    // The line view runs two days past "now": the curve keeps being drawn there
+    // The line view runs one day past "now": the curve keeps being drawn there
     // (the simulation covers the last dose's lifetime), and the forward window is
     // what the reader asked for — the point of the chart is seeing where the level
     // is heading, not only where it has been. The header's number is still the
     // reading at "now", and the "现在" marker sits on the curve at that moment.
-    const lineFutureCap = now + 2 * DAY;
+    const lineFutureCap = now + DAY;
 
-    // Base window (before drag) — centered on "now" for 7d/30d, full span for "all".
+    // Base window (before drag) — centered on "now" for 3d/30d, full span for "all".
     const baseWindow = useMemo<[number, number]>(() => {
         if (data.length === 0) return [fullMin, fullMax];
-        const span = range === 'all' ? (fullMax - fullMin) : range === '7d' ? 7 * DAY : 30 * DAY;
+        const span = range === 'all' ? (fullMax - fullMin) : RANGE_SPAN_MS[range];
         if (range === 'all') {
             const hi = isCandle ? Math.min(fullMax, futureCap) : Math.min(fullMax, lineFutureCap);
             return [fullMin, Math.max(fullMin, hi)];
         }
         // Anchor the right edge then walk back one span. In candle view the right
-        // edge stops two candles past now; in line view two days past now. Only the
+        // edge stops two candles past now; in line view one day past now. Only the
         // candle view is clamped back to the last datum — the line view is allowed
-        // to end in empty future, which is the two-day forward window.
+        // to end in empty future, which is the one-day forward window.
         const center = Math.min(Math.max(now, fullMin), fullMax);
         let hi = isCandle
             ? Math.min(futureCap, fullMax)
@@ -376,7 +440,7 @@ const ResultChart = ({
     const labPoints = useMemo(() => {
         if (!labResults.length) return [];
         return labResults
-            .filter(l => (isTransmasc ? isT_LabUnit(l.unit) : !isT_LabUnit(l.unit)))
+            .filter(l => (isTransmasc ? isTestosteroneLab(l) : isEstradiolLab(l)))
             .map(l => ({
                 t: l.timeH * HOUR,
                 v: isTransmasc ? convertToNgDl(l.concValue, l.unit) : convertToPgMl(l.concValue, l.unit),
@@ -385,9 +449,12 @@ const ResultChart = ({
             .filter(l => l.t >= t0 && l.t <= t1);
     }, [labResults, isTransmasc, t0, t1]);
 
-    // Dose markers sit on whichever axis their compound belongs to.
+    // Dose markers sit on whichever axis their compound belongs to. They are a
+    // 3-day-range affordance: on 30 days and "all" a dot per dose is dense enough
+    // to read as noise, and the curve already says when the levels moved.
+    const showDoseMarkers = range === '3d';
     const markers = useMemo(() => {
-        if (!sim) return [];
+        if (!sim || !showDoseMarkers) return [];
         return events.map(e => {
             const isT = T_ESTERS.has(e.ester);
             const isCPA = e.ester === 'CPA';
@@ -395,11 +462,11 @@ const ResultChart = ({
             let value: number | null, axis: 'p' | 's';
             if (isTransmasc) { value = interpolateConcentration_T(sim, e.timeH); axis = 'p'; }
             else if (isCPA) { value = interpolateConcentration_CPA(sim, e.timeH); axis = hasSecondary ? 's' : 'p'; }
-            else { const v = interpolateConcentration_E2(sim, e.timeH); value = v == null ? null : v * calibrationFn(e.timeH); axis = 'p'; }
+            else { const v = interpolateConcentration_E2(sim, e.timeH); value = v == null ? null : v * calibrationFn(e.timeH) + (calibrationOffsetFn?.(e.timeH) ?? 0); axis = 'p'; }
             const v = value != null && Number.isFinite(value) ? value : 0;
             return { t: e.timeH * HOUR, v, axis, event: e };
         }).filter((m): m is { t: number; v: number; axis: 'p' | 's'; event: DoseEvent } => !!m && m.t >= t0 && m.t <= t1);
-    }, [sim, events, isTransmasc, hasSecondary, calibrationFn, t0, t1]);
+    }, [sim, events, isTransmasc, hasSecondary, calibrationFn, calibrationOffsetFn, showDoseMarkers, t0, t1]);
 
     // Candles are built from the drawn slice by resolveCandleIntervalH's choice
     // of interval (computed above, with the window).
@@ -417,8 +484,10 @@ const ResultChart = ({
         // Keep the target band's lower edge on-screen so "below target" reads clearly,
         // without forcing the whole (often much higher) band into view.
         if (primaryTarget) mx = Math.max(mx, primaryTarget.low * 1.05);
-        return buildYDomain(0, mx);
-    }, [slice, labPoints, markers, primaryTarget]);
+        // The left axis is also the reader's zoom control: they can widen or
+        // tighten the visible concentration window for finer or coarser readings.
+        return buildYDomain(0, mx * yScale);
+    }, [slice, labPoints, markers, primaryTarget, yScale]);
 
     const ySecondary = useMemo(() => {
         if (!hasSecondary) return [0, 1] as [number, number];
@@ -516,24 +585,55 @@ const ResultChart = ({
         return out;
     };
 
-    const linePath = (key: 'p' | 's') => {
-        let d = '';
-        let xs: number[] = [];
-        let ys: number[] = [];
-        const flush = () => {
-            if (xs.length) d += monotonePath(xs, ys);
-            xs = [];
-            ys = [];
+    // The drawn series, decimated to about two points per pixel: a multi-year
+    // "all" window is tens of thousands of samples, and rebuilding their path on
+    // every pointer move is what made tapping that range stutter. Min/max
+    // decimation keeps each bucket's extremes, so peaks survive the reduction.
+    const drawBudget = Math.max(160, Math.round(plotW));
+    const drawPointsP = useMemo(
+        () => (isCandle ? [] : decimateSeries(slice, drawBudget, 'p')),
+        [isCandle, slice, drawBudget],
+    );
+    const drawPointsS = useMemo(
+        () => (isCandle || !hasSecondary ? [] : decimateSeries(slice, drawBudget, 's')),
+        [isCandle, hasSecondary, slice, drawBudget],
+    );
+
+    // Path strings are memoized separately from the render: a hover only moves
+    // the crosshair, and it should not pay for the curve again. The part past
+    // "now" is a projection, so it is split off and drawn dashed; a bridged point
+    // at "now" keeps the two segments meeting without a gap.
+    const linePaths = useMemo(() => {
+        const build = (pts: SeriesPoint[], key: 'p' | 's') => {
+            const xy = (pt: SeriesPoint) => ({
+                t: pt.t,
+                x: X(pt.t),
+                y: key === 'p' ? YP(pt.p) : YS(pt.s as number),
+            });
+            const valid = pts.filter(pt => {
+                const v = key === 'p' ? pt.p : pt.s;
+                return v != null && Number.isFinite(v);
+            });
+            const past = valid.filter(pt => pt.t <= now).map(xy);
+            const future = valid.filter(pt => pt.t >= now).map(xy);
+            if (past.length && future.length) {
+                const a = past[past.length - 1];
+                const b = future[0];
+                if (a.t < now && b.t > now) {
+                    const u = (now - a.t) / (b.t - a.t);
+                    const bridge = { t: now, x: X(now), y: a.y + (b.y - a.y) * u };
+                    past.push(bridge);
+                    future.unshift(bridge);
+                }
+            }
+            const toPath = (seg: { x: number; y: number }[]) =>
+                seg.length ? monotonePath(seg.map(v => v.x), seg.map(v => v.y)) : '';
+            return { solid: toPath(past), dashed: toPath(future) };
         };
-        for (const pt of slice) {
-            const val = key === 'p' ? pt.p : pt.s;
-            if (val == null || !Number.isFinite(val)) { flush(); continue; }
-            xs.push(X(pt.t));
-            ys.push(key === 'p' ? YP(val) : YS(val));
-        }
-        flush();
-        return d;
-    };
+        return { p: build(drawPointsP, 'p'), s: build(drawPointsS, 's') };
+        // X/YP/YS are rebuilt each render; their inputs are listed instead.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [drawPointsP, drawPointsS, now, vt0, vt1, vy0, vy1, vs0, vs1, mL, mT, plotW, plotH]);
 
     const xTicks = useMemo(() => {
         if (plotW <= 0) return [];
@@ -571,9 +671,9 @@ const ResultChart = ({
             ? interpolateConcentration_T(sim, h)
             : primaryIsCPA
                 ? interpolateConcentration_CPA(sim, h)
-                : (() => { const e = interpolateConcentration_E2(sim, h); return e == null ? null : e * calibrationFn(h); })();
+                : (() => { const e = interpolateConcentration_E2(sim, h); return e == null ? null : e * calibrationFn(h) + (calibrationOffsetFn?.(h) ?? 0); })();
         return v != null && Number.isFinite(v) ? v : null;
-    }, [sim, now, isTransmasc, primaryIsCPA, calibrationFn]);
+    }, [sim, now, isTransmasc, primaryIsCPA, calibrationFn, calibrationOffsetFn]);
 
     // "Now" position on the secondary (CPA) curve.
     const nowValS = useMemo(() => {
@@ -582,28 +682,52 @@ const ResultChart = ({
         return v != null && Number.isFinite(v) ? v : null;
     }, [sim, now, hasSecondary]);
 
-    // Hover lookup — nearest sample to the pointer.
+    // Hover lookup — nearest sample to the pointer. The grid is ordered, so this
+    // is a binary search: a linear scan over a multi-year series was the other
+    // half of the "all" range's tap lag.
     const updateHover = (clientX: number) => {
         if (!plotEl || data.length === 0) return;
         const rect = plotEl.getBoundingClientRect();
         const px = clientX - rect.left;
         if (px < mL || px > mL + plotW) { setHover(null); return; }
         const time = t0 + ((px - mL) / plotW) * (t1 - t0);
-        let best = 0, bestDiff = Infinity;
-        for (let i = 0; i < data.length; i++) {
-            const diff = Math.abs(data[i].t - time);
-            if (diff < bestDiff) { bestDiff = diff; best = i; }
+        let lo = 0, hi = data.length - 1;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (data[mid].t < time) lo = mid + 1;
+            else hi = mid;
         }
-        setHover(best);
+        if (lo > 0 && Math.abs(data[lo - 1].t - time) <= Math.abs(data[lo].t - time)) lo--;
+        setHover(lo);
     };
 
     const onPointerDown = (e: React.PointerEvent) => {
+        // The left gutter is the y-axis control, not a drag surface for the curve.
+        const rect = plotEl?.getBoundingClientRect();
+        if (rect && e.clientX - rect.left <= mL) {
+            yDragRef.current = { startY: e.clientY, startScale: yScale, pointerId: e.pointerId };
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+            setHover(null);
+            return;
+        }
         pressRef.current = { x: e.clientX, y: e.clientY };
+        // A finger scrubs the readout; moving the window is the time slider's job
+        // below the plot, so a drag on the curve never pans it.
+        if (e.pointerType !== 'mouse') {
+            scrubRef.current = { startX: e.clientX, startY: e.clientY, active: false };
+            return;
+        }
         if (!canPan) return;
         dragRef.current = { startX: e.clientX, startY: e.clientY, startOffset: panOffset, moved: false, pointerId: e.pointerId };
     };
 
     const onPointerMove = (e: React.PointerEvent) => {
+        const yd = yDragRef.current;
+        if (yd) {
+            // Down widens the window (coarser), up tightens it (finer).
+            setYScale(clampYScale(yd.startScale * Math.exp((e.clientY - yd.startY) / 180)));
+            return;
+        }
         const drag = dragRef.current;
         if (drag) {
             const dx = e.clientX - drag.startX;
@@ -629,18 +753,37 @@ const ResultChart = ({
             }
             return;
         }
+        const scrub = scrubRef.current;
+        if (scrub) {
+            const dx = e.clientX - scrub.startX;
+            const dy = e.clientY - scrub.startY;
+            if (!scrub.active) {
+                // A mostly-vertical gesture belongs to the page scroller, not the
+                // readout; a mostly-horizontal one locks into scrubbing.
+                if (Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) { scrubRef.current = null; return; }
+                if (Math.abs(dx) < 4) return;
+                scrub.active = true;
+            }
+            updateHover(e.clientX);
+            return;
+        }
         updateHover(e.clientX);
     };
 
     const endDrag = (e?: React.PointerEvent) => {
         const drag = dragRef.current;
-        if (drag && e) { try { e.currentTarget.releasePointerCapture(drag.pointerId); } catch { /* ignore */ } }
+        const yd = yDragRef.current;
+        const pointerId = drag?.pointerId ?? yd?.pointerId;
+        if (pointerId != null && e) { try { e.currentTarget.releasePointerCapture(pointerId); } catch { /* ignore */ } }
         dragRef.current = null;
+        yDragRef.current = null;
+        scrubRef.current = null;
         if (dragging) setDragging(false);
     };
 
     const onPointerLeave = (e: React.PointerEvent) => {
         endDrag(e);
+        scrubRef.current = null;
         // Only a mouse leaving means "done looking". A finger fires leave when it
         // lifts, and clearing on that was what kept a tapped readout from ever
         // staying on screen.
@@ -650,16 +793,20 @@ const ResultChart = ({
     /**
      * A finger has no hover, so a touch screen could only look at the chart: a
      * press either turned into a pan or produced no pointermove at all, and the
-     * leave on lift cleared whatever was left. A tap that did not pan or scroll
-     * now puts the readout where it landed, and it stays until the next press
-     * outside the plot. A tap on a dose marker still only opens that dose.
+     * leave on lift cleared whatever was left. A press now scrubs the readout as
+     * it moves, and a plain tap puts it where it landed; both stay until the next
+     * press outside the plot. Moving the window is the time slider's job. A tap on
+     * a dose marker still only opens that dose.
      */
     const onPointerUp = (e: React.PointerEvent) => {
         const press = pressRef.current;
         const panned = !!dragRef.current?.moved;
+        const scrubbed = !!scrubRef.current?.active;
         endDrag(e);
         pressRef.current = null;
+        scrubRef.current = null;
         if (e.pointerType === 'mouse' || !press || panned) return;
+        if (scrubbed) return; // the last scrub position is already the readout
         if (Math.abs(e.clientX - press.x) > 10 || Math.abs(e.clientY - press.y) > 10) return;
         if ((e.target as Element).closest?.('[data-dose-marker]')) { setHover(null); return; }
         updateHover(e.clientX);
@@ -678,6 +825,23 @@ const ResultChart = ({
         return () => window.removeEventListener('pointerdown', dismiss, true);
     }, [hovering, plotEl]);
 
+    // The wheel over the left gutter adjusts the same display scale the drag
+    // does. A native non-passive listener is required: React's synthetic wheel
+    // handler cannot preventDefault, so the page would scroll while the axis zooms.
+    useEffect(() => {
+        if (!plotEl) return;
+        const onWheel = (ev: WheelEvent) => {
+            const rect = plotEl.getBoundingClientRect();
+            const x = ev.clientX - rect.left;
+            const y = ev.clientY - rect.top;
+            if (x > mL || y < mT || y > mT + plotH) return;
+            ev.preventDefault();
+            setYScale(s => clampYScale(s * (ev.deltaY > 0 ? 1.08 : 1 / 1.08)));
+        };
+        plotEl.addEventListener('wheel', onWheel, { passive: false });
+        return () => plotEl.removeEventListener('wheel', onWheel);
+    }, [plotEl, mL, mT, plotH]);
+
     const hoverPt = hover != null ? data[hover] : null;
     // In candle view the unit of reading is the candle, not the sample: the
     // crosshair and the tooltip both report the bucket the pointer is over — its
@@ -691,12 +855,15 @@ const ResultChart = ({
     const calFactor = calibrationFn(now / HOUR);
 
     const rangeOpts: { key: RangeKey; label: string }[] = [
-        { key: '7d', label: t('chart.range_7d') },
+        { key: '3d', label: t('chart.range_3d') },
         { key: '30d', label: t('chart.range_30d') },
         { key: 'all', label: t('chart.range_all') },
     ];
+    // The time slider's position: where the visible window sits in the full range.
+    const scrubValue = Math.max(minOffset, Math.min(maxOffset, panOffset));
+    const scrubPct = maxOffset > minOffset ? ((scrubValue - minOffset) / (maxOffset - minOffset)) * 100 : 0;
 
-    // The header chip's name for the interval actually drawn: 4小时K (the 7-day
+    // The header chip's name for the interval actually drawn: 4小时K (the 3-day
     // default), 日K, or 周K (and whole multiples of a week once weekly runs out).
     const kIntervalLabel = !isCandle ? '' : candleIntervalH < 24
         ? t('chart.k.hour4')
@@ -774,6 +941,10 @@ const ResultChart = ({
                         onPointerUp={onPointerUp}
                         onPointerCancel={endDrag}
                         onPointerLeave={onPointerLeave}
+                        onDoubleClick={(e) => {
+                            const rect = plotEl?.getBoundingClientRect();
+                            if (rect && e.clientX - rect.left <= mL) setYScale(1);
+                        }}
                         style={{ touchAction: 'pan-y', cursor: canPan ? (dragging ? 'grabbing' : 'grab') : 'default' }}
                     >
                         <defs>
@@ -903,12 +1074,25 @@ const ResultChart = ({
                                     })}
                                 </g>
                             ) : (
-                                <path d={linePath('p')} fill="none" stroke={c.primary} strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" />
+                                // "All" compresses years into one width — a thinner
+                                // line keeps the peaks from fusing into a band. The
+                                // dashed tail is the forward projection.
+                                <>
+                                    <path d={linePaths.p.solid} fill="none" stroke={c.primary} strokeWidth={range === 'all' ? 2.4 : 3} strokeLinejoin="round" strokeLinecap="round" />
+                                    {linePaths.p.dashed && (
+                                        <path d={linePaths.p.dashed} fill="none" stroke={c.primary} strokeWidth={range === 'all' ? 2.4 : 3} strokeLinejoin="round" strokeLinecap="round" strokeDasharray="6 5" />
+                                    )}
+                                </>
                             )}
 
                             {/* Secondary curve (CPA) — kept quiet so E2 stays the focus */}
                             {hasSecondary && (
-                                <path d={linePath('s')} fill="none" stroke={c.second} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" />
+                                <>
+                                    <path d={linePaths.s.solid} fill="none" stroke={c.second} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" />
+                                    {linePaths.s.dashed && (
+                                        <path d={linePaths.s.dashed} fill="none" stroke={c.second} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" strokeDasharray="5 4" />
+                                    )}
+                                </>
                             )}
                         </g>
 
@@ -991,6 +1175,13 @@ const ResultChart = ({
                                 )
                             )}
                         </g>
+                        {/* Last, so it sits above the tick labels it shares the
+                            gutter with: the whole strip is the axis control. */}
+                        <rect
+                            x={0} y={mT} width={mL} height={plotH}
+                            fill="transparent"
+                            style={{ cursor: 'ns-resize', pointerEvents: 'all', touchAction: 'none' }}
+                        />
                     </svg>
                 )}
 
@@ -1053,6 +1244,28 @@ const ResultChart = ({
                     );
                 })()}
             </div>
+
+            {/* The only way to move the window on a touch screen: the plot itself
+                scrubs. It appears whenever there is more time than one window. */}
+            {canPan && (
+                <div className="px-3 md:px-4">
+                    <input
+                        type="range"
+                        className="chart-scrub"
+                        min={minOffset}
+                        max={maxOffset}
+                        step={60000}
+                        value={scrubValue}
+                        aria-label={t('chart.scrub')}
+                        style={{ '--chart-scrub-fill': `${scrubPct}%` } as React.CSSProperties}
+                        onChange={(e) => { setHover(null); setPanOffset(Number(e.target.value)); }}
+                    />
+                    <div className="flex justify-between m3-text-2xs tabular-nums text-[var(--color-m3-on-surface-variant)] px-0.5">
+                        <span>{formatDate(new Date(fullMin), lang, timeZone)}</span>
+                        <span>{formatDate(new Date(fullMax), lang, timeZone)}</span>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

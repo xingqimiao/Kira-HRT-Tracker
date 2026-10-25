@@ -237,6 +237,20 @@ export function parseLabInput(input: unknown, id: string): Result<LabResult> {
 
   const unit: Result<(typeof LAB_UNITS)[number]> = requireEnum(raw.unit, LAB_UNITS, 'unit');
   if (!unit.ok) return unit;
+
+  // The analyte is the structural signal. A caller that omits it gets the safe
+  // `unknown` state, not a unit-based guess: a testosterone reading labelled
+  // pg/mL must never be inferred into the E2 fit.
+  let analyte: 'E2' | 'T' | 'unknown';
+  if (raw.analyte !== undefined) {
+    if (raw.analyte !== 'E2' && raw.analyte !== 'T' && raw.analyte !== 'unknown') {
+      return fail('analyte: must be E2, T or unknown');
+    }
+    analyte = raw.analyte;
+  } else {
+    analyte = 'unknown';
+  }
+
   const at: Result<number> = parseInstant(raw.at, 'at');
   if (!at.ok) return at;
 
@@ -253,6 +267,7 @@ export function parseLabInput(input: unknown, id: string): Result<LabResult> {
     timeH: at.value,
     concValue: raw.value,
     unit: unit.value as LabResult['unit'],
+    analyte,
   });
 }
 

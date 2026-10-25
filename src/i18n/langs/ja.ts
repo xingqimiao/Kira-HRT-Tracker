@@ -209,6 +209,15 @@ const PACK: LangPack = {
 
     "plan.sum.days": "{d}日ごと · {time}",
 
+
+    "plan.next": "次回",
+
+
+    "plan.next_next": "その次",
+
+
+    "plan.next_preview": "この設定では：次回 {first}、その次 {second}",
+
     "plan.mode.times": "1日 N 回",
 
     "plan.mode.hours": "x時間ごと",
@@ -290,7 +299,7 @@ const PACK: LangPack = {
     "core.acct.delete_sub": "{doses} 件の投薬記録、{labs} 件の検査結果、その他すべてが削除されます。元に戻せません。",
     "core.acct.delete_sub_basic": "すべての記録が削除されます。元に戻せません。",
     "core.acct.sign_out": "ログアウト",
-    "core.acct.sign_out_confirm": "ログアウトしますか？ 再び入るにはパスワードが必要です。",
+    "core.acct.sign_out_confirm": "ログアウトしますか？ 再び入るにはパスワードが必要です。",
     "core.acct.sign_out_clear": "ログアウトしてこの端末のデータを消去",
     "core.acct.sign_out_clear_hint": "このブラウザに保存された記録も削除します",
 "core.acct.sign_out_clear_hint_native": "この端末に保存された記録も削除します",
@@ -470,7 +479,7 @@ const PACK: LangPack = {
     "timeline.title": "投薬記録",
     "chart.title": "ホルモン濃度の推移",
     "chart.reset": "表示をリセット",
-    "chart.range_7d": "7日",
+    "chart.range_3d": "3日",
     "chart.k.day": "日足",
     "chart.k.hour4": "4時間足",
     "chart.k.days": "{n}日足",
@@ -482,6 +491,7 @@ const PACK: LangPack = {
     "chart.k.close": "終",
     "chart.range_30d": "30日",
     "chart.range_all": "全期間",
+    "chart.scrub": "表示期間",
     "chart.target": "目標範囲",
     "orderbook.title": "最近の投与",
     "orderbook.empty": "まだ記録がありません",
@@ -490,7 +500,7 @@ const PACK: LangPack = {
     "advisory.t.body": "最近のテストステロンの量が少し多めに見えます。高いまま続けても血液が少し濃くなるだけで、特に得はありません。推定値には誤差があり得るので、ホルモン検査で補正し、最近の服用量も見直してみてください。",
     "advisory.cpa.body": "最近の CPA の量が少し多めに見えます。増やしてもテストステロン抑制は強まらず、リスクだけがじわじわ上がります。推定値には誤差があり得るので、ホルモン検査で補正し、最近の服用量も見直してみてください。",
     "advisory.e2_cpa.body": "最近のエストラジオールと CPA の量が、どちらも少し多めに見えます。エストラジオールは主に血栓の、CPA は時間とともに積み重なるリスクを伴います。推定値には誤差があり得るので、ホルモン検査で補正し、最近の服用量も見直してみてください。",
-    "advisory.calibrate.text": "これはモデルの推定値です。",
+    "advisory.calibrate.text": "校正に使える血液検査がまだないため、この曲線は推定値で、正確でない可能性があります。",
     "advisory.calibrate.cta": "血液検査の結果を追加して調整",
     "advisory.hormone_both_low.body": "最近のエストラジオールとテストステロンの検査値が、どちらも低めです。両方のホルモンが同時に低いと、長期的には骨密度や気分、ほてりなどの血管運動症状に影響することがあります。採血のタイミングによる可能性もあるので、最近の服用量とあわせて医師と相談してみてください。",
     "advisory.hormone_both_high.body": "最近のエストラジオールとテストステロンの検査値が、どちらも高めです。この組み合わせは珍しく、注意が必要です。採血のタイミングや単位の入力ミスの可能性もあるので、医師に検査結果を確認してみてください。",
@@ -532,6 +542,10 @@ const PACK: LangPack = {
     "drawer.qr": "QRコード入出力",
     "drawer.qr_hint": "QRコードで共有や復元ができます。",
     "import.title": "データのインポート",
+
+    "import.legacy_analyte": "この旧バックアップにはホルモン種別の記録がありません（{n} 件）",
+
+    "import.legacy_analyte_hint": "この取り込みに限り単位から推定します：pg/ml・pmol/l → E2、ng/dl・nmol/l → T。単位が正しい場合だけ使ってください。",
     "export.title": "データのエクスポート",
     "import.text": "JSON テキストを貼り付け",
     "import.paste_hint": "ここに JSON の内容を貼り付けてください...",
@@ -1047,6 +1061,15 @@ const PACK: LangPack = {
     "cal.halflife": "半減期",
     "cal.fit": "適合",
     "cal.labs": "件",
+    "cal.baseline_labs": "基準値検査",
+
+    "cal.baseline_estimate": "推定背景E2",
+
+    "cal.baseline_note": "過去の投与による残存を含む可能性があり、長期的に安定した基準値の証明ではありません。",
+
+    "cal.baseline_only": "背景E2のみの推定で、PKパラメータの適合は未完了です。",
+
+    "cal.unknown_labs": "未確認の検査",
     "cal.model": "モデル",
     "onboarding.skip": "スキップ",
     "onboarding.back": "戻る",
@@ -1128,10 +1151,7 @@ const PACK: LangPack = {
 
     "mcp.tool.hrt_med_plan_status": "今日の服薬プランと、まだ残っている分",
 
-    "mcp.tool.hrt_get_settings": "体重・モード・較正・PK 上書き",
-
-    "mcp.tool.hrt_sync_state": "全記録を一度に取得（大きい場合あり・ページ分割の読み取り推奨）",
-
+    "mcp.tool.hrt_get_settings": "体重・モード・較正・PK 上書き",
     "mcp.tool.hrt_reference": "有効な経路・エステル・単位と、ツール一覧そのもの",
 
     "mcp.tool.hrt_add_medication": "服薬を記録",

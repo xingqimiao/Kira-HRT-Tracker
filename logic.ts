@@ -254,6 +254,13 @@ export interface LabResult {
     concValue: number; // Value in the user's unit
     // E2 units (transfem) or T units (transmasc). Kept in one field for storage simplicity.
     unit: 'pg/ml' | 'pmol/l' | 'ng/dl' | 'nmol/l';
+    /**
+     * Which hormone this reading measures. `unknown` (and an absent value on
+     * legacy rows) means the type cannot be established reliably: the record is
+     * kept, but it is excluded from every calibration fit until the user
+     * confirms it. No implicit unit→analyte inference is performed.
+     */
+    analyte?: 'E2' | 'T' | 'unknown';
     // Epoch ms of the last edit — see DoseEvent.updatedAt.
     updatedAt?: number;
     // --- Monitoring bloods carried by the same draw -------------------------
@@ -301,6 +308,30 @@ export function convertToNgDl(val: number, unit: 'pg/ml' | 'pmol/l' | 'ng/dl' | 
 
 export function isT_LabUnit(unit: LabResult['unit']): boolean {
     return unit === 'ng/dl' || unit === 'nmol/l';
+}
+
+/**
+ * Analyte-aware classification.
+ *
+ * An explicit `E2` / `T` is trusted. `unknown` and legacy rows without the field
+ * stay unknown — the unit is NOT used to guess, because a testosterone reading
+ * can be mislabelled pg/ml and would otherwise silently enter an E2 fit.
+ */
+export function labAnalyte(r: Pick<LabResult, 'analyte'>): 'E2' | 'T' | 'unknown' {
+    if (r.analyte === 'E2' || r.analyte === 'T') return r.analyte;
+    return 'unknown';
+}
+
+export function isTestosteroneLab(r: Pick<LabResult, 'analyte'>): boolean {
+    return labAnalyte(r) === 'T';
+}
+
+export function isEstradiolLab(r: Pick<LabResult, 'analyte'>): boolean {
+    return labAnalyte(r) === 'E2';
+}
+
+export function isUnknownAnalyteLab(r: Pick<LabResult, 'analyte'>): boolean {
+    return labAnalyte(r) === 'unknown';
 }
 
 // --- Dose advisory ("you've taken a lot" heads-up) ---
@@ -1248,7 +1279,7 @@ export function computeCalibrationPoints(sim: SimulationResult | null, results: 
     return results
         // A monitoring-only record's placeholder 0 would otherwise be converted to
         // an "E2 of 0" and produce a NaN ratio.
-        .filter(r => !isMonitoringOnlyLab(r) && !isT_LabUnit(r.unit))
+        .filter(r => !isMonitoringOnlyLab(r) && isEstradiolLab(r))
         .map(r => {
             const obs = convertToPgMl(r.concValue, r.unit);
             let pred = interpolateConcentration_E2(sim, r.timeH);
@@ -1277,16 +1308,48 @@ function logRmsePct(sse: number, n: number): number | null {
 /** Outcome of fitting the personal E2 calibration to the user's labs. */
 export interface CalibrationResult {
     method: CalibrationMethod;
-    /** Scale function r(t): calibrated E2 = model E2(t) * factorFn(t). */
+    /**
+     * Scale function r(t). With no additive term: calibrated = model × factorFn.
+     * When `offsetFn` is present: calibrated = model × factorFn + offsetFn.
+     */
     factorFn: (timeH: number) => number;
+    /**
+     * Optional additive term in pg/mL (the endogenous baseline). A multiplier
+     * alone cannot represent a non-zero concentration before the first dose or
+     * at a near-zero trough, so engines that estimate a baseline return it here
+     * instead of folding it into `factorFn`.
+     */
+    offsetFn?: (timeH: number) => number;
     /** Personal amplitude multiplier (bioavailability/Vd correction). */
     scale: number;
     /** Personal clearance multiplier (1 = unchanged; >1 = faster clearance). */
     kMul: number;
     /** Change in elimination half-life vs the model, as a signed percentage. */
     halfLifeDeltaPct: number;
-    /** Number of E2 labs used in the fit. */
+    /** Number of E2 labs used in the fit (post-dose observations). */
     n: number;
+    /**
+     * Pre-dose labs used only to estimate the additive baseline. They are not
+     * part of `n`; the UI reports the two counts separately.
+     */
+    nBaseline?: number;
+    /**
+     * Non-monitoring labs whose analyte is `unknown` (or absent on a legacy row).
+     * They are deliberately excluded from the fit; the UI asks the user to
+     * confirm them instead of guessing from the unit.
+     */
+    nUnknown?: number;
+    /**
+     * Estimated background E2 in pg/mL from trusted pre-dose draws (median).
+     * `0` when there are none. This is NOT assumed to be a stable long-term
+     * endogenous baseline: it may include residual from earlier, unrecorded doses.
+     */
+    baselinePGmL?: number;
+    /**
+     * True when a background estimate exists but no post-dose calibration point
+     * does. The curve carries the baseline; PK parameters were NOT fitted.
+     */
+    baselineOnly?: boolean;
     /** Typical fit error as ±% (log-space RMSE), or null when not estimable (<2 labs / off). */
     fitErrPct: number | null;
     /** Per-lab measured-vs-model comparison points. */
@@ -1614,6 +1677,59 @@ function ouCalibrate(points: CalibrationPoint[], historyMode: CalibrationHistory
  * is the time-varying multiplier on the baseline E2 curve, so all downstream
  * consumers keep working unchanged.
  */
+/** Median of a non-empty numeric list; even counts average the middle pair. */
+function medianNumber(values: readonly number[]): number {
+    if (values.length === 0) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+interface BaselineSample { timeH: number; value: number }
+
+/**
+ * Trusted pre-dose E2 draws.
+ *
+ * Trusted means: explicit E2 analyte, not monitoring-only, a finite positive
+ * value, and NO recorded estrogen dose at or before the draw. The last condition
+ * is what keeps a post-dose trough out of the background estimate. It does NOT
+ * prove the value is a stable endogenous baseline — unrecorded earlier dosing
+ * can still be present, which is why the UI labels this "estimated background
+ * E2" rather than "baseline".
+ */
+function trustedBaselineSamples(results: LabResult[], events: DoseEvent[]): BaselineSample[] {
+    return results
+        .filter(r => !isMonitoringOnlyLab(r) && isEstradiolLab(r)
+            && Number.isFinite(r.concValue) && r.concValue > 0)
+        .filter(r => !events.some(ev =>
+            ev.route !== Route.patchRemove
+            && isEstradiolEster(ev.ester)
+            && ev.timeH <= r.timeH))
+        .map(r => ({ timeH: r.timeH, value: convertToPgMl(r.concValue, r.unit) }))
+        .sort((a, b) => a.timeH - b.timeH);
+}
+
+/** Median of the draws known at `timeH`; 0 before the first one. */
+function baselineValueAt(samples: readonly BaselineSample[], timeH: number): number {
+    const known = samples.filter(s => s.timeH <= timeH).map(s => s.value);
+    return known.length ? medianNumber(known) : 0;
+}
+
+/**
+ * Background-E2 function. Retrospective is the final median everywhere; forward
+ * is a causal step function that only uses draws at or before `timeH`.
+ */
+function baselineFnFor(
+    samples: readonly BaselineSample[],
+    historyMode: CalibrationHistoryMode,
+): (timeH: number) => number {
+    if (samples.length === 0) return () => 0;
+    const final = medianNumber(samples.map(s => s.value));
+    return historyMode === 'forward'
+        ? (timeH: number) => baselineValueAt(samples, timeH)
+        : () => final;
+}
+
 export function computeCalibration(
     baselineSim: SimulationResult | null,
     events: DoseEvent[],
@@ -1623,19 +1739,56 @@ export function computeCalibration(
     historyMode: CalibrationHistoryMode = 'retrospective',
 ): CalibrationResult {
     const points = computeCalibrationPoints(baselineSim, results);
-    const identity: CalibrationResult = {
-        method, factorFn: () => 1, scale: 1, kMul: 1, halfLifeDeltaPct: 0, n: points.length, fitErrPct: null, points,
+    const nUnknown = results.filter(r => !isMonitoringOnlyLab(r) && isUnknownAnalyteLab(r)).length;
+    // Only trusted pre-dose draws can set the background. All of them precede
+    // the first recorded estrogen dose, so using their median for the post-dose
+    // fit is causally safe even in forward mode.
+    const baselineSamples = trustedBaselineSamples(results, events);
+    const baselineValue = baselineSamples.length
+        ? medianNumber(baselineSamples.map(s => s.value))
+        : 0;
+    const nBaseline = baselineSamples.length;
+    const offsetFn = baselineFnFor(baselineSamples, historyMode);
+    const shared = {
+        method,
+        n: points.length,
+        nUnknown,
+        nBaseline,
+        baselinePGmL: baselineValue,
+        fitErrPct: null as number | null,
+        points,
     };
-    if (method === 'off' || !baselineSim || points.length === 0) return identity;
+
+    if (method === 'off' || !baselineSim) {
+        // Calibration disabled (or no curve to calibrate): report no background
+        // either, so the UI cannot show a value the curve is not applying.
+        return {
+            ...shared, baselinePGmL: 0, nBaseline: 0, baselineOnly: false,
+            factorFn: () => 1, offsetFn: () => 0, scale: 1, kMul: 1, halfLifeDeltaPct: 0,
+        };
+    }
+    if (points.length === 0) {
+        // A background can be estimated from pre-dose draws alone; that is not a
+        // PK fit, so the result says so explicitly (baselineOnly).
+        return { ...shared, factorFn: () => 1, offsetFn, baselineOnly: baselineValue > 0, scale: 1, kMul: 1, halfLifeDeltaPct: 0 };
+    }
 
     const n = points.length;
-    const logObs = points.map(p => Math.log(p.obs));
+    // Fit drug-derived E2 only. The background is added back exactly once in the
+    // output via offsetFn; leaving it in the observations would let the fit
+    // absorb it into amplitude/clearance and then double-count it.
+    const fitObs = points.map(p => Math.max(p.obs - baselineValue, 1e-6));
+    const logObs = fitObs.map(v => Math.log(v));
     const labTimes = points.map(p => p.timeH);
 
     // OU-Kalman models a time-varying amplitude correction; no clearance grid needed.
     if (method === 'ou_kalman') {
-        const out = ouCalibrate(points, historyMode);
-        return { method, ...out, n, points };
+        const fitPoints = points.map((p, i) => ({ ...p, obs: fitObs[i] }));
+        const out = ouCalibrate(fitPoints, historyMode);
+        return {
+            method, ...out, n, nUnknown, nBaseline,
+            baselinePGmL: baselineValue, baselineOnly: false, offsetFn, points,
+        };
     }
 
     // EKF and MIPD identify amplitude + clearance; both share the clearance field.
@@ -1647,6 +1800,13 @@ export function computeCalibration(
 
     if (method === 'ekf') {
         const fit = ekfFit(field, logObs, allowClearance);
+        if (historyMode === 'forward' && allowClearance) {
+            // Future labs must not enable clearance learning in earlier snapshots.
+            for (let i = 0; i < MIN_LABS_FOR_CLEARANCE - 1; i++) {
+                const prefix = ekfFit(field, logObs.slice(0, i + 1), false);
+                fit.snapshots[i] = prefix.snapshots[i];
+            }
+        }
         aRep = fit.aFinal + 0.5 * fit.paaFinal;          // Jensen log→linear mean correction
         kRep = fit.kFinal;
         factorFn = historyMode === 'forward'
@@ -1673,10 +1833,15 @@ export function computeCalibration(
     return {
         method,
         factorFn,
+        offsetFn,
         scale: clampFactor(Math.exp(aRep)),
         kMul,
         halfLifeDeltaPct: (1 / kMul - 1) * 100, // half-life ∝ 1/clearance
         n,
+        nUnknown,
+        nBaseline,
+        baselinePGmL: baselineValue,
+        baselineOnly: false,
         fitErrPct: logRmsePct(sseAt(field, logObs, aRep, kRep), n),
         points,
     };
@@ -1851,6 +2016,16 @@ export const SublingualTierParams = {
     standard: { theta: 0.08, hold: 10 },
     strict: { theta: 0.15, hold: 15 }
 };
+
+/**
+ * Highest mucosal fraction the tier table supports.
+ *
+ * The strict tier is the last point with a defined value; beyond it the UI used
+ * to extrapolate at 0.014/min with no evidence. A custom theta above this is
+ * clamped here so an imported or previously-saved record cannot keep producing
+ * the resulting high peak.
+ */
+const SL_THETA_MAX = SublingualTierParams.strict.theta;
 
 // --- PK Custom Parameters ---
 
@@ -2144,7 +2319,7 @@ export function getBioavailabilityMultiplier(
             if (extras[ExtraKey.sublingualTheta] !== undefined) {
                 const customTheta = extras[ExtraKey.sublingualTheta];
                 if (typeof customTheta === 'number' && Number.isFinite(customTheta)) {
-                    theta = Math.min(1, Math.max(0, customTheta));
+                    theta = Math.min(SL_THETA_MAX, Math.max(0, customTheta));
                 }
             } else if (extras[ExtraKey.sublingualTier] !== undefined) {
                 const tierIdx = Math.min(SL_TIER_ORDER.length - 1, Math.max(0, Math.round(extras[ExtraKey.sublingualTier]!)));
@@ -2262,7 +2437,7 @@ function resolveParams(event: DoseEvent): PKParams {
             if (extras[ExtraKey.sublingualTheta] !== undefined) {
                 const customTheta = extras[ExtraKey.sublingualTheta];
                 if (typeof customTheta === 'number' && Number.isFinite(customTheta)) {
-                    theta = Math.min(1, Math.max(0, customTheta));
+                    theta = Math.min(SL_THETA_MAX, Math.max(0, customTheta));
                 }
             } else if (extras[ExtraKey.sublingualTier] !== undefined) {
                 const tierRaw = extras[ExtraKey.sublingualTier];
@@ -2350,16 +2525,25 @@ function patchRemovalTimes(allEvents: DoseEvent[]): Map<DoseEvent, number> {
         if (e.route !== Route.patchRemove) continue;
         const target = e.extras?.patchRemovalFor;
         if (!target) continue;
-        const apply = allEvents.find((a) => a.route === Route.patchApply && !used.has(a)
+        // `<=` so a removal recorded at the same instant as its application
+        // pairs as zero wear (the vendored engine already does this). Only a
+        // removal strictly earlier than every matching apply is ignored.
+        const apply = allEvents.find((a) => a.route === Route.patchApply && a.timeH <= e.timeH && !used.has(a)
             && String(a.extras?.patchInstanceId ?? a.id) === String(target));
         if (apply) { pairs.set(apply, e.timeH); used.add(apply); }
     }
     // Second pass: untargeted removals keep the legacy FIFO pairing, oldest first.
     for (const e of allEvents) {
-        if (e.route === Route.patchApply) onSkin.push(e);
+        if (e.route === Route.patchApply && !used.has(e)) onSkin.push(e);
         else if (e.route === Route.patchRemove) {
             if (e.extras?.patchRemovalFor) continue;
-            const apply = onSkin.shift();
+            // A legacy removal ends a patch that was already on the skin. At the
+            // same instant the UI's active-patch list and the vendored engine both
+            // keep the patch (they require a strictly later removal), so a
+            // same-instant legacy record must not zero it. It stays unpaired and a
+            // later removal can still claim the application.
+            const oldest = onSkin[0];
+            const apply = oldest !== undefined && oldest.timeH < e.timeH ? onSkin.shift() : undefined;
             if (apply) pairs.set(apply, e.timeH);
         }
     }
@@ -2378,7 +2562,10 @@ function patchRemovalTimes(allEvents: DoseEvent[]): Map<DoseEvent, number> {
  */
 function resolvePatchWearH(event: DoseEvent, allEvents: DoseEvent[]): number {
     const removeAt = patchRemovalTimes(allEvents).get(event);
-    if (removeAt !== undefined && removeAt > event.timeH) return removeAt - event.timeH;
+    // `>=` keeps a same-instant pairing as zero wear; `>` would fall through to
+    // the planned duration and make an explicit "removed at once" mean "worn
+    // for the full plan", which contradicts the removal record.
+    if (removeAt !== undefined && removeAt >= event.timeH) return removeAt - event.timeH;
     const planned = event.extras?.[ExtraKey.patchWearH];
     if (typeof planned === 'number' && Number.isFinite(planned) && planned > 0) return planned;
     return Number.MAX_VALUE;
@@ -2470,12 +2657,10 @@ class PrecomputedEventModel {
  * the evaluation — critical when there are hundreds of events (e.g. daily
  * oral recording for a year).
  */
-function computeMaxLifetimeH(params: PKParams, route: Route, allEvents: DoseEvent[], eventTimeH: number): number {
-    // For patches: account for wear duration + post-removal decay. The apply
-    // event carries the time, so reconstruct a minimal event for the resolver.
-    if (route === Route.patchApply) {
-        const applyEvent = allEvents.find(e => e.route === Route.patchApply && e.timeH === eventTimeH);
-        const wearH = applyEvent ? resolvePatchWearH(applyEvent, allEvents) : Number.MAX_VALUE;
+function computeMaxLifetimeH(params: PKParams, event: DoseEvent, allEvents: DoseEvent[]): number {
+    // Preserve instance identity: simultaneous applications can have different wear times.
+    if (event.route === Route.patchApply) {
+        const wearH = resolvePatchWearH(event, allEvents);
         if (wearH >= Number.MAX_VALUE) return Infinity; // Worn indefinitely, always contributes
         const decayH = params.k3 > 0 ? Math.ceil(13.816 / params.k3) : 10000;
         return wearH + decayH;
@@ -2506,7 +2691,7 @@ export function runSimulation(events: DoseEvent[], bodyWeightKG: number): Simula
         .map(e => {
             const model = new PrecomputedEventModel(e, sortedEvents);
             const params = resolveParams(e);
-            const maxLifetimeH = computeMaxLifetimeH(params, e.route, sortedEvents, e.timeH);
+            const maxLifetimeH = computeMaxLifetimeH(params, e, sortedEvents);
             return { model, ester: e.ester, startTimeH: e.timeH, maxLifetimeH };
         });
 

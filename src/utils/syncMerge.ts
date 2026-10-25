@@ -31,7 +31,7 @@
  * it never had (see `resolvePlan`).
  */
 
-import { isTestosteroneEster, isT_LabUnit } from '../../logic';
+import { isTestosteroneEster, isTestosteroneLab } from '../../logic';
 import { sanitizeMedPlans, type MedPlan } from './medPlan';
 import type { GelProduct } from './gelProducts';
 
@@ -401,7 +401,10 @@ function routeFlatPayload(payload: any, modes: Record<ModeKey, ModeBlock>): void
     }
     for (const lab of asArray(payload.labResults)) {
         if (!lab || typeof lab !== 'object') continue;
-        modes[isT_LabUnit(lab.unit) ? 'transmasc' : 'transfem'].labResults.push(lab);
+        // An unknown analyte cannot be classified. The record is kept but remains
+        // `unknown`, so calibration and both mode views exclude it until the user
+        // confirms the hormone; the bucket here is only a storage location.
+        modes[isTestosteroneLab(lab) ? 'transmasc' : 'transfem'].labResults.push(lab);
     }
     for (const tpl of asArray(payload.doseTemplates)) {
         if (!tpl || typeof tpl !== 'object') continue;

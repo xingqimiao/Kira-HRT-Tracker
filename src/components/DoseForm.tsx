@@ -107,37 +107,18 @@ const roundToStep = (value: number, step: number): number => {
     return Number(value.toFixed(decimals));
 };
 
-const thetaFromHold = (holdMin: number): number => {
-    const points = SL_TIER_ORDER.map(key => ({ hold: SublingualTierParams[key].hold, theta: SublingualTierParams[key].theta }));
-    const h = Math.max(1, holdMin);
-    for (let i = 0; i < points.length - 1; i += 1) {
-        const a = points[i];
-        const b = points[i + 1];
-        if (h >= a.hold && h <= b.hold) {
-            const t = (h - a.hold) / (b.hold - a.hold || 1);
-            return Math.min(1, Math.max(0, a.theta + (b.theta - a.theta) * t));
-        }
+/**
+ * Map a legacy custom theta (a record saved before the custom control was
+ * removed) to the nearest defined tier, so editing it does not silently change
+ * the curve to the default standard tier.
+ */
+const tierForTheta = (theta: number): number => {
+    const points = SL_TIER_ORDER.map((key, idx) => ({ idx, theta: SublingualTierParams[key].theta }));
+    let best = points[0];
+    for (const p of points) {
+        if (Math.abs(p.theta - theta) < Math.abs(best.theta - theta)) best = p;
     }
-    const first = points[0];
-    const last = points[points.length - 1];
-    if (h < first.hold) return Math.max(0, first.theta);
-    return Math.min(1, last.theta + (h - last.hold) * 0.014);
-};
-
-const holdFromTheta = (theta: number): number => {
-    const points = SL_TIER_ORDER.map(key => ({ hold: SublingualTierParams[key].hold, theta: SublingualTierParams[key].theta }));
-    for (let i = 0; i < points.length - 1; i += 1) {
-        const a = points[i];
-        const b = points[i + 1];
-        const min = Math.min(a.theta, b.theta);
-        const max = Math.max(a.theta, b.theta);
-        if (theta >= min && theta <= max) {
-            const t = (theta - a.theta) / (b.theta - a.theta || 1);
-            return Math.max(1, Math.min(60, a.hold + (b.hold - a.hold) * t));
-        }
-    }
-    const last = points[points.length - 1];
-    return Math.max(1, Math.min(60, last.hold + (theta - last.theta) / 0.014));
+    return best.idx;
 };
 
 /**
@@ -227,12 +208,9 @@ const DoseForm: React.FC<DoseFormProps> = ({
 
     const [slTier, setSlTier] = useState(() => {
         const idx = eventToEdit?.extras?.[ExtraKey.sublingualTier];
-        return typeof idx === 'number' ? idx : 2;
-    });
-    const [useCustomTheta, setUseCustomTheta] = useState(() => eventToEdit?.extras?.[ExtraKey.sublingualTheta] !== undefined);
-    const [customHold, setCustomHold] = useState(() => {
+        if (typeof idx === 'number') return idx;
         const theta = eventToEdit?.extras?.[ExtraKey.sublingualTheta];
-        return typeof theta === 'number' ? Math.round(holdFromTheta(theta)) : 10;
+        return typeof theta === 'number' ? tierForTheta(theta) : 2;
     });
 
     const [patchWearDays, setPatchWearDays] = useState(() => {
@@ -424,10 +402,8 @@ const DoseForm: React.FC<DoseFormProps> = ({
         setGelWashHours(typeof wash === 'number' && wash > 0 ? Math.round(wash) : 0);
 
         const tier = record?.extras?.[ExtraKey.sublingualTier];
-        setSlTier(typeof tier === 'number' ? tier : 2);
         const theta = record?.extras?.[ExtraKey.sublingualTheta];
-        setUseCustomTheta(typeof theta === 'number');
-        setCustomHold(typeof theta === 'number' ? Math.round(holdFromTheta(theta)) : 10);
+        setSlTier(typeof tier === 'number' ? tier : typeof theta === 'number' ? tierForTheta(theta) : 2);
 
         const wearH = record?.extras?.[ExtraKey.patchWearH];
         setPatchWearDays(typeof wearH === 'number' && wearH > 0 ? trimNumber(wearH / 24) : '');
@@ -543,9 +519,7 @@ const DoseForm: React.FC<DoseFormProps> = ({
         if (tpl.route === Route.sublingual) {
             const tier = tpl.extras?.[ExtraKey.sublingualTier];
             const theta = tpl.extras?.[ExtraKey.sublingualTheta];
-            setSlTier(typeof tier === 'number' ? tier : 2);
-            setUseCustomTheta(typeof theta === 'number');
-            setCustomHold(typeof theta === 'number' ? Math.round(holdFromTheta(theta)) : 10);
+            setSlTier(typeof tier === 'number' ? tier : typeof theta === 'number' ? tierForTheta(theta) : 2);
         }
         const wearH = tpl.extras?.[ExtraKey.patchWearH];
         setPatchWearDays(typeof wearH === 'number' && wearH > 0 ? trimNumber(wearH / 24) : '');
@@ -560,8 +534,7 @@ const DoseForm: React.FC<DoseFormProps> = ({
     const buildExtras = (): Partial<Record<ExtraKey, number>> => {
         const extras: Partial<Record<ExtraKey, number>> = {};
         if (route === Route.sublingual) {
-            if (useCustomTheta) extras[ExtraKey.sublingualTheta] = thetaFromHold(customHold);
-            else extras[ExtraKey.sublingualTier] = slTier;
+            extras[ExtraKey.sublingualTier] = slTier;
         }
         if (route === Route.gel) {
             extras[ExtraKey.gelSite] = gelSite;
@@ -823,7 +796,6 @@ const DoseForm: React.FC<DoseFormProps> = ({
     }
 
     if (route === Route.sublingual && cat === 'hrt') {
-        const theta = thetaFromHold(customHold).toFixed(2);
         listEntries.push({
             key: 'sublingual',
             node: (
@@ -840,33 +812,13 @@ const DoseForm: React.FC<DoseFormProps> = ({
                             <button
                                 type="button"
                                 key={key}
-                                className={!useCustomTheta && slTier === idx ? 'on' : ''}
-                                onClick={() => { setUseCustomTheta(false); setSlTier(idx); }}
+                                className={slTier === idx ? 'on' : ''}
+                                onClick={() => setSlTier(idx)}
                             >
                                 {t(`pill.tier.${key}`)} · {SublingualTierParams[key].hold}m
                             </button>
                         ))}
-                        <button
-                            type="button"
-                            className={useCustomTheta ? 'on' : ''}
-                            onClick={() => setUseCustomTheta(true)}
-                        >
-                            {t('pill.tier.custom')}
-                        </button>
                     </div>
-                    {useCustomTheta && (
-                        <div className="li-row">
-                            <div className="tx">
-                                <div className="t" style={{ fontSize: 13.5 }}>{t('m3e.field.sub_custom')}</div>
-                                <div className="s">{t('m3e.field.sub_theta').replace('{x}', theta)}</div>
-                            </div>
-                            <div className="m3e-num">
-                                <button type="button" className="m3e-num-btn minus" onClick={() => setCustomHold(v => Math.max(1, v - 1))}>−</button>
-                                <span className="m3e-num-val">{customHold} m</span>
-                                <button type="button" className="m3e-num-btn plus" onClick={() => setCustomHold(v => Math.min(60, v + 1))}>+</button>
-                            </div>
-                        </div>
-                    )}
                 </div>
             ),
         });

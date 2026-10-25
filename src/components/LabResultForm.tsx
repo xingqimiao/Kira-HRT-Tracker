@@ -204,7 +204,7 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
             }
             const numValue = parseFloat(editValue);
             if (!editValue || isNaN(numValue) || numValue < 0) return;
-            onSave({ id: resultToEdit.id, timeH, concValue: numValue, unit: editUnit });
+            onSave({ id: resultToEdit.id, timeH, concValue: numValue, unit: editUnit, analyte: editIsT ? 'T' : 'E2' });
             bloods.forEach(onSave);
             return;
         }
@@ -219,8 +219,8 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
 
         // One draw can carry E2, T and monitoring bloods — as separate records at
         // one timestamp, never merged into a single row.
-        if (hasE2) onSave({ id: uuidv4(), timeH, concValue: e2Num, unit: e2Unit });
-        if (hasT) onSave({ id: uuidv4(), timeH, concValue: tNum, unit: tUnit });
+        if (hasE2) onSave({ id: uuidv4(), timeH, concValue: e2Num, unit: e2Unit, analyte: 'E2' });
+        if (hasT) onSave({ id: uuidv4(), timeH, concValue: tNum, unit: tUnit, analyte: 'T' });
         bloods.forEach(onSave);
 
         // The form stays mounted on save, so without this a second open would still
@@ -233,7 +233,7 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
             ? (!!prlValue || !!altValue || !!astValue || !!kValue)
             : !!editValue)
         : (!!e2Value || !!tValue || !!prlValue || !!altValue || !!astValue || !!kValue);
-    const editIsT = isT_LabUnit(editUnit);
+    const editIsT = resultToEdit?.analyte ? resultToEdit.analyte === 'T' : isT_LabUnit(editUnit);
 
     const dateLabel = dateStr
         ? new Date(dateStr).toLocaleDateString(LOCALE_MAP[lang] || 'en-US', { month: 'short', day: 'numeric', year: 'numeric' })

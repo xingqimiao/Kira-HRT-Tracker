@@ -39,11 +39,11 @@ docker compose version
 
 ## 第 3 步：下载、解压，进入包含脚本的目录
 
-本教程使用 **2.2.2 安装脚本修订包 setup.2**。应用镜像仍固定为 2.2.2；后缀只表示脚本和教程修订。已有实例不用重新初始化。
+本教程使用 **2.3.0 部署包**。已有实例不用重新初始化，按[维护文档](MAINTENANCE.md)升级即可。
 
-**[点击下载 kira-hrt-self-host-2.2.2-setup.2.tar.gz](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.2.2/kira-hrt-self-host-2.2.2-setup.2.tar.gz)**
+**[点击下载 kira-hrt-self-host-2.3.0.tar.gz](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.0/kira-hrt-self-host-2.3.0.tar.gz)**
 
-也可以到 [自部署 Release](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/tag/self-host-v2.2.2) 的 Assets 中找这个文件。不要选 APK、Source code 或 Packages 页的镜像。`.sha256` 只是可选的文件校验信息，不是安装程序。
+也可以到 [自部署 Release](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/tag/self-host-v2.3.0) 的 Assets 中找这个文件。不要选 APK、Source code 或 Packages 页的镜像。`.sha256` 只是可选的文件校验信息，不是安装程序。
 
 ### Windows
 
@@ -51,8 +51,8 @@ docker compose version
 
 ```powershell
 cd "$HOME\Downloads"
-tar -xzf .\kira-hrt-self-host-2.2.2-setup.2.tar.gz
-cd .\kira-hrt-self-host-2.2.2
+tar -xzf .\kira-hrt-self-host-2.3.0.tar.gz
+cd .\kira-hrt-self-host-2.3.0
 Get-ChildItem
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
@@ -64,9 +64,9 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 先进入一个有写入权限、准备长期保留的目录。NAS 可用你的 `docker` 共享文件夹，**不要用重启会清空的临时目录**。逐行执行：
 
 ```sh
-curl -fL --retry 3 -o kira-hrt-self-host-2.2.2-setup.2.tar.gz https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.2.2/kira-hrt-self-host-2.2.2-setup.2.tar.gz
-tar -xzf kira-hrt-self-host-2.2.2-setup.2.tar.gz
-cd kira-hrt-self-host-2.2.2
+curl -fL --retry 3 -o kira-hrt-self-host-2.3.0.tar.gz https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.0/kira-hrt-self-host-2.3.0.tar.gz
+tar -xzf kira-hrt-self-host-2.3.0.tar.gz
+cd kira-hrt-self-host-2.3.0
 ls
 ```
 
@@ -94,7 +94,7 @@ Windows PowerShell：
 
 正常结束显示 `[1/3]`、`[2/3]`、`[3/3]`，以及 `Services are running. Open https://192.168.1.20`。当前目录应出现 `local-root.crt`，接着做第 5 步，不要跳过浏览器证书警告。
 
-已有配置时不要删密钥：用 `sh hrt.sh start`（Windows：`./hrt.ps1 start`），健康后执行 `cert` 导出证书。旧包没有 install 时，新安装可使用 setup.2；已有实例无需重新初始化。
+已有配置时不要删密钥：用 `sh hrt.sh start`（Windows：`./hrt.ps1 start`），健康后执行 `cert` 导出证书。新安装请使用当前部署包；已有实例无需重新初始化。
 
 ## 第 5 步：局域网设备信任证书，然后打开网页
 

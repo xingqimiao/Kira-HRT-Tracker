@@ -209,6 +209,15 @@ const PACK: LangPack = {
 
     "plan.sum.days": "{d}일마다 · {time}",
 
+
+    "plan.next": "다음",
+
+
+    "plan.next_next": "그다음",
+
+
+    "plan.next_preview": "현재 설정: 다음 {first}, 그다음 {second}",
+
     "plan.mode.times": "하루 N 회",
 
     "plan.mode.hours": "x시간마다",
@@ -290,7 +299,7 @@ const PACK: LangPack = {
     "core.acct.delete_sub": "투약 기록 {doses}건, 검사 결과 {labs}건과 그 밖의 모든 내용이 삭제됩니다. 되돌릴 수 없습니다.",
     "core.acct.delete_sub_basic": "모든 기록이 삭제됩니다. 되돌릴 수 없습니다.",
     "core.acct.sign_out": "로그아웃",
-    "core.acct.sign_out_confirm": "로그아웃할까요? 다시 들어오려면 비밀번호가 필요합니다.",
+    "core.acct.sign_out_confirm": "로그아웃할까요? 다시 들어오려면 비밀번호가 필요합니다.",
     "core.acct.sign_out_clear": "로그아웃하고 이 기기 데이터 삭제",
     "core.acct.sign_out_clear_hint": "이 브라우저에 저장된 기록도 삭제합니다",
 "core.acct.sign_out_clear_hint_native": "이 기기에 저장된 기록도 삭제합니다",
@@ -452,7 +461,7 @@ const PACK: LangPack = {
     "timeline.title": "복용 기록",
     "chart.title": "호르몬 수치 변화",
     "chart.reset": "보기 초기화",
-    "chart.range_7d": "7일",
+    "chart.range_3d": "3일",
     "chart.k.day": "일봉",
     "chart.k.hour4": "4시간봉",
     "chart.k.days": "{n}일봉",
@@ -464,6 +473,7 @@ const PACK: LangPack = {
     "chart.k.close": "종",
     "chart.range_30d": "30일",
     "chart.range_all": "전체",
+    "chart.scrub": "표시 기간",
     "chart.target": "목표 범위",
     "orderbook.title": "최근 투약",
     "orderbook.empty": "기록이 없습니다",
@@ -472,7 +482,7 @@ const PACK: LangPack = {
     "advisory.t.body": "최근 테스토스테론 용량이 조금 많아 보여요. 계속 높게 유지해도 피가 조금 걸쭉해질 뿐 별다른 이득은 없어요. 추정치에 오차가 있을 수 있으니 호르몬 검사로 보정하고, 최근 복용량도 살펴봐 주세요.",
     "advisory.cpa.body": "최근 CPA 용량이 조금 많아 보여요. 늘려도 테스토스테론 억제가 더 강해지진 않고 위험만 서서히 올라가요. 추정치에 오차가 있을 수 있으니 호르몬 검사로 보정하고, 최근 복용량도 살펴봐 주세요.",
     "advisory.e2_cpa.body": "최근 에스트라디올과 CPA 용량이 둘 다 조금 많아 보여요. 에스트라디올은 주로 혈전 위험을, CPA는 시간이 지나며 쌓이는 위험을 더해요. 추정치에 오차가 있을 수 있으니 호르몬 검사로 보정하고, 최근 복용량도 살펴봐 주세요.",
-    "advisory.calibrate.text": "이건 모델 추정치예요.",
+    "advisory.calibrate.text": "보정에 사용할 혈액 검사가 아직 없어 이 곡선은 추정치이며 부정확할 수 있습니다.",
     "advisory.calibrate.cta": "혈액 검사 결과를 추가해 보정하기",
     "advisory.hormone_both_low.body": "최근 에스트라디올과 테스토스테론 수치가 둘 다 낮게 나왔어요. 두 성호르몬이 동시에 낮으면 장기적으로 골밀도, 기분, 안면홍조 같은 혈관운동 증상에 영향을 줄 수 있어요. 채혈 시점 때문일 수도 있으니 최근 복용량과 함께 의사와 상의해 보세요.",
     "advisory.hormone_both_high.body": "최근 에스트라디올과 테스토스테론 수치가 둘 다 높게 나왔어요. 흔치 않은 조합이라 한번 확인해볼 만해요. 채혈 시점이나 단위 입력 실수일 수도 있으니 의사와 검사 결과를 확인해 보세요.",
@@ -545,6 +555,10 @@ const PACK: LangPack = {
     "settings.privacy_confirm": "제3자 사이트 (kiramyao.com)로 이동합니다. 계속할까요?",
     "drawer.disclaimer_desc": "의학 정보에 관한 중요 공지",
     "import.title": "데이터 가져오기",
+
+    "import.legacy_analyte": "이 예전 백업에는 호르몬 종류 표시가 없습니다 ({n}건)",
+
+    "import.legacy_analyte_hint": "이번 가져오기에만 단위로 추정합니다: pg/ml·pmol/l → E2, ng/dl·nmol/l → T. 단위가 올바른 경우에만 사용하세요.",
     "export.title": "데이터 내보내기",
     "import.text": "JSON 텍스트 붙여넣기",
     "import.paste_hint": "여기에 JSON 내용을 붙여넣으세요...",
@@ -910,6 +924,15 @@ const PACK: LangPack = {
     "cal.halflife": "반감기",
     "cal.fit": "적합",
     "cal.labs": "건",
+    "cal.baseline_labs": "기저치 검사",
+
+    "cal.baseline_estimate": "추정 배경 E2",
+
+    "cal.baseline_note": "이전 투여의 잔류가 포함될 수 있으며, 장기적으로 안정한 기저치의 증거가 아닙니다.",
+
+    "cal.baseline_only": "배경 E2만 추정했으며 약동학 매개변수 적합은 완료되지 않았습니다.",
+
+    "cal.unknown_labs": "미확인 검사",
     "cal.model": "모델",
     "lab.add_title": "검사 결과 추가",
     "lab.edit_title": "검사 결과 편집",
@@ -1106,10 +1129,7 @@ const PACK: LangPack = {
 
     "mcp.tool.hrt_med_plan_status": "오늘의 복약 계획과 아직 남은 용량",
 
-    "mcp.tool.hrt_get_settings": "체중·모드·보정·PK 재정의",
-
-    "mcp.tool.hrt_sync_state": "전체 기록을 한 번에(클 수 있음 — 페이징 읽기 권장)",
-
+    "mcp.tool.hrt_get_settings": "체중·모드·보정·PK 재정의",
     "mcp.tool.hrt_reference": "유효한 경로·에스터·단위와 도구 목록 자체",
 
     "mcp.tool.hrt_add_medication": "복약 기록",

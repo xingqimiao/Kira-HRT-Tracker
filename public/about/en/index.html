@@ -12,7 +12,7 @@
 <link rel="alternate" hreflang="zh-CN" href="https://hrt.kiramyao.com/about/" />
 <link rel="alternate" hreflang="en" href="https://hrt.kiramyao.com/about/en/" />
 <link rel="alternate" hreflang="x-default" href="https://hrt.kiramyao.com/about/" />
-<link rel="icon" href="../../brand/kira-app-icon.svg" type="image/svg+xml" />
+<link rel="icon" href="/brand/kira-app-icon.svg" type="image/svg+xml" />
 
 <!-- Open Graph / social share card -->
 <meta property="og:type" content="website" />
@@ -41,7 +41,7 @@
   "applicationCategory": "HealthApplication",
   "description": "An open-source, privacy-first HRT (hormone replacement therapy) dose log and personal level estimator, with every route supported, calibration from your own blood tests, on-device lab-report OCR and an AI assistant over MCP.",
   "url": "https://hrt.kiramyao.com",
-  "downloadUrl": "https://hrt.kiramyao.com/android/KiraHRT-2.2.2-release.apk",
+  "downloadUrl": "https://hrt.kiramyao.com/android/KiraHRT-2.3.0-release.apk",
   "license": "https://www.gnu.org/licenses/gpl-3.0.html",
   "offers": {
     "@type": "Offer",
@@ -55,6 +55,10 @@
 :root{
   --bg:#fff8f8;--sc:#f9ecf0;--sch:#f2e3e9;--sch-h:#ead6de;
   --pri:#a03d63;--onpri:#ffffff;--pric:#ffd9e3;--onpric:#3f001e;
+  /* The hero mark's own backing, and deliberately not a theme token: the logo
+     keeps its light-background artwork in dark mode, so it keeps its light
+     backing too. There is no dark override for this one. */
+  --logoc:#ffd9e3;
   --secc:#f6dbe5;--onsecc:#2b151e;--terc:#ffe3b0;--onterc:#261900;
   --ok:#2f8458;--okc:#d6f2e2;
   --on:#1d1619;--var:#57494f;--out:#8a7980;
@@ -97,7 +101,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 /* hero layout */
 .hero-wrap{display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:12px}
 .hero-logo-wrap{width:112px;height:112px;position:relative;display:grid;place-items:center;margin-bottom:26px;animation:floatSlow 4.5s ease-in-out infinite}
-.hero-logo-bg{position:absolute;inset:0;width:100%;height:100%;color:var(--pric)}
+.hero-logo-bg{position:absolute;inset:0;width:100%;height:100%;color:var(--logoc)}
 .hero-logo-img{width:72px;height:72px;position:relative;z-index:2;display:block;image-rendering:pixelated}
 
 .h-hero{font-size:clamp(46px,7.2vw,88px);font-weight:900;letter-spacing:-.04em;line-height:1.04;margin-bottom:18px}
@@ -214,7 +218,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
   .site-footer{flex-direction:column;text-align:center}
 }
 </style>
-<script src="../about-boot.js"></script>
+<script src="/about/about-boot.js"></script>
 </head>
 <body>
 
@@ -230,7 +234,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
 
 <!-- ================= PAGE 1 · hero ================= -->
 <section class="chapter" id="top">
-  <a class="hero-lang-btn" href="../" hreflang="zh-CN" lang="zh-CN" data-m style="--mo:14px" title="切换到中文">中文</a>
+  <a class="hero-lang-btn" href="/about/" hreflang="zh-CN" lang="zh-CN" data-m style="--mo:14px" title="切换到中文">中文</a>
   <button class="hero-theme-btn" data-m style="--mo:14px" data-act="theme" aria-label="Toggle light / dark" title="Toggle light / dark">
     <svg class="i"><use href="#sun"/></svg>
   </button>
@@ -238,7 +242,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
   <div class="wrap hero-wrap">
     <div class="hero-logo-wrap">
       <svg class="hero-logo-bg"><path class="js-live-cookie" data-n="9" data-r="52" data-cx="56" data-cy="56" fill="currentColor"/></svg>
-      <img id="brandLogoImg" class="hero-logo-img" src="../../brand/kira-app-icon.svg" alt="Kira HRT Tracker logo" />
+      <img id="brandLogoImg" class="hero-logo-img" src="/brand/kira-app-icon.svg" alt="Kira HRT Tracker logo" />
     </div>
 
     <h1 class="h-hero reveal-text in">Kira HRT Tracker</h1>
@@ -249,7 +253,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
         <svg class="i"><use href="#globe"/></svg>
         <span>Open the web app</span>
       </a>
-      <a href="https://hrt.kiramyao.com/android/KiraHRT-2.2.2-release.apk" target="_blank" class="btn-giant terc" data-m style="--mo:28px">
+      <a href="https://hrt.kiramyao.com/android/KiraHRT-2.3.0-release.apk" target="_blank" class="btn-giant terc" data-m style="--mo:28px">
         <svg class="i"><use href="#download"/></svg>
         <span>Download for Android</span>
       </a>
@@ -264,7 +268,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
       <div class="pixel-phone js-phone">
         <div class="pixel-screen">
           <div class="status-eraser dark"><div class="pixel-cam"></div></div>
-          <img src="en-1-overview.jpg" alt="Overview: estradiol level, target band and the concentration curve" />
+          <img src="/about/en/en-1-overview.jpg" alt="Overview: estradiol level, target band and the concentration curve" />
         </div>
       </div>
     </div>
@@ -285,7 +289,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
         <div class="pixel-phone js-phone">
           <div class="pixel-screen">
             <div class="status-eraser dark"><div class="pixel-cam"></div></div>
-            <img src="en-2-calibration.jpg" alt="Calibration settings, with the fitted curve and calibration multiplier" />
+            <img src="/about/en/en-2-calibration.jpg" alt="Calibration settings, with the fitted curve and calibration multiplier" />
           </div>
         </div>
       </div>
@@ -307,7 +311,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
         <div class="pixel-phone js-phone">
           <div class="pixel-screen">
             <div class="status-eraser dark"><div class="pixel-cam"></div></div>
-            <img src="en-3-add-dose.jpg" alt="Adding a dose: route, ester, dose and the route-specific details" />
+            <img src="/about/en/en-3-add-dose.jpg" alt="Adding a dose: route, ester, dose and the route-specific details" />
           </div>
         </div>
       </div>
@@ -329,7 +333,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
         <div class="pixel-phone js-phone">
           <div class="pixel-screen">
             <div class="status-eraser scrim"><div class="pixel-cam"></div></div>
-            <img src="en-4-quick-record.jpg" alt="Quick logging from saved dose templates" />
+            <img src="/about/en/en-4-quick-record.jpg" alt="Quick logging from saved dose templates" />
           </div>
         </div>
       </div>
@@ -351,7 +355,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
         <div class="pixel-phone js-phone">
           <div class="pixel-screen">
             <div class="status-eraser dark"><div class="pixel-cam"></div></div>
-            <img src="en-5-checkup.jpg" alt="Checkup: measured results beside the modelled curve" />
+            <img src="/about/en/en-5-checkup.jpg" alt="Checkup: measured results beside the modelled curve" />
           </div>
         </div>
       </div>
@@ -373,7 +377,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
         <div class="pixel-phone js-phone">
           <div class="pixel-screen">
             <div class="status-eraser scrim"><div class="pixel-cam"></div></div>
-            <img src="en-6-add-lab.jpg" alt="Adding a lab result, with the numbers read from a photo on the device" />
+            <img src="/about/en/en-6-add-lab.jpg" alt="Adding a lab result, with the numbers read from a photo on the device" />
           </div>
         </div>
       </div>
@@ -395,7 +399,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
         <div class="pixel-phone js-phone">
           <div class="pixel-screen">
             <div class="status-eraser dark"><div class="pixel-cam"></div></div>
-            <img src="en-7-history.jpg" alt="Records: dose history grouped by day" />
+            <img src="/about/en/en-7-history.jpg" alt="Records: dose history grouped by day" />
           </div>
         </div>
       </div>
@@ -413,7 +417,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
 
     <div class="art-col">
       <div class="mcp-stage">
-        <img src="../mcp.webp" alt="The AI assistant connected over MCP" class="mcp-mascots" />
+        <img src="/about/mcp.webp" alt="The AI assistant connected over MCP" class="mcp-mascots" />
         <div class="mcp-chat-box">
           <div class="mcp-bubble user">“Just applied 2.6 mg of estradiol gel — log it and check my level?”</div>
           <div class="mcp-bubble ai">“Logged 2.60 mg of gel for you! The estimated level is 133.5 pg/mL, inside your target range.”</div>
@@ -437,7 +441,7 @@ html:not(.js) .m3e-collapse-body{max-height:none}
         <div class="pixel-phone js-phone">
           <div class="pixel-screen">
             <div class="status-eraser dark"><div class="pixel-cam"></div></div>
-            <img src="en-8-account.jpg" alt="Account page with the HRT anniversary card" />
+            <img src="/about/en/en-8-account.jpg" alt="Account page with the HRT anniversary card" />
           </div>
         </div>
       </div>
@@ -580,14 +584,14 @@ html:not(.js) .m3e-collapse-body{max-height:none}
 
   <div class="cta-row reveal-text" style="margin-bottom:0;position:relative;z-index:2">
     <a href="https://hrt.kiramyao.com" target="_blank" class="btn-giant pri" data-m style="--mo:18px">Open the web app</a>
-    <a href="https://hrt.kiramyao.com/android/KiraHRT-2.2.2-release.apk" target="_blank" class="btn-giant tonal" style="background:rgba(255,255,255,.26);color:currentColor" data-m style="--mo:18px">Download for Android</a>
+    <a href="https://hrt.kiramyao.com/android/KiraHRT-2.3.0-release.apk" target="_blank" class="btn-giant tonal" style="background:rgba(255,255,255,.26);color:currentColor" data-m style="--mo:18px">Download for Android</a>
   </div>
 </section>
 
 <footer class="site-footer">
   <div>© 2026 KiraMyao Equal</div>
   <div class="footer-links">
-    <a href="../" hreflang="zh-CN" lang="zh-CN">中文</a>
+    <a href="/about/" hreflang="zh-CN" lang="zh-CN">中文</a>
     <a href="https://kiramyao.com/" target="_blank" rel="noopener">About Us</a>
     <a href="https://kiramyao.com/privacy" target="_blank" rel="noopener">Privacy Policy</a>
     <a href="https://2345.lgbt/" target="_blank" rel="noopener">Project Trans</a>
@@ -603,6 +607,6 @@ html:not(.js) .m3e-collapse-body{max-height:none}
   <rect x="0" y="20" width="100" height="5" fill="#5BCEFA"/>
 </svg>
 
-<script src="../about.js" defer></script>
+<script src="/about/about.js" defer></script>
 </body>
 </html>

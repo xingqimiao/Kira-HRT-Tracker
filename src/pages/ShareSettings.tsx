@@ -21,6 +21,7 @@ interface ShareSettingsProps {
     events: DoseEvent[];
     simulation: SimulationResult | null;
     calibrationFn: (timeH: number) => number;
+    calibrationOffsetFn?: (timeH: number) => number;
 }
 
 const toLocalDateTimeValue = (timestamp: number): string => {
@@ -73,6 +74,7 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
     events,
     simulation,
     calibrationFn,
+    calibrationOffsetFn,
 }) => {
     const { lang, t } = useTranslation();
     const { showDialog } = useDialog();
@@ -124,8 +126,8 @@ const ShareSettings: React.FC<ShareSettingsProps> = ({
     }, [authToken]);
 
     const shareSnapshot = useMemo(
-        () => buildSharedDosageSnapshot({ mode, events, simulation, calibrationFn }),
-        [mode, events, simulation, calibrationFn],
+        () => buildSharedDosageSnapshot({ mode, events, simulation, calibrationFn, offsetFn: calibrationOffsetFn }),
+        [mode, events, simulation, calibrationFn, calibrationOffsetFn],
     );
 
     const handleSubmit = async (event: React.FormEvent) => {

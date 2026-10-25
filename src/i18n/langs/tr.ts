@@ -111,6 +111,15 @@ const PACK: LangPack = {
 
     "plan.sum.days": "{d} günde bir · {time}",
 
+
+    "plan.next": "Sonraki",
+
+
+    "plan.next_next": "Ondan sonraki",
+
+
+    "plan.next_preview": "Bu ayarla: sonraki {first}; ondan sonraki {second}",
+
     "plan.mode.times": "Günde N kez",
 
     "plan.mode.hours": "x saatte bir",
@@ -192,7 +201,7 @@ const PACK: LangPack = {
     "core.acct.delete_sub": "Removes {doses} dose record(s), {labs} lab result(s) and everything else. Not reversible.",
     "core.acct.delete_sub_basic": "Removes every record. Not reversible.",
     "core.acct.sign_out": "Sign out",
-    "core.acct.sign_out_confirm": "Sign out of this device? You will need your password to get back in.",
+    "core.acct.sign_out_confirm": "Sign out of this device? You will need your password to get back in.",
     "core.acct.sign_out_clear": "Çıkış yap ve bu cihazı temizle",
     "core.acct.sign_out_clear_hint": "Bu tarayıcıda tutulan kayıtları da siler",
 "core.acct.sign_out_clear_hint_native": "Bu cihazda tutulan kayıtları da siler",
@@ -297,7 +306,7 @@ const PACK: LangPack = {
     "status.level.t_high": "Hedef aralığının üzerinde",
     "chart.title": "Hormon düzeyi grafiği",
     "chart.reset": "Görünümü sıfırla",
-    "chart.range_7d": "7g",
+    "chart.range_3d": "3g",
     "chart.k.day": "Günlük K",
     "chart.k.hour4": "4s",
     "chart.k.days": "{n} günlük K",
@@ -309,6 +318,7 @@ const PACK: LangPack = {
     "chart.k.close": "Kapa",
     "chart.range_30d": "30g",
     "chart.range_all": "Tümü",
+    "chart.scrub": "Zaman aralığı",
     "chart.target": "Hedef",
     "orderbook.title": "Son dozlar",
     "orderbook.empty": "Henüz doz kaydı yok",
@@ -317,7 +327,7 @@ const PACK: LangPack = {
     "advisory.t.body": "Son testosteron dozun biraz yüksek görünüyor. Yüksek kalması kanı biraz koyulaştırmaktan öteye geçmiyor. Tahmin hatalı olabilir; hormon testiyle kalibre edip son dozunu gözden geçirmekte fayda var.",
     "advisory.cpa.body": "Son CPA dozun biraz yüksek görünüyor. Artırmak testosteronu daha iyi baskılamıyor, risk zamanla artıyor. Tahmin hatalı olabilir; hormon testiyle kalibre edip son dozunu gözden geçirmekte fayda var.",
     "advisory.e2_cpa.body": "Son östradiol ve CPA dozların ikisi de biraz yüksek görünüyor. Östradiol daha çok pıhtı riski taşırken, CPA'nın riski zamanla birikiyor. Tahmin hatalı olabilir; hormon testiyle kalibre edip son dozunu gözden geçirmekte fayda var.",
-    "advisory.calibrate.text": "Bu bir model tahmini.",
+    "advisory.calibrate.text": "Kalibrasyon için kullanılabilir kan tahlili yok; bu eğri bir tahmindir ve yanlış olabilir.",
     "advisory.calibrate.cta": "Kalibre etmek için kan tahlili ekle",
     "advisory.hormone_both_low.body": "Son östradiol ve testosteron tahlillerin ikisi de düşük görünüyor. İki cinsiyet hormonunun aynı anda düşük olması, zamanla kemik yoğunluğunu, ruh halini ve ateş basması gibi vazomotor belirtileri etkileyebilir. Bu, kan alma zamanlamasından da kaynaklanabilir; son dozlarınla birlikte bir doktorla konuşmakta fayda var.",
     "advisory.hormone_both_high.body": "Son östradiol ve testosteron tahlillerin ikisi de yüksek görünüyor, alışılmadık bir kombinasyon. Kan alma zamanlaması ya da birim karışıklığından kaynaklanabilir; sonuçları bir doktorla teyit etmekte fayda var.",
@@ -360,6 +370,10 @@ const PACK: LangPack = {
     "drawer.qr": "QR İçe / Dışa Aktar",
     "drawer.qr_hint": "QR kodu ile veri paylaşın veya geri yükleyin.",
     "import.title": "Veri İçe Aktar",
+
+    "import.legacy_analyte": "Bu eski yedekte hormon türü etiketi yok ({n} tahlil)",
+
+    "import.legacy_analyte_hint": "Yalnızca bu içe aktarma için birimden tahmin et: pg/ml + pmol/l → E2; ng/dl + nmol/l → T. Yalnızca birimler doğruysa kullan.",
     "export.title": "Veri Dışa Aktar",
     "import.text": "JSON Metni Yapıştır",
     "import.paste_hint": "JSON içeriğini buraya yapıştırın...",
@@ -780,6 +794,15 @@ const PACK: LangPack = {
     "cal.halflife": "yarı ömür",
     "cal.fit": "uyum",
     "cal.labs": "tahlil",
+    "cal.baseline_labs": "bazal tahlil",
+
+    "cal.baseline_estimate": "Tahmini arka plan E2",
+
+    "cal.baseline_note": "Daha önceki dozlardan kalanları içerebilir; uzun vadeli kararlı bir bazal değerin kanıtı değildir.",
+
+    "cal.baseline_only": "Yalnızca arka plan E2 tahmini; PK parametreleri uyarlanmadı.",
+
+    "cal.unknown_labs": "onaylanmamış tahlil",
     "cal.model": "model",
     "lab.add_title": "Lab Sonucu Ekle",
     "lab.edit_title": "Lab Sonucunu Düzenle",
@@ -1007,10 +1030,7 @@ const PACK: LangPack = {
 
     "mcp.tool.hrt_med_plan_status": "Bugünün ilaç planı ve hâlâ bekleyen dozlar",
 
-    "mcp.tool.hrt_get_settings": "Vücut ağırlığı, mod, kalibrasyon ve PK geçersiz kılmaları",
-
-    "mcp.tool.hrt_sync_state": "Tüm kayıt durumunu tek çağrıda — büyük olabilir; sayfalanmış okumaları tercih edin",
-
+    "mcp.tool.hrt_get_settings": "Vücut ağırlığı, mod, kalibrasyon ve PK geçersiz kılmaları",
     "mcp.tool.hrt_reference": "Geçerli yollar, esterler ve birimler ile araç listesinin kendisi",
 
     "mcp.tool.hrt_add_medication": "Doz kaydet",

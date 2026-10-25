@@ -80,7 +80,7 @@ any future static document under `hrt.kiramyao.com` (a licence page, an imprint,
 notice): **URL checkers do not execute JavaScript**, so an SPA route returns an empty
 application shell that reads as a broken link.
 
-Two things are needed, and both are in place:
+Three things are needed, and all are in place:
 
 1. The document must be a **real file** copied to the web root at build time, not a
    route — anything in `public/` is, e.g. `public/x/index.html -> dist/x/index.html
@@ -91,6 +91,13 @@ Two things are needed, and both are in place:
    which passes a manual check and fails an automated one — exactly the bug `/terms`
    had before it was fixed, and it was live for a while because a person sees a
    working page (the shell loads the app).
+3. Every reference inside the page must be **root-absolute** (`/about/about.js`,
+   `/brand/…`, `/about/en/`), never relative. That middle term serves `/x` *as*
+   `/x/index.html` while the browser keeps `/x` as the base URL, so `src="about.js"`
+   asks for `/about.js`. This is what `/about` looked like on 2026-10-25: the full
+   34 KB document arrived, but both scripts and all eight screenshots 404'd and the
+   language button pointed at `/en/`; `/about/` was unaffected. `scripts/check-web-bundle.mjs`
+   now fails the build on a relative `src`/`href` in any served page.
 
 Verify with JavaScript **disabled**, which is the only way to see what a checker sees:
 

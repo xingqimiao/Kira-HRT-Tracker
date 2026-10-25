@@ -61,7 +61,7 @@ const PACK: LangPack = {
     "timeline.title": "用藥紀錄",
     "chart.title": "激素濃度變化",
     "chart.reset": "重設檢視",
-    "chart.range_7d": "7天",
+    "chart.range_3d": "3天",
     "chart.k.day": "日K",
     "chart.k.hour4": "4小時K",
     "chart.k.days": "{n}日K",
@@ -73,6 +73,7 @@ const PACK: LangPack = {
     "chart.k.close": "收",
     "chart.range_30d": "30天",
     "chart.range_all": "全部",
+    "chart.scrub": "時間窗",
     "chart.target": "目標範圍",
     "orderbook.title": "近期劑量",
     "orderbook.empty": "暫無劑量紀錄",
@@ -81,7 +82,7 @@ const PACK: LangPack = {
     "advisory.t.body": "最近睪固酮用量似乎偏高。長期偏高主要讓血液變稠，並無額外好處。估測可能有偏差，可查激素六項校準，並留意最近劑量。",
     "advisory.cpa.body": "最近 CPA 用量似乎偏高。加量並不會更好地抑制睪固酮，風險卻會累積。估測可能有偏差，可查激素六項校準，並留意最近劑量。",
     "advisory.e2_cpa.body": "最近雌二醇和 CPA 用量都似乎偏高。雌二醇主要關聯血栓風險，CPA 的風險則隨時間累積。估測可能有偏差，可查激素六項校準，並留意最近劑量。",
-    "advisory.calibrate.text": "這是模型的估算值。",
+    "advisory.calibrate.text": "還沒有可用於校準的血檢，這條曲線只是估算，可能不準確。",
     "advisory.calibrate.cta": "新增血檢結果來校準",
     "advisory.hormone_both_low.body": "最近的雌二醇和睪固酮化驗值都偏低，兩項性激素同時不足，長期可能影響骨密度、情緒和血管舒縮症狀（比如潮熱）。這也可能只是抽血時間點的問題，建議結合最近的用藥情況和醫生討論一下。",
     "advisory.hormone_both_high.body": "最近的雌二醇和睪固酮化驗值都偏高，這種組合並不常見，值得留意。也可能是抽血時間點或單位填寫有誤，建議和醫生確認一下檢查結果。",
@@ -123,6 +124,10 @@ const PACK: LangPack = {
     "drawer.qr": "QR Code 匯入／匯出",
     "drawer.qr_hint": "使用 QR Code 分享或還原資料。",
     "import.title": "匯入資料",
+
+    "import.legacy_analyte": "這份舊備份沒有激素類型標記（{n} 條化驗）",
+
+    "import.legacy_analyte_hint": "僅本次匯入按單位推斷：pg/ml、pmol/l → E2；ng/dl、nmol/l → T。請先確認單位本身正確。",
     "export.title": "匯出資料",
     "import.text": "貼上 JSON 文字",
     "import.paste_hint": "請在此貼上 JSON 內容…",
@@ -558,6 +563,15 @@ const PACK: LangPack = {
     "cal.halflife": "半衰期",
     "cal.fit": "擬合",
     "cal.labs": "次檢驗",
+    "cal.baseline_labs": "次基線檢驗",
+
+    "cal.baseline_estimate": "估計背景 E2",
+
+    "cal.baseline_note": "可能包含歷史給藥殘留；不能據此證明長期穩定基線。",
+
+    "cal.baseline_only": "僅估計背景 E2，未完成藥代參數擬合。",
+
+    "cal.unknown_labs": "條類型未確認",
     "cal.model": "模型",
     "export.col.type": "類型",
     "export.col.date": "日期",
@@ -748,10 +762,7 @@ const PACK: LangPack = {
 
     "mcp.tool.hrt_med_plan_status": "今天的用藥方案，以及還差哪幾劑",
 
-    "mcp.tool.hrt_get_settings": "體重、模式、校準與藥代參數覆寫",
-
-    "mcp.tool.hrt_sync_state": "一次取回全部記錄（可能很大，建議用分頁的讀取工具）",
-
+    "mcp.tool.hrt_get_settings": "體重、模式、校準與藥代參數覆寫",
     "mcp.tool.hrt_reference": "可用的給藥途徑、酯類、單位，以及工具清單本身",
 
     "mcp.tool.hrt_add_medication": "記錄一次用藥",
@@ -1004,6 +1015,15 @@ const PACK: LangPack = {
 
     "plan.sum.days": "每 {d} 天 · {time}",
 
+
+    "plan.next": "下次",
+
+
+    "plan.next_next": "再下次",
+
+
+    "plan.next_preview": "按目前設定：下次 {first}；再下次 {second}",
+
     "plan.mode.times": "每日 N 次",
 
     "plan.mode.hours": "每 x 小時",
@@ -1085,7 +1105,7 @@ const PACK: LangPack = {
     "core.acct.delete_sub": "會移除 {doses} 筆用藥紀錄、{labs} 筆檢驗結果以及所有其他內容。無法復原。",
     "core.acct.delete_sub_basic": "會移除全部紀錄。無法復原。",
     "core.acct.sign_out": "登出",
-    "core.acct.sign_out_confirm": "要登出嗎？登出後需要重新輸入密碼。",
+    "core.acct.sign_out_confirm": "要登出嗎？登出後需要重新輸入密碼。",
     "core.acct.sign_out_clear": "登出並清除本機資料",
     "core.acct.sign_out_clear_hint": "同時刪除此瀏覽器儲存的紀錄",
 "core.acct.sign_out_clear_hint_native": "同時刪除此裝置儲存的紀錄",

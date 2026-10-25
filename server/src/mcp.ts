@@ -33,7 +33,16 @@ import {
 } from './core.ts';
 import type { AuthContext, ContextDenial } from './types.ts';
 
-import { buildExportPayload } from './records.ts';
+/**
+ * How much raw dose history MCP exposes.
+ *
+ * A durable token can read records without a browser present, so the default
+ * surface is deliberately bounded: recent activity is enough for an assistant to
+ * help, while the full historical log stays in the web app. Derived reads
+ * (hrt_predict_levels, advisories) still use the complete history internally.
+ */
+const MCP_RECENT_DAYS = 7;
+
 import { ShareService } from './shares.ts';
 import {
   SL_TIER_ORDER,
@@ -214,8 +223,9 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
     {
       title: 'Get HRT timeline',
       description:
-        'Recent activity newest-first: logged doses and lab results merged into one stream. ' +
-        'Start here to see what a user has been taking.',
+        'Recent activity newest-first, limited to the last 7 days: logged doses and lab ' +
+        'results merged into one stream. Older history is not exposed over MCP; use the web ' +
+        'app to review it.',
       inputSchema: {
         limit: z.number().int().min(1).max(1000).optional().describe('Maximum entries (default 100)'),
         before: z
@@ -235,14 +245,18 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
     async ({ limit, before, before_id }) => {
       const cursor = pagingCursor(before, before_id);
       if (!cursor.ok) return toolError(cursor.error);
+      const cutoffH = Date.now() / 3_600_000 - MCP_RECENT_DAYS * 24;
+      if (cursor.value !== undefined && cursor.value < cutoffH) return toolResult([]);
       const r = await withContext((ctx) => TimelineService.get(ctx, { limit, before: cursor.value, beforeId: cursor.id }));
       if ('error' in r) return toolError(r.error);
       return toolResult(
-        r.value.map((e) =>
-          e.kind === 'dose'
-            ? { kind: 'dose', at: e.at, route: e.event.route, ester: e.event.ester, dose_mg: e.event.doseMG, id: e.id }
-            : { kind: 'lab', at: e.at, value: e.lab.concValue, unit: e.lab.unit, id: e.id },
-        ),
+        r.value
+          .filter((e) => Date.parse(e.at) / 3_600_000 >= cutoffH)
+          .map((e) =>
+            e.kind === 'dose'
+              ? { kind: 'dose', at: e.at, route: e.event.route, ester: e.event.ester, dose_mg: e.event.doseMG, id: e.id }
+              : { kind: 'lab', at: e.at, value: e.lab.concValue, unit: e.lab.unit, id: e.id },
+          ),
       );
     },
   );
@@ -252,8 +266,8 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
     {
       title: 'List logged doses',
       description:
-        'Doses the user has logged, newest first. Page back through a long history with ' +
-        '`before` rather than raising `limit`.',
+        'Doses the user has logged in the last 7 days, newest first. Older doses are not ' +
+        'exposed over MCP; use the web app to review them.',
       inputSchema: {
         limit: z.number().int().min(1).max(1000).optional().describe('Records per page (default 100, maximum 1000)'),
         before: z
@@ -273,10 +287,14 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
     async ({ limit, before, before_id }) => {
       const cursor = pagingCursor(before, before_id);
       if (!cursor.ok) return toolError(cursor.error);
+      const cutoffH = Date.now() / 3_600_000 - MCP_RECENT_DAYS * 24;
+      if (cursor.value !== undefined && cursor.value < cutoffH) return toolResult([]);
       const r = await withContext((ctx) => MedicationService.list(ctx, { limit, before: cursor.value, beforeId: cursor.id }));
       if ('error' in r) return toolError(r.error);
       return toolResult(
-        r.value.records.map((rec) => ({
+        r.value.records
+          .filter((rec) => rec.data.timeH >= cutoffH)
+          .map((rec) => ({
           // The id the app minted, and the address the store filed it under. Both are
           // reported because a caller replaying a write needs the first and the delete
           // tool needs the second, and neither is derivable from the other alone.
@@ -445,6 +463,10 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         'arguments, a different horizon. **Check `window.endTruncated` before comparing the ' +
         'far end of two calls**, and read `window.endDaysFromNow` for the real horizon. ' +
         '`startTruncated` just means the history does not go back that far. ' +
+        '`calibration` reports the post-dose points used for the fit (`labs`), the pre-dose ' +
+        'draws used only for the additive background (`nBaseline`), labs whose hormone type is ' +
+        'unconfirmed and therefore excluded (`nUnknown`), and the estimated background E2 ' +
+        '(`baselinePGmL`). ' +
         SAFETY_NOTE,
       inputSchema: {
         analyte: z.enum(['e2', 't']).optional().describe('"e2" = estradiol (default), "t" = testosterone. These exact strings; no other value is accepted.'),
@@ -616,6 +638,11 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         id: z.string().min(1).max(200).optional().describe('Opaque record id; omit to have one generated'),
         value: z.number().positive().max(20000),
         unit: z.enum(['pg/ml', 'pmol/l', 'ng/dl', 'nmol/l']),
+        analyte: z.enum(['E2', 'T', 'unknown']).optional().describe(
+          'Which hormone the value measures. Omit it and the record is stored as unknown; ' +
+          'unknown records are kept but excluded from every calibration fit until confirmed. ' +
+          'Send E2 or T whenever the caller knows it.'
+        ),
         at: z.string().describe('When the sample was drawn, ISO 8601'),
       },
     },
@@ -630,6 +657,7 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         at: new Date(rec.data.timeH * 3_600_000).toISOString(),
         value: rec.data.concValue,
         unit: rec.data.unit,
+        analyte: rec.data.analyte ?? 'unknown',
         version: rec.updatedAt,
       });
     },
@@ -790,25 +818,6 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
     },
   );
 
-  server.registerTool(
-    'hrt_sync_state',
-    {
-      title: 'Read full record state',
-      description:
-        "The account's complete records in the web app's own export shape, including " +
-        'deletions. This is the whole export: it can run to tens of kilobytes and be ' +
-        'truncated by the result budget, so read history through the paginated tools ' +
-        '(hrt_get_timeline, hrt_list_medications, hrt_list_labs, hrt_list_journal, ' +
-        'hrt_list_dose_templates) and call this only when you need everything at once.',
-      inputSchema: {},
-    },
-    async () => {
-      const r = await withContext((ctx) => buildExportPayload(ctx));
-      if ('error' in r) return toolError(r.error);
-      return toolResult(r.value);
-    },
-  );
-
   // --- Reference -----------------------------------------------------------
 
   server.registerTool(
@@ -847,13 +856,16 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         gel_sites: GEL_SITE_ORDER,
         pk_param_ranges: PK_PARAM_RANGES,
         analyte_units: { e2: ['pg/ml', 'pmol/l'], t: ['ng/dl', 'nmol/l'] },
-        // A known-bad default, stated where an agent will read it: the one tool that
-        // returns everything is also the one the result budget truncates.
+        lab_analytes: ['E2', 'T', 'unknown'],
+        calibration_fields: ['labs', 'nBaseline', 'nUnknown', 'baselinePGmL', 'scale', 'fitErrorPct'],
+        // The full export is deliberately not an MCP tool: a durable token must
+        // not be able to pull a user's entire history in one call. The paginated
+        // reads above are bounded to recent activity; full export stays in the
+        // signed-in web app.
         large_reads:
-          'hrt_sync_state returns the whole export and can be truncated by the result budget. ' +
-          'Read history with the paginated tools instead: hrt_get_timeline, ' +
-          'hrt_list_medications, hrt_list_labs, hrt_list_journal, hrt_list_dose_templates or ' +
-          'hrt_get_settings.',
+          'MCP does not expose the full export. Use the paginated recent reads: ' +
+          'hrt_get_timeline, hrt_list_medications, hrt_list_labs, hrt_list_journal, ' +
+          'hrt_list_dose_templates or hrt_get_settings.',
         // The whole tool surface. Present so an agent that reads only this tool still
         // learns what exists, and grouped because the grouping is the safety-relevant
         // part: the writes change the record, and the shares leave the account.
@@ -878,7 +890,6 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
             'hrt_check_advisories',
             'hrt_med_plan_status',
             'hrt_get_settings',
-            'hrt_sync_state',
             'hrt_reference',
           ],
           write: [
