@@ -14,11 +14,11 @@
 
 ## 下载什么？
 
-**[下载 2.3.1 部署包](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.1/kira-hrt-self-host-2.3.1.tar.gz)**
+**[下载 2.3.2 部署包](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.2/kira-hrt-self-host-2.3.2.tar.gz)**
 
 两种场景使用同一个包，各自教程已提供完整下载、解压和安装命令。解压后先看本文件，再打开 `SERVER.md` 或 `LAN.md`。中英文安装及维护文档均包含在包内。
 
-部署包内含应用镜像版本、脚本和中英文教程。**已有实例不需要重新安装或初始化**，按[维护文档](MAINTENANCE.md)的升级命令切到 2.3.1 即可；旧版本的部署包仍保留。
+部署包内含应用镜像版本、脚本和中英文教程。**已有实例不需要重新安装或初始化**，按[维护文档](MAINTENANCE.md)的升级命令切到 2.3.2 即可；旧版本的部署包仍保留。
 
 ## GitHub 两个 package 是什么？
 

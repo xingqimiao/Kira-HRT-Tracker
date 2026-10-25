@@ -39,11 +39,11 @@ Host ports 80/443 must be free. Resolve NAS web-server/proxy/container conflicts
 
 ## Step 3: download, extract and enter the script directory
 
-This guide uses the **2.3.1 archive**. Existing installations need no reinitialization; use the [maintenance guide](MAINTENANCE.en.md) to upgrade.
+This guide uses the **2.3.2 archive**. Existing installations need no reinitialization; use the [maintenance guide](MAINTENANCE.en.md) to upgrade.
 
-**[Download kira-hrt-self-host-2.3.1.tar.gz](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.1/kira-hrt-self-host-2.3.1.tar.gz)**
+**[Download kira-hrt-self-host-2.3.2.tar.gz](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.2/kira-hrt-self-host-2.3.2.tar.gz)**
 
-Alternatively open the [self-hosted Release](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/tag/self-host-v2.3.1), expand Assets and select that file. Do not select an APK, Source code or a Packages image. A `.sha256` file contains optional checksum information, not the installer.
+Alternatively open the [self-hosted Release](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/tag/self-host-v2.3.2), expand Assets and select that file. Do not select an APK, Source code or a Packages image. A `.sha256` file contains optional checksum information, not the installer.
 
 ### Windows
 
@@ -51,8 +51,8 @@ Save the file to Downloads, open PowerShell and run these lines one at a time:
 
 ```powershell
 cd "$HOME\Downloads"
-tar -xzf .\kira-hrt-self-host-2.3.1.tar.gz
-cd .\kira-hrt-self-host-2.3.1
+tar -xzf .\kira-hrt-self-host-2.3.2.tar.gz
+cd .\kira-hrt-self-host-2.3.2
 Get-ChildItem
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
@@ -64,9 +64,9 @@ You should see `hrt.ps1`, `hrt.sh`, `compose.yaml`, `manage.mjs` and `VERSION`. 
 First enter a writable directory that you will keep. A NAS Docker shared folder is suitable; **do not use a temporary directory erased on reboot**. Run:
 
 ```sh
-curl -fL --retry 3 -o kira-hrt-self-host-2.3.1.tar.gz https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.1/kira-hrt-self-host-2.3.1.tar.gz
-tar -xzf kira-hrt-self-host-2.3.1.tar.gz
-cd kira-hrt-self-host-2.3.1
+curl -fL --retry 3 -o kira-hrt-self-host-2.3.2.tar.gz https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.2/kira-hrt-self-host-2.3.2.tar.gz
+tar -xzf kira-hrt-self-host-2.3.2.tar.gz
+cd kira-hrt-self-host-2.3.2
 ls
 ```
 

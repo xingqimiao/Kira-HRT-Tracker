@@ -14,11 +14,11 @@ Accounts, sync, sharing, MCP and offline lab-report recognition are included. No
 
 ## What should I download?
 
-**[Download the 2.3.1 deployment archive](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.1/kira-hrt-self-host-2.3.1.tar.gz)**
+**[Download the 2.3.2 deployment archive](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.2/kira-hrt-self-host-2.3.2.tar.gz)**
 
 Both scenarios use this archive. Each guide provides its own download, extraction and installation commands. After extracting, read this index, then SERVER.en.md or LAN.en.md. English/Chinese installation and maintenance guides are all bundled.
 
-The archive carries the application image version, scripts and both language guides. **Existing instances need no reinstall or reinitialization**; the [maintenance guide](MAINTENANCE.en.md) upgrades them to 2.3.1, and previous archives remain available.
+The archive carries the application image version, scripts and both language guides. **Existing instances need no reinstall or reinitialization**; the [maintenance guide](MAINTENANCE.en.md) upgrades them to 2.3.2, and previous archives remain available.
 
 ## What are the two GitHub packages?
 

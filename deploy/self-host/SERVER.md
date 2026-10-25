@@ -49,15 +49,15 @@ docker compose version
 
 ## 第 4 步：下载、解压，然后运行一条安装命令
 
-本教程下载 **2.3.1 部署包**。已有实例不需要重新安装，按[维护文档](MAINTENANCE.md)升级即可。
+本教程下载 **2.3.2 部署包**。已有实例不需要重新安装，按[维护文档](MAINTENANCE.md)升级即可。
 
 先选一个长期保留、有写入权限的目录，例如自己的主目录。下面的目标目录若已存在，先确认是不是旧实例，不要覆盖。在服务器终端逐行执行，**有一行报错就先停止处理，不要继续粘贴后面的命令**：
 
 ```sh
 cd ~
-curl -fL --retry 3 -o kira-hrt-self-host-2.3.1.tar.gz https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.1/kira-hrt-self-host-2.3.1.tar.gz
-tar -xzf kira-hrt-self-host-2.3.1.tar.gz
-cd kira-hrt-self-host-2.3.1
+curl -fL --retry 3 -o kira-hrt-self-host-2.3.2.tar.gz https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.2/kira-hrt-self-host-2.3.2.tar.gz
+tar -xzf kira-hrt-self-host-2.3.2.tar.gz
+cd kira-hrt-self-host-2.3.2
 ls
 ```
 
