@@ -652,66 +652,23 @@
     animation: chart-mark-in 260ms var(--ease-standard) both;
 }
 
-/* The chart's time scrubber: a 4dp M3 track with a 20dp handle, inside a 40dp
-   row so it is a comfortable touch target. The filled part of the track is a
-   gradient positioned by `--chart-scrub-fill`, which the component sets from the
-   window's place in the full range. */
-.chart-scrub {
-    -webkit-appearance: none;
-    appearance: none;
-    display: block;
-    width: 100%;
-    height: 40px;
-    margin: 0;
-    background: transparent;
-    cursor: pointer;
+/* The quick-record sheet's delete affordance: a small × at the trailing edge.
+   Two taps — the first arms it (red), the second deletes. It is drawn inside the
+   row's own trailing slot so the row stays one button, and the hit area is the
+   right 44px measured in the click handler. */
+.qrec-x {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin-inline-end: -6px;
+    color: var(--color-m3-on-surface-variant);
+    transition: color 120ms var(--ease-standard);
 }
 
-.chart-scrub::-webkit-slider-runnable-track {
-    height: 4px;
-    border-radius: 2px;
-    background: linear-gradient(
-        to right,
-        var(--color-m3-primary) 0 var(--chart-scrub-fill, 0%),
-        var(--color-m3-outline-variant) var(--chart-scrub-fill, 0%) 100%
-    );
-}
-
-.chart-scrub::-moz-range-track {
-    height: 4px;
-    border-radius: 2px;
-    background: var(--color-m3-outline-variant);
-}
-
-.chart-scrub::-moz-range-progress {
-    height: 4px;
-    border-radius: 2px;
-    background: var(--color-m3-primary);
-}
-
-.chart-scrub::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 20px;
-    height: 20px;
-    margin-top: -8px;
-    border: 0;
-    border-radius: 50%;
-    background: var(--color-m3-primary);
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
-}
-
-.chart-scrub::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
-    border: 0;
-    border-radius: 50%;
-    background: var(--color-m3-primary);
-}
-
-.chart-scrub:focus-visible {
-    outline: 2px solid var(--color-m3-primary);
-    outline-offset: 2px;
-    border-radius: 20px;
+.qrec-x.on {
+    color: var(--color-m3-error);
 }
 
 

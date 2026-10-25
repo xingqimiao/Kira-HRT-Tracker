@@ -976,6 +976,7 @@ const AppContent = () => {
                             onAuthRequired={() => setIsCoreAuthOpen(true)}
                             doseTemplates={doseTemplates}
                             onAddEvent={addEvent}
+                            onDeleteDoseTemplate={deleteTemplate}
                             onRemoveEvent={deleteEvent}
                             aaChartMode={aaChartMode}
                             nowMs={currentTime.getTime()}

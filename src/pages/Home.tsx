@@ -48,6 +48,8 @@ interface HomeProps {
     /** Saved doses the overview can log in one tap. */
     doseTemplates: DoseTemplate[];
     onAddEvent: (e: DoseEvent) => void;
+    /** Removes a saved one-tap dose (the quick-record sheet's × control). */
+    onDeleteDoseTemplate?: (id: string) => void;
     /** The undo for a one-tap add, once the notice has closed. */
     onRemoveEvent: (id: string) => void;
     /** Which reading the anti-androgen column shows — see antiandrogenReading. */
@@ -108,6 +110,7 @@ const Home: React.FC<HomeProps> = ({
     onAuthRequired,
     doseTemplates,
     onAddEvent,
+    onDeleteDoseTemplate,
     onRemoveEvent,
     aaChartMode,
     nowMs,
@@ -121,6 +124,16 @@ const Home: React.FC<HomeProps> = ({
     const [isEstimateInfoOpen, setIsEstimateInfoOpen] = React.useState(false);
     const [isAbsurdOpen, setIsAbsurdOpen] = React.useState(false);
     const [undo, setUndo] = React.useState<{ id: string; name: string } | null>(null);
+    // Two taps delete a saved quick record: the first arms the × (it turns red),
+    // the second removes it. Nothing else in the row changes colour.
+    const [armedTemplate, setArmedTemplate] = React.useState<string | null>(null);
+    const armedTimer = React.useRef<number | null>(null);
+    React.useEffect(() => () => {
+        if (armedTimer.current) window.clearTimeout(armedTimer.current);
+    }, []);
+    React.useEffect(() => {
+        if (!quickRecordOpen) setArmedTemplate(null);
+    }, [quickRecordOpen]);
     const { isTransmasc } = useHRTMode();
     const { lang } = useTranslation();
     const shareCopy = getShareCopy(lang);
@@ -252,6 +265,18 @@ const Home: React.FC<HomeProps> = ({
         setUndo({ id: event.id, name: template.name });
     };
 
+    /** The × control: arm on the first tap, delete on the second. */
+    const armTemplateDelete = (id: string) => {
+        if (armedTimer.current) window.clearTimeout(armedTimer.current);
+        if (armedTemplate === id) {
+            setArmedTemplate(null);
+            onDeleteDoseTemplate?.(id);
+            return;
+        }
+        setArmedTemplate(id);
+        armedTimer.current = window.setTimeout(() => setArmedTemplate(null), 3000);
+    };
+
     const timeLabel = (timeH: number): string =>
         new Date(timeH * 3_600_000).toLocaleString(lang, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
@@ -293,14 +318,46 @@ const Home: React.FC<HomeProps> = ({
                                 : category === 'progest' || category === 'hair'
                                     ? 'secondary'
                                     : 'primary';
+                            // Only saved doses can be deleted; a plan's generated entry
+                            // belongs to the plan, not to this list.
+                            const deletable = !!onDeleteDoseTemplate
+                                && doseTemplates.some(d => d.id === template.id);
+                            const armed = deletable && armedTemplate === template.id;
                             return (
                                 <SegmentedListItem
                                     key={template.id}
                                     sprite={ROUTE_ICON_ID[template.route] ?? 'pill'}
                                     leadingTone={tone}
                                     title={template.name}
-                                    subtitle={`${t(`route.${template.route}`)} · ${template.doseMG.toFixed(2)} mg`}
-                                    onClick={() => logTemplate(template)}
+                                    subtitle={armed
+                                        ? t('quickadd.arm_delete')
+                                        : `${t(`route.${template.route}`)} · ${template.doseMG.toFixed(2)} mg`}
+                                    trailing={deletable ? (
+                                        <span className={`qrec-x${armed ? ' on' : ''}`} aria-hidden="true">
+                                            <Icon icon={X} size={18} />
+                                        </span>
+                                    ) : undefined}
+                                    onClick={(e) => {
+                                        // The right 48px is the × target, measured rather
+                                        // than nested: a button inside a button is invalid
+                                        // markup and steals the row's own click.
+                                        if (deletable) {
+                                            const rect = e.currentTarget.getBoundingClientRect();
+                                            if (e.clientX >= rect.right - 48) {
+                                                armTemplateDelete(template.id);
+                                                return;
+                                            }
+                                            if (armed) { setArmedTemplate(null); return; }
+                                        }
+                                        logTemplate(template);
+                                    }}
+                                    onKeyDown={(e) => {
+                                        // Keyboard equivalent of the second × tap.
+                                        if (deletable && (e.key === 'Delete' || e.key === 'Backspace')) {
+                                            e.preventDefault();
+                                            armTemplateDelete(template.id);
+                                        }
+                                    }}
                                 />
                             );
                         })}

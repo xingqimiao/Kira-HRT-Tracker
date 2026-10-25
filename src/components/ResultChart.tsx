@@ -248,15 +248,22 @@ const ResultChart = ({
     const [panOffset, setPanOffset] = useState(0); // ms the window is dragged from its centered base
     const [dragging, setDragging] = useState(false);
     const dragRef = useRef<{ startX: number; startY: number; startOffset: number; moved: boolean; pointerId: number } | null>(null);
-    // A finger on the plot scrubs the readout; the axis gutter and the time
-    // slider are the only drag targets, so a press never moves the curve.
+    // A finger on the plot scrubs the readout; the axis gutter, the time-label
+    // strip under the plot, and a mouse drag are the pan targets, so a press on
+    // the curve never moves it.
     const scrubRef = useRef<{ startX: number; startY: number; active: boolean } | null>(null);
     const yDragRef = useRef<{ startY: number; startScale: number; pointerId: number } | null>(null);
+    /** A drag that started on the x-axis label strip: fine panning, no readout. */
+    const axisDragRef = useRef<{ startX: number; startOffset: number; pointerId: number } | null>(null);
     // Where the current press went down, pan or no pan, so lifting can tell a tap
     // from a swipe.
     const pressRef = useRef<{ x: number; y: number } | null>(null);
 
     const selectRange = (r: RangeKey) => { setRange(r); setPanOffset(0); };
+
+    // The pan is a one-off nudge, not a stored position: choosing another view
+    // starts from that view's own window again.
+    useEffect(() => { setPanOffset(0); }, [chartStyle]);
 
     /**
      * The plotted colours, read from the app's role tokens.
@@ -702,8 +709,17 @@ const ResultChart = ({
     };
 
     const onPointerDown = (e: React.PointerEvent) => {
-        // The left gutter is the y-axis control, not a drag surface for the curve.
         const rect = plotEl?.getBoundingClientRect();
+        // The time-label strip under the plot is the pan surface. There is no
+        // slider: dragging the labels is the touch way to move the window, and it
+        // is deliberately slow so a finger can settle on a trough.
+        if (rect && canPan && e.clientX - rect.left > mL && e.clientY - rect.top >= mT + plotH - 6) {
+            axisDragRef.current = { startX: e.clientX, startOffset: panOffset, pointerId: e.pointerId };
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+            setHover(null);
+            return;
+        }
+        // The left gutter is the y-axis control, not a drag surface for the curve.
         if (rect && e.clientX - rect.left <= mL) {
             yDragRef.current = { startY: e.clientY, startScale: yScale, pointerId: e.pointerId };
             try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
@@ -722,6 +738,15 @@ const ResultChart = ({
     };
 
     const onPointerMove = (e: React.PointerEvent) => {
+        const axis = axisDragRef.current;
+        if (axis) {
+            const span = baseWindow[1] - baseWindow[0];
+            // A full-width drag covers about a third of the window — fine control,
+            // not a throw.
+            const next = axis.startOffset - ((e.clientX - axis.startX) / Math.max(1, plotW)) * span * 0.35;
+            setPanOffset(Math.max(minOffset, Math.min(maxOffset, next)));
+            return;
+        }
         const yd = yDragRef.current;
         if (yd) {
             // Down widens the window (coarser), up tightens it (finer).
@@ -773,10 +798,12 @@ const ResultChart = ({
     const endDrag = (e?: React.PointerEvent) => {
         const drag = dragRef.current;
         const yd = yDragRef.current;
-        const pointerId = drag?.pointerId ?? yd?.pointerId;
+        const axis = axisDragRef.current;
+        const pointerId = drag?.pointerId ?? yd?.pointerId ?? axis?.pointerId;
         if (pointerId != null && e) { try { e.currentTarget.releasePointerCapture(pointerId); } catch { /* ignore */ } }
         dragRef.current = null;
         yDragRef.current = null;
+        axisDragRef.current = null;
         scrubRef.current = null;
         if (dragging) setDragging(false);
     };
@@ -859,9 +886,6 @@ const ResultChart = ({
         { key: '30d', label: t('chart.range_30d') },
         { key: 'all', label: t('chart.range_all') },
     ];
-    // The time slider's position: where the visible window sits in the full range.
-    const scrubValue = Math.max(minOffset, Math.min(maxOffset, panOffset));
-    const scrubPct = maxOffset > minOffset ? ((scrubValue - minOffset) / (maxOffset - minOffset)) * 100 : 0;
 
     // The header chip's name for the interval actually drawn: 4小时K (the 3-day
     // default), 日K, or 周K (and whole multiples of a week once weekly runs out).
@@ -1245,27 +1269,8 @@ const ResultChart = ({
                 })()}
             </div>
 
-            {/* The only way to move the window on a touch screen: the plot itself
-                scrubs. It appears whenever there is more time than one window. */}
-            {canPan && (
-                <div className="px-3 md:px-4">
-                    <input
-                        type="range"
-                        className="chart-scrub"
-                        min={minOffset}
-                        max={maxOffset}
-                        step={60000}
-                        value={scrubValue}
-                        aria-label={t('chart.scrub')}
-                        style={{ '--chart-scrub-fill': `${scrubPct}%` } as React.CSSProperties}
-                        onChange={(e) => { setHover(null); setPanOffset(Number(e.target.value)); }}
-                    />
-                    <div className="flex justify-between m3-text-2xs tabular-nums text-[var(--color-m3-on-surface-variant)] px-0.5">
-                        <span>{formatDate(new Date(fullMin), lang, timeZone)}</span>
-                        <span>{formatDate(new Date(fullMax), lang, timeZone)}</span>
-                    </div>
-                </div>
-            )}
+            {/* No slider and no extra controls: the time axis is the pan surface,
+                and it is part of the plot. */}
         </div>
     );
 };

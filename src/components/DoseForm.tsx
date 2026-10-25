@@ -228,7 +228,12 @@ const DoseForm: React.FC<DoseFormProps> = ({
     const [cookieDeg, setCookieDeg] = useState(0);
     const [activeTplId, setActiveTplId] = useState<string | null>(null);
     const [showTplSheet, setShowTplSheet] = useState(false);
+    const [tplSheetMode, setTplSheetMode] = useState<'add' | 'edit'>('add');
     const [templateName, setTemplateName] = useState('');
+    /** The form's values right after a template was applied, to tell an untouched
+     *  template (delete) from one the user then edited (modify). */
+    const [tplSnapPending, setTplSnapPending] = useState(false);
+    const tplBaselineRef = useRef<string | null>(null);
     const [snack, setSnack] = useState('');
     const [showInjectionGuide, setShowInjectionGuide] = useState(false);
     const [customGels, setCustomGels] = useState<GelProduct[]>(() => readGelProducts());
@@ -525,6 +530,7 @@ const DoseForm: React.FC<DoseFormProps> = ({
         setPatchWearDays(typeof wearH === 'number' && wearH > 0 ? trimNumber(wearH / 24) : '');
 
         setActiveTplId(tpl.id);
+        setTplSnapPending(true);
         setAnimTick(k => k + 1);
         setPopKey(k => k + 1);
         toast(t('template.loaded'));
@@ -581,6 +587,33 @@ const DoseForm: React.FC<DoseFormProps> = ({
         return dose;
     };
 
+    /**
+     * The form's values in the shape a template stores them, used only to tell an
+     * untouched template (the button deletes it) from one the user then edited
+     * (the button modifies it).
+     */
+    const formSignature = (): string => JSON.stringify({
+        route: saveRoute(),
+        ester: saveEster(),
+        doseMG: saveDoseMG(),
+        extras: buildExtras(),
+    });
+
+    // Snapshot the form once it has settled after `applyTemplate`. Without this,
+    // any template picked from the strip would read as "already edited" because
+    // the state updates land in the render after the click.
+    useEffect(() => {
+        if (!tplSnapPending) return;
+        tplBaselineRef.current = formSignature();
+        setTplSnapPending(false);
+    });
+
+    const activeTpl = activeTplId ? (modeTemplates.find(t => t.id === activeTplId) ?? null) : null;
+    const tplDirty = !!activeTpl
+        && !tplSnapPending
+        && tplBaselineRef.current !== null
+        && formSignature() !== tplBaselineRef.current;
+
     const handleSave = () => {
         if (isSavingRef.current) return;
         isSavingRef.current = true;
@@ -634,26 +667,30 @@ const DoseForm: React.FC<DoseFormProps> = ({
             toast(t('m3e.tpl.limit'));
             return;
         }
+        setTplSheetMode('add');
         setTemplateName('');
+        setShowTplSheet(true);
+    };
+
+    /** The same sheet, seeded from the template the form came from. */
+    const openTplEditSheet = () => {
+        if (!activeTpl) return;
+        setTplSheetMode('edit');
+        setTemplateName(activeTpl.name ?? '');
         setShowTplSheet(true);
     };
 
     const closeTplSheet = () => setShowTplSheet(false);
 
-    const confirmAddTemplate = () => {
-        if (modeTemplates.length >= 10) {
-            toast(t('m3e.tpl.limit'));
-            return;
-        }
-        const custom = templateName.trim();
+    /** The template the form would save right now, for the add and edit paths. */
+    const templateFromForm = (custom: string, base?: DoseTemplate): DoseTemplate => {
         const unit = currentUnit();
         let label: string;
         if (isGnrh) label = custom || t('m3e.tpl.gnrh');
         else if (drug.noDose) label = custom || t('m3e.drug.E2_PEEL');
         else label = `${custom || drugShortName(drug, t)} · ${trimNumber(dose)} ${unit}`;
-
-        const template: DoseTemplate = {
-            id: uuidv4(),
+        return {
+            id: base?.id ?? uuidv4(),
             name: custom || drugShortName(drug, t),
             label,
             drugId: drug.id,
@@ -662,9 +699,27 @@ const DoseForm: React.FC<DoseFormProps> = ({
             ester: isGnrh ? Ester.GNRH : drug.ester,
             doseMG: isNoDose || (drug.route === Route.patchApply && patchMode === 'rate') ? 0 : dose,
             extras: buildExtras(),
-            createdAt: Date.now(),
+            createdAt: base?.createdAt ?? Date.now(),
         };
+    };
 
+    const confirmTplSheet = () => {
+        const custom = templateName.trim();
+        if (tplSheetMode === 'edit') {
+            if (!activeTpl) return;
+            onSaveTemplate(templateFromForm(custom, activeTpl));
+            setShowTplSheet(false);
+            setTemplateName('');
+            // The form still matches the template it just rewrote.
+            setTplSnapPending(true);
+            toast(t('m3e.tpl.updated'));
+            return;
+        }
+        if (modeTemplates.length >= 10) {
+            toast(t('m3e.tpl.limit'));
+            return;
+        }
+        const template = templateFromForm(custom);
         onSaveTemplate(template);
         setActiveTplId(template.id);
         setShowTplSheet(false);
@@ -1390,9 +1445,21 @@ const DoseForm: React.FC<DoseFormProps> = ({
                     </button>
                 )}
                 {!hideTemplates && (
-                    <button type="button" className="tpl-toggle" data-m style={{ ['--mo' as string]: '14px' }} onClick={openTplSheet}>
-                        <Icon id="mark" />{t('m3e.tpl.save')}
-                    </button>
+                    activeTpl ? (
+                        tplDirty ? (
+                            <button type="button" className="tpl-toggle" data-m style={{ ['--mo' as string]: '14px' }} onClick={openTplEditSheet}>
+                                <Icon id="mark" />{t('m3e.tpl.modify')}
+                            </button>
+                        ) : (
+                            <button type="button" className="tpl-toggle" data-m style={{ ['--mo' as string]: '14px' }} onClick={() => deleteTemplate(activeTpl)}>
+                                <Icon id="trash" />{t('m3e.tpl.delete')}
+                            </button>
+                        )
+                    ) : (
+                        <button type="button" className="tpl-toggle" data-m style={{ ['--mo' as string]: '14px' }} onClick={openTplSheet}>
+                            <Icon id="mark" />{t('m3e.tpl.save')}
+                        </button>
+                    )
                 )}
                 <button type="button" className="save-btn" data-m style={{ ['--mo' as string]: '16px' }} onClick={handleSave}>
                     <Icon id="check" />{accentSubmit ? t('dose.add_submit') : t('m3e.save')}
@@ -1414,8 +1481,8 @@ const DoseForm: React.FC<DoseFormProps> = ({
             <div className={`scrim${showTplSheet ? ' open' : ''}`} onClick={closeTplSheet} />
             <div className={`sheet${showTplSheet ? ' open' : ''}`} id="tplSheet" role="dialog" aria-modal="true" aria-label={t('m3e.tpl.sheet_title')}>
                 <div className="sh-handle" />
-                <div className="sh-title">{t('m3e.tpl.sheet_title')}</div>
-                <div className="sh-sub">{t('m3e.tpl.save_desc')}</div>
+                <div className="sh-title">{tplSheetMode === 'edit' ? t('m3e.tpl.edit_title') : t('m3e.tpl.sheet_title')}</div>
+                <div className="sh-sub">{tplSheetMode === 'edit' ? t('m3e.tpl.edit_desc') : t('m3e.tpl.save_desc')}</div>
                 <input
                     type="text"
                     className="fld"
@@ -1427,7 +1494,7 @@ const DoseForm: React.FC<DoseFormProps> = ({
                 />
                 <div className="sh-actions">
                     <button type="button" className="sh-btn cancel" onClick={closeTplSheet}>{t('btn.cancel')}</button>
-                    <button type="button" className="sh-btn ok" onClick={confirmAddTemplate}>{t('m3e.tpl.add')}</button>
+                    <button type="button" className="sh-btn ok" onClick={confirmTplSheet}>{tplSheetMode === 'edit' ? t('m3e.tpl.save_changes') : t('m3e.tpl.add')}</button>
                 </div>
             </div>
 

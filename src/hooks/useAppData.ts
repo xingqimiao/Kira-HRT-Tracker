@@ -935,7 +935,11 @@ export const useAppData = (
 
     const addTemplate = (template: DoseTemplate) => {
         forgetDeletions('doseTemplates', [template.id]);
-        setDoseTemplates(prev => [...prev, stamp(template)]);
+        // Upsert: the record panel's "modify" writes the same id back, and
+        // appending would leave the old copy beside the new one.
+        setDoseTemplates(prev => prev.some(t => t.id === template.id)
+            ? prev.map(t => (t.id === template.id ? stamp(template) : t))
+            : [...prev, stamp(template)]);
     };
     const deleteTemplate = (id: string) => {
         recordDeletions('doseTemplates', [id]);
