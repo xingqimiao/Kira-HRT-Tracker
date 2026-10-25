@@ -554,6 +554,35 @@ check('a lab monitoring value edit is uploaded', () => {
   assert.deepEqual(ids(changedRecords(pushPayload(local), pushPayload(remote))), ['lab:transfem:l1']);
 });
 
+check('a quick-record template edit is uploaded', () => {
+  // The record panel can rewrite a saved template in place. An edit is content, so
+  // it must travel; otherwise the other device keeps the old name and dose forever.
+  const remote = modeWith('transfem', {
+    doseTemplates: [{ id: 't1', name: 'EV', route: 'injection', ester: 'EV', doseMG: 5, extras: {}, updatedAt: 5 }],
+  });
+  const local = modeWith('transfem', {
+    doseTemplates: [{ id: 't1', name: 'EV 夜间', route: 'injection', ester: 'EV', doseMG: 4, extras: {}, updatedAt: 6 }],
+  });
+  assert.deepEqual(ids(changedRecords(pushPayload(local), pushPayload(remote))), ['tpl:transfem:t1']);
+  const merged = mergeSyncStates(local, remote).merged;
+  assert.equal(merged.modes.transfem.doseTemplates[0].doseMG, 4, 'the newer edit wins');
+});
+
+check('deleting a quick record travels as a tombstone', () => {
+  // The × in the quick-record sheet is the only way out of a mis-saved record: the
+  // tombstone has to reach the account, or the next pull puts the row straight back.
+  const local = modeWith('transfem', {
+    doseTemplates: [{ id: 't1', name: 'EV', route: 'injection', ester: 'EV', doseMG: 5, extras: {}, updatedAt: 5 }],
+  });
+  const remote = modeWith('transfem', {
+    doseTemplates: [{ id: 't1', name: 'EV', route: 'injection', ester: 'EV', doseMG: 5, extras: {}, updatedAt: 5 }],
+    deletions: { ...emptySyncState().modes.transfem.deletions, doseTemplates: { t1: 1000 } },
+  });
+  const merged = mergeSyncStates(local, remote).merged;
+  assert.equal(merged.modes.transfem.doseTemplates.length, 0, 'the deleted template does not survive the merge');
+  assert.deepEqual(ids(changedRecords(pushPayload(remote), pushPayload(local))), ['del:transfem:doseTemplates']);
+});
+
 check('an analyte backfill is uploaded, not lost to a pull', () => {
   // The upgrade migration adds `analyte` to a record stored by an older build. If the
   // field is not content, the transport cannot see the change and the next pull hands

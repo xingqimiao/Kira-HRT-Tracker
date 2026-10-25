@@ -301,7 +301,6 @@ const DoseForm: React.FC<DoseFormProps> = ({
         const next = clampWith(value, step, max);
         setDose(next);
         setDoseText(trimNumber(next));
-        setActiveTplId(null);
         if (pop) setPopKey(k => k + 1);
     }, [clampWith]);
 
@@ -329,6 +328,7 @@ const DoseForm: React.FC<DoseFormProps> = ({
         setRoute(nextRoute);
         setDrugId(nextDrug.id);
         setPatchMode('rate');
+        setActiveTplId(null);
         setDoseValue(defaultDoseFor(nextDrug, 'rate'), stepFor(nextDrug, nextRoute, 'rate'), nextDrug.max, true);
         setAnimTick(k => k + 1);
     };
@@ -339,6 +339,7 @@ const DoseForm: React.FC<DoseFormProps> = ({
         setRoute(nextRoute);
         setDrugId(nextDrug.id);
         if (nextRoute === Route.patchApply) setPatchMode('rate');
+        setActiveTplId(null);
         setDoseValue(defaultDoseFor(nextDrug, pm), stepFor(nextDrug, nextRoute, pm), nextDrug.max, true);
         setAnimTick(k => k + 1);
     };
@@ -346,6 +347,7 @@ const DoseForm: React.FC<DoseFormProps> = ({
     const selectDrug = (nextDrug: DrugDef) => {
         const pm: PatchMode = nextDrug.route === Route.patchApply ? patchMode : 'rate';
         setDrugId(nextDrug.id);
+        setActiveTplId(null);
         setDoseValue(defaultDoseFor(nextDrug, pm), stepFor(nextDrug, nextDrug.route, pm), nextDrug.max, true);
         setAnimTick(k => k + 1);
     };
@@ -353,6 +355,7 @@ const DoseForm: React.FC<DoseFormProps> = ({
     const selectPatchMode = (next: PatchMode) => {
         setPatchMode(next);
         const nextDose = next === 'rate' ? 100 : 3;
+        setActiveTplId(null);
         setDoseValue(nextDose, next === 'rate' ? 25 : 0.5, drug.max, true);
         setAnimTick(k => k + 1);
     };
@@ -360,12 +363,10 @@ const DoseForm: React.FC<DoseFormProps> = ({
     const stepDose = (direction: number) => {
         applyDose((dose || 0) + direction * currentStep(), true);
     };
-
     const handleDoseText = (raw: string) => {
         if (!/^\d*[.,]?\d*$/.test(raw)) return;
         const clean = raw.replace(',', '.');
         setDoseText(clean);
-        setActiveTplId(null);
         const parsed = parseFloat(clean);
         if (Number.isFinite(parsed)) setDose(parsed);
     };
