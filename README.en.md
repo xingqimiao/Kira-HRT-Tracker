@@ -399,9 +399,9 @@ The independent **Web/PWA distribution** retains multiple accounts, sync, sharin
 - **[LAN / NAS deployment](deploy/self-host/LAN.en.md)**: fixed IP → Windows/macOS/NAS preparation → install → trust the local certificate on each device.
 - [Backup, upgrade, recovery and troubleshooting](deploy/self-host/MAINTENANCE.en.md): after installation.
 
-[Download the 2.3.0 archive](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.0/kira-hrt-self-host-2.3.0.tar.gz). One archive includes both routes and maintenance in English/Chinese; exact commands are in the matching guide. The [deployment index](deploy/self-host/README.en.md) helps select your scenario.
+[Download the 2.3.1 archive](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.1/kira-hrt-self-host-2.3.1.tar.gz). One archive includes both routes and maintenance in English/Chinese; exact commands are in the matching guide. The [deployment index](deploy/self-host/README.en.md) helps select your scenario.
 
-The two GitHub Packages are kira-hrt-web (website/HTTPS) and kira-hrt-api (backend). Both and PostgreSQL are pulled automatically; do not choose between them. Existing instances upgrade to 2.3.0 with the commands in the [maintenance guide](deploy/self-host/MAINTENANCE.en.md); no reinitialization is needed and the previous archives remain available.
+The two GitHub Packages are kira-hrt-web (website/HTTPS) and kira-hrt-api (backend). Both and PostgreSQL are pulled automatically; do not choose between them. Existing instances upgrade to 2.3.1 with the commands in the [maintenance guide](deploy/self-host/MAINTENANCE.en.md); no reinitialization is needed and the previous archives remain available.
 
 OAuth, CAPTCHA, FCM and official-site updates are disabled by default. Official Android APKs use the official service; use Web/PWA for self-hosting. Migrate via export/import rather than copying an OCI database and switching key providers. Back up keys and database, keeping key copies separately.
 

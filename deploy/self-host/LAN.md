@@ -39,11 +39,11 @@ docker compose version
 
 ## 第 3 步：下载、解压，进入包含脚本的目录
 
-本教程使用 **2.3.0 部署包**。已有实例不用重新初始化，按[维护文档](MAINTENANCE.md)升级即可。
+本教程使用 **2.3.1 部署包**。已有实例不用重新初始化，按[维护文档](MAINTENANCE.md)升级即可。
 
-**[点击下载 kira-hrt-self-host-2.3.0.tar.gz](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.0/kira-hrt-self-host-2.3.0.tar.gz)**
+**[点击下载 kira-hrt-self-host-2.3.1.tar.gz](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.1/kira-hrt-self-host-2.3.1.tar.gz)**
 
-也可以到 [自部署 Release](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/tag/self-host-v2.3.0) 的 Assets 中找这个文件。不要选 APK、Source code 或 Packages 页的镜像。`.sha256` 只是可选的文件校验信息，不是安装程序。
+也可以到 [自部署 Release](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/tag/self-host-v2.3.1) 的 Assets 中找这个文件。不要选 APK、Source code 或 Packages 页的镜像。`.sha256` 只是可选的文件校验信息，不是安装程序。
 
 ### Windows
 
@@ -51,8 +51,8 @@ docker compose version
 
 ```powershell
 cd "$HOME\Downloads"
-tar -xzf .\kira-hrt-self-host-2.3.0.tar.gz
-cd .\kira-hrt-self-host-2.3.0
+tar -xzf .\kira-hrt-self-host-2.3.1.tar.gz
+cd .\kira-hrt-self-host-2.3.1
 Get-ChildItem
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
@@ -64,9 +64,9 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 先进入一个有写入权限、准备长期保留的目录。NAS 可用你的 `docker` 共享文件夹，**不要用重启会清空的临时目录**。逐行执行：
 
 ```sh
-curl -fL --retry 3 -o kira-hrt-self-host-2.3.0.tar.gz https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.0/kira-hrt-self-host-2.3.0.tar.gz
-tar -xzf kira-hrt-self-host-2.3.0.tar.gz
-cd kira-hrt-self-host-2.3.0
+curl -fL --retry 3 -o kira-hrt-self-host-2.3.1.tar.gz https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.1/kira-hrt-self-host-2.3.1.tar.gz
+tar -xzf kira-hrt-self-host-2.3.1.tar.gz
+cd kira-hrt-self-host-2.3.1
 ls
 ```
 
