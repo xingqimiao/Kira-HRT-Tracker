@@ -98,6 +98,10 @@ const PACK: LangPack = {
 
     "plan.system_settings": "去系统设置",
 
+    "plan.exact_title": "准点提醒",
+    "plan.exact_desc": "未授予系统“闹钟和提醒”权限，提醒可能延迟或错过。",
+    "plan.exact_grant": "去授权",
+
     "plan.on": "通知已启用",
     "plan.notify_title": "用药提醒",
     "plan.notify_body": "到点用药，记得记录。",
@@ -1044,7 +1048,7 @@ const PACK: LangPack = {
 
     "mcp.tool.hrt_med_plan_status": "今天的用药方案，以及还差哪几剂",
 
-    "mcp.tool.hrt_get_settings": "体重、模式、校准与药代参数覆盖",
+    "mcp.tool.hrt_get_settings": "体重、模式、校准与药代参数覆盖",
     "mcp.tool.hrt_reference": "可用的给药途径、酯类、单位，以及工具清单本身",
 
     "mcp.tool.hrt_add_medication": "记录一次用药",

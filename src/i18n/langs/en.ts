@@ -97,6 +97,10 @@ const PACK: LangPack = {
 
     "plan.system_settings": "System settings",
 
+    "plan.exact_title": "On-time alerts",
+    "plan.exact_desc": "Exact alarms are not granted; reminders may ring late or be missed.",
+    "plan.exact_grant": "Grant",
+
     "plan.on": "Notifications are on",
     "plan.notify_title": "Medication reminder",
     "plan.notify_body": "Time to take your medication.",
@@ -1044,7 +1048,7 @@ const PACK: LangPack = {
 
     "mcp.tool.hrt_med_plan_status": "Today's medication plan and any doses still due",
 
-    "mcp.tool.hrt_get_settings": "Body weight, mode, calibration and PK overrides",
+    "mcp.tool.hrt_get_settings": "Body weight, mode, calibration and PK overrides",
     "mcp.tool.hrt_reference": "The valid routes, esters and units, and the tool list itself",
 
     "mcp.tool.hrt_add_medication": "Log a dose",

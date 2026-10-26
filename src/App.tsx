@@ -64,6 +64,7 @@ import {
     startPlanWebNotifications,
     registerDoseSource,
     setPlanNotificationLanguage,
+    maybePromptExactAlarms,
 } from './utils/medPlanNotify';
 import { installNativeBack, useBackHandler } from './utils/nativeBack';
 import { installNativeLinkInterceptor } from './utils/externalLinks';
@@ -181,6 +182,9 @@ const AppContent = () => {
         migrateOldRemindersToPlans();
         void reschedulePlanNotifications().catch(e => console.error('[med-plan] reschedule failed', e));
         startPlanWebNotifications();
+        // Users who enabled reminders before the exact-alarm gate existed still run
+        // on inexact alarms; ask once per device, on open, while reminders are on.
+        void maybePromptExactAlarms({ onceOnly: true }).catch(() => undefined);
         const refresh = () => {
             if (document.visibilityState === 'visible') {
                 void reschedulePlanNotifications().catch(e => console.error('[med-plan] reschedule failed', e));

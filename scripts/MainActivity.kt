@@ -1,5 +1,6 @@
 package com.kiramyao.hrt
 
+import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -213,6 +214,51 @@ class MainActivity : TauriActivity() {
             Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
           }
           intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          startActivity(intent)
+        } catch (e: Exception) {
+          try {
+            val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(fallback)
+          } catch (e2: Exception) {
+            // Nothing else to try.
+          }
+        }
+      }
+    }
+
+    /**
+     * Whether Android lets this app schedule exact alarms ("Alarms & reminders").
+     *
+     * Since Android 14 the special access is denied by default for apps targeting
+     * 33+, so a freshly installed build silently degrades to inexact alarms that
+     * Doze can delay by minutes to hours — the reminder still fires, just not at
+     * the dose time. The JS layer surfaces this in MedPlanSettings. API < 31 has
+     * no such gate, so it is always true there.
+     */
+    @JavascriptInterface fun canScheduleExactAlarms(): Boolean {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+      val alarms = getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return true
+      return alarms.canScheduleExactAlarms()
+    }
+
+    /**
+     * Ask for the exact-alarm special access.
+     *
+     * The platform's own request flow: on Android 14+ (this app targets 33+) it
+     * shows the system "allow setting alarms?" dialog, on 12/13 it opens the
+     * "Alarms & reminders" page. On return the JS focus recheck reschedules
+     * natively, which then lands as exact alarms. Needs SCHEDULE_EXACT_ALARM in
+     * the manifest (the patch script declares it) and a device that knows the
+     * action — anything else falls back to the app details page, which links to
+     * special app access.
+     */
+    @JavascriptInterface fun openExactAlarmSettings() {
+      runOnUiThread {
+        try {
+          lockBridge?.markExternalFlow()
+          val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName"))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
           startActivity(intent)
         } catch (e: Exception) {
           try {

@@ -21,6 +21,7 @@ import {
     Importance,
     isPermissionGranted,
     requestPermission,
+    removeChannel,
     Schedule,
     sendNotification,
     Visibility,
@@ -46,6 +47,20 @@ const OWNED_NOTIFICATION_IDS_KEY = 'hrt-med-plan-notification-ids';
  */
 const NOTIFY_OFF_KEY = 'hrt-med-plan-notify-off';
 const NATIVE_QUEUE_SIZE = 5;
+/**
+ * The reminder notification channel, and the one it replaced.
+ *
+ * Android freezes a channel's settings the moment it is created — every later
+ * createChannel with the same id is ignored — so "no vibration" could never reach
+ * a device that already holds the vibrating channel. The quiet settings ship as a
+ * new id and the old one is deleted once per process (a no-op when it does not
+ * exist); the reschedule pass in the same run re-issues every scheduled ring on
+ * the new channel, so nothing is stranded on the deleted one. The FCM service
+ * (HrtMessagingService.kt) must keep using the same id and settings.
+ */
+const MED_CHANNEL_ID = 'hrt-med-v2';
+const LEGACY_MED_CHANNEL_ID = 'hrt-med';
+let legacyChannelDeleted = false;
 
 function currentMode(): HRTMode {
     return get('hrt-mode') === 'transmasc' ? 'transmasc' : 'transfem';
@@ -186,7 +201,11 @@ async function rescheduleOnce(request: boolean): Promise<boolean> {
     if (!granted && request) granted = (await requestPermission()) === 'granted';
     // Private: the tray entry is complete once the device is unlocked, but the
     // lock screen shows only the public version (app lock plan §10).
-    await createChannel({ id: 'hrt-med', name: 'HRT medication', importance: Importance.Default, vibration: true, visibility: Visibility.Private });
+    if (!legacyChannelDeleted) {
+        legacyChannelDeleted = true;
+        await removeChannel(LEGACY_MED_CHANNEL_ID).catch(() => undefined);
+    }
+    await createChannel({ id: MED_CHANNEL_ID, name: 'HRT medication', importance: Importance.Default, vibration: false, visibility: Visibility.Private });
 
     // Cancel every id this module has ever issued, not just the ones the plugin
     // still reports as pending. `pending()` can drop an id it has already
@@ -246,7 +265,7 @@ async function rescheduleOnce(request: boolean): Promise<boolean> {
                 id,
                 title: reminderTitle(plan),
                 body: reminderBody(plan),
-                channelId: 'hrt-med',
+                channelId: MED_CHANNEL_ID,
                 schedule: Schedule.at(time, false, true),
             });
         }
@@ -324,6 +343,62 @@ export function openNativeNotificationSettings(): void {
     if (!isNativeApp()) return;
     const bridge = (window as unknown as { HrtNotif?: { openSettings?: () => void } }).HrtNotif;
     try { bridge?.openSettings?.(); } catch { /* best effort — the plugin path may still work */ }
+}
+
+/**
+ * Whether Android grants this app exact alarms ("Alarms & reminders").
+ *
+ * Android 14 denies the special access by default for apps targeting 33+, and the
+ * notifications plugin then schedules inexact alarms that Doze can delay by minutes
+ * to hours — the ring still comes, just not at the dose time. Native only; null
+ * off the APK or on an older bridge, so callers can treat "web" and "unknown"
+ * alike and never nag on a transport that has no gate.
+ */
+export function canScheduleExactAlarms(): boolean | null {
+    if (!isNativeApp()) return null;
+    const bridge = (window as unknown as { HrtNotif?: { canScheduleExactAlarms?: () => boolean } }).HrtNotif;
+    try { return bridge?.canScheduleExactAlarms?.() ?? null; } catch { return null; }
+}
+
+/**
+ * Open Android's exact-alarm request flow: the system dialog on 14+, the "Alarms &
+ * reminders" page on 12/13. On return the app's focus handler reschedules, which
+ * then schedules exactly. No-op off the native app.
+ */
+export function openNativeExactAlarmSettings(): void {
+    if (!isNativeApp()) return;
+    const bridge = (window as unknown as { HrtNotif?: { openExactAlarmSettings?: () => void } }).HrtNotif;
+    try { bridge?.openExactAlarmSettings?.(); } catch { /* best effort — the fallback page may still work */ }
+}
+
+/** Whether the one-shot auto-prompt already asked, so a denial is never repeated. */
+const EXACT_ALARM_PROMPTED_KEY = 'hrt-exact-alarm-prompted';
+
+/**
+ * Ask for the exact-alarm special access when reminders are on without it.
+ *
+ * Two callers: the enable flow (the user just turned reminders on and is looking
+ * at the screen) and the app's launch — which exists for the users who enabled
+ * reminders before this gate existed and silently run on inexact alarms. `onceOnly`
+ * is the launch shape: it fires at most once per device, because re-asking every
+ * open after a denial reads as nagging — the settings row stays as the manual path.
+ * All the gates (native, actually denied, reminders on, a plan exists) are checked
+ * here so callers stay one line.
+ */
+export async function maybePromptExactAlarms(opts: { onceOnly?: boolean } = {}): Promise<void> {
+    if (!isNativeApp()) return;
+    if (canScheduleExactAlarms() !== false) return;
+    try {
+        if (arePlanNotificationsMuted()) return;
+        if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+        if (!(await isPlanNotificationGranted())) return;
+        if (plansForMode(readMedPlans(), currentMode()).length === 0) return;
+        if (opts.onceOnly && get(EXACT_ALARM_PROMPTED_KEY) === '1') return;
+    } catch {
+        return;
+    }
+    try { set(EXACT_ALARM_PROMPTED_KEY, '1'); } catch { /* a lost flag only risks one extra future ask */ }
+    openNativeExactAlarmSettings();
 }
 
 /** Start the web check. The permission must already be granted (asked in settings). */

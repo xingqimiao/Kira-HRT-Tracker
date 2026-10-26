@@ -17,6 +17,7 @@ import {
     readMedPlans, writeMedPlans, sanitizeMedPlans, isSavedTemplate, type MedPlan, type PlanTime,
     migrateOldRemindersToPlans,
     isPlanNotificationGranted, requestPlanNotificationPermission, openNativeNotificationSettings,
+    canScheduleExactAlarms, openNativeExactAlarmSettings, maybePromptExactAlarms,
     arePlanNotificationsMuted, resumePlanNotifications, stopPlanWebNotifications,
 } from '../utils/medPlanNotify';
 import { plansForMode, localDateKey, nextPlanOccurrences } from '../utils/medPlan';
@@ -74,6 +75,14 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
      */
     const [mutedPref, setMutedPref] = useState(() => arePlanNotificationsMuted());
     const notifyOn = webPermission && !mutedPref;
+    /**
+     * Whether Android grants exact alarms ("Alarms & reminders"). Native only:
+     * Android 14 denies the special access by default, and without it the scheduled
+     * rings degrade to inexact alarms Doze can delay well past the dose time — the
+     * single most likely reason the phone rings late while the desktop is on time.
+     * null = not applicable (web, or an older bridge without the method).
+     */
+    const [exactAlarms, setExactAlarms] = useState<boolean | null>(() => canScheduleExactAlarms());
     const visiblePlans = useMemo(() => plansForMode(plans, hrtMode), [plans, hrtMode]);
 
     // Add-form state. The picker is the record panel's catalogue: category first,
@@ -181,6 +190,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
     useEffect(() => {
         const recheck = (): void => {
             if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+            setExactAlarms(canScheduleExactAlarms());
             void isPlanNotificationGranted().then(v => {
                 setWebPermission(v);
                 setMutedPref(arePlanNotificationsMuted());
@@ -376,6 +386,10 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
             // Web: start the 60-second in-app check.
             if (isNativeApp()) {
                 void reschedulePlanNotifications().catch(() => undefined);
+                // The user just turned reminders on and is looking at the screen:
+                // Android 14+ still needs the exact-alarm special access for the
+                // rings to land at the dose time, so ask for it right here.
+                void maybePromptExactAlarms().catch(() => undefined);
             }
             // Bind this device's FCM token so the server can send a catch-up nudge
             // for a dose that was never logged. Both transports; no-op until signed in.
@@ -593,6 +607,23 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                             {isNativeApp() ? t('plan.system_settings') : t('plan.disable')}
                         </button>
                     </div>
+                    {/* Exact alarms gate the *timing*, not the permission: the
+                        scheduled rings exist either way, but denied special access
+                        turns them into inexact alarms Doze can postpone well past
+                        the dose time. Native-only (null elsewhere), and it re-reads
+                        on focus so granting in system settings clears it on return. */}
+                    {isNativeApp() && exactAlarms === false && (
+                        <div className="li is-static" style={{ cursor: 'default' }}>
+                            <span className="ic p"><SpriteIcon id="clock" /></span>
+                            <div className="t">
+                                <b>{t('plan.exact_title')}</b>
+                                <span className="s">{t('plan.exact_desc')}</span>
+                            </div>
+                            <button type="button" onClick={openNativeExactAlarmSettings} className="btn t" style={{ minWidth: 0 }}>
+                                {t('plan.exact_grant')}
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
 

@@ -195,6 +195,10 @@ const PACK: LangPack = {
 
     "plan.system_settings": "시스템 설정",
 
+    "plan.exact_title": "정시 알림",
+    "plan.exact_desc": "정확한 알람 권한이 없어 알림이 지연되거나 놓칠 수 있습니다.",
+    "plan.exact_grant": "권한 허용",
+
     "plan.on": "알림이 켜져 있습니다",
     "plan.notify_title": "복약 알림",
     "plan.notify_body": "복약할 시간입니다.",
@@ -1129,7 +1133,7 @@ const PACK: LangPack = {
 
     "mcp.tool.hrt_med_plan_status": "오늘의 복약 계획과 아직 남은 용량",
 
-    "mcp.tool.hrt_get_settings": "체중·모드·보정·PK 재정의",
+    "mcp.tool.hrt_get_settings": "체중·모드·보정·PK 재정의",
     "mcp.tool.hrt_reference": "유효한 경로·에스터·단위와 도구 목록 자체",
 
     "mcp.tool.hrt_add_medication": "복약 기록",

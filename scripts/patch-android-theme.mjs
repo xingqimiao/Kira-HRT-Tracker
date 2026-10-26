@@ -180,8 +180,11 @@ if (!manifestXml.includes('REQUEST_INSTALL_PACKAGES')) {
 // throws unless the app holds exact-alarm access; the notifications plugin catches
 // that and falls back to `setAndAllowWhileIdle` — an INEXACT alarm Doze can delay by
 // minutes, which for a dose reminder is a missed reminder. Declaring
-// SCHEDULE_EXACT_ALARM is what lets `canScheduleExactAlarms()` be true; on 13+ it is
-// granted by default, on 12 the user grants it under "Alarms & reminders". (The
+// SCHEDULE_EXACT_ALARM is what lets `canScheduleExactAlarms()` be true; on 12/13
+// declaring it grants it, but since Android 14 apps targeting 33+ are DENIED by
+// default — the app asks via ACTION_REQUEST_SCHEDULE_EXACT_ALARM
+// (HrtNotif.openExactAlarmSettings, surfaced in MedPlanSettings) and until granted
+// the plugin keeps falling back to inexact alarms. (The
 // alternative, USE_EXACT_ALARM, is auto-granted but is a Play-policy carve-out for
 // alarm/calendar apps only, so it is deliberately not used here.) Declared in the
 // gitignored gen/ manifest via this script for the same reason as the permission above.

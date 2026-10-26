@@ -195,6 +195,10 @@ const PACK: LangPack = {
 
     "plan.system_settings": "システム設定",
 
+    "plan.exact_title": "定時通知",
+    "plan.exact_desc": "正確なアラームが許可されていないため、通知が遅れることがあります。",
+    "plan.exact_grant": "許可する",
+
     "plan.on": "通知は有効です",
     "plan.notify_title": "服薬リマインダー",
     "plan.notify_body": "服薬の時間です。",
@@ -1151,7 +1155,7 @@ const PACK: LangPack = {
 
     "mcp.tool.hrt_med_plan_status": "今日の服薬プランと、まだ残っている分",
 
-    "mcp.tool.hrt_get_settings": "体重・モード・較正・PK 上書き",
+    "mcp.tool.hrt_get_settings": "体重・モード・較正・PK 上書き",
     "mcp.tool.hrt_reference": "有効な経路・エステル・単位と、ツール一覧そのもの",
 
     "mcp.tool.hrt_add_medication": "服薬を記録",

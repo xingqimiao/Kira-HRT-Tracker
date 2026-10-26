@@ -762,7 +762,7 @@ const PACK: LangPack = {
 
     "mcp.tool.hrt_med_plan_status": "今天的用藥方案，以及還差哪幾劑",
 
-    "mcp.tool.hrt_get_settings": "體重、模式、校準與藥代參數覆寫",
+    "mcp.tool.hrt_get_settings": "體重、模式、校準與藥代參數覆寫",
     "mcp.tool.hrt_reference": "可用的給藥途徑、酯類、單位，以及工具清單本身",
 
     "mcp.tool.hrt_add_medication": "記錄一次用藥",
@@ -1000,6 +1000,10 @@ const PACK: LangPack = {
     "plan.disable": "關閉",
 
     "plan.system_settings": "前往系統設定",
+
+    "plan.exact_title": "準點提醒",
+    "plan.exact_desc": "未授予系統「鬧鐘與提醒」權限，提醒可能延遲或錯過。",
+    "plan.exact_grant": "前往授權",
 
     "plan.on": "通知已啟用",
     "plan.notify_title": "用藥提醒",

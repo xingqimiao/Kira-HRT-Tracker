@@ -43,7 +43,11 @@ import com.google.firebase.messaging.RemoteMessage
 class HrtMessagingService : FirebaseMessagingService() {
 
     companion object {
-        private const val CHANNEL_ID = "hrt-med"
+        // Same id and settings as the JS-created channel in medPlanNotify.ts —
+        // whoever runs first creates it, and the second call is a no-op. The -v2
+        // id replaces the vibrating original (Android freezes channel settings at
+        // first creation, so quiet settings need a new id).
+        private const val CHANNEL_ID = "hrt-med-v2"
         private const val PREFS = "hrt-push"
         private const val SHOWN_KEY = "shown"
         private const val SHOWN_MAX_AGE_MS = 3L * 24 * 60 * 60 * 1000 // 3 days, matching Web
@@ -128,7 +132,8 @@ class HrtMessagingService : FirebaseMessagingService() {
                 "HRT medication",
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply {
-                enableVibration(true)
+                // Quiet: sound only, no vibration (matches the JS channel).
+                enableVibration(false)
                 // Device locked: only the public version below is shown. Unlocked,
                 // the tray shows the real title and dose.
                 lockscreenVisibility = Notification.VISIBILITY_PRIVATE

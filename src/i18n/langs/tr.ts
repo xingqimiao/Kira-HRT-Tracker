@@ -97,6 +97,10 @@ const PACK: LangPack = {
 
     "plan.system_settings": "Sistem ayarları",
 
+    "plan.exact_title": "Zamanında bildirim",
+    "plan.exact_desc": "Tam alarm izni verilmedi; bildirimler gecikebilir veya kaçabilir.",
+    "plan.exact_grant": "İzin ver",
+
     "plan.on": "Bildirimler açık",
     "plan.notify_title": "İlaç hatırlatıcısı",
     "plan.notify_body": "İlacınızı alma zamanı.",
@@ -1030,7 +1034,7 @@ const PACK: LangPack = {
 
     "mcp.tool.hrt_med_plan_status": "Bugünün ilaç planı ve hâlâ bekleyen dozlar",
 
-    "mcp.tool.hrt_get_settings": "Vücut ağırlığı, mod, kalibrasyon ve PK geçersiz kılmaları",
+    "mcp.tool.hrt_get_settings": "Vücut ağırlığı, mod, kalibrasyon ve PK geçersiz kılmaları",
     "mcp.tool.hrt_reference": "Geçerli yollar, esterler ve birimler ile araç listesinin kendisi",
 
     "mcp.tool.hrt_add_medication": "Doz kaydet",
