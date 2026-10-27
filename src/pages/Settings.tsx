@@ -96,8 +96,8 @@ interface SettingsProps {
     languageOptions: { value: Lang; label: string }[];
     onImportJson: (text: string) => boolean | Promise<boolean>;
     labResults: any[];
-    onExport: (encrypt: boolean, password?: string) => Promise<string | null>;
-    onQuickExport: () => void;
+    onExport: (encrypt: boolean, password?: string, legacy?: boolean) => Promise<string | null>;
+    onQuickExport: (legacy?: boolean) => void;
     onClearAllEvents: () => void;
     events: DoseEvent[];
     showDialog: (type: 'alert' | 'confirm', message: string, onConfirm?: () => void) => void;

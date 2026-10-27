@@ -10,6 +10,8 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { APP_VERSION, AppTheme, ChartStyle, KeyColor, normalizeChartStyle } from './constants';
 import { DoseEvent, decompressData, encryptData, decryptData } from '../logic';
 import { detectForeignFormat, convertForeignPayload, type ForeignSource } from './utils/foreignImport';
+import { countLegacyLabs } from './utils/labAnalyteImport';
+import { toLegacyExport } from './utils/legacyExport';
 import { importGelProducts } from './utils/gelProducts';
 import { decryptFeatherline, mapFeatherlineSnapshot, FeatherlineError } from './utils/featherlineBackup';
 import type { Lang } from './i18n/types';
@@ -332,6 +334,17 @@ const AppContent = () => {
     const [pendingImport, setPendingImport] = useState<
         { kind: 'json'; text: string } | { kind: 'featherline'; bytes: Uint8Array } | null
     >(null);
+    /**
+     * Decrypted plaintext waiting for the review a plaintext file would have got
+     * before the password step.
+     *
+     * `previewImport` cannot count a password-protected file, so the import page
+     * skipped its review entirely and a legacy backup could never reach the
+     * unit-mapping switch — it was applied with every lab untyped. Once the file is
+     * open the plaintext is handed back to the page, which runs the ordinary
+     * preview on it. `nonce` distinguishes two imports of identical contents.
+     */
+    const [importReview, setImportReview] = useState<{ data: string; nonce: number } | null>(null);
 
     // --- Auto-sync preference ---
     // Storage key kept from when this only ever uploaded, so an existing
@@ -614,17 +627,11 @@ const AppContent = () => {
             // A legacy backup has neither `analyte` nor the newer `format` marker;
             // the import preview offers a user-confirmed unit mapping for exactly
             // these rows. Explicit unknown is left alone.
-            const legacyLabs = labs.filter((raw): boolean => {
-                if (!raw || typeof raw !== 'object') return false;
-                const l = raw as { analyte?: unknown; monitoringOnly?: unknown };
-                if (l.monitoringOnly === true) return false;
-                return l.analyte !== 'E2' && l.analyte !== 'T' && l.analyte !== 'unknown';
-            }).length;
             return {
                 source: source ?? 'kira',
                 doses: counted.events?.length ?? 0,
                 labs: labs.length,
-                legacyLabs,
+                legacyLabs: countLegacyLabs(payload),
             };
         } catch {
             return null;
@@ -720,7 +727,21 @@ const AppContent = () => {
             // The plaintext inside the envelope is where the source finally becomes
             // knowable, so it is detected here rather than from the envelope.
             const source = detectForeignFormat(JSON.stringify(parsed)).source;
-            if (applyImportedPayload(parsed, source)) {
+            const legacyLabs = countLegacyLabs(convertForeignPayload(parsed, source ?? 'kira').payload);
+            // The password step replaced the preview, so this is the first moment a
+            // legacy file can be reviewed at all. On the import page the plaintext
+            // goes back through the ordinary review: same counts, same switch, same
+            // confirmation as a plaintext file. Entry points with no review surface
+            // (the onboarding row) take the documented default instead — legacy labs
+            // classified by unit, exactly as a checked switch would do.
+            if (legacyLabs > 0 && currentView === 'settings-import') {
+                setIsPasswordInputOpen(false);
+                setPendingImport(null);
+                setImportReview({ data: JSON.stringify(parsed), nonce: Date.now() });
+                return;
+            }
+            const opts = legacyLabs > 0 ? { legacyAnalyteFromUnit: true } : undefined;
+            if (applyImportedPayload(parsed, source, opts)) {
                 setIsPasswordInputOpen(false);
                 setPendingImport(null);
             }
@@ -732,13 +753,13 @@ const AppContent = () => {
 
     const handleEditEvent = (e: DoseEvent) => { setEditingEvent(e); setIsFormOpen(true); };
 
-    const handleQuickExport = () => {
+    const handleQuickExport = (legacy = false) => {
         if (events.length === 0 && labResults.length === 0) {
             showDialog('alert', t('drawer.empty_export'));
             return;
         }
-        const exportData = buildExportPayload();
-        const json = JSON.stringify(exportData, null, 2);
+        const payload = buildExportPayload();
+        const json = JSON.stringify(legacy ? toLegacyExport(payload) : payload, null, 2);
         navigator.clipboard.writeText(json).then(() => {
             showDialog('alert', t('drawer.export_copied'));
         }).catch(err => {
@@ -750,9 +771,9 @@ const AppContent = () => {
         saveTextFile(filename, 'application/json', data);
     };
 
-    const handleExportConfirm = async (encrypt: boolean, customPassword?: string): Promise<string | null> => {
-        const exportData = buildExportPayload();
-        const json = JSON.stringify(exportData, null, 2);
+    const handleExportConfirm = async (encrypt: boolean, customPassword?: string, legacy = false): Promise<string | null> => {
+        const payload = buildExportPayload();
+        const json = JSON.stringify(legacy ? toLegacyExport(payload) : payload, null, 2);
 
         if (encrypt) {
             const { data, password } = await encryptData(json, customPassword);
@@ -1174,6 +1195,8 @@ const AppContent = () => {
                         <ImportSettings
                             onImportJson={importEventsFromJson}
                             onPreview={previewImport}
+                            review={importReview}
+                            onReviewConsumed={() => setImportReview(null)}
                             onBack={() => handleViewChange('settings')}
                         />
                     )}

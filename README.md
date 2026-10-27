@@ -328,9 +328,9 @@ node_modules/.bin/tauri android build --apk --target aarch64 \
 - **[局域网 / NAS 部署](deploy/self-host/LAN.md)**：固定 IP → Windows/macOS/NAS 准备 → 安装 → 每台设备信任本地证书。
 - [备份、升级、恢复与故障处理](deploy/self-host/MAINTENANCE.md)：安装完成后使用。
 
-[下载 2.3.2 部署包](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.2/kira-hrt-self-host-2.3.2.tar.gz)。同一个包包含中英文的两条安装路线及维护文档，具体命令在各自教程中。[部署总入口](deploy/self-host/README.md) 说明如何选择场景。
+[下载 2.4.0 部署包](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.3.2/kira-hrt-self-host-2.3.2.tar.gz)。同一个包包含中英文的两条安装路线及维护文档，具体命令在各自教程中。[部署总入口](deploy/self-host/README.md) 说明如何选择场景。
 
-GitHub 两个 Packages 是网页及 HTTPS 的 `kira-hrt-web` 和后端 `kira-hrt-api`，安装时连同 PostgreSQL 自动下载，不用二选一。已有实例按[维护文档](deploy/self-host/MAINTENANCE.md)的升级命令切到 2.3.2 即可，不需要重新初始化；旧版本部署包仍保留。
+GitHub 两个 Packages 是网页及 HTTPS 的 `kira-hrt-web` 和后端 `kira-hrt-api`，安装时连同 PostgreSQL 自动下载，不用二选一。已有实例按[维护文档](deploy/self-host/MAINTENANCE.md)的升级命令切到 2.4.0 即可，不需要重新初始化；旧版本部署包仍保留。
 
 默认关闭 OAuth、验证码、FCM 和官网更新入口。官网 Android APK 仍连接官网，自部署手机端使用 Web/PWA。官网迁移通过导出、导入，不能直接复制 OCI 数据库后切换密钥提供方。主密钥和数据库都需要备份，密钥副本与数据库副本分开保管。
 

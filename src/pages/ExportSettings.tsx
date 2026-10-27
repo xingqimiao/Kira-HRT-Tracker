@@ -8,8 +8,9 @@ interface ExportSettingsProps {
     events: DoseEvent[];
     labResults: LabResult[];
     weight: number;
-    onExport: (encrypt: boolean, password?: string) => Promise<string | null>;
-    onQuickExport: () => void;
+    /** `legacy` writes the pre-2.3.0 shape — see `toLegacyExport`. */
+    onExport: (encrypt: boolean, password?: string, legacy?: boolean) => Promise<string | null>;
+    onQuickExport: (legacy?: boolean) => void;
     onBack: () => void;
 }
 

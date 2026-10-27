@@ -65,7 +65,7 @@ const slEvents: DoseEvent[] = [
         doseMG: 2.0,
         route: Route.sublingual,
         ester: Ester.E2,
-        extras: { [ExtraKey.sublingualTier]: 2 } // standard tier (theta = 0.08)
+        extras: { [ExtraKey.sublingualTier]: 2 } // standard tier (theta = 0.06)
     }
 ];
 const slModernRes = runSimulation(slEvents, 55);
@@ -77,9 +77,9 @@ const slConc4h = getConcAt(slModernRes, baseH + 4);
 const slConc8h = getConcAt(slModernRes, baseH + 8);
 
 assert(
-    slMax.maxConc >= 550 && slMax.maxConc <= 750,
-    'Sublingual 2mg/55kg peak falls in realistic literature range (550 - 750 pg/mL)',
-    `Observed peak: ${slMax.maxConc.toFixed(1)} pg/mL at ${slMax.deltaH.toFixed(2)} h (Casper & Yen 1981 observed 380-630 pg/mL)`
+    slMax.maxConc >= 440 && slMax.maxConc <= 560,
+    'Sublingual 2mg/55kg peak matches the Doll 2022 70 kg reference (~195 pg/mL/mg E2)',
+    `Observed peak: ${slMax.maxConc.toFixed(1)} pg/mL at ${slMax.deltaH.toFixed(2)} h (195/mg at 70 kg -> 248/mg at 55 kg; Casper & Yen 1981 RIA observed 380-630)`
 );
 
 assert(
@@ -205,13 +205,13 @@ assert(
 // -----------------------------------------------------------------------------
 console.log('\n--- Test 6: Patched Transmtf Engine Alignment & Antiandrogen Decoupling ---');
 
-// 6.1 Sublingual in Transmtf: should peak ~660 pg/mL, not 1400!
+// 6.1 Sublingual in Transmtf: same anchor as the built-in engine, not 1400!
 const tmSlEvents = slEvents.map(e => ({ ...e, weightKG: 55 }));
 const tmSlRes = runTransmtfSim(tmSlEvents as any);
 const tmSlMax = findMaxConc(tmSlRes!, baseH);
 assert(
-    tmSlMax.maxConc >= 550 && tmSlMax.maxConc <= 750,
-    'Transmtf sublingual 2mg/55kg peak matches literature range (550 - 750 pg/mL)',
+    tmSlMax.maxConc >= 440 && tmSlMax.maxConc <= 560,
+    'Transmtf sublingual 2mg/55kg peak matches the Doll 2022 70 kg reference',
     `Transmtf observed peak: ${tmSlMax.maxConc.toFixed(1)} pg/mL at ${tmSlMax.deltaH.toFixed(2)} h`
 );
 

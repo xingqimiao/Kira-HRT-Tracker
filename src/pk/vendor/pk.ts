@@ -1,5 +1,5 @@
 import { Route, Ester, ExtraKey, VehicleType, type DoseEvent, type DoseEventExtras, type SimulationResult, type ConcUnit } from './types';
-import { absorbedThenEliminated, patchAmount, sequentialChainAmount } from '../kernels.ts';
+import { absorbedThenEliminated, patchAmount, sequentialChainAmount, e2VolumeWeightKG } from '../kernels.ts';
 
 /**
  * Route-specific metadata for transdermal gel absorption.
@@ -665,17 +665,25 @@ const OralPK = {
     bioavailability: 0.030,
     kAbsSL: 1.8,
     kElimSL: 1.2,   // Mucosal rapid elimination rate (distinct from systemic 0.41/h)
+    // No separate hydrolysis compartment on the mucosal branch: kAbsSL is a lumped
+    // rate that already carries the observed 41-minute peak, so a second delay
+    // would double-count it. Non-zero here only if that evidence changes.
+    k2SL: 0,
     sublingualRecyclingShare: 0.004 // 0.4% oral recycling share
 };
 
 // Deterministic ordering keeps the serialized tier index stable across UI and PK code.
 export const SL_TIER_ORDER = ["quick", "casual", "standard", "strict"] as const;
 
+// Standard (10-minute hold) is theta = 0.06: the Doll 2022 1 mg Cmax, brought
+// back to a 70 kg reference person and to the true 41-minute peak rather than the
+// study's first 60-minute sample, is ~195 pg/mL/mg E2 (~150 pg/mL/mg EV). The
+// other tiers keep their hold times and scale with it.
 export const SublingualTierParams = {
-    quick: { theta: 0.01, hold: 2 },
-    casual: { theta: 0.04, hold: 5 },
-    standard: { theta: 0.08, hold: 10 },
-    strict: { theta: 0.15, hold: 15 }
+    quick: { theta: 0.0075, hold: 2 },
+    casual: { theta: 0.03, hold: 5 },
+    standard: { theta: 0.06, hold: 10 },
+    strict: { theta: 0.1125, hold: 15 }
 };
 
 /** Highest mucosal fraction the tier table supports; custom theta is clamped here. */
@@ -703,7 +711,7 @@ export function getBioavailabilityMultiplier(
         case Route.oral:
             return OralPK.bioavailability * mwFactor;
         case Route.sublingual: {
-            let theta = 0.08;
+            let theta = SublingualTierParams.standard.theta;
             if (extras[ExtraKey.sublingualTheta] !== undefined) {
                 const customTheta = extras[ExtraKey.sublingualTheta];
                 if (typeof customTheta === 'number' && Number.isFinite(customTheta)) {
@@ -712,7 +720,7 @@ export function getBioavailabilityMultiplier(
             } else if (extras[ExtraKey.sublingualTier] !== undefined) {
                 const tierIdx = Math.min(SL_TIER_ORDER.length - 1, Math.max(0, Math.round(extras[ExtraKey.sublingualTier]!)));
                 const tierKey = SL_TIER_ORDER[tierIdx] || 'standard';
-                theta = SublingualTierParams[tierKey]?.theta ?? 0.08;
+                theta = SublingualTierParams[tierKey]?.theta ?? SublingualTierParams.standard.theta;
             }
             const recycled = theta < 1.0 ? OralPK.sublingualRecyclingShare / (1.0 - theta) : 0;
             return (theta + (1 - theta) * (OralPK.bioavailability + recycled)) * mwFactor;
@@ -789,7 +797,7 @@ export function resolveParams(event: DoseEvent): PKParams {
         }
 
         case Route.sublingual: {
-            let theta = 0.08;
+            let theta = SublingualTierParams.standard.theta;
             if (extras[ExtraKey.sublingualTheta] !== undefined) {
                 const customTheta = extras[ExtraKey.sublingualTheta];
                 if (typeof customTheta === 'number' && Number.isFinite(customTheta)) {
@@ -806,7 +814,7 @@ export function resolveParams(event: DoseEvent): PKParams {
             const k1_fast = OralPK.kAbsSL;
             const k1_slow = OralPK.kAbsE2;
             const k3_fast = OralPK.kElimSL;
-            const k2 = 0;
+            const k2 = OralPK.k2SL;
             const F_fast = toE2;
             const recycled = theta < 1.0 ? OralPK.sublingualRecyclingShare / (1.0 - theta) : 0;
             const F_slow = (OralPK.bioavailability + recycled) * toE2;
@@ -1058,7 +1066,12 @@ class PrecomputedEventModel {
                     const doseF = dose * params.Frac_fast;
                     const doseS = dose * (1.0 - params.Frac_fast);
                     const fastElim = params.k3_fast ?? params.k3;
-                    return absorbedThenEliminated(tau, doseF, params.F_fast, params.k1_fast, fastElim) +
+                    // Only when the mucosal branch actually carries a hydrolysis rate;
+                    // k2 = 0 means "lumped into kAbsSL" and must stay a two-rate path.
+                    const fastAmount = params.k2 > 0
+                        ? sequentialChainAmount(tau, doseF, params.F_fast, params.k1_fast, params.k2, fastElim)
+                        : absorbedThenEliminated(tau, doseF, params.F_fast, params.k1_fast, fastElim);
+                    return fastAmount +
                         absorbedThenEliminated(tau, doseS, params.F_slow, params.k1_slow, params.k3);
                 };
                 break;
@@ -1187,7 +1200,7 @@ export function runSimulation(
         }
 
         const bodyWeightKG = weightAtTimeH(sortedEvents, t);
-        const plasmaVolumeML_E2 = CorePK.vdPerKG * bodyWeightKG * 1000;
+        const plasmaVolumeML_E2 = CorePK.vdPerKG * e2VolumeWeightKG(bodyWeightKG) * 1000;
 
         const currentConc_E2 = (totalAmountMG_E2 * 1e9) / plasmaVolumeML_E2;
 

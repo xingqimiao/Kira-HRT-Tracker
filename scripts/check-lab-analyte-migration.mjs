@@ -36,7 +36,11 @@ import {
     Route,
     Ester,
 } from '../logic.ts';
-import { backfillLegacyLabAnalyte } from '../src/utils/labAnalyteImport.ts';
+import {
+    backfillLegacyLabAnalyte,
+    countLegacyLabs,
+    normalizeImportedAnalyte,
+} from '../src/utils/labAnalyteImport.ts';
 
 const checks = [];
 const check = (name, fn) => {
@@ -120,6 +124,59 @@ check('the pass is idempotent', () => {
     const second = backfillLegacyLabAnalyte(first.labs);
     assert.equal(first.changed, 1);
     assert.equal(second.changed, 0);
+});
+
+// --- 1b. The import review's count and the unit mapping ---------------------
+
+check('the review counts untyped labs in both mode blocks', () => {
+    const payload = {
+        modes: {
+            transfem: { labResults: [
+                lab('a', 10, 120, 'pg/ml'),
+                lab('b', 20, 500, 'ng/dl', { analyte: 'T' }),
+                lab('c', 30, 0, 'pmol/l', { monitoringOnly: true }),
+            ] },
+            transmasc: { labResults: [lab('d', 40, 12, 'nmol/l')] },
+        },
+    };
+    assert.equal(countLegacyLabs(payload), 2, 'only the two untyped readings');
+});
+
+check('the review counts a flat v1 payload', () => {
+    assert.equal(countLegacyLabs({ labResults: [
+        lab('a', 10, 120, 'pg/ml'),
+        lab('b', 20, 300, 'pmol/l', { analyte: 'unknown' }),
+    ] }), 1);
+});
+
+check('the review count is 0 for an empty or foreign payload', () => {
+    assert.equal(countLegacyLabs(null), 0);
+    assert.equal(countLegacyLabs({}), 0);
+    assert.equal(countLegacyLabs({ events: [] }), 0);
+});
+
+check('the switch maps units in both directions', () => {
+    assert.equal(normalizeImportedAnalyte(undefined, false, { legacyAnalyteFromUnit: true, unit: 'pg/ml' }), 'E2');
+    assert.equal(normalizeImportedAnalyte(undefined, false, { legacyAnalyteFromUnit: true, unit: 'pmol/l' }), 'E2');
+    assert.equal(normalizeImportedAnalyte(undefined, false, { legacyAnalyteFromUnit: true, unit: 'ng/dl' }), 'T');
+    assert.equal(normalizeImportedAnalyte(undefined, false, { legacyAnalyteFromUnit: true, unit: 'nmol/l' }), 'T');
+    assert.equal(normalizeImportedAnalyte(undefined, false, { legacyAnalyteFromUnit: true, unit: 'ng/mL' }), 'unknown');
+});
+
+check('without the switch an untyped lab stays unknown', () => {
+    assert.equal(normalizeImportedAnalyte(undefined, false, { unit: 'pg/ml' }), 'unknown');
+    assert.equal(normalizeImportedAnalyte('E2', false), 'E2');
+    assert.equal(normalizeImportedAnalyte('T', false), 'T');
+    assert.equal(normalizeImportedAnalyte('unknown', false), 'unknown');
+});
+
+check('the switch never overrides an explicit type', () => {
+    assert.equal(normalizeImportedAnalyte('unknown', false, { legacyAnalyteFromUnit: true, unit: 'ng/dl' }), 'unknown');
+    assert.equal(normalizeImportedAnalyte('E2', false, { legacyAnalyteFromUnit: true, unit: 'ng/dl' }), 'E2');
+});
+
+check('a monitoring-only record has no type with or without the switch', () => {
+    assert.equal(normalizeImportedAnalyte(undefined, true, { legacyAnalyteFromUnit: true, unit: 'pg/ml' }), undefined);
 });
 
 // --- 2. Calibration equivalence with 2.2.2 ----------------------------------

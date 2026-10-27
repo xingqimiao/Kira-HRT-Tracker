@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import Icon from './Icon';
+import Switch from './Switch';
 import { useTranslation } from '../contexts/LanguageContext';
 import { DoseEvent, LabResult } from '../../logic';
-import { Lock, Copy, Check } from '../icons';
+import { Lock, Copy, Check, RotateCcw } from '../icons';
 import { exportToCSV, exportToPDF } from '../services/export';
 import { saveTextFile } from '../utils/saveFile';
 import { SegmentedList } from '../ui/proto';
@@ -12,8 +13,9 @@ interface ExportSectionProps {
     events: DoseEvent[];
     labResults: LabResult[];
     weight: number;
-    onExport: (encrypt: boolean, password?: string) => Promise<string | null>;
-    onQuickExport?: () => void;
+    /** `legacy` writes the pre-2.3.0 shape — see `toLegacyExport`. */
+    onExport: (encrypt: boolean, password?: string, legacy?: boolean) => Promise<string | null>;
+    onQuickExport?: (legacy?: boolean) => void;
 }
 
 const ExportSection: React.FC<ExportSectionProps> = ({ events, labResults, weight, onExport, onQuickExport }) => {
@@ -23,15 +25,16 @@ const ExportSection: React.FC<ExportSectionProps> = ({ events, labResults, weigh
     const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
     const [jsonCopied, setJsonCopied] = useState(false);
+    const [legacyCompat, setLegacyCompat] = useState(false);
 
     const hasData = events.length > 0 || labResults.length > 0;
 
     const handleJsonExport = async () => {
-        await onExport(false);
+        await onExport(false, undefined, legacyCompat);
     };
 
     const handleEncryptedExport = async () => {
-        const pw = await onExport(true, password || undefined);
+        const pw = await onExport(true, password || undefined, legacyCompat);
         if (pw) setGeneratedPassword(pw);
     };
 
@@ -44,7 +47,7 @@ const ExportSection: React.FC<ExportSectionProps> = ({ events, labResults, weigh
 
     const handleCopyJson = () => {
         if (onQuickExport) {
-            onQuickExport();
+            onQuickExport(legacyCompat);
             setJsonCopied(true);
             setTimeout(() => setJsonCopied(false), 2000);
         }
@@ -106,6 +109,20 @@ const ExportSection: React.FC<ExportSectionProps> = ({ events, labResults, weigh
                         {showEncrypted ? t('btn.cancel') : t('export.btn_encrypted')}
                     </button>
                 ))}
+                {/* Qualifies the JSON rows above, so it lives in the same list.
+                    A switch is its own control — this row is not a button. */}
+                <div className="li" style={{ cursor: 'default' }}>
+                    <span className="ic"><Icon icon={RotateCcw} size={22} /></span>
+                    <div className="t">
+                        <b>{t('export.legacy_compat')}</b>
+                        <span className="s" style={{ whiteSpace: 'normal' }}>{t('export.legacy_compat_desc')}</span>
+                    </div>
+                    <Switch
+                        checked={legacyCompat}
+                        onChange={setLegacyCompat}
+                        label={t('export.legacy_compat')}
+                    />
+                </div>
             </SegmentedList>
 
             {showEncrypted && (

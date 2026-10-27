@@ -31,7 +31,20 @@ export interface RuntimeLicence {
     licence: string;
 }
 
-export const GENERATED_AT = "2026-10-23";
+export interface CalibrationReference {
+    /** Short in-text form, e.g. "Doll et al. (2022)". */
+    cite: string;
+    title: string;
+    journal: string;
+    pmid: string;
+    doi: string | null;
+    /** The publisher (DOI) or PubMed page. */
+    url: string;
+    /** i18n key saying what this paper is used for. */
+    roleKey: string;
+}
+
+export const GENERATED_AT = "2026-10-27";
 
 export const UPSTREAM_WORKS: UpstreamWork[] = [
     {
@@ -87,6 +100,45 @@ export const UPSTREAM_WORKS: UpstreamWork[] = [
         "licence": "MIT",
         "noLicence": false,
         "copyright": "Copyright (c) 2025 Transmtf Team"
+    }
+];
+
+export const CALIBRATION_REFERENCES: CalibrationReference[] = [
+    {
+        "cite": "Doll et al. (2022)",
+        "title": "Pharmacokinetics of Sublingual Versus Oral Estradiol in Transgender Women",
+        "journal": "Endocrine Practice 28(3):237–242",
+        "pmid": "34781041",
+        "doi": "10.1016/j.eprac.2021.11.081",
+        "roleKey": "licence.ref_doll",
+        "url": "https://doi.org/10.1016/j.eprac.2021.11.081"
+    },
+    {
+        "cite": "Cirrincione et al. (2021)",
+        "title": "Sublingual Estradiol Is Associated with Higher Estrone Concentrations than Transdermal or Injectable Preparations in Transgender Women and Gender Nonbinary Adults",
+        "journal": "LGBT Health 8(2):125–132",
+        "pmid": "33449828",
+        "doi": "10.1089/lgbt.2020.0249",
+        "roleKey": "licence.ref_cirrincione",
+        "url": "https://doi.org/10.1089/lgbt.2020.0249"
+    },
+    {
+        "cite": "Casper & Yen (1981)",
+        "title": "Rapid absorption of micronized estradiol-17β following sublingual administration",
+        "journal": "Obstetrics & Gynecology 57(1):62–64",
+        "pmid": "7454177",
+        "doi": null,
+        "roleKey": "licence.ref_casper",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/7454177/"
+    },
+    {
+        "cite": "Kuhl (2005)",
+        "title": "Pharmacology of estrogens and progestogens: influence of different routes of administration",
+        "journal": "Climacteric 8 Suppl 1:3–63",
+        "pmid": "16112947",
+        "doi": "10.1080/13697130500148875",
+        "roleKey": "licence.ref_kuhl",
+        "url": "https://doi.org/10.1080/13697130500148875"
     }
 ];
 

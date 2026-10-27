@@ -213,6 +213,14 @@ const DoseForm: React.FC<DoseFormProps> = ({
         return typeof theta === 'number' ? tierForTheta(theta) : 2;
     });
 
+    // A record imported with an explicit theta keeps computing that theta, while the
+    // pills above can only show the nearest tier. Surface the gap so the number on
+    // screen is not mistaken for the tier's.
+    const [slStoredTheta, setSlStoredTheta] = useState<number | null>(() => {
+        const theta = eventToEdit?.extras?.[ExtraKey.sublingualTheta];
+        return typeof theta === 'number' && Number.isFinite(theta) ? theta : null;
+    });
+
     const [patchWearDays, setPatchWearDays] = useState(() => {
         const wearH = eventToEdit?.extras?.[ExtraKey.patchWearH];
         return typeof wearH === 'number' && wearH > 0 ? trimNumber(wearH / 24) : '';
@@ -418,6 +426,7 @@ const DoseForm: React.FC<DoseFormProps> = ({
         const tier = record?.extras?.[ExtraKey.sublingualTier];
         const theta = record?.extras?.[ExtraKey.sublingualTheta];
         setSlTier(typeof tier === 'number' ? tier : typeof theta === 'number' ? tierForTheta(theta) : 2);
+        setSlStoredTheta(typeof theta === 'number' && Number.isFinite(theta) ? theta : null);
 
         const wearH = record?.extras?.[ExtraKey.patchWearH];
         setPatchWearDays(typeof wearH === 'number' && wearH > 0 ? trimNumber(wearH / 24) : '');
@@ -534,6 +543,8 @@ const DoseForm: React.FC<DoseFormProps> = ({
             const tier = tpl.extras?.[ExtraKey.sublingualTier];
             const theta = tpl.extras?.[ExtraKey.sublingualTheta];
             setSlTier(typeof tier === 'number' ? tier : typeof theta === 'number' ? tierForTheta(theta) : 2);
+            // The template is written back as a tier, so no stored theta survives it.
+            setSlStoredTheta(null);
         }
         const wearH = tpl.extras?.[ExtraKey.patchWearH];
         setPatchWearDays(typeof wearH === 'number' && wearH > 0 ? trimNumber(wearH / 24) : '');
@@ -567,6 +578,9 @@ const DoseForm: React.FC<DoseFormProps> = ({
             setGelCoApplied(snap.gelCoApplied);
             setGelWashHours(snap.gelWashHours);
             setSlTier(snap.slTier);
+            // The hint belongs to the record being edited, not to the template.
+            const restoredTheta = eventToEdit?.extras?.[ExtraKey.sublingualTheta];
+            setSlStoredTheta(typeof restoredTheta === 'number' && Number.isFinite(restoredTheta) ? restoredTheta : null);
             setPatchWearDays(snap.patchWearDays);
         }
         preTplRef.current = null;
@@ -934,6 +948,11 @@ const DoseForm: React.FC<DoseFormProps> = ({
                             </button>
                         ))}
                     </div>
+                    {slStoredTheta !== null && (
+                        <span className="s" style={{ padding: '0 2px 2px' }}>
+                            {t('m3e.field.sub_imported_theta').replace('{x}', slStoredTheta.toFixed(3))}
+                        </span>
+                    )}
                 </div>
             ),
         });

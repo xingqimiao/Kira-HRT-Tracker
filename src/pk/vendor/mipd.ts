@@ -50,7 +50,7 @@ import {
     findPatchRemovalForApply,
 } from './pk';
 import { convertToPgMl } from './calibration';
-import { absorbedThenEliminated, patchAmount } from '../kernels.ts';
+import { absorbedThenEliminated, patchAmount, e2VolumeWeightKG } from '../kernels.ts';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -215,7 +215,7 @@ export function mipdDrugE2AtTimeSorted(
     }
 
     const weight = weightAtTimeH(sortedEvents, timeH);
-    const volML = CorePK.vdPerKG * weight * 1000;
+    const volML = CorePK.vdPerKG * e2VolumeWeightKG(weight) * 1000;
     return Math.max(0, (totalMG * 1e9) / volML * s);
 }
 

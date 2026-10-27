@@ -1,7 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
+import Switch from './Switch';
 import { useTranslation } from '../contexts/LanguageContext';
-import { ChevronDown, ChevronUp, Check, Copy } from '../icons';
+import { ChevronDown, ChevronUp, Check, Copy, TestTube2 } from '../icons';
 import { SegmentedList, SegmentedListItem } from '../ui/proto';
 import { Icon as SpriteIcon } from '../ui/SvgDefs';
 
@@ -25,13 +26,28 @@ interface ImportSectionProps {
     ) => boolean | Promise<boolean>;
     /** Counts the payload without applying it. */
     onPreview?: (data: string | ArrayBuffer) => Promise<ImportPreview | null>;
+    /**
+     * Plaintext that only became readable after the password step.
+     *
+     * A protected file cannot be counted before it is opened, so the importer
+     * hands the decrypted text back here and the ordinary review runs on it —
+     * including the legacy-analyte switch, which a password would otherwise hide.
+     */
+    review?: { data: string; nonce: number } | null;
+    /** Called once `review` has been turned into a preview, so it is not replayed. */
+    onReviewConsumed?: () => void;
 }
 
 /**
  * Import, in two steps: read/count, then confirm. The file is never merged on
  * the same tap that chose it.
  */
-const ImportSection: React.FC<ImportSectionProps> = ({ onImportJson, onPreview }) => {
+const ImportSection: React.FC<ImportSectionProps> = ({
+    onImportJson,
+    onPreview,
+    review,
+    onReviewConsumed,
+}) => {
     const { t } = useTranslation();
     const [showPaste, setShowPaste] = useState(false);
     const [text, setText] = useState('');
@@ -40,6 +56,8 @@ const ImportSection: React.FC<ImportSectionProps> = ({ onImportJson, onPreview }
     const [busy, setBusy] = useState(false);
     const [legacyCompat, setLegacyCompat] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    /** The review already shown, so a re-render cannot replay it. */
+    const consumedReview = useRef<number | null>(null);
 
     const begin = async (data: string | ArrayBuffer) => {
         if (!onPreview) {
@@ -80,6 +98,15 @@ const ImportSection: React.FC<ImportSectionProps> = ({ onImportJson, onPreview }
         e.target.value = '';
     };
 
+    // A password-protected file reaches its review only after decryption, which
+    // happens outside this component. The nonce guard also absorbs StrictMode's
+    // double effect: the ref survives the remount, so the second run is a no-op.
+    useEffect(() => {
+        if (!review || consumedReview.current === review.nonce) return;
+        consumedReview.current = review.nonce;
+        void begin(review.data).finally(() => onReviewConsumed?.());
+    }, [review, onReviewConsumed]);
+
     if (preview) {
         return (
             <div className="d-col" style={{ gap: 12 }}>
@@ -89,31 +116,26 @@ const ImportSection: React.FC<ImportSectionProps> = ({ onImportJson, onPreview }
                     <SegmentedListItem sprite="tube" title={`${preview.labs}`} subtitle={t('lab.title')} />
                 </SegmentedList>
                 {(preview.legacyLabs ?? 0) > 0 && (
-                    <label
-                        className="card"
-                        style={{ display: 'flex', gap: 10, padding: 12, alignItems: 'flex-start', cursor: 'pointer' }}
-                    >
-                        <input
-                            type="checkbox"
-                            checked={legacyCompat}
-                            onChange={e => setLegacyCompat(e.target.checked)}
-                            style={{ marginTop: 3, flex: 'none' }}
-                        />
-                        <span>
-                            <b style={{ display: 'block' }}>
-                                {t('import.legacy_analyte').replace('{n}', String(preview.legacyLabs))}
-                            </b>
-                            <span className="sub" style={{ fontSize: 12, lineHeight: 1.5 }}>
-                                {t('import.legacy_analyte_hint')}
-                            </span>
-                        </span>
-                    </label>
+                    <SegmentedList>
+                        <div className="li" style={{ cursor: 'default' }}>
+                            <span className="ic p"><Icon icon={TestTube2} size={22} /></span>
+                            <div className="t">
+                                <b>{t('import.legacy_analyte').replace('{n}', String(preview.legacyLabs))}</b>
+                                <span className="s" style={{ whiteSpace: 'normal' }}>{t('import.legacy_analyte_hint')}</span>
+                            </div>
+                            <Switch
+                                checked={legacyCompat}
+                                onChange={setLegacyCompat}
+                                label={t('import.legacy_analyte').replace('{n}', String(preview.legacyLabs))}
+                            />
+                        </div>
+                    </SegmentedList>
                 )}
                 <div style={{ display: 'flex', gap: 8 }}>
                     <button
                         type="button"
                         onClick={() => { setPreview(null); setPending(null); setLegacyCompat(false); }}
-                        className="btn t"
+                        className="btn x"
                         style={{ flex: 1 }}
                     >
                         {t('btn.cancel')}

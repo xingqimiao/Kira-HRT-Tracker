@@ -30,7 +30,7 @@ interface LicenceSettingsProps {
  * app does still descend from. See `THIRD-PARTY-LICENSES.md` before deploying
  * publicly.
  */
-import { UPSTREAM_WORKS, RUNTIME_LICENCES, GENERATED_AT } from '../licences.generated';
+import { UPSTREAM_WORKS, RUNTIME_LICENCES, CALIBRATION_REFERENCES, GENERATED_AT } from '../licences.generated';
 
 const LicenceSettings: React.FC<LicenceSettingsProps> = ({ onBack, appVersion }) => {
     const { t } = useTranslation();
@@ -97,6 +97,32 @@ const LicenceSettings: React.FC<LicenceSettingsProps> = ({ onBack, appVersion })
                                         {work.url.replace(/^https:\/\//, '')}
                                     </button>
                                 )}
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="lab" style={{ marginTop: 4 }}>{t('licence.refs_title')}</div>
+                    <div className="list">
+                        {CALIBRATION_REFERENCES.map(ref => (
+                            <div
+                                key={ref.cite}
+                                className="li"
+                                style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6, padding: '14px 16px', cursor: 'default' }}
+                            >
+                                <b style={{ fontSize: 15.5, lineHeight: 1.3 }}>{ref.cite}</b>
+                                <p className="sub" style={{ margin: 0, lineHeight: 1.55 }}>{ref.title}</p>
+                                <p className="sub" style={{ margin: 0, fontSize: 12 }}>
+                                    {ref.journal} · PMID {ref.pmid}
+                                </p>
+                                <p className="sub" style={{ margin: 0, lineHeight: 1.55 }}>{t(ref.roleKey)}</p>
+                                <button
+                                    type="button"
+                                    onClick={() => void openExternalUrl(ref.url)}
+                                    className="lic-link"
+                                >
+                                    <Icon icon={ExternalLink} size={13} />
+                                    {ref.url.replace(/^https:\/\//, '')}
+                                </button>
                             </div>
                         ))}
                     </div>

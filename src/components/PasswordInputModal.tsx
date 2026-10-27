@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from '../contexts/LanguageContext';
-import { useEscape } from '../hooks/useEscape';
-import { usePresence } from '../hooks/usePresence';
+import { AdaptiveSheet } from '../ui/proto';
 
 interface PasswordInputModalProps {
     isOpen: boolean;
@@ -15,58 +14,64 @@ interface PasswordInputModalProps {
     masked?: boolean;
 }
 
+/**
+ * The backup password prompt, on the same AdaptiveSheet as every other dialog.
+ *
+ * It used to carry the retired `modal-overlay`/`modal-card` shell, so the one
+ * step that opens an encrypted backup looked like it came from the previous
+ * build while the import page around it was M3E. Escape and system back are the
+ * sheet's own concern now, not this component's duplicated handlers.
+ */
 const PasswordInputModal = ({ isOpen, onClose, onConfirm, title, description, error, loading, masked }: PasswordInputModalProps) => {
     const { t } = useTranslation();
     const [password, setPassword] = useState("");
-
-    useEscape(onClose, isOpen);
 
     useEffect(() => {
         if (isOpen) setPassword("");
     }, [isOpen]);
 
-    const { mounted, state } = usePresence(isOpen, 200);
-
-    if (!mounted) return null;
-
     const submit = () => { if (password && !loading) onConfirm(password); };
 
     return (
-        <div className="modal-overlay z-[60] p-4" data-state={state}>
-            <div className="modal-shell">
-                <div className="modal-card">
-                    <h3 className="modal-title text-center">{title ?? t('import.password_title')}</h3>
-                    <p className="text-xs text-muted mb-4 text-center leading-relaxed">{description ?? t('import.password_desc')}</p>
-
+        <AdaptiveSheet
+            open={isOpen}
+            onClose={onClose}
+            title={title ?? t('import.password_title')}
+            closeLabel={t('btn.cancel')}
+            footer={
+                <div className="hrow" style={{ gap: 8 }}>
+                    <button type="button" onClick={onClose} className="btn x" style={{ flex: 1 }}>
+                        {t('btn.cancel')}
+                    </button>
+                    <button type="button" onClick={submit} disabled={!password || loading} className="btn" style={{ flex: 1 }}>
+                        {t('btn.ok')}
+                    </button>
+                </div>
+            }
+        >
+            <div className="d-col" style={{ gap: 12 }}>
+                <p className="sub" style={{ margin: 0, fontSize: 13, lineHeight: 1.6 }}>
+                    {description ?? t('import.password_desc')}
+                </p>
+                <div className="fld" style={{ height: 48, borderRadius: 16 }}>
                     <input
+                        autoFocus
                         type={masked ? 'password' : 'text'}
                         value={password}
                         onChange={e => setPassword(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') submit(); }}
-                        className="input-base font-mono text-center mb-2"
-                        style={{ fontSize: '16px' }}
                         placeholder={t('auth.password')}
                         autoComplete="current-password"
-                        autoFocus
+                        style={{ fontSize: 15 }}
                     />
-
-                    {error && (
-                        <p className="text-xs text-cos-error  mb-2 text-center">{error}</p>
-                    )}
-
-                    <div className="flex gap-2 mt-2">
-                        <button onClick={onClose} className="btn-secondary flex-1">{t('btn.cancel')}</button>
-                        <button
-                            onClick={submit}
-                            disabled={!password || loading}
-                            className="btn-primary flex-1"
-                        >
-                            {t('btn.ok')}
-                        </button>
-                    </div>
                 </div>
+                {error && (
+                    <p className="sub" role="alert" style={{ color: 'var(--err)', margin: 0 }}>
+                        {error}
+                    </p>
+                )}
             </div>
-        </div>
+        </AdaptiveSheet>
     );
 };
 

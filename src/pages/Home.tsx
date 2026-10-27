@@ -6,6 +6,7 @@ import ResultChart from '../components/ResultChart';
 import FitText from '../components/FitText';
 import EstimateInfoModal from '../components/EstimateInfoModal';
 import NoticeModal from '../components/NoticeModal';
+import ModelFixNotice from '../components/ModelFixNotice';
 import { DoseTemplate } from '../components/DoseFormModal';
 import { rememberTransformSource } from '../ui/ContainerTransform';
 import { useHRTMode } from '../contexts/HRTModeContext';
@@ -13,6 +14,7 @@ import { AppTheme, ChartStyle } from '../constants';
 import { useTranslation } from '../contexts/LanguageContext';
 import { getShareCopy } from '../i18n/share';
 import { formatRelativeParts } from '../utils/helpers';
+import { get as secureGet, set as secureSet } from '../utils/secureStore';
 import { readMedPlans, planStatuses, planQuickEntries, plansForMode, activePatches, patchRemovalEvent, type PlanStatus } from '../utils/medPlan';
 import { templateToEvent } from '../utils/templateToEvent';
 import {
@@ -157,6 +159,41 @@ const Home: React.FC<HomeProps> = ({
         }
     }, [absurd]);
 
+    // The 2.0 sublingual peak fix changed numbers users had already seen. Say so
+    // once per install — decided on the first open only, so a sublingual dose added
+    // later does not surface an apology for a bug that user never met. Gel, patch,
+    // injection and oral curves never moved, so those accounts have nothing to read.
+    const [modelFixOpen, setModelFixOpen] = React.useState(false);
+    const modelFixChecked = React.useRef(false);
+    const modelFixEvents = React.useRef(events);
+    modelFixEvents.current = events;
+    React.useEffect(() => {
+        const KEY = 'hrt-seen-model-fix-v1';
+        const decide = () => {
+            if (modelFixChecked.current) return;
+            modelFixChecked.current = true;
+            // Marked either way: the question is asked once, on this first open.
+            secureSet(KEY, '1');
+            if (modelFixEvents.current.some(e => e.route === Route.sublingual)) setModelFixOpen(true);
+        };
+
+        if (secureGet(KEY)) {
+            modelFixChecked.current = true;
+            return;
+        }
+        // Let the overview paint, and give storage a bounded time to decrypt. The
+        // deadline matters for accounts with no doses at all: they must be marked
+        // as answered too, or their first sublingual dose months later would ask.
+        const earliest = window.setTimeout(() => {
+            if (modelFixEvents.current.length > 0) decide();
+        }, 1200);
+        const deadline = window.setTimeout(decide, 4000);
+        return () => {
+            window.clearTimeout(earliest);
+            window.clearTimeout(deadline);
+        };
+    }, []);
+
     const antiandrogen = React.useMemo(
         () => antiandrogenReading(events, nowMs / 3_600_000, aaChartMode),
         [events, nowMs, aaChartMode],
@@ -290,6 +327,7 @@ const Home: React.FC<HomeProps> = ({
                 bodyKey="modal.absurd.body"
                 icon={<span style={{ color: 'var(--warn)', display: 'inline-flex' }}><Icon icon={AlertTriangle} weight="Filled" size={28} /></span>}
             />
+            <ModelFixNotice isOpen={modelFixOpen} onClose={() => setModelFixOpen(false)} />
             <OverdueSheet statuses={planState.statuses} isOpen={showOverdue} onClose={() => setShowOverdue(false)} t={t} />
 
             <AdaptiveSheet open={quickRecordOpen} onClose={onQuickRecordClose} title={t('quickadd.button')}>
@@ -533,8 +571,20 @@ const Home: React.FC<HomeProps> = ({
                                     <p className="sub" style={{ margin: '0 6px', color: 'var(--warn)' }}>{t(`advisory.hormone_${hormoneAdvisory.kind}.body`)}</p>
                                 )}
                                 {showCalibrate && (
-                                    <button type="button" className="btn x" style={{ alignSelf: 'flex-start', color: 'var(--var)' }} onClick={onNavigateToLab}>
-                                        <Icon icon={Info} size={13} />{t('advisory.calibrate.cta')}
+                                    <button
+                                        type="button"
+                                        className="btn x"
+                                        style={{
+                                            alignSelf: 'flex-start', height: 'auto', minHeight: 44,
+                                            borderRadius: 999, padding: '8px 14px',
+                                            justifyContent: 'flex-start', textAlign: 'left',
+                                            whiteSpace: 'normal', lineHeight: 1.35,
+                                            fontWeight: 500, color: 'var(--var)',
+                                        }}
+                                        onClick={onNavigateToLab}
+                                    >
+                                        <Icon icon={Info} size={14} className="shrink-0" />
+                                        <span>{t('advisory.calibrate.cta')}</span>
                                     </button>
                                 )}
                             </div>

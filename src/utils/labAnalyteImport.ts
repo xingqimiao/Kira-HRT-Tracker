@@ -47,6 +47,33 @@ export function backfillLegacyLabAnalyte(
 }
 
 /**
+ * How many lab records in an import payload would land as "type missing".
+ *
+ * This is the number the import preview offers the legacy switch for, and the
+ * same number the post-decryption path uses to decide whether a password-protected
+ * backup needs that review at all. One predicate for both, so the switch cannot
+ * appear for a count the import would not act on.
+ *
+ * Accepts both payload shapes the importer understands: the multi-mode block and
+ * the flat v1 form.
+ */
+export function countLegacyLabs(payload: unknown): number {
+    const p = payload as
+        | { modes?: Record<string, { labResults?: unknown[] }>; labResults?: unknown[] }
+        | null
+        | undefined;
+    const labs = p?.modes
+        ? Object.values(p.modes).flatMap(b => (Array.isArray(b?.labResults) ? b.labResults : []))
+        : Array.isArray(p?.labResults) ? p.labResults : [];
+    return labs.filter(raw => {
+        if (!raw || typeof raw !== 'object') return false;
+        const l = raw as { analyte?: unknown; monitoringOnly?: unknown };
+        if (l.monitoringOnly === true) return false;
+        return l.analyte !== 'E2' && l.analyte !== 'T' && l.analyte !== 'unknown';
+    }).length;
+}
+
+/**
  * Normalise the analyte field of an imported lab record.
  *
  * The default is deliberately conservative: an explicit E2/T/unknown is preserved,
@@ -56,7 +83,7 @@ export function backfillLegacyLabAnalyte(
  *
  * The one exception is an explicit, user-confirmed legacy import
  * (`legacyAnalyteFromUnit`): backups written before the analyte field existed only
- * carry a unit, so the import preview offers a checkbox that maps
+ * carry a unit, so the import review offers a switch that maps
  * pg/ml + pmol/l -> E2 and ng/dl + nmol/l -> T for that file. It defaults to on,
  * matching the upgrade migration applied to stored records, and never applies to
  * an explicit `unknown`.

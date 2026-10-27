@@ -135,6 +135,56 @@ const UPSTREAM_WORKS = [
     },
 ];
 
+/**
+ * The clinical literature the model's sublingual parameters are calibrated against.
+ *
+ * Separate from `UPSTREAM_WORKS` because these are not works this app descends
+ * from or reuses: they are the published measurements a reader can check the
+ * predictions against. A citation is not a licence, and the page must not imply
+ * one — it says what each paper is used for, in the same card style.
+ *
+ * `url` prefers the DOI (the publisher's version) and falls back to PubMed.
+ */
+const CALIBRATION_REFERENCES = [
+    {
+        cite: 'Doll et al. (2022)',
+        title: 'Pharmacokinetics of Sublingual Versus Oral Estradiol in Transgender Women',
+        journal: 'Endocrine Practice 28(3):237–242',
+        pmid: '34781041',
+        doi: '10.1016/j.eprac.2021.11.081',
+        roleKey: 'licence.ref_doll',
+    },
+    {
+        cite: 'Cirrincione et al. (2021)',
+        title: 'Sublingual Estradiol Is Associated with Higher Estrone Concentrations than Transdermal or Injectable Preparations in Transgender Women and Gender Nonbinary Adults',
+        journal: 'LGBT Health 8(2):125–132',
+        pmid: '33449828',
+        doi: '10.1089/lgbt.2020.0249',
+        roleKey: 'licence.ref_cirrincione',
+    },
+    {
+        cite: 'Casper & Yen (1981)',
+        title: 'Rapid absorption of micronized estradiol-17β following sublingual administration',
+        journal: 'Obstetrics & Gynecology 57(1):62–64',
+        pmid: '7454177',
+        doi: null,
+        roleKey: 'licence.ref_casper',
+    },
+    {
+        cite: 'Kuhl (2005)',
+        title: 'Pharmacology of estrogens and progestogens: influence of different routes of administration',
+        journal: 'Climacteric 8 Suppl 1:3–63',
+        pmid: '16112947',
+        doi: '10.1080/13697130500148875',
+        roleKey: 'licence.ref_kuhl',
+    },
+].map((ref) => ({
+    ...ref,
+    url: ref.doi
+        ? `https://doi.org/${ref.doi}`
+        : `https://pubmed.ncbi.nlm.nih.gov/${ref.pmid}/`,
+}));
+
 function readLicenceField(name) {
     const pkgPath = join(ROOT, 'node_modules', name, 'package.json');
     if (!existsSync(pkgPath)) return null;
@@ -215,9 +265,24 @@ const out = [
     '    licence: string;',
     '}',
     '',
+    'export interface CalibrationReference {',
+    '    /** Short in-text form, e.g. "Doll et al. (2022)". */',
+    '    cite: string;',
+    '    title: string;',
+    '    journal: string;',
+    '    pmid: string;',
+    '    doi: string | null;',
+    '    /** The publisher (DOI) or PubMed page. */',
+    '    url: string;',
+    '    /** i18n key saying what this paper is used for. */',
+    '    roleKey: string;',
+    '}',
+    '',
     `export const GENERATED_AT = ${JSON.stringify(GENERATED_AT)};`,
     '',
     `export const UPSTREAM_WORKS: UpstreamWork[] = ${JSON.stringify(UPSTREAM_WORKS, null, 4)};`,
+    '',
+    `export const CALIBRATION_REFERENCES: CalibrationReference[] = ${JSON.stringify(CALIBRATION_REFERENCES, null, 4)};`,
     '',
     `export const RUNTIME_LICENCES: RuntimeLicence[] = ${JSON.stringify(RUNTIME_LICENCES, null, 4)};`,
     '',

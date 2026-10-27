@@ -20,7 +20,7 @@ import {
     type CalibrationModel,
     type CalibrationMode,
 } from './calibration';
-import { absorbedThenEliminated, patchAmount } from '../kernels.ts';
+import { absorbedThenEliminated, patchAmount, e2VolumeWeightKG } from '../kernels.ts';
 import {
     fitMipd,
     fitMipdTimeline,
@@ -235,7 +235,7 @@ function e2AtTimeWithThetaSorted(
     }
 
     const weight = weightAtTimeH(sortedEvents, timeH);
-    const plasmaVolML = CorePK.vdPerKG * weight * 1000;
+    const plasmaVolML = CorePK.vdPerKG * e2VolumeWeightKG(weight) * 1000;
     return Math.max(0, (totalMG * 1e9) / plasmaVolML * s);
 }
 

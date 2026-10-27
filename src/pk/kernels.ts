@@ -175,3 +175,28 @@ export function patchAmount(
     const absorbed = absorbedThenEliminated(worn, dose, bioavailability, kAbs, kElim);
     return t <= wearHours ? absorbed : absorbed * Math.exp(-kElim * (t - wearHours));
 }
+
+/** Weight below which the E2 distribution volume stops following the record. */
+const E2_VOLUME_FLOOR_KG = 45;
+/** Width of the smooth hand-over from the floor back onto the recorded weight. */
+const E2_VOLUME_BLEND_KG = 3;
+
+/**
+ * Body weight that drives the E2 distribution volume (`2 L/kg × weight`).
+ *
+ * Concentration is `amount / volume`, so scaling the volume linearly down to a
+ * very light record scales the whole curve up without limit: 39.6 kg multiplies a
+ * 70 kg prediction by 1.77. Early distribution volume does not follow body mass
+ * that closely, and the extrapolation is not evidence-based below ~45 kg, so the
+ * volume stops shrinking there and hands back onto the recorded weight over
+ * 45–48 kg (cubic Hermite: zero slope at the floor, slope 1 at the hand-over).
+ *
+ * At and above 48 kg this returns the weight unchanged, so every curve that
+ * already used a normal weight is bit-for-bit identical.
+ */
+export function e2VolumeWeightKG(weightKG: number): number {
+    if (!(weightKG > E2_VOLUME_FLOOR_KG)) return E2_VOLUME_FLOOR_KG;
+    if (weightKG >= E2_VOLUME_FLOOR_KG + E2_VOLUME_BLEND_KG) return weightKG;
+    const u = (weightKG - E2_VOLUME_FLOOR_KG) / E2_VOLUME_BLEND_KG;
+    return E2_VOLUME_FLOOR_KG + E2_VOLUME_BLEND_KG * (2 * u * u - u * u * u);
+}

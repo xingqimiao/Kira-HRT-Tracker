@@ -308,6 +308,16 @@ Our export carries `analyte` on every lab where it is known. Exports written bef
 field existed do not; they import as `unknown` unless the user accepts the one-time legacy
 unit mapping described in §4.2.1.
 
+### Legacy-compatible export
+
+The export screen offers a **旧版本兼容 / Legacy compatibility** switch for moving data
+back to a build from before 2.3.0. With it on, `analyte` is omitted from every lab record
+and nothing else changes: `format`, `meta.version: 3`, `modes`, `journal` and
+`monitoringOnly` are all fields that release already writes and accepts. (In fact
+`analyte` is the only difference between a 2.2.2 export and a current one.) `meta.version`
+deliberately stays `3` rather than being lowered — that is the shape actually produced,
+and 2.2.x both writes and reads it.
+
 ---
 
 ## 10. Encrypted files (optional)

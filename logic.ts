@@ -2,6 +2,7 @@ import {
     absorbedThenEliminated,
     patchAmount,
     sequentialChainAmount,
+    e2VolumeWeightKG,
 } from './src/pk/kernels.ts';
 
 // --- Types & Enums ---
@@ -2004,17 +2005,25 @@ const OralPK = {
     bioavailability: 0.030,
     kAbsSL: 1.8,
     kElimSL: 1.2,
+    // No separate hydrolysis compartment on the mucosal branch: kAbsSL is a lumped
+    // rate that already carries the observed 41-minute peak, so a second delay
+    // would double-count it. Non-zero here only if that evidence changes.
+    k2SL: 0,
     sublingualRecyclingShare: 0.004
 };
 
 // Define deterministic order for mapping integer tiers (0-3) to keys
 export const SL_TIER_ORDER = ["quick", "casual", "standard", "strict"] as const;
 
+// Standard (10-minute hold) is theta = 0.06: the Doll 2022 1 mg Cmax, brought
+// back to a 70 kg reference person and to the true 41-minute peak rather than the
+// study's first 60-minute sample, is ~195 pg/mL/mg E2 (~150 pg/mL/mg EV). The
+// other tiers keep their hold times and scale with it.
 export const SublingualTierParams = {
-    quick: { theta: 0.01, hold: 2 },
-    casual: { theta: 0.04, hold: 5 },
-    standard: { theta: 0.08, hold: 10 },
-    strict: { theta: 0.15, hold: 15 }
+    quick: { theta: 0.0075, hold: 2 },
+    casual: { theta: 0.03, hold: 5 },
+    standard: { theta: 0.06, hold: 10 },
+    strict: { theta: 0.1125, hold: 15 }
 };
 
 /**
@@ -2042,10 +2051,10 @@ export interface PKCustomParams {
     // E2 oral/sublingual
     e2_oral_bio: number;     // oral bioavailability fraction (default: 0.03)
     e2_oral_kAbs: number;    // oral absorption rate h⁻¹ (default: 0.045)
-    e2_sl_quick: number;     // SL theta — quick tier (default: 0.01)
-    e2_sl_casual: number;    // SL theta — casual tier (default: 0.04)
-    e2_sl_standard: number;  // SL theta — standard tier (default: 0.08)
-    e2_sl_strict: number;    // SL theta — strict tier (default: 0.15)
+    e2_sl_quick: number;     // SL theta — quick tier (default: 0.0075)
+    e2_sl_casual: number;    // SL theta — casual tier (default: 0.03)
+    e2_sl_standard: number;  // SL theta — standard tier (default: 0.06)
+    e2_sl_strict: number;    // SL theta — strict tier (default: 0.1125)
     e2_sl_kElim: number;     // SL mucosal rapid elimination rate h⁻¹ (default: 1.2)
     // E2 gel bioavailability per site & kinetics
     e2_gel_arm: number;      // Arm (default: 0.05)
@@ -2069,7 +2078,7 @@ export interface PKCustomParams {
 
 /**
  * 2026 Literature-anchored calibrated parameters (LC-MS/MS & physical conservation):
- * - Sublingual: separate mucosal rapid elimination (1.2/h), theta=0.08, oral recycling (0.4%)
+ * - Sublingual: separate mucosal rapid elimination (1.2/h), theta=0.06, oral recycling (0.4%)
  * - Oral: flip-flop kinetics (0.045/h, apparent half-life ~15.4h, steady-state accumulation 1.6x)
  * - Injections: EB/EV/EC/EN unified formation fraction 0.078 (physical F <= 1.0 conservation)
  * - Gel: faster skin transit (0.04/h)
@@ -2085,10 +2094,10 @@ export const DEFAULT_PK_PARAMS: PKCustomParams = {
     e2_ff_EU: 0.040,
     e2_oral_bio: 0.030,
     e2_oral_kAbs: 0.045,
-    e2_sl_quick: 0.01,
-    e2_sl_casual: 0.04,
-    e2_sl_standard: 0.08,
-    e2_sl_strict: 0.15,
+    e2_sl_quick: 0.0075,
+    e2_sl_casual: 0.03,
+    e2_sl_standard: 0.06,
+    e2_sl_strict: 0.1125,
     e2_sl_kElim: 1.2,
     e2_gel_arm: 0.05,
     e2_gel_thigh: 0.05,
@@ -2450,7 +2459,7 @@ function resolveParams(event: DoseEvent): PKParams {
             const k1_fast = OralPK.kAbsSL;
             const k1_slow = _activePKParams.e2_oral_kAbs;
             const k3_fast = _activePKParams.e2_sl_kElim;
-            const k2 = 0; // Rapid mucosal absorption + ester cleavage yields direct active E2
+            const k2 = OralPK.k2SL;
             const F_fast = toE2;
             const oralBio = _activePKParams.e2_oral_bio;
             const recycled = theta < 1.0 ? OralPK.sublingualRecyclingShare / (1.0 - theta) : 0;
@@ -2714,7 +2723,7 @@ export function runSimulation(events: DoseEvent[], bodyWeightKG: number): Simula
     // Different Vd for E2 and T. Anti-androgens are never simulated, so they have
     // no distribution volume here; `concPGmL_CPA` stays in the result shape only
     // because the chart and the share snapshot index it, and it is zeros throughout.
-    const plasmaVolumeML_E2 = CorePK.vdPerKG * bodyWeightKG * 1000; // E2: ~2.0 L/kg
+    const plasmaVolumeML_E2 = CorePK.vdPerKG * e2VolumeWeightKG(bodyWeightKG) * 1000; // E2: ~2.0 L/kg
     const plasmaVolumeML_T = T_CorePK.vdPerKG * bodyWeightKG * 1000; // T: ~1.0 L/kg
 
     const timeH: number[] = [];

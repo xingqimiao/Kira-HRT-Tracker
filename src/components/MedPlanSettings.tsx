@@ -14,7 +14,7 @@ import { rememberTransformSource } from '../ui/ContainerTransform';
 import { Icon as SpriteIcon } from '../ui/SvgDefs';
 import { cookie } from '../ui/cookie';
 import {
-    readMedPlans, writeMedPlans, sanitizeMedPlans, isSavedTemplate, type MedPlan, type PlanTime,
+    readMedPlans, writeMedPlans, sanitizeMedPlans, isSavedTemplate, type MedPlan,
     migrateOldRemindersToPlans,
     isPlanNotificationGranted, requestPlanNotificationPermission, openNativeNotificationSettings,
     canScheduleExactAlarms, openNativeExactAlarmSettings, maybePromptExactAlarms,
@@ -30,6 +30,7 @@ import {
     modeOf,
     routesFor,
     type CatId,
+    type DoseMode,
 } from './dose_form/catalog';
 import { reschedulePlanNotifications } from '../utils/medPlanNotify';
 import { syncPushRegistration } from '../utils/pushRegister';
@@ -43,7 +44,14 @@ const MODES: readonly PlanMode[] = ['times', 'hours', 'days'];
 const HERO_COOKIE_D = cookie(0, 0, 72, 9, 0.09).d;
 
 const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-const hhmmOf = (t: PlanTime) => `${String(t.hour).padStart(2, '0')}:${String(t.minute).padStart(2, '0')}`;
+
+/**
+ * Routes a plan can be scheduled on.
+ *
+ * A patch removal is a record that closes an application, not a dose anyone takes
+ * on a schedule, so it must not appear in the plan editor's route rail.
+ */
+const planRoutes = (mode: DoseMode, cat: CatId) => routesFor(mode, cat).filter(r => r.id !== Route.patchRemove);
 
 /**
  * The medication plan (用药方案), its own settings section.
@@ -92,9 +100,9 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
     const initialCat = categoryForEster(doseMode, Ester.E2);
     const [cat, setCat] = useState<CatId>(initialCat);
     const [ester, setEster] = useState<Ester>(Ester.E2);
-    const [route, setRoute] = useState<Route>(() => routesFor(doseMode, initialCat)[0].id);
+    const [route, setRoute] = useState<Route>(() => planRoutes(doseMode, initialCat)[0].id);
     const [cookieDeg, setCookieDeg] = useState(0);
-    const routeChoices = useMemo(() => routesFor(doseMode, cat).map(r => r.id), [doseMode, cat]);
+    const routeChoices = useMemo(() => planRoutes(doseMode, cat).map(r => r.id), [doseMode, cat]);
     const routeDrugs = useMemo(
         () => drugsFor(doseMode, cat).filter(d => d.route === route),
         [doseMode, cat, route],
@@ -246,7 +254,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
 
     const emptyForm = (): void => {
         const firstCat = categoryForEster(doseMode, Ester.E2);
-        const firstRoute = routesFor(doseMode, firstCat)[0].id;
+        const firstRoute = planRoutes(doseMode, firstCat)[0].id;
         const firstDrug = drugsFor(doseMode, firstCat).find(d => d.route === firstRoute);
         setCat(firstCat);
         setEster(firstDrug?.ester ?? Ester.E2);
@@ -271,7 +279,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
     const editPlan = (p: MedPlan): void => {
         setCat(categoryForEster(doseMode, p.ester));
         setEster(p.ester);
-        setRoute(p.route ?? routesFor(doseMode, categoryForEster(doseMode, p.ester))[0].id);
+        setRoute(p.route ?? planRoutes(doseMode, categoryForEster(doseMode, p.ester))[0].id);
         setAlias(p.alias ?? '');
         setDose(stripMG(p.dose ?? ''));
         setPatchMode(typeof p.extras?.[ExtraKey.releaseRateUGPerDay] === 'number' ? 'rate' : 'dose');
@@ -421,16 +429,31 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
     };
 
     const scheduleSummary = (p: MedPlan): string => {
-        const time = `${String(p.firstHour).padStart(2, '0')}:${String(p.firstMinute).padStart(2, '0')}`;
-        if (p.mode === 'times') {
-            const all = [time, ...(p.doseTimes ?? []).map(hhmmOf)];
-            return all.join(' · ');
-        }
-        if (p.mode === 'hours') return t('plan.sum.hours').replace('{h}', String(p.intervalHours ?? 24)).replace('{time}', time);
-        return t('plan.sum.days').replace('{d}', String(p.everyDays ?? 2)).replace('{time}', time);
+        // The clock time is deliberately absent: the next/next-next lines already
+        // carry it, and a fixed "01:00" in front of them read as a duplicate.
+        if (p.mode === 'times') return '';
+        if (p.mode === 'hours') return t('plan.sum.hours').replace('{h}', String(p.intervalHours ?? 24));
+        return t('plan.sum.days').replace('{d}', String(p.everyDays ?? 2));
     };
 
     const modeLabel = (m: PlanMode): string => m === 'times' ? t('plan.mode.times') : m === 'hours' ? t('plan.mode.hours') : t('plan.mode.days');
+
+    /**
+     * The list title.
+     *
+     * Gel and patch carry estradiol only, so "凝胶" / "贴片" name the plan on their
+     * own. A drug with a single route needs no route prefix (CPA is oral-only),
+     * while an ester that can be taken several ways says which one: 口服 雌二醇.
+     */
+    const planTitle = (p: MedPlan): string => {
+        if (p.alias) return p.alias;
+        if (p.route === Route.gel) return t('plan.title.gel');
+        if (p.route === Route.patchApply || p.route === Route.patchRemove) return t('plan.title.patch');
+        const cat = categoryForEster(doseMode, p.ester);
+        const routes = drugsFor(doseMode, cat).filter(d => d.ester === p.ester && d.route !== Route.patchRemove);
+        if (routes.length <= 1) return t(`ester.${p.ester}`);
+        return `${t(`plan.title.${p.route}`)} ${t(`ester.${p.ester}`)}`;
+    };
 
     useEffect(() => {
         // Never write `undefined` when the mode change temporarily leaves no
@@ -450,7 +473,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
     useEffect(() => {
         if (categoriesOf(doseMode).some(category => category.id === cat)) return;
         const nextCat = categoryForEster(doseMode, Ester.E2);
-        const nextRoute = routesFor(doseMode, nextCat)[0].id;
+        const nextRoute = planRoutes(doseMode, nextCat)[0].id;
         const nextDrug = drugsFor(doseMode, nextCat).find(d => d.route === nextRoute);
         setCat(nextCat);
         setRoute(nextRoute);
@@ -521,7 +544,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
     );
 
     const chooseCategory = (nextCat: CatId) => {
-        const nextRoute = routesFor(doseMode, nextCat)[0].id;
+        const nextRoute = planRoutes(doseMode, nextCat)[0].id;
         const nextDrug = drugsFor(doseMode, nextCat).find(d => d.route === nextRoute);
         setCat(nextCat);
         setRoute(nextRoute);
@@ -638,6 +661,19 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                 <SegmentedList label={t('plan.title')}>
                     {visiblePlans.map(p => {
                         const next = nextPlanOccurrences(p, nowMs, new Date().getTimezoneOffset(), 2);
+                        // The title already carries the drug name unless an alias
+                        // replaced it, and the route is not repeated anywhere else…
+                        const meta: string[] = [];
+                        if (p.alias) meta.push(t(`ester.${p.ester}`));
+                        if (p.route === Route.patchApply && typeof p.extras?.[ExtraKey.releaseRateUGPerDay] === 'number') {
+                            meta.push(`${p.extras[ExtraKey.releaseRateUGPerDay]} µg/day`);
+                        } else if (p.dose) {
+                            meta.push(p.dose);
+                        }
+                        const summary = scheduleSummary(p);
+                        if (summary) meta.push(summary);
+                        if (next[0]) meta.push(`${t('plan.next')}: ${formatNext(next[0])}`);
+                        if (next[1]) meta.push(`${t('plan.next_next')}: ${formatNext(next[1])}`);
                         return (
                             <div key={p.id} className="li" style={{ alignItems: 'flex-start', cursor: 'default' }}>
                                 <button
@@ -647,17 +683,10 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                                     style={{ flex: 1, minWidth: 0, textAlign: 'left', border: 0, background: 'none', font: 'inherit', color: 'inherit', padding: 0 }}
                                 >
                                     <b style={{ color: p.enabled ? 'var(--on)' : 'var(--var)' }}>
-                                        {p.alias || t(`ester.${p.ester}`)}
+                                        {planTitle(p)}
                                     </b>
                                     <span className="s" style={{ whiteSpace: 'normal' }}>
-                                        {t(`ester.${p.ester}`)}
-                                        {p.route ? ` · ${t(`route.${p.route}`)}` : ''}
-                                        {p.route === Route.patchApply && typeof p.extras?.[ExtraKey.releaseRateUGPerDay] === 'number'
-                                            ? ` · ${p.extras[ExtraKey.releaseRateUGPerDay]} µg/day`
-                                            : p.dose ? ` · ${p.dose}` : ''}
-                                        {` · ${scheduleSummary(p)}`}
-                                        {next[0] ? ` · ${t('plan.next')}: ${formatNext(next[0])}` : ''}
-                                        {next[1] ? ` · ${t('plan.next_next')}: ${formatNext(next[1])}` : ''}
+                                        {meta.join(' · ')}
                                     </span>
                                 </button>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none' }}>
