@@ -1,0 +1,17 @@
+[Unit]
+Description=Update the Caddy Cloudflare IP allowlist
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cloudflare-ips-update
+User=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/etc/caddy /var/lib/cloudflare-ips /var/log/cloudflare-ips /srv/hrt-backup-caddy/cloudflare-ips

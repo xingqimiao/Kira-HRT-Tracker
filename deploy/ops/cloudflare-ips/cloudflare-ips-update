@@ -1,0 +1,328 @@
+#!/usr/bin/env bash
+# cloudflare-ips-update — keep the managed Cloudflare allowlist in the api site current.
+#
+# The allowlist lives between two marker comments in the Caddyfile. This script
+# replaces only that one matcher line; everything else is copied byte-for-byte.
+# It never writes without a backup + validation, and restores the backup if the
+# reloaded configuration fails its post-checks.
+set -uo pipefail
+export LC_ALL=C
+
+CADDYFILE=/etc/caddy/Caddyfile
+STATE_DIR=/var/lib/cloudflare-ips
+LOG_DIR=/var/log/cloudflare-ips
+BACKUP_ROOT=/srv/hrt-backup-caddy/cloudflare-ips
+URL_V4=https://www.cloudflare.com/ips-v4
+URL_V6=https://www.cloudflare.com/ips-v6
+
+DRY_RUN=0; ALLOW_REMOVALS=0; NO_RELOAD=0; SIMULATE_FAIL=0; SOURCE_DIR=
+REMOVAL_GRACE_DAYS=${REMOVAL_GRACE_DAYS:-7}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) DRY_RUN=1 ;;
+    --allow-removals) ALLOW_REMOVALS=1 ;;
+    --no-reload) NO_RELOAD=1 ;;
+    --simulate-post-reload-failure) SIMULATE_FAIL=1 ;;
+    --removal-grace-days) REMOVAL_GRACE_DAYS=${2:-7}; shift ;;
+    --source-dir) SOURCE_DIR=${2:-}; shift ;;
+    --caddyfile) CADDYFILE=${2:-}; shift ;;
+    --state-dir) STATE_DIR=${2:-}; shift ;;
+    --log-dir) LOG_DIR=${2:-}; shift ;;
+    --backup-root) BACKUP_ROOT=${2:-}; shift ;;
+    -h|--help)
+      echo "usage: $0 [--dry-run] [--allow-removals] [--removal-grace-days N] [--no-reload] [--source-dir DIR] [--caddyfile FILE] [--state-dir DIR] [--log-dir DIR] [--backup-root DIR]"
+      exit 0 ;;
+    *) echo "unknown option: $1" >&2; exit 64 ;;
+  esac
+  shift
+done
+
+# A sandbox Caddyfile must never trigger a production reload.
+if [ "$CADDYFILE" != /etc/caddy/Caddyfile ]; then NO_RELOAD=1; fi
+if [ "$SIMULATE_FAIL" -eq 1 ] && [ "$NO_RELOAD" -eq 0 ]; then
+  echo "--simulate-post-reload-failure is only allowed with --no-reload" >&2
+  exit 64
+fi
+
+mkdir -p "$STATE_DIR" "$LOG_DIR"
+LOG="$LOG_DIR/updates.log"
+PENDING="$STATE_DIR/pending-removal.json"
+log() {
+  local line
+  line="$(date -u +%FT%TZ) $*"
+  printf '%s\n' "$line" >> "$LOG"
+  printf '%s\n' "$line"
+  logger -t cloudflare-ips "$*" 2>/dev/null || true
+}
+warn() {
+  local line
+  line="$(date -u +%FT%TZ) WARNING: $*"
+  printf '%s\n' "$line" >> "$LOG"
+  printf '%s\n' "$line"
+  logger -t cloudflare-ips -p user.warning "$*" 2>/dev/null || true
+}
+result() { # result <status> <added> <removed> <applied>
+  printf '{"at":"%s","status":"%s","added":%s,"removed":%s,"applied":%s}\n' \
+    "$(date -u +%FT%TZ)" "$1" "${2:-0}" "${3:-0}" "${4:-false}" > "$STATE_DIR/last-result.json"
+}
+notify() {
+  local url
+  [ -r /etc/cloudflare-ips/webhook-url ] || return 0
+  url=$(tr -d '[:space:]' < /etc/cloudflare-ips/webhook-url)
+  [ -n "$url" ] || return 0
+  curl -fsS -m 10 -X POST -H 'Content-Type: application/json' \
+    --data "{\"text\":$(printf '%s' "$*" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read()))')}" \
+    "$url" >/dev/null 2>&1 || log "webhook delivery failed"
+}
+
+exec 9>"$STATE_DIR/lock"
+flock -n 9 || { log "another run holds the lock; exiting"; exit 0; }
+
+tmp=$(mktemp -d) || { log "ERROR cannot create temp dir"; exit 1; }
+trap 'rm -rf "$tmp"' EXIT
+
+# --- 1. fetch ---------------------------------------------------------------
+if [ -n "$SOURCE_DIR" ]; then
+  if [ ! -r "$SOURCE_DIR/ips-v4" ] || [ ! -r "$SOURCE_DIR/ips-v6" ]; then
+    log "ERROR source-dir is missing ips-v4/ips-v6; nothing changed"
+    result error; exit 1
+  fi
+  cp "$SOURCE_DIR/ips-v4" "$tmp/v4"
+  cp "$SOURCE_DIR/ips-v6" "$tmp/v6"
+else
+  curl -fsS --proto '=https' --max-time 20 --retry 3 --retry-delay 2 -o "$tmp/v4" "$URL_V4" \
+    || { log "ERROR fetching $URL_V4 failed; nothing changed"; result error; exit 1; }
+  curl -fsS --proto '=https' --max-time 20 --retry 3 --retry-delay 2 -o "$tmp/v6" "$URL_V6" \
+    || { log "ERROR fetching $URL_V6 failed; nothing changed"; result error; exit 1; }
+fi
+
+# --- 2. validate + normalize ------------------------------------------------
+python3 - "$tmp/v4" "$tmp/v6" > "$tmp/new" 2> "$tmp/validate.err" <<'PY'
+import ipaddress, sys
+
+def load(path, family):
+    out = []
+    with open(path, encoding="utf-8") as fh:
+        for raw in fh:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            try:
+                net = ipaddress.ip_network(line, strict=True)
+            except ValueError:
+                sys.exit(f"invalid CIDR: {line}")
+            if net.version != family:
+                sys.exit(f"wrong address family: {line}")
+            if not (net.is_global and not net.is_private and not net.is_loopback
+                    and not net.is_link_local and not net.is_multicast
+                    and not net.is_reserved and not net.is_unspecified):
+                sys.exit(f"not a public unicast range: {line}")
+            out.append(net)
+    if len(out) != len(set(out)):
+        sys.exit("duplicate range in list")
+    return out
+
+v4 = load(sys.argv[1], 4)
+v6 = load(sys.argv[2], 6)
+# Cloudflare publishes roughly 15 v4 and 7 v6 networks; a short list means a
+# truncated or error page, and applying it would lock users out.
+if not 10 <= len(v4) <= 40:
+    sys.exit(f"implausible IPv4 count: {len(v4)}")
+if not 5 <= len(v6) <= 20:
+    sys.exit(f"implausible IPv6 count: {len(v6)}")
+for net in sorted(v4, key=lambda n: (int(n.network_address), n.prefixlen)):
+    print(net)
+for net in sorted(v6, key=lambda n: (int(n.network_address), n.prefixlen)):
+    print(net)
+PY
+rc=$?
+if [ "$rc" -ne 0 ]; then
+  log "ERROR validation rejected the fetched list (rc=$rc): $(tr '\n' ' ' < "$tmp/validate.err" | cut -c1-300)"
+  result error; exit 1
+fi
+log "validated: $(grep -c '\.' "$tmp/new") IPv4 + $(grep -c ':' "$tmp/new") IPv6 ranges"
+
+# --- 3. read the managed block ---------------------------------------------
+python3 - "$CADDYFILE" > "$tmp/current" 2> "$tmp/extract.err" <<'PY'
+import re, sys
+path = sys.argv[1]
+data = open(path, encoding="utf-8").read()
+lines = data.splitlines()
+begin = [i for i, l in enumerate(lines) if re.match(r"^\s*# BEGIN CLOUDFLARE-IPS\b", l)]
+end = [i for i, l in enumerate(lines) if re.match(r"^\s*# END CLOUDFLARE-IPS\b", l)]
+if len(begin) != 1 or len(end) != 1 or end[0] <= begin[0]:
+    sys.exit("marker pair missing, duplicated or out of order")
+block = lines[begin[0] + 1:end[0]]
+matchers = [l for l in block if re.match(r"^\s*@not_cloudflare\s+not\s+remote_ip\b", l)]
+if len(matchers) != 1:
+    sys.exit("expected exactly one @not_cloudflare remote_ip matcher inside the markers")
+tokens = matchers[0].split()
+ranges = tokens[tokens.index("remote_ip") + 1:]
+if not ranges:
+    sys.exit("matcher line has no ranges")
+print(" ".join(ranges))
+PY
+if [ $? -ne 0 ]; then
+  log "ERROR cannot read managed block: $(tr '\n' ' ' < "$tmp/extract.err" | cut -c1-300); nothing changed"
+  result error; exit 1
+fi
+tr ' ' '\n' < "$tmp/current" | sed '/^$/d' | sort > "$tmp/old.list"
+sed '/^$/d' "$tmp/new" | sort > "$tmp/new.list"
+
+# --- 4. compare ------------------------------------------------------------
+if cmp -s "$tmp/old.list" "$tmp/new.list"; then
+  # A pending removal that no longer appears is resolved (or was applied by hand).
+  rm -f "$PENDING"
+  log "no change: $(wc -l < "$tmp/new.list") ranges already current"
+  result no_change 0 0 false; exit 0
+fi
+comm -13 "$tmp/old.list" "$tmp/new.list" | sed 's/^/+ /' > "$tmp/diff"
+comm -23 "$tmp/old.list" "$tmp/new.list" | sed 's/^/- /' >> "$tmp/diff"
+added=$(comm -13 "$tmp/old.list" "$tmp/new.list" | wc -l)
+removed=$(comm -23 "$tmp/old.list" "$tmp/new.list" | wc -l)
+log "change detected: +$added -$removed"
+while IFS= read -r line; do log "  $line"; done < "$tmp/diff"
+
+# A removal is a *shrinking* trust boundary: applying it automatically would be
+# safe, but a fetch that omits ranges could lock users out, so the default is to
+# hold it for review — and then apply it once it has been pending long enough.
+# Holding a decommissioned range forever is its own risk, so the hold expires.
+APPLY_REMOVAL=0
+if [ "$removed" -gt 0 ]; then
+  fp=$(comm -23 "$tmp/old.list" "$tmp/new.list" | sha256sum | cut -c1-16)
+  prev_pair=$(python3 - "$PENDING" <<'PY'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    print(d.get("fingerprint", ""), int(d.get("firstSeen", 0)))
+except Exception:
+    print(" 0")
+PY
+)
+  prev_fp=${prev_pair% *}; prev_at=${prev_pair#* }
+  if [ "$ALLOW_REMOVALS" -ne 1 ] && [ -n "$prev_fp" ] && [ "$prev_fp" = "$fp" ] && [ "$prev_at" -gt 0 ]; then
+    age_days=$(( ($(date +%s) - prev_at) / 86400 ))
+    if [ "$age_days" -ge "$REMOVAL_GRACE_DAYS" ]; then
+      warn "removal has been pending ${age_days}d (>= ${REMOVAL_GRACE_DAYS}d); applying it now so an expired authorization does not persist"
+      APPLY_REMOVAL=1
+    fi
+  fi
+  if [ "$ALLOW_REMOVALS" -ne 1 ] && [ "$APPLY_REMOVAL" -ne 1 ]; then
+    cp "$tmp/diff" "$STATE_DIR/pending.diff"
+    if [ -z "$prev_fp" ] || [ "$prev_fp" != "$fp" ]; then
+      printf '{"fingerprint":"%s","firstSeen":%s}\n' "$fp" "$(date +%s)" > "$PENDING"
+    fi
+    warn "$removed range(s) would be removed; review $STATE_DIR/pending.diff; they are applied automatically after ${REMOVAL_GRACE_DAYS}d"
+    result pending_removal "$added" "$removed" false
+    notify "Cloudflare IP list: $removed removal(s) need review (auto-applies after ${REMOVAL_GRACE_DAYS}d)"
+    exit 3
+  fi
+fi
+
+if [ "$DRY_RUN" -eq 1 ]; then
+  log "dry-run: would apply +$added -$removed; nothing written"
+  result dry_run "$added" "$removed" false
+  exit 0
+fi
+
+# --- 5. build + validate the candidate -------------------------------------
+python3 - "$CADDYFILE" "$tmp/new" > "$tmp/Caddyfile.new" <<'PY'
+import re, sys
+path, newpath = sys.argv[1], sys.argv[2]
+ranges = open(newpath, encoding="utf-8").read().split()
+data = open(path, encoding="utf-8").read()
+trailing = data.endswith("\n")
+lines = data.splitlines()
+begin = [i for i, l in enumerate(lines) if re.match(r"^\s*# BEGIN CLOUDFLARE-IPS\b", l)]
+end = [i for i, l in enumerate(lines) if re.match(r"^\s*# END CLOUDFLARE-IPS\b", l)]
+if len(begin) != 1 or len(end) != 1:
+    sys.exit("marker pair missing or duplicated")
+indent = re.match(r"^(\s*)", lines[begin[0]]).group(1)
+matcher = indent + "@not_cloudflare not remote_ip " + " ".join(ranges)
+out = lines[:begin[0] + 1] + [matcher] + lines[end[0]:]
+sys.stdout.write("\n".join(out) + ("\n" if trailing else ""))
+PY
+if [ $? -ne 0 ]; then
+  log "ERROR could not build the candidate Caddyfile; nothing changed"
+  result error; exit 1
+fi
+
+CADDY_BIN=$(systemctl show caddy -p ExecStart --value 2>/dev/null | sed -n 's/.*path=\([^ ;]*\).*/\1/p')
+[ -x "$CADDY_BIN" ] || CADDY_BIN=/usr/bin/caddy
+if ! "$CADDY_BIN" validate --config "$tmp/Caddyfile.new" > "$tmp/validate.out" 2>&1; then
+  log "ERROR candidate config failed validation; nothing written: $(tail -1 "$tmp/validate.out")"
+  result error; exit 1
+fi
+log "candidate config validates with $CADDY_BIN"
+
+# --- 6. backup + atomic install -------------------------------------------
+ts=$(date -u +%Y%m%dT%H%M%SZ)
+backup="$BACKUP_ROOT/$ts"
+mkdir -p "$backup" || { log "ERROR cannot create backup dir; nothing changed"; result error; exit 1; }
+cp -a "$CADDYFILE" "$backup/Caddyfile" || { log "ERROR backup failed; nothing changed"; result error; exit 1; }
+install -m 644 -o root -g root "$tmp/Caddyfile.new" "$CADDYFILE.tmp.$$" \
+  && mv -f "$CADDYFILE.tmp.$$" "$CADDYFILE" \
+  || { log "ERROR atomic install failed; backup at $backup"; result error; exit 1; }
+log "installed new matcher; backup=$backup"
+
+# keep the last 10 backups
+find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d -name '20*' -printf '%T@ %p\n' 2>/dev/null \
+  | sort -nr | tail -n +11 | cut -d' ' -f2- | xargs -r rm -rf
+
+rollback() {
+  local why="$1"
+  log "ROLLBACK: $why"
+  install -m 644 -o root -g root "$backup/Caddyfile" "$CADDYFILE.tmp.$$" \
+    && mv -f "$CADDYFILE.tmp.$$" "$CADDYFILE" \
+    || { log "ROLLBACK FAILED: cannot restore $backup/Caddyfile"; result rollback_failed "$added" "$removed" false; exit 3; }
+  if [ "$NO_RELOAD" -eq 0 ]; then
+    systemctl reload caddy || { log "ROLLBACK FAILED: reload after restore failed"; result rollback_failed "$added" "$removed" false; exit 3; }
+    sleep 1
+    if curl -s -m 10 http://127.0.0.1:2019/config/ | grep -qF "$(head -1 "$tmp/old.list")" \
+       && [ "$(curl -s -o /dev/null -w '%{http_code}' -m 10 https://api.kiramyao.com/hrt/health)" = 200 ]; then
+      log "ROLLBACK OK: previous allowlist is live again"
+      result rolled_back "$added" "$removed" false
+      exit 2
+    fi
+    log "ROLLBACK FAILED: restored file is not live"; result rollback_failed "$added" "$removed" false; exit 3
+  fi
+  if cmp -s "$CADDYFILE" "$backup/Caddyfile"; then
+    log "ROLLBACK OK (file restored; no reload in sandbox mode)"
+    result rolled_back "$added" "$removed" false
+    exit 2
+  fi
+  log "ROLLBACK FAILED: file mismatch"; result rollback_failed "$added" "$removed" false; exit 3
+}
+
+# --- 7. reload + verify ----------------------------------------------------
+if [ "$NO_RELOAD" -eq 0 ]; then
+  systemctl reload caddy || rollback "systemctl reload failed"
+  sleep 1
+  live=$(curl -s -m 10 http://127.0.0.1:2019/config/ || true)
+  [ -n "$live" ] || rollback "admin API did not answer after reload"
+  tail_v4=$(grep '\.' "$tmp/new" | tail -1)
+  tail_v6=$(grep ':' "$tmp/new" | tail -1)
+  grep -qF "$tail_v4" <<< "$live" || rollback "new IPv4 range not present in the live config"
+  grep -qF "$tail_v6" <<< "$live" || rollback "new IPv6 range not present in the live config"
+  if [ "$(curl -s -o /dev/null -w '%{http_code}' -m 10 https://api.kiramyao.com/hrt/health)" != 200 ]; then
+    rollback "health check failed after reload"
+  fi
+  if curl -k -sS -m 5 --noproxy '*' --resolve api.kiramyao.com:443:127.0.0.1 \
+       -o /dev/null https://api.kiramyao.com/hrt/health 2>/dev/null; then
+    rollback "non-Cloudflare peer was not refused after reload"
+  fi
+  log "live config verified: new ranges present, gate intact, health 200"
+else
+  log "reload skipped (sandbox/no-reload); file updated in place"
+fi
+
+if [ "$SIMULATE_FAIL" -eq 1 ]; then
+  rollback "simulated post-update verification failure"
+fi
+
+rm -f "$PENDING"
+result applied "$added" "$removed" true
+log "applied: +$added -$removed; backup=$backup"
+notify "Cloudflare IP list updated: +$added -$removed"
+exit 0
