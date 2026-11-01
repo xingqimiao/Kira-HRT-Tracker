@@ -592,3 +592,219 @@ test('skipping the state does not hide a refusal', async () => {
   assert.equal(response.body.rejected?.[0]?.id, 'skip-bad');
   assert.ok(response.body.rejected?.[0]?.reason, 'the reason still travels');
 });
+
+test('a failed settings projection rolls back the entire batch', async () => {
+  const token = await newAccount();
+  const response = await call(base, '/api/records/batch', json({
+    records: [
+      { id: 'dose:transfem:rollback', takenAt: Date.now(), category: 'dose', data: { dose: 1 } },
+      { id: 'scalar:weight', takenAt: Date.now(), category: 'setting', data: { value: 70, stamp: 1e100 } },
+    ],
+    echoState: false,
+  }, token));
+  assert.equal(response.status, 500);
+  const read = await call(base, '/api/records', { headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(read.status, 200);
+  assert.ok(!read.body.records.some((r: { id: string }) => r.id === 'dose:transfem:rollback'));
+});
+
+test('after a restore, old clients cannot write records or settings', async () => {
+  const account = await registerAccount(base, { password: 'coresync-password' });
+  const { getPool } = await import('../src/db.ts');
+  await getPool().query('UPDATE users SET restore_generation = 1 WHERE id = $1', [account.userId]);
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` };
+  const record = { id: 'dose:transfem:guarded', takenAt: Date.now(), category: 'dose', data: { dose: 1 } };
+  for (const [path, method, body] of [
+    ['/api/records', 'POST', record],
+    ['/api/records/batch', 'POST', { records: [record], echoState: false }],
+    ['/api/records/dose%3Atransfem%3Aguarded', 'DELETE', undefined],
+    ['/api/settings', 'PATCH', { body_weight_kg: 70 }],
+  ] as const) {
+    const refused = await call(base, path, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) });
+    assert.equal(refused.status, 409, `${method} ${path} must reject a missing generation`);
+  }
+  const accepted = await call(base, '/api/records/batch', {
+    method: 'POST', headers: { ...headers, 'X-HRT-Restore-Generation': '1' },
+    body: JSON.stringify({ records: [record], echoState: false }),
+  });
+  assert.equal(accepted.status, 200);
+});
+
+/** A wire record shaped the way `payloadToRecords` produces one. */
+function wireDose(appId: string, doseMG: number) {
+  return {
+    id: `dose:transfem:${appId}`,
+    takenAt: Date.now(),
+    category: 'dose',
+    data: { id: appId, doseMG, updatedAt: Date.now() },
+  };
+}
+
+async function seed(token: string, records: unknown[]) {
+  const response = await call(base, '/api/records/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ records, echoState: false }),
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body.rejected, []);
+}
+
+test('a restore replaces the account with the snapshot and advances both counters', async () => {
+  const account = await registerAccount(base, { password: 'restore-password' });
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` };
+  await seed(account.token, [
+    wireDose('old-a', 1),
+    wireDose('old-b', 2),
+    { id: 'scalar:weight', takenAt: Date.now(), category: 'setting', data: { value: 70, stamp: Date.now() } },
+  ]);
+
+  const read = await call(base, '/api/records', { headers });
+  assert.equal(read.status, 200);
+  assert.equal(read.body.restoreGeneration, '0');
+
+  const restored = await call(base, '/api/restore', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ expectedVersion: read.body.syncVersion, records: [wireDose('new-only', 3)] }),
+  });
+  assert.equal(restored.status, 200);
+  assert.equal(restored.body.restoreGeneration, '1');
+  assert.ok(Number(restored.body.syncVersion) > read.body.syncVersion);
+
+  const after = await call(base, '/api/records', { headers });
+  assert.deepEqual(after.body.records.map((r: { id: string }) => r.id), ['dose:transfem:new-only']);
+  assert.equal(after.body.restoreGeneration, '1');
+  // The settings row is part of the replaced state: a weight the snapshot does not carry
+  // is gone rather than surviving the restore.
+  assert.equal(after.body.settings?.weight, undefined);
+});
+
+test('a restore made against a stale read is refused and changes nothing', async () => {
+  const account = await registerAccount(base, { password: 'restore-password' });
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` };
+  await seed(account.token, [wireDose('kept', 1)]);
+  const read = await call(base, '/api/records', { headers });
+
+  // Another device writes after this caller's read. The snapshot alone does not know it.
+  await seed(account.token, [wireDose('late-write', 2)]);
+
+  const refused = await call(base, '/api/restore', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ expectedVersion: read.body.syncVersion, records: [wireDose('replacement', 3)] }),
+  });
+  assert.equal(refused.status, 409);
+  assert.equal(refused.body.error, 'restore version mismatch');
+
+  const after = await call(base, '/api/records', { headers });
+  assert.deepEqual(
+    after.body.records.map((r: { id: string }) => r.id).sort(),
+    ['dose:transfem:kept', 'dose:transfem:late-write'],
+  );
+  assert.equal(after.body.restoreGeneration, '0', 'a refused restore must not advance the epoch');
+});
+
+test('a malformed snapshot is refused before anything is deleted', async () => {
+  const account = await registerAccount(base, { password: 'restore-password' });
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` };
+  await seed(account.token, [wireDose('survivor', 1)]);
+  const read = await call(base, '/api/records', { headers });
+
+  const attempt = async (records: unknown[]) => {
+    const response = await call(base, '/api/restore', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ expectedVersion: read.body.syncVersion, records }),
+    });
+    assert.equal(response.status, 400, JSON.stringify(records));
+  };
+  // The payload's own id must agree with the id it is filed under, or the app can never
+  // read it back.
+  await attempt([{ id: 'dose:transfem:x', category: 'dose', data: { id: 'y' } }]);
+  await attempt([{ id: 'dose:unknown:x', category: 'dose', data: { id: 'x' } }]);
+  await attempt([{ id: 'dose:transfem:x', category: 'lab', data: { id: 'x' } }]);
+  await attempt([wireDose('dup', 1), wireDose('dup', 2)]);
+  await attempt([{ id: 'scalar:weight', category: 'setting', data: { value: 70, stamp: 'now' } }]);
+
+  const after = await call(base, '/api/records', { headers });
+  assert.deepEqual(after.body.records.map((r: { id: string }) => r.id), ['dose:transfem:survivor']);
+});
+
+test('a restore refuses rather than dropping a record id this version cannot name', async () => {
+  const account = await registerAccount(base, { password: 'restore-password' });
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` };
+  await seed(account.token, [wireDose('known', 1)]);
+  // A single-record write accepts any id, so an account can hold one the app's sync
+  // protocol would never produce.
+  const legacy = await call(base, '/api/records', {
+    method: 'POST', headers,
+    body: JSON.stringify({ id: 'legacy-1', takenAt: Date.now(), category: 'dose', data: { dose: 1 } }),
+  });
+  assert.equal(legacy.status, 201);
+  const read = await call(base, '/api/records', { headers });
+
+  const refused = await call(base, '/api/restore', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ expectedVersion: read.body.syncVersion, records: [wireDose('replacement', 3)] }),
+  });
+  assert.equal(refused.status, 409);
+  const after = await call(base, '/api/records', { headers });
+  assert.equal(after.body.records.length, 2, 'nothing was deleted');
+});
+
+test('after a real restore, a device holding the old generation must re-read before it writes', async () => {
+  const account = await registerAccount(base, { password: 'restore-password' });
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` };
+  await seed(account.token, [wireDose('before', 1)]);
+  const read = await call(base, '/api/records', { headers });
+
+  const restored = await call(base, '/api/restore', {
+    method: 'POST', headers,
+    body: JSON.stringify({ expectedVersion: read.body.syncVersion, records: [wireDose('after', 2)] }),
+  });
+  assert.equal(restored.status, 200);
+
+  const stale = await call(base, '/api/records/batch', {
+    method: 'POST',
+    headers: { ...headers, 'X-HRT-Restore-Generation': '0' },
+    body: JSON.stringify({ records: [wireDose('ghost', 3)], echoState: false }),
+  });
+  assert.equal(stale.status, 409);
+
+  const relearned = await call(base, '/api/records', { headers });
+  assert.equal(relearned.body.restoreGeneration, '1');
+  const accepted = await call(base, '/api/records/batch', {
+    method: 'POST',
+    headers: { ...headers, 'X-HRT-Restore-Generation': relearned.body.restoreGeneration },
+    body: JSON.stringify({ records: [wireDose('after-relearn', 4)], echoState: false }),
+  });
+  assert.equal(accepted.status, 200);
+});
+
+test('a delta read made after a restore returns every restored row', async () => {
+  const account = await registerAccount(base, { password: 'restore-password' });
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` };
+  await seed(account.token, [wireDose('gone', 1)]);
+  const read = await call(base, '/api/records', { headers });
+
+  await call(base, '/api/restore', {
+    method: 'POST', headers,
+    body: JSON.stringify({
+      expectedVersion: read.body.syncVersion,
+      records: [wireDose('a', 1), wireDose('b', 2)],
+    }),
+  });
+
+  // The old watermark must not skip the replacement: the restore stamped every row
+  // above it, which is what makes a delta read the whole new set.
+  const delta = await call(base, `/api/records?since=${read.body.syncVersion}`, { headers });
+  assert.equal(delta.status, 200);
+  assert.deepEqual(
+    delta.body.records.map((r: { id: string }) => r.id).sort(),
+    ['dose:transfem:a', 'dose:transfem:b'],
+  );
+  assert.equal(delta.body.restoreGeneration, '1');
+});
+

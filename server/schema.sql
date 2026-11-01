@@ -553,6 +553,8 @@ ALTER TABLE records DROP COLUMN IF EXISTS client_id;
 -- because a page boundary must land *inside* a group of rows sharing one version: the
 -- same same-instant tie that `taken_at` paging needed `id` for.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS sync_version bigint NOT NULL DEFAULT 0;
+-- Restore epochs default to zero for existing clients until a restore protocol is enabled.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS restore_generation bigint NOT NULL DEFAULT 0;
 ALTER TABLE records ADD COLUMN IF NOT EXISTS sync_version bigint NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_records_user_sync_version
     ON records(user_id, sync_version, id);

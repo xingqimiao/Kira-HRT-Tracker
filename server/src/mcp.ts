@@ -1045,10 +1045,14 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
  * A durable token that resolves to null makes the tool say "sign in first" rather
  * than reporting a confusing authentication error.
  */
-export function makeBearerResolver(getToken: () => string | undefined): ContextResolver {
+export function makeBearerResolver(getToken: () => string | undefined, getRestoreGeneration?: () => string | undefined): ContextResolver {
   return async () => {
     const token = getToken();
     if (!token) return null;
-    return await AccountService.resolveApiContext(token);
+    const ctx = await AccountService.resolveApiContext(token);
+    if (!ctx || 'denied' in ctx) return ctx;
+    // An agent is a live session, not a replayed device cache: it stays writable after a
+    // restore even though it cannot carry the epoch header (see `AuthContext.trustedActor`).
+    return { ...ctx, restoreGeneration: getRestoreGeneration?.(), trustedActor: true };
   };
 }

@@ -31,6 +31,7 @@ import { randomUUID, createHash, createHmac, randomBytes, scrypt, timingSafeEqua
 import { promisify } from 'node:util';
 
 import { getPool, withTransaction } from './db.ts';
+import { lockRestoreGeneration } from './restoreGeneration.ts';
 import type { PoolClient } from 'pg';
 import { getConfig } from './config.ts';
 import { settings, APP_SETTING_BY_COLUMN, type UserSettings } from './settings.ts';
@@ -1718,8 +1719,6 @@ export const AccountService = {
     if (Object.keys(update).length === 0) {
       return { ok: false, error: 'nothing to update' };
     }
-    await settings.upsert(ctx.userId, update);
-
     // The model columns are the copy the PK model reads; the app reads its own
     // settings bag. Writing only the columns is what left an agent's HRT-mode or
     // calibration change invisible in the browser, so the same values are merged
@@ -1731,10 +1730,16 @@ export const AccountService = {
       const value = update[column];
       if (value !== undefined) appSettings[APP_SETTING_BY_COLUMN[column].appKey] = value;
     }
-    if (Object.keys(appSettings).length > 0) {
-      await settings.mergeAppSettings(ctx.userId, appSettings, Date.now());
-    }
-    return { ok: true, value: await settings.get(ctx.userId) };
+    const value = await withTransaction(async (client) => {
+      await lockRestoreGeneration(client, ctx);
+      await settings.upsert(ctx.userId, update, client);
+      if (Object.keys(appSettings).length > 0) {
+        await settings.mergeAppSettings(ctx.userId, appSettings, Date.now(), client);
+      }
+      await client.query('UPDATE users SET sync_version = sync_version + 1 WHERE id = $1', [ctx.userId]);
+      return settings.get(ctx.userId, client);
+    });
+    return { ok: true, value };
   },
 };
 

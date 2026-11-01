@@ -35,6 +35,12 @@ import { randomUUID } from 'node:crypto';
 
 import type { PoolClient } from 'pg';
 import { getPool, withTransaction } from './db.ts';
+import {
+    lockRestoreGeneration,
+    RestoreInputError,
+    RestoreUnsupportedRecordError,
+    RestoreVersionConflict,
+} from './restoreGeneration.ts';
 import { openPayload, sealPayload } from './payloadCrypto.ts';
 import {
     settings, settingsScalarFor, settingsScalars, appStateForRead, type SettingsScalar,
@@ -237,7 +243,7 @@ async function purgeTombstoned(
     const doomed = [...cutoff.keys()];
     if (doomed.length === 0) return 0;
 
-    const removable: string[] = [];
+    const removable: { id: string; encrypted: string }[] = [];
     for (let start = 0; start < doomed.length; start += INSERT_CHUNK) {
         const chunk = doomed.slice(start, start + INSERT_CHUNK);
         const { rows } = await getPool().query<{ id: string; payload_encrypted: string }>(
@@ -251,7 +257,7 @@ async function purgeTombstoned(
             const at = cutoff.get(row.id) ?? 0;
             // A record newer than the delete is a restore of it, not a copy to purge.
             if (typeof stamp === 'number' && Number.isFinite(stamp) && stamp > at) continue;
-            removable.push(row.id);
+            removable.push({ id: row.id, encrypted: row.payload_encrypted });
         }
     }
     if (removable.length === 0) return 0;
@@ -260,8 +266,11 @@ async function purgeTombstoned(
     for (let start = 0; start < removable.length; start += INSERT_CHUNK) {
         const chunk = removable.slice(start, start + INSERT_CHUNK);
         const { rowCount } = await getPool().query(
-            `DELETE FROM records WHERE user_id = $1 AND id = ANY($2::text[])`,
-            [ctx.userId, chunk],
+            `DELETE FROM records AS r
+              USING unnest($2::text[], $3::text[]) AS observed(id, payload_encrypted)
+              WHERE r.user_id = $1 AND r.id = observed.id
+                AND r.payload_encrypted = observed.payload_encrypted`,
+            [ctx.userId, chunk.map(row => row.id), chunk.map(row => row.encrypted)],
         );
         removed += rowCount ?? 0;
     }
@@ -478,15 +487,13 @@ function scalarOf(id: string, data: unknown): SyncedScalar | null {
 
 /**
  * Reflect the settings-class scalars a sync carried into the account settings,
- * best effort.
- *
- * The record is the primary write and has already committed; a settings row that
- * fails to follow must not turn a successful sync into a failure. The next sync
- * carries the same scalar again, so one swallowed failure loses nothing.
+ * A batch supplies its transaction client so the projection commits or rolls
+ * back with its sealed records. The legacy single-record path is best effort.
  */
-async function reflectSettings(ctx: AuthContext, synced: SyncedScalar[]): Promise<void> {
+async function reflectSettings(ctx: AuthContext, synced: SyncedScalar[], client?: PoolClient): Promise<void> {
     for (const scalar of synced) {
-        await scalar.absorb(ctx.userId, scalar.value, scalar.stamp).catch(() => undefined);
+        if (client) await scalar.absorb(ctx.userId, scalar.value, scalar.stamp, client);
+        else await scalar.absorb(ctx.userId, scalar.value, scalar.stamp).catch(() => undefined);
     }
 }
 
@@ -499,12 +506,31 @@ async function reflectSettings(ctx: AuthContext, synced: SyncedScalar[]): Promis
  * version and arrive on the next delta.
  */
 export async function currentSyncVersion(ctx: AuthContext): Promise<number> {
-    const { rows } = await getPool().query<{ sync_version: string }>(
-        'SELECT sync_version FROM users WHERE id = $1',
+    return (await currentAccountVersion(ctx)).syncVersion;
+}
+
+/**
+ * Both counters a read hands back, from one row and therefore one instant.
+ *
+ * They must be read together. `sync_version` says where the change cursor resumes, and
+ * `restore_generation` says which epoch the rows belong to; a restore advances both in the
+ * same statement, so a read that took them separately could hand back a generation newer
+ * than the version it captured — and the client's next delta would then skip every row
+ * the restore wrote. Unlike `sync_version`, the generation is a string: it comes back from
+ * Postgres as a bigint and is never arithmetic in the app.
+ */
+export async function currentAccountVersion(
+    ctx: AuthContext,
+): Promise<{ syncVersion: number; restoreGeneration: string }> {
+    const { rows } = await getPool().query<{ sync_version: string; restore_generation: string }>(
+        'SELECT sync_version, restore_generation FROM users WHERE id = $1',
         [ctx.userId],
     );
     const raw = rows[0]?.sync_version;
-    return raw === undefined ? 0 : Number(raw);
+    return {
+        syncVersion: raw === undefined ? 0 : Number(raw),
+        restoreGeneration: rows[0]?.restore_generation ?? '0',
+    };
 }
 
 /**
@@ -573,7 +599,140 @@ async function listByVersion(
     return { records, unreadable };
 }
 
+/** Tombstone maps the client may carry: one per deletable kind. */
+const TOMBSTONE_KINDS = ['events', 'labResults', 'doseTemplates', 'quickDoses', 'journal'];
+
+/** Whether this build knows what a stored record id means (and can therefore replace it). */
+function recognizedRecordId(id: string): boolean {
+    const parts = id.split(':');
+    if (parts[0] === 'scalar') {
+        return parts.length === 2 && ['weight', 'pkParams', 'appSettings', 'medPlan'].includes(parts[1]);
+    }
+    if (!MODES.includes(parts[1] as Mode)) return false;
+    if (parts[0] === 'del') return parts.length === 3 && TOMBSTONE_KINDS.includes(parts[2]);
+    return ['dose', 'lab', 'tpl', 'quick', 'journal'].includes(parts[0])
+        && parts.length >= 3 && Boolean(parts.slice(2).join(':'));
+}
+
+/**
+ * Why one record of a restore snapshot cannot be accepted, or null when it can.
+ *
+ * This is stricter than the incremental write path on purpose. A delta is repaired by the
+ * next sync if one row is odd, but a restore *replaces* the account: a record that does
+ * not match its own id, or whose category disagrees with it, would be written under an
+ * identity the app can never read back, and the original copy is gone by then. The check
+ * is structural, not clinical — it validates the wire shape the app itself produces.
+ */
+function restoreRecordProblem(id: string, item: { category?: unknown; data?: unknown }): string | null {
+    const parts = id.split(':');
+    if (parts[0] === 'scalar') {
+        if (parts.length !== 2 || !['weight', 'pkParams', 'appSettings', 'medPlan'].includes(parts[1])) {
+            return 'unknown scalar id';
+        }
+        const body = item.data as { stamp?: unknown } | null;
+        if (!body || typeof body !== 'object' || Array.isArray(body)) return 'scalar data must be an object';
+        if (typeof body.stamp !== 'number' || !Number.isFinite(body.stamp)) return 'scalar stamp must be a number';
+        return null;
+    }
+
+    const [kind, mode, ...rest] = parts;
+    if (!MODES.includes(mode as Mode)) return 'unknown mode';
+    if (kind === 'del') {
+        if (rest.length !== 1 || !TOMBSTONE_KINDS.includes(rest[0])) return 'unknown tombstone kind';
+        const map = item.data;
+        if (!map || typeof map !== 'object' || Array.isArray(map)) return 'tombstone data must be an object';
+        for (const [appId, at] of Object.entries(map)) {
+            if (!appId || typeof at !== 'number' || !Number.isFinite(at)) return 'tombstone stamps must be numbers';
+        }
+        return null;
+    }
+
+    const expectedCategory = kind === 'dose' ? 'dose'
+        : kind === 'lab' ? 'lab'
+            : kind === 'journal' ? 'journal'
+                : kind === 'tpl' || kind === 'quick' ? 'setting'
+                    : null;
+    if (expectedCategory === null) return 'unknown record kind';
+    if (item.category !== expectedCategory) return `category must be ${expectedCategory}`;
+    const appId = rest.join(':');
+    if (!appId) return 'record id has no local id';
+    const data = item.data as { id?: unknown } | null;
+    if (!data || typeof data !== 'object' || Array.isArray(data) || data.id !== appId) {
+        return 'record payload does not match its id';
+    }
+    return null;
+}
+
 export const RecordService = {
+    /**
+     * Replace the account's records and settings with one complete snapshot.
+     *
+     * The caller owns two obligations this function cannot check:
+     *
+     *   1. `items` is the *whole* state, not a delta. Everything absent from it is
+     *      deleted here, which is what "restore" means.
+     *   2. `expectedVersion` is the `syncVersion` of a full read this device made.
+     *
+     * The version is checked inside the transaction, under the account row's lock, so a
+     * write that landed after that read makes the restore fail rather than silently
+     * discard it. The generation and the version both advance in the same statement:
+     * devices holding the old picture will see the generation change on their next read,
+     * and any write they attempt before that read is refused.
+     */
+    async replaceForRestore(ctx: AuthContext, expectedVersion: string, items: unknown): Promise<{ syncVersion: string; restoreGeneration: string }> {
+        if (!/^(0|[1-9][0-9]*)$/.test(expectedVersion)) throw new RestoreInputError('expectedVersion: must be the syncVersion of a full read');
+        if (!Array.isArray(items)) throw new RestoreInputError('records: must be an array');
+        if (items.length > 100_000) throw new RestoreInputError('records: too many for one restore');
+
+        const records: PreparedRecord[] = [];
+        const scalars: SyncedScalar[] = [];
+        const ids = new Set<string>();
+        for (const raw of items) {
+            const item = raw as { id?: unknown; takenAt?: unknown; category?: unknown; data?: unknown } | null;
+            if (!item || typeof item.id !== 'string' || item.id === '') throw new RestoreInputError('every record needs a string id');
+            if (ids.has(item.id)) throw new RestoreInputError(`duplicate record id: ${item.id}`);
+            const problem = restoreRecordProblem(item.id, item);
+            if (problem) throw new RestoreInputError(`${item.id}: ${problem}`);
+            const prepared = prepareRecord(ctx, item);
+            if (!prepared.ok) throw new RestoreInputError(`${item.id}: ${prepared.error}`);
+            ids.add(item.id);
+            records.push(prepared.value);
+            const scalar = scalarOf(item.id, item.data);
+            if (scalar) scalars.push(scalar);
+        }
+
+        return withTransaction(async client => {
+            await lockRestoreGeneration(client, ctx);
+            const version = await client.query<{ sync_version: string }>('SELECT sync_version FROM users WHERE id = $1', [ctx.userId]);
+            if (!version.rows.length) throw new Error('account missing');
+            if (version.rows[0].sync_version !== expectedVersion) throw new RestoreVersionConflict();
+            // Read every existing row before deleting anything: a row this build cannot
+            // place would be dropped by a restore without the user ever seeing it, so the
+            // restore is refused instead. (The sweep is one statement, so the check and
+            // the delete cannot be interleaved.)
+            const existing = await client.query<{ id: string }>('SELECT id FROM records WHERE user_id = $1', [ctx.userId]);
+            for (const row of existing.rows) {
+                if (!recognizedRecordId(row.id)) throw new RestoreUnsupportedRecordError();
+            }
+            const advanced = await client.query<{ sync_version: string; restore_generation: string }>(
+                'UPDATE users SET sync_version = sync_version + 1, restore_generation = restore_generation + 1 WHERE id = $1 RETURNING sync_version, restore_generation', [ctx.userId],
+            );
+            const next = advanced.rows[0];
+            await client.query('DELETE FROM records WHERE user_id = $1', [ctx.userId]);
+            await client.query('DELETE FROM user_settings WHERE user_id = $1', [ctx.userId]);
+            for (let start = 0; start < records.length; start += INSERT_CHUNK) {
+                const values: unknown[] = [ctx.userId, next.sync_version];
+                const tuples = records.slice(start, start + INSERT_CHUNK).map(record => {
+                    const at = values.length + 1;
+                    values.push(record.takenAt, record.category, record.sealed, record.id);
+                    return `($1, to_timestamp($${at} / 1000.0), $${at + 1}, $${at + 2}, $${at + 3}, $2::bigint)`;
+                });
+                await client.query(`INSERT INTO records (user_id, taken_at, category, payload_encrypted, id, sync_version) VALUES ${tuples.join(', ')}`, values);
+            }
+            await reflectSettings(ctx, scalars, client);
+            return { syncVersion: next.sync_version, restoreGeneration: next.restore_generation };
+        });
+    },
     /**
      * Re-seal every record under a fresh DEK, in one transaction.
      *
@@ -658,7 +817,9 @@ export const RecordService = {
         // `user_id` in the key also means the conflict can only ever be this
         // account's own row, so no `WHERE` guard is needed to keep one account from
         // overwriting another's.
-        const { rows } = await getPool().query<{ id: string }>(
+        const rows = await withTransaction(async client => {
+            await lockRestoreGeneration(client, ctx);
+            const { rows } = await client.query<{ id: string }>(
             `WITH bumped AS (
                  UPDATE users SET sync_version = sync_version + 1
                   WHERE id = $1
@@ -674,12 +835,14 @@ export const RecordService = {
                     updated_at = now(),
                     sync_version = EXCLUDED.sync_version
              RETURNING id`,
-            [ctx.userId, takenAt, category, sealed, id],
-        );
+                [ctx.userId, takenAt, category, sealed, id],
+            );
+            const scalar = scalarOf(id, body?.data);
+            await reflectSettings(ctx, scalar ? [scalar] : [], client);
+            return rows;
+        });
 
         if (rows.length === 0) return { ok: false, error: 'id_unavailable' };
-        const scalar = scalarOf(id, body?.data);
-        await reflectSettings(ctx, scalar ? [scalar] : []);
         return { ok: true, id: rows[0].id };
     },
 
@@ -760,6 +923,7 @@ export const RecordService = {
         if (records.length === 0) return { ok: true, written, rejected };
 
         await withTransaction(async (client) => {
+            await lockRestoreGeneration(client, ctx);
             // One version for the whole request, taken inside the transaction so it is
             // the value every row of this batch carries. A concurrent batch bumps it
             // again after this commits, which is what keeps the cursors ordered.
@@ -795,9 +959,9 @@ export const RecordService = {
                 // silently skipped any more, and the counts are the chunk's own.
                 for (const record of chunk) written.push(record.id);
             }
+            await reflectSettings(ctx, [...synced.values()], client);
         });
 
-        await reflectSettings(ctx, [...synced.values()]);
         // After the write has committed, so a failure here cannot lose the tombstone
         // that makes the delete stick. The next push carries the same map again and
         // the sweep is idempotent, so a purge that fails is retried by the next sync.
@@ -907,23 +1071,41 @@ export const RecordService = {
             // let a lagging device resurrect those records on the next sync.
             return false;
         }
-        const { rowCount } = await getPool().query(
-            `DELETE FROM records WHERE user_id = $1 AND id = $2`,
-            [ctx.userId, id],
-        );
-        const removed = (rowCount ?? 0) > 0;
-        if (removed) {
+        return withTransaction(async client => {
+            await lockRestoreGeneration(client, ctx);
+            const { rowCount } = await client.query(
+                `DELETE FROM records WHERE user_id = $1 AND id = $2`, [ctx.userId, id],
+            );
+            const removed = (rowCount ?? 0) > 0;
+            if (!removed) return false;
+            const { rows: versions } = await client.query<{ sync_version: string }>(
+                'UPDATE users SET sync_version = sync_version + 1 WHERE id = $1 RETURNING sync_version', [ctx.userId],
+            );
             const parts = id.split(':');
             if (parts.length >= 3) {
                 const [head, mode, ...rest] = parts;
                 const appId = rest.join(':');
                 const kind = WIRE_TO_TOMBSTONE_KIND[head];
                 if (kind && (mode === 'transfem' || mode === 'transmasc')) {
-                    await RecordService.noteDeletion(ctx, mode as Mode, kind, appId).catch(() => undefined);
+                    const mapKey = `del:${mode}:${kind}`;
+                    const existing = await client.query<{ payload_encrypted: string }>(
+                        'SELECT payload_encrypted FROM records WHERE user_id = $1 AND id = $2', [ctx.userId, mapKey],
+                    );
+                    const prior = existing.rows.length ? open(existing.rows[0].payload_encrypted, ctx) : {};
+                    if (!prior || typeof prior !== 'object' || Array.isArray(prior)) throw new Error('invalid tombstone');
+                    const map = { ...(prior as Record<string, number>), [appId]: Date.now() };
+                    await client.query(
+                        `INSERT INTO records (user_id, id, taken_at, category, payload_encrypted, sync_version)
+                         VALUES ($1, $2, now(), 'setting', $3, $4::bigint)
+                         ON CONFLICT (user_id, id) DO UPDATE SET taken_at = EXCLUDED.taken_at,
+                           category = EXCLUDED.category, payload_encrypted = EXCLUDED.payload_encrypted,
+                           updated_at = now(), sync_version = EXCLUDED.sync_version`,
+                        [ctx.userId, mapKey, seal(map, ctx), versions[0].sync_version],
+                    );
                 }
             }
-        }
-        return removed;
+            return true;
+        });
     },
 
     /**

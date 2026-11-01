@@ -16,6 +16,17 @@ export interface AuthContext {
   userId: string;
   /** The record key R: the DEK under key splitting, never the bare DEK. */
   recordKey: string;
+  /** Generation acknowledged by this device after replacing any stale local cache. */
+  restoreGeneration?: string;
+  /**
+   * This caller is a live agent session, not a cache that could be replayed.
+   *
+   * The restore epoch exists to stop a *device* uploading a state it holds from before
+   * the account was replaced. An MCP tool call is a single, deliberate edit made against
+   * data it just read, and an agent cannot carry a per-request epoch header — so gating it
+   * would lock agents out of a restored account forever without protecting anything.
+   */
+  trustedActor?: boolean;
 }
 
 /**

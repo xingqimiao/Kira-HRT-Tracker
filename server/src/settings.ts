@@ -31,6 +31,7 @@
  * without a server release.
  */
 import { getPool } from './db.ts';
+import type { PoolClient } from 'pg';
 import { RecordService } from './records.ts';
 import { CALIBRATION_METHODS, isPlausibleBodyWeightKG } from './engine.ts';
 import type { AuthContext } from './types.ts';
@@ -163,8 +164,8 @@ function appStateFor(userSettings: UserSettings | null): Record<string, unknown>
 }
 
 export const settings = {
-  async get(userId: string): Promise<UserSettings | null> {
-    const { rows } = await getPool().query(
+  async get(userId: string, client?: PoolClient): Promise<UserSettings | null> {
+    const { rows } = await (client ?? getPool()).query(
       `SELECT body_weight_kg, body_weight_updated_at, hrt_mode, calibration_method,
               calibration_history, pk_params, pk_params_updated_at, timezone, app_state
          FROM user_settings WHERE user_id = $1`,
@@ -186,8 +187,8 @@ export const settings = {
     };
   },
 
-  async upsert(userId: string, patch: Partial<UserSettings>): Promise<UserSettings> {
-    const { rows } = await getPool().query(
+  async upsert(userId: string, patch: Partial<UserSettings>, client?: PoolClient): Promise<UserSettings> {
+    const { rows } = await (client ?? getPool()).query(
       `INSERT INTO user_settings AS s (user_id, body_weight_kg, body_weight_updated_at,
                                        hrt_mode, calibration_method, calibration_history,
                                        pk_params, pk_params_updated_at, timezone, app_state, updated_at)
@@ -258,7 +259,7 @@ export const settings = {
    * (`APP_SETTING_BY_COLUMN`), or the PK model would keep running under the mode
    * the account was created with while the app showed another.
    */
-  async absorbAppState(userId: string, appState: unknown): Promise<void> {
+  async absorbAppState(userId: string, appState: unknown, client?: PoolClient): Promise<void> {
     const stored = jsonObject(appState);
     if (!stored) return;
     const columns = columnsFromBag(stored);
@@ -274,7 +275,7 @@ export const settings = {
       // The projection merges against what this column already holds, so a write that
       // states no whitelisted key does not erase one. It is a no-op for the filtered-out
       // keys by construction — they were never here — which is what keeps them out.
-      const current = await this.get(userId);
+      const current = await this.get(userId, client);
       const here = jsonObject(jsonObject(current?.appState)?.settings);
       const kept = plaintextBag({ ...here, ...incoming });
       if (kept) bag.settings = kept;
@@ -282,7 +283,7 @@ export const settings = {
     } else {
       delete bag.settings;
     }
-    await getPool().query(
+    await (client ?? getPool()).query(
       `INSERT INTO user_settings AS s (user_id, hrt_mode, calibration_method, calibration_history,
                                        timezone, app_state, updated_at)
        VALUES ($1, COALESCE($3::text,'transfem'), COALESCE($4::text,'mipd'),
@@ -324,12 +325,12 @@ export const settings = {
    * stamp moves so the app's whole-bag merge adopts it rather than leaving the
    * change on the server.
    */
-  async mergeAppSettings(userId: string, patch: Record<string, unknown>, stampMs: number): Promise<void> {
+  async mergeAppSettings(userId: string, patch: Record<string, unknown>, stampMs: number, client?: PoolClient): Promise<void> {
     // Only the keys a server-side reader needs reach the plaintext column; the rest of
     // the patch is already in the sealed record. A patch that is entirely unlisted keys
     // still moves the stamp, so the app's whole-bag merge adopts the change.
     const stored = plaintextBag(patch) ?? {};
-    await getPool().query(
+    await (client ?? getPool()).query(
       `INSERT INTO user_settings AS s (user_id, app_state, updated_at)
        VALUES ($1, jsonb_build_object('settings', $2::jsonb, 'settingsUpdatedAt', $3::bigint), now())
        ON CONFLICT (user_id) DO UPDATE
@@ -359,10 +360,10 @@ export const settings = {
    * A value that is absent or implausible is ignored rather than written as null:
    * "this device has no opinion about weight" is not "clear the weight".
    */
-  async absorbWeight(userId: string, weightKg: unknown, stampMs: unknown): Promise<void> {
+  async absorbWeight(userId: string, weightKg: unknown, stampMs: unknown, client?: PoolClient): Promise<void> {
     if (typeof weightKg !== 'number' || !isPlausibleBodyWeightKG(weightKg)) return;
     const at = typeof stampMs === 'number' && Number.isFinite(stampMs) ? stampMs : 0;
-    await getPool().query(
+    await (client ?? getPool()).query(
       `INSERT INTO user_settings AS s (user_id, body_weight_kg, body_weight_updated_at, updated_at)
        VALUES ($1, $2, to_timestamp($3 / 1000.0), now())
        ON CONFLICT (user_id) DO UPDATE
@@ -387,11 +388,11 @@ export const settings = {
    * record only when it has an opinion, and "clear every override" is that opinion.
    * A record that says nothing at all never reaches here.
    */
-  async absorbPKParams(userId: string, value: unknown, stampMs: unknown): Promise<void> {
+  async absorbPKParams(userId: string, value: unknown, stampMs: unknown, client?: PoolClient): Promise<void> {
     if (value === undefined) return;
     if (value !== null && (typeof value !== 'object' || Array.isArray(value))) return;
     const at = typeof stampMs === 'number' && Number.isFinite(stampMs) ? stampMs : 0;
-    await getPool().query(
+    await (client ?? getPool()).query(
       `INSERT INTO user_settings AS s (user_id, pk_params, pk_params_updated_at, updated_at)
        VALUES ($1, $2::jsonb, to_timestamp($3 / 1000.0), now())
        ON CONFLICT (user_id) DO UPDATE
@@ -414,7 +415,7 @@ export interface SettingsScalar {
   /** Other `UserSettings` fields this scalar carries (its stamp, or its bag keys). */
   readonly carries: readonly (keyof UserSettings)[];
   /** Fold one record body into the settings row. */
-  readonly absorb: (userId: string, value: unknown, stamp: number) => Promise<void>;
+  readonly absorb: (userId: string, value: unknown, stamp: number, client?: PoolClient) => Promise<void>;
   /** Put the stored value into the app payload's scalar fields. */
   readonly emit: (settings: UserSettings, out: Record<string, unknown>) => void;
 }
@@ -433,7 +434,7 @@ export const SETTINGS_SCALARS = [
     key: 'bodyWeightKg',
     recordId: 'scalar:weight',
     carries: ['bodyWeightUpdatedAt'],
-    absorb: (userId: string, value: unknown, stamp: number) => settings.absorbWeight(userId, value, stamp),
+    absorb: (userId: string, value: unknown, stamp: number, client?: PoolClient) => settings.absorbWeight(userId, value, stamp, client),
     emit: (s: UserSettings, out: Record<string, unknown>) => {
       if (s.bodyWeightKg == null) return;
       out.weight = s.bodyWeightKg;
@@ -444,7 +445,7 @@ export const SETTINGS_SCALARS = [
     key: 'pkParams',
     recordId: 'scalar:pkParams',
     carries: ['pkParamsUpdatedAt'],
-    absorb: (userId: string, value: unknown, stamp: number) => settings.absorbPKParams(userId, value, stamp),
+    absorb: (userId: string, value: unknown, stamp: number, client?: PoolClient) => settings.absorbPKParams(userId, value, stamp, client),
     emit: (s: UserSettings, out: Record<string, unknown>) => {
       // A stamp with no value is an explicit "no overrides" rather than
       // "unstated" — that difference is the whole reason the stamp exists.
@@ -457,7 +458,7 @@ export const SETTINGS_SCALARS = [
     key: 'appState',
     recordId: 'scalar:appSettings',
     carries: [],
-    absorb: (userId: string, value: unknown) => settings.absorbAppState(userId, value),
+    absorb: (userId: string, value: unknown, _stamp: number, client?: PoolClient) => settings.absorbAppState(userId, value, client),
     // No `emit`: the bag the app reads is the sealed `scalar:appSettings` record, and
     // reaching it means a record read, which this table cannot do synchronously. The
     // entry stays so the write half and the compile-time coverage assertion below still

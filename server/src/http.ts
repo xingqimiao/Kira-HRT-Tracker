@@ -25,6 +25,12 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { getConfig } from './config.ts';
 import { clientIp as resolveClientIp, createProxyMisconfigurationWarner } from './clientIp.ts';
 import {
+  RestoreGenerationConflict,
+  RestoreInputError,
+  RestoreUnsupportedRecordError,
+  RestoreVersionConflict,
+} from './restoreGeneration.ts';
+import {
   buildServer,
   makeBearerResolver,
   MCP_PROTOCOL_VERSION,
@@ -34,7 +40,7 @@ import {
 import { AccountService } from './accounts.ts';
 import { avatarEtag, avatarForUser } from './avatars.ts';
 import { isGoogleConfigured } from './oauth.ts';
-import { RecordService, buildExportPayload, buildSettingsScalars, currentSyncVersion, publicStats } from './records.ts';
+import { RecordService, buildExportPayload, buildSettingsScalars, currentAccountVersion, publicStats } from './records.ts';
 import { getPool } from './db.ts';
 import { ShareService } from './shares.ts';
 import {
@@ -509,7 +515,8 @@ async function contextFor(req: IncomingMessage): Promise<AuthContext | null> {
   // the single point every authenticated REST call passes through; a durable `hrt_` agent
   // token is not a session, and `touchSession` ignores it for exactly that reason.
   if (token.startsWith('ks_')) await touchSession(token, requestDevice(req));
-  return ctx;
+  const generation = req.headers['x-hrt-restore-generation'];
+  return { ...ctx, restoreGeneration: typeof generation === 'string' ? generation : undefined };
 }
 
 /**
@@ -634,7 +641,7 @@ export function createRequestHandler() {
         res.writeHead(204, {
           ...cors,
           'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Kira-Client',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Kira-Client, X-HRT-Restore-Generation',
           'Access-Control-Max-Age': '600',
         });
         res.end();
@@ -648,7 +655,8 @@ export function createRequestHandler() {
           return;
         }
         const token = bearer(req);
-        const server = buildServer(makeBearerResolver(() => token));
+        const generation = req.headers['x-hrt-restore-generation'];
+        const server = buildServer(makeBearerResolver(() => token, () => typeof generation === 'string' ? generation : undefined));
         // Answer with a single JSON response rather than opening an SSE stream.
         //
         // Every tool here is one request, one answer -- initialize, tools/list,
@@ -1266,7 +1274,7 @@ export function createRequestHandler() {
         const afterRaw = url.searchParams.get('after_version');
         const afterVersion = afterRaw !== null && Number.isFinite(Number(afterRaw)) ? Number(afterRaw) : undefined;
         const afterId = url.searchParams.get('after_id') || undefined;
-        const syncVersion = await currentSyncVersion(ctx);
+        const { syncVersion, restoreGeneration } = await currentAccountVersion(ctx);
 
         if (since !== undefined) {
           const { records, unreadable } = await RecordService.list(ctx, {
@@ -1293,6 +1301,7 @@ export function createRequestHandler() {
             })),
             unreadable,
             syncVersion,
+            restoreGeneration,
             ...(settings ? { settings } : {}),
           });
         }
@@ -1323,6 +1332,7 @@ export function createRequestHandler() {
           // being told its history is complete when it is not.
           unreadable,
           syncVersion,
+          restoreGeneration,
           ...(settings ? { settings } : {}),
         });
       }
@@ -1363,6 +1373,30 @@ export function createRequestHandler() {
           state = null;
         }
         return send(res, 200, { written: result.written, rejected: result.rejected, state });
+      }
+
+      // --- Restore ---------------------------------------------------------
+      //
+      // Replace the account with one complete snapshot, instead of merging into it. This
+      // is the write behind "overwrite the cloud" on import, and it is deliberately the
+      // narrowest possible route: it needs the `syncVersion` of the caller's own full
+      // read, so a device cannot replace a state it never saw, and the account row is
+      // locked for the whole replacement so no write can slip in between the check and
+      // the commit. Both counters advance together; every other write path refuses a
+      // device still holding the old generation (see `lockRestoreGeneration`).
+      if (path === '/api/restore' && req.method === 'POST') {
+        const ctx = await requireBoundCtx();
+        if (!ctx) return;
+        const body = (await readBody(req, 8_000_000)) as
+          { expectedVersion?: unknown; records?: unknown } | undefined;
+        const expected = typeof body?.expectedVersion === 'number'
+          ? String(body.expectedVersion)
+          : body?.expectedVersion;
+        if (typeof expected !== 'string') {
+          return fail(res, 400, 'expectedVersion: must be the syncVersion of a full read');
+        }
+        const result = await RecordService.replaceForRestore(ctx, expected, body?.records);
+        return send(res, 200, result);
       }
 
       const recordMatch = path.match(/^\/api\/records\/([^/]+)$/);
@@ -1799,6 +1833,24 @@ export function createRequestHandler() {
 
       fail(res, 404, 'not found');
     } catch (error) {
+      if (error instanceof RestoreGenerationConflict) {
+        if (!res.headersSent) fail(res, 409, 'restore generation mismatch');
+        return;
+      }
+      // The account was replaced from a backup, or another write landed between this
+      // caller's read and its restore. Both are retryable; the message says which.
+      if (error instanceof RestoreVersionConflict) {
+        if (!res.headersSent) fail(res, 409, 'restore version mismatch');
+        return;
+      }
+      if (error instanceof RestoreUnsupportedRecordError) {
+        if (!res.headersSent) fail(res, 409, error.message);
+        return;
+      }
+      if (error instanceof RestoreInputError) {
+        if (!res.headersSent) fail(res, 400, error.message);
+        return;
+      }
       // Log the whole thing, answer with nothing. A thrown driver or DNS error
       // carries hostnames, database names and query fragments — useful to us,
       // reconnaissance to a caller. The audit's example was a malformed uuid that
