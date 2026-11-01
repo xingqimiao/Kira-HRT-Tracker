@@ -1,0 +1,41 @@
+version: 2
+
+# Dependency alerts live in the Security tab, but only exist for ecosystems
+# declared here. Without this file the repo exposes no update PRs and no
+# Dependabot alerts at all.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      root-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: npm
+    directory: /server
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      server-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # Dockerfile.api, Dockerfile.web and compose.yaml: base images are pinned by
+  # tag only, so an update here is the only signal that a tag moved.
+  - package-ecosystem: docker
+    directory: /deploy/self-host
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

@@ -112,6 +112,10 @@ jobs:
     permissions:
       contents: write
       packages: write
+      # Signing a build-provenance statement needs an OIDC token, and attaching
+      # that statement to the image needs the attestations scope.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -132,9 +136,39 @@ jobs:
             docker buildx imagetools create -t "$PREFIX-$SERVICE:$VERSION" "$PREFIX-$SERVICE:$VERSION-amd64" "$PREFIX-$SERVICE:$VERSION-arm64"
           done
       - run: node scripts/package-self-host.mjs
+      - name: Record published image digests
+        id: digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          PREFIX="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/kira-hrt"
+          : > dist-self-host/releases/images.txt
+          for SERVICE in api web; do
+            DIGEST=$(docker buildx imagetools inspect "$PREFIX-$SERVICE:$VERSION" --format '{{json .Manifest.Digest}}' | tr -d '"')
+            echo "$PREFIX-$SERVICE@$DIGEST" >> dist-self-host/releases/images.txt
+            echo "${SERVICE}_name=$PREFIX-$SERVICE" >> "$GITHUB_OUTPUT"
+            echo "${SERVICE}_digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          done
+          cat dist-self-host/releases/images.txt
+      # The build already ran and passed its smoke tests; this signs the published
+      # digest instead of rebuilding it. Verify with:
+      #   gh attestation verify oci://<images.txt entry> -R <owner>/<repo>
+      - name: Attest api image
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ steps.digests.outputs.api_name }}
+          subject-digest: ${{ steps.digests.outputs.api_digest }}
+          push-to-registry: true
+      - name: Attest web image
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ steps.digests.outputs.web_name }}
+          subject-digest: ${{ steps.digests.outputs.web_digest }}
+          push-to-registry: true
       - name: Publish deployment archive
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          gh release create "$GITHUB_REF_NAME" dist-self-host/releases/*.tar.gz dist-self-host/releases/*.sha256 --verify-tag --latest=false --title "Kira HRT self-hosted ${GITHUB_REF_NAME#self-host-v}" --notes "Web/PWA self-hosted distribution. Read the bundled deployment and key-backup instructions before starting."
+          gh release create "$GITHUB_REF_NAME" dist-self-host/releases/*.tar.gz dist-self-host/releases/*.sha256 dist-self-host/releases/images.txt --verify-tag --latest=false --title "Kira HRT self-hosted ${GITHUB_REF_NAME#self-host-v}" --notes "Web/PWA self-hosted distribution. Read the bundled deployment and key-backup instructions before starting. images.txt pins the published image digests."
