@@ -53,6 +53,9 @@ const hasFeatherlineMagic = (bytes: Uint8Array): boolean =>
     bytes.length >= FEATHERLINE_MAGIC.length
     && FEATHERLINE_MAGIC.every((b, i) => bytes[i] === b);
 
+/** The same ceiling the decompressor enforces. Beyond it, refuse before JSON.parse. */
+const MAX_JSON_CHARS = 128 * 1024 * 1024;
+
 const isObject = (v: unknown): v is Record<string, unknown> =>
     typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -71,7 +74,16 @@ export function detectForeignFormat(input: string | ArrayBuffer | Uint8Array): F
         return { source: 'featherline', bytes, encrypted: true, hasIter: false };
     }
 
+    // Refuse an oversized input before decoding or parsing it. A real backup is far
+    // below this; anything above is either a mistake or a deliberate memory spike.
+    if (bytes && bytes.byteLength > MAX_JSON_CHARS) {
+        return { source: null, encrypted: false, hasIter: false, problem: 'unreadable' };
+    }
+
     const text = bytes ? new TextDecoder().decode(bytes) : input as string;
+    if (text.length > MAX_JSON_CHARS) {
+        return { source: null, encrypted: false, hasIter: false, problem: 'unreadable' };
+    }
 
     let parsed: unknown;
     try {

@@ -4,6 +4,7 @@ import {
     sequentialChainAmount,
     e2VolumeWeightKG,
 } from './src/pk/kernels.ts';
+import { decompressGzipText } from './src/utils/boundedDecompression.ts';
 
 // --- Types & Enums ---
 
@@ -1864,15 +1865,25 @@ export async function compressData(data: string): Promise<string> {
     return btoa(binary);
 }
 
+/**
+ * The decompressed ceiling for a backup, and the base64 length that can produce it.
+ *
+ * Base64 inflates by 4/3, so an envelope claiming more than this many characters
+ * cannot decode to a payload under the ceiling. Rejecting before `atob` keeps the
+ * allocation bounded: decoding first and checking after is the shape that turns a
+ * large (but valid) file into an out-of-memory tab.
+ */
+const MAX_BACKUP_BYTES = 128 * 1024 * 1024;
+const MAX_BACKUP_B64_CHARS = Math.ceil(MAX_BACKUP_BYTES / 3) * 4;
+
 export async function decompressData(base64: string): Promise<string> {
+    if (base64.length > MAX_BACKUP_B64_CHARS) throw new Error('compressed payload too large');
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) {
         bytes[i] = binary.charCodeAt(i);
     }
-    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-    const response = new Response(stream);
-    return await response.text();
+    return decompressGzipText(bytes, MAX_BACKUP_BYTES);
 }
 
 const CorePK = {

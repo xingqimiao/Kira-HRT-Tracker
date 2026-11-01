@@ -24,6 +24,8 @@
  * exercise it headlessly, with a real encrypt/decrypt round trip.
  */
 
+import { decompressGzipText } from './boundedDecompression.ts';
+
 /** A record shaped for `sanitizeImportedEvents`, before that helper sees it. */
 interface RawDose {
     id: string;
@@ -210,13 +212,13 @@ export async function decryptFeatherline(bytes: Uint8Array, password: string): P
         throw new FeatherlineError('wrong password or damaged file');
     }
 
-    if (container.compression === COMPRESSION_NONE) return utf8.decode(compressed);
+    if (container.compression === COMPRESSION_NONE) {
+        if (compressed.byteLength > MAX_JSON_BYTES) throw new FeatherlineError('payload too large');
+        return utf8.decode(compressed);
+    }
     if (container.compression !== COMPRESSION_GZIP) throw new FeatherlineError('unsupported compression');
 
-    const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'));
-    const json = await new Response(stream).text();
-    if (json.length > MAX_JSON_BYTES) throw new FeatherlineError('payload too large');
-    return json;
+    return decompressGzipText(new Uint8Array(compressed), MAX_JSON_BYTES);
 }
 
 // ── Snapshot → this app's records ────────────────────────────────────────────
