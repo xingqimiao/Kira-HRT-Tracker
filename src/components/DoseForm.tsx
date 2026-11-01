@@ -24,6 +24,7 @@ import {
     type PkEngineId,
 } from '../../logic';
 import { GEL_PRODUCTS_EVENT, readGelProducts, type GelProduct } from '../utils/gelProducts';
+import GelDoseReference from './dose_form/GelDoseReference';
 import { activePatches } from '../utils/medPlan';
 import { LOCALE_MAP } from '../utils/helpers';
 import { Icon } from '../ui/SvgDefs';
@@ -959,6 +960,7 @@ const DoseForm: React.FC<DoseFormProps> = ({
     }
 
     if (route === Route.gel) {
+        if (mode === 'mtf') listEntries.push({ key: 'gel-reference', node: <GelDoseReference /> });
         listEntries.push({
             key: 'gel-site',
             node: (

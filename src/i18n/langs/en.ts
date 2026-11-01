@@ -9,6 +9,15 @@ import type { LangPack } from '../types';
  * generator is not re-run.
  */
 const PACK: LangPack = {
+    'gel.reference.chinatube': 'China, tube',
+    'gel.reference.title': 'Gel package measurements',
+    'gel.reference.note': 'For conversion only, not a recommended dose. Check the leaflet for your exact product: dispensers and pack specifications vary by country. Gel weight is not the estradiol amount.',
+    'gel.reference.gel': 'Gel weight',
+    'gel.reference.active': 'Estradiol amount',
+    'gel.reference.ruler': '1 measuring ruler',
+    'gel.reference.pump': '1 pump',
+    'gel.reference.applicator': '1 × 2.5 g mark',
+    'gel.reference.sachet': '1 sachet',
     "settings.app_lock.title": "App lock",
     "settings.app_lock.desc": "Require your fingerprint or face to read records on launch or unlock",
     "settings.app_lock.enable_failed": "Could not turn on the app lock. The record key was not changed.",

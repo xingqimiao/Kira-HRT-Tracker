@@ -9,6 +9,15 @@ import type { LangPack } from '../types';
  * generator is not re-run.
  */
 const PACK: LangPack = {
+    'gel.reference.chinatube': '中国管装',
+    'gel.reference.title': '凝胶规格与每单位含量',
+    'gel.reference.note': '仅供换算，并非推荐剂量。不同国家、包装和计量器规格可能不同，请核对你手中产品的说明书。凝胶重量与雌二醇含量不同。',
+    'gel.reference.gel': '凝胶重量',
+    'gel.reference.active': '雌二醇含量',
+    'gel.reference.ruler': '1 计量尺',
+    'gel.reference.pump': '1 泵',
+    'gel.reference.applicator': '1 个 2.5 g 刻度',
+    'gel.reference.sachet': '1 袋',
     "settings.app_lock.title": "应用锁",
     "settings.app_lock.desc": "启动或解锁本机时，需要指纹或面容才能读取记录",
     "settings.app_lock.enable_failed": "未能开启应用锁，记录密钥没有改动",
