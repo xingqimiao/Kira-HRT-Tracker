@@ -232,7 +232,8 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
 
     const liveReady = state.kind === 'ready' && state.details.live;
     useEffect(() => {
-        if (!token || !liveReady) return;
+        if (!token || !liveReady || state.kind !== 'ready') return;
+        const currentDetails = state.details;
 
         let cancelled = false;
         let refreshing = false;
@@ -241,11 +242,7 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
             if (cancelled || refreshing || document.hidden || Date.now() < retryAfter) return;
             refreshing = true;
             try {
-                const result = viewerPassRef.current
-                    ? await sharingService.unlock(token, undefined, viewerPassRef.current)
-                    : (unlockedPasswordRef.current
-                        ? await sharingService.unlock(token, unlockedPasswordRef.current)
-                        : await sharingService.open(token));
+                const result = await sharingService.refreshLive(token, viewerPassRef.current || undefined, unlockedPasswordRef.current || undefined);
                 if (!cancelled && 'snapshot' in result) {
                     viewerPassRef.current = result.viewerPass || viewerPassRef.current;
                     // Each live update is a fresh envelope sealed under the same key,
@@ -255,6 +252,10 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
                         viewerPassRef.current = next.details.viewerPass || viewerPassRef.current;
                         setState(next);
                     }
+                } else if (!cancelled) {
+                    viewerPassRef.current = '';
+                    unlockedPasswordRef.current = '';
+                    setState({ kind: 'locked', meta: { ...currentDetails, passwordRequired: true } });
                 }
             } catch (error) {
                 if (cancelled) return;
@@ -264,6 +265,11 @@ const PublicShare: React.FC<PublicShareProps> = ({ token }) => {
                     setState({ kind: 'unavailable' });
                 } else if (error instanceof ShareApiError && error.status === 429) {
                     retryAfter = Date.now() + (error.retryAfterMs ?? 60_000);
+                } else if (error instanceof ShareApiError && (error.code === 'INVALID_PASSWORD' || error.code === 'PASSWORD_REQUIRED')) {
+                    viewerPassRef.current = '';
+                    unlockedPasswordRef.current = '';
+                    setPasswordError(copy.wrongPassword);
+                    setState({ kind: 'locked', meta: { ...currentDetails, passwordRequired: true } });
                 }
                 // Keep showing the most recently loaded data for transient
                 // network failures and rate limits.

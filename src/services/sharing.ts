@@ -1,4 +1,4 @@
-import { DoseEvent, HRTMode, SimulationResult } from '../../logic';
+import type { DoseEvent, HRTMode, SimulationResult } from '../../logic';
 import { apiEndpoint, apiFetch } from './apiClient';
 import {
     createShareKey,
@@ -215,6 +215,13 @@ export const sharingService = {
         });
         if (!response.ok) throw await readError(response);
         return await response.json() as ShareDetails;
+    },
+
+    /** Renew an expired viewer pass once using the password already entered. */
+    async refreshLive(token: string, viewerPass?: string, password?: string): Promise<ShareDetails | LockedShare> {
+        const result = await sharingService.open(token, viewerPass);
+        if ('snapshot' in result || !password) return result;
+        return sharingService.unlock(token, password);
     },
 
     async list(authToken: string): Promise<ShareSummary[]> {
