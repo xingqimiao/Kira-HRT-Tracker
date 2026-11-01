@@ -35,8 +35,6 @@ process.env.DATABASE_URL = `postgres://postgres:postgres@127.0.0.1:${PORT}/${DAT
 process.env.NODE_ENV = 'production'
 process.env.PUBLIC_ORIGIN = 'https://example.test'
 process.env.API_ORIGIN = 'https://api.example.test'
-process.env.JWT_SECRET = 'x'.repeat(40)
-process.env.SERVER_DEK_KEY = 'z'.repeat(40)
 
 const { RecordService } = await import('../src/records.ts')
 const { getPool, migrate } = await import('../src/db.ts')
