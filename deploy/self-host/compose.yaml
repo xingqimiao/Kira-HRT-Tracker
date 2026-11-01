@@ -26,6 +26,7 @@ services:
       API_ORIGIN: ${PUBLIC_ORIGIN}
       BASE_PATH: ""
       BIND_HOST: 0.0.0.0
+      TRUSTED_IP_SOURCE: xff
       PORT: 8788
       DATABASE_URL: postgres://hrt:${POSTGRES_PASSWORD}@db:5432/hrt
       KEY_PROVIDER: local

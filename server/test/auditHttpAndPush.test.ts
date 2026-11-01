@@ -15,7 +15,7 @@ import type { Server } from 'node:http';
 
 import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
 import { registerAccount, TEST_KMS_CONFIG } from './helpers.ts';
-import { setConfigForTesting } from '../src/config.ts';
+import { getConfig, setConfigForTesting } from '../src/config.ts';
 
 let pg: PostgresHandle;
 let server: Server | undefined;
@@ -48,6 +48,7 @@ after(async () => {
 });
 
 test('M-3: a rotating X-Forwarded-For prefix does not reset the per-IP bucket', async () => {
+  setConfigForTesting({ ...getConfig(), trustedIpSource: 'xff' });
   // Same last hop every time (the one the proxy would have written), different
   // caller-supplied first entries. With the old leftmost read each of these was a
   // new bucket, so no 429 ever arrived.
@@ -69,7 +70,22 @@ test('M-3: a rotating X-Forwarded-For prefix does not reset the per-IP bucket', 
   );
 });
 
+test('untrusted proxy headers cannot rotate a direct client rate limit', async () => {
+  setConfigForTesting({ ...getConfig(), trustedIpSource: 'socket' });
+  const statuses: number[] = [];
+  for (let i = 0; i < 5; i += 1) {
+    const res = await call(base, '/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `198.51.100.${i}`, 'X-Forwarded-For': `203.0.113.${i}` },
+      body: JSON.stringify({ username: `direct${i}${Date.now().toString(36)}`, password: 'a-good-password-1' }),
+    });
+    statuses.push(res.status);
+  }
+  assert.ok(statuses.includes(429), `forged headers must not reset the bucket: ${statuses}`);
+});
+
 test('M-3: CF-Connecting-IP is the bucket key when present', async () => {
+  setConfigForTesting({ ...getConfig(), trustedIpSource: 'cf' });
   // A fresh address, then the same address again with a different XFF: the second
   // request has to land in the same bucket, and a different CF-Connecting-IP in a
   // third bucket.
@@ -87,6 +103,7 @@ test('M-3: CF-Connecting-IP is the bucket key when present', async () => {
 
   const other = await send('198.51.100.8', '9.9.9.9');
   assert.notEqual(other.status, 429, 'a different real address keeps its own bucket');
+  setConfigForTesting({ ...getConfig(), rateLimits: { ...getConfig().rateLimits, register: 1000 } });
 });
 
 test('M-5: registering a token under a second account takes it from the first', async () => {

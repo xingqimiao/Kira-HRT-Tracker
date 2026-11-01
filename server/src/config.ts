@@ -13,6 +13,7 @@
  */
 
 import { readFileSync } from 'node:fs';
+import type { TrustedIpSource } from './clientIp.ts';
 
 import { getPool } from './db.ts';
 import { kmsEndpointError, kmsKeyIdError, type KmsConfig } from './kms.ts';
@@ -146,6 +147,7 @@ export interface Config {
    * are conservative; raise them when legitimate users hit them.
    */
   rateLimits: RateLimitConfig;
+  trustedIpSource?: TrustedIpSource;
 }
 
 export interface RateLimitConfig {
@@ -399,6 +401,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new ConfigError('AFDIAN_SYNC_INTERVAL_MINUTES must be at most 1440 (one day)');
   }
 
+  const trustedIpSource = env.TRUSTED_IP_SOURCE?.trim() || 'socket';
+  if (trustedIpSource !== 'socket' && trustedIpSource !== 'cf' && trustedIpSource !== 'xff') {
+    throw new ConfigError('TRUSTED_IP_SOURCE must be socket, cf, or xff');
+  }
+
   // FCM is optional and whole: the service-account JSON (inline or a path to it) is
   // the one thing required. A malformed/missing file is refused at boot rather than
   // at the first push, so a deployment either has working push or reports none.
@@ -423,6 +430,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     afdianSyncMinutes,
     sessionTtlMinutes,
     rateLimits,
+    trustedIpSource,
   };
 }
 

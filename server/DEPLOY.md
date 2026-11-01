@@ -210,6 +210,12 @@ BASE_PATH=/hrt
 
 PORT=8788
 BIND_HOST=127.0.0.1
+# Only when Cloudflare is the sole ingress and overwrites this header:
+TRUSTED_IP_SOURCE=cf
+
+# Upgrade note: unset defaults to socket. Behind a proxy this groups clients in
+# one rate-limit bucket. Configure the source only after securing the ingress;
+# use xff when Caddy overwrites X-Forwarded-For for every request.
 
 # Wraps each account's data key, alongside the password wrapper. Every account carries
 # that wrapper, which is what lets provider sign-in finish in one round-trip and lets a
@@ -336,12 +342,10 @@ api.kiramyao.com {
             # Overwrite the header instead of appending to what the client sent.
             #
             # The API's per-IP buckets (login, register, account deletion, share
-            # unlock, OAuth start) read `CF-Connecting-IP` first and the LAST
-            # X-Forwarded-For hop second. Cloudflare sets `CF-Connecting-IP` and
-            # overwrites any value the client supplied, so that is the real address
-            # whenever the request came through the proxy. This line is the belt for
-            # the direct-to-origin case: with Caddy replacing the header, the last
-            # hop is always `{remote_host}`, never a value the caller chose.
+            # unlock, OAuth start) use TRUSTED_IP_SOURCE. Set cf only when the
+            # origin accepts Cloudflare traffic exclusively. For direct Caddy
+            # ingress use xff, which this line overwrites with the peer address.
+            # With the default socket mode all proxied clients share one bucket.
             header_up X-Forwarded-For {remote_host}
         }
     }

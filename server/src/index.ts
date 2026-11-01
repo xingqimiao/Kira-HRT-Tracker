@@ -34,6 +34,7 @@ Environment:
   API_ORIGIN        This server's public origin, e.g. https://api.example.com
   PORT              HTTP port (default 8788)
   BIND_HOST         Interface to bind (default 127.0.0.1 — put a proxy in front)
+  TRUSTED_IP_SOURCE socket (default), cf, or xff; proxy modes require isolated ingress
   X_CLIENT_ID       Optional. All three are needed to enable X sign-in.
   X_CLIENT_SECRET
   X_REDIRECT_URI    Must match the X app's Callback URI exactly

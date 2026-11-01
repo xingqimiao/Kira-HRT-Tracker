@@ -23,6 +23,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 import { getConfig } from './config.ts';
+import { clientIp as resolveClientIp, createProxyMisconfigurationWarner } from './clientIp.ts';
 import {
   buildServer,
   makeBearerResolver,
@@ -196,41 +197,13 @@ function rateLimited(key: string, max: number, windowMs: number): boolean {
   return entry.count > max;
 }
 
-/**
- * The caller's address, as far as the rate limiter can trust it.
- *
- * It used to take the **leftmost** X-Forwarded-For entry, which is the one the
- * caller wrote: every per-IP bucket (login, register, account deletion, share
- * unlock) could be bypassed by prefixing a fresh value, leaving only the
- * per-account lockout standing.
- *
- * The trustworthy values are, in order:
- *
- *   1. `CF-Connecting-IP`, which Cloudflare sets on every proxied request and
- *      overwrites if the client sent one. The site is behind Cloudflare, so this
- *      is the real client address.
- *   2. The **last** X-Forwarded-For entry — the hop appended by the reverse proxy
- *      that actually connects to us. Caddy appends rather than replaces, so the
- *      leftmost entries are still caller-controlled.
- *   3. The socket address, for a direct call.
- *
- * All three are only as good as the ingress: if the origin is reachable directly,
- * any of them can be forged. `server/DEPLOY.md` therefore requires the service to
- * stay bound to loopback and the origin to accept only Cloudflare's ranges.
- * The result is length-capped because it becomes a Map key.
- */
+const warnProxyMisconfiguration = createProxyMisconfigurationWarner();
+
+/** Resolve the address using the configured trust boundary. */
 function clientIp(req: IncomingMessage): string {
-  const clamp = (value: string): string => value.trim().slice(0, 64);
-
-  const cf = req.headers['cf-connecting-ip'];
-  if (typeof cf === 'string' && cf.trim()) return clamp(cf);
-
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.trim()) {
-    const hops = forwarded.split(',').map((part) => part.trim()).filter(Boolean);
-    if (hops.length > 0) return clamp(hops[hops.length - 1]);
-  }
-  return clamp(req.socket.remoteAddress ?? 'unknown');
+  const source = getConfig().trustedIpSource ?? 'socket';
+  warnProxyMisconfiguration(req.headers, source);
+  return resolveClientIp(req, source);
 }
 
 // ---------------------------------------------------------------------------
