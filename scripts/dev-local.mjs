@@ -1,7 +1,10 @@
 /**
  * Local dev server: embedded Postgres + the real API, with a seeded account.
  *
- *   node scripts/dev-local.mjs            # boot, seed, serve on :8787
+ *   node --experimental-transform-types --import ./server/resolve-hook.mjs scripts/dev-local.mjs
+ *
+ * (The flags are needed on Node 24: the server sources use TypeScript enums, which
+ * strip-only type removal refuses. The script boots, seeds, and serves on :8787.)
  *
  * This is for poking the UI against a REAL backend without touching production.
  * It is not a test and not a deploy: it boots its own throwaway Postgres cluster
@@ -25,9 +28,11 @@ const serverDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'server
 const requireFromServer = createRequire(resolve(serverDir, 'index.js'));
 
 const PG_DIR = './.pgdata-dev';
-const PG_PORT = 55447;
+// Overridable so a second instance can run beside a dev server that already holds the
+// defaults — the pairing that lets an import be verified against a live backend.
+const PG_PORT = Number(process.env.DEV_PG_PORT ?? 55447);
 const PG_DB = 'hrt_dev';
-const API_PORT = 8787;
+const API_PORT = Number(process.env.DEV_API_PORT ?? 8787);
 const WEB_ORIGIN = process.env.PUBLIC_ORIGIN ?? 'http://127.0.0.1:3000';
 const USERNAME = process.env.DEV_USERNAME ?? 'dev';
 const PASSWORD = process.env.DEV_PASSWORD ?? 'dev-password-1';
@@ -86,7 +91,14 @@ async function main() {
     fcm: null,
     x: null,
     sessionTtlMinutes: 1440,
-    rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },
+    // Env-driven so a check can tighten a bucket and exercise the trust boundary
+    // without patching the harness. Defaults keep the old permissive behaviour.
+    trustedIpSource: process.env.TRUSTED_IP_SOURCE ?? 'socket',
+    rateLimits: {
+      register: Number(process.env.RATE_LIMIT_REGISTER ?? 1000),
+      login: Number(process.env.RATE_LIMIT_LOGIN ?? 1000),
+      windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS ?? 60_000),
+    },
   });
 
   const { migrate } = await import('../server/src/db.ts');
