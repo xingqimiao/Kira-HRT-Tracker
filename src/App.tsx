@@ -10,12 +10,14 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { APP_VERSION, AppTheme, ChartStyle, KeyColor, normalizeChartStyle } from './constants';
 import { DoseEvent, decompressData, encryptData, decryptData } from '../logic';
 import { detectForeignFormat, convertForeignPayload, type ForeignSource } from './utils/foreignImport';
-import { countLegacyLabs } from './utils/labAnalyteImport';
+import { applyLegacyAnalyteToPayload, countLegacyLabs } from './utils/labAnalyteImport';
 import { toLegacyExport } from './utils/legacyExport';
-import { importGelProducts } from './utils/gelProducts';
+import { gelProductsForMerge, readGelProducts, writeGelProductsDurably } from './utils/gelProducts';
 import { decryptFeatherline, mapFeatherlineSnapshot, FeatherlineError } from './utils/featherlineBackup';
 import type { Lang } from './i18n/types';
 import { useAppData } from './hooks/useAppData';
+import { normalizeSyncState } from './utils/syncMerge';
+import type { ImportMode } from './components/ImportSection';
 import { useAppNavigation, ViewKey } from './hooks/useAppNavigation';
 import { useLiveShareSync } from './hooks/useLiveShareSync';
 import { useCoreSync } from './hooks/useCoreSync';
@@ -161,7 +163,9 @@ const AppContent = () => {
         quickDoses,
         pkParams, setPkParams, clearPkParams,
         medPlan,
-        processImportedData,
+        inactiveImportRevision,
+        mergeImportedData,
+        countInvalidImport,
         buildExportPayload,
         applySyncedState,
         scope,
@@ -483,6 +487,7 @@ const AppContent = () => {
         weight,
         pkParams,
         medPlan,
+        inactiveImportRevision,
         calibrationMethod,
         calibrationHistoryMode,
         aaChartMode,
@@ -576,20 +581,63 @@ const AppContent = () => {
      * transformation (the fork means the shapes already agree), a Transmtf file needs
      * its unsupported `gelProducts` dropped and reported.
      */
-    const applyImportedPayload = (
+    const applyImportedPayload = async (
         parsed: unknown,
         source: ForeignSource | null,
-        opts?: { legacyAnalyteFromUnit?: boolean },
-    ): boolean => {
+        opts?: { legacyAnalyteFromUnit?: boolean; mode?: ImportMode },
+    ): Promise<boolean> => {
         const { payload, gelProducts } = convertForeignPayload(parsed, source ?? 'kira');
-        const ok = processImportedData(payload, opts);
-        // The custom gel catalogue is account data in its own right — merged after
-        // the records so a product can never be imported "for" a record that then
-        // failed to land.
-        if (ok && gelProducts) {
-            const merged = importGelProducts(gelProducts);
-            const n = merged.added + merged.updated;
-            if (n > 0) showDialog('alert', t('import.gel_products_imported').replace('{n}', String(n)));
+        const versioned = payload as { version?: unknown; meta?: { version?: unknown } } | null;
+        if (Number(versioned?.version) > 1 || Number(versioned?.meta?.version) > 3) {
+            showDialog('alert', t('account.merge_failed'));
+            return false;
+        }
+        const invalid = countInvalidImport(payload, opts);
+        if (invalid > 0) {
+            showDialog('alert', t('import.invalid_records').replace('{n}', String(invalid)));
+            return false;
+        }
+        const newGelProducts = gelProducts ? gelProductsForMerge(gelProducts) : [];
+        if (newGelProducts === null) {
+            showDialog('alert', t('import.gel_products_conflict'));
+            return false;
+        }
+        const existingProducts = readGelProducts();
+        if (newGelProducts.length) {
+            try {
+                await writeGelProductsDurably([...existingProducts, ...newGelProducts]);
+                if (JSON.stringify(readGelProducts()) !== JSON.stringify([...existingProducts, ...newGelProducts])) {
+                    throw new Error('gel catalog changed during import');
+                }
+            } catch {
+                showDialog('alert', t('account.merge_failed'));
+                return false;
+            }
+        }
+        // "Replace the cloud" is the same validated payload, pushed as the account's
+        // whole state instead of merged into it. The sync engine owns the operation
+        // because it has to be serialised against ordinary syncs — see `restoreToCloud`.
+        if (opts?.mode === 'overwrite') {
+            // Same legacy-analyte decision the merge path's sanitizer makes — see
+            // `applyLegacyAnalyteToPayload`.
+            const whole = opts.legacyAnalyteFromUnit ? applyLegacyAnalyteToPayload(payload) : payload;
+            const outcome = await coreSyncState.restoreToCloud(normalizeSyncState(whole));
+            if (outcome.ok) {
+                showDialog('alert', t('import.overwrite_success'));
+                return true;
+            }
+            showDialog('alert', t(
+                outcome.reason === 'conflict' ? 'import.overwrite_conflict'
+                    : outcome.reason === 'unavailable' ? 'import.overwrite_needs_signin'
+                        : 'import.overwrite_failed',
+            ));
+            return false;
+        }
+        const ok = mergeImportedData(payload, opts);
+        if (!ok && newGelProducts.length) {
+            // Some records may already have been saved before a storage error.
+            // Keep their catalog entries so those records do not become dangling.
+            showDialog('alert', t('import.merge_partial'));
         }
         return ok;
     };
@@ -619,7 +667,7 @@ const AppContent = () => {
             const counted = payload as {
                 events?: unknown[];
                 labResults?: unknown[];
-                modes?: Record<string, { labResults?: unknown[] }>;
+                modes?: Record<string, { events?: unknown[]; labResults?: unknown[] }>;
             };
             const labs = counted.modes
                 ? Object.values(counted.modes).flatMap(b => Array.isArray(b?.labResults) ? b.labResults : [])
@@ -629,7 +677,7 @@ const AppContent = () => {
             // these rows. Explicit unknown is left alone.
             return {
                 source: source ?? 'kira',
-                doses: counted.events?.length ?? 0,
+                doses: counted.modes ? Object.values(counted.modes).reduce((n, b) => n + (Array.isArray(b?.events) ? b.events.length : 0), 0) : counted.events?.length ?? 0,
                 labs: labs.length,
                 legacyLabs: countLegacyLabs(payload),
             };
@@ -640,7 +688,7 @@ const AppContent = () => {
 
     const importEventsFromJson = async (
         input: string | ArrayBuffer,
-        opts?: { legacyAnalyteFromUnit?: boolean },
+        opts?: { legacyAnalyteFromUnit?: boolean; mode?: ImportMode },
     ): Promise<boolean> => {
         try {
             const detection = detectForeignFormat(input);
@@ -697,7 +745,18 @@ const AppContent = () => {
                 if (!pendingImport.bytes) return;
                 const json = await decryptFeatherline(pendingImport.bytes, password);
                 const mapped = mapFeatherlineSnapshot(json);
-                const ok = processImportedData(mapped);
+                if (currentView === 'settings-import') {
+                    setIsPasswordInputOpen(false);
+                    setPendingImport(null);
+                    setImportReview({ data: JSON.stringify(mapped), nonce: Date.now() });
+                    if (mapped.skipped.reasons.length > 0) {
+                        showDialog('alert', t('import.skipped_rows')
+                            .replace('{n}', String(mapped.skipped.doses + mapped.skipped.labs))
+                            .replace('{why}', mapped.skipped.reasons.join('; ')));
+                    }
+                    return;
+                }
+                const ok = mergeImportedData(mapped);
                 if (ok) {
                     setIsPasswordInputOpen(false);
                     setPendingImport(null);
@@ -734,14 +793,14 @@ const AppContent = () => {
             // confirmation as a plaintext file. Entry points with no review surface
             // (the onboarding row) take the documented default instead — legacy labs
             // classified by unit, exactly as a checked switch would do.
-            if (legacyLabs > 0 && currentView === 'settings-import') {
+            if (currentView === 'settings-import') {
                 setIsPasswordInputOpen(false);
                 setPendingImport(null);
                 setImportReview({ data: JSON.stringify(parsed), nonce: Date.now() });
                 return;
             }
             const opts = legacyLabs > 0 ? { legacyAnalyteFromUnit: true } : undefined;
-            if (applyImportedPayload(parsed, source, opts)) {
+            if (await applyImportedPayload(parsed, source, opts)) {
                 setIsPasswordInputOpen(false);
                 setPendingImport(null);
             }
@@ -1194,6 +1253,9 @@ const AppContent = () => {
                     {currentView === 'settings-import' && (
                         <ImportSettings
                             onImportJson={importEventsFromJson}
+                            // Replacing the account needs a live Core session; without one
+                            // the import stays a local merge.
+                            canOverwrite={Boolean(coreSession.token)}
                             onPreview={previewImport}
                             review={importReview}
                             onReviewConsumed={() => setImportReview(null)}

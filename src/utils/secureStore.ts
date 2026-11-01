@@ -27,6 +27,12 @@ const cache = new Map<string, string>();
 let dataKey: CryptoKey | null = null;
 let ready = false;
 const pendingWrites = new Set<Promise<unknown>>();
+const writeRevision = new Map<string, number>();
+const nextWriteRevision = (key: string): number => {
+    const next = (writeRevision.get(key) ?? 0) + 1;
+    writeRevision.set(key, next);
+    return next;
+};
 
 const b64 = (bytes: Uint8Array): string => {
     let out = '';
@@ -211,6 +217,7 @@ export function get(key: string): string | null {
 }
 
 export function set(key: string, value: string): void {
+    nextWriteRevision(key);
     if (!isProtectedKey(key)) { localStorage.setItem(key, value); return; }
     cache.set(key, value);
     const write = encrypt(value)
@@ -220,7 +227,19 @@ export function set(key: string, value: string): void {
     void write.finally(() => pendingWrites.delete(write));
 }
 
+/** Persist before publishing a value when later writes depend on it. */
+export async function setDurably(key: string, value: string): Promise<void> {
+    const revision = nextWriteRevision(key);
+    if (!isProtectedKey(key)) { localStorage.setItem(key, value); return; }
+    await flushSecureStore();
+    const envelope = await encrypt(value);
+    if (writeRevision.get(key) !== revision) throw new Error('secure store value changed during write');
+    localStorage.setItem(key, envelope);
+    cache.set(key, value);
+}
+
 export function remove(key: string): void {
+    nextWriteRevision(key);
     if (!isProtectedKey(key)) { localStorage.removeItem(key); return; }
     cache.delete(key);
     localStorage.removeItem(key);

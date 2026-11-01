@@ -100,3 +100,69 @@ export function normalizeImportedAnalyte(
     }
     return 'unknown';
 }
+
+/** The units an imported lab may carry; the sanitizer's own coercion, named once. */
+const IMPORT_UNITS = ['pg/ml', 'pmol/l', 'ng/dl', 'nmol/l'] as const;
+
+/**
+ * The unit an imported lab will actually be stored under.
+ *
+ * Exported because the overwrite import has to reach the same decision as the
+ * sanitizer: an unrecognised unit is coerced to `pmol/l` there, and the legacy
+ * unit→analyte rule then reads that coerced value. Two paths, one rule.
+ */
+export function normalizeImportUnit(unit: unknown): LabResult['unit'] {
+    return (IMPORT_UNITS as readonly unknown[]).includes(unit)
+        ? unit as LabResult['unit']
+        : 'pmol/l';
+}
+
+/** One lab row through the same unit+analyte decisions `sanitizeImportedLabResults` makes. */
+function legacyLabFix(row: unknown): unknown {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+    const lab = row as { analyte?: unknown; monitoringOnly?: unknown; unit?: unknown; concValue?: unknown };
+    const unit = normalizeImportUnit(lab.unit);
+    const raw = lab.concValue;
+    const value = raw === null || raw === undefined || raw === ''
+        ? undefined
+        : (Number.isFinite(Number(raw)) && Number(raw) >= 0 ? Number(raw) : undefined);
+    // A row with no hormone value is monitoring-only by construction, and such a row
+    // carries no analyte — the sanitizer's rule, applied before the record is written
+    // rather than after.
+    if (lab.monitoringOnly === true || value === undefined) {
+        const { analyte: _analyte, ...rest } = lab;
+        return { ...rest, unit };
+    }
+    return {
+        ...lab,
+        unit,
+        analyte: normalizeImportedAnalyte(lab.analyte, false, { legacyAnalyteFromUnit: true, unit }),
+    };
+}
+
+/**
+ * Apply the import review's legacy-analyte switch to a payload that will be written whole.
+ *
+ * The merge import runs every row through the sanitizers, which is where the switch
+ * takes effect. An overwrite import bypasses that path — the file's state *is* the
+ * account's state — so the same decision has to be applied to the payload first, or a
+ * backup from before the analyte field would land untyped while the switch claimed
+ * otherwise. Only called when the switch is on.
+ */
+export function applyLegacyAnalyteToPayload(payload: unknown): unknown {
+    const p = payload as { modes?: Record<string, unknown>; labResults?: unknown } | null;
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return payload;
+
+    if (p.modes && typeof p.modes === 'object') {
+        const modes: Record<string, unknown> = { ...p.modes };
+        for (const [mode, block] of Object.entries(p.modes)) {
+            if (!block || typeof block !== 'object') continue;
+            const labs = (block as { labResults?: unknown }).labResults;
+            if (!Array.isArray(labs)) continue;
+            modes[mode] = { ...block, labResults: labs.map(legacyLabFix) };
+        }
+        return { ...p, modes };
+    }
+    if (Array.isArray(p.labResults)) return { ...p, labResults: p.labResults.map(legacyLabFix) };
+    return payload;
+}

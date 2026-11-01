@@ -33,7 +33,13 @@
  * the data.
  */
 import { apiEndpoint, apiFetch } from './apiClient';
-import { changedAgainstKnown, changedRecords, recordsToPayload, type RecordDoc } from './recordDocs';
+import {
+  changedAgainstKnown,
+  changedRecords,
+  payloadToRecords,
+  recordsToPayload,
+  type RecordDoc,
+} from './recordDocs';
 import { toAppState, RECORD_KINDS, type SyncState } from '../utils/syncMerge';
 
 /** The app's own payload shape, as `normalizeSyncState` reads it. */
@@ -84,6 +90,12 @@ export class CoreSyncError extends Error {
      * so signing out would destroy the only means of fixing it.
      */
     readonly accountIncomplete = false,
+    /**
+     * The account was restored from a backup elsewhere, and this device still holds the
+     * previous epoch. Retrying cannot fix it: the device has to re-read the account and
+     * adopt it before it may write, or its stale cache would undo the restore.
+     */
+    readonly restoreConflict = false,
   ) {
     super(message);
     this.name = 'CoreSyncError';
@@ -100,10 +112,14 @@ interface WireRecord {
   data: unknown;
 }
 
-function authHeaders(token: string): Record<string, string> {
+function authHeaders(token: string, restoreGeneration?: string): Record<string, string> {
   return {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${token}`,
+    // Sent only once a device has learned its epoch. An account that has never been
+    // restored is at generation 0 and the server accepts a missing header; after a
+    // restore, every write must state the epoch it belongs to or it is refused.
+    ...(restoreGeneration ? { 'X-HRT-Restore-Generation': restoreGeneration } : {}),
   };
 }
 
@@ -123,6 +139,9 @@ function describe(status: number, what: string, detail?: string): CoreSyncError 
   if (status === 403 && detail === 'account_incomplete') {
     return new CoreSyncError('this account has no fallback credential yet', 403, false, true);
   }
+  if (status === 409 && detail === 'restore generation mismatch') {
+    return new CoreSyncError('the account was restored on another device', 409, false, false, true);
+  }
   return new CoreSyncError(detail ?? `${what} failed (${status})`, status);
 }
 
@@ -135,6 +154,14 @@ function describe(status: number, what: string, detail?: string): CoreSyncError 
 export interface CoreStateRead {
   payload: SyncPayload;
   syncVersion: number;
+  /**
+   * The account's restore epoch, read in the same response as `syncVersion`.
+   *
+   * Unlike the version this is an identity, not a cursor: a device that was offline
+   * while another one restored the account learns from it that its own cache belongs to
+   * a replaced history, and must adopt the read instead of merging and pushing it back.
+   */
+  restoreGeneration: string;
 }
 
 /**
@@ -164,6 +191,7 @@ async function readChangedSince(token: string, since: number): Promise<CoreState
   let afterVersion: number | undefined;
   let afterId: string | undefined;
   let syncVersion = since;
+  let restoreGeneration = '0';
   let settings: Record<string, unknown> | undefined;
 
   for (let page = 0; page < 100; page++) {
@@ -181,9 +209,11 @@ async function readChangedSince(token: string, since: number): Promise<CoreState
       unreadable?: number;
       settings?: Record<string, unknown>;
       syncVersion?: number;
+      restoreGeneration?: string;
     };
     const batch = body.records ?? [];
     if (typeof body.syncVersion === 'number') syncVersion = body.syncVersion;
+    if (typeof body.restoreGeneration === 'string') restoreGeneration = body.restoreGeneration;
     settings = body.settings ?? settings;
 
     for (const row of batch) {
@@ -206,7 +236,7 @@ async function readChangedSince(token: string, since: number): Promise<CoreState
   if (unknown > 0) {
     console.warn(`[sync] ignored ${unknown} changed record(s) this version does not understand`);
   }
-  return { payload: settings ? { ...payload, ...settings } : payload, syncVersion };
+  return { payload: settings ? { ...payload, ...settings } : payload, syncVersion, restoreGeneration };
 }
 
 /**
@@ -223,6 +253,7 @@ async function readFullState(token: string): Promise<CoreStateRead> {
   let beforeId: string | undefined;
   /** The account's change version, captured by the server before the first page. */
   let syncVersion = 0;
+  let restoreGeneration = '0';
   // The settings row rides with the first page (see the records route): it is
   // where a settings screen or an agent writes, and it is not a record, so it
   // would otherwise be invisible to this read — the gap that made an agent's
@@ -247,11 +278,13 @@ async function readFullState(token: string): Promise<CoreStateRead> {
       unreadable?: number;
       settings?: Record<string, unknown>;
       syncVersion?: number;
+      restoreGeneration?: string;
     };
     const batch = body.records ?? [];
     settings = body.settings ?? settings;
     // Every page of a full read carries the same captured version; the first one wins.
     if (syncVersion === 0 && typeof body.syncVersion === 'number') syncVersion = body.syncVersion;
+    if (typeof body.restoreGeneration === 'string') restoreGeneration = body.restoreGeneration;
 
     for (const row of batch) {
       docs.push({
@@ -284,7 +317,7 @@ async function readFullState(token: string): Promise<CoreStateRead> {
   // supplied. `appState` carries the model settings too — a settings route merges
   // its columns into the same bag the app reads (see the server's
   // `mergeAppSettings`) — which is how an agent's HRT-mode change reaches the app.
-  return { payload: settings ? { ...payload, ...settings } : payload, syncVersion };
+  return { payload: settings ? { ...payload, ...settings } : payload, syncVersion, restoreGeneration };
 }
 
 /** The server's error text, when it sent one. */
@@ -383,7 +416,13 @@ export function withRemoteTombstones(local: SyncPayload, remote: SyncPayload): S
 export async function syncWithCore(
   token: string,
   payload: SyncPayload,
-  opts: { updateExisting?: boolean; remote?: SyncPayload; known?: Record<string, string> } = {},
+  opts: {
+    updateExisting?: boolean;
+    remote?: SyncPayload;
+    known?: Record<string, string>;
+    /** The epoch this device last read, once the account has been restored. */
+    restoreGeneration?: string;
+  } = {},
 ): Promise<SyncResult> {
   // Read first, always. Pushing without looking would drop the account's tombstones
   // (see `withRemoteTombstones`) and, on any record this device has never seen, would
@@ -444,7 +483,7 @@ export async function syncWithCore(
   const bodyBytes = new TextEncoder().encode(requestBody).length;
   const res = await apiFetch(apiEndpoint('/api/records/batch'), {
     method: 'POST',
-    headers: authHeaders(token),
+    headers: authHeaders(token, opts.restoreGeneration),
     ...(bodyBytes <= 60_000 ? { keepalive: true } : {}),
     body: requestBody,
   });
@@ -474,6 +513,58 @@ export async function syncWithCore(
   // saw — but nothing is asked for it any more.
   const settled = rejected.length > 0 ? remote : outgoing;
   return { state: body.state ?? settled, ...summary() };
+}
+
+/**
+ * Replace the account with this device's whole state, instead of merging into it.
+ *
+ * The import screen offers this as the deliberate alternative to a merge. Two things
+ * make it safe rather than a blind overwrite:
+ *
+ *   - `expectedVersion` is the `syncVersion` of the full read this caller made. The
+ *     server refuses the restore when anything was written since, so a device cannot
+ *     silently discard a change it never saw.
+ *   - `payload` must be the *complete* state to keep, not a diff: everything absent from
+ *     it is deleted. Building it from the app's merged/imported state (`toLocalPayload`)
+ *     is what makes that true.
+ *
+ * The account's restore epoch advances with the replacement. Devices still holding the
+ * old one are refused on their next write (409, `restoreConflict`) and must re-read and
+ * adopt the account instead of pushing their stale cache back.
+ */
+export async function restoreCoreState(
+  token: string,
+  payload: SyncPayload,
+  expectedVersion: number,
+  opts: { restoreGeneration?: string } = {},
+): Promise<{ syncVersion: number; restoreGeneration: string }> {
+  const requestBody = JSON.stringify({
+    expectedVersion,
+    records: payloadToRecords(payload).map((doc) => ({
+      id: doc.id,
+      takenAt: doc.takenAt,
+      category: doc.category,
+      data: doc.data,
+    })),
+  });
+  const res = await apiFetch(apiEndpoint('/api/restore'), {
+    method: 'POST',
+    headers: authHeaders(token, opts.restoreGeneration),
+    body: requestBody,
+  });
+  if (!res.ok) {
+    const detail = await errorDetail(res);
+    if (res.status === 401) throw describe(401, 'restore');
+    throw describe(res.status, 'restore', detail);
+  }
+  const body = (await res.json()) as { syncVersion?: unknown; restoreGeneration?: unknown };
+  const syncVersion = Number(body.syncVersion);
+  if (!Number.isFinite(syncVersion) || typeof body.restoreGeneration !== 'string') {
+    // A half-answer would leave this device unable to write: it would keep the old
+    // epoch and the server would refuse it. Treat it as a failed restore.
+    throw new CoreSyncError('the server did not confirm the restore', 500);
+  }
+  return { syncVersion, restoreGeneration: body.restoreGeneration };
 }
 
 /**

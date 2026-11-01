@@ -1,4 +1,4 @@
-import { get as secureGet, set as secureSet, remove as secureRemove } from './secureStore';
+import { get as secureGet, set as secureSet, setDurably as secureSetDurably, remove as secureRemove } from './secureStore';
 /**
  * The account's own gel products — the catalogue a `gelProductId` ≥ 1000 points at.
  *
@@ -109,6 +109,13 @@ export function writeGelProducts(list: readonly GelProduct[]): void {
     }
 }
 
+/** Persist a catalog before importing records which reference it. */
+export async function writeGelProductsDurably(list: readonly GelProduct[]): Promise<void> {
+    const clean = list.map(asStoredProduct).filter((p): p is GelProduct => p !== null);
+    await secureSetDurably(GEL_PRODUCTS_STORAGE_KEY, JSON.stringify(clean));
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(GEL_PRODUCTS_EVENT));
+}
+
 /**
  * The next free id.
  *
@@ -126,6 +133,21 @@ export interface GelProductsImportResult {
     added: number;
     updated: number;
     rejected: number;
+}
+
+/** Prepare a non-destructive merge, or reject a conflicting/malformed product. */
+export function gelProductsForMerge(incoming: unknown): GelProduct[] | null {
+    if (!Array.isArray(incoming)) return null;
+    const byId = new Map(readGelProducts().map(product => [product.id, product]));
+    const result: GelProduct[] = [];
+    for (const raw of incoming) {
+        const product = asStoredProduct(raw);
+        if (!product) return null;
+        const existing = byId.get(product.id);
+        if (existing && JSON.stringify(existing) !== JSON.stringify(product)) return null;
+        if (!existing) { byId.set(product.id, product); result.push(product); }
+    }
+    return result;
 }
 
 /**

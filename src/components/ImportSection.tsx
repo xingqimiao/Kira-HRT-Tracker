@@ -3,8 +3,11 @@ import Icon from './Icon';
 import Switch from './Switch';
 import { useTranslation } from '../contexts/LanguageContext';
 import { ChevronDown, ChevronUp, Check, Copy, TestTube2 } from '../icons';
-import { SegmentedList, SegmentedListItem } from '../ui/proto';
+import { ConnectedButtonGroup, SegmentedList, SegmentedListItem } from '../ui/proto';
 import { Icon as SpriteIcon } from '../ui/SvgDefs';
+
+/** How an import treats what is already in the account. */
+export type ImportMode = 'merge' | 'overwrite';
 
 /** What an import would bring in, counted before anything is written. */
 export interface ImportPreview {
@@ -19,11 +22,16 @@ interface ImportSectionProps {
     /**
      * Imports a file's contents. Accepts bytes as well as text because one supported
      * source (Featherline) exports a binary container rather than JSON.
+     *
+     * `mode` is only ever `overwrite` when `canOverwrite` is true; the caller still owns
+     * the decision because replacing the account needs a signed-in session.
      */
     onImportJson: (
         data: string | ArrayBuffer,
-        opts?: { legacyAnalyteFromUnit?: boolean },
+        opts?: { legacyAnalyteFromUnit?: boolean; mode?: ImportMode },
     ) => boolean | Promise<boolean>;
+    /** Whether "replace the cloud" is available at all (a signed-in Core session). */
+    canOverwrite?: boolean;
     /** Counts the payload without applying it. */
     onPreview?: (data: string | ArrayBuffer) => Promise<ImportPreview | null>;
     /**
@@ -44,6 +52,7 @@ interface ImportSectionProps {
  */
 const ImportSection: React.FC<ImportSectionProps> = ({
     onImportJson,
+    canOverwrite = false,
     onPreview,
     review,
     onReviewConsumed,
@@ -55,6 +64,12 @@ const ImportSection: React.FC<ImportSectionProps> = ({
     const [pending, setPending] = useState<string | ArrayBuffer | null>(null);
     const [busy, setBusy] = useState(false);
     const [legacyCompat, setLegacyCompat] = useState(false);
+    /**
+     * Merge is the default, and not a neutral one: it cannot remove anything from the
+     * account, so the button that says "确认" never quietly turns an import into a
+     * deletion. Replacing requires choosing it explicitly.
+     */
+    const [mode, setMode] = useState<ImportMode>('merge');
     const fileInputRef = useRef<HTMLInputElement>(null);
     /** The review already shown, so a re-render cannot replay it. */
     const consumedReview = useRef<number | null>(null);
@@ -81,8 +96,9 @@ const ImportSection: React.FC<ImportSectionProps> = ({
         const data = pending;
         setPreview(null);
         setPending(null);
-        await onImportJson(data, { legacyAnalyteFromUnit: legacyCompat });
+        await onImportJson(data, { legacyAnalyteFromUnit: legacyCompat, mode });
         setLegacyCompat(false);
+        setMode('merge');
         setText('');
         setShowPaste(false);
     };
@@ -110,6 +126,20 @@ const ImportSection: React.FC<ImportSectionProps> = ({
     if (preview) {
         return (
             <div className="d-col" style={{ gap: 12 }}>
+                {canOverwrite && (
+                    <ConnectedButtonGroup
+                        options={[
+                            { value: 'merge', label: t('import.mode_merge') },
+                            { value: 'overwrite', label: t('import.mode_overwrite') },
+                        ]}
+                        value={mode}
+                        onChange={setMode}
+                        label={t('import.mode')}
+                    />
+                )}
+                <p className="sub" role={mode === 'overwrite' ? 'alert' : 'status'}>
+                    {t(mode === 'overwrite' ? 'import.overwrite_hint' : 'import.merge_note')}
+                </p>
                 <SegmentedList label={t('import.title')}>
                     <SegmentedListItem icon={undefined} sprite="code" title={preview.source} subtitle={t('import.title')} />
                     <SegmentedListItem sprite="db" title={`${preview.doses}`} subtitle={t('timeline.records')} />
@@ -140,9 +170,19 @@ const ImportSection: React.FC<ImportSectionProps> = ({
                     >
                         {t('btn.cancel')}
                     </button>
-                    <button type="button" onClick={() => void confirm()} className="btn" style={{ flex: 1 }}>
+                    <button
+                        type="button"
+                        onClick={() => void confirm()}
+                        className="btn"
+                        style={{
+                            flex: 1,
+                            // Destructive actions get the error role, not the accent one:
+                            // this is the only import button that can remove records.
+                            ...(mode === 'overwrite' ? { background: 'var(--err)', color: 'var(--onerrc)' } : {}),
+                        }}
+                    >
                         <Icon icon={Check} size={16} />
-                        {t('btn.confirm')}
+                        {t(mode === 'overwrite' ? 'import.mode_overwrite' : 'btn.confirm')}
                     </button>
                 </div>
             </div>
@@ -151,6 +191,7 @@ const ImportSection: React.FC<ImportSectionProps> = ({
 
     return (
         <div className="d-col" style={{ gap: 12 }}>
+            <p className="sub">{t('import.merge_note')}</p>
             <SegmentedList>
                 <div className="li" style={{ cursor: 'default' }}>
                     <span className="ic p"><SpriteIcon id="upload" /></span>

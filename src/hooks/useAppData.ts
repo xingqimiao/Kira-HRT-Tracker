@@ -19,7 +19,8 @@ import { JournalEntry, sanitizeJournalEntries } from '../utils/bodyJournal';
 import { hrtDaysSince, normalizeHrtStartDate } from '../utils/hrtStart';
 import { milestoneFor } from '../utils/hrtMilestone';
 import { isThirdDayStreak } from '../utils/hrtStreak';
-import { backfillLegacyLabAnalyte, normalizeImportedAnalyte } from '../utils/labAnalyteImport';
+import { backfillLegacyLabAnalyte, normalizeImportedAnalyte, normalizeImportUnit } from '../utils/labAnalyteImport';
+import { importedAdditions } from '../utils/importMerge';
 import { get as secureGet, set as secureSet, remove as secureRemove } from '../utils/secureStore';
 import { readMedPlans, readMedPlanState, writeMedPlans, setMedPlanOwner, MED_PLAN_CHANGED_EVENT } from '../utils/medPlan';
 
@@ -258,6 +259,7 @@ export const useAppData = (
 
     // --- State ---
     const [events, setEvents] = useState<DoseEvent[]>(() => loadJSON(keyFor(mode, 'events'), [] as DoseEvent[]));
+    const [inactiveImportRevision, setInactiveImportRevision] = useState(0);
     const [weight, setWeightState] = useState<number>(() => {
         // Weight is shared across modes (a physical attribute of the person).
         const saved = secureGet(sharedKey('weight'));
@@ -1129,7 +1131,7 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
             // Explicit flag wins; otherwise a record with no hormone value is
             // monitoring-only by construction.
             const monitoringOnly = item.monitoringOnly === true || valNum === undefined;
-            const unitVal = (item.unit === 'pg/ml' || item.unit === 'pmol/l' || item.unit === 'ng/dl' || item.unit === 'nmol/l') ? item.unit : 'pmol/l';
+            const unitVal = normalizeImportUnit(item.unit);
             // Never infer from the unit: a missing/unknown analyte is the safe
             // state, and calibration excludes it until the user confirms it.
             const analyteVal = normalizeImportedAnalyte(item.analyte, monitoringOnly, {
@@ -1452,14 +1454,63 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
         }
     };
 
+    const countInvalidImport = (parsed: any, opts?: { legacyAnalyteFromUnit?: boolean }): number => {
+        let rejected = 0;
+        const count = (rows: unknown, sanitize: (input: unknown) => unknown[]) => {
+            if (Array.isArray(rows)) rejected += rows.length - sanitize(rows).length;
+        };
+        const inspect = (block: any) => {
+            if (!block || typeof block !== 'object') return;
+            count(block.events, sanitizeImportedEvents);
+            count(block.labResults, rows => sanitizeImportedLabResults(rows, opts));
+            count(block.doseTemplates, sanitizeImportedTemplates);
+            count(block.journal, sanitizeJournalEntries);
+            count(block.quickDoses, sanitizeImportedQuickDoses);
+        };
+        if (Array.isArray(parsed)) count(parsed, sanitizeImportedEvents);
+        else if (parsed?.modes && typeof parsed.modes === 'object') {
+            inspect(parsed.modes.transfem);
+            inspect(parsed.modes.transmasc);
+        } else inspect(parsed);
+        return rejected;
+    };
+
     const mergeImportedData = (parsed: any, opts?: { legacyAnalyteFromUnit?: boolean }): boolean => {
+        let mayHaveWritten = false;
         try {
+            const metaVersion = Number(parsed?.meta?.version), rootVersion = Number(parsed?.version);
+            if ((Number.isFinite(metaVersion) && metaVersion > 3) || (Number.isFinite(rootVersion) && rootVersion > 1)) throw new Error('Unsupported backup version');
+            const invalid = countInvalidImport(parsed, opts);
+            if (invalid > 0) {
+                showDialog('alert', t('import.invalid_records').replace('{n}', String(invalid)));
+                return false;
+            }
+            if (parsed?.modes && typeof parsed.modes === 'object') {
+                for (const m of ['transfem', 'transmasc'] as const) {
+                    const block = parsed.modes[m];
+                    if (!block || typeof block !== 'object') continue;
+                    if (Array.isArray(block.events)) sanitizeImportedEvents(block.events);
+                    if (Array.isArray(block.labResults)) sanitizeImportedLabResults(block.labResults, opts);
+                    if (Array.isArray(block.doseTemplates)) sanitizeImportedTemplates(block.doseTemplates);
+                    if (Array.isArray(block.journal)) sanitizeJournalEntries(block.journal);
+                    if (Array.isArray(block.quickDoses)) sanitizeImportedQuickDoses(block.quickDoses);
+                }
+            }
+            // Which added records may be restamped is a data-safety rule, not a
+            // detail of this function — see `importedAdditions`. Tombstones are read
+            // by each caller *before* `forgetDeletions` clears them.
+            const added = <T extends { id: string }>(
+                incoming: T[],
+                existing: T[],
+                tombstones: Readonly<Record<string, number>>,
+            ): T[] => importedAdditions(incoming, existing, tombstones);
             let incomingEvents: DoseEvent[] = [];
-            let incomingWeight: number | undefined = undefined;
             let incomingLabs: LabResult[] = [];
             let incomingTemplates: DoseTemplate[] = [];
             let incomingJournal: JournalEntry[] = [];
+            let incomingQuickDoses: QuickDose[] = [];
             let mergedOther = 0;
+            let hadOther = false;
 
             if (parsed && typeof parsed === 'object' && parsed.modes && typeof parsed.modes === 'object') {
                 const modesBlock = parsed.modes as Record<string, any>;
@@ -1474,43 +1525,49 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
                         incomingLabs = ls;
                         incomingTemplates = tmps;
                         if (Array.isArray(block.journal)) incomingJournal = sanitizeJournalEntries(block.journal);
+                        if (Array.isArray(block.quickDoses)) incomingQuickDoses = sanitizeImportedQuickDoses(block.quickDoses);
                     } else {
                         // Merge into the other mode's localStorage directly.
                         const existingEvs = loadJSON<DoseEvent[]>(keyFor(m, 'events'), []);
                         const existingLs = loadJSON<LabResult[]>(keyFor(m, 'lab-results'), []);
                         const existingTmps = loadJSON<DoseTemplate[]>(keyFor(m, 'dose-templates'), []);
                         const existingJour = loadJSON<JournalEntry[]>(keyFor(m, 'journal'), []);
-                        const evIds = new Set(existingEvs.map(e => e.id));
-                        const lsIds = new Set(existingLs.map(l => l.id));
-                        const tmpIds = new Set(existingTmps.map(tm => tm.id));
-                        const jourIds = new Set(existingJour.map(j => j.id));
-                        const newEvs = evs.filter(e => !evIds.has(e.id));
-                        const newLs = ls.filter(l => !lsIds.has(l.id));
-                        const newTmps = tmps.filter(tm => !tmpIds.has(tm.id));
+                        const existingQuick = loadJSON<QuickDose[]>(keyFor(m, 'quick-doses'), []);
+                        // Before `forgetDeletions` below, which is what decides a
+                        // revived record's stamp.
+                        const deleted = readTombstones(m);
+                        const newEvs = added(evs, existingEvs, deleted.events);
+                        const newLs = added(ls, existingLs, deleted.labResults);
+                        const newTmps = added(tmps, existingTmps, deleted.doseTemplates);
                         const jour = Array.isArray(block.journal) ? sanitizeJournalEntries(block.journal) : [];
-                        const newJour = jour.filter(j => !jourIds.has(j.id));
+                        const newJour = added(jour, existingJour, deleted.journal);
+                        const qds = Array.isArray(block.quickDoses) ? sanitizeImportedQuickDoses(block.quickDoses) : [];
+                        const newQuick = added(qds, existingQuick, deleted.quickDoses);
+                        hadOther ||= Boolean(evs.length || ls.length || tmps.length || jour.length || qds.length);
                         // An explicit merge is the user asking for these records
                         // back, so any tombstone standing in the way goes.
+                        mayHaveWritten = true;
                         forgetDeletions('events', evs.map(e => e.id), m);
                         forgetDeletions('labResults', ls.map(l => l.id), m);
                         forgetDeletions('doseTemplates', tmps.map(tm => tm.id), m);
                         forgetDeletions('journal', jour.map(j => j.id), m);
+                        forgetDeletions('quickDoses', qds.map(q => q.id), m);
                         if (newEvs.length) secureSet(keyFor(m, 'events'), JSON.stringify([...existingEvs, ...newEvs]));
                         if (newLs.length) secureSet(keyFor(m, 'lab-results'), JSON.stringify([...existingLs, ...newLs]));
                         if (newTmps.length) secureSet(keyFor(m, 'dose-templates'), JSON.stringify([...existingTmps, ...newTmps]));
                         if (newJour.length) secureSet(keyFor(m, 'journal'), JSON.stringify([...existingJour, ...newJour]));
-                        mergedOther += newEvs.length + newLs.length + newJour.length;
+                        if (newQuick.length) secureSet(keyFor(m, 'quick-doses'), JSON.stringify([...existingQuick, ...newQuick]));
+                        mergedOther += newEvs.length + newLs.length + newTmps.length + newJour.length + newQuick.length;
                     }
                 }
-                if (typeof parsed.weight === 'number' && parsed.weight > 0) incomingWeight = parsed.weight;
             } else if (Array.isArray(parsed)) {
                 incomingEvents = sanitizeImportedEvents(parsed);
             } else if (typeof parsed === 'object' && parsed !== null) {
                 if (Array.isArray(parsed.events)) incomingEvents = sanitizeImportedEvents(parsed.events);
-                if (typeof parsed.weight === 'number' && parsed.weight > 0) incomingWeight = parsed.weight;
                 if (Array.isArray(parsed.labResults)) incomingLabs = sanitizeImportedLabResults(parsed.labResults, opts);
                 if (Array.isArray(parsed.doseTemplates)) incomingTemplates = sanitizeImportedTemplates(parsed.doseTemplates);
                 if (Array.isArray(parsed.journal)) incomingJournal = sanitizeJournalEntries(parsed.journal);
+                if (Array.isArray(parsed.quickDoses)) incomingQuickDoses = sanitizeImportedQuickDoses(parsed.quickDoses);
             }
 
             // v1 flat-format safety (merge): siphon wrong-mode events *and labs*
@@ -1529,9 +1586,10 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
                 const otherEvs: DoseEvent[] = [];
                 for (const e of incomingEvents) (eventBelongs(e) ? keepEvs : otherEvs).push(e);
                 if (otherEvs.length) {
+                    mayHaveWritten = true;
                     const existing = loadJSON<DoseEvent[]>(keyFor(otherMode, 'events'), []);
-                    const existingIds = new Set(existing.map(x => x.id));
-                    const newOnes = otherEvs.filter(e => !existingIds.has(e.id));
+                    const newOnes = added(otherEvs, existing, readTombstones(otherMode).events);
+                    hadOther = true;
                     forgetDeletions('events', otherEvs.map(e => e.id), otherMode);
                     if (newOnes.length) {
                         secureSet(keyFor(otherMode, 'events'), JSON.stringify([...existing, ...newOnes]));
@@ -1545,9 +1603,10 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
                 const otherLs: LabResult[] = [];
                 for (const l of incomingLabs) (labBelongs(l) ? keepLs : otherLs).push(l);
                 if (otherLs.length) {
+                    mayHaveWritten = true;
                     const existing = loadJSON<LabResult[]>(keyFor(otherMode, 'lab-results'), []);
-                    const existingIds = new Set(existing.map(x => x.id));
-                    const newOnes = otherLs.filter(l => !existingIds.has(l.id));
+                    const newOnes = added(otherLs, existing, readTombstones(otherMode).labResults);
+                    hadOther = true;
                     forgetDeletions('labResults', otherLs.map(l => l.id), otherMode);
                     if (newOnes.length) {
                         secureSet(keyFor(otherMode, 'lab-results'), JSON.stringify([...existing, ...newOnes]));
@@ -1557,55 +1616,64 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
                 }
             }
 
-            if (!mergedOther && !incomingEvents.length && !incomingWeight && !incomingLabs.length && !incomingTemplates.length && !incomingJournal.length) throw new Error('No valid entries');
+            if (!hadOther && !incomingEvents.length && !incomingLabs.length && !incomingTemplates.length && !incomingJournal.length && !incomingQuickDoses.length) throw new Error('No valid entries');
 
             let merged = mergedOther;
+
+            // The stamps a revival needs, read before `forgetDeletions` clears them.
+            const deleted = readTombstones(mode);
 
             // Compute diffs synchronously against current state so the count is
             // available immediately when showDialog is called (setter callbacks
             // are invoked asynchronously by React and would not update `merged`
             // in time).
             if (incomingEvents.length > 0) {
-                const existingIds = new Set(events.map(e => e.id));
-                const newOnes = incomingEvents.filter(e => !existingIds.has(e.id));
+                mayHaveWritten = true;
+                const newOnes = added(incomingEvents, events, deleted.events);
                 merged += newOnes.length;
                 forgetDeletions('events', incomingEvents.map(e => e.id));
                 if (newOnes.length > 0) setEvents(prev => [...prev, ...newOnes]);
             }
 
-            if (incomingWeight !== undefined && incomingWeight > weight) {
-                setWeight(incomingWeight);
-            }
-
             if (incomingLabs.length > 0) {
-                const existingIds = new Set(labResults.map(r => r.id));
-                const newOnes = incomingLabs.filter(r => !existingIds.has(r.id));
+                mayHaveWritten = true;
+                const newOnes = added(incomingLabs, labResults, deleted.labResults);
                 merged += newOnes.length;
                 forgetDeletions('labResults', incomingLabs.map(r => r.id));
                 if (newOnes.length > 0) setLabResults(prev => [...prev, ...newOnes]);
             }
 
             if (incomingTemplates.length > 0) {
-                const existingIds = new Set(doseTemplates.map(t => t.id));
-                const newOnes = incomingTemplates.filter(t => !existingIds.has(t.id));
+                mayHaveWritten = true;
+                const newOnes = added(incomingTemplates, doseTemplates, deleted.doseTemplates);
                 merged += newOnes.length;
                 forgetDeletions('doseTemplates', incomingTemplates.map(t => t.id));
                 if (newOnes.length > 0) setDoseTemplates(prev => [...prev, ...newOnes]);
             }
 
             if (incomingJournal.length > 0) {
-                const existingIds = new Set(journal.map(e => e.id));
-                const newOnes = incomingJournal.filter(e => !existingIds.has(e.id));
+                mayHaveWritten = true;
+                const newOnes = added(incomingJournal, journal, deleted.journal);
                 merged += newOnes.length;
                 forgetDeletions('journal', incomingJournal.map(e => e.id));
                 if (newOnes.length > 0) setJournal(prev => [...prev, ...newOnes]);
             }
 
+            if (incomingQuickDoses.length > 0) {
+                mayHaveWritten = true;
+                const newOnes = added(incomingQuickDoses, quickDoses, deleted.quickDoses);
+                merged += newOnes.length;
+                forgetDeletions('quickDoses', incomingQuickDoses.map(q => q.id));
+                if (newOnes.length > 0) setQuickDoses(prev => [...prev, ...newOnes]);
+            }
+            // Inactive-mode data lives in storage and is not in the active records
+            // fingerprint, so report a genuine change to the sync scheduler.
+            if (mergedOther > 0) setInactiveImportRevision(n => n + 1);
             showDialog('alert', (t('account.merge_success') as string).replace('{n}', String(merged)));
             return true;
         } catch (err) {
             console.error(err);
-            showDialog('alert', t('account.merge_failed'));
+            showDialog('alert', t(mayHaveWritten ? 'import.merge_partial' : 'account.merge_failed'));
             return false;
         }
     };
@@ -1840,6 +1908,7 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
 
     return {
         events, setEvents,
+        inactiveImportRevision,
         weight, setWeight,
         labResults, setLabResults,
         doseTemplates, setDoseTemplates,
@@ -1884,6 +1953,7 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
         addQuickDose, deleteQuickDose,
         processImportedData,
         mergeImportedData,
+        countInvalidImport,
         buildExportPayload,
         applySyncedState,
         // (account, mode) currently selected vs. the one whose data is actually

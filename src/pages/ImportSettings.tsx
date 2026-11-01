@@ -6,7 +6,12 @@ import { HeaderBack } from '../ui/proto';
 
 interface ImportSettingsProps {
     /** Accepts bytes too — see `ImportSection` for why (Featherline is binary). */
-    onImportJson: (data: string | ArrayBuffer, opts?: { legacyAnalyteFromUnit?: boolean }) => boolean | Promise<boolean>;
+    onImportJson: (
+        data: string | ArrayBuffer,
+        opts?: { legacyAnalyteFromUnit?: boolean; mode?: import('../components/ImportSection').ImportMode },
+    ) => boolean | Promise<boolean>;
+    /** Whether the signed-in session allows replacing the cloud, not just merging. */
+    canOverwrite?: boolean;
     /** Counts the payload before it is merged — see `ImportSection`. */
     onPreview?: (data: string | ArrayBuffer) => Promise<import('../components/ImportSection').ImportPreview | null>;
     /** Plaintext that only became readable after a password step. */
@@ -17,6 +22,7 @@ interface ImportSettingsProps {
 
 const ImportSettings: React.FC<ImportSettingsProps> = ({
     onImportJson,
+    canOverwrite = false,
     onPreview,
     review,
     onReviewConsumed,
@@ -29,6 +35,7 @@ const ImportSettings: React.FC<ImportSettingsProps> = ({
             <HeaderBack title={t('import.title')} onBack={onBack} backLabel={t('core.back')} />
             <ImportSection
                 onImportJson={onImportJson}
+                canOverwrite={canOverwrite}
                 onPreview={onPreview}
                 review={review}
                 onReviewConsumed={onReviewConsumed}

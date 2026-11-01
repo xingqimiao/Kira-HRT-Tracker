@@ -14,7 +14,7 @@ import { get as secureGet, set as secureSet, remove as secureRemove } from '../u
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { readCoreState, syncWithCore, CoreSyncError, toLocalPayload } from '../services/coreSync';
+import { readCoreState, restoreCoreState, syncWithCore, CoreSyncError, toLocalPayload } from '../services/coreSync';
 import { identitiesOf, remoteDiffers } from '../services/recordDocs';
 import { mergeSyncStates, fingerprintState, type SyncState } from '../utils/syncMerge';
 import { normalizeSyncState } from '../utils/syncMerge';
@@ -49,6 +49,13 @@ interface SyncCursor {
   identities: Record<string, string>;
   /** 0/absent for a cursor written before `SYNC_SCHEMA` existed. */
   schema: number;
+  /**
+   * The account's restore epoch when this cursor was written.
+   *
+   * Absent on a cursor from before restores existed, which is the same as '0' — the
+   * server itself treats a missing epoch as generation 0 until an account is restored.
+   */
+  restoreGeneration?: string;
 }
 
 /**
@@ -67,7 +74,8 @@ function readSyncCursor(key: string): SyncCursor | null {
     const identities = parsed.identities;
     if (!identities || typeof identities !== 'object' || Array.isArray(identities)) return null;
     const schema = typeof parsed.schema === 'number' && Number.isFinite(parsed.schema) ? parsed.schema : 0;
-    return { version: parsed.version, identities: identities as Record<string, string>, schema };
+    const restoreGeneration = typeof parsed.restoreGeneration === 'string' ? parsed.restoreGeneration : undefined;
+    return { version: parsed.version, identities: identities as Record<string, string>, schema, restoreGeneration };
   } catch {
     return null;
   }
@@ -84,10 +92,29 @@ function writeSyncCursor(key: string, cursor: SyncCursor): void {
 
 export type CoreSyncStatus = 'off' | 'idle' | 'syncing' | 'synced' | 'error';
 
+/** Why a "replace the cloud" import did or did not land. */
+export type RestoreOutcome =
+  | { ok: true }
+  /** Not signed in, or a sync was mid-flight; nothing was sent. */
+  | { ok: false; reason: 'unavailable' | 'busy' }
+  /** Another device wrote since the read, or restored the account. Retry is meaningful. */
+  | { ok: false; reason: 'conflict' }
+  | { ok: false; reason: 'error' };
+
 export interface CoreSyncState {
   status: CoreSyncStatus;
   lastSyncedAt: number | null;
   syncNow: () => Promise<void>;
+  /**
+   * Replace the account with `state` — the "overwrite the cloud" half of an import.
+   *
+   * The whole operation lives here rather than in the import screen because it has to be
+   * serialised against ordinary syncs: a push that ran between the restore's read and its
+   * commit would make the restore fail, and a merge that ran after it but before the local
+   * state was replaced would upload the old cache back. `state` is written locally *after*
+   * the server accepted it, so a failed restore leaves this device untouched.
+   */
+  restoreToCloud: (state: SyncState) => Promise<RestoreOutcome>;
   /**
    * The server refused the records because this account has no bound fallback
    * credential. True until a sync succeeds, and it is a state to act on — see
@@ -124,6 +151,8 @@ interface Options {
   pkParams: unknown;
   /** The medication plan scalar — included so a plan edit schedules a push. */
   medPlan: unknown;
+  /** Changes when a file import updates the other mode's storage. */
+  inactiveImportRevision: number;
   /** Account-scoped settings, same contract as the data above. */
   calibrationMethod: unknown;
   calibrationHistoryMode: unknown;
@@ -159,6 +188,7 @@ export const useCoreSync = ({
   weight,
   pkParams,
   medPlan,
+  inactiveImportRevision,
   calibrationMethod,
   calibrationHistoryMode,
   aaChartMode,
@@ -199,6 +229,13 @@ export const useCoreSync = ({
 
   /** Prevents overlapping syncs; a rerun requested mid-sync is coalesced. */
   const runningRef = useRef(false);
+  /**
+   * A restore owns the account while it runs.
+   *
+   * Ordinary syncs skip while this is set — they would otherwise read the account
+   * mid-replacement or push the cache the replacement is about to discard.
+   */
+  const restoringRef = useRef(false);
   const rerunRef = useRef(false);
   /**
    * Who is waiting on the coalesced rerun, so `syncNow` can await a real sync.
@@ -292,6 +329,8 @@ export const useCoreSync = ({
     // A manual "sync now" is a user action, so it works even when the automatic
     // sync preference is off. Background paths still require the preference.
     if (!authToken || !userId || !ready || (!enabled && !force)) return;
+    // A restore is replacing the account; merging against it now would fight it.
+    if (restoringRef.current) return;
 
     if (runningRef.current) {
       // A sync is already in flight. Ask for a rerun and hand the caller a promise
@@ -308,6 +347,9 @@ export const useCoreSync = ({
     // account has moved on stops rather than writing one account's data into another's.
     const myGeneration = generationRef.current;
     const stillMine = () => generationRef.current === myGeneration && tokenRef.current === authToken;
+    // Outside the `try`: the restore-conflict handler below has to rewrite it, and it
+    // is the same key the successful path advances.
+    const cursorKey = `hrt-sync-cursor-${account}`;
 
     try {
       // Read first, always. Pushing without looking would overwrite whatever
@@ -317,7 +359,6 @@ export const useCoreSync = ({
       // after the watermark, so a poll that finds nothing costs a few hundred bytes
       // instead of the whole history. The push then compares against the identities
       // the last successful push acknowledged, rather than against a full read.
-      const cursorKey = `hrt-sync-cursor-${account}`;
       let cursor = readSyncCursor(cursorKey);
       // A cursor from an older merge protocol cannot be trusted to describe what the
       // account holds (see `SYNC_SCHEMA`). Dropping it forces a full read and, because
@@ -343,6 +384,32 @@ export const useCoreSync = ({
         if (!stillMine()) return;
       }
       const remoteState = read.payload;
+
+      // The account was restored from a backup since this device last looked. Its cache
+      // describes a history that no longer exists, so merging would treat every record
+      // it holds as missing from the account and upload it again — undoing the restore.
+      // The account is adopted whole instead, epoch included; this is the read-time half
+      // of the protection whose write-time half is the server's epoch check.
+      if (cursor && (cursor.restoreGeneration ?? '0') !== read.restoreGeneration) {
+        if (!stillMine()) return;
+        const adopted = normalizeSyncState(remoteState);
+        applyRemoteRef.current(adopted);
+        writeSyncCursor(cursorKey, {
+          version: read.syncVersion,
+          identities: identitiesOf(toLocalPayload(adopted)),
+          schema: SYNC_SCHEMA,
+          restoreGeneration: read.restoreGeneration,
+        });
+        lastSeenRef.current = fingerprintState(adopted);
+        bootstrappedForRef.current = account;
+        markSynced();
+        setAccountIncomplete(false);
+        setStatus('synced');
+        retryCountRef.current = 0;
+        clearRetry();
+        return;
+      }
+
       const remote = normalizeSyncState(remoteState);
       const local = normalizeSyncState(buildPayloadRef.current());
 
@@ -358,8 +425,23 @@ export const useCoreSync = ({
       // The read's watermark is about reads, not writes: storing it here is safe even
       // if the push below fails, because the rows it covers have already been merged
       // into local state. The identity map is only advanced after a push lands.
-      if (cursor) writeSyncCursor(cursorKey, { ...cursor, version: read.syncVersion, schema: SYNC_SCHEMA });
-      else writeSyncCursor(cursorKey, { version: read.syncVersion, identities: {}, schema: SYNC_SCHEMA });
+      if (cursor) {
+        writeSyncCursor(cursorKey, {
+          ...cursor,
+          version: read.syncVersion,
+          schema: SYNC_SCHEMA,
+          // Learned on every read, so a device finds out about a restore the first time
+          // it reads — before it tries to write anything.
+          restoreGeneration: read.restoreGeneration,
+        });
+      } else {
+        writeSyncCursor(cursorKey, {
+          version: read.syncVersion,
+          identities: {},
+          schema: SYNC_SCHEMA,
+          restoreGeneration: read.restoreGeneration,
+        });
+      }
       const baseline = cursor?.identities;
 
       // The merged picture, computed before the "nothing to send" check because that
@@ -388,6 +470,7 @@ export const useCoreSync = ({
           version: read.syncVersion,
           identities: baseline ?? identitiesOf(mergedPayload),
           schema: SYNC_SCHEMA,
+          restoreGeneration: read.restoreGeneration,
         });
         bootstrappedForRef.current = account;
         markSynced();
@@ -417,6 +500,7 @@ export const useCoreSync = ({
         updateExisting: true,
         remote: pushRemote,
         known: pushKnown,
+        restoreGeneration: read.restoreGeneration,
       });
 
 
@@ -446,6 +530,7 @@ export const useCoreSync = ({
         version: read.syncVersion,
         identities: identitiesOf(mergedPayload),
         schema: SYNC_SCHEMA,
+        restoreGeneration: read.restoreGeneration,
       });
       bootstrappedForRef.current = account;
       markSynced();
@@ -455,6 +540,39 @@ export const useCoreSync = ({
       clearRetry();
     } catch (error) {
       console.warn('[sync] sync failed:', error);
+
+      // The account was replaced from a backup on another device, and this one still
+      // holds the old epoch. Retrying with the same cache is exactly what must not
+      // happen: the merge would re-upload the records the restore removed. The account
+      // as it now stands is authoritative, so this device adopts it whole — records,
+      // tombstones and epoch — and its next push starts from that state.
+      if (error instanceof CoreSyncError && error.restoreConflict) {
+        try {
+          const read = await readCoreState(authToken);
+          if (!stillMine()) return;
+          const adopted = normalizeSyncState(read.payload);
+          applyRemoteRef.current(adopted);
+          writeSyncCursor(cursorKey, {
+            version: read.syncVersion,
+            identities: identitiesOf(toLocalPayload(adopted)),
+            schema: SYNC_SCHEMA,
+            restoreGeneration: read.restoreGeneration,
+          });
+          lastSeenRef.current = fingerprintState(adopted);
+          bootstrappedForRef.current = account;
+          markSynced();
+          setAccountIncomplete(false);
+          setStatus('synced');
+          retryCountRef.current = 0;
+          clearRetry();
+          return;
+        } catch (recovery) {
+          // The read failed too (offline, locked). Fall through to the ordinary retry,
+          // which re-reads before writing — the epoch is learned there.
+          console.warn('[sync] could not adopt the restored account:', recovery);
+        }
+      }
+
       const isLocked = error instanceof CoreSyncError && error.locked;
       const isIncomplete = error instanceof CoreSyncError && error.accountIncomplete;
       setStatus(isLocked ? 'idle' : 'error');
@@ -518,7 +636,7 @@ export const useCoreSync = ({
   // to `events`. `readAppSettings` returns the same values until one of them
   // actually changes, which is what makes it a usable dependency.
   const localFingerprint = JSON.stringify([
-    events, labResults, doseTemplates, journal, quickDoses, weight, pkParams, medPlan,
+    events, labResults, doseTemplates, journal, quickDoses, weight, pkParams, medPlan, inactiveImportRevision,
     readAppSettings(), calibrationMethod, calibrationHistoryMode, aaChartMode, hrtStartDate, recheckIntervals, ocrModelTier, pkEngine,
   ]);
   useEffect(() => {
@@ -579,6 +697,106 @@ export const useCoreSync = ({
     if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
   }, []);
 
+  const restoreToCloud = useCallback(async (state: SyncState): Promise<RestoreOutcome> => {
+    const authToken = tokenRef.current;
+    const account = userId;
+    if (!authToken || !account || !ready) return { ok: false, reason: 'unavailable' };
+
+    // Let a sync that is already in flight finish, so the read below is not racing a
+    // push. A run that starts after this point sees `restoringRef` and stands down.
+    if (runningRef.current) {
+      await new Promise<void>((resolve) => rerunWaitersRef.current.push(resolve));
+    }
+    if (runningRef.current) return { ok: false, reason: 'busy' };
+
+    const myGeneration = generationRef.current;
+    const stillMine = () => generationRef.current === myGeneration && tokenRef.current === authToken;
+
+    restoringRef.current = true;
+    setStatus('syncing');
+    try {
+      const next = normalizeSyncState(state);
+      const read = await readCoreState(authToken);
+      if (!stillMine()) return { ok: false, reason: 'error' };
+      const payload = toLocalPayload(next);
+      const restored = await restoreCoreState(authToken, payload, read.syncVersion, {
+        restoreGeneration: read.restoreGeneration,
+      });
+      if (!stillMine()) return { ok: false, reason: 'error' };
+
+      // The server has the snapshot; only now may this device replace what it shows, so a
+      // failed restore leaves the local data exactly as it was.
+      applyRemoteRef.current(next);
+      writeSyncCursor(`hrt-sync-cursor-${account}`, {
+        version: restored.syncVersion,
+        identities: identitiesOf(payload),
+        schema: SYNC_SCHEMA,
+        restoreGeneration: restored.restoreGeneration,
+      });
+      lastSeenRef.current = fingerprintState(next);
+      bootstrappedForRef.current = account;
+      markSynced();
+      setAccountIncomplete(false);
+      setStatus('synced');
+      retryCountRef.current = 0;
+      clearRetry();
+      return { ok: true };
+    } catch (error) {
+      console.warn('[sync] restore failed:', error);
+      const cursorKey = `hrt-sync-cursor-${account}`;
+
+      // The account was restored elsewhere between this device's read and its write. Its
+      // epoch is the one to adopt: keeping this device's cache would undo that restore.
+      if (error instanceof CoreSyncError && error.restoreConflict) {
+        try {
+          const fresh = await readCoreState(authToken);
+          if (!stillMine()) return { ok: false, reason: 'error' };
+          const adopted = normalizeSyncState(fresh.payload);
+          applyRemoteRef.current(adopted);
+          writeSyncCursor(cursorKey, {
+            version: fresh.syncVersion,
+            identities: identitiesOf(toLocalPayload(adopted)),
+            schema: SYNC_SCHEMA,
+            restoreGeneration: fresh.restoreGeneration,
+          });
+          lastSeenRef.current = fingerprintState(adopted);
+          markSynced();
+          setStatus('synced');
+        } catch {
+          // Offline too; the retry path re-reads before it writes.
+          setStatus('error');
+        }
+        return { ok: false, reason: 'conflict' };
+      }
+
+      // Another ordinary write landed since the read. Drop the identity baseline so the
+      // next sync compares against the whole account instead of pushing a stale delta.
+      if (error instanceof CoreSyncError && error.status === 409) {
+        try {
+          const fresh = await readCoreState(authToken);
+          if (stillMine()) {
+            writeSyncCursor(cursorKey, {
+              version: fresh.syncVersion,
+              identities: {},
+              schema: SYNC_SCHEMA,
+              restoreGeneration: fresh.restoreGeneration,
+            });
+            lastSeenRef.current = null;
+          }
+        } catch {
+          // Offline; a failed cursor is survivable (the next sync does a full read).
+        }
+        setStatus('idle');
+        return { ok: false, reason: 'conflict' };
+      }
+
+      setStatus('error');
+      return { ok: false, reason: 'error' };
+    } finally {
+      restoringRef.current = false;
+    }
+  }, [clearRetry, markSynced, ready, userId]);
+
   const syncNow = useCallback(async (): Promise<void> => {
     clearRetry();
     retryCountRef.current = 0;
@@ -588,5 +806,5 @@ export const useCoreSync = ({
     await run(true);
   }, [clearRetry, run]);
 
-  return { status, lastSyncedAt, syncNow, accountIncomplete };
+  return { status, lastSyncedAt, syncNow, accountIncomplete, restoreToCloud };
 };
