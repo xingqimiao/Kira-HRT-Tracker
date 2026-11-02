@@ -1426,6 +1426,7 @@ const PACK: LangPack = {
     "gel.reference.show_all": "查看全部 {n} 项",
     "gel.reference.collapse": "收起",
     "gel.reference.use": "使用",
+    "gel.reference.note_detail": "不同国家、包装和计量器规格可能不同，请核对你手中产品的说明书。凝胶重量与雌二醇含量不同。",
 };
 
 export default PACK;

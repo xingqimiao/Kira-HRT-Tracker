@@ -1426,6 +1426,7 @@ const PACK: LangPack = {
     "gel.reference.show_all": "Show all {n}",
     "gel.reference.collapse": "Show less",
     "gel.reference.use": "Use",
+    "gel.reference.note_detail": "Check the leaflet for your exact product: dispensers and pack specifications vary by country. Gel weight is not the estradiol amount.",
 };
 
 export default PACK;

@@ -278,7 +278,9 @@ export default function GelDoseReference({ onPick, onExpandedChange }: {
                     <ul className="m3e-gelref-list" role="list">
                         {rows.map(row => rowNode(row, selected === row.id, () => pickInline(row)))}
                     </ul>
-                    <p className="m3e-gelref-note">{t('gel.reference.note')}</p>
+                    {/* The header already carries the short warning; repeating it here
+                        only pushed the list down. */}
+                    <p className="m3e-gelref-note">{t('gel.reference.note_detail')}</p>
                 </>
             )}
 
@@ -287,7 +289,6 @@ export default function GelDoseReference({ onPick, onExpandedChange }: {
                 onClose={closeSheet}
                 title={label}
                 closeLabel={t('btn.cancel')}
-                tall
                 footer={(
                     <div className="m3e-gelref-sheet-actions">
                         <button type="button" className="btn x" onClick={closeSheet}>
