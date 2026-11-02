@@ -1405,9 +1405,11 @@ const PACK: LangPack = {
     "gel.reference.use": "使用",
     "gel.reference.half": "半分",
     "restore.entry_hint": "クラウドをこのファイルで完全に置き換えますか？",
-    "restore.action": "差分を確認して上書き",
+    "restore.action": "差分を見る",
     "import.merge_action": "マージして取り込む",
-    "import.format_link": "データ形式の仕様を見る",
+    "import.format_link": "データ形式の仕様",
+    "restore.entry_title": "クラウドを破棄して上書き",
+    "restore.entry_body": "クラウドの記録を消去し、このファイルで完全に置き換えます",
 };
 
 export default PACK;

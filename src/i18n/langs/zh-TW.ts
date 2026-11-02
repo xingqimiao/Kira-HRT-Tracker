@@ -1405,9 +1405,11 @@ const PACK: LangPack = {
     "gel.reference.use": "使用",
     "gel.reference.half": "半",
     "restore.entry_hint": "需要將雲端完全重置為此檔案？",
-    "restore.action": "檢視差異並覆蓋",
+    "restore.action": "檢視差異",
     "import.merge_action": "合併匯入",
-    "import.format_link": "檢視開放資料格式規範",
+    "import.format_link": "開放資料格式規範",
+    "restore.entry_title": "捨棄雲端並覆蓋",
+    "restore.entry_body": "清空雲端現有紀錄，完全替換為此檔案",
 };
 
 export default PACK;

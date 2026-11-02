@@ -1428,9 +1428,11 @@ const PACK: LangPack = {
     "gel.reference.note_detail": "不同国家、包装和计量器规格可能不同，请核对你手中产品的说明书。凝胶重量与雌二醇含量不同。",
     "gel.reference.half": "半",
     "restore.entry_hint": "需要将云端完全重置为此文件？",
-    "restore.action": "查看差异并覆盖",
+    "restore.action": "查看差异",
     "import.merge_action": "合并导入",
-    "import.format_link": "查看开放数据格式规范",
+    "import.format_link": "开放数据格式规范",
+    "restore.entry_title": "丢弃云端并覆盖",
+    "restore.entry_body": "清空云端现有记录，完全替换为此文件",
 };
 
 export default PACK;

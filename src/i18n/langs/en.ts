@@ -1428,9 +1428,11 @@ const PACK: LangPack = {
     "gel.reference.note_detail": "Check the leaflet for your exact product: dispensers and pack specifications vary by country. Gel weight is not the estradiol amount.",
     "gel.reference.half": "Half",
     "restore.entry_hint": "Need to reset the cloud to this file?",
-    "restore.action": "Review difference and overwrite",
+    "restore.action": "View diff",
     "import.merge_action": "Merge import",
     "import.format_link": "Open data format spec",
+    "restore.entry_title": "Discard the cloud and overwrite",
+    "restore.entry_body": "Clears every record in the cloud and replaces them with this file",
 };
 
 export default PACK;

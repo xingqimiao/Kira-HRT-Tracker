@@ -51,23 +51,32 @@ const ImportSettings: React.FC<ImportSettingsProps> = ({
 
             {/* The Chinese guide carries the field tables, worked example code and a
                 prompt to hand an assistant; the English spec stays the authority. */}
-            <p className="sub" style={{ margin: '4px 6px 0', fontSize: 12, lineHeight: 1.6 }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 24 }}>
                 <button
                     type="button"
                     onClick={() => void openExternalUrl('https://github.com/xingqimiao/Kira-HRT-Tracker/blob/HEAD/docs/hrt-import-export-protocol.zh-CN.md')}
                     style={{
-                        padding: 0,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '7px 14px',
+                        borderRadius: 999,
                         border: 0,
-                        background: 'none',
+                        background: 'var(--sch)',
+                        color: 'var(--var)',
                         font: 'inherit',
-                        color: 'var(--pri)',
-                        textDecoration: 'underline',
-                        textUnderlineOffset: 2,
+                        fontSize: 12,
+                        fontWeight: 500,
+                        cursor: 'pointer',
                     }}
                 >
-                    {t('import.format_link')} ↗
+                    <svg className="i" aria-hidden="true" style={{ width: 14, height: 14 }}>
+                        <use href="#code" />
+                    </svg>
+                    {t('import.format_link')}
+                    <span aria-hidden="true" style={{ opacity: .7 }}>↗</span>
                 </button>
-            </p>
+            </div>
         </div>
     );
 };

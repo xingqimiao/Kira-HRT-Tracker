@@ -3,7 +3,7 @@ import Icon from './Icon';
 import Switch from './Switch';
 import RestoreConfirmDialog from './RestoreConfirmDialog';
 import { useTranslation } from '../contexts/LanguageContext';
-import { ChevronDown, ChevronUp, Check, Copy, TestTube2 } from '../icons';
+import { ChevronDown, ChevronUp, Check, Copy, TestTube2, TriangleWarning } from '../icons';
 import { SegmentedList, SegmentedListItem } from '../ui/proto';
 import { Icon as SpriteIcon } from '../ui/SvgDefs';
 import type { RestorePreview } from '../hooks/useCoreSync';
@@ -186,9 +186,9 @@ const ImportSection: React.FC<ImportSectionProps> = ({
                     </button>
                 </div>
 
-                {/* The destructive path is a footnote, not a panel: replacing the account
-                    is rare, and a red box on every import taught people to ignore red. The
-                    colour and the warning live in the dialog, which only opens on demand. */}
+                {/* One compact error-tonal row, not a panel: the only saturated thing on
+                    the screen is the row itself, and the warning + diff + backup live in
+                    the dialog it opens. */}
                 <button
                     type="button"
                     onClick={() => setConfirmOpen(true)}
@@ -197,26 +197,68 @@ const ImportSection: React.FC<ImportSectionProps> = ({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        gap: 10,
+                        gap: 12,
                         width: '100%',
-                        marginTop: 2,
-                        padding: '10px 2px 2px',
-                        border: 0,
-                        background: 'none',
+                        marginTop: 18,
+                        padding: 14,
+                        borderRadius: 16,
+                        border: '1px solid color-mix(in srgb, var(--err) 18%, transparent)',
+                        background: 'var(--errc)',
                         font: 'inherit',
                         textAlign: 'left',
                         cursor: canOverwrite ? 'pointer' : 'default',
-                        opacity: canOverwrite ? 1 : .55,
+                        opacity: canOverwrite ? 1 : .6,
                     }}
                 >
-                    <span className="s" style={{ margin: 0, whiteSpace: 'normal' }}>
-                        {canOverwrite ? t('restore.entry_hint') : disabledCopy}
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                        <span
+                            aria-hidden="true"
+                            style={{
+                                display: 'grid',
+                                placeItems: 'center',
+                                flex: 'none',
+                                width: 42,
+                                height: 42,
+                                borderRadius: '50%',
+                                background: 'color-mix(in srgb, var(--err) 15%, transparent)',
+                                color: 'var(--err)',
+                            }}
+                        >
+                            <Icon icon={TriangleWarning} size={20} />
+                        </span>
+                        <span style={{ minWidth: 0, display: 'block' }}>
+                            <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600, lineHeight: 1.3, color: 'var(--onerrc)' }}>
+                                {canOverwrite ? t('restore.entry_title') : disabledCopy}
+                            </span>
+                            {canOverwrite && (
+                                <span
+                                    className="s"
+                                    style={{ display: 'block', margin: 0, whiteSpace: 'normal' }}
+                                >
+                                    {restoring ? t('restore.busy') : t('restore.entry_body')}
+                                </span>
+                            )}
+                        </span>
                     </span>
                     {canOverwrite && (
-                        <b style={{ flex: 'none', color: 'var(--err)', fontSize: 12.5, fontWeight: 600 }}>
-                            {t(restoring ? 'restore.busy' : 'restore.action')}
-                            <span aria-hidden="true"> ›</span>
-                        </b>
+                        <span
+                            aria-hidden="true"
+                            style={{
+                                display: 'inline-flex',
+                                flex: 'none',
+                                alignItems: 'center',
+                                gap: 4,
+                                padding: '6px 12px',
+                                borderRadius: 999,
+                                background: 'color-mix(in srgb, var(--err) 14%, transparent)',
+                                color: 'var(--onerrc)',
+                                fontSize: 12,
+                                fontWeight: 600,
+                            }}
+                        >
+                            {t('restore.action')}
+                            <span>›</span>
+                        </span>
                     )}
                 </button>
 

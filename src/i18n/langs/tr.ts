@@ -1405,9 +1405,11 @@ const PACK: LangPack = {
     "gel.reference.use": "Kullan",
     "gel.reference.half": "Yarım",
     "restore.entry_hint": "Bulut bu dosyayla tamamen sıfırlansın mı?",
-    "restore.action": "Farkı gör ve üzerine yaz",
+    "restore.action": "Farkı gör",
     "import.merge_action": "Birleştirerek içe aktar",
-    "import.format_link": "Veri biçimi belirtimini aç",
+    "import.format_link": "Veri biçimi belirtimi",
+    "restore.entry_title": "Bulutu sil ve üzerine yaz",
+    "restore.entry_body": "Buluttaki tüm kayıtları siler ve bu dosyayla değiştirir",
 };
 
 export default PACK;

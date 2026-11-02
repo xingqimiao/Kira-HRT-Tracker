@@ -1405,9 +1405,11 @@ const PACK: LangPack = {
     "gel.reference.use": "사용",
     "gel.reference.half": "반",
     "restore.entry_hint": "클라우드를 이 파일로 완전히 초기화할까요?",
-    "restore.action": "차이 확인 후 덮어쓰기",
+    "restore.action": "차이 보기",
     "import.merge_action": "병합 가져오기",
-    "import.format_link": "데이터 형식 사양 보기",
+    "import.format_link": "데이터 형식 사양",
+    "restore.entry_title": "클라우드를 버리고 덮어쓰기",
+    "restore.entry_body": "클라우드의 기존 기록을 지우고 이 파일로 완전히 바꿉니다",
 };
 
 export default PACK;
