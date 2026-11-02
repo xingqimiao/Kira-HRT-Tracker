@@ -41,6 +41,17 @@ sudo mv /srv/hrt-web /srv/hrt-web-releases/2.4.0   # keeps .well-known and other
 sudo ln -s /srv/hrt-web-releases/2.4.0 /srv/hrt-web
 ```
 
+## Installed copy
+
+On the production host the script lives at `/opt/hrt-ops/release/release-hrt.sh`
+(root:root, 0755), linked as `/usr/local/sbin/release-hrt`. `VERSION` and
+`release-hrt.sh.sha256` sit beside it so the running copy can be traced to a commit.
+It needs root (it reads `/srv/hrt`, restarts the unit and queries Postgres):
+
+```bash
+sudo /usr/local/sbin/release-hrt check
+```
+
 ## Deploy and roll back
 
 ```bash
