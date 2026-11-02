@@ -35,7 +35,7 @@ const FLOORS = {
     'workbox-build': ['7.4.1', 'transitive serialize-javascript advisory was fixed here'],
     'serialize-javascript': ['7.1.3', 'the advisory itself; workbox resolves this copy (advisory fixed in 7.1.3)'],
     sharp: ['0.35.5', 'native image decoding of provider avatars and OCR assets'],
-    tailwindcss: ['4.3.3', 'postcss plugin runs over every stylesheet'],
+    tailwindcss: ['4.3.4', 'postcss plugin runs over every stylesheet'],
     '@tauri-apps/cli': ['2.12.4', 'builds the Android shell'],
   },
   'server/package-lock.json': {
@@ -45,7 +45,7 @@ const FLOORS = {
     esbuild: ['0.28.2', 'bundles the shipped server'],
     'oci-common': ['2.144.0', 'OCI SDK shared layer, including the KMS calls'],
     'oci-keymanagement': ['2.144.0', 'KMS client that unwraps account keys'],
-    '@modelcontextprotocol/sdk': ['1.32.1', 'MCP adapter transport'],
+    '@modelcontextprotocol/sdk': ['1.32.2', 'MCP adapter transport'],
   },
 };
 
