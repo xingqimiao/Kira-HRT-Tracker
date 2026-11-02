@@ -94,6 +94,9 @@ async function main() {
     // Env-driven so a check can tighten a bucket and exercise the trust boundary
     // without patching the harness. Defaults keep the old permissive behaviour.
     trustedIpSource: process.env.TRUSTED_IP_SOURCE ?? 'socket',
+    // Mirrors the server default: the overwrite import stays hidden unless the
+    // harness is started with RESTORE_ENABLED=1.
+    restoreEnabled: process.env.RESTORE_ENABLED === '1',
     rateLimits: {
       register: Number(process.env.RATE_LIMIT_REGISTER ?? 1000),
       login: Number(process.env.RATE_LIMIT_LOGIN ?? 1000),

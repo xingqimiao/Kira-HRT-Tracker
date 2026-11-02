@@ -162,6 +162,14 @@ export interface CoreStateRead {
    * a replaced history, and must adopt the read instead of merging and pushing it back.
    */
   restoreGeneration: string;
+  /**
+   * Whether this deployment accepts `POST /api/restore`.
+   *
+   * False for a server that has not opted in, and for any server that predates the
+   * field. The import screen hides the "replace the cloud" option while this is
+   * false, so it never offers an action that can only fail with 403.
+   */
+  restoreEnabled: boolean;
 }
 
 /**
@@ -192,6 +200,7 @@ async function readChangedSince(token: string, since: number): Promise<CoreState
   let afterId: string | undefined;
   let syncVersion = since;
   let restoreGeneration = '0';
+  let restoreEnabled = false;
   let settings: Record<string, unknown> | undefined;
 
   for (let page = 0; page < 100; page++) {
@@ -210,10 +219,12 @@ async function readChangedSince(token: string, since: number): Promise<CoreState
       settings?: Record<string, unknown>;
       syncVersion?: number;
       restoreGeneration?: string;
+      restoreEnabled?: boolean;
     };
     const batch = body.records ?? [];
     if (typeof body.syncVersion === 'number') syncVersion = body.syncVersion;
     if (typeof body.restoreGeneration === 'string') restoreGeneration = body.restoreGeneration;
+    if (body.restoreEnabled === true) restoreEnabled = true;
     settings = body.settings ?? settings;
 
     for (const row of batch) {
@@ -236,7 +247,7 @@ async function readChangedSince(token: string, since: number): Promise<CoreState
   if (unknown > 0) {
     console.warn(`[sync] ignored ${unknown} changed record(s) this version does not understand`);
   }
-  return { payload: settings ? { ...payload, ...settings } : payload, syncVersion, restoreGeneration };
+  return { payload: settings ? { ...payload, ...settings } : payload, syncVersion, restoreGeneration, restoreEnabled };
 }
 
 /**
@@ -254,6 +265,7 @@ async function readFullState(token: string): Promise<CoreStateRead> {
   /** The account's change version, captured by the server before the first page. */
   let syncVersion = 0;
   let restoreGeneration = '0';
+  let restoreEnabled = false;
   // The settings row rides with the first page (see the records route): it is
   // where a settings screen or an agent writes, and it is not a record, so it
   // would otherwise be invisible to this read — the gap that made an agent's
@@ -279,12 +291,14 @@ async function readFullState(token: string): Promise<CoreStateRead> {
       settings?: Record<string, unknown>;
       syncVersion?: number;
       restoreGeneration?: string;
+      restoreEnabled?: boolean;
     };
     const batch = body.records ?? [];
     settings = body.settings ?? settings;
     // Every page of a full read carries the same captured version; the first one wins.
     if (syncVersion === 0 && typeof body.syncVersion === 'number') syncVersion = body.syncVersion;
     if (typeof body.restoreGeneration === 'string') restoreGeneration = body.restoreGeneration;
+    if (body.restoreEnabled === true) restoreEnabled = true;
 
     for (const row of batch) {
       docs.push({
@@ -317,7 +331,7 @@ async function readFullState(token: string): Promise<CoreStateRead> {
   // supplied. `appState` carries the model settings too — a settings route merges
   // its columns into the same bag the app reads (see the server's
   // `mergeAppSettings`) — which is how an agent's HRT-mode change reaches the app.
-  return { payload: settings ? { ...payload, ...settings } : payload, syncVersion, restoreGeneration };
+  return { payload: settings ? { ...payload, ...settings } : payload, syncVersion, restoreGeneration, restoreEnabled };
 }
 
 /** The server's error text, when it sent one. */

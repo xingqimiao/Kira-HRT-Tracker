@@ -12,7 +12,8 @@ let pg: PostgresHandle;
 let server: Server;
 let base: string;
 before(async () => {
-  setConfigForTesting({ publicOrigin: 'https://hrt.test', apiOrigin: 'https://api.hrt.test', basePath: '', apiBaseUrl: 'https://api.hrt.test', port: 0, databaseUrl: '', kms: TEST_KMS_CONFIG, google: null, turnstile: null, fcm: null, x: null, sessionTtlMinutes: 30, rateLimits: { register: 1000, login: 1000, windowMs: 60000 } });
+  // The overwrite test replaces the account, so this suite is the deployment that opts in.
+  setConfigForTesting({ publicOrigin: 'https://hrt.test', apiOrigin: 'https://api.hrt.test', basePath: '', apiBaseUrl: 'https://api.hrt.test', port: 0, databaseUrl: '', kms: TEST_KMS_CONFIG, google: null, turnstile: null, fcm: null, x: null, sessionTtlMinutes: 30, rateLimits: { register: 1000, login: 1000, windowMs: 60000 }, restoreEnabled: true });
   pg = await bootPostgres({ dir: './.pgdata-merge-import', port: 55474, database: 'hrt_merge_import' });
   await useDatabase(pg);
   ({ server, base } = await startApiServer());
@@ -103,6 +104,7 @@ test('an overwrite import replaces the account and the next read carries the new
     })));
     const before = await readCoreState(account.token);
     assert.equal(eventsOf(before).length, 2);
+    assert.equal(before.restoreEnabled, true, 'the read reports that this deployment accepts a restore');
 
     // The import is "overwrite": the file's own state is the whole account.
     const file = normalizeSyncState({ modes: { transfem: { events: [dose('only-in-file')] }, transmasc: { events: [] } } });

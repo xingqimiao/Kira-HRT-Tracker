@@ -121,6 +121,14 @@ export interface CoreSyncState {
    * `BindCredentials` — rather than a failure to retry.
    */
   accountIncomplete: boolean;
+  /**
+   * Whether this deployment accepts a whole-account restore.
+   *
+   * Learned from the last read; false until then, and false for a server that predates
+   * the field. The import screen uses it to hide "replace the cloud" instead of
+   * offering a button that can only come back 403.
+   */
+  restoreAvailable: boolean;
 }
 
 interface Options {
@@ -214,6 +222,7 @@ export const useCoreSync = ({
   // Sticky in one direction only: cleared by a sync that gets through, so binding the
   // credential is what takes the gate down rather than a second server round trip.
   const [accountIncomplete, setAccountIncomplete] = useState(false);
+  const [restoreAvailable, setRestoreAvailable] = useState(false);
 
   // Read at fire time rather than captured: a sync armed before a render must not
   // upload a payload built from state that render has since replaced.
@@ -316,6 +325,8 @@ export const useCoreSync = ({
     lastSeenRef.current = null;
     bootstrappedForRef.current = null;
     retryCountRef.current = 0;
+    // A capability belongs to the account that reported it, not the one before it.
+    setRestoreAvailable(false);
     clearRetry();
     if (pushTimerRef.current) {
       clearTimeout(pushTimerRef.current);
@@ -383,6 +394,9 @@ export const useCoreSync = ({
         read = await readCoreState(authToken);
         if (!stillMine()) return;
       }
+      // A capability, not data: the import screen hides "replace the cloud" when the
+      // deployment has not enabled it, so the option is never offered and then refused.
+      setRestoreAvailable(read.restoreEnabled);
       const remoteState = read.payload;
 
       // The account was restored from a backup since this device last looked. Its cache
@@ -806,5 +820,5 @@ export const useCoreSync = ({
     await run(true);
   }, [clearRetry, run]);
 
-  return { status, lastSyncedAt, syncNow, accountIncomplete, restoreToCloud };
+  return { status, lastSyncedAt, syncNow, accountIncomplete, restoreAvailable, restoreToCloud };
 };

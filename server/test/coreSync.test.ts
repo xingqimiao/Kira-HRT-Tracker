@@ -817,9 +817,12 @@ test('a deployment that has not enabled restore refuses to replace an account', 
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` };
   await seed(account.token, [wireDose('kept-disabled', 1)]);
   const read = await call(base, '/api/records', { headers });
+  assert.equal(read.body.restoreEnabled, true, 'an enabled deployment advertises the capability');
 
   setConfigForTesting({ ...getConfig(), restoreEnabled: false });
   try {
+    const hidden = await call(base, '/api/records', { headers });
+    assert.equal(hidden.body.restoreEnabled, false, 'a disabled deployment hides the capability from the app');
     const refused = await call(base, '/api/restore', {
       method: 'POST',
       headers,

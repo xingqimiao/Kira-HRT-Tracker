@@ -1302,6 +1302,9 @@ export function createRequestHandler() {
             unreadable,
             syncVersion,
             restoreGeneration,
+            // The app hides "replace the cloud" when this is false, so a deployment
+            // that has not opted in does not offer an action that can only 403.
+            restoreEnabled: getConfig().restoreEnabled === true,
             ...(settings ? { settings } : {}),
           });
         }
@@ -1333,6 +1336,7 @@ export function createRequestHandler() {
           unreadable,
           syncVersion,
           restoreGeneration,
+          restoreEnabled: getConfig().restoreEnabled === true,
           ...(settings ? { settings } : {}),
         });
       }

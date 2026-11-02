@@ -1253,9 +1253,10 @@ const AppContent = () => {
                     {currentView === 'settings-import' && (
                         <ImportSettings
                             onImportJson={importEventsFromJson}
-                            // Replacing the account needs a live Core session; without one
-                            // the import stays a local merge.
-                            canOverwrite={Boolean(coreSession.token)}
+                            // Replacing the account needs a live Core session and a server
+                            // that accepts it; otherwise the import stays a local merge
+                            // (and the option is not shown at all).
+                            canOverwrite={Boolean(coreSession.token) && coreSyncState.restoreAvailable}
                             onPreview={previewImport}
                             review={importReview}
                             onReviewConsumed={() => setImportReview(null)}
