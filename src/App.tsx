@@ -686,6 +686,30 @@ const AppContent = () => {
         }
     };
 
+    /**
+     * The whole-file read behind "replace the cloud": the same detection and
+     * conversion the import uses, stopped before anything is written, so the
+     * confirmation can compare the account with the file instead of trusting a count.
+     */
+    const restorePreviewFor = async (input: string | ArrayBuffer) => {
+        try {
+            const detection = detectForeignFormat(input);
+            if (detection.source === 'featherline' || detection.problem === 'unreadable') return null;
+
+            let parsed: any = detection.parsed;
+            if (parsed && typeof parsed === 'object' && typeof parsed.c === 'string') {
+                parsed = JSON.parse(await decompressData(parsed.c));
+            }
+            if (parsed && parsed.encrypted && parsed.iv && parsed.salt && parsed.data) return null;
+
+            const source = detection.source ?? detectForeignFormat(JSON.stringify(parsed)).source;
+            const { payload } = convertForeignPayload(parsed, source ?? 'kira');
+            return coreSyncState.previewRestore(normalizeSyncState(payload), mode);
+        } catch {
+            return null;
+        }
+    };
+
     const importEventsFromJson = async (
         input: string | ArrayBuffer,
         opts?: { legacyAnalyteFromUnit?: boolean; mode?: ImportMode },
@@ -1254,9 +1278,16 @@ const AppContent = () => {
                         <ImportSettings
                             onImportJson={importEventsFromJson}
                             // Replacing the account needs a live Core session and a server
-                            // that accepts it; otherwise the import stays a local merge
-                            // (and the option is not shown at all).
+                            // that accepts it. When either is missing the action is shown
+                            // disabled, with the reason, rather than hidden: a hidden action
+                            // reads as "this app cannot do it", a disabled one explains why.
                             canOverwrite={Boolean(coreSession.token) && coreSyncState.restoreAvailable}
+                            restoreDisabledReason={
+                                !coreSession.token ? 'signed-out'
+                                    : coreSyncState.restoreAvailable ? undefined
+                                        : 'server-off'
+                            }
+                            onRestorePreview={restorePreviewFor}
                             onPreview={previewImport}
                             review={importReview}
                             onReviewConsumed={() => setImportReview(null)}

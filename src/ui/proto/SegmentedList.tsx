@@ -26,6 +26,9 @@ export interface SegmentedListItemProps extends Omit<React.ButtonHTMLAttributes<
     trailing?: React.ReactNode;
     active?: boolean;
     href?: string;
+    /** Anchor attributes, for the rows `href` turns into a link. */
+    target?: React.HTMLAttributeAnchorTarget;
+    rel?: string;
     danger?: boolean;
 }
 

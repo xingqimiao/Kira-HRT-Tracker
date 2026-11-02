@@ -1,10 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
 import Switch from './Switch';
+import RestoreConfirmDialog from './RestoreConfirmDialog';
 import { useTranslation } from '../contexts/LanguageContext';
-import { ChevronDown, ChevronUp, Check, Copy, TestTube2 } from '../icons';
-import { ConnectedButtonGroup, SegmentedList, SegmentedListItem } from '../ui/proto';
+import { ChevronDown, ChevronUp, Check, Copy, TestTube2, TriangleWarning } from '../icons';
+import { SegmentedList, SegmentedListItem } from '../ui/proto';
 import { Icon as SpriteIcon } from '../ui/SvgDefs';
+import type { RestorePreview } from '../hooks/useCoreSync';
 
 /** How an import treats what is already in the account. */
 export type ImportMode = 'merge' | 'overwrite';
@@ -32,6 +34,13 @@ interface ImportSectionProps {
     ) => boolean | Promise<boolean>;
     /** Whether "replace the cloud" is available at all (a signed-in Core session). */
     canOverwrite?: boolean;
+    /**
+     * Why the replace action is unavailable, so the disabled zone can say something
+     * more useful than "disabled". Omitted while the capability is still unknown.
+     */
+    restoreDisabledReason?: 'signed-out' | 'server-off';
+    /** Reads the account and describes what replacing it would delete. */
+    onRestorePreview?: (data: string | ArrayBuffer) => Promise<RestorePreview | null>;
     /** Counts the payload without applying it. */
     onPreview?: (data: string | ArrayBuffer) => Promise<ImportPreview | null>;
     /**
@@ -53,6 +62,8 @@ interface ImportSectionProps {
 const ImportSection: React.FC<ImportSectionProps> = ({
     onImportJson,
     canOverwrite = false,
+    restoreDisabledReason,
+    onRestorePreview,
     onPreview,
     review,
     onReviewConsumed,
@@ -65,11 +76,12 @@ const ImportSection: React.FC<ImportSectionProps> = ({
     const [busy, setBusy] = useState(false);
     const [legacyCompat, setLegacyCompat] = useState(false);
     /**
-     * Merge is the default, and not a neutral one: it cannot remove anything from the
-     * account, so the button that says "确认" never quietly turns an import into a
-     * deletion. Replacing requires choosing it explicitly.
+     * The destructive path is its own dialog, not a mode toggle next to the safe
+     * button: merging can never remove anything, so it stays the primary action and
+     * the only way to replace the account is to open the danger zone deliberately.
      */
-    const [mode, setMode] = useState<ImportMode>('merge');
+    const [confirmOpen, setConfirmOpen] = useState(false);
+    const [restoring, setRestoring] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     /** The review already shown, so a re-render cannot replay it. */
     const consumedReview = useRef<number | null>(null);
@@ -96,11 +108,24 @@ const ImportSection: React.FC<ImportSectionProps> = ({
         const data = pending;
         setPreview(null);
         setPending(null);
-        await onImportJson(data, { legacyAnalyteFromUnit: legacyCompat, mode });
+        await onImportJson(data, { legacyAnalyteFromUnit: legacyCompat });
         setLegacyCompat(false);
-        setMode('merge');
         setText('');
         setShowPaste(false);
+    };
+
+    // Stable identity: the dialog re-reads on open, not on every parent render. An
+    // inline arrow here reset the backup/acknowledgement state whenever the caller
+    // re-rendered, which silently re-armed close to a destructive action.
+    const loadRestorePreview = useCallback(
+        () => (pending !== null && onRestorePreview ? onRestorePreview(pending) : Promise.resolve(null)),
+        [pending, onRestorePreview],
+    );
+
+    const resetReview = () => {
+        setPreview(null);
+        setPending(null);
+        setLegacyCompat(false);
     };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -124,22 +149,12 @@ const ImportSection: React.FC<ImportSectionProps> = ({
     }, [review, onReviewConsumed]);
 
     if (preview) {
+        const disabledCopy = restoreDisabledReason === 'signed-out'
+            ? t('restore.disabled_signed_out')
+            : t('restore.disabled_server');
         return (
             <div className="d-col" style={{ gap: 12 }}>
-                {canOverwrite && (
-                    <ConnectedButtonGroup
-                        options={[
-                            { value: 'merge', label: t('import.mode_merge') },
-                            { value: 'overwrite', label: t('import.mode_overwrite') },
-                        ]}
-                        value={mode}
-                        onChange={setMode}
-                        label={t('import.mode')}
-                    />
-                )}
-                <p className="sub" role={mode === 'overwrite' ? 'alert' : 'status'}>
-                    {t(mode === 'overwrite' ? 'import.overwrite_hint' : 'import.merge_note')}
-                </p>
+                <p className="sub">{t('import.merge_note')}</p>
                 <SegmentedList label={t('import.title')}>
                     <SegmentedListItem icon={undefined} sprite="code" title={preview.source} subtitle={t('import.title')} />
                     <SegmentedListItem sprite="db" title={`${preview.doses}`} subtitle={t('timeline.records')} />
@@ -162,29 +177,73 @@ const ImportSection: React.FC<ImportSectionProps> = ({
                     </SegmentedList>
                 )}
                 <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                        type="button"
-                        onClick={() => { setPreview(null); setPending(null); setLegacyCompat(false); }}
-                        className="btn x"
-                        style={{ flex: 1 }}
-                    >
+                    <button type="button" onClick={resetReview} className="btn x" style={{ flex: 1 }}>
                         {t('btn.cancel')}
                     </button>
-                    <button
-                        type="button"
-                        onClick={() => void confirm()}
-                        className="btn"
-                        style={{
-                            flex: 1,
-                            // Destructive actions get the error role, not the accent one:
-                            // this is the only import button that can remove records.
-                            ...(mode === 'overwrite' ? { background: 'var(--err)', color: 'var(--onerrc)' } : {}),
-                        }}
-                    >
+                    <button type="button" onClick={() => void confirm()} className="btn" style={{ flex: 1 }}>
                         <Icon icon={Check} size={16} />
-                        {t(mode === 'overwrite' ? 'import.mode_overwrite' : 'btn.confirm')}
+                        {t('btn.confirm')}
                     </button>
                 </div>
+
+                {/* The destructive action lives in its own zone: merging is the primary
+                    action above and can never remove a record, so replacing the account
+                    has to be reached through a visibly different, gated surface. */}
+                <div
+                    className="card"
+                    role="group"
+                    aria-label={t('restore.danger_title')}
+                    style={{
+                        marginTop: 8,
+                        padding: 16,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 12,
+                        border: '1px solid var(--err)',
+                        background: 'transparent',
+                    }}
+                >
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                        <span className="ic err" style={{ flex: 'none' }}>
+                            <Icon icon={TriangleWarning} size={22} />
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <b style={{ display: 'block', color: 'var(--err)' }}>{t('restore.danger_title')}</b>
+                            <span className="s" style={{ display: 'block', whiteSpace: 'normal' }}>
+                                {canOverwrite ? t('restore.danger_body') : disabledCopy}
+                            </span>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        className="btn danger-wide"
+                        style={{ marginTop: 0, opacity: canOverwrite ? 1 : .45 }}
+                        disabled={!canOverwrite || !onRestorePreview || restoring}
+                        aria-disabled={!canOverwrite}
+                        onClick={() => setConfirmOpen(true)}
+                    >
+                        <Icon icon={TriangleWarning} size={18} />
+                        <span>{t(restoring ? 'restore.busy' : 'restore.action')}</span>
+                    </button>
+                </div>
+
+                <RestoreConfirmDialog
+                    open={confirmOpen}
+                    onClose={() => setConfirmOpen(false)}
+                    load={loadRestorePreview}
+                    onConfirm={async () => {
+                        if (pending === null) return false;
+                        const data = pending;
+                        setRestoring(true);
+                        const ok = await onImportJson(data, {
+                            legacyAnalyteFromUnit: legacyCompat,
+                            mode: 'overwrite',
+                        });
+                        setRestoring(false);
+                        resetReview();
+                        return ok;
+                    }}
+                />
             </div>
         );
     }

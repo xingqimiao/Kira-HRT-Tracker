@@ -12,6 +12,10 @@ interface ImportSettingsProps {
     ) => boolean | Promise<boolean>;
     /** Whether the signed-in session allows replacing the cloud, not just merging. */
     canOverwrite?: boolean;
+    /** Why the replace action is unavailable, when it is. */
+    restoreDisabledReason?: 'signed-out' | 'server-off';
+    /** Reads the account and describes what replacing it would delete. */
+    onRestorePreview?: (data: string | ArrayBuffer) => Promise<import('../hooks/useCoreSync').RestorePreview | null>;
     /** Counts the payload before it is merged — see `ImportSection`. */
     onPreview?: (data: string | ArrayBuffer) => Promise<import('../components/ImportSection').ImportPreview | null>;
     /** Plaintext that only became readable after a password step. */
@@ -23,6 +27,8 @@ interface ImportSettingsProps {
 const ImportSettings: React.FC<ImportSettingsProps> = ({
     onImportJson,
     canOverwrite = false,
+    restoreDisabledReason,
+    onRestorePreview,
     onPreview,
     review,
     onReviewConsumed,
@@ -36,6 +42,8 @@ const ImportSettings: React.FC<ImportSettingsProps> = ({
             <ImportSection
                 onImportJson={onImportJson}
                 canOverwrite={canOverwrite}
+                restoreDisabledReason={restoreDisabledReason}
+                onRestorePreview={onRestorePreview}
                 onPreview={onPreview}
                 review={review}
                 onReviewConsumed={onReviewConsumed}

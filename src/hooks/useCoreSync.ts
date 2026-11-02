@@ -16,8 +16,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { readCoreState, restoreCoreState, syncWithCore, CoreSyncError, toLocalPayload } from '../services/coreSync';
 import { identitiesOf, remoteDiffers } from '../services/recordDocs';
-import { mergeSyncStates, fingerprintState, type SyncState } from '../utils/syncMerge';
+import { mergeSyncStates, fingerprintState, type ModeKey, type SyncState } from '../utils/syncMerge';
 import { normalizeSyncState } from '../utils/syncMerge';
+import { buildRestoreBackup, diffRestorePayloads, type RestoreDiff } from '../utils/restoreDiff';
 import { readAppSettings } from '../utils/appSettings';
 
 /**
@@ -101,6 +102,15 @@ export type RestoreOutcome =
   | { ok: false; reason: 'conflict' }
   | { ok: false; reason: 'error' };
 
+/** What the confirmation dialog needs before it lets anyone press the red button. */
+export interface RestorePreview {
+  diff: RestoreDiff;
+  /** The account's current records, already serialised as an importable backup. */
+  backup: string;
+  syncVersion: number;
+  restoreGeneration: string;
+}
+
 export interface CoreSyncState {
   status: CoreSyncStatus;
   lastSyncedAt: number | null;
@@ -115,6 +125,14 @@ export interface CoreSyncState {
    * the server accepted it, so a failed restore leaves this device untouched.
    */
   restoreToCloud: (state: SyncState) => Promise<RestoreOutcome>;
+  /**
+   * Read the account and describe what replacing it with `state` would delete.
+   *
+   * A read, not a lock: the confirmation may sit on screen for a while, so the version
+   * it reports is only a snapshot — `restoreToCloud` re-reads under its own guard and
+   * the server refuses a stale write with a 409.
+   */
+  previewRestore: (state: SyncState, mode: ModeKey) => Promise<RestorePreview | null>;
   /**
    * The server refused the records because this account has no bound fallback
    * credential. True until a sync succeeds, and it is a state to act on — see
@@ -711,6 +729,26 @@ export const useCoreSync = ({
     if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
   }, []);
 
+  const previewRestore = useCallback(async (state: SyncState, mode: ModeKey): Promise<RestorePreview | null> => {
+    const authToken = tokenRef.current;
+    const account = userId;
+    if (!authToken || !account || !ready) return null;
+    try {
+      const read = await readCoreState(authToken);
+      if (tokenRef.current !== authToken) return null;
+      const cloud = normalizeSyncState(read.payload);
+      const incoming = normalizeSyncState(state);
+      return {
+        diff: diffRestorePayloads(toLocalPayload(cloud), toLocalPayload(incoming), read.syncVersion),
+        backup: buildRestoreBackup(cloud, mode),
+        syncVersion: read.syncVersion,
+        restoreGeneration: read.restoreGeneration,
+      };
+    } catch {
+      return null;
+    }
+  }, [ready, userId]);
+
   const restoreToCloud = useCallback(async (state: SyncState): Promise<RestoreOutcome> => {
     const authToken = tokenRef.current;
     const account = userId;
@@ -820,5 +858,5 @@ export const useCoreSync = ({
     await run(true);
   }, [clearRetry, run]);
 
-  return { status, lastSyncedAt, syncNow, accountIncomplete, restoreAvailable, restoreToCloud };
+  return { status, lastSyncedAt, syncNow, accountIncomplete, restoreAvailable, restoreToCloud, previewRestore };
 };
