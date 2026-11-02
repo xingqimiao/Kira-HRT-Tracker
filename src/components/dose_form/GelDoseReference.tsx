@@ -28,7 +28,6 @@ interface GelRow {
     /** Where the package is sold — also the ordering key. */
     regions: string[];
     strength?: string;
-    pack?: string;
     unit: 'ruler' | 'pump' | 'applicator' | 'sachet';
     /** Gel weight delivered by one unit. */
     gel: string;
@@ -49,7 +48,6 @@ const ROWS: GelRow[] = [
         name: '爱斯妥 / 健民',
         regions: ['CN'],
         strength: '0.06%',
-        pack: '30 g / 80 g',
         unit: 'ruler', gel: '2.5 g', mg: 1.5, half: true,
         url: 'https://tfsci.mtf.wiki/zh-cn/misc/oestrogel/',
     },
@@ -241,7 +239,6 @@ export default function GelDoseReference({ onPick, onExpandedChange }: {
                     </a>
                 </div>
                 {row.alsoSoldAs && <div className="m3e-gelref-also">{row.alsoSoldAs}</div>}
-                {row.pack && <div className="m3e-gelref-measure">{row.pack}</div>}
             </div>
             <div className="m3e-gelref-actions">
                 {/* Half a dispenser is a legitimate dose and not a multiple of one, so it

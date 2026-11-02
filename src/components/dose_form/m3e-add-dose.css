@@ -718,9 +718,12 @@ input[type=number] {
 .m3e-gelref-actions { display: flex; flex: none; align-items: center; gap: 6px; }
 .m3e-gelref-half {
     display: inline-flex; align-items: center; justify-content: center;
-    min-width: 26px; height: 34px; padding: 0 7px; border: 0; border-radius: 17px;
+    min-width: 34px; height: 34px; padding: 0 7px; border: 0; border-radius: 17px;
     background: var(--pric); color: var(--onpric);
     font: inherit; font-size: 11px; font-weight: 700; line-height: 1;
     cursor: pointer; transition: background .16s ease, color .16s ease;
 }
 .m3e-gelref-half[aria-pressed="true"] { background: var(--pri); color: var(--onpri); }
+/* 使用 is inert until something is picked; .btn has no disabled styling of its own,
+   so an unpicked sheet showed a fully saturated primary button that did nothing. */
+.m3e-gelref-sheet-actions .btn:disabled { background: var(--sch); color: var(--var); cursor: default; }
