@@ -625,7 +625,9 @@ input[type=number] {
     }
     .dose-panel .bot-bar > * { max-width: none; }
     .dose-panel .bot-bar { justify-content: center; }
-    .dose-panel .sub-page { padding: 24px 36px; }
+    /* Same gutter as the sheet"s header (28px), so the drill-in page and the page
+       under it do not shift their titles sideways when you move between them. */
+    .dose-panel .sub-page { padding: 24px 28px; }
     .dose-panel .tp-layout {
         display: grid; grid-template-columns: 1.1fr 1fr;
         gap: 20px; align-items: stretch;
@@ -727,3 +729,9 @@ input[type=number] {
 /* 使用 is inert until something is picked; .btn has no disabled styling of its own,
    so an unpicked sheet showed a fully saturated primary button that did nothing. */
 .m3e-gelref-sheet-actions .btn:disabled { background: var(--sch); color: var(--var); cursor: default; }
+
+/* The drill-in page keeps its content off the status bar on a phone, but on a wide
+   screen that same rule put its title 24px higher than the sheet's. */
+@media (min-width: 760px) {
+    .lab-time .sub-page { padding-top: 18px; }
+}
