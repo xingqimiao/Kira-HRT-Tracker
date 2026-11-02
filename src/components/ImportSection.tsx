@@ -81,6 +81,8 @@ const ImportSection: React.FC<ImportSectionProps> = ({
      * the only way to replace the account is to open the danger zone deliberately.
      */
     const [confirmOpen, setConfirmOpen] = useState(false);
+    /** Merge is the default; the overwrite card below only exists while this is on. */
+    const [overwrite, setOverwrite] = useState(false);
     const [restoring, setRestoring] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     /** The review already shown, so a re-render cannot replay it. */
@@ -123,6 +125,7 @@ const ImportSection: React.FC<ImportSectionProps> = ({
     );
 
     const resetReview = () => {
+        setOverwrite(false);
         setPreview(null);
         setPending(null);
         setLegacyCompat(false);
@@ -176,19 +179,44 @@ const ImportSection: React.FC<ImportSectionProps> = ({
                         </div>
                     </SegmentedList>
                 )}
+
+                {/* The mode is the switch; the card below only exists while it is on. Not
+                    signed in means there is no cloud to name, so the line stays mode-only. */}
+                <SegmentedList>
+                    <div className="li" style={{ cursor: canOverwrite ? 'pointer' : 'default', minHeight: 56 }}>
+                        <span className="ic"><SpriteIcon id="db" /></span>
+                        <div className="t" onClick={() => canOverwrite && setOverwrite(v => !v)}>
+                            <b>{overwrite ? t('import.mode_overwrite_current') : t('import.mode_merge_current')}</b>
+                        </div>
+                        <Switch
+                            checked={overwrite}
+                            onChange={setOverwrite}
+                            disabled={!canOverwrite}
+                            label={t('import.mode_switch_label')}
+                        />
+                    </div>
+                </SegmentedList>
                 <div style={{ display: 'flex', gap: 8 }}>
                     <button type="button" onClick={resetReview} className="btn x" style={{ flex: 1 }}>
                         {t('btn.cancel')}
                     </button>
-                    <button type="button" onClick={() => void confirm()} className="btn" style={{ flex: 1 }}>
+                    <button
+                        type="button"
+                        onClick={() => (overwrite && canOverwrite ? setConfirmOpen(true) : void confirm())}
+                        className="btn"
+                        style={{
+                            flex: 1,
+                            ...(overwrite && canOverwrite ? { background: 'var(--err)', color: 'var(--onerrc)' } : {}),
+                        }}
+                    >
                         <Icon icon={Check} size={16} />
-                        {t('import.merge_action')}
+                        {t(overwrite && canOverwrite ? 'import.overwrite_action' : 'import.merge_action')}
                     </button>
                 </div>
 
-                {/* One compact error-tonal row, not a panel: the only saturated thing on
-                    the screen is the row itself, and the warning + diff + backup live in
-                    the dialog it opens. */}
+                {/* One compact error-tonal row, and only while the mode switch is on: the
+                    warning + diff + backup live in the dialog it opens. */}
+                {overwrite && canOverwrite && (
                 <button
                     type="button"
                     onClick={() => setConfirmOpen(true)}
@@ -199,7 +227,7 @@ const ImportSection: React.FC<ImportSectionProps> = ({
                         justifyContent: 'space-between',
                         gap: 12,
                         width: '100%',
-                        marginTop: 18,
+                        marginTop: 6,
                         padding: 14,
                         borderRadius: 16,
                         border: '1px solid color-mix(in srgb, var(--err) 18%, transparent)',
@@ -257,10 +285,13 @@ const ImportSection: React.FC<ImportSectionProps> = ({
                             }}
                         >
                             {t('restore.action')}
-                            <span>›</span>
+                            <svg className="i" aria-hidden="true" style={{ width: 13, height: 13 }}>
+                                <use href="#chev" />
+                            </svg>
                         </span>
                     )}
                 </button>
+                )}
 
                 <RestoreConfirmDialog
                     open={confirmOpen}

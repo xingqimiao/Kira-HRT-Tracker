@@ -1433,6 +1433,10 @@ const PACK: LangPack = {
     "import.format_link": "Open data format spec",
     "restore.entry_title": "Discard the cloud and overwrite",
     "restore.entry_body": "Clears every record in the cloud and replaces them with this file",
+    "import.mode_merge_current": "Merge mode",
+    "import.mode_overwrite_current": "Overwrite mode",
+    "import.mode_switch_label": "Overwrite mode",
+    "import.overwrite_action": "Overwrite import",
 };
 
 export default PACK;

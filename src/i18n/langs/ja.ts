@@ -1410,6 +1410,10 @@ const PACK: LangPack = {
     "import.format_link": "データ形式の仕様",
     "restore.entry_title": "クラウドを破棄して上書き",
     "restore.entry_body": "クラウドの記録を消去し、このファイルで完全に置き換えます",
+    "import.mode_merge_current": "現在はマージモード",
+    "import.mode_overwrite_current": "現在は上書きモード",
+    "import.mode_switch_label": "上書きモード",
+    "import.overwrite_action": "上書きで取り込む",
 };
 
 export default PACK;

@@ -1433,6 +1433,10 @@ const PACK: LangPack = {
     "import.format_link": "开放数据格式规范",
     "restore.entry_title": "丢弃云端并覆盖",
     "restore.entry_body": "清空云端现有记录，完全替换为此文件",
+    "import.mode_merge_current": "当前是合并模式",
+    "import.mode_overwrite_current": "当前是覆盖模式",
+    "import.mode_switch_label": "覆盖模式",
+    "import.overwrite_action": "覆盖导入",
 };
 
 export default PACK;

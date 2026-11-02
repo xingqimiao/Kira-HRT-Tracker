@@ -1410,6 +1410,10 @@ const PACK: LangPack = {
     "import.format_link": "데이터 형식 사양",
     "restore.entry_title": "클라우드를 버리고 덮어쓰기",
     "restore.entry_body": "클라우드의 기존 기록을 지우고 이 파일로 완전히 바꿉니다",
+    "import.mode_merge_current": "현재 병합 모드",
+    "import.mode_overwrite_current": "현재 덮어쓰기 모드",
+    "import.mode_switch_label": "덮어쓰기 모드",
+    "import.overwrite_action": "덮어쓰기 가져오기",
 };
 
 export default PACK;

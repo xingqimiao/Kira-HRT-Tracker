@@ -1410,6 +1410,10 @@ const PACK: LangPack = {
     "import.format_link": "開放資料格式規範",
     "restore.entry_title": "丟棄雲端並覆蓋",
     "restore.entry_body": "清空雲端現有紀錄，完全換成呢個檔案",
+    "import.mode_merge_current": "而家係合併模式",
+    "import.mode_overwrite_current": "而家係覆蓋模式",
+    "import.mode_switch_label": "覆蓋模式",
+    "import.overwrite_action": "覆蓋匯入",
 };
 
 export default PACK;

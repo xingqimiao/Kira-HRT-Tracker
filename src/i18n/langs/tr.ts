@@ -1410,6 +1410,10 @@ const PACK: LangPack = {
     "import.format_link": "Veri biçimi belirtimi",
     "restore.entry_title": "Bulutu sil ve üzerine yaz",
     "restore.entry_body": "Buluttaki tüm kayıtları siler ve bu dosyayla değiştirir",
+    "import.mode_merge_current": "Birleştirme modu",
+    "import.mode_overwrite_current": "Üzerine yazma modu",
+    "import.mode_switch_label": "Üzerine yazma modu",
+    "import.overwrite_action": "Üzerine yazarak içe aktar",
 };
 
 export default PACK;
