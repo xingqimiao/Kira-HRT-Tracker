@@ -221,19 +221,16 @@ export default function GelDoseReference({ onPick, onExpandedChange }: {
                     </a>
                 </div>
                 {row.alsoSoldAs && <div className="m3e-gelref-also">{row.alsoSoldAs}</div>}
-                <div className="m3e-gelref-measure">
-                    {[row.pack, `${t(`gel.unit.${row.unit}`)} · ${t('gel.reference.gel')} ${row.gel}`]
-                        .filter(Boolean).join(' · ')}
-                </div>
+                {row.pack && <div className="m3e-gelref-measure">{row.pack}</div>}
             </div>
             <button
                 type="button"
                 className="m3e-gelref-pill"
                 aria-pressed={active}
                 onClick={onSelect}
-                aria-label={`${row.name} · ${formatMg(row.mg * multiplier)}`}
+                aria-label={`${multiplier} ${t(`gel.unit.${row.unit}`)} · ${formatMg(row.mg * multiplier)}`}
             >
-                {multiplier}×
+                {multiplier} {t(`gel.unit.${row.unit}`)}
                 <span className="dim">({row.gel})</span>
                 <span className="arrow" aria-hidden="true">→</span>
                 <b>{formatMg(row.mg * multiplier)}</b>
