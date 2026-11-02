@@ -24,6 +24,14 @@
 --    field. Row-level columns are reserved for what the server must query,
 --    index, or enforce uniqueness on.
 
+-- This file is applied as one implicit transaction, so a failed statement rolls back
+-- every earlier one and a migration can never leave half a schema. The lock timeout
+-- turns "waiting behind a long query at boot" into a fast, loud failure; the
+-- statement timeout bounds a pathological rewrite. Both are reset at the end so
+-- they cannot leak onto a pooled connection (a rollback reverts them regardless).
+SET lock_timeout = '5s';
+SET statement_timeout = '120s';
+
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- ---------------------------------------------------------------------------
@@ -678,4 +686,7 @@ CREATE TABLE IF NOT EXISTS deployment_key_guard (
   id integer PRIMARY KEY CHECK (id = 1),
   envelope jsonb NOT NULL
 );
+
+RESET statement_timeout;
+RESET lock_timeout;
 
