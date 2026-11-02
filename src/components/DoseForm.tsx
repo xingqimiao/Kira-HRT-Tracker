@@ -960,7 +960,18 @@ const DoseForm: React.FC<DoseFormProps> = ({
     }
 
     if (route === Route.gel) {
-        if (mode === 'mtf') listEntries.push({ key: 'gel-reference', node: <GelDoseReference /> });
+        if (mode === 'mtf') listEntries.push({
+            key: 'gel-reference',
+            node: (
+                <GelDoseReference
+                    // A fine step here on purpose: the catalog's 0.75 mg step is right for
+                    // the ± buttons (one pump at a time) but would round 0.5 mg — Estreva's
+                    // and Sandrena's unit — up to 0.75. Picking a unit must land on that
+                    // unit's own number.
+                    onPick={(mg) => setDoseValue(mg, 0.001, drug.max, true)}
+                />
+            ),
+        });
         listEntries.push({
             key: 'gel-site',
             node: (
