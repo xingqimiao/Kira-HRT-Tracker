@@ -228,20 +228,6 @@ export default function GelDoseReference({ onPick, onExpandedChange }: {
             <div className="m3e-gelref-meta">
                 <div className="m3e-gelref-name">{row.name}</div>
                 <div className="m3e-gelref-badges">
-                    {/* A half dispenser is a legitimate dose and not a multiple of one, so
-                        it gets its own control; the label is locale-specific, hence the
-                        width floor (a circle for 半, a capsule for Half). */}
-                    {row.half && (
-                        <button
-                            type="button"
-                            className="m3e-gelref-half"
-                            aria-pressed={halfActive}
-                            aria-label={`${row.name} · ${t('gel.reference.half')} · ${formatMg(row.mg * 0.5 * multiplier)}`}
-                            onClick={() => onPickId(halfId)}
-                        >
-                            {t('gel.reference.half')}
-                        </button>
-                    )}
                     {row.regions.map(code => <span key={code} className="m3e-gelref-badge">{code}</span>)}
                     {row.strength && <span className="m3e-gelref-badge">{row.strength}</span>}
                     <a
@@ -257,18 +243,35 @@ export default function GelDoseReference({ onPick, onExpandedChange }: {
                 {row.alsoSoldAs && <div className="m3e-gelref-also">{row.alsoSoldAs}</div>}
                 {row.pack && <div className="m3e-gelref-measure">{row.pack}</div>}
             </div>
-            <button
-                type="button"
-                className="m3e-gelref-pill"
-                aria-pressed={rowActive}
-                onClick={() => onPickId(row.id)}
-                aria-label={`${multiplier} ${t(`gel.unit.${row.unit}`)} · ${formatMg(row.mg * multiplier)}`}
-            >
-                {multiplier} {t(`gel.unit.${row.unit}`)}
-                <span className="dim">({row.gel})</span>
-                <span className="arrow" aria-hidden="true">→</span>
-                <b>{formatMg(row.mg * multiplier)}</b>
-            </button>
+            <div className="m3e-gelref-actions">
+                {/* Half a dispenser is a legitimate dose and not a multiple of one, so it
+                    sits immediately before the pill it modifies; the label is
+                    locale-specific, hence the width floor (a circle for 半, a capsule
+                    for Half). */}
+                {row.half && (
+                    <button
+                        type="button"
+                        className="m3e-gelref-half"
+                        aria-pressed={halfActive}
+                        aria-label={`${row.name} · ${t('gel.reference.half')} · ${formatMg(row.mg * 0.5 * multiplier)}`}
+                        onClick={() => onPickId(halfId)}
+                    >
+                        {t('gel.reference.half')}
+                    </button>
+                )}
+                <button
+                    type="button"
+                    className="m3e-gelref-pill"
+                    aria-pressed={rowActive}
+                    onClick={() => onPickId(row.id)}
+                    aria-label={`${multiplier} ${t(`gel.unit.${row.unit}`)} · ${formatMg(row.mg * multiplier)}`}
+                >
+                    {multiplier} {t(`gel.unit.${row.unit}`)}
+                    <span className="dim">({row.gel})</span>
+                    <span className="arrow" aria-hidden="true">→</span>
+                    <b>{formatMg(row.mg * multiplier)}</b>
+                </button>
+            </div>
         </li>
         );
     };

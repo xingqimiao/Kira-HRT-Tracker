@@ -715,11 +715,12 @@ input[type=number] {
 /* Half a dispenser: a tonal chip, not a primary action. min-width keeps it circular
    for a one-character label (半, 반) and lets a longer word (Half, Yarım) widen it
    without clipping. */
+.m3e-gelref-actions { display: flex; flex: none; align-items: center; gap: 6px; }
 .m3e-gelref-half {
     display: inline-flex; align-items: center; justify-content: center;
-    min-width: 24px; height: 24px; padding: 0 6px; border: 0; border-radius: 12px;
-    background: var(--secc); color: var(--onsecc);
+    min-width: 26px; height: 34px; padding: 0 7px; border: 0; border-radius: 17px;
+    background: var(--pric); color: var(--onpric);
     font: inherit; font-size: 11px; font-weight: 700; line-height: 1;
     cursor: pointer; transition: background .16s ease, color .16s ease;
 }
-.m3e-gelref-half[aria-pressed="true"] { background: var(--onsecc); color: var(--secc); }
+.m3e-gelref-half[aria-pressed="true"] { background: var(--pri); color: var(--onpri); }
