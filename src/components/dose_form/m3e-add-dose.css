@@ -650,7 +650,10 @@ input[type=number] {
    padding, so on Android its header ran under the status bar. The overlay keeps
    painting to the screen edge; only its content is pushed down. */
 .lab-time .sub-page {
-    padding-top: max(env(safe-area-inset-top, 0px), var(--app-safe-top, 0px));
+    /* At least the normal gutter: on a device that reports no inset (a browser, or a
+       shell that has not set --app-safe-top) this used to collapse to 0 and pin the
+       title to the top edge. */
+    padding-top: max(18px, env(safe-area-inset-top, 0px), var(--app-safe-top, 0px));
 }
 
 /* --- gel package converter -------------------------------------------------
@@ -729,9 +732,3 @@ input[type=number] {
 /* 使用 is inert until something is picked; .btn has no disabled styling of its own,
    so an unpicked sheet showed a fully saturated primary button that did nothing. */
 .m3e-gelref-sheet-actions .btn:disabled { background: var(--sch); color: var(--var); cursor: default; }
-
-/* The drill-in page keeps its content off the status bar on a phone, but on a wide
-   screen that same rule put its title 24px higher than the sheet's. */
-@media (min-width: 760px) {
-    .lab-time .sub-page { padding-top: 18px; }
-}
