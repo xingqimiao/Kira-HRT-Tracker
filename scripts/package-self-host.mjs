@@ -22,6 +22,6 @@ copyFileSync(join(root, 'LICENSE'), join(dir, 'LICENSE'));
 writeFileSync(join(dir, 'VERSION'), `${version}\n`);
 // A script-only revision does not replace an existing release asset or image tag.
 const archive = join(output, `${name}${revision ? `-${revision}` : ''}.tar.gz`);
-execFileSync('tar', ['-czf', archive, '-C', stage, name], { stdio: 'inherit' });
+execFileSync('tar', ['--force-local', '-czf', archive, '-C', stage, name], { stdio: 'inherit' });
 writeFileSync(`${archive}.sha256`, `${createHash('sha256').update(readFileSync(archive)).digest('hex')}  ${name}${revision ? `-${revision}` : ''}.tar.gz\n`);
 console.log(archive);
