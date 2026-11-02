@@ -1312,12 +1312,20 @@ const DoseForm: React.FC<DoseFormProps> = ({
     ));
 
     // The gel settings that follow the converter move into the left column when the
-    // converter is expanded on a wide screen. Keys rather than positions: the product
-    // row only exists in one HRT mode.
-    const FLOW_LEFT_KEYS = new Set(['gel-site', 'gel-product', 'gel-area', 'gel-co', 'gel-wash']);
+    // converter is expanded on a wide screen. Under the default (builtin) PK model, the
+    // time row also flows left above the site selector to balance the columns. In the
+    // Transmtf engine the extra product/coverage/wash options already fill that column,
+    // so the time row remains at the top of the right column.
     const flowLeft = desktopWide && route === Route.gel && gelRefExpanded;
-    const leftEntries = flowLeft ? listEntries.filter(entry => FLOW_LEFT_KEYS.has(entry.key)) : [];
-    const rightEntries = flowLeft ? listEntries.filter(entry => !FLOW_LEFT_KEYS.has(entry.key)) : listEntries;
+    const flowLeftKeys = useMemo(() => {
+        const keys = new Set(['gel-site', 'gel-product', 'gel-area', 'gel-co', 'gel-wash']);
+        if (effectiveEngine === 'builtin') {
+            keys.add('time');
+        }
+        return keys;
+    }, [effectiveEngine]);
+    const leftEntries = flowLeft ? listEntries.filter(entry => flowLeftKeys.has(entry.key)) : [];
+    const rightEntries = flowLeft ? listEntries.filter(entry => !flowLeftKeys.has(entry.key)) : listEntries;
 
     const renderEntry = (entry: ListEntry, idx: number) => (
         React.isValidElement(entry.node)
