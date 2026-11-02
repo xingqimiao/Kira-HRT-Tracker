@@ -1403,6 +1403,7 @@ const PACK: LangPack = {
     "gel.unit.sachet": "포",
     "gel.reference.show_all": "전체 {n}개 보기",
     "gel.reference.collapse": "접기",
+    "gel.reference.use": "사용",
 };
 
 export default PACK;

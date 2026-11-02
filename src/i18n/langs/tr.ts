@@ -1403,6 +1403,7 @@ const PACK: LangPack = {
     "gel.unit.sachet": "poşet",
     "gel.reference.show_all": "Tümünü göster ({n})",
     "gel.reference.collapse": "Daralt",
+    "gel.reference.use": "Kullan",
 };
 
 export default PACK;

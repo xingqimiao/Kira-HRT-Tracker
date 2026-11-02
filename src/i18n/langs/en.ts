@@ -1425,6 +1425,7 @@ const PACK: LangPack = {
     "gel.unit.sachet": "sachet",
     "gel.reference.show_all": "Show all {n}",
     "gel.reference.collapse": "Show less",
+    "gel.reference.use": "Use",
 };
 
 export default PACK;

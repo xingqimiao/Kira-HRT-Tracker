@@ -1403,6 +1403,7 @@ const PACK: LangPack = {
     "gel.unit.sachet": "袋",
     "gel.reference.show_all": "睇全部 {n} 項",
     "gel.reference.collapse": "收起",
+    "gel.reference.use": "用呢個",
 };
 
 export default PACK;

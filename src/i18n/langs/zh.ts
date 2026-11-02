@@ -1425,6 +1425,7 @@ const PACK: LangPack = {
     "gel.unit.sachet": "袋",
     "gel.reference.show_all": "查看全部 {n} 项",
     "gel.reference.collapse": "收起",
+    "gel.reference.use": "使用",
 };
 
 export default PACK;
