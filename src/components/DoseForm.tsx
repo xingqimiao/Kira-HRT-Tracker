@@ -28,6 +28,7 @@ import GelDoseReference from './dose_form/GelDoseReference';
 import { activePatches } from '../utils/medPlan';
 import { LOCALE_MAP } from '../utils/helpers';
 import { Icon } from '../ui/SvgDefs';
+import { useMediaQuery } from '../ui/proto';
 import { TimePage } from './TimePage';
 import { cookie } from '../ui/cookie';
 import type { QuickDose } from './dose_form/QuickDoseButtons';
@@ -191,6 +192,8 @@ const DoseForm: React.FC<DoseFormProps> = ({
     const [route, setRoute] = useState<Route>(initialDrug.route);
     const [drugId, setDrugId] = useState<string>(initialDrug.id);
     const [patchMode, setPatchMode] = useState<PatchMode>(initialPatchMode);
+    const [gelRefExpanded, setGelRefExpanded] = useState(false);
+    const desktopWide = useMediaQuery('(min-width: 760px)');
     const [dose, setDose] = useState<number>(initialDose);
     const [doseText, setDoseText] = useState<string>(() => trimNumber(initialDose));
 
@@ -969,6 +972,7 @@ const DoseForm: React.FC<DoseFormProps> = ({
                     // and Sandrena's unit — up to 0.75. Picking a unit must land on that
                     // unit's own number.
                     onPick={(mg) => setDoseValue(mg, 0.001, drug.max, true)}
+                    onExpandedChange={setGelRefExpanded}
                 />
             ),
         });
@@ -1307,6 +1311,23 @@ const DoseForm: React.FC<DoseFormProps> = ({
         </button>
     ));
 
+    // The gel settings that follow the converter move into the left column when the
+    // converter is expanded on a wide screen. Keys rather than positions: the product
+    // row only exists in one HRT mode.
+    const FLOW_LEFT_KEYS = new Set(['gel-site', 'gel-product', 'gel-area', 'gel-co', 'gel-wash']);
+    const flowLeft = desktopWide && route === Route.gel && gelRefExpanded;
+    const leftEntries = flowLeft ? listEntries.filter(entry => FLOW_LEFT_KEYS.has(entry.key)) : [];
+    const rightEntries = flowLeft ? listEntries.filter(entry => !FLOW_LEFT_KEYS.has(entry.key)) : listEntries;
+
+    const renderEntry = (entry: ListEntry, idx: number) => (
+        React.isValidElement(entry.node)
+            ? React.cloneElement(entry.node as React.ReactElement<{ className?: string; style?: React.CSSProperties }>, {
+                className: `${(entry.node as React.ReactElement<{ className?: string }>).props.className ?? ''} anim-in`,
+                style: { ...(entry.node as React.ReactElement<{ style?: React.CSSProperties }>).props.style, animationDelay: `${idx * 40}ms` },
+            })
+            : entry.node
+    );
+
     return (
         <div className="dose-panel">
             {!hideHeader && (
@@ -1505,18 +1526,26 @@ const DoseForm: React.FC<DoseFormProps> = ({
                                 <b>+{peak} {mode === 'ftm' ? 'ng/dL' : 'pg/mL'}</b>
                             </div>
                         )}
+
+                        {/* Expanded converter: the settings that used to sit below it flow
+                            into the empty half-column under the peak bar instead of
+                            stretching the right column past the fold. */}
+                        {leftEntries.length > 0 && (
+                            <div className="list m3e-flowed">
+                                {leftEntries.map((entry, idx) => (
+                                    <React.Fragment key={`${animTick}-${entry.key}`}>
+                                        {renderEntry(entry, idx)}
+                                    </React.Fragment>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     <div>
                         <div className="list" id="detailList">
-                            {listEntries.map((entry, idx) => (
+                            {rightEntries.map((entry, idx) => (
                                 <React.Fragment key={`${animTick}-${entry.key}`}>
-                                    {React.isValidElement(entry.node)
-                                        ? React.cloneElement(entry.node as React.ReactElement<{ className?: string; style?: React.CSSProperties }>, {
-                                            className: `${(entry.node as React.ReactElement<{ className?: string }>).props.className ?? ''} anim-in`,
-                                            style: { ...(entry.node as React.ReactElement<{ style?: React.CSSProperties }>).props.style, animationDelay: `${idx * 40}ms` },
-                                        })
-                                        : entry.node}
+                                    {renderEntry(entry, idx)}
                                 </React.Fragment>
                             ))}
                         </div>

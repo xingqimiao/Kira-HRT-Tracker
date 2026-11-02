@@ -692,3 +692,8 @@ input[type=number] {
     .m3e-gelref-pill { padding: 0 10px; font-size: 12px; }
     .m3e-gelref-pill .dim { display: none; }
 }
+
+/* Sections that follow the expanded gel converter, re-homed under the peak bar on a
+   wide screen. The margin only exists in that position; in the single-column layout
+   the grid gap already separates them. */
+.dose-panel .m3e-flowed { margin-top: 12px; }

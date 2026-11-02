@@ -54,7 +54,11 @@ function readFavourite(): string | null {
 
 const formatMg = (value: number) => `${Number(value.toFixed(3))} mg`;
 
-export default function GelDoseReference({ onPick }: { onPick?: (mg: number) => void }) {
+export default function GelDoseReference({ onPick, onExpandedChange }: {
+    onPick?: (mg: number) => void;
+    /** Lets the form re-flow the sections below when the full list opens. */
+    onExpandedChange?: (open: boolean) => void;
+}) {
     const { t } = useTranslation();
     const [favourite, setFavourite] = useState<string | null>(readFavourite);
     const [multiplier, setMultiplier] = useState<number>(1);
@@ -139,7 +143,7 @@ export default function GelDoseReference({ onPick }: { onPick?: (mg: number) => 
             </ul>
 
             {rows.length > COLLAPSED_ROWS && (
-                <button type="button" className="m3e-gelref-more" onClick={() => setShowAll(v => !v)}>
+                <button type="button" className="m3e-gelref-more" onClick={() => { const next = !showAll; setShowAll(next); onExpandedChange?.(next); }}>
                     {t(showAll ? 'gel.reference.collapse' : 'gel.reference.show_all').replace('{n}', String(rows.length))}
                 </button>
             )}
