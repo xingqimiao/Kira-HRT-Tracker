@@ -155,13 +155,13 @@ jobs:
       # digest instead of rebuilding it. Verify with:
       #   gh attestation verify oci://<images.txt entry> -R <owner>/<repo>
       - name: Attest api image
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ steps.digests.outputs.api_name }}
           subject-digest: ${{ steps.digests.outputs.api_digest }}
           push-to-registry: true
       - name: Attest web image
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ steps.digests.outputs.web_name }}
           subject-digest: ${{ steps.digests.outputs.web_digest }}
