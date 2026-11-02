@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+# cloudflare-ips-notify — deliver one updater alert to Telegram, with dedup and retries.
+#
+#   cloudflare-ips-notify [options] -- MESSAGE
+#
+#   --level info|warn|error   severity prefix (default info)
+#   --key KEY                 dedup key (default: the message itself)
+#   --window SECONDS          suppress a repeat of KEY within this window (0 = never)
+#   --once                    suppress KEY after the first successful delivery
+#   --token-file FILE         default /etc/cloudflare-ips/telegram-token
+#   --chat-file FILE          default /etc/cloudflare-ips/telegram-chat-id
+#   --state-file FILE         default /var/lib/cloudflare-ips/alerts.state
+#   --log-file FILE           default /var/log/cloudflare-ips/alerts.log
+#   --api-base URL            default https://api.telegram.org (test seam)
+#   --dry-run                 report the decision, send nothing
+#
+# Exit status is always 0. An alert must never fail, delay past its retry budget,
+# or change the outcome of the update that raised it.
+#
+# The bot token is never printed and never reaches a command line: the request URL
+# is handed to curl through a 0600 config file in a private temp dir, removed on
+# exit. Only the HTTP status and Telegram's own `description` are ever logged.
+set -uo pipefail
+export LC_ALL=C
+
+TOKEN_FILE=${CF_TG_TOKEN_FILE:-/etc/cloudflare-ips/telegram-token}
+CHAT_FILE=${CF_TG_CHAT_FILE:-/etc/cloudflare-ips/telegram-chat-id}
+STATE_FILE=${CF_ALERT_STATE:-/var/lib/cloudflare-ips/alerts.state}
+LOG_FILE=${CF_ALERT_LOG:-/var/log/cloudflare-ips/alerts.log}
+API_BASE=${CF_TG_API_BASE:-https://api.telegram.org}
+LEVEL=info
+KEY=
+WINDOW=86400
+ONCE=0
+DRY_RUN=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --level) LEVEL=${2:-info}; shift ;;
+    --key) KEY=${2:-}; shift ;;
+    --window) WINDOW=${2:-86400}; shift ;;
+    --once) ONCE=1 ;;
+    --token-file) TOKEN_FILE=${2:-}; shift ;;
+    --chat-file) CHAT_FILE=${2:-}; shift ;;
+    --state-file) STATE_FILE=${2:-}; shift ;;
+    --log-file) LOG_FILE=${2:-}; shift ;;
+    --api-base) API_BASE=${2:-}; shift ;;
+    --dry-run) DRY_RUN=1 ;;
+    --) shift; break ;;
+    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    *) echo "unknown option: $1" >&2; exit 64 ;;
+  esac
+  shift
+done
+MESSAGE="$*"
+[ -n "$MESSAGE" ] || { echo "usage: $0 [options] -- MESSAGE" >&2; exit 64; }
+API_BASE=${API_BASE%/}
+
+mkdir -p "$(dirname "$LOG_FILE")" "$(dirname "$STATE_FILE")" 2>/dev/null || true
+
+log() {
+  local line
+  line="$(date -u +%FT%TZ) $*"
+  printf '%s\n' "$line" >> "$LOG_FILE" 2>/dev/null || true
+  printf '%s\n' "$line"
+  logger -t cloudflare-ips-alert "$*" 2>/dev/null || true
+}
+
+case "$LEVEL" in
+  warn) prefix="[WARN]" ;;
+  error) prefix="[ERROR]" ;;
+  *) prefix="[INFO]" ;;
+esac
+host=$(hostname -s 2>/dev/null || echo hrt)
+TEXT="[$host] $prefix $MESSAGE"
+# Telegram rejects >4096 characters; keep a margin for the prefix and framing.
+TEXT=${TEXT:0:3500}
+
+[ -n "$KEY" ] || KEY="msg:$(printf '%s' "$MESSAGE" | sha256sum | cut -c1-16)"
+
+# --- dedup -----------------------------------------------------------------
+if [ "$DRY_RUN" -eq 0 ] && [ -r "$STATE_FILE" ]; then
+  prev=$(awk -F'\t' -v k="$KEY" '$1==k{print $2}' "$STATE_FILE" | tail -1)
+  if [ -n "${prev:-}" ]; then
+    if [ "$ONCE" -eq 1 ]; then
+      log "suppressed: key=$KEY already delivered"; exit 0
+    fi
+    age=$(( $(date +%s) - prev ))
+    if [ "$age" -lt "$WINDOW" ]; then
+      log "suppressed: key=$KEY last sent ${age}s ago (< ${WINDOW}s)"; exit 0
+    fi
+  fi
+fi
+
+if [ "$DRY_RUN" -eq 1 ]; then
+  log "dry-run: level=$LEVEL key=$KEY window=$WINDOW once=$ONCE text=$TEXT"; exit 0
+fi
+
+# --- channel ---------------------------------------------------------------
+if [ ! -r "$TOKEN_FILE" ] || [ ! -r "$CHAT_FILE" ]; then
+  log "NOT SENT: no channel configured (need $TOKEN_FILE and $CHAT_FILE): key=$KEY text=$TEXT"
+  exit 0
+fi
+token=$(tr -d '[:space:]' < "$TOKEN_FILE")
+chat=$(tr -d '[:space:]' < "$CHAT_FILE")
+if [ -z "$token" ] || [ -z "$chat" ]; then
+  log "NOT SENT: empty token or chat id in $TOKEN_FILE / $CHAT_FILE: key=$KEY"
+  exit 0
+fi
+
+tmp=$(mktemp -d) || { log "NOT SENT: cannot create temp dir: key=$KEY"; exit 0; }
+chmod 700 "$tmp"
+trap 'rm -rf "$tmp"' EXIT
+
+python3 - "$chat" "$TEXT" > "$tmp/body.json" <<'PY' || { log "NOT SENT: cannot build payload: key=$KEY"; exit 0; }
+import json, sys
+print(json.dumps({"chat_id": sys.argv[1], "text": sys.argv[2],
+                  "disable_web_page_preview": True}))
+PY
+( umask 077; printf 'url = "%s/bot%s/sendMessage"\n' "$API_BASE" "$token" > "$tmp/curl.cfg" )
+
+# --- send, with a bounded retry budget -------------------------------------
+attempt=1
+while :; do
+  code=$(curl -sS -m 10 -o "$tmp/resp.json" -w '%{http_code}' \
+           -K "$tmp/curl.cfg" -H 'Content-Type: application/json' \
+           --data @"$tmp/body.json" 2>"$tmp/err")
+  curl_rc=$?
+  if [ "$curl_rc" -eq 0 ] && [ "$code" = 200 ] && grep -qE '"ok"[[:space:]]*:[[:space:]]*true' "$tmp/resp.json" 2>/dev/null; then
+    printf '%s\t%s\n' "$KEY" "$(date +%s)" >> "$STATE_FILE" 2>/dev/null || true
+    log "sent: key=$KEY attempt=$attempt text=$TEXT"
+    exit 0
+  fi
+  reason=$(python3 - "$tmp/resp.json" <<'PY' 2>/dev/null
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    print(str(d.get("description", ""))[:200])
+except Exception:
+    print("")
+PY
+)
+  retry_after=$(python3 - "$tmp/resp.json" <<'PY' 2>/dev/null
+import json, sys
+try:
+    print(int(json.load(open(sys.argv[1])).get("parameters", {}).get("retry_after", 0)))
+except Exception:
+    print(0)
+PY
+)
+  # 4xx other than 429 is a configuration problem: retrying cannot fix it.
+  retryable=1
+  case "$code" in
+    429) : ;;
+    5??) : ;;
+    200) : ;;
+    4??) retryable=0 ;;
+  esac
+  [ "$curl_rc" -eq 0 ] || retryable=1
+  if [ "$retryable" -eq 0 ] || [ "$attempt" -ge 3 ]; then
+    log "delivery FAILED: key=$KEY attempts=$attempt http=$code curl=$curl_rc reason=${reason:-none} text=$TEXT"
+    exit 0
+  fi
+  sleep_for=2
+  [ "$attempt" -eq 2 ] && sleep_for=5
+  if [ "$code" = 429 ] && [ "${retry_after:-0}" -gt 0 ] 2>/dev/null; then
+    sleep_for=$retry_after
+    [ "$sleep_for" -gt 30 ] && sleep_for=30
+  fi
+  log "retrying in ${sleep_for}s: key=$KEY attempt=$attempt http=$code reason=${reason:-none}"
+  sleep "$sleep_for"
+  attempt=$(( attempt + 1 ))
+done

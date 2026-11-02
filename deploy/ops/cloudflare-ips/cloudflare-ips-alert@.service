@@ -1,0 +1,17 @@
+[Unit]
+Description=Alert that %i failed
+# Started by OnFailure= from cloudflare-ips-update.service. It is a supplement to
+# the script's own event alerts, not a replacement: it exists for exits the script
+# cannot report (a crash, an unset variable, a signal).
+[Service]
+Type=oneshot
+User=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/cloudflare-ips /var/log/cloudflare-ips
+ExecStart=/usr/local/sbin/cloudflare-ips-notify --level error --key unitfail:%i --window 3600 -- "cloudflare-ips-update 以未预期的退出码失败（unit %i）。请查看 journalctl -u %i 与 /var/log/cloudflare-ips/updates.log。"

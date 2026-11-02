@@ -2,6 +2,10 @@
 Description=Update the Caddy Cloudflare IP allowlist
 After=network-online.target
 Wants=network-online.target
+# Supplement only: the script alerts on every event it understands (pending
+# removals, reminders, apply, fetch/validate/reload/rollback failures). This
+# catches an exit nobody anticipated.
+OnFailure=cloudflare-ips-alert@%n.service
 
 [Service]
 Type=oneshot
@@ -15,3 +19,7 @@ ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 ReadWritePaths=/etc/caddy /var/lib/cloudflare-ips /var/log/cloudflare-ips /srv/hrt-backup-caddy/cloudflare-ips
+# 2 = rolled back after a failed apply, 3 = removal held for review. Both are
+# reported by the script itself; treating them as success keeps OnFailure for
+# genuinely unhandled failures instead of firing on a normal pending review.
+SuccessExitStatus=2 3

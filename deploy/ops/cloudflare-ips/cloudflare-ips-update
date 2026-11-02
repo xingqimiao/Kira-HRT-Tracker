@@ -14,6 +14,10 @@ LOG_DIR=/var/log/cloudflare-ips
 BACKUP_ROOT=/srv/hrt-backup-caddy/cloudflare-ips
 URL_V4=https://www.cloudflare.com/ips-v4
 URL_V6=https://www.cloudflare.com/ips-v6
+# Alerts are delivered by a separate helper, so that a delivery failure can never
+# change this script's outcome or its exit status. See cloudflare-ips-notify.
+NOTIFY=${NOTIFY:-/usr/local/sbin/cloudflare-ips-notify}
+CADDY_BIN=${CADDY_BIN:-}
 
 DRY_RUN=0; ALLOW_REMOVALS=0; NO_RELOAD=0; SIMULATE_FAIL=0; SIMULATE_ROLLBACK_FAIL=0; SOURCE_DIR=
 REMOVAL_GRACE_DAYS=${REMOVAL_GRACE_DAYS:-7}
@@ -49,6 +53,11 @@ fi
 mkdir -p "$STATE_DIR" "$LOG_DIR"
 LOG="$LOG_DIR/updates.log"
 PENDING="$STATE_DIR/pending-removal.json"
+# Read before any result() overwrites it, so a run that was failing can announce
+# that it is healthy again instead of only ever sending bad news.
+PREV_STATUS=$(python3 -c 'import json,sys
+try: print(json.load(open(sys.argv[1])).get("status",""))
+except Exception: print("")' "$STATE_DIR/last-result.json" 2>/dev/null || true)
 log() {
   local line
   line="$(date -u +%FT%TZ) $*"
@@ -67,14 +76,19 @@ result() { # result <status> <added> <removed> <applied>
   printf '{"at":"%s","status":"%s","added":%s,"removed":%s,"applied":%s}\n' \
     "$(date -u +%FT%TZ)" "$1" "${2:-0}" "${3:-0}" "${4:-false}" > "$STATE_DIR/last-result.json"
 }
-notify() {
-  local url
-  [ -r /etc/cloudflare-ips/webhook-url ] || return 0
-  url=$(tr -d '[:space:]' < /etc/cloudflare-ips/webhook-url)
-  [ -n "$url" ] || return 0
-  curl -fsS -m 10 -X POST -H 'Content-Type: application/json' \
-    --data "{\"text\":$(printf '%s' "$*" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read()))')}" \
-    "$url" >/dev/null 2>&1 || log "webhook delivery failed"
+# alert <level> <key> <once|seconds> <message>
+# Never fails: the helper always exits 0, and this wrapper swallows anything else.
+alert() {
+  local level=$1 key=$2 win=$3 msg=$4
+  if [ ! -x "$NOTIFY" ]; then
+    log "alert not sent ($key): $NOTIFY is not installed"
+    return 0
+  fi
+  if [ "$win" = once ]; then
+    "$NOTIFY" --level "$level" --key "$key" --once -- "$msg" >> "$LOG" 2>&1 || true
+  else
+    "$NOTIFY" --level "$level" --key "$key" --window "$win" -- "$msg" >> "$LOG" 2>&1 || true
+  fi
 }
 
 exec 9>"$STATE_DIR/lock"
@@ -87,15 +101,19 @@ trap 'rm -rf "$tmp"' EXIT
 if [ -n "$SOURCE_DIR" ]; then
   if [ ! -r "$SOURCE_DIR/ips-v4" ] || [ ! -r "$SOURCE_DIR/ips-v6" ]; then
     log "ERROR source-dir is missing ips-v4/ips-v6; nothing changed"
-    result error; exit 1
+    result error
+    alert error fail:fetch 86400 "Cloudflare IP 列表读取失败（$SOURCE_DIR 缺少 ips-v4/ips-v6）。本次未做任何修改，allowlist 保持原样。"
+    exit 1
   fi
   cp "$SOURCE_DIR/ips-v4" "$tmp/v4"
   cp "$SOURCE_DIR/ips-v6" "$tmp/v6"
 else
   curl -fsS --proto '=https' --max-time 20 --retry 3 --retry-delay 2 -o "$tmp/v4" "$URL_V4" \
-    || { log "ERROR fetching $URL_V4 failed; nothing changed"; result error; exit 1; }
+    || { log "ERROR fetching $URL_V4 failed; nothing changed"; result error
+         alert error fail:fetch 86400 "Cloudflare IP 列表下载失败（IPv4）。本次未做任何修改，allowlist 保持原样。"; exit 1; }
   curl -fsS --proto '=https' --max-time 20 --retry 3 --retry-delay 2 -o "$tmp/v6" "$URL_V6" \
-    || { log "ERROR fetching $URL_V6 failed; nothing changed"; result error; exit 1; }
+    || { log "ERROR fetching $URL_V6 failed; nothing changed"; result error
+         alert error fail:fetch 86400 "Cloudflare IP 列表下载失败（IPv6）。本次未做任何修改，allowlist 保持原样。"; exit 1; }
 fi
 
 # --- 2. validate + normalize ------------------------------------------------
@@ -139,8 +157,11 @@ for net in sorted(v6, key=lambda n: (int(n.network_address), n.prefixlen)):
 PY
 rc=$?
 if [ "$rc" -ne 0 ]; then
-  log "ERROR validation rejected the fetched list (rc=$rc): $(tr '\n' ' ' < "$tmp/validate.err" | cut -c1-300)"
-  result error; exit 1
+  why=$(tr '\n' ' ' < "$tmp/validate.err" | cut -c1-300)
+  log "ERROR validation rejected the fetched list (rc=$rc): $why"
+  result error
+  alert error fail:validate 86400 "Cloudflare IP 列表校验失败，已拒绝应用：$why"
+  exit 1
 fi
 log "validated: $(grep -c '\.' "$tmp/new") IPv4 + $(grep -c ':' "$tmp/new") IPv6 ranges"
 
@@ -165,8 +186,11 @@ if not ranges:
 print(" ".join(ranges))
 PY
 if [ $? -ne 0 ]; then
-  log "ERROR cannot read managed block: $(tr '\n' ' ' < "$tmp/extract.err" | cut -c1-300); nothing changed"
-  result error; exit 1
+  why=$(tr '\n' ' ' < "$tmp/extract.err" | cut -c1-300)
+  log "ERROR cannot read managed block: $why; nothing changed"
+  result error
+  alert error fail:config 86400 "Caddyfile 的 CLOUDFLARE-IPS 标记块读取失败，未做修改：$why"
+  exit 1
 fi
 tr ' ' '\n' < "$tmp/current" | sed '/^$/d' | sort > "$tmp/old.list"
 sed '/^$/d' "$tmp/new" | sort > "$tmp/new.list"
@@ -176,13 +200,19 @@ if cmp -s "$tmp/old.list" "$tmp/new.list"; then
   # A pending removal that no longer appears is resolved (or was applied by hand).
   rm -f "$PENDING"
   log "no change: $(wc -l < "$tmp/new.list") ranges already current"
-  result no_change 0 0 false; exit 0
+  result no_change 0 0 false
+  case "$PREV_STATUS" in
+    error|rollback_failed|rolled_back)
+      alert info recovered 86400 "Cloudflare IP 更新器已恢复正常：列表已是最新（$(wc -l < "$tmp/new.list") 个网段）。上一次运行状态为 $PREV_STATUS。" ;;
+  esac
+  exit 0
 fi
 comm -13 "$tmp/old.list" "$tmp/new.list" | sed 's/^/+ /' > "$tmp/diff"
 comm -23 "$tmp/old.list" "$tmp/new.list" | sed 's/^/- /' >> "$tmp/diff"
 added=$(comm -13 "$tmp/old.list" "$tmp/new.list" | wc -l)
 removed=$(comm -23 "$tmp/old.list" "$tmp/new.list" | wc -l)
 log "change detected: +$added -$removed"
+change_fp=$(sha256sum < "$tmp/diff" | cut -c1-16)
 while IFS= read -r line; do log "  $line"; done < "$tmp/diff"
 
 # A removal is a *shrinking* trust boundary: applying it automatically would be
@@ -192,6 +222,7 @@ while IFS= read -r line; do log "  $line"; done < "$tmp/diff"
 APPLY_REMOVAL=0
 if [ "$removed" -gt 0 ]; then
   fp=$(comm -23 "$tmp/old.list" "$tmp/new.list" | sha256sum | cut -c1-16)
+  diff_text=$(tr '\n' ' ' < "$tmp/diff" | cut -c1-600)
   prev_pair=$(python3 - "$PENDING" <<'PY'
 import json, sys
 try:
@@ -202,12 +233,14 @@ except Exception:
 PY
 )
   prev_fp=${prev_pair% *}; prev_at=${prev_pair#* }
-  if [ "$ALLOW_REMOVALS" -ne 1 ] && [ -n "$prev_fp" ] && [ "$prev_fp" = "$fp" ] && [ "$prev_at" -gt 0 ]; then
+  age_days=0
+  if [ -n "$prev_fp" ] && [ "$prev_fp" = "$fp" ] && [ "$prev_at" -gt 0 ]; then
     age_days=$(( ($(date +%s) - prev_at) / 86400 ))
-    if [ "$age_days" -ge "$REMOVAL_GRACE_DAYS" ]; then
-      warn "removal has been pending ${age_days}d (>= ${REMOVAL_GRACE_DAYS}d); applying it now so an expired authorization does not persist"
-      APPLY_REMOVAL=1
-    fi
+  fi
+  if [ "$ALLOW_REMOVALS" -ne 1 ] && [ "$age_days" -ge "$REMOVAL_GRACE_DAYS" ]; then
+    warn "removal has been pending ${age_days}d (>= ${REMOVAL_GRACE_DAYS}d); applying it now so an expired authorization does not persist"
+    APPLY_REMOVAL=1
+    alert warn "apply:$fp" once "宽限期已满（已挂起 ${age_days} 天）：正在应用移除 $removed 个网段。先备份、再校验，reload 后校验失败会自动回滚。变更：$diff_text"
   fi
   if [ "$ALLOW_REMOVALS" -ne 1 ] && [ "$APPLY_REMOVAL" -ne 1 ]; then
     cp "$tmp/diff" "$STATE_DIR/pending.diff"
@@ -216,7 +249,17 @@ PY
     fi
     warn "$removed range(s) would be removed; review $STATE_DIR/pending.diff; they are applied automatically after ${REMOVAL_GRACE_DAYS}d"
     result pending_removal "$added" "$removed" false
-    notify "Cloudflare IP list: $removed removal(s) need review (auto-applies after ${REMOVAL_GRACE_DAYS}d)"
+    alert warn "pending:$fp:first" once "Cloudflare 列表要求移除 $removed 个网段，已暂缓应用。${REMOVAL_GRACE_DAYS} 天宽限后自动应用；期间如需立即处理：cloudflare-ips-update --allow-removals。变更：$diff_text"
+    mid=$(( REMOVAL_GRACE_DAYS / 2 ))
+    [ "$mid" -lt 1 ] && mid=1
+    last=$(( REMOVAL_GRACE_DAYS - 1 ))
+    [ "$last" -lt "$mid" ] && last=$mid
+    if [ "$age_days" -ge "$mid" ]; then
+      alert warn "pending:$fp:d$mid" once "Cloudflare 网段移除仍在挂起（${age_days} 天）：$removed 个网段将在第 ${REMOVAL_GRACE_DAYS} 天自动应用。变更：$diff_text"
+    fi
+    if [ "$age_days" -ge "$last" ]; then
+      alert warn "pending:$fp:d$last" once "Cloudflare 网段移除即将自动应用（已挂起 ${age_days} 天，宽限 ${REMOVAL_GRACE_DAYS} 天）：$removed 个网段。变更：$diff_text"
+    fi
     exit 3
   fi
 fi
@@ -246,25 +289,35 @@ sys.stdout.write("\n".join(out) + ("\n" if trailing else ""))
 PY
 if [ $? -ne 0 ]; then
   log "ERROR could not build the candidate Caddyfile; nothing changed"
-  result error; exit 1
+  result error
+  alert error fail:config 86400 "无法生成候选 Caddyfile（标记块结构异常），未做修改。"
+  exit 1
 fi
 
-CADDY_BIN=$(systemctl show caddy -p ExecStart --value 2>/dev/null | sed -n 's/.*path=\([^ ;]*\).*/\1/p')
-[ -x "$CADDY_BIN" ] || CADDY_BIN=/usr/bin/caddy
+if [ -z "$CADDY_BIN" ]; then
+  CADDY_BIN=$(systemctl show caddy -p ExecStart --value 2>/dev/null | sed -n 's/.*path=\([^ ;]*\).*/\1/p')
+  [ -x "$CADDY_BIN" ] || CADDY_BIN=/usr/bin/caddy
+fi
 if ! "$CADDY_BIN" validate --config "$tmp/Caddyfile.new" > "$tmp/validate.out" 2>&1; then
-  log "ERROR candidate config failed validation; nothing written: $(tail -1 "$tmp/validate.out")"
-  result error; exit 1
+  why=$(tail -1 "$tmp/validate.out" | cut -c1-300)
+  log "ERROR candidate config failed validation; nothing written: $why"
+  result error
+  alert error fail:cadvalidate 86400 "候选 Caddyfile 未通过 caddy validate，未写入、未 reload：$why"
+  exit 1
 fi
 log "candidate config validates with $CADDY_BIN"
 
 # --- 6. backup + atomic install -------------------------------------------
 ts=$(date -u +%Y%m%dT%H%M%SZ)
 backup="$BACKUP_ROOT/$ts"
-mkdir -p "$backup" || { log "ERROR cannot create backup dir; nothing changed"; result error; exit 1; }
-cp -a "$CADDYFILE" "$backup/Caddyfile" || { log "ERROR backup failed; nothing changed"; result error; exit 1; }
+mkdir -p "$backup" || { log "ERROR cannot create backup dir; nothing changed"; result error
+  alert error fail:install 86400 "无法创建备份目录 $backup，未做任何修改。"; exit 1; }
+cp -a "$CADDYFILE" "$backup/Caddyfile" || { log "ERROR backup failed; nothing changed"; result error
+  alert error fail:install 86400 "备份 Caddyfile 失败，未做任何修改。"; exit 1; }
 install -m 644 -o root -g root "$tmp/Caddyfile.new" "$CADDYFILE.tmp.$$" \
   && mv -f "$CADDYFILE.tmp.$$" "$CADDYFILE" \
-  || { log "ERROR atomic install failed; backup at $backup"; result error; exit 1; }
+  || { log "ERROR atomic install failed; backup at $backup"; result error
+       alert error fail:install 86400 "写入新 allowlist 失败；原文件备份在 $backup，配置未被改动。"; exit 1; }
 log "installed new matcher; backup=$backup"
 
 # keep the last 10 backups
@@ -277,26 +330,34 @@ rollback() {
   # exercised rather than only reviewed. Sandbox-only, like the post-update simulation.
   if [ "$SIMULATE_ROLLBACK_FAIL" -eq 1 ]; then src="$backup/Caddyfile.missing"; fi
   log "ROLLBACK: $why"
+  alert error "fail:postcheck" 900 "allowlist 更新后的校验未通过（$why），正在回滚到上一份配置。"
   install -m 644 -o root -g root "$src" "$CADDYFILE.tmp.$$" \
     && mv -f "$CADDYFILE.tmp.$$" "$CADDYFILE" \
-    || { log "ROLLBACK FAILED: cannot restore $backup/Caddyfile"; result rollback_failed "$added" "$removed" false; exit 3; }
+    || { log "ROLLBACK FAILED: cannot restore $backup/Caddyfile"; result rollback_failed "$added" "$removed" false
+         alert error "fail:rollback" 0 "回滚失败：无法恢复 $backup/Caddyfile。Caddy 当前可能仍在用新列表，请人工介入。"
+         exit 4; }
   if [ "$NO_RELOAD" -eq 0 ]; then
-    systemctl reload caddy || { log "ROLLBACK FAILED: reload after restore failed"; result rollback_failed "$added" "$removed" false; exit 3; }
+    systemctl reload caddy || { log "ROLLBACK FAILED: reload after restore failed"; result rollback_failed "$added" "$removed" false
+      alert error "fail:rollback" 0 "回滚失败：恢复文件后 reload caddy 仍失败，请人工介入。"; exit 4; }
     sleep 1
     if curl -s -m 10 http://127.0.0.1:2019/config/ | grep -qF "$(head -1 "$tmp/old.list")" \
        && [ "$(curl -s -o /dev/null -w '%{http_code}' -m 10 https://api.kiramyao.com/hrt/health)" = 200 ]; then
       log "ROLLBACK OK: previous allowlist is live again"
       result rolled_back "$added" "$removed" false
+      alert warn "rollback:ok:$change_fp" once "已自动回滚：上一份 allowlist 重新生效，新列表未应用（原因：$why）。服务 health 200。"
       exit 2
     fi
-    log "ROLLBACK FAILED: restored file is not live"; result rollback_failed "$added" "$removed" false; exit 3
+    log "ROLLBACK FAILED: restored file is not live"; result rollback_failed "$added" "$removed" false
+    alert error "fail:rollback" 0 "回滚失败：恢复的文件没有生效（admin API 或 health 校验不通过），请人工介入。"; exit 4
   fi
   if cmp -s "$CADDYFILE" "$backup/Caddyfile"; then
     log "ROLLBACK OK (file restored; no reload in sandbox mode)"
     result rolled_back "$added" "$removed" false
+    alert warn "rollback:ok:$change_fp" once "已自动回滚：上一份 allowlist 重新生效，新列表未应用（原因：$why）。"
     exit 2
   fi
-  log "ROLLBACK FAILED: file mismatch"; result rollback_failed "$added" "$removed" false; exit 3
+  log "ROLLBACK FAILED: file mismatch"; result rollback_failed "$added" "$removed" false
+  alert error "fail:rollback" 0 "回滚失败：文件内容与备份不一致，请人工介入。"; exit 4
 }
 
 # --- 7. reload + verify ----------------------------------------------------
@@ -328,5 +389,5 @@ fi
 rm -f "$PENDING"
 result applied "$added" "$removed" true
 log "applied: +$added -$removed; backup=$backup"
-notify "Cloudflare IP list updated: +$added -$removed"
+alert info "applied:$change_fp" once "Cloudflare allowlist 已更新并生效：+$added / -$removed 个网段（备份 $backup）。变更：$(tr '\n' ' ' < "$tmp/diff" | cut -c1-600)"
 exit 0
