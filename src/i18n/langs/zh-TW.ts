@@ -1369,13 +1369,12 @@ const PACK: LangPack = {
     "m3e.quick.remove": "长按删除常用剂量",
     "m3e.delete": "删除此记录",
     "m3e.delete_confirm": "确定删除这条记录吗？",
-    "restore.title": "替換雲端資料？",
-    "restore.danger_title": "刪除並替換雲端資料",
+    "restore.title": "覆蓋雲端資料？",
+    "restore.danger_title": "刪除並覆蓋雲端資料",
     "restore.danger_body": "把這個檔案中的紀錄整體寫入帳號，雲端現有紀錄會被刪除；其他裝置隨後會同步成這份檔案。",
     "restore.disabled_signed_out": "登入後即可替換雲端資料",
     "restore.disabled_server": "目前伺服器未開啟此功能",
-    "restore.action": "檢視差異並替換",
-    "restore.confirm_action": "刪除並替換",
+    "restore.confirm_action": "確認覆蓋",
     "restore.loading": "正在讀取雲端資料…",
     "restore.load_failed": "無法讀取雲端資料，請檢查網路後重試",
     "restore.summary": "雲端現有 {cloud} 筆紀錄，這個檔案有 {file} 筆",
@@ -1405,6 +1404,10 @@ const PACK: LangPack = {
     "gel.reference.collapse": "收起",
     "gel.reference.use": "使用",
     "gel.reference.half": "半",
+    "restore.entry_hint": "需要將雲端完全重置為此檔案？",
+    "restore.action": "檢視差異並覆蓋",
+    "import.merge_action": "合併匯入",
+    "import.format_link": "檢視開放資料格式規範",
 };
 
 export default PACK;

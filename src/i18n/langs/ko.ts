@@ -1374,7 +1374,6 @@ const PACK: LangPack = {
     "restore.danger_body": "이 파일의 기록을 계정 전체로 기록합니다. 클라우드에 있는 기존 기록은 삭제되고 다른 기기들도 이 파일로 동기화됩니다.",
     "restore.disabled_signed_out": "로그인하면 교체할 수 있습니다",
     "restore.disabled_server": "이 서버에서는 교체가 허용되지 않습니다",
-    "restore.action": "차이 확인 후 교체",
     "restore.confirm_action": "삭제하고 교체",
     "restore.loading": "클라우드를 읽는 중…",
     "restore.load_failed": "클라우드를 읽을 수 없습니다. 연결을 확인한 뒤 다시 시도하세요.",
@@ -1405,6 +1404,10 @@ const PACK: LangPack = {
     "gel.reference.collapse": "접기",
     "gel.reference.use": "사용",
     "gel.reference.half": "반",
+    "restore.entry_hint": "클라우드를 이 파일로 완전히 초기화할까요?",
+    "restore.action": "차이 확인 후 덮어쓰기",
+    "import.merge_action": "병합 가져오기",
+    "import.format_link": "데이터 형식 사양 보기",
 };
 
 export default PACK;

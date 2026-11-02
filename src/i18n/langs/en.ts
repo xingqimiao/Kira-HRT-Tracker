@@ -1391,13 +1391,12 @@ const PACK: LangPack = {
     "m3e.delete": "Delete this record",
     "m3e.delete_confirm": "Delete this dose record?",
 
-    "restore.title": "Replace the cloud data?",
-    "restore.danger_title": "Delete and replace cloud data",
+    "restore.title": "Overwrite the cloud data?",
+    "restore.danger_title": "Delete and overwrite cloud data",
     "restore.danger_body": "Writes this file's records as the whole account. The records already in the cloud are deleted, and your other devices sync to this file.",
     "restore.disabled_signed_out": "Sign in to replace cloud data",
     "restore.disabled_server": "This server does not allow replacing data",
-    "restore.action": "Review difference and replace",
-    "restore.confirm_action": "Delete and replace",
+    "restore.confirm_action": "Overwrite",
     "restore.loading": "Reading the cloud…",
     "restore.load_failed": "Could not read the cloud. Check the connection and try again.",
     "restore.summary": "The cloud holds {cloud} records; this file holds {file}.",
@@ -1428,6 +1427,10 @@ const PACK: LangPack = {
     "gel.reference.use": "Use",
     "gel.reference.note_detail": "Check the leaflet for your exact product: dispensers and pack specifications vary by country. Gel weight is not the estradiol amount.",
     "gel.reference.half": "Half",
+    "restore.entry_hint": "Need to reset the cloud to this file?",
+    "restore.action": "Review difference and overwrite",
+    "import.merge_action": "Merge import",
+    "import.format_link": "Open data format spec",
 };
 
 export default PACK;

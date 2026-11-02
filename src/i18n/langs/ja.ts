@@ -1374,7 +1374,6 @@ const PACK: LangPack = {
     "restore.danger_body": "このファイルの記録をアカウント全体として書き込みます。クラウドにある現在の記録は削除され、他の端末もこのファイルに同期します。",
     "restore.disabled_signed_out": "サインインすると置き換えできます",
     "restore.disabled_server": "このサーバーでは置き換えが許可されていません",
-    "restore.action": "差分を確認して置き換える",
     "restore.confirm_action": "削除して置き換える",
     "restore.loading": "クラウドを読み込み中…",
     "restore.load_failed": "クラウドを読み込めませんでした。接続を確認して再試行してください。",
@@ -1405,6 +1404,10 @@ const PACK: LangPack = {
     "gel.reference.collapse": "折りたたむ",
     "gel.reference.use": "使用",
     "gel.reference.half": "半分",
+    "restore.entry_hint": "クラウドをこのファイルで完全に置き換えますか？",
+    "restore.action": "差分を確認して上書き",
+    "import.merge_action": "マージして取り込む",
+    "import.format_link": "データ形式の仕様を見る",
 };
 
 export default PACK;

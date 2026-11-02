@@ -1374,7 +1374,6 @@ const PACK: LangPack = {
     "restore.danger_body": "Bu dosyadaki kayıtlar hesabın tamamı olarak yazılır. Bulutta var olan kayıtlar silinir ve diğer cihazlar bu dosyaya senkronlanır.",
     "restore.disabled_signed_out": "Bulut verisini değiştirmek için giriş yapın",
     "restore.disabled_server": "Bu sunucu veri değiştirmeye izin vermiyor",
-    "restore.action": "Farkı gör ve değiştir",
     "restore.confirm_action": "Sil ve değiştir",
     "restore.loading": "Bulut okunuyor…",
     "restore.load_failed": "Bulut okunamadı. Bağlantıyı kontrol edip yeniden deneyin.",
@@ -1405,6 +1404,10 @@ const PACK: LangPack = {
     "gel.reference.collapse": "Daralt",
     "gel.reference.use": "Kullan",
     "gel.reference.half": "Yarım",
+    "restore.entry_hint": "Bulut bu dosyayla tamamen sıfırlansın mı?",
+    "restore.action": "Farkı gör ve üzerine yaz",
+    "import.merge_action": "Birleştirerek içe aktar",
+    "import.format_link": "Veri biçimi belirtimini aç",
 };
 
 export default PACK;

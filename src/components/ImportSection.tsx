@@ -3,7 +3,7 @@ import Icon from './Icon';
 import Switch from './Switch';
 import RestoreConfirmDialog from './RestoreConfirmDialog';
 import { useTranslation } from '../contexts/LanguageContext';
-import { ChevronDown, ChevronUp, Check, Copy, TestTube2, TriangleWarning } from '../icons';
+import { ChevronDown, ChevronUp, Check, Copy, TestTube2 } from '../icons';
 import { SegmentedList, SegmentedListItem } from '../ui/proto';
 import { Icon as SpriteIcon } from '../ui/SvgDefs';
 import type { RestorePreview } from '../hooks/useCoreSync';
@@ -182,50 +182,43 @@ const ImportSection: React.FC<ImportSectionProps> = ({
                     </button>
                     <button type="button" onClick={() => void confirm()} className="btn" style={{ flex: 1 }}>
                         <Icon icon={Check} size={16} />
-                        {t('btn.confirm')}
+                        {t('import.merge_action')}
                     </button>
                 </div>
 
-                {/* The destructive action lives in its own zone: merging is the primary
-                    action above and can never remove a record, so replacing the account
-                    has to be reached through a visibly different, gated surface. */}
-                <div
-                    className="card"
-                    role="group"
-                    aria-label={t('restore.danger_title')}
+                {/* The destructive path is a footnote, not a panel: replacing the account
+                    is rare, and a red box on every import taught people to ignore red. The
+                    colour and the warning live in the dialog, which only opens on demand. */}
+                <button
+                    type="button"
+                    onClick={() => setConfirmOpen(true)}
+                    disabled={!canOverwrite || !onRestorePreview || restoring}
                     style={{
-                        marginTop: 8,
-                        padding: 16,
                         display: 'flex',
-                        flexDirection: 'column',
-                        gap: 12,
-                        border: '1px solid var(--err)',
-                        background: 'transparent',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 10,
+                        width: '100%',
+                        marginTop: 2,
+                        padding: '10px 2px 2px',
+                        border: 0,
+                        background: 'none',
+                        font: 'inherit',
+                        textAlign: 'left',
+                        cursor: canOverwrite ? 'pointer' : 'default',
+                        opacity: canOverwrite ? 1 : .55,
                     }}
                 >
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                        <span className="ic err" style={{ flex: 'none' }}>
-                            <Icon icon={TriangleWarning} size={22} />
-                        </span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                            <b style={{ display: 'block', color: 'var(--err)' }}>{t('restore.danger_title')}</b>
-                            <span className="s" style={{ display: 'block', whiteSpace: 'normal' }}>
-                                {canOverwrite ? t('restore.danger_body') : disabledCopy}
-                            </span>
-                        </div>
-                    </div>
-                    <button
-                        type="button"
-                        className="btn danger-wide"
-                        style={{ marginTop: 0, opacity: canOverwrite ? 1 : .45 }}
-                        disabled={!canOverwrite || !onRestorePreview || restoring}
-                        aria-disabled={!canOverwrite}
-                        onClick={() => setConfirmOpen(true)}
-                    >
-                        <Icon icon={TriangleWarning} size={18} />
-                        <span>{t(restoring ? 'restore.busy' : 'restore.action')}</span>
-                    </button>
-                </div>
+                    <span className="s" style={{ margin: 0, whiteSpace: 'normal' }}>
+                        {canOverwrite ? t('restore.entry_hint') : disabledCopy}
+                    </span>
+                    {canOverwrite && (
+                        <b style={{ flex: 'none', color: 'var(--err)', fontSize: 12.5, fontWeight: 600 }}>
+                            {t(restoring ? 'restore.busy' : 'restore.action')}
+                            <span aria-hidden="true"> ›</span>
+                        </b>
+                    )}
+                </button>
 
                 <RestoreConfirmDialog
                     open={confirmOpen}

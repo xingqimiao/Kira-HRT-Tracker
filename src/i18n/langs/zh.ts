@@ -1391,13 +1391,12 @@ const PACK: LangPack = {
     "m3e.delete": "删除此记录",
     "m3e.delete_confirm": "确定删除这条记录吗？",
 
-    "restore.title": "替换云端数据？",
-    "restore.danger_title": "删除并替换云端数据",
+    "restore.title": "覆盖云端数据？",
+    "restore.danger_title": "删除并覆盖云端数据",
     "restore.danger_body": "把这个文件的记录整体写入账号，云端现有记录会被删除；其他设备随后同步成这份文件。",
     "restore.disabled_signed_out": "登录后可替换云端数据",
     "restore.disabled_server": "当前服务器未开启此功能",
-    "restore.action": "查看差异并替换",
-    "restore.confirm_action": "删除并替换",
+    "restore.confirm_action": "确认覆盖",
     "restore.loading": "正在读取云端数据…",
     "restore.load_failed": "无法读取云端数据，请检查网络后重试",
     "restore.summary": "云端现有 {cloud} 条记录，这个文件有 {file} 条",
@@ -1428,6 +1427,10 @@ const PACK: LangPack = {
     "gel.reference.use": "使用",
     "gel.reference.note_detail": "不同国家、包装和计量器规格可能不同，请核对你手中产品的说明书。凝胶重量与雌二醇含量不同。",
     "gel.reference.half": "半",
+    "restore.entry_hint": "需要将云端完全重置为此文件？",
+    "restore.action": "查看差异并覆盖",
+    "import.merge_action": "合并导入",
+    "import.format_link": "查看开放数据格式规范",
 };
 
 export default PACK;
