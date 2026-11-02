@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import Icon from '../Icon';
 import { useTranslation } from '../../contexts/LanguageContext';
-import { ChevronDown, ChevronRight, ChevronUp, ExternalLink } from '../../icons';
+import { ExternalLink } from '../../icons';
 import { Icon as SpriteIcon } from '../../ui/SvgDefs';
 import { AdaptiveSheet, useMediaQuery } from '../../ui/proto';
 
@@ -269,7 +269,9 @@ export default function GelDoseReference({ onPick, onExpandedChange }: {
                         <div className="s">{t('gel.reference.short_note')}</div>
                     </div>
                 </div>
-                <Icon icon={desktop ? (open ? ChevronUp : ChevronDown) : ChevronRight} size={20} />
+                {desktop
+                    ? <SpriteIcon id="down" className={open ? 'i m3e-gelref-chev up' : 'i m3e-gelref-chev'} />
+                    : <SpriteIcon id="chev" />}
             </button>
 
             {desktop && open && (
@@ -300,7 +302,7 @@ export default function GelDoseReference({ onPick, onExpandedChange }: {
                     </div>
                 )}
             >
-                <p className="m3e-gelref-note">{t('gel.reference.note')}</p>
+                <p className="m3e-gelref-note">{t('gel.reference.short_note')}</p>
                 <div className="m3e-gelref-tools">{multiplierChips}</div>
                 <ul className="m3e-gelref-list" role="list">
                     {rows.map(row => rowNode(

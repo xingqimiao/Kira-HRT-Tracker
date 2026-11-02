@@ -656,7 +656,7 @@ input[type=number] {
    field. Deliberately not a stack of per-row surfaces: nine of those read as a
    wall and push the dose itself off screen. */
 .m3e-gelref { padding: 14px 14px 10px; }
-.m3e-gelref-head { display: flex; width: 100%; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 10px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.m3e-gelref-head { display: flex; width: 100%; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 10px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .m3e-gelref-title { display: flex; flex: 1 1 190px; align-items: center; gap: 10px; min-width: 0; }
 .m3e-gelref-title .t { font-size: 15px; font-weight: 600; color: var(--on); }
 .m3e-gelref-title .s { margin-top: 2px; font-size: 12px; color: var(--var); }
@@ -702,3 +702,10 @@ input[type=number] {
    wide screen. The margin only exists in that position; in the single-column layout
    the grid gap already separates them. */
 .dose-panel .m3e-flowed { margin-top: 12px; }
+
+/* The header's chevron is the sprite the rest of the panel uses; opening rotates it
+   rather than swapping glyphs, so the two states cannot drift in size or stroke. */
+.m3e-gelref-chev { transition: transform .22s cubic-bezier(.2, 1, .3, 1); }
+.m3e-gelref-chev.up { transform: rotate(180deg); }
+/* Same trailing glyph metrics as the panel's other list rows. */
+.m3e-gelref-head > svg.i { width: 20px; height: 20px; flex: none; color: var(--var); }
