@@ -1,68 +1,54 @@
 # Post-release follow-ups — 2.5.0
 
-Items found during the post-release observation window (2026-11-02) that are **not**
-fixed yet. Nothing here has been applied to production.
+Items found during the post-release observation window (2026-11-02). Updated after
+the two approved low-risk operations.
 
-## 1. The SPA shell has no cache policy (recommended next)
+## 1. SPA shell cache policy — done (2026-11-02 08:41 UTC)
 
-Measured: `GET /` and `GET /index.html` return `Last-Modified` and no `Cache-Control`,
-no `ETag`; Cloudflare answers `cf-cache-status: DYNAMIC` (it does not cache them).
-Browsers therefore apply heuristic freshness, and a shell that survives in a browser
-cache still references chunk filenames that the newer release deleted. `assets/*`
-requests for a deleted chunk are a correct 404 (the `@static_assets` branch), so the
-failure mode is a blank app, not a wrong-API app.
+Applied to the `hrt.kiramyao.com` site only: `@spa_routes` now also matches
+`/index.html`, and the branch sets `Cache-Control: no-cache, must-revalidate` +
+`Expires: 0` before `rewrite`/`file_server`. Proven in the adapted config that the
+header handler sorts ahead of the rewrite and the file server in the same branch.
+Cloudflare passes those values through unchanged (`cf-cache-status: DYNAMIC`), so
+its Browser Cache TTL does not override them. Assets, the worker, `/ocr/*`,
+`/android/*` and `/about/*` keep their previous policy; `/index.html` revalidates
+with a 304. Backup: `/srv/hrt-backup-caddy/20261102T084152Z/Caddyfile`.
 
-Proposed change, shell paths only:
-
-```caddy
-@shell path / /index.html /share /share/* /auth/x/callback /auth/x/setup /auth/google/callback
-header @shell Cache-Control "no-cache, must-revalidate"
-header @shell Expires "0"
-```
-
-Scope and impact if applied:
-
-- Affects only SPA-shell responses (navigations). Hashed assets, `/ocr/*`, `/android/*`,
-  `/about/*` and the worker are untouched.
-- Revalidation is cheap: the origin answers `304` to `If-Modified-Since` (verified).
-- `no-cache` (not `no-store`) keeps back/forward-cache eligibility; offline first load
-  is unaffected because the service worker precaches the shell.
-- Blast radius of a mistake: one `handle` block in the `hrt.kiramyao.com` site, with
-  `caddy validate` + reload and a one-line revert.
-
-Deliberately **not** proposed now: `public, max-age=31536000, immutable` on `/assets/*`.
-It would stop Cloudflare's 2 h default, but it makes a bad chunk unrevokable without a
-purge, so it is a separate decision.
+Still open, separate decision: `public, max-age=31536000, immutable` on `/assets/*`
+would stop Cloudflare's 2 h default, but makes a bad chunk unrevokable without a
+purge.
 
 ## 2. `ERR_HTTP_HEADERS_SENT` on client abort
 
-One occurrence on the host at 07:37:14 UTC (test-account deletion, client hung up).
-The central catch calls `fail()` after the response was already committed. Fix: guard
-the error path with `res.headersSent` (destroy the socket / return) and add a test that
-aborts mid-handler. Cosmetic until then — the request had already been served.
+One occurrence at 07:37:14 UTC (test-account deletion, client hung up). The central
+catch calls `fail()` after the response was already committed. Fix: guard the error
+path with `res.headersSent` (destroy the socket / return) and add a test that aborts
+mid-handler. Cosmetic until then — the request had already been served.
 
 ## 3. Old-client end-to-end compatibility
 
 Not yet exercised as a real client matrix. Still to run, against the new server with
 `RESTORE_ENABLED` unset and generation 0: 2.4.0 web and PWA (install + update path),
-Android 2.3.x, MCP streaming, then the same set after a synthetic generation bump on an
-isolated account (expect `409`, re-pull, adoption, no data loss).
+Android 2.3.x, MCP streaming, then the same set after a synthetic generation bump on
+an isolated account (expect `409`, re-pull, adoption, no data loss).
 
-## 4. No HTTP access log
+## 4. API status and latency observability — designed, not implemented
 
-The Caddyfile has no `log` directive, so only error-level lines reach the journal —
-401/403/5xx rates cannot be measured or alerted on. A per-site JSON access log for
-`api.kiramyao.com` (with rotation) would close this; it needs its own review for
-retention, disk growth and query-string exposure.
+See `deploy/ops/observability/README.md`. The Caddyfile still has no `log`
+directive, so 401/403/429/5xx rates remain unmeasurable until that plan is applied.
 
-## 5. Updater alerts are inert
+## 5. Updater alerts — connected (2026-11-02)
 
-`cloudflare-ips-update` calls `notify()`, which returns silently unless
-`/etc/cloudflare-ips/webhook-url` exists. It does not exist on the host. The timer runs
-clean (last run 2026-11-02 04:20:31 UTC, `no change: 22 ranges already current`, next
-2026-11-03 04:36:20 UTC), but a removal or a fetch failure would only be visible in
-`/var/log/cloudflare-ips/updates.log` and `last-result.json`. Provision the webhook or
-add `OnFailure=` to the unit.
+Telegram bot `@NuclearSharkBot`, credentials in `/etc/cloudflare-ips/telegram-token`
+and `telegram-chat-id` (0600, root). Delivery verified end to end (`ok:true`).
+Events: removal held for review, reminders at half the grace window and one day
+before expiry, "about to apply", "applied", and every failure path including a
+failed rollback. `OnFailure=` is a supplement only, and `SuccessExitStatus=2 3`
+keeps a normal "held for review" from being reported as a crash.
+
+Remaining operational dependency: the bot must stay reachable and the chat must not
+block it. If the token is revoked, the helper logs `NOT SENT` and the update logic
+still runs — alerts go quiet rather than the updater breaking.
 
 ## 6. Deferred cleanups (owner's call, nothing deleted)
 
@@ -71,3 +57,23 @@ add `OnFailure=` to the unit.
 - `/tmp/hrt-server-2.5.0-rc1.052263b.tgz`, `/tmp/hrt-web-*.tgz` are the artifacts listed
   in `MANIFEST-2.5.0.md`; they live in `/tmp` and will not survive a reboot.
 - Cloudflare may still hold rc1 chunks until their 2 h TTL expires; a purge is optional.
+
+## 7. `hrt-server` hardening drop-in has two ignored lines
+
+`systemd-analyze verify` reports, from `/etc/systemd/system/hrt-server.service.d/hardening.conf`:
+
+- `ProtectKernelImage` is not a systemd option (ignored);
+- `MemoryDenyWriteExecute=false  # V8 JIT needs W^X-breaking memory; see the base unit`
+  fails to parse because systemd has no inline comments, so the whole line — including
+  the `=false` — is ignored.
+
+Whatever the base unit sets therefore still applies, and a future base-unit change
+would not be overridden as the comment intends. Worth fixing when that drop-in is next
+touched; no restart was performed for it in this window.
+
+## 8. The web origin is reachable directly
+
+`https://hrt.kiramyao.com` answers on `161.33.157.62:443` without going through
+Cloudflare; only the api site carries the `remote_ip` gate. That was the agreed scope
+of the origin-protection change, and this release did not alter it. It means the site
+itself has no WAF in front of it, only the API does.
