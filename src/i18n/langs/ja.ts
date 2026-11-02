@@ -1404,6 +1404,7 @@ const PACK: LangPack = {
     "gel.reference.show_all": "すべて表示（{n}）",
     "gel.reference.collapse": "折りたたむ",
     "gel.reference.use": "使用",
+    "gel.reference.half": "半分",
 };
 
 export default PACK;

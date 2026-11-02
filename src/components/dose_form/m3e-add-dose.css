@@ -660,7 +660,7 @@ input[type=number] {
 .m3e-gelref-title { display: flex; flex: 1 1 190px; align-items: center; gap: 10px; min-width: 0; }
 .m3e-gelref-title .t { font-size: 15px; font-weight: 600; color: var(--on); }
 .m3e-gelref-title .s { margin-top: 2px; font-size: 12px; color: var(--var); }
-.m3e-gelref-mult { display: inline-grid; flex: none; grid-auto-flow: column; grid-auto-columns: 1fr; width: 164px; margin-left: auto; gap: 2px; padding: 2px; border-radius: 19px; background: var(--sch); }
+.m3e-gelref-mult { display: inline-grid; flex: none; grid-auto-flow: column; grid-auto-columns: 1fr; width: 164px; margin-left: auto; gap: 2px; padding: 2px; border-radius: 19px; background: var(--sch-h); }
 .m3e-gelref-mult button {
     width: 100%; height: 30px; padding: 0; border: 0; border-radius: 15px;
     background: transparent; color: var(--var); font: inherit; font-size: 12px; font-weight: 600;
@@ -676,7 +676,7 @@ input[type=number] {
 .m3e-gelref-badge { padding: 3px 6px; border-radius: 6px; background: var(--sch); color: var(--var); font-size: 10.5px; line-height: 1; }
 .m3e-gelref-src { display: inline-flex; align-items: center; color: var(--out); }
 .m3e-gelref-pill {
-    display: inline-flex; flex: none; align-items: center; gap: 5px; width: 164px; height: 34px; padding: 0 12px;
+    display: inline-flex; flex: none; align-items: center; gap: 5px; min-width: 164px; height: 34px; padding: 0 12px; white-space: nowrap;
     border: 0; border-radius: 17px; background: var(--pric); color: var(--onpric);
     font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
     transition: transform .16s cubic-bezier(.3,1.6,.5,1), background .16s ease;
@@ -687,13 +687,15 @@ input[type=number] {
 .m3e-gelref-pill b { font-size: 13.5px; font-weight: 700; }
 .m3e-gelref-list li.fav .m3e-gelref-pill { background: var(--pri); color: var(--onpri); }
 .m3e-gelref-tools { display: flex; justify-content: flex-end; padding: 8px 0 2px; }
+.m3e-gelref-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0 8px; }
+.m3e-gelref-sheet-head .m3e-gelref-note { margin: 0; min-width: 0; flex: 1 1 auto; }
 .m3e-gelref-also { margin-top: 3px; font-size: 11.5px; color: var(--out); }
 .m3e-gelref-measure { margin-top: 3px; font-size: 11.5px; color: var(--var); }
 .m3e-gelref-sheet-actions { display: flex; gap: 8px; }
-.m3e-gelref-sheet-actions .btn { flex: 1; height: 48px; }
+.m3e-gelref-sheet-actions .btn { width: 100%; height: 50px; }
 .m3e-gelref-note { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--var); }
 @media (max-width: 380px) {
-    .m3e-gelref-pill { width: 136px; padding: 0 10px; font-size: 12px; }
+    .m3e-gelref-pill { min-width: 136px; padding: 0 10px; font-size: 12px; }
     .m3e-gelref-mult { width: 136px; }
     .m3e-gelref-pill .dim { display: none; }
 }
@@ -709,3 +711,15 @@ input[type=number] {
 .m3e-gelref-chev.up { transform: rotate(180deg); }
 /* Same trailing glyph metrics as the panel's other list rows. */
 .m3e-gelref-head > svg.i { width: 20px; height: 20px; flex: none; color: var(--var); }
+
+/* Half a dispenser: a tonal chip, not a primary action. min-width keeps it circular
+   for a one-character label (半, 반) and lets a longer word (Half, Yarım) widen it
+   without clipping. */
+.m3e-gelref-half {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 24px; height: 24px; padding: 0 6px; border: 0; border-radius: 12px;
+    background: var(--secc); color: var(--onsecc);
+    font: inherit; font-size: 11px; font-weight: 700; line-height: 1;
+    cursor: pointer; transition: background .16s ease, color .16s ease;
+}
+.m3e-gelref-half[aria-pressed="true"] { background: var(--onsecc); color: var(--secc); }

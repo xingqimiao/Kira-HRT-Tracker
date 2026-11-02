@@ -1404,6 +1404,7 @@ const PACK: LangPack = {
     "gel.reference.show_all": "전체 {n}개 보기",
     "gel.reference.collapse": "접기",
     "gel.reference.use": "사용",
+    "gel.reference.half": "반",
 };
 
 export default PACK;

@@ -1404,6 +1404,7 @@ const PACK: LangPack = {
     "gel.reference.show_all": "Tümünü göster ({n})",
     "gel.reference.collapse": "Daralt",
     "gel.reference.use": "Kullan",
+    "gel.reference.half": "Yarım",
 };
 
 export default PACK;

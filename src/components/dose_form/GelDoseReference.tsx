@@ -34,6 +34,8 @@ interface GelRow {
     gel: string;
     /** Estradiol in that one unit, before the multiplier. */
     mg: number;
+    /** Whether half a dispenser is offered as its own quick choice. */
+    half?: boolean;
     url: string;
 }
 
@@ -48,7 +50,7 @@ const ROWS: GelRow[] = [
         regions: ['CN'],
         strength: '0.06%',
         pack: '30 g / 80 g',
-        unit: 'ruler', gel: '2.5 g', mg: 1.5,
+        unit: 'ruler', gel: '2.5 g', mg: 1.5, half: true,
         url: 'https://tfsci.mtf.wiki/zh-cn/misc/oestrogel/',
     },
     {
@@ -159,6 +161,18 @@ export default function GelDoseReference({ onPick, onExpandedChange }: {
 
     const label = t('gel.reference.title');
 
+    /**
+     * A row id, or `<id>:half` for half a dispenser. One string keeps the "what is
+     * selected" state a single value on both layouts.
+     */
+    const HALF = ':half';
+    const mgFor = (id: string | null) => {
+        if (!id) return null;
+        const half = id.endsWith(HALF);
+        const row = rows.find(r => r.id === (half ? id.slice(0, -HALF.length) : id));
+        return row ? Number((row.mg * (half ? 0.5 : 1) * multiplier).toFixed(3)) : null;
+    };
+
     const toggleOpen = () => {
         const next = !open;
         setOpen(next);
@@ -172,22 +186,24 @@ export default function GelDoseReference({ onPick, onExpandedChange }: {
 
     const chooseMultiplier = (value: number) => {
         setMultiplier(value);
-        // A different number of units is a different dose: keep an applied row in step
-        // instead of leaving the field on the old multiple.
+        // A different number of units is a different dose: keep an applied choice in
+        // step instead of leaving the field on the old multiple.
         if (selected) {
-            const row = rows.find(r => r.id === selected);
-            if (row) onPick?.(Number((row.mg * value).toFixed(3)));
+            const half = selected.endsWith(HALF);
+            const row = rows.find(r => r.id === (half ? selected.slice(0, -HALF.length) : selected));
+            if (row) onPick?.(Number((row.mg * (half ? 0.5 : 1) * value).toFixed(3)));
         }
     };
 
-    /** Desktop: selecting applies; selecting the same row again lets go of it. */
-    const pickInline = (row: GelRow) => {
-        if (selected === row.id) {
+    /** Desktop: selecting applies; selecting the same choice again lets go of it. */
+    const pickInline = (id: string) => {
+        if (selected === id) {
             setSelected(null);
             return;
         }
-        setSelected(row.id);
-        onPick?.(Number((row.mg * multiplier).toFixed(3)));
+        setSelected(id);
+        const mg = mgFor(id);
+        if (mg !== null) onPick?.(mg);
     };
 
     const closeSheet = () => {
@@ -197,17 +213,35 @@ export default function GelDoseReference({ onPick, onExpandedChange }: {
 
     const applySheet = () => {
         if (!pending) return;
-        const row = rows.find(r => r.id === pending);
+        const mg = mgFor(pending);
         setSelected(pending);
-        if (row) onPick?.(Number((row.mg * multiplier).toFixed(3)));
+        if (mg !== null) onPick?.(mg);
         setSheetOpen(false);
     };
 
-    const rowNode = (row: GelRow, active: boolean, onSelect: () => void) => (
-        <li key={row.id} className={active ? 'fav' : ''}>
+    const rowNode = (row: GelRow, activeId: string | null, onPickId: (id: string) => void) => {
+        const halfId = `${row.id}${HALF}`;
+        const rowActive = activeId === row.id;
+        const halfActive = activeId === halfId;
+        return (
+        <li key={row.id} className={rowActive ? 'fav' : ''}>
             <div className="m3e-gelref-meta">
                 <div className="m3e-gelref-name">{row.name}</div>
                 <div className="m3e-gelref-badges">
+                    {/* A half dispenser is a legitimate dose and not a multiple of one, so
+                        it gets its own control; the label is locale-specific, hence the
+                        width floor (a circle for 半, a capsule for Half). */}
+                    {row.half && (
+                        <button
+                            type="button"
+                            className="m3e-gelref-half"
+                            aria-pressed={halfActive}
+                            aria-label={`${row.name} · ${t('gel.reference.half')} · ${formatMg(row.mg * 0.5 * multiplier)}`}
+                            onClick={() => onPickId(halfId)}
+                        >
+                            {t('gel.reference.half')}
+                        </button>
+                    )}
                     {row.regions.map(code => <span key={code} className="m3e-gelref-badge">{code}</span>)}
                     {row.strength && <span className="m3e-gelref-badge">{row.strength}</span>}
                     <a
@@ -226,8 +260,8 @@ export default function GelDoseReference({ onPick, onExpandedChange }: {
             <button
                 type="button"
                 className="m3e-gelref-pill"
-                aria-pressed={active}
-                onClick={onSelect}
+                aria-pressed={rowActive}
+                onClick={() => onPickId(row.id)}
                 aria-label={`${multiplier} ${t(`gel.unit.${row.unit}`)} · ${formatMg(row.mg * multiplier)}`}
             >
                 {multiplier} {t(`gel.unit.${row.unit}`)}
@@ -236,7 +270,8 @@ export default function GelDoseReference({ onPick, onExpandedChange }: {
                 <b>{formatMg(row.mg * multiplier)}</b>
             </button>
         </li>
-    );
+        );
+    };
 
     const multiplierChips = (
         <div className="m3e-gelref-mult" role="group" aria-label={label}>
@@ -266,7 +301,9 @@ export default function GelDoseReference({ onPick, onExpandedChange }: {
                     <span className="ic p" aria-hidden="true"><SpriteIcon id="gel" /></span>
                     <div>
                         <div className="t">{label}</div>
-                        <div className="s">{t('gel.reference.short_note')}</div>
+                        {/* While the list is open the warning sits next to the multiplier,
+                            so printing it here as well would say it twice on one screen. */}
+                        {!(desktop && open) && <div className="s">{t('gel.reference.short_note')}</div>}
                     </div>
                 </div>
                 {desktop
@@ -276,12 +313,13 @@ export default function GelDoseReference({ onPick, onExpandedChange }: {
 
             {desktop && open && (
                 <>
-                    <div className="m3e-gelref-tools">{multiplierChips}</div>
+                    <div className="m3e-gelref-sheet-head">
+                        <span className="m3e-gelref-note">{t('gel.reference.short_note')}</span>
+                        {multiplierChips}
+                    </div>
                     <ul className="m3e-gelref-list" role="list">
-                        {rows.map(row => rowNode(row, selected === row.id, () => pickInline(row)))}
+                        {rows.map(row => rowNode(row, selected, pickInline))}
                     </ul>
-                    {/* The header already carries the short warning; repeating it here
-                        only pushed the list down. */}
                     <p className="m3e-gelref-note">{t('gel.reference.note_detail')}</p>
                 </>
             )}
@@ -290,26 +328,21 @@ export default function GelDoseReference({ onPick, onExpandedChange }: {
                 open={desktop ? false : sheetOpen}
                 onClose={closeSheet}
                 title={label}
-                closeLabel={t('btn.cancel')}
+                closeLabel={t('btn.close')}
                 footer={(
                     <div className="m3e-gelref-sheet-actions">
-                        <button type="button" className="btn x" onClick={closeSheet}>
-                            {t('btn.cancel')}
-                        </button>
                         <button type="button" className="btn" disabled={!pending} onClick={applySheet}>
                             {t('gel.reference.use')}
                         </button>
                     </div>
                 )}
             >
-                <p className="m3e-gelref-note">{t('gel.reference.short_note')}</p>
-                <div className="m3e-gelref-tools">{multiplierChips}</div>
+                <div className="m3e-gelref-sheet-head">
+                    <span className="m3e-gelref-note">{t('gel.reference.short_note')}</span>
+                    {multiplierChips}
+                </div>
                 <ul className="m3e-gelref-list" role="list">
-                    {rows.map(row => rowNode(
-                        row,
-                        pending === row.id,
-                        () => setPending(row.id === pending ? null : row.id),
-                    ))}
+                    {rows.map(row => rowNode(row, pending, (id) => setPending(p => (p === id ? null : id))))}
                 </ul>
             </AdaptiveSheet>
         </div>
