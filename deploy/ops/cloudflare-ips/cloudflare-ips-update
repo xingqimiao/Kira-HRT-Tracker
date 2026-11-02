@@ -15,7 +15,7 @@ BACKUP_ROOT=/srv/hrt-backup-caddy/cloudflare-ips
 URL_V4=https://www.cloudflare.com/ips-v4
 URL_V6=https://www.cloudflare.com/ips-v6
 
-DRY_RUN=0; ALLOW_REMOVALS=0; NO_RELOAD=0; SIMULATE_FAIL=0; SOURCE_DIR=
+DRY_RUN=0; ALLOW_REMOVALS=0; NO_RELOAD=0; SIMULATE_FAIL=0; SIMULATE_ROLLBACK_FAIL=0; SOURCE_DIR=
 REMOVAL_GRACE_DAYS=${REMOVAL_GRACE_DAYS:-7}
 
 while [ $# -gt 0 ]; do
@@ -24,6 +24,7 @@ while [ $# -gt 0 ]; do
     --allow-removals) ALLOW_REMOVALS=1 ;;
     --no-reload) NO_RELOAD=1 ;;
     --simulate-post-reload-failure) SIMULATE_FAIL=1 ;;
+    --simulate-rollback-restore-failure) SIMULATE_ROLLBACK_FAIL=1 ;;
     --removal-grace-days) REMOVAL_GRACE_DAYS=${2:-7}; shift ;;
     --source-dir) SOURCE_DIR=${2:-}; shift ;;
     --caddyfile) CADDYFILE=${2:-}; shift ;;
@@ -40,8 +41,8 @@ done
 
 # A sandbox Caddyfile must never trigger a production reload.
 if [ "$CADDYFILE" != /etc/caddy/Caddyfile ]; then NO_RELOAD=1; fi
-if [ "$SIMULATE_FAIL" -eq 1 ] && [ "$NO_RELOAD" -eq 0 ]; then
-  echo "--simulate-post-reload-failure is only allowed with --no-reload" >&2
+if { [ "$SIMULATE_FAIL" -eq 1 ] || [ "$SIMULATE_ROLLBACK_FAIL" -eq 1 ]; } && [ "$NO_RELOAD" -eq 0 ]; then
+  echo "simulation flags are only allowed with --no-reload" >&2
   exit 64
 fi
 
@@ -271,9 +272,12 @@ find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d -name '20*' -printf '%T@ %p\
   | sort -nr | tail -n +11 | cut -d' ' -f2- | xargs -r rm -rf
 
 rollback() {
-  local why="$1"
+  local why="$1" src="$backup/Caddyfile"
+  # Test seam: makes the restore itself fail, so the "rollback failed" branch is
+  # exercised rather than only reviewed. Sandbox-only, like the post-update simulation.
+  if [ "$SIMULATE_ROLLBACK_FAIL" -eq 1 ]; then src="$backup/Caddyfile.missing"; fi
   log "ROLLBACK: $why"
-  install -m 644 -o root -g root "$backup/Caddyfile" "$CADDYFILE.tmp.$$" \
+  install -m 644 -o root -g root "$src" "$CADDYFILE.tmp.$$" \
     && mv -f "$CADDYFILE.tmp.$$" "$CADDYFILE" \
     || { log "ROLLBACK FAILED: cannot restore $backup/Caddyfile"; result rollback_failed "$added" "$removed" false; exit 3; }
   if [ "$NO_RELOAD" -eq 0 ]; then
