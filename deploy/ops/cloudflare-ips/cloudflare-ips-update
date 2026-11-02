@@ -94,7 +94,8 @@ alert() {
 exec 9>"$STATE_DIR/lock"
 flock -n 9 || { log "another run holds the lock; exiting"; exit 0; }
 
-tmp=$(mktemp -d) || { log "ERROR cannot create temp dir"; exit 1; }
+tmp=$(mktemp -d) || { log "ERROR cannot create temp dir"; result error
+  alert error fail:runtime 86400 "无法创建临时目录，本次更新未执行。"; exit 1; }
 trap 'rm -rf "$tmp"' EXIT
 
 # --- 1. fetch ---------------------------------------------------------------
@@ -334,11 +335,11 @@ rollback() {
   install -m 644 -o root -g root "$src" "$CADDYFILE.tmp.$$" \
     && mv -f "$CADDYFILE.tmp.$$" "$CADDYFILE" \
     || { log "ROLLBACK FAILED: cannot restore $backup/Caddyfile"; result rollback_failed "$added" "$removed" false
-         alert error "fail:rollback" 0 "回滚失败：无法恢复 $backup/Caddyfile。Caddy 当前可能仍在用新列表，请人工介入。"
+         alert error "fail:rollback" 3600 "回滚失败：无法恢复 $backup/Caddyfile。Caddy 当前可能仍在用新列表，请人工介入。"
          exit 4; }
   if [ "$NO_RELOAD" -eq 0 ]; then
     systemctl reload caddy || { log "ROLLBACK FAILED: reload after restore failed"; result rollback_failed "$added" "$removed" false
-      alert error "fail:rollback" 0 "回滚失败：恢复文件后 reload caddy 仍失败，请人工介入。"; exit 4; }
+      alert error "fail:rollback" 3600 "回滚失败：恢复文件后 reload caddy 仍失败，请人工介入。"; exit 4; }
     sleep 1
     if curl -s -m 10 http://127.0.0.1:2019/config/ | grep -qF "$(head -1 "$tmp/old.list")" \
        && [ "$(curl -s -o /dev/null -w '%{http_code}' -m 10 https://api.kiramyao.com/hrt/health)" = 200 ]; then
@@ -348,7 +349,7 @@ rollback() {
       exit 2
     fi
     log "ROLLBACK FAILED: restored file is not live"; result rollback_failed "$added" "$removed" false
-    alert error "fail:rollback" 0 "回滚失败：恢复的文件没有生效（admin API 或 health 校验不通过），请人工介入。"; exit 4
+    alert error "fail:rollback" 3600 "回滚失败：恢复的文件没有生效（admin API 或 health 校验不通过），请人工介入。"; exit 4
   fi
   if cmp -s "$CADDYFILE" "$backup/Caddyfile"; then
     log "ROLLBACK OK (file restored; no reload in sandbox mode)"
@@ -357,7 +358,7 @@ rollback() {
     exit 2
   fi
   log "ROLLBACK FAILED: file mismatch"; result rollback_failed "$added" "$removed" false
-  alert error "fail:rollback" 0 "回滚失败：文件内容与备份不一致，请人工介入。"; exit 4
+  alert error "fail:rollback" 3600 "回滚失败：文件内容与备份不一致，请人工介入。"; exit 4
 }
 
 # --- 7. reload + verify ----------------------------------------------------

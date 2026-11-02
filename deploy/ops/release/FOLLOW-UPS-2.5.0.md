@@ -58,18 +58,24 @@ still runs — alerts go quiet rather than the updater breaking.
   in `MANIFEST-2.5.0.md`; they live in `/tmp` and will not survive a reboot.
 - Cloudflare may still hold rc1 chunks until their 2 h TTL expires; a purge is optional.
 
-## 7. `hrt-server` hardening drop-in has two ignored lines
+## 7. `hrt-server` hardening drop-in — two ignored lines fixed (2026-11-02 09:02 UTC)
 
-`systemd-analyze verify` reports, from `/etc/systemd/system/hrt-server.service.d/hardening.conf`:
+`systemd-analyze verify` reported two problems in
+`/etc/systemd/system/hrt-server.service.d/hardening.conf`:
 
-- `ProtectKernelImage` is not a systemd option (ignored);
-- `MemoryDenyWriteExecute=false  # V8 JIT needs W^X-breaking memory; see the base unit`
-  fails to parse because systemd has no inline comments, so the whole line — including
-  the `=false` — is ignored.
+- `ProtectKernelImage` is not a systemd property. It was removed and replaced by a
+  comment pointing at `ProtectKernelModules`/`ProtectKernelTunables`/`ProtectKernelLogs`,
+  which already cover the intent.
+- `MemoryDenyWriteExecute=false  # V8 JIT …` failed to parse because systemd has no
+  inline comments, so the whole assignment was ignored (the base unit sets the same
+  value, so the effective value never differed). The note moved to its own lines and
+  the assignment is now explicit.
 
-Whatever the base unit sets therefore still applies, and a future base-unit change
-would not be overridden as the comment intends. Worth fixing when that drop-in is next
-touched; no restart was performed for it in this window.
+Proof: a 32-property snapshot taken before and after `daemon-reload` is byte-identical,
+`systemd-analyze verify` no longer mentions the drop-in, and the service kept the same
+PID with `NRestarts=0` — no restart was needed or performed. Backup:
+`/srv/hrt-backup-systemd-20261102T090237Z/hardening.conf`.
+
 
 ## 8. The web origin is reachable directly
 

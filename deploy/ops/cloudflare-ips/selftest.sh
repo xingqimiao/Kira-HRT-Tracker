@@ -226,6 +226,14 @@ check "failed rollback exit" 4 $?
 check "failed rollback status" rollback_failed "$(status)"
 contains "failed rollback alert" "$SB/sent.txt" "回滚失败"
 
+# A second failure inside the window must not stack more messages: the alarm for
+# "cannot put the old allowlist back" is one per hour, not one per attempt.
+before=$(nlines "$SB/sent.txt")
+write_source "$BASE4 9.0.0.0/24 13.0.0.0/24" "$BASE6"
+run_upd --simulate-post-reload-failure --simulate-rollback-restore-failure
+check "second failed rollback exit" 4 $?
+check "second failed rollback is rate-limited" "$before" "$(nlines "$SB/sent.txt")"
+
 # --- 11. notifier: dedup, retry, no-retry, missing channel ---------------
 before=$(nlines "$SB/sent.txt")
 "$NOTIFY" --key dedup-test --window 3600 -- "第一次" >/dev/null 2>&1
@@ -259,6 +267,17 @@ fi
 contains "service has OnFailure" "$HERE/cloudflare-ips-update.service" "OnFailure=cloudflare-ips-alert@%N.service"
 contains "service treats review/rollback as handled" "$HERE/cloudflare-ips-update.service" "SuccessExitStatus=2 3"
 contains "alert unit exists" "$HERE/cloudflare-ips-alert@.service" "cloudflare-ips-notify"
+# 2 = rolled back safely, 3 = held for review. 4 (rollback failed) and 1 (any
+# error) must stay failures so OnFailure still fires as the supplement.
+check "SuccessExitStatus is exactly 2 3" "SuccessExitStatus=2 3" \
+  "$(grep '^SuccessExitStatus=' "$HERE/cloudflare-ips-update.service")"
+if grep -qE '^SuccessExitStatus=.*\b4\b' "$HERE/cloudflare-ips-update.service"; then
+  no "exit 4 (rollback failed) must not be a success status"
+else
+  ok "exit 4 (rollback failed) is still a failure"
+fi
+check "exit 3 appears only for the pending-review branch" "1" \
+  "$(grep -oE 'exit 3' "$UPD" | wc -l | tr -d ' ')"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
