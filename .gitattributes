@@ -3,3 +3,7 @@ deploy/self-host/*.sh text eol=lf
 deploy/self-host/*.mjs text eol=lf
 deploy/self-host/*.yaml text eol=lf
 .github/workflows/self-host.yml text eol=lf
+# These are copied to a Linux host and run by bash/systemd; with core.autocrlf=true a
+# fresh checkout would otherwise give them CRLF and `#!/usr/bin/env bash` would fail.
+deploy/ops/release/* text eol=lf
+deploy/ops/cloudflare-ips/* text eol=lf
