@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Icon from './Icon';
 import Switch from './Switch';
@@ -52,6 +52,13 @@ const RestoreConfirmDialog: React.FC<RestoreConfirmDialogProps> = ({ open, onClo
 
     useEscape(onClose, open && !busy);
 
+    // The caller builds `load` inline, so its identity changes on every parent
+    // render (a sync tick is enough). Reading through a ref keeps the fetch tied to
+    // the open, not to the parent: otherwise the backup and the acknowledgement are
+    // wiped out from under the user mid-flow and the button silently re-disables.
+    const loadRef = useRef(load);
+    loadRef.current = load;
+
     useEffect(() => {
         if (!open) return;
         let cancelled = false;
@@ -60,13 +67,13 @@ const RestoreConfirmDialog: React.FC<RestoreConfirmDialogProps> = ({ open, onClo
         setBackupSaved(false);
         setAck(false);
         setBusy(false);
-        void load().then(result => {
+        void loadRef.current().then(result => {
             if (cancelled) return;
             if (result) setPreview(result);
             else setFailed(true);
         });
         return () => { cancelled = true; };
-    }, [open, load]);
+    }, [open]);
 
     const downloadBackup = () => {
         if (!preview) return;
