@@ -92,9 +92,9 @@ const RestoreConfirmDialog: React.FC<RestoreConfirmDialogProps> = ({ open, onClo
                 <span className="ic err" aria-hidden="true" style={{ flex: 'none' }}>
                     <Icon icon={TriangleWarning} size={22} />
                 </span>
-                {/* Box centres already match; CJK ink sits a touch low in its line box, so
-                    the title is nudged up to sit on the icon's centre optically. */}
-                <b style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.3, transform: 'translateY(-1px)' }}>{t('restore.title')}</b>
+                {/* The boxes are centred but the glyph ink is not: this font leaves ~3px more
+                    space below the em box than above, so the title is offset to match the icon. */}
+                <b style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.3, transform: 'translateY(-3px)' }}>{t('restore.title')}</b>
             </div>
 
             {!preview && !failed && (

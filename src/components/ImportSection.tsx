@@ -225,7 +225,7 @@ const ImportSection: React.FC<ImportSectionProps> = ({
                         width: '100%',
                         marginTop: 6,
                         padding: 14,
-                        borderRadius: 16,
+                        borderRadius: 26,
                         border: '1px solid color-mix(in srgb, var(--err) 18%, transparent)',
                         background: 'var(--errc)',
                         textAlign: 'left',
