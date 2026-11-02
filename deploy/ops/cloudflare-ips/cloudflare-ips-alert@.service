@@ -14,4 +14,4 @@ ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 ReadWritePaths=/var/lib/cloudflare-ips /var/log/cloudflare-ips
-ExecStart=/usr/local/sbin/cloudflare-ips-notify --level error --key unitfail:%i --window 3600 -- "cloudflare-ips-update 以未预期的退出码失败（unit %i）。请查看 journalctl -u %i 与 /var/log/cloudflare-ips/updates.log。"
+ExecStart=/usr/local/sbin/cloudflare-ips-notify --level error --key unitfail:%i --window 3600 -- "cloudflare-ips-update 以未预期的退出码失败（unit %i.service）。请查看 journalctl -u %i.service 与 /var/log/cloudflare-ips/updates.log。"

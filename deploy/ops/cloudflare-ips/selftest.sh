@@ -256,7 +256,7 @@ else
 fi
 
 # --- 13. unit definitions carry the supplement ---------------------------
-contains "service has OnFailure" "$HERE/cloudflare-ips-update.service" "OnFailure=cloudflare-ips-alert@%n.service"
+contains "service has OnFailure" "$HERE/cloudflare-ips-update.service" "OnFailure=cloudflare-ips-alert@%N.service"
 contains "service treats review/rollback as handled" "$HERE/cloudflare-ips-update.service" "SuccessExitStatus=2 3"
 contains "alert unit exists" "$HERE/cloudflare-ips-alert@.service" "cloudflare-ips-notify"
 

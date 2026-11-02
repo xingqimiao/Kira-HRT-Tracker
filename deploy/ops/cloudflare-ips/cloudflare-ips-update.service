@@ -5,7 +5,7 @@ Wants=network-online.target
 # Supplement only: the script alerts on every event it understands (pending
 # removals, reminders, apply, fetch/validate/reload/rollback failures). This
 # catches an exit nobody anticipated.
-OnFailure=cloudflare-ips-alert@%n.service
+OnFailure=cloudflare-ips-alert@%N.service
 
 [Service]
 Type=oneshot
