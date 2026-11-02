@@ -1387,6 +1387,13 @@ export function createRequestHandler() {
       if (path === '/api/restore' && req.method === 'POST') {
         const ctx = await requireBoundCtx();
         if (!ctx) return;
+        // Off unless the deployment opts in: replacing an account changes what every
+        // other client may write until it re-reads. The generation gate is a separate
+        // mechanism and stays on, so disabling this route is the rollback that keeps a
+        // restored account protected.
+        if (getConfig().restoreEnabled !== true) {
+          return fail(res, 403, 'restore is disabled on this deployment');
+        }
         const body = (await readBody(req, 8_000_000)) as
           { expectedVersion?: unknown; records?: unknown } | undefined;
         const expected = typeof body?.expectedVersion === 'number'

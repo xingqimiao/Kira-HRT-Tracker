@@ -148,6 +148,15 @@ export interface Config {
    */
   rateLimits: RateLimitConfig;
   trustedIpSource?: TrustedIpSource;
+  /**
+   * Whether `POST /api/restore` may replace an account. Off unless explicitly enabled.
+   *
+   * The route changes every other client's ability to write until it re-reads the
+   * account, so it is turned on deliberately rather than by upgrading. The generation
+   * gate stays active either way: a deployment that has restored an account and then
+   * disables the route keeps refusing stale writers, which is the safe rollback target.
+   */
+  restoreEnabled?: boolean;
 }
 
 export interface RateLimitConfig {
@@ -406,6 +415,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new ConfigError('TRUSTED_IP_SOURCE must be socket, cf, or xff');
   }
 
+  const restoreEnabled = env.RESTORE_ENABLED === '1'
+    || env.RESTORE_ENABLED?.trim().toLowerCase() === 'true';
+
   // FCM is optional and whole: the service-account JSON (inline or a path to it) is
   // the one thing required. A malformed/missing file is refused at boot rather than
   // at the first push, so a deployment either has working push or reports none.
@@ -431,6 +443,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sessionTtlMinutes,
     rateLimits,
     trustedIpSource,
+    restoreEnabled,
   };
 }
 

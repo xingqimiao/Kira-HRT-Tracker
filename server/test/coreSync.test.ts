@@ -16,7 +16,7 @@ import type { Server } from 'node:http';
 
 import { bootPostgres, useDatabase, startApiServer, teardown, call, type PostgresHandle } from './pg.ts';
 import { registerAccount , TEST_KMS_CONFIG} from './helpers.ts';
-import { setConfigForTesting } from '../src/config.ts';
+import { getConfig, setConfigForTesting } from '../src/config.ts';
 import { emptySyncState, mergeSyncStates, normalizeSyncState } from '../../src/utils/syncMerge.ts';
 
 let pg: PostgresHandle;
@@ -42,6 +42,9 @@ before(async () => {
     x: null,
     sessionTtlMinutes: 30,
     rateLimits: { register: 1000, login: 1000, windowMs: 60_000 },
+    // This suite exercises the replacement protocol; the default is off and the
+    // dedicated test below turns it off again to prove that.
+    restoreEnabled: true,
   });
   pg = await bootPostgres({ dir: './.pgdata-coresync', port: 55437, database: 'hrt_coresync' });
   await useDatabase(pg);
@@ -808,3 +811,52 @@ test('a delta read made after a restore returns every restored row', async () =>
   assert.equal(delta.body.restoreGeneration, '1');
 });
 
+
+test('a deployment that has not enabled restore refuses to replace an account', async () => {
+  const account = await registerAccount(base, { password: 'restore-password' });
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` };
+  await seed(account.token, [wireDose('kept-disabled', 1)]);
+  const read = await call(base, '/api/records', { headers });
+
+  setConfigForTesting({ ...getConfig(), restoreEnabled: false });
+  try {
+    const refused = await call(base, '/api/restore', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ expectedVersion: read.body.syncVersion, records: [wireDose('nope', 2)] }),
+    });
+    assert.equal(refused.status, 403);
+    assert.equal(refused.body.error, 'restore is disabled on this deployment');
+  } finally {
+    setConfigForTesting({ ...getConfig(), restoreEnabled: true });
+  }
+
+  const after = await call(base, '/api/records', { headers });
+  assert.deepEqual(after.body.records.map((r: { id: string }) => r.id), ['dose:transfem:kept-disabled']);
+  assert.equal(after.body.restoreGeneration, '0', 'a refused restore must not advance the epoch');
+});
+
+test('disabling restore does not disable the generation gate', async () => {
+  const account = await registerAccount(base, { password: 'restore-password' });
+  const { getPool } = await import('../src/db.ts');
+  await getPool().query('UPDATE users SET restore_generation = 1 WHERE id = $1', [account.userId]);
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` };
+  const record = wireDose('stale-writer', 1);
+
+  setConfigForTesting({ ...getConfig(), restoreEnabled: false });
+  try {
+    const refused = await call(base, '/api/records/batch', {
+      method: 'POST', headers,
+      body: JSON.stringify({ records: [record], echoState: false }),
+    });
+    assert.equal(refused.status, 409, 'a stale epoch is refused even with the route disabled');
+    const accepted = await call(base, '/api/records/batch', {
+      method: 'POST',
+      headers: { ...headers, 'X-HRT-Restore-Generation': '1' },
+      body: JSON.stringify({ records: [record], echoState: false }),
+    });
+    assert.equal(accepted.status, 200);
+  } finally {
+    setConfigForTesting({ ...getConfig(), restoreEnabled: true });
+  }
+});

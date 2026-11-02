@@ -217,6 +217,14 @@ TRUSTED_IP_SOURCE=cf
 # one rate-limit bucket. Configure the source only after securing the ingress;
 # use xff when Caddy overwrites X-Forwarded-For for every request.
 
+# "Replace the cloud" (POST /api/restore). Off unless set to 1: enabling it lets
+# a client replace every record and setting in the account, which every other
+# client must re-read before it can write again. Leave it off until that
+# client behaviour is acceptable. With an account already restored, keeping it
+# off still refuses stale writers (the generation gate is separate), so this is
+# also the rollback target.
+# RESTORE_ENABLED=1
+
 # Wraps each account's data key, alongside the password wrapper. Every account carries
 # that wrapper, which is what lets provider sign-in finish in one round-trip and lets a
 # durable `hrt_` agent token read records with no live unlock. Required in production:
