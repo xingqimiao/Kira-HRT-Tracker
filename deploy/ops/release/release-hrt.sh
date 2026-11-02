@@ -52,7 +52,13 @@ restore_generation() {
     eval "$PREFLIGHT_CMD"
     return
   fi
-  sudo -u postgres psql -d hrt -tAc "SELECT CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='restore_generation') THEN (SELECT coalesce(max(restore_generation),0) FROM users) ELSE 0 END" 2>/dev/null | tr -d '[:space:]'
+  # Two steps: a single statement cannot name the column before it exists without
+  # failing at parse time. "Unknown" (empty output) makes the caller refuse.
+  local has
+  has=$(sudo -u postgres psql -d hrt -tAc "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='users' AND column_name='restore_generation'" 2>/dev/null | tr -d '[:space:]')
+  [ "$has" = 0 ] && { echo 0; return; }
+  [ "$has" = 1 ] || return 0
+  sudo -u postgres psql -d hrt -tAc "SELECT coalesce(max(restore_generation),0) FROM users" 2>/dev/null | tr -d '[:space:]'
 }
 
 has_gate() { # has_gate <release-dir>
@@ -61,6 +67,18 @@ has_gate() { # has_gate <release-dir>
 
 health_api() { curl -fsS --max-time 10 -o /dev/null "$HEALTH_API"; }
 health_web() { curl -fsS --max-time 10 -o /dev/null "$HEALTH_WEB"; }
+
+# Type=simple reports "active" as soon as the process exists, which is before the
+# listener is up (KMS unwrap and migration take a moment). Poll the endpoint instead
+# of failing the release on that race.
+wait_health() {
+  local i
+  for i in $(seq 1 30); do
+    health_api && return 0
+    sleep 1
+  done
+  return 1
+}
 
 wait_active() {
   local i
@@ -88,7 +106,7 @@ server_switch() { # server_switch <target-release>
   systemctl restart "$UNIT" || { warn "restart failed"; return 1; }
   wait_active || { warn "service did not become active"; return 1; }
   if [ "$NO_HEALTH" -eq 0 ]; then
-    health_api || { warn "API health failed"; return 1; }
+    wait_health || { warn "API did not become healthy within 30s"; return 1; }
     health_web || { warn "web health failed"; return 1; }
     local code
     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${HEALTH_API%/health}/api/records")
@@ -120,7 +138,7 @@ server_rollback_to() { # server_rollback_to <previous-release-label>
     systemctl restart "$UNIT"
     die "rollback failed and the previous state was restored"
   fi
-  [ "$NO_HEALTH" -eq 0 ] && { health_api || warn "API health failed after rollback"; }
+  [ "$NO_HEALTH" -eq 0 ] && { wait_health || warn "API did not become healthy after rollback"; }
   log "rolled back to $previous"
 }
 

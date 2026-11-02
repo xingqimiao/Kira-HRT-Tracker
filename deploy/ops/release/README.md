@@ -25,7 +25,9 @@ sudo install -d /etc/systemd/system/hrt-server.service.d
 sudo tee /etc/systemd/system/hrt-server.service.d/10-release.conf >/dev/null <<'EOF'
 [Service]
 ExecStart=
-ExecStart=/usr/bin/node /srv/hrt/current/dist/index.cjs http
+# Keep the node binary the existing unit already uses (on this host it is
+# /opt/node-v24.22.1-linux-arm64/bin/node, not /usr/bin/node).
+ExecStart=/opt/node-v24.22.1-linux-arm64/bin/node /srv/hrt/current/dist/index.cjs http
 WorkingDirectory=/srv/hrt/current
 EOF
 sudo systemctl daemon-reload && sudo systemctl restart hrt-server
