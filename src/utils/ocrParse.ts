@@ -33,15 +33,16 @@
  */
 
 /** The units the app stores, and which analyte they imply. */
-const UNIT_ANALYTES = {
-    'pg/ml': 'E2',
-    'pmol/l': 'E2',
-    'ng/dl': 'T',
-    'nmol/l': 'T',
-}
+export type LabUnit = 'pg/ml' | 'pmol/l' | 'ng/dl' | 'nmol/l' | 'ng/ml' | 'iu/l'
+export type Analyte = 'E2' | 'T' | 'PRL' | 'LH' | 'FSH'
 
-export type LabUnit = keyof typeof UNIT_ANALYTES
-export type Analyte = 'E2' | 'T'
+const ANALYTE_ALLOWED_UNITS: Record<Analyte, LabUnit[]> = {
+    E2: ['pg/ml', 'pmol/l'],
+    T: ['ng/dl', 'nmol/l'],
+    PRL: ['ng/ml'],
+    LH: ['iu/l'],
+    FSH: ['iu/l'],
+}
 
 /** One recognised reading, as handed to the confirm screen. */
 export interface HormoneCandidate {
@@ -53,7 +54,7 @@ export interface HormoneCandidate {
 }
 
 /**
- * Label text that indicates estradiol or testosterone.
+ * Label text that indicates estradiol, testosterone, prolactin, LH, or FSH.
  *
  * ── The trade-off, stated honestly ───────────────────────────────────────────
  *
@@ -75,7 +76,7 @@ export interface HormoneCandidate {
  * name — `雌二醇 (E2)`, `睾酮 (T)` — but not always, which is the whole reason both
  * forms are accepted.
  */
-const LABELS = {
+const LABELS: Record<Analyte, string[]> = {
     E2: [
         '雌二醇', '雌二酮', 'estradiol', 'oestradiol', 'e2',
     ],
@@ -84,6 +85,15 @@ const LABELS = {
         // The bare abbreviation, which is what survives OCR on a Chinese report. It
         // needs the boundary check below or it would match the `t` of any word.
         't',
+    ],
+    PRL: [
+        '泌乳素', '催乳素', 'prolactin', 'prl',
+    ],
+    LH: [
+        '促黄体生成素', '黄体生成素', '促黄体素', '黄体素', 'lh', 'luteinizing hormone',
+    ],
+    FSH: [
+        '促卵泡生成素', '卵泡刺激素', '促卵泡素', '卵泡素', 'fsh', 'follicle stimulating hormone',
     ],
 }
 
@@ -186,6 +196,8 @@ const BOUNDS: Record<LabUnit, { min: number; max: number }> = {
     'pmol/l': { min: 1, max: 8000 },
     'ng/dl': { min: 1, max: 3000 },
     'nmol/l': { min: 0.1, max: 120 },
+    'ng/ml': { min: 0.1, max: 2000 },
+    'iu/l': { min: 0.01, max: 500 },
 }
 
 /**
@@ -201,9 +213,32 @@ const BOUNDS: Record<LabUnit, { min: number; max: number }> = {
  */
 const UNIT_NICKNAMES = (() => {
     const map = new Map<string, LabUnit>()
-    const known = Object.keys(UNIT_ANALYTES) as LabUnit[]
-    for (const unit of known) {
-        map.set(unit, unit)
+    const baseUnits: [string, LabUnit][] = [
+        ['pg/ml', 'pg/ml'],
+        ['pmol/l', 'pmol/l'],
+        ['ng/dl', 'ng/dl'],
+        ['nmol/l', 'nmol/l'],
+        ['pgml', 'pg/ml'],
+        ['pmoll', 'pmol/l'],
+        ['ngdl', 'ng/dl'],
+        ['nmoll', 'nmol/l'],
+        ['hmoll', 'nmol/l'],
+        ['hgdl', 'ng/dl'],
+        // PRL: 1 ng/mL = 1 ug/L
+        ['ng/ml', 'ng/ml'],
+        ['ngml', 'ng/ml'],
+        ['ug/l', 'ng/ml'],
+        ['ugl', 'ng/ml'],
+        // LH & FSH: 1 IU/L = 1 mIU/mL
+        ['iu/l', 'iu/l'],
+        ['iul', 'iu/l'],
+        ['miu/ml', 'iu/l'],
+        ['miuml', 'iu/l'],
+        ['u/l', 'iu/l'],
+        ['ul', 'iu/l'],
+    ]
+    for (const [unit, target] of baseUnits) {
+        map.set(unit, target)
         // Every `l` in a real unit also arrives as `I`, `i`, `1` or `|`.
         // The leading `n` in `nmol/l` or `ng/dl` also arrives as `h` in OCR on small text.
         let variants = ['']
@@ -211,15 +246,7 @@ const UNIT_NICKNAMES = (() => {
             const alternates = char === 'l' ? ['l', 'I', 'i', '1'] : char === 'n' ? ['n', 'h'] : [char]
             variants = variants.flatMap((prefix) => alternates.map((alt) => prefix + alt))
         }
-        for (const variant of variants) map.set(variant.toLowerCase(), unit)
-    }
-    // A dropped or mistyped separator — `pgml` for `pg/ml`. Added last so a real unit
-    // always wins, and so these cannot shadow one.
-    for (const [from, to] of [
-        ['pgml', 'pg/ml'], ['pmoll', 'pmol/l'], ['ngdl', 'ng/dl'], ['nmoll', 'nmol/l'],
-        ['hmoll', 'nmol/l'], ['hgdl', 'ng/dl'],
-    ] as [string, LabUnit][]) {
-        if (!map.has(from)) map.set(from, to)
+        for (const variant of variants) map.set(variant.toLowerCase(), target)
     }
     return map
 })()
@@ -237,6 +264,8 @@ const UNIT_NICKNAMES = (() => {
 export function normalizeText(raw: unknown): string {
     if (typeof raw !== 'string') return ''
     return raw
+        // Normalize Greek micro signs to ASCII 'u' (e.g. μg/L → ug/L).
+        .replace(/[μµ]/g, 'u')
         // Full-width digits and letters → ASCII.
         .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
         .replace(/[Ａ-Ｚａ-ｚ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
@@ -256,6 +285,9 @@ export function normalizeText(raw: unknown): string {
         // A decimal comma, but not a thousands separator: `45,2` → `45.2`, while
         // `1,234` is left alone because the lookahead refuses a third digit.
         .replace(/(\d),(\d{1,2})(?!\d)/g, '$1.$2')
+        // Collapse spaces around decimal dots (e.g. `40. 43` → `40.43`, `0. 48` → `0.48`),
+        // which OCR emits when character bounding boxes have kerning gaps.
+        .replace(/(\d)\s*\.\s*(\d{1,2})(?!\d)/g, '$1.$2')
         // The rest are list separators.
         .replace(/[，、,]/g, ' ')
         // Collapse runs of spaces.
@@ -351,14 +383,19 @@ function isReferenceBound(line: string, index: number): boolean {
  */
 function referenceSpans(line: string): [number, number][] {
     const spans: [number, number][] = []
-    const bound = /[<>≤≥＜＞]\s*(\d+(?:\.\d+)?)/g
-    let m
-    while ((m = bound.exec(line)) !== null) {
-        spans.push([m.index + m[0].length - m[1].length, m.index + m[0].length])
-    }
     const range = /(\d+(?:\.\d+)?)\s*[-–—~至]\s*(\d+(?:\.\d+)?)/g
+    let m
     while ((m = range.exec(line)) !== null) {
         spans.push([m.index, m.index + m[0].length])
+    }
+    // Only look for single-sided bounds (<143, >5) if there is no two-sided range on the line.
+    // If a line already contains a range (e.g. `促卵泡生成素 <0.20NM IU/L 1.50-12.40`), that range
+    // is the reference column, and any `<0.20` earlier in the line is a detection limit measurement.
+    if (spans.length === 0) {
+        const bound = /[<>≤≥＜＞]\s*(\d+(?:\.\d+)?)/g
+        while ((m = bound.exec(line)) !== null) {
+            spans.push([m.index + m[0].length - m[1].length, m.index + m[0].length])
+        }
     }
     return spans
 }
@@ -367,6 +404,9 @@ function referenceSpans(line: string): [number, number][] {
 function isReference(index: number, spans: [number, number][]): boolean {
     return spans.some(([from, to]) => index >= from && index < to)
 }
+
+/** Pattern that matches a unit token, tolerating OCR character confusions like 1 for l. */
+const UNIT_PATTERN_STR = '[A-Za-z][A-Za-z0-9|]{1,5}(?:\\s*[/\\\\-]\\s*[A-Za-z0-9|]{1,3})?'
 
 /**
  * The table layout: label, patient value, reference, unit — flattened onto one line.
@@ -384,8 +424,16 @@ function isReference(index: number, spans: [number, number][]): boolean {
  *   - the label within the usual window, and matching that unit's analyte.
  */
 function tableRowValue(line: string, spans: [number, number][]): HormoneCandidate | null {
+    // If the line starts with a row/item number (e.g. `1 雌二醇` or `4睾酮`), that leading
+    // integer is an item index, not a measurement.
+    const leadingIndex = line.match(/^\s*(\d+)[\s.、)\]]*(?=[\u4e00-\u9fff]|[A-Za-z])/)
+    const leadingIndexPos = leadingIndex ? line.indexOf(leadingIndex[1]) : -1
+
     const numbers = [...line.matchAll(/\d+(?:\.\d+)?/g)]
         .filter((m) => !isReference(m.index, spans))
+        .filter((m) => m.index !== leadingIndexPos)
+        // If preceded by a letter (like `E2` or `pmo1`), it is an identifier or OCR unit artifact.
+        .filter((m) => !(m.index > 0 && /[A-Za-z]/.test(line[m.index - 1])))
         // The bracketed abbreviation is part of the *label*, and it contains a digit:
         // `雌二醇 (E2)`. Counting that as a number made this refuse a perfectly clear
         // row — `雌二醇 (E2) 45.2 12.4-233.0 pg/mL` has three numeric tokens, so the
@@ -397,7 +445,7 @@ function tableRowValue(line: string, spans: [number, number][]): HormoneCandidat
         })
     if (numbers.length !== 1) return null
 
-    const units = [...line.matchAll(/([A-Za-z]{1,4}\s*[/\-]?\s*[A-Za-z]{0,3})/g)]
+    const units = [...line.matchAll(new RegExp(`(${UNIT_PATTERN_STR})`, 'g'))]
         .map((m) => canonicalUnit(m[1]))
         .filter((u) => u !== null)
     const distinct = [...new Set(units)]
@@ -409,9 +457,9 @@ function tableRowValue(line: string, spans: [number, number][]): HormoneCandidat
     if (!Number.isFinite(value) || value < bounds.min || value > bounds.max) return null
 
     const context = labelContext(line, numbers[0].index, numbers[0][0].length)
-    if (context === null || context !== UNIT_ANALYTES[unit]) return null
+    if (context === null || !ANALYTE_ALLOWED_UNITS[context].includes(unit)) return null
 
-    return { analyte: UNIT_ANALYTES[unit], value, unit, source: line.trim().slice(0, 120) }
+    return { analyte: context, value, unit, source: line.trim().slice(0, 120) }
 }
 
 function valuesInLine(line: string): HormoneCandidate[] {
@@ -421,10 +469,9 @@ function valuesInLine(line: string): HormoneCandidate[] {
     const results: HormoneCandidate[] = []
     const spans = referenceSpans(line)
     // A number followed by a unit, which is the shape on most reports: `45.2 pg/mL`.
-    // The unit alternation is `[A-Za-z]` rather than `[a-z]` because OCR emits the
-    // confusions in either case (`pg/mI`, `ng/dI`) and the canonicaliser needs to
-    // see the actual character to resolve it.
-    const pattern = /(\d+(?:\.\d+)?)\s*([A-Za-z]{1,4}\s*[/\\-]?\s*[A-Za-z]{0,3})/g
+    // The unit can arrive with digits (like `1` for `l`: `pmo1/L`, `nmo1/L`, `pg/m1`),
+    // and may have an optional abnormality/status marker (arrow, H, L, +/-, NM) in between.
+    const pattern = new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(?:[+\\-HLhl↑↓⇡⇣]|NM|nm)?\\s*(${UNIT_PATTERN_STR})`, 'g')
     let match
     while ((match = pattern.exec(line)) !== null) {
         // A reference bound or range is not a measurement. It is the one thing here
@@ -435,7 +482,6 @@ function valuesInLine(line: string): HormoneCandidate[] {
         const value = Number(match[1])
         const unit = canonicalUnit(match[2])
         if (unit === null || !Number.isFinite(value)) continue
-        const analyte = UNIT_ANALYTES[unit] as Analyte
         const bounds = BOUNDS[unit]
         if (value < bounds.min || value > bounds.max) continue
 
@@ -444,10 +490,10 @@ function valuesInLine(line: string): HormoneCandidate[] {
         // layouts interleave the two.
         const context = labelContext(line, match.index, match[0].length)
         if (context === null) continue
-        if (context !== analyte) continue
+        if (!ANALYTE_ALLOWED_UNITS[context].includes(unit)) continue
 
         results.push({
-            analyte,
+            analyte: context,
             value,
             unit,
             // Kept so the UI can show which line it read, letting the user check it
@@ -495,9 +541,12 @@ function labelContext(line: string, index: number, matchLength: number): Analyte
 
 /** A label match that respects boundaries for the short Latin abbreviations. */
 function matchesLabel(window: string, label: string): boolean {
-    if (label.length > 2) return window.includes(label)
-    // A one- or two-character abbreviation must sit on its own.
-    return new RegExp(`(^|[^a-z0-9])${label}([^a-z0-9]|$)`, 'i').test(window)
+    // Only short Latin abbreviations (like 'e2' or 't') need word boundaries to avoid
+    // matching inside other words. Chinese labels (like '睾酮') are not Latin words.
+    if (/^[a-z0-9]{1,2}$/i.test(label)) {
+        return new RegExp(`(^|[^a-z0-9])${label}([^a-z0-9]|$)`, 'i').test(window)
+    }
+    return window.includes(label)
 }
 
 /**
@@ -510,13 +559,17 @@ function matchesLabel(window: string, label: string): boolean {
  * way, and a wrong guess that looks confident is worse than an empty field.
  */
 export function suggestSelection(candidates: HormoneCandidate[]): Partial<Record<Analyte, HormoneCandidate>> {
-    const byAnalyte: Record<Analyte, HormoneCandidate[]> = { E2: [], T: [] }
-    for (const candidate of candidates) byAnalyte[candidate.analyte].push(candidate)
+    const byAnalyte: Partial<Record<Analyte, HormoneCandidate[]>> = {}
+    for (const candidate of candidates) {
+        if (!byAnalyte[candidate.analyte]) byAnalyte[candidate.analyte] = []
+        byAnalyte[candidate.analyte]!.push(candidate)
+    }
 
     const suggestion: Partial<Record<Analyte, HormoneCandidate>> = {}
-    for (const analyte of ['E2', 'T'] as const) {
+    const analytes: Analyte[] = ['E2', 'T', 'PRL', 'LH', 'FSH']
+    for (const analyte of analytes) {
         const list = byAnalyte[analyte]
-        if (list.length === 0) continue
+        if (!list || list.length === 0) continue
         // Every candidate for this analyte agreeing on one value is unambiguous.
         const values = new Set(list.map((c) => c.value))
         if (values.size === 1) {
@@ -534,5 +587,11 @@ export function suggestSelection(candidates: HormoneCandidate[]): Partial<Record
 
 /** The app's canonical unit per analyte — see `LabResultForm`'s defaults. */
 function isCanonicalUnit(candidate: HormoneCandidate): boolean {
-    return candidate.analyte === 'E2' ? candidate.unit === 'pg/ml' : candidate.unit === 'ng/dl'
+    switch (candidate.analyte) {
+        case 'E2': return candidate.unit === 'pg/ml'
+        case 'T': return candidate.unit === 'ng/dl'
+        case 'PRL': return candidate.unit === 'ng/ml'
+        case 'LH': return candidate.unit === 'iu/l'
+        case 'FSH': return candidate.unit === 'iu/l'
+    }
 }

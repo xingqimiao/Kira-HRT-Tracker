@@ -496,7 +496,7 @@ const CONTENT_FIELDS: Record<RecordKind, readonly string[]> = {
     // `analyte` belongs here for the same reason: the upgrade migration writes it
     // onto legacy rows, and without it that write is invisible to the transport
     // (never uploaded) and a pull can hand the untyped copy straight back.
-    labResults: ['analyte', 'unit', 'concValue', 'timeH', 'monitoringOnly', 'prolactin', 'prolactinUln', 'alt', 'altUln', 'ast', 'potassium'],
+    labResults: ['analyte', 'unit', 'concValue', 'timeH', 'monitoringOnly', 'prolactin', 'prolactinUln', 'alt', 'altUln', 'ast', 'potassium', 'lh', 'lhUln', 'fsh', 'fshUln'],
     doseTemplates: ['name', 'route', 'ester', 'doseMG', 'extras'],
     // Everything a check-in holds. The scales may be absent ("not answered"),
     // which stableString renders as an empty slot, so one answered scale is

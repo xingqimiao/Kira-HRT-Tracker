@@ -19,7 +19,13 @@ interface LabResultFormProps {
      * Prefills only. The user still edits and presses save — see `LabScan` for why
      * nothing reaches a record from recognition alone.
      */
-    initialValues?: { E2?: { value: number; unit: LabUnit }; T?: { value: number; unit: LabUnit } } | null;
+    initialValues?: {
+        E2?: { value: number; unit: LabUnit };
+        T?: { value: number; unit: LabUnit };
+        PRL?: { value: number; unit: string };
+        LH?: { value: number; unit: string };
+        FSH?: { value: number; unit: string };
+    } | null;
 }
 
 type LabUnit = 'pg/ml' | 'pmol/l' | 'ng/dl' | 'nmol/l';
@@ -90,6 +96,10 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
 
     // Monitoring bloods. Optional and independent of the two hormones above: a
     // single draw may carry any subset, and an empty field saves nothing.
+    const [lhValue, setLhValue] = useState('');
+    const [lhUln, setLhUln] = useState('');
+    const [fshValue, setFshValue] = useState('');
+    const [fshUln, setFshUln] = useState('');
     const [prlValue, setPrlValue] = useState('');
     const [prlUln, setPrlUln] = useState('');
     const [altValue, setAltValue] = useState('');
@@ -99,7 +109,7 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
 
     // Monitoring bloods default collapsed, unless editing a record that has monitoring bloods.
     const [isMonitoringOpen, setIsMonitoringOpen] = useState(
-        Boolean(resultToEdit?.monitoringOnly || resultToEdit?.prolactin || resultToEdit?.alt || resultToEdit?.ast || resultToEdit?.potassium),
+        Boolean(resultToEdit?.monitoringOnly || resultToEdit?.prolactin || resultToEdit?.alt || resultToEdit?.ast || resultToEdit?.potassium || resultToEdit?.lh || resultToEdit?.fsh),
     );
 
     useEffect(() => {
@@ -112,37 +122,43 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
             // Prefill the monitoring fields so editing a record cannot silently drop
             // the bloods that were saved with it.
             const str = (v: number | undefined) => (typeof v === 'number' && Number.isFinite(v) ? String(v) : '');
+            setLhValue(str(resultToEdit.lh));
+            setLhUln(str(resultToEdit.lhUln));
+            setFshValue(str(resultToEdit.fsh));
+            setFshUln(str(resultToEdit.fshUln));
             setPrlValue(str(resultToEdit.prolactin));
             setPrlUln(str(resultToEdit.prolactinUln));
             setAltValue(str(resultToEdit.alt));
             setAltUln(str(resultToEdit.altUln));
             setAstValue(str(resultToEdit.ast));
             setKValue(str(resultToEdit.potassium));
-            setIsMonitoringOpen(Boolean(resultToEdit.monitoringOnly || resultToEdit.prolactin || resultToEdit.alt || resultToEdit.ast || resultToEdit.potassium));
+            setIsMonitoringOpen(Boolean(resultToEdit.monitoringOnly || resultToEdit.prolactin || resultToEdit.alt || resultToEdit.ast || resultToEdit.potassium || resultToEdit.lh || resultToEdit.fsh));
         } else {
             const now = new Date();
             const iso = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
             setDateStr(iso);
-            // A scanned report prefills the two fields; anything it did not read is
+            // A scanned report prefills the fields; anything it did not read is
             // left empty rather than defaulted.
             setE2Value(initialValues?.E2 ? String(initialValues.E2.value) : '');
             setTValue(initialValues?.T ? String(initialValues.T.value) : '');
             setE2Unit(initialValues?.E2?.unit ?? DEFAULT_E2_UNIT);
             setTUnit(initialValues?.T?.unit ?? DEFAULT_T_UNIT);
-            setPrlValue(''); setPrlUln('');
+            setLhValue(initialValues?.LH ? String(initialValues.LH.value) : ''); setLhUln('');
+            setFshValue(initialValues?.FSH ? String(initialValues.FSH.value) : ''); setFshUln('');
+            setPrlValue(initialValues?.PRL ? String(initialValues.PRL.value) : ''); setPrlUln('');
             setAltValue(''); setAltUln('');
             setAstValue(''); setKValue('');
-            setIsMonitoringOpen(false);
+            setIsMonitoringOpen(Boolean(initialValues?.PRL || initialValues?.LH || initialValues?.FSH));
         }
     }, [resultToEdit, initialValues]);
 
-    const filledMonitoringCount = [prlValue, altValue, astValue, kValue].filter(v => v.trim() !== '').length;
+    const filledMonitoringCount = [lhValue, fshValue, prlValue, altValue, astValue, kValue].filter(v => v.trim() !== '').length;
 
     /**
      * The monitoring bloods, one record each.
      *
-     * A draw carries any subset of PRL/ALT/AST/K, and keeping them on one record
-     * made the 体检 list print four analytes as a single run-on line *and* made
+     * A draw carries any subset of LH/FSH/PRL/ALT/AST/K, and keeping them on one record
+     * made the 体检 list print all analytes as a single run-on line *and* made
      * deleting one of them delete the rest. Each is stored as its own
      * `monitoringOnly` record at the same timestamp instead, so every measured
      * item is a row of its own and edits only touch what they name.
@@ -161,6 +177,16 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
         const push = (fields: Partial<LabResult>) => rows.push({
             id: uuidv4(), timeH, concValue: 0, unit: DEFAULT_E2_UNIT, monitoringOnly: true, ...fields,
         });
+        const lh = num(lhValue);
+        const lhUlnValue = num(lhUln);
+        if (lh !== undefined) {
+            push({ lh, ...(lhUlnValue !== undefined && lhUlnValue > 0 ? { lhUln: lhUlnValue } : {}) });
+        }
+        const fsh = num(fshValue);
+        const fshUlnValue = num(fshUln);
+        if (fsh !== undefined) {
+            push({ fsh, ...(fshUlnValue !== undefined && fshUlnValue > 0 ? { fshUln: fshUlnValue } : {}) });
+        }
         const prolactin = num(prlValue);
         const prolactinUln = num(prlUln);
         if (prolactin !== undefined) {
@@ -181,6 +207,8 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
     /** Clear the add-form's fields (it stays mounted across saves). */
     const resetFields = () => {
         setE2Value(''); setTValue('');
+        setLhValue(''); setLhUln('');
+        setFshValue(''); setFshUln('');
         setPrlValue(''); setPrlUln('');
         setAltValue(''); setAltUln('');
         setAstValue(''); setKValue('');
@@ -298,6 +326,10 @@ const LabResultForm: React.FC<LabResultFormProps> = ({ resultToEdit, onSave, onC
             {isMonitoringOpen && (
                 <div className="list" style={{ marginTop: 3, gap: 3 }}>
                     {[
+                        { key: 'lh', label: t('monitor.lh'), unit: MONITORING_UNIT.LH, value: lhValue, set: setLhValue },
+                        { key: 'lh_uln', label: t('monitor.lh_uln'), unit: MONITORING_UNIT.LH, value: lhUln, set: setLhUln },
+                        { key: 'fsh', label: t('monitor.fsh'), unit: MONITORING_UNIT.FSH, value: fshValue, set: setFshValue },
+                        { key: 'fsh_uln', label: t('monitor.fsh_uln'), unit: MONITORING_UNIT.FSH, value: fshUln, set: setFshUln },
                         { key: 'prl', label: t('monitor.prl'), unit: MONITORING_UNIT.PRL, value: prlValue, set: setPrlValue },
                         { key: 'prl_uln', label: t('monitor.prl_uln'), unit: MONITORING_UNIT.PRL, value: prlUln, set: setPrlUln },
                         { key: 'alt', label: t('monitor.alt'), unit: MONITORING_UNIT.ALT, value: altValue, set: setAltValue },

@@ -49,6 +49,8 @@ interface RawLab {
     altUln?: number;
     ast?: number;
     potassium?: number;
+    lh?: number;
+    fsh?: number;
 }
 
 export interface FeatherlineImport {
@@ -361,7 +363,7 @@ function unitFor(value: unknown): string | null {
 }
 
 /** Which of our lab fields a built-in analyte key fills, if any. */
-function analyteFor(key: unknown): 'e2' | 't' | 'prolactin' | 'alt' | 'ast' | 'potassium' | null {
+function analyteFor(key: unknown): 'e2' | 't' | 'prolactin' | 'alt' | 'ast' | 'potassium' | 'lh' | 'fsh' | null {
     const token = String(key ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
     switch (token) {
         case 'e2': case 'estradiol': return 'e2';
@@ -370,6 +372,8 @@ function analyteFor(key: unknown): 'e2' | 't' | 'prolactin' | 'alt' | 'ast' | 'p
         case 'alt': return 'alt';
         case 'ast': return 'ast';
         case 'k': case 'potassium': return 'potassium';
+        case 'lh': return 'lh';
+        case 'fsh': return 'fsh';
         default: return null;
     }
 }
@@ -454,7 +458,7 @@ export function mapFeatherlineSnapshot(json: string): FeatherlineImport {
         if (collectedAt === null) { skipped.labs++; reason('lab panel without a time'); continue; }
 
         let hormone: { value: number; unit: string; kind: 'e2' | 't' } | null = null;
-        const monitoring: Partial<Record<'prolactin' | 'alt' | 'ast' | 'potassium', number>> = {};
+        const monitoring: Partial<Record<'prolactin' | 'alt' | 'ast' | 'potassium' | 'lh' | 'fsh', number>> = {};
 
         for (const result of arr(panel.results)) {
             if (!isObj(result)) continue;

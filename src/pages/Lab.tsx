@@ -274,7 +274,13 @@ const Lab: React.FC<LabProps> = ({
     // when either this or the App's FAB flag says so.
     const [editingLabId, setEditingLabId] = useState<string | null>(null);
     // Values the scanner read, handed to the manual form as prefill only.
-    const [scanValues, setScanValues] = useState<{ E2?: { value: number; unit: 'pg/ml' | 'pmol/l' }; T?: { value: number; unit: 'ng/dl' | 'nmol/l' } } | null>(null);
+    const [scanValues, setScanValues] = useState<{
+        E2?: { value: number; unit: 'pg/ml' | 'pmol/l' };
+        T?: { value: number; unit: 'ng/dl' | 'nmol/l' };
+        PRL?: { value: number; unit: string };
+        LH?: { value: number; unit: string };
+        FSH?: { value: number; unit: string };
+    } | null>(null);
     // Phone only: the journal entry drilled into `#examSub`.
     const [examSubOpen, setExamSubOpen] = useState(false);
 
@@ -635,6 +641,7 @@ const Lab: React.FC<LabProps> = ({
                                 timeH,
                                 concValue: suggestion.E2.value,
                                 unit: suggestion.E2.unit as 'pg/ml' | 'pmol/l',
+                                analyte: 'E2',
                             });
                         }
                         if (suggestion.T) {
@@ -643,6 +650,37 @@ const Lab: React.FC<LabProps> = ({
                                 timeH,
                                 concValue: suggestion.T.value,
                                 unit: suggestion.T.unit as 'ng/dl' | 'nmol/l',
+                                analyte: 'T',
+                            });
+                        }
+                        if (suggestion.LH) {
+                            onSaveLabResult({
+                                id: uuidv4(),
+                                timeH,
+                                concValue: 0,
+                                unit: 'pg/ml',
+                                monitoringOnly: true,
+                                lh: suggestion.LH.value,
+                            });
+                        }
+                        if (suggestion.FSH) {
+                            onSaveLabResult({
+                                id: uuidv4(),
+                                timeH,
+                                concValue: 0,
+                                unit: 'pg/ml',
+                                monitoringOnly: true,
+                                fsh: suggestion.FSH.value,
+                            });
+                        }
+                        if (suggestion.PRL) {
+                            onSaveLabResult({
+                                id: uuidv4(),
+                                timeH,
+                                concValue: 0,
+                                unit: 'pg/ml',
+                                monitoringOnly: true,
+                                prolactin: suggestion.PRL.value,
                             });
                         }
                         setIsScanOpen(false);
@@ -652,6 +690,9 @@ const Lab: React.FC<LabProps> = ({
                         setScanValues({
                             ...(suggestion.E2 ? { E2: { value: suggestion.E2.value, unit: suggestion.E2.unit as 'pg/ml' | 'pmol/l' } } : {}),
                             ...(suggestion.T ? { T: { value: suggestion.T.value, unit: suggestion.T.unit as 'ng/dl' | 'nmol/l' } } : {}),
+                            ...(suggestion.PRL ? { PRL: { value: suggestion.PRL.value, unit: suggestion.PRL.unit } } : {}),
+                            ...(suggestion.LH ? { LH: { value: suggestion.LH.value, unit: suggestion.LH.unit } } : {}),
+                            ...(suggestion.FSH ? { FSH: { value: suggestion.FSH.value, unit: suggestion.FSH.unit } } : {}),
                         });
                         setEditingLabId(null);
                         setIsScanOpen(false);

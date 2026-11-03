@@ -233,6 +233,16 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onDirectSave, onCancel }
     const muted = 'text-[var(--color-m3-on-surface-variant)] ';
     const on = 'text-[var(--color-m3-on-surface)] ';
 
+    const analyteLabel = (analyte: HormoneCandidate['analyte']): string => {
+        switch (analyte) {
+            case 'E2': return t('scan.analyte_e2');
+            case 'T': return t('scan.analyte_t');
+            case 'PRL': return t('scan.analyte_prl');
+            case 'LH': return t('scan.analyte_lh');
+            case 'FSH': return t('scan.analyte_fsh');
+        }
+    };
+
     const runRecognition = useCallback(async (dataUrl: string) => {
         setState({ kind: 'preparing' });
         let prepared: string;
@@ -420,7 +430,7 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onDirectSave, onCancel }
                                             ? `0 0 0 2px ${doubt ? 'var(--color-m3-error)' : 'var(--color-m3-primary)'}`
                                             : 'none',
                                     }}
-                                    aria-label={`${t(value.analyte === 'E2' ? 'scan.analyte_e2' : 'scan.analyte_t')} ${value.value} ${value.unit}${doubt ? ' — ' + t('scan.check_pair') : ''}`}
+                                    aria-label={`${analyteLabel(value.analyte)} ${value.value} ${value.unit}${doubt ? ' — ' + t('scan.check_pair') : ''}`}
                                     title={`${value.value} ${value.unit}`}
                                 >
                                     {/* The number badge floats right above the box (-top-3.5) and is shown ONLY on the first region of the row (boxIndex === 0) */}
@@ -530,7 +540,7 @@ const LabScan: React.FC<LabScanProps> = ({ onExtracted, onDirectSave, onCancel }
                                                     {i + 1}
                                                 </span>
                                                 <span className={on}>
-                                                    {t(c.analyte === 'E2' ? 'scan.analyte_e2' : 'scan.analyte_t')}
+                                                    {analyteLabel(c.analyte)}
                                                 </span>
                                             </span>
                                             <span className={`tabular-nums ${on}`}>

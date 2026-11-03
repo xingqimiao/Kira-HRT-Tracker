@@ -277,6 +277,10 @@ export interface LabResult {
     altUln?: number;
     ast?: number;
     potassium?: number;
+    lh?: number;
+    lhUln?: number;
+    fsh?: number;
+    fshUln?: number;
     /**
      * True when the record holds monitoring bloods only and no estradiol /
      * testosterone reading.
@@ -510,7 +514,7 @@ export function getHormoneLevelAdvisory(results: LabResult[]): HormoneLevelAdvis
 // Every number below is quoted from that document, and the row it came from is in
 // the comment. Where the document says "not stated", nothing is invented here.
 
-export type MonitoringAnalyte = 'PRL' | 'ALT' | 'AST' | 'K';
+export type MonitoringAnalyte = 'PRL' | 'ALT' | 'AST' | 'K' | 'LH' | 'FSH';
 
 /**
  * One monitoring analyte as carried by a `LabResult`.
@@ -547,6 +551,8 @@ export const MONITORING_UNIT: Record<MonitoringAnalyte, string> = {
     ALT: 'U/L',
     AST: 'U/L',
     K: 'mmol/L',
+    LH: 'IU/L',
+    FSH: 'IU/L',
 };
 
 /**
@@ -566,6 +572,12 @@ export function monitoringValues(lab: LabResult): MonitoringValue[] {
     }
     if (num(lab.ast)) out.push({ analyte: 'AST', value: lab.ast });
     if (num(lab.potassium)) out.push({ analyte: 'K', value: lab.potassium });
+    if (num(lab.lh)) {
+        out.push({ analyte: 'LH', value: lab.lh, ...(num(lab.lhUln) && lab.lhUln > 0 ? { uln: lab.lhUln } : {}) });
+    }
+    if (num(lab.fsh)) {
+        out.push({ analyte: 'FSH', value: lab.fsh, ...(num(lab.fshUln) && lab.fshUln > 0 ? { uln: lab.fshUln } : {}) });
+    }
     return out;
 }
 

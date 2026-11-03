@@ -199,8 +199,10 @@ check('a realistic multi-line report fragment is read correctly', () => {
     assert.equal(byValue[45.2].unit, 'pg/ml')
     assert.ok(byValue[512], 'testosterone is found')
     assert.equal(byValue[512].analyte, 'T')
-    // FSH in mIU/mL and total SHBG in nmol/L must not appear.
-    assert.ok(!found.some((c) => c.value === 5.1), 'FSH is not a stored analyte')
+    // FSH in mIU/mL is now a supported analyte; SHBG in nmol/L must not appear.
+    assert.ok(byValue[5.1], 'FSH is found')
+    assert.equal(byValue[5.1].analyte, 'FSH')
+    assert.equal(byValue[5.1].unit, 'iu/l')
     assert.equal(found.filter((c) => c.value === 45.2).length, 1, 'the SHBG 45.2 is not a second reading')
 })
 
@@ -413,6 +415,84 @@ check('the confusable label characters are folded, and nothing else is', () => {
         assert.equal(found[0].value, 17.4, 'the result column, not the 2.6 reference bound')
     }
     assert.deepEqual(findHormoneValues('辜酮 9999 ng/dL'), [], 'out of bounds is still refused')
+})
+
+check('OCR character confusions in unit (1 for l in pmo1/L, nmo1/L) are resolved in line', () => {
+    const e2 = findHormoneValues('1 雌二醇 1572.82 ↑ pmo1/L <308.36')
+    assert.equal(e2.length, 1, 'pmo1/L should resolve as pmol/l')
+    assert.equal(e2[0].analyte, 'E2')
+    assert.equal(e2[0].value, 1572.82)
+    assert.equal(e2[0].unit, 'pmol/l')
+
+    const t = findHormoneValues('4 睾酮 0.48 ↓ nmo1/L 3.23-28.77')
+    assert.equal(t.length, 1, 'nmo1/L should resolve as nmol/l')
+    assert.equal(t[0].analyte, 'T')
+    assert.equal(t[0].value, 0.48)
+    assert.equal(t[0].unit, 'nmol/l')
+})
+
+check('Chinese label immediately preceded by row number (4睾酮) resolves correctly', () => {
+    // When OCR merges the row number with the Chinese label, e.g. 4睾酮, Latin abbreviation
+    // word-boundary rules must not reject the CJK label.
+    const t = findHormoneValues('4睾酮 0.48 ↓ nmo1/L 3.23-28.77')
+    assert.equal(t.length, 1, '4睾酮 should resolve as testosterone')
+    assert.equal(t[0].analyte, 'T')
+    assert.equal(t[0].value, 0.48)
+    assert.equal(t[0].unit, 'nmol/l')
+})
+
+check('table row with leading item index is read', () => {
+    // Leading item index (e.g. 1 雌二醇 ...) must not count towards the value column in table layouts
+    const found = findHormoneValues('1 雌二醇 45.2 12.4-233.0 pg/mL')
+    assert.equal(found.length, 1, 'table layout with item index should resolve')
+    assert.equal(found[0].analyte, 'E2')
+    assert.equal(found[0].value, 45.2)
+    assert.equal(found[0].unit, 'pg/ml')
+})
+
+check('real multi-item hospital report extracts all 5 analytes (E2, FSH, LH, T, PRL)', () => {
+    const report = [
+        '合肥市第四人民医院_微信',
+        '检验报告单',
+        '科室：急性心理失训床号： 标本号：',
+        '图： 26-11-02 11:13: 检验项目：其他',
+        '项目名称 结果 单位 参考值',
+        '1 雌二醇 1572.82 ↑ pmo1/L <308.36',
+        '2 促卵泡生成素 <0.20NM IU/L 1.50-12.40',
+        '3 促黄体生成素 <0.20NM IU/L 1.40-7.70',
+        '4睾酮 0.48 ↓ nmo1/L 3.23-28.77',
+        '5 泌乳素 40. 43 ↑ μg/L 3.00-16.50',
+        '送检医生： 检验日期：2026-11-02 11:13: 报告日期：2026-11-03 06:09: 复核员：甘雪亮 检验员：甘雪亮',
+        '注:本检验结果仅对当日当次标本负责!',
+    ].join('\n')
+
+    const found = findHormoneValues(report)
+    assert.equal(found.length, 5, 'all 5 analytes (E2, FSH, LH, T, PRL) should be found')
+
+    const e2 = found.find((c) => c.analyte === 'E2')
+    assert.ok(e2, 'estradiol found')
+    assert.equal(e2.value, 1572.82)
+    assert.equal(e2.unit, 'pmol/l')
+
+    const fsh = found.find((c) => c.analyte === 'FSH')
+    assert.ok(fsh, 'FSH found')
+    assert.equal(fsh.value, 0.20)
+    assert.equal(fsh.unit, 'iu/l')
+
+    const lh = found.find((c) => c.analyte === 'LH')
+    assert.ok(lh, 'LH found')
+    assert.equal(lh.value, 0.20)
+    assert.equal(lh.unit, 'iu/l')
+
+    const t = found.find((c) => c.analyte === 'T')
+    assert.ok(t, 'testosterone found')
+    assert.equal(t.value, 0.48)
+    assert.equal(t.unit, 'nmol/l')
+
+    const prl = found.find((c) => c.analyte === 'PRL')
+    assert.ok(prl, 'prolactin found')
+    assert.equal(prl.value, 40.43)
+    assert.equal(prl.unit, 'ng/ml')
 })
 
 // --- report -----------------------------------------------------------------

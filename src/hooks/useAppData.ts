@@ -1123,39 +1123,47 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
             const valNum = num(item.concValue);
             const prolactin = num(item.prolactin);
             const alt = num(item.alt);
-            const ast = num(item.ast);
-            const potassium = num(item.potassium);
-            const hasMonitoring = prolactin !== undefined || alt !== undefined || ast !== undefined || potassium !== undefined;
-            // Neither a hormone nor a monitoring reading: nothing to store.
-            if (valNum === undefined && !hasMonitoring) return null;
-            // Explicit flag wins; otherwise a record with no hormone value is
-            // monitoring-only by construction.
-            const monitoringOnly = item.monitoringOnly === true || valNum === undefined;
-            const unitVal = normalizeImportUnit(item.unit);
-            // Never infer from the unit: a missing/unknown analyte is the safe
-            // state, and calibration excludes it until the user confirms it.
-            const analyteVal = normalizeImportedAnalyte(item.analyte, monitoringOnly, {
-                ...opts,
-                unit: unitVal,
-            });
-            const prolactinUln = num(item.prolactinUln);
-            const altUln = num(item.altUln);
-            return {
-                id: typeof item.id === 'string' ? item.id : uuidv4(),
-                timeH: timeNum,
-                // A monitoring-only record keeps the neutral placeholder the type
-                // requires; `monitoringOnly` is what tells readers to ignore it.
-                concValue: valNum ?? 0,
-                unit: unitVal,
-                ...(prolactin !== undefined ? { prolactin } : {}),
-                ...(prolactin !== undefined && prolactinUln !== undefined ? { prolactinUln } : {}),
-                ...(alt !== undefined ? { alt } : {}),
-                ...(alt !== undefined && altUln !== undefined ? { altUln } : {}),
-                ...(ast !== undefined ? { ast } : {}),
-                ...(potassium !== undefined ? { potassium } : {}),
-                ...(monitoringOnly ? { monitoringOnly: true } : { analyte: analyteVal }),
-                updatedAt: keepStamp(item)
-            } as LabResult;
+	            const ast = num(item.ast);
+	            const potassium = num(item.potassium);
+	            const lh = num(item.lh);
+	            const fsh = num(item.fsh);
+	            const hasMonitoring = prolactin !== undefined || alt !== undefined || ast !== undefined || potassium !== undefined || lh !== undefined || fsh !== undefined;
+	            // Neither a hormone nor a monitoring reading: nothing to store.
+	            if (valNum === undefined && !hasMonitoring) return null;
+	            // Explicit flag wins; otherwise a record with no hormone value is
+	            // monitoring-only by construction.
+	            const monitoringOnly = item.monitoringOnly === true || valNum === undefined;
+	            const unitVal = normalizeImportUnit(item.unit);
+	            // Never infer from the unit: a missing/unknown analyte is the safe
+	            // state, and calibration excludes it until the user confirms it.
+	            const analyteVal = normalizeImportedAnalyte(item.analyte, monitoringOnly, {
+	                ...opts,
+	                unit: unitVal,
+	            });
+	            const prolactinUln = num(item.prolactinUln);
+	            const altUln = num(item.altUln);
+	            const lhUln = num(item.lhUln);
+	            const fshUln = num(item.fshUln);
+	            return {
+	                id: typeof item.id === 'string' ? item.id : uuidv4(),
+	                timeH: timeNum,
+	                // A monitoring-only record keeps the neutral placeholder the type
+	                // requires; `monitoringOnly` is what tells readers to ignore it.
+	                concValue: valNum ?? 0,
+	                unit: unitVal,
+	                ...(prolactin !== undefined ? { prolactin } : {}),
+	                ...(prolactin !== undefined && prolactinUln !== undefined ? { prolactinUln } : {}),
+	                ...(alt !== undefined ? { alt } : {}),
+	                ...(alt !== undefined && altUln !== undefined ? { altUln } : {}),
+	                ...(ast !== undefined ? { ast } : {}),
+	                ...(potassium !== undefined ? { potassium } : {}),
+	                ...(lh !== undefined ? { lh } : {}),
+	                ...(lh !== undefined && lhUln !== undefined ? { lhUln } : {}),
+	                ...(fsh !== undefined ? { fsh } : {}),
+	                ...(fsh !== undefined && fshUln !== undefined ? { fshUln } : {}),
+	                ...(monitoringOnly ? { monitoringOnly: true } : { analyte: analyteVal }),
+	                updatedAt: keepStamp(item)
+	            } as LabResult;
         }).filter((item): item is LabResult => item !== null);
     };
 
