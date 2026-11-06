@@ -2,7 +2,7 @@
   "version": "2.5.2",
   "versionCode": 2005002,
   "apk": "https://hrt.kiramyao.com/android/KiraHRT-2.5.2-release.apk",
-  "sha256": "PENDING",
+  "sha256": "179840FF48ED8CAF4E38F5AEB16DF7853F1F5683842FCB303A6B8FEFB295BB8E",
   "notes": [
     "用药提醒「忽略一次」：今日未用药面板内点按某条遗漏用药，向下展开「取消 / 忽略一次」。忽略只宽限该次到期时刻，不写入用药记录、不影响次日同一时间的提醒，激素曲线也不变。",
     "忽略记录随用药方案一同加密同步，首页提示、网页提醒、服务端补推与 MCP 查询四处判定一致，其他设备同样停止催促。",
