@@ -53,6 +53,16 @@ export interface MedPlan {
     firstHour: number;
     firstMinute: number;
     enabled: boolean;
+    /** Due instants (epoch ms) the user forgave with 忽略一次: this occurrence is
+     *  not a missed dose and no reminder fires for it again — but only that
+     *  occurrence; the same wall-clock time tomorrow is a new instant. Lives on
+     *  the plan rather than a device-local ledger so every consumer of
+     *  `planStatuses` — the home badge, the web tick, the server's push scanner
+     *  and the agent's status — filters the same instants, and the ignore rides
+     *  the plan's sealed scalar to the other devices. A forgiven dose is
+     *  deliberately *not* a logged dose: the record history stays truthful.
+     *  Pruned to the newest few by `sanitizeMedPlans`. */
+    ignoredDue?: number[];
 }
 
 /**
@@ -110,6 +120,19 @@ function sanitizeTime(raw: unknown): PlanTime | null {
     return { hour, minute };
 }
 
+/**
+ * Forgiven due instants: finite epoch-ms numbers only, deduped ascending, capped
+ * to the newest 64. The cap is storage hygiene, not correctness — due times are
+ * today's only, so an expired entry can never match anything.
+ */
+function sanitizeIgnoredDue(raw: unknown): number[] | undefined {
+    if (!Array.isArray(raw)) return undefined;
+    const out = [...new Set(raw.filter((v): v is number => typeof v === 'number' && Number.isFinite(v)))]
+        .sort((a, b) => a - b)
+        .slice(-64);
+    return out.length > 0 ? out : undefined;
+}
+
 export function sanitizeMedPlans(value: unknown): MedPlan[] {
     if (!Array.isArray(value)) return [];
     return value.flatMap(item => {
@@ -144,6 +167,7 @@ export function sanitizeMedPlans(value: unknown): MedPlan[] {
             firstHour: hour,
             firstMinute: minute,
             enabled: p.enabled !== false,
+            ignoredDue: sanitizeIgnoredDue(p.ignoredDue),
         }];
     });
 }
@@ -220,6 +244,42 @@ export function writeMedPlans(plans: MedPlan[], at: number = Date.now(), cleared
         else secureRemove(medPlanClearedAtKey());
     } catch { /* private mode: the plan stays in memory for this session */ }
     if (typeof window !== 'undefined') window.dispatchEvent(new Event(MED_PLAN_CHANGED_EVENT));
+}
+
+/**
+ * 忽略一次: forgive a plan's currently-missed occurrences.
+ *
+ * The instants land in `ignoredDue` on the plan itself, so the home badge, the
+ * web reminder tick, the server's push scanner and the agent's status all stop
+ * counting them through the one `planStatuses` filter. An ignore is a plan edit
+ * to sync — it restamps and dispatches like any other — while a no-op (the same
+ * occurrences already forgiven) is dropped by `writeMedPlans` without restamping.
+ */
+export function ignorePlanOccurrences(planId: string, dueMs: number[]): void {
+    if (dueMs.length === 0) return;
+    let changed = false;
+    const next = readMedPlans().map(plan => {
+        if (plan.id !== planId) return plan;
+        const merged = sanitizeIgnoredDue([...(plan.ignoredDue ?? []), ...dueMs]);
+        if (merged && merged.join() === (plan.ignoredDue ?? []).join()) return plan;
+        changed = true;
+        return { ...plan, ignoredDue: merged };
+    });
+    if (changed) writeMedPlans(next);
+}
+
+/** Undo for `ignorePlanOccurrences`: the occurrences count as missed again. */
+export function restorePlanOccurrences(planId: string, dueMs: number[]): void {
+    if (dueMs.length === 0) return;
+    const drop = new Set(dueMs);
+    let changed = false;
+    const next = readMedPlans().map(plan => {
+        if (plan.id !== planId || !plan.ignoredDue?.length) return plan;
+        const kept = plan.ignoredDue.filter(ms => !drop.has(ms));
+        changed = true;
+        return { ...plan, ignoredDue: kept.length > 0 ? kept : undefined };
+    });
+    if (changed) writeMedPlans(next);
 }
 
 /**
@@ -536,8 +596,13 @@ export function planStatuses(plans: MedPlan[], doses: PlanDoseRef[], nowMs: numb
             .filter(d => matchesPlan(plan, d))
             .map(d => d.timeH * 60 * 60 * 1000)
             .sort((a, b) => a - b);
+        const ignored = plan.ignoredDue?.length ? new Set(plan.ignoredDue) : null;
         const missed: number[] = [];
         for (const dueMs of due) {
+            // 忽略一次: a forgiven occurrence is not a missed dose. The instant is
+            // matched by epoch ms, so the same wall-clock time tomorrow — and any
+            // occurrence not explicitly forgiven — is still counted here.
+            if (ignored?.has(dueMs)) continue;
             if (!takenTimes.some(tt => tt >= dueMs)) missed.push(dueMs);
         }
         out.push({ plan, missed, overdue: missed.length > 0 });

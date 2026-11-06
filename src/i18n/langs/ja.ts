@@ -285,6 +285,9 @@ const PACK: LangPack = {
 
     "plan.badge_hint": "予定時刻を過ぎた服薬があります — タップで確認",
     "plan.overdue_view": "確認",
+    "plan.overdue_cancel": "キャンセル",
+    "plan.overdue_ignore": "今回はスキップ",
+    "plan.overdue_ignored": "「{name}」の今回分をスキップしました",
 
     "plan.quick_suffix": "・プラン",
 

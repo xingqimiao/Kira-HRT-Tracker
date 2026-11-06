@@ -187,6 +187,9 @@ const PACK: LangPack = {
 
     "plan.badge_hint": "Vakti geçen planlı dozlar var — görmek için dokunun",
     "plan.overdue_view": "Gör",
+    "plan.overdue_cancel": "İptal",
+    "plan.overdue_ignore": "Bu seferlik yoksay",
+    "plan.overdue_ignored": "“{name}” bu sefer yoksayıldı",
 
     "plan.quick_suffix": "·Plan",
 

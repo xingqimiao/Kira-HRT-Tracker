@@ -196,6 +196,9 @@ const PACK: LangPack = {
 
     "plan.badge_hint": "Some planned doses are due — tap to see them",
     "plan.overdue_view": "View",
+    "plan.overdue_cancel": "Cancel",
+    "plan.overdue_ignore": "Ignore this time",
+    "plan.overdue_ignored": "Ignored “{name}” this time",
 
     "plan.quick_suffix": "·Plan",
 

@@ -15,7 +15,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { getShareCopy } from '../i18n/share';
 import { formatRelativeParts } from '../utils/helpers';
 import { get as secureGet, set as secureSet } from '../utils/secureStore';
-import { readMedPlans, planStatuses, planQuickEntries, plansForMode, activePatches, patchRemovalEvent, type PlanStatus } from '../utils/medPlan';
+import { readMedPlans, planStatuses, planQuickEntries, plansForMode, activePatches, patchRemovalEvent, ignorePlanOccurrences, restorePlanOccurrences, MED_PLAN_CHANGED_EVENT, type PlanStatus } from '../utils/medPlan';
 import { templateToEvent } from '../utils/templateToEvent';
 import {
     AdaptiveSheet,
@@ -125,7 +125,11 @@ const Home: React.FC<HomeProps> = ({
     const isDarkMode = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     const [isEstimateInfoOpen, setIsEstimateInfoOpen] = React.useState(false);
     const [isAbsurdOpen, setIsAbsurdOpen] = React.useState(false);
-    const [undo, setUndo] = React.useState<{ id: string; name: string } | null>(null);
+    /** The undo offer under a recent action: a one-tap dose, or an ignored plan
+     *  occurrence. One snackbar, so two quick actions never overlap. */
+    const [undo, setUndo] = React.useState<
+        { kind: 'dose'; id: string; name: string } | { kind: 'ignore'; planId: string; name: string; missed: number[] } | null
+    >(null);
     // Two taps delete a saved quick record: the first arms the × (it turns red),
     // the second removes it. Nothing else in the row changes colour.
     const [armedTemplate, setArmedTemplate] = React.useState<string | null>(null);
@@ -208,6 +212,15 @@ const Home: React.FC<HomeProps> = ({
     const nowSec = nowMs / 1000;
 
     const [showOverdue, setShowOverdue] = React.useState(false);
+    // The plan is read from storage inside the memo, not from props — a plan write
+    // (an ignore, an edit in settings) re-renders nothing otherwise. Bump a
+    // revision on the plan's own change event so the banner keeps up instantly.
+    const [planRev, setPlanRev] = React.useState(0);
+    React.useEffect(() => {
+        const bump = () => setPlanRev(v => v + 1);
+        window.addEventListener(MED_PLAN_CHANGED_EVENT, bump);
+        return () => window.removeEventListener(MED_PLAN_CHANGED_EVENT, bump);
+    }, []);
     const planState = React.useMemo(() => {
         const plans = plansForMode(readMedPlans(), isTransmasc ? 'transmasc' : 'transfem');
         if (plans.length === 0) return { overdue: false, statuses: [] as PlanStatus[], entries: [] };
@@ -220,7 +233,18 @@ const Home: React.FC<HomeProps> = ({
             statuses,
             entries: planQuickEntries(plans, covered, t('plan.quick_suffix')),
         };
-    }, [events, nowMs, doseTemplates, t, isTransmasc]);
+    }, [events, nowMs, doseTemplates, t, isTransmasc, planRev]);
+
+    // Fold the overdue sheet away once nothing is overdue — the ignore that
+    // emptied it, or a dose logged from the quick-record sheet meanwhile.
+    React.useEffect(() => {
+        if (showOverdue && !planState.overdue) setShowOverdue(false);
+    }, [showOverdue, planState.overdue]);
+
+    const ignoreOccurrences = (s: PlanStatus) => {
+        ignorePlanOccurrences(s.plan.id, s.missed);
+        setUndo({ kind: 'ignore', planId: s.plan.id, name: s.plan.alias || t(`ester.${s.plan.ester}`), missed: s.missed });
+    };
 
     const patches = React.useMemo(() => activePatches(events, nowMs / 3_600_000), [events, nowMs]);
     const removePatch = (patch: DoseEvent): void => {
@@ -299,7 +323,7 @@ const Home: React.FC<HomeProps> = ({
         const event = templateToEvent(template, crypto.randomUUID(), Date.now() / 3600000);
         onAddEvent(event);
         onQuickRecordClose();
-        setUndo({ id: event.id, name: template.name });
+        setUndo({ kind: 'dose', id: event.id, name: template.name });
     };
 
     /** The × control: arm on the first tap, delete on the second. */
@@ -328,7 +352,7 @@ const Home: React.FC<HomeProps> = ({
                 icon={<span style={{ color: 'var(--warn)', display: 'inline-flex' }}><Icon icon={AlertTriangle} weight="Filled" size={28} /></span>}
             />
             <ModelFixNotice isOpen={modelFixOpen} onClose={() => setModelFixOpen(false)} />
-            <OverdueSheet statuses={planState.statuses} isOpen={showOverdue} onClose={() => setShowOverdue(false)} t={t} />
+            <OverdueSheet statuses={planState.statuses} isOpen={showOverdue} onClose={() => setShowOverdue(false)} t={t} onIgnore={ignoreOccurrences} />
 
             <AdaptiveSheet open={quickRecordOpen} onClose={onQuickRecordClose} title={t('quickadd.button')}>
                 {orderedTemplates.length === 0 ? (
@@ -398,10 +422,11 @@ const Home: React.FC<HomeProps> = ({
 
             <Snackbar
                 open={undo !== null}
-                message={t('quickadd.done').replace('{name}', undo?.name ?? '')}
+                message={t(undo?.kind === 'ignore' ? 'plan.overdue_ignored' : 'quickadd.done').replace('{name}', undo?.name ?? '')}
                 actionLabel={t('quickadd.undo')}
                 onAction={() => {
-                    if (undo) onRemoveEvent(undo.id);
+                    if (undo?.kind === 'ignore') restorePlanOccurrences(undo.planId, undo.missed);
+                    else if (undo) onRemoveEvent(undo.id);
                     setUndo(null);
                 }}
                 onClose={() => setUndo(null)}
@@ -646,21 +671,22 @@ const Home: React.FC<HomeProps> = ({
 /**
  * Today's missed doses, in the same adaptive sheet the rest of the app uses.
  *
- * It offers no logging of its own — the quick-record FAB is what clears a dose —
- * because a second write path from a status list would be a destructive-looking
- * shortcut with none of the undo the FAB's records carry.
+ * It still logs nothing — the quick-record FAB is what logs a dose, and a second
+ * write path from a status list would be a destructive-looking shortcut with none
+ * of the undo the FAB's records carry. What it does offer is 忽略一次: forgiving
+ * the occurrences a row shows, a plan-level edit (not a dose record) that stops
+ * the badge, the reminder tick, the server's push scanner and the agent's status
+ * from counting them — with the undo on the snackbar. Rows expand like the
+ * monitoring notice's: tap one to slide the two actions out beneath it.
  */
 const OverdueSheet: React.FC<{
     statuses: PlanStatus[];
     isOpen: boolean;
     onClose: () => void;
     t: (key: string) => string;
-}> = ({ statuses, isOpen, onClose, t }) => {
+    onIgnore: (s: PlanStatus) => void;
+}> = ({ statuses, isOpen, onClose, t, onIgnore }) => {
     const missed = statuses.filter(s => s.overdue);
-    const timeOf = (ms: number) => {
-        const d = new Date(ms);
-        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    };
 
     return (
         <AdaptiveSheet open={isOpen} onClose={onClose} title={t('plan.overdue_title')}>
@@ -672,18 +698,82 @@ const OverdueSheet: React.FC<{
             ) : (
                 <SegmentedList>
                     {missed.map(s => (
-                        <SegmentedListItem
-                            key={s.plan.id}
-                            icon={TriangleWarning}
-                            leadingTone="amber"
-                            title={s.plan.alias || t(`ester.${s.plan.ester}`)}
-                            subtitle={`${t('plan.overdue_missed_at')}: ${s.missed.map(timeOf).join(' · ')}`}
-                            trailing={s.plan.dose ? <span>{s.plan.dose}</span> : undefined}
-                        />
+                        <OverdueRow key={s.plan.id} status={s} t={t} onIgnore={onIgnore} />
                     ))}
                 </SegmentedList>
             )}
         </AdaptiveSheet>
+    );
+};
+
+/**
+ * One missed plan, in the monitoring notice's expandable-row idiom (`.li.mon`):
+ * the row keeps the segmented look, and tapping it folds a 取消 / 忽略一次 strip
+ * out beneath the title with the shared grid disclosure.
+ */
+const OverdueRow: React.FC<{
+    status: PlanStatus;
+    t: (key: string) => string;
+    onIgnore: (s: PlanStatus) => void;
+}> = ({ status: s, t, onIgnore }) => {
+    const [open, setOpen] = React.useState(false);
+    const panelId = React.useId();
+    const ignoreTimer = React.useRef<number | null>(null);
+    React.useEffect(() => () => {
+        if (ignoreTimer.current) window.clearTimeout(ignoreTimer.current);
+    }, []);
+    const timeOf = (ms: number) => {
+        const d = new Date(ms);
+        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    };
+    // Fold first, forgive after the collapse: the write removes this row, and the
+    // strip's own exit should be seen before the row goes. The delay is the
+    // disclosure's own --duration-base.
+    const ignore = () => {
+        setOpen(false);
+        if (ignoreTimer.current) window.clearTimeout(ignoreTimer.current);
+        ignoreTimer.current = window.setTimeout(() => {
+            ignoreTimer.current = null;
+            onIgnore(s);
+        }, 250);
+    };
+    const toggle = () => {
+        // Re-opening mid-fold interrupts the pending ignore.
+        if (!open && ignoreTimer.current) {
+            window.clearTimeout(ignoreTimer.current);
+            ignoreTimer.current = null;
+        }
+        setOpen(value => !value);
+    };
+
+    return (
+        <div className={`li mon${open ? ' open' : ''}`}>
+            <div className="mon-head">
+                <button
+                    type="button"
+                    className="mon-btn"
+                    onClick={toggle}
+                    aria-expanded={open}
+                    aria-controls={panelId}
+                >
+                    <span className="ic am" aria-hidden="true"><Icon icon={TriangleWarning} size={22} /></span>
+                    <div className="t">
+                        <b>{s.plan.alias || t(`ester.${s.plan.ester}`)}</b>
+                        <span className="s">{`${t('plan.overdue_missed_at')}: ${s.missed.map(timeOf).join(' · ')}`}</span>
+                    </div>
+                    {s.plan.dose ? <div className="r"><span>{s.plan.dose}</span></div> : null}
+                    <SpriteIcon id="chev" />
+                </button>
+            </div>
+            <div id={panelId} className="disclosure" data-open={open}>
+                <div className="disclosure-inner">
+                    <div className="overdue-actions">
+                        <button type="button" className="btn t" onClick={() => setOpen(false)}>{t('plan.overdue_cancel')}</button>
+                        <button type="button" className="btn" onClick={ignore}>{t('plan.overdue_ignore')}</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     );
 };
 

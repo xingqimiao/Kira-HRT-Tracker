@@ -197,6 +197,9 @@ const PACK: LangPack = {
 
     "plan.badge_hint": "有到点的用药还没记录 — 点这里查看",
     "plan.overdue_view": "查看",
+    "plan.overdue_cancel": "取消",
+    "plan.overdue_ignore": "忽略一次",
+    "plan.overdue_ignored": "已忽略「{name}」本次提醒",
 
     "plan.quick_suffix": "·方案",
 

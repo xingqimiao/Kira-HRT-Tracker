@@ -30,6 +30,8 @@ import {
   patchRemovalEvent,
   readMedPlans,
   writeMedPlans,
+  ignorePlanOccurrences,
+  restorePlanOccurrences,
   resetMedPlanStorage,
   setMedPlanOwner,
   medPlanUpdatedAt,
@@ -137,6 +139,52 @@ const plan = (over = {}) => ({
   assert.equal(wrongRoute[0].overdue, true, 'a plan that names a route is not cleared by another route');
 }
 
+// ── 忽略一次: a forgiven occurrence is not a missed dose ─────────────────────
+{
+  const p = plan();
+  // By 20:00 both of today's dose times are missed.
+  const evening = Date.UTC(2026, 9, 11, 20);
+  assert.deepEqual(planStatuses([p], [], evening, 0)[0].missed,
+    [Date.UTC(2026, 9, 11, 8), Date.UTC(2026, 9, 11, 16)], 'both dose times are missed by evening');
+
+  // Forgiving the morning occurrence leaves only the evening one.
+  const one = planStatuses([{ ...p, ignoredDue: [Date.UTC(2026, 9, 11, 8)] }], [], evening, 0);
+  assert.deepEqual(one[0].missed, [Date.UTC(2026, 9, 11, 16)], 'the forgiven occurrence still counted as missed');
+  assert.equal(one[0].overdue, true, 'a plan with one forgiven and one missed dose is not overdue');
+
+  // Forgiving both silences the plan.
+  const none = planStatuses([{ ...p, ignoredDue: [Date.UTC(2026, 9, 11, 8), Date.UTC(2026, 9, 11, 16)] }], [], evening, 0);
+  assert.deepEqual(none[0].missed, [], 'a fully forgiven plan still reported a missed dose');
+  assert.equal(none[0].overdue, false, 'a fully forgiven plan is still overdue');
+
+  // "Once" means the instant: the same wall-clock time tomorrow is a new epoch ms
+  // and is missed again.
+  const tomorrow = planStatuses([{ ...p, ignoredDue: [Date.UTC(2026, 9, 11, 8)] }], [], Date.UTC(2026, 9, 12, 12), 0);
+  assert.deepEqual(tomorrow[0].missed, [Date.UTC(2026, 9, 12, 8)], "the next day's occurrence stayed forgiven");
+
+  // A logged dose still clears the plan through the forgiveness, unchanged.
+  const logged = planStatuses(
+    [{ ...p, ignoredDue: [Date.UTC(2026, 9, 11, 8)] }],
+    [{ ester: Ester.E2, route: Route.sublingual, timeH: Date.UTC(2026, 9, 11, 16, 30) / HOUR }],
+    evening, 0,
+  );
+  assert.deepEqual(logged[0].missed, [], 'the dose taken after the forgiven slot failed to clear the evening one');
+
+  // The forgiven instants survive the sanitiser, minus anything unusable.
+  const forgiven = sanitizeMedPlans([{ ...plan(), ignoredDue: [8_000, 'x', NaN, 8_000, 9_000] }]);
+  assert.deepEqual(forgiven[0].ignoredDue, [8_000, 9_000], 'ignoredDue dropped a usable value or kept an unusable one');
+
+  // Capped to the newest 64 — an expired entry can never match anything, so the
+  // cap is storage hygiene, not correctness.
+  const many = Array.from({ length: 70 }, (_, i) => i * 1_000);
+  const capped = sanitizeMedPlans([{ ...plan(), ignoredDue: many }]);
+  assert.equal(capped[0].ignoredDue.length, 64, 'the cap was not applied');
+  assert.equal(capped[0].ignoredDue[0], 6_000, 'the cap dropped a newest instant instead of an oldest one');
+
+  assert.equal(sanitizeMedPlans([{ ...plan(), ignoredDue: [] }])[0].ignoredDue, undefined, 'an empty forgive list was stored');
+  assert.equal(sanitizeMedPlans([plan()])[0].ignoredDue, undefined, 'a plan without forgiveness grew one');
+}
+
 // ── Dose text → mg, and quick-record entries ────────────────────────────────
 {
   assert.equal(parseDoseMG('2mg'), 2);
@@ -224,6 +272,27 @@ const plan = (over = {}) => ({
   migrateOldRemindersToPlans();
   assert.equal(medPlanUpdatedAt(), 12_345, 'the migration restamped the plan');
   assert.equal(readMedPlans()[0].hrtMode, 'transfem', 'the migration did not enrich the plan');
+}
+
+// ── 忽略一次 as a write: forgiven instants ride the plan's own sync ──────────
+{
+  setMedPlanOwner('ig');
+  writeMedPlans([plan()], 20_000);
+
+  const dueMs = Date.UTC(2026, 9, 11, 8);
+  ignorePlanOccurrences('p1', [dueMs]);
+  assert.deepEqual(readMedPlans()[0].ignoredDue, [dueMs], 'ignoring did not record the occurrence on the plan');
+  assert.equal(medPlanUpdatedAt() > 20_000, true, 'an ignore is a plan edit and did not restamp for sync');
+
+  const stamp = medPlanUpdatedAt();
+  ignorePlanOccurrences('p1', [dueMs]);
+  assert.equal(medPlanUpdatedAt(), stamp, 'a duplicate ignore restamped the plan');
+  ignorePlanOccurrences('unknown-plan', [dueMs]);
+  assert.equal(medPlanUpdatedAt(), stamp, 'ignoring a plan that does not exist restamped the plan');
+
+  restorePlanOccurrences('p1', [dueMs]);
+  assert.equal(readMedPlans()[0].ignoredDue, undefined, 'the undo kept the forgiveness on the plan');
+  assert.deepEqual(planStatuses(readMedPlans(), [], NOW, 0)[0].missed, [dueMs], 'after the undo the occurrence was not missed again');
 }
 
 console.log('med-plan: all checks passed');

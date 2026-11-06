@@ -285,6 +285,9 @@ const PACK: LangPack = {
 
     "plan.badge_hint": "예정 시각이 지난 복용이 있습니다 — 눌러서 확인",
     "plan.overdue_view": "보기",
+    "plan.overdue_cancel": "취소",
+    "plan.overdue_ignore": "이번만 건너뛰기",
+    "plan.overdue_ignored": "“{name}” 이번 알림을 건너뛰었습니다",
 
     "plan.quick_suffix": "·계획",
 

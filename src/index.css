@@ -1966,6 +1966,20 @@ select,
     overflow: hidden;
 }
 
+/* The overdue sheet's 取消 / 忽略一次 strip, revealed by .disclosure inside a
+   .li.mon row. Same inner padding as .mon-body so the strip sits where the row's
+   own content would, and the filled/tonal pair reads as one connected action. */
+.overdue-actions {
+    display: flex;
+    gap: 8px;
+    padding: 2px 16px 14px;
+}
+
+.overdue-actions .btn {
+    flex: 1;
+    min-width: 0;
+}
+
 /* ── Blood vial (empty states) ────────────────────────────────── */
 /* The liquid is its own colour rather than a role token: it stands for blood, and
    it must not change when the key colour does. Purple by choice — the sample in
