@@ -13,8 +13,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
-    "oci-common": "^2.142.2",
-    "oci-keymanagement": "^2.142.2",
+    "oci-common": "^2.145.0",
+    "oci-keymanagement": "^2.145.0",
     "pg": "^8.13.1"
   },
   "devDependencies": {
