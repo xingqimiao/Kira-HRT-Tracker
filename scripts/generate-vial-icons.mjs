@@ -7,7 +7,7 @@
  * alternative (an artist's copy of the vial) is a second source of truth that
  * goes stale the first time the sprite changes.
  *
- *   node --experimental-transform-types scripts/generate-vial-icons.mjs [outDir]
+ *   node scripts/generate-vial-icons.mjs [outDir]
  *
  * Writes favicon.png, apple-touch-icon.png, pwa-192x192.png and pwa-512x512.png.
  * PNGs come out of `node:zlib` with no image dependency: the format here is a

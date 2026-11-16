@@ -140,7 +140,7 @@ if (used > 0) {
 
 ```powershell
 cd server
-node --experimental-transform-types --import ./resolve-hook.mjs --test test/gelProducts.test.ts test/pkEngine.test.ts
+node --import ./resolve-hook.mjs --test test/gelProducts.test.ts test/pkEngine.test.ts
 ```
 
 类型检查：

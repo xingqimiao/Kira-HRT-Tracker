@@ -74,8 +74,8 @@
 
 .ob2 [data-m] {
     transition:
-        border-radius .5s cubic-bezier(.3, 1.8, .5, 1),
-        transform .35s cubic-bezier(.3, 1.7, .5, 1),
+        border-radius .5s var(--spring-settled),
+        transform .35s var(--spring-settled),
         background .25s, color .25s, border-color .25s;
 }
 /* Declared after every `.on` rule below so the press wins the tie on
@@ -113,7 +113,7 @@
     border-radius: 21px;
     background: var(--sch);
     color: var(--on);
-    transition: opacity .25s, transform .35s cubic-bezier(.3, 1.7, .5, 1), border-radius .5s cubic-bezier(.3, 1.8, .5, 1);
+    transition: opacity .25s, transform .35s var(--spring-settled), border-radius .5s var(--spring-settled);
 }
 .ob2 .back-pill.hide {
     opacity: 0;
@@ -133,7 +133,7 @@
     width: 12px;
     border-radius: 99px;
     background: var(--sch);
-    transition: width .45s cubic-bezier(.3, 1.8, .5, 1), background .3s;
+    transition: width .45s var(--spring-settled), background .3s;
 }
 .ob2 .prog-seg.done { background: var(--pric); width: 14px; }
 .ob2 .prog-seg.on { background: var(--pri); width: 32px; }
@@ -191,7 +191,7 @@
     width: 100%;
     height: 100%;
     color: var(--pric);
-    transition: transform .7s cubic-bezier(.22, 1.2, .36, 1), color .4s;
+    transition: transform .7s var(--spring-settled), color .4s;
 }
 .ob2 .morph-bg.terc { color: var(--terc); }
 .ob2 .morph-bg.secc { color: var(--secc); }
@@ -247,8 +247,8 @@
     font-weight: 700;
     text-align: start;
     transition:
-        border-radius .45s cubic-bezier(.3, 1.8, .5, 1),
-        transform .35s cubic-bezier(.3, 1.7, .5, 1),
+        border-radius .45s var(--spring-settled),
+        transform .35s var(--spring-settled),
         background .25s, color .25s, border-color .25s;
 }
 :root:not(.dark) .ob2 .lang-card { border-color: rgba(160, 61, 99, .14); }
@@ -271,7 +271,7 @@
     flex-shrink: 0;
     opacity: 0;
     transform: scale(.5);
-    transition: opacity .22s, transform .35s cubic-bezier(.3, 1.8, .5, 1);
+    transition: opacity .22s, transform .35s var(--spring-settled);
 }
 .ob2 .lang-card.on .px-check { opacity: 1; transform: scale(1); }
 
@@ -290,8 +290,8 @@
     font: inherit;
     text-align: start;
     transition:
-        border-radius .5s cubic-bezier(.3, 1.8, .5, 1),
-        transform .35s cubic-bezier(.3, 1.7, .5, 1),
+        border-radius .5s var(--spring-settled),
+        transform .35s var(--spring-settled),
         background .25s, color .25s;
 }
 /* The selected tile turns into a leaf — one pair of corners round, the opposite
@@ -315,7 +315,7 @@
     flex-shrink: 0;
     border-radius: 24px;
     background: rgba(255, 255, 255, .14);
-    transition: transform .35s cubic-bezier(.3, 1.8, .5, 1);
+    transition: transform .35s var(--spring-settled);
 }
 :root:not(.dark) .ob2 .hrt-tile .ht-ic { background: rgba(0, 0, 0, .07); }
 .ob2 .hrt-tile.on .ht-ic { transform: scale(1.08); }
@@ -344,8 +344,8 @@
     font: inherit;
     text-align: start;
     transition:
-        border-radius .45s cubic-bezier(.3, 1.8, .5, 1),
-        transform .35s cubic-bezier(.3, 1.7, .5, 1),
+        border-radius .45s var(--spring-settled),
+        transform .35s var(--spring-settled),
         background .2s;
 }
 .ob2 .list > .li:first-child { border-radius: 26px 26px 8px 8px; }
@@ -393,7 +393,7 @@
     font-size: 12px;
     font-weight: 800;
     white-space: nowrap;
-    transition: opacity .25s, transform .3s cubic-bezier(.3, 1.8, .5, 1);
+    transition: opacity .25s, transform .3s var(--spring-settled);
 }
 .ob2 .day-badge.hide {
     opacity: 0;
@@ -411,7 +411,7 @@
     border: 2px solid var(--out);
     border-radius: 15px;
     background: var(--sc);
-    transition: .25s;
+    transition: .25s var(--spring-effects);
 }
 .ob2 .sw::after {
     content: "";
@@ -422,7 +422,7 @@
     height: 16px;
     border-radius: 50%;
     background: var(--out);
-    transition: .28s cubic-bezier(.3, 1.7, .5, 1);
+    transition: .28s var(--spring-settled);
 }
 .ob2 .sw.on { border-color: var(--pri); background: var(--pri); }
 .ob2 .sw.on::after {
@@ -481,7 +481,7 @@
     letter-spacing: -1.5px;
     text-align: center;
     outline: 0;
-    transition: transform .25s cubic-bezier(.3, 1.8, .5, 1);
+    transition: transform .25s var(--spring-settled);
     -moz-appearance: textfield;
     appearance: textfield;
 }
@@ -504,8 +504,8 @@
     font-weight: 700;
     text-align: center;
     transition:
-        border-radius .4s cubic-bezier(.3, 1.8, .5, 1),
-        transform .3s cubic-bezier(.3, 1.7, .5, 1),
+        border-radius .4s var(--spring-settled),
+        transform .3s var(--spring-settled),
         background .2s, color .2s;
 }
 :root:not(.dark) .ob2 .preset-pill { background: rgba(255, 255, 255, .55); color: var(--onpric); }
@@ -648,13 +648,13 @@
        never ran (hidden tab, suspended WebView) can leave `opacity` at its start
        value, which is how an empty dark bar stayed on screen under the buttons. */
     visibility: hidden;
-    transition: opacity .28s, transform .28s, visibility 0s .28s;
+    transition: opacity .28s var(--spring-effects), transform .28s var(--spring-settled), visibility 0s .28s var(--spring-effects);
 }
 .ob2 .ob2-snack.on {
     opacity: 1;
     transform: none;
     visibility: visible;
-    transition: opacity .28s, transform .28s, visibility 0s;
+    transition: opacity .28s var(--spring-effects), transform .28s var(--spring-settled), visibility 0s var(--spring-effects);
 }
 .ob2 .ob2-snack-inner { width: 100%; max-width: 440px; margin: 0 auto; }
 

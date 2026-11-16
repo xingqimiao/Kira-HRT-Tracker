@@ -7,7 +7,7 @@
  * cases here are drawn from the ways a real report and a real misread actually
  * behave, and each one is asserted rather than eyeballed.
  *
- *   node --experimental-transform-types scripts/check-ocr-parse.mjs
+ *   node scripts/check-ocr-parse.mjs
  *
  * No browser, no model, no network — the module is pure, which is the reason this
  * check is cheap enough to be worth running every time.

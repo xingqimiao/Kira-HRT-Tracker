@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Icon } from '../SvgDefs';
 import { useEscape } from '../../hooks/useEscape';
 import { useBackHandler } from '../../utils/nativeBack';
+import { useBackPose } from '../../utils/backPose';
 
 /**
  * The prototype's bottom sheet / centred dialog.
@@ -64,6 +65,19 @@ export function AdaptiveSheet({
     const [tall, setTall] = useState(defaultTall);
     const panelRef = useRef<HTMLDivElement>(null);
     const rafRef = useRef<number | null>(null);
+    /**
+     * How far the sheet has been dragged down by a predictive-back gesture, in px.
+     *
+     * Written to the panel's `translateY` directly rather than through state: the
+     * value changes every frame of the gesture, and a React render per frame
+     * would compete with the WebView's own compositing for the same 16ms. The
+     * commit still goes through the normal close path, so nothing downstream can
+     * tell a gesture-dismiss from the X button.
+     *
+     * The writing itself lives in `useBackPose` (`src/utils/backPose.ts`), shared
+     * with the container-transform panels; only this close-path clearing stays
+     * local, because it has to land in the same style recalc as the class swap.
+     */
 
     /**
      * What the panel shows — which is not always what the caller currently
@@ -90,7 +104,18 @@ export function AdaptiveSheet({
     useBackHandler(open, () => {
         onClose();
         return true;
-    });
+    }, 'overlay', true);
+
+    /*
+     * Predictive back: the sheet moves with the gesture, and a cancelled gesture
+     * springs it back. The commit is *not* handled here — `useBackHandler` above
+     * already owns it, and a sheet that closed itself at ~40% would be closed a
+     * second time when the gesture commits. `useBackPose` clears the inline
+     * transform when `open` goes false, which is what lets the CSS exit
+     * transition below continue *from the finger's offset* rather than freezing
+     * the sheet there for CLOSE_MS (the reported "返回之后会卡一下").
+     */
+    useBackPose(open, panelRef, 'sheet');
 
     // Mount and start the entrance in layout, with a forced style read between
     // the off-screen pose and `.on`. Without that read the browser occasionally
@@ -121,6 +146,17 @@ export function AdaptiveSheet({
         if (open) return;
         setShown(false);
         if (!mounted) return;
+        // A predictive-back commit arrives while the panel is still carrying the
+        // gesture's inline `translateY`. That inline value overrides the class's
+        // `translateY(102%)`, so without this the panel sits frozen at the
+        // finger's offset for CLOSE_MS and then vanishes — the reported
+        // "返回之后会卡一下". Clearing it in the same style recalc as the class
+        // change is what makes the CSS transition continue *from the finger's
+        // offset* down to off-screen rather than from the top. (`useBackPose`
+        // does the same clearing one effect over; this one is the guarantee that
+        // it lands with the class swap rather than after it.)
+        const el = panelRef.current;
+        if (el && el.style.transform) el.style.transform = '';
         const timer = window.setTimeout(() => setMounted(false), CLOSE_MS);
         return () => window.clearTimeout(timer);
     }, [open, mounted]);

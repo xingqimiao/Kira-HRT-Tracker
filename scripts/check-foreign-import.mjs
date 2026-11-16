@@ -1,7 +1,7 @@
 /**
  * Self-check for the foreign-import adapters.
  *
- *   node --experimental-transform-types scripts/check-foreign-import.mjs
+ *   node scripts/check-foreign-import.mjs
  *
  * Covers recognition (every source, plus the two negative cases), the Transmtf
  * conversion, and a **real** Featherline envelope round trip — the module's

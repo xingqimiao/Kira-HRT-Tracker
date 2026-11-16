@@ -8,8 +8,8 @@
   "scripts": {
     "build": "esbuild src/index.ts --bundle --platform=node --format=cjs --define:import.meta.url=__filename --outfile=dist/index.cjs && node scripts/check-bundle.mjs",
     "start": "node dist/index.cjs",
-    "dev": "node --env-file-if-exists=.env --experimental-transform-types --import ./resolve-hook.mjs --watch src/index.ts",
-    "test": "node --experimental-transform-types --import ./resolve-hook.mjs --test test/*.test.ts"
+    "dev": "node --env-file-if-exists=.env --import ./resolve-hook.mjs --watch src/index.ts",
+    "test": "node --import ./resolve-hook.mjs --test test/*.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
@@ -22,5 +22,9 @@
     "@types/pg": "^8.11.10",
     "embedded-postgres": "^18.6.0-beta.19",
     "esbuild": "^0.28.2"
+  },
+  "overrides": {
+    "@hono/node-server": "^2.1.8",
+    "hono": "^4.13.18"
   }
 }

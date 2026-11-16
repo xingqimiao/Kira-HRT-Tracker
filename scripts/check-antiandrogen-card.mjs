@@ -8,7 +8,7 @@
  * wrong unit. This pins the four settings, the "today" day boundary, and the
  * tie-break when several anti-androgens are present.
  *
- *   node --experimental-transform-types --import ./server/resolve-hook.mjs scripts/check-antiandrogen-card.mjs
+ *   node --import ./scripts/lib/ts-hook-register.mjs scripts/check-antiandrogen-card.mjs
  *
  * The resolve hook is the server's, matching check-body-journal.mjs: it lets a
  * bare script import the app's TypeScript the way Vite does.

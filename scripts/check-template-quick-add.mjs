@@ -6,7 +6,7 @@
  * timeline and plots differently in the simulation, which is the one thing the
  * overview exists to show.
  *
- *   node --experimental-transform-types scripts/check-template-quick-add.mjs
+ *   node scripts/check-template-quick-add.mjs
  *
  * No browser, no model, no network — the module is pure, which is the reason this
  * check is cheap enough to be worth running every time.

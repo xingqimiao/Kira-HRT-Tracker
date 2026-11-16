@@ -6,7 +6,7 @@
  * column for. Everything else in the payload is byte-identical to that build's
  * own export, so the rule is narrow on purpose.
  *
- *   node --experimental-transform-types --import ./server/resolve-hook.mjs \
+ *   node --import ./scripts/lib/ts-hook-register.mjs \
  *     scripts/check-legacy-export.mjs
  */
 import assert from 'node:assert/strict';

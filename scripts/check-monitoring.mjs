@@ -8,11 +8,12 @@
  * line must not fire, because every source states its rule with a strict inequality
  * ("action at > 3x ULN", "discontinue at ALT > 2x ULN", "must be < 5.0").
  *
- *   node --experimental-transform-types scripts/check-monitoring.mjs
+ *   node --import ./scripts/lib/ts-hook-register.mjs scripts/check-monitoring.mjs
  *
- * The flag is required, not cosmetic: this check imports `logic.ts` directly and
- * that module uses a TypeScript `enum`, which plain Node 24 cannot parse. Any
- * gate list that runs this file must pass `--experimental-transform-types`.
+ * The `--import` is required, not cosmetic: this check imports `logic.ts`
+ * directly and that module uses TypeScript `enum`s, which Node's strip-only type
+ * mode refuses. The hook transpiles them; any gate list that runs this file must
+ * pass it.
  */
 import assert from 'node:assert/strict';
 

@@ -46,6 +46,13 @@ const FLOORS = {
     'oci-common': ['2.144.0', 'OCI SDK shared layer, including the KMS calls'],
     'oci-keymanagement': ['2.144.0', 'KMS client that unwraps account keys'],
     '@modelcontextprotocol/sdk': ['1.32.2', 'MCP adapter transport'],
+    // Both are the SDK's transitive HTTP layer, pinned by `overrides` in
+    // `server/package.json`. The floors are what keep a later install from
+    // resolving back to the copies the 2026-11 advisories cover: mount-prefix
+    // bypass, RegExpRouter wildcard skip, css/validator/csrf gaps, and the
+    // WebSocket-upgrade ECONNRESET crash.
+    hono: ['4.13.18', 'MCP transport; the 4.13.16 advisories are fixed here'],
+    '@hono/node-server': ['2.1.8', 'MCP transport socket layer; the 2.1.6 advisories are fixed here'],
   },
 };
 

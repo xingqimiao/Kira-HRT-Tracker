@@ -8,7 +8,7 @@
  * language reset). Same reasoning as `check-vial-level.mjs`: the logic is pure,
  * so it is asserted here rather than eyeballed in a browser.
  *
- *   node --experimental-transform-types scripts/check-sync-merge.mjs
+ *   node scripts/check-sync-merge.mjs
  *
  * `syncMerge.ts` imports the app's `logic.ts` by extensionless path, which is a
  * bundler convention rather than a Node one, so the resolve hook below fills the
@@ -16,13 +16,12 @@
  * not grow a hook to make one check run.
  */
 import assert from 'node:assert/strict';
-import { register } from 'node:module';
-import { pathToFileURL } from 'node:url';
 
-register(
-  pathToFileURL('./scripts/lib/ts-extension-hook.mjs'),
-  pathToFileURL('./'),
-);
+import { registerHooks } from 'node:module';
+import { load as tsLoad, resolve as tsResolve } from './lib/ts-extension-hook.mjs';
+
+// Synchronous, so it is in force before the first import below is resolved.
+registerHooks({ resolve: tsResolve, load: tsLoad });
 
 const {
   emptySyncState,

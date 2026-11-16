@@ -7,7 +7,7 @@
  * button logs — so both are asserted here against the same pure module the app paints
  * from.
  *
- *   node --experimental-transform-types --import ./server/resolve-hook.mjs scripts/check-med-plan.mjs
+ *   node --import ./scripts/lib/ts-hook-register.mjs scripts/check-med-plan.mjs
  *
  * The resolve hook is needed because the module imports `../../logic` by extensionless
  * path, exactly as the app does.

@@ -23,6 +23,7 @@ import {
     Rewind,
     Settings2,
     Shield,
+    RotateCcw,
     ShieldCheck,
     TestTube2,
     Trash2,
@@ -38,6 +39,7 @@ import {
     DoseEvent,
     PKCustomParams,
     RecheckIntervals,
+    DEFAULT_RECHECK_INTERVALS,
     OcrModelTier,
     PkEngineId,
     PK_ENGINES,
@@ -708,6 +710,12 @@ const Settings: React.FC<SettingsProps> = ({
     );
 
     // ── Reminders ─────────────────────────────────────────────────────────────
+    /** Whether any interval has drifted from the app default — what turns the
+     *  reset row on. Same comparison `logic.ts` uses to label a custom interval. */
+    const recheckIntervalsCustomized = (intervals: RecheckIntervals): boolean =>
+        (Object.keys(DEFAULT_RECHECK_INTERVALS) as (keyof RecheckIntervals)[])
+            .some(key => intervals[key] !== DEFAULT_RECHECK_INTERVALS[key]);
+
     /** One interval as a label plus a bounded numeric pill. */
     const intervalRow = (label: string, value: number, onChange: (n: number) => void) => (
         <label className="li" style={{ cursor: 'default' }}>
@@ -816,6 +824,20 @@ const Settings: React.FC<SettingsProps> = ({
                 {!isFtm && intervalGroup(t('settings.reminders.estradiol'), (
                     intervalRow(t('settings.reminders.interval'), recheckIntervals.estradiolMonths, v => setRecheckIntervals({ ...recheckIntervals, estradiolMonths: v }))
                 ))}
+
+                {/* Reset, as a row in its own list so it reads as one of this
+                    page's controls rather than a floating button. Disabled while
+                    every interval already matches the default — the same
+                    nothing-to-do state the data group's clear button uses. */}
+                <SegmentedList>
+                    <SegmentedListItem
+                        icon={RotateCcw}
+                        title={t('settings.reminders.reset')}
+                        subtitle={t('settings.reminders.reset_desc')}
+                        disabled={!recheckIntervalsCustomized(recheckIntervals)}
+                        onClick={() => setRecheckIntervals({ ...DEFAULT_RECHECK_INTERVALS })}
+                    />
+                </SegmentedList>
             </div>
         );
     };

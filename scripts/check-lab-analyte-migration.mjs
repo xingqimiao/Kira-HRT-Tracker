@@ -17,7 +17,7 @@
  *      same records, for all three estimators. That is the "升级前后曲线一致"
  *      guarantee the re-release depends on.
  *
- *   node --experimental-transform-types --import ./server/resolve-hook.mjs \
+ *   node --import ./scripts/lib/ts-hook-register.mjs \
  *     scripts/check-lab-analyte-migration.mjs
  *
  * The 2.2.2 engine is read out of git (`v2.2.2:logic.ts`) into a scratch file at

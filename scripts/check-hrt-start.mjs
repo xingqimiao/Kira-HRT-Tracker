@@ -1,7 +1,7 @@
 /**
  * Runnable check for the intro's start-date answer.
  *
- *   node --experimental-transform-types scripts/check-hrt-start.mjs
+ *   node scripts/check-hrt-start.mjs
  *
  * The day count is the only arithmetic behind the account page's "HRT started N
  * days ago" line, and the two ways it can be quietly wrong are worth a check: an

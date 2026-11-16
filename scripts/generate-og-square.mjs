@@ -2,7 +2,7 @@
  * Generate `public/og-square.png` — the 4:3 friend-link card variant — and the
  * partner-logo variant alongside it.
  *
- *   node --experimental-transform-types scripts/generate-og-square.mjs [partnersOutPath]
+ *   node scripts/generate-og-square.mjs [partnersOutPath]
  *
  * Same composition as `generate-og-image.mjs`, re-parameterised for 4:3 instead of
  * 1200×630. The landscape card is a two-panel banner (text panel | vial panel);

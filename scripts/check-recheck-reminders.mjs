@@ -10,7 +10,7 @@
  * and the estradiol anchor: the interval runs from the last logged check, not
  * from a first dose that may be years old.
  *
- *   node --experimental-transform-types --import ./server/resolve-hook.mjs scripts/check-recheck-reminders.mjs
+ *   node --import ./scripts/lib/ts-hook-register.mjs scripts/check-recheck-reminders.mjs
  *
  * The resolve hook is the server's, matching check-antiandrogen-card.mjs: this
  * imports `logic.ts` indirectly through the component's module graph in the

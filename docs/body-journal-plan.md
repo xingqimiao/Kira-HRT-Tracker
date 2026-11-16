@@ -171,9 +171,9 @@ instrument, and it has had no clinician review.
 
 - `node scripts/check-i18n-coverage.mjs` — 7 languages, **0 gaps**, 710 keys each.
 - `npx tsc --noEmit -p tsconfig.json` — no `src/` errors from this work.
-- `node --experimental-transform-types scripts/check-spiro.mjs` — 24/24.
+- `node scripts/check-spiro.mjs` — 24/24.
 - `node scripts/check-template-quick-add.mjs` — 4/4.
-- `node --experimental-transform-types --import ./server/resolve-hook.mjs
+- `node --import ./scripts/lib/ts-hook-register.mjs
   scripts/check-body-journal.mjs` — 8/8, including a two-state `mergeSyncStates` union, a
   tombstone delete, newest-wins, and a payload → records → payload round-trip.
 - `cd server; npm test` — 104/104.

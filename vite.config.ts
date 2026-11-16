@@ -146,6 +146,21 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3000,
       host: '0.0.0.0',
+      // The dev watcher must not recurse into build output. `src-tauri/target` is
+      // multiple GB of Rust artefacts and `src-tauri/gen` carries Gradle reports,
+      // so an APK build running beside the dev server spilled hundreds of "page
+      // reload" events and then killed the watcher outright (EBUSY on public/ocr
+      // while sync-ocr-assets.mjs rewrote the models). None of these is app
+      // source, so ignoring them costs no HMR.
+      watch: {
+        ignored: [
+          '**/src-tauri/**',
+          '**/dist/**',
+          '**/dist-self-host/**',
+          '**/public/ocr/**',
+          '**/releases/**',
+        ],
+      },
       proxy: {
         '/api': {
           target: 'http://127.0.0.1:8787',

@@ -63,6 +63,82 @@ export const suspendBack = (on: boolean): void => {
     syncCapacity();
 };
 
+/**
+ * Whether the gesture would pop an **overlay** (sheet, modal, dialog) or a
+ * **view** (a page below home). The view layer reads these before animating
+ * itself: a page must not slide while a sheet on top of it is the surface
+ * actually following the finger, and the shell must not lean at the root,
+ * where the gesture leaves the app and the system plays its own preview.
+ */
+export const hasViewBack = (): boolean => viewStack.length > 0;
+
+/**
+ * How many open overlays animate themselves with the gesture (a sheet).
+ *
+ * Only those. An overlay is also where page-internal states register — the
+ * Settings category screen, a dialog — and none of them move on the gesture, so
+ * if the shell refused to lean whenever *any* overlay was open, the back on
+ * those surfaces would again be invisible. This is the condition the shell
+ * actually cares about: lean unless something on top is already following the
+ * finger.
+ */
+let gestureSurfaces = 0;
+export const overlayFollowsGesture = (): boolean =>
+    overlayStack.length > 0 && gestureSurfaces > 0;
+
+/**
+ * Predictive back: the system gesture's progress, for surfaces that want to move
+ * with the finger.
+ *
+ * Android 13+ reports a back *gesture* before it commits — 0 at the start, 1 at
+ * the commit threshold — and Kotlin forwards those frames as `hrt-back-start`,
+ * `hrt-back-progress` (detail = progress) and `hrt-back-cancel` (see
+ * `handleOnBackStarted`/`Progressed`/`Cancelled` in `scripts/MainActivity.kt`).
+ * A surface subscribes here, translates its own transform from the number, and
+ * gets a cancel when the finger is lifted early.
+ *
+ * Deliberately *not* wired into the dismiss stack: this is a preview, and the
+ * actual close still arrives as `hrt-back` through the stack. A surface that
+ * dismissed itself on progress would close at ~40% of the gesture and then be
+ * closed a second time by the commit.
+ *
+ * Returns an unsubscribe. No-op where the events never fire (the web, and any
+ * Android below 13), so callers need no platform check.
+ */
+export interface BackGestureHandlers {
+    /**
+     * The gesture was recognised, while the finger is still down.
+     *
+     * `edge` is the screen edge the finger started from — 0 = left, 1 = right —
+     * so a surface can lean *toward* the finger rather than assuming one side.
+     */
+    onStart?: (edge: number) => void;
+    /** 0..1, as reported by the platform. */
+    onProgress?: (progress: number) => void;
+    /** The finger was lifted before the commit threshold. */
+    onCancel?: () => void;
+}
+
+export const onBackGesture = (handlers: BackGestureHandlers): (() => void) => {
+    const start = (event: Event) => {
+        const detail = (event as CustomEvent<number>).detail;
+        handlers.onStart?.(typeof detail === 'number' && Number.isFinite(detail) ? detail : 0);
+    };
+    const progress = (event: Event) => {
+        const detail = (event as CustomEvent<number>).detail;
+        if (typeof detail === 'number' && Number.isFinite(detail)) handlers.onProgress?.(detail);
+    };
+    const cancel = () => handlers.onCancel?.();
+    window.addEventListener('hrt-back-start', start);
+    window.addEventListener('hrt-back-progress', progress);
+    window.addEventListener('hrt-back-cancel', cancel);
+    return () => {
+        window.removeEventListener('hrt-back-start', start);
+        window.removeEventListener('hrt-back-progress', progress);
+        window.removeEventListener('hrt-back-cancel', cancel);
+    };
+};
+
 /** Runs the stack. Returns true when something consumed the gesture. */
 const dispatchBack = (): boolean => {
     for (let i = overlayStack.length - 1; i >= 0; i--) {
@@ -198,6 +274,9 @@ export const useBackHandler = (
     active: boolean,
     handler: BackHandler,
     layer: BackLayer = 'overlay',
+    /** The surface animates itself with the gesture — a sheet that follows the
+     *  finger. See [overlayFollowsGesture] for why the flag exists. */
+    followsGesture = false,
 ) => {
     const ref = useRef(handler);
     ref.current = handler;
@@ -206,13 +285,15 @@ export const useBackHandler = (
         const target = layer === 'view' ? viewStack : overlayStack;
         const fn: BackHandler = () => ref.current();
         target.push(fn);
+        if (followsGesture) gestureSurfaces += 1;
         syncCapacity();
         const token = layer === 'overlay' ? pushOverlayEntry() : null;
         return () => {
             const i = target.lastIndexOf(fn);
             if (i >= 0) target.splice(i, 1);
+            if (followsGesture) gestureSurfaces -= 1;
             syncCapacity();
             if (token) dropOverlayEntry(token);
         };
-    }, [active, layer]);
+    }, [active, layer, followsGesture]);
 };

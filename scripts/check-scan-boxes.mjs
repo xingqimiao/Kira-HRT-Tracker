@@ -7,7 +7,7 @@
  * That reads as a broken engine rather than a wrong offset, so the arithmetic is
  * pinned here instead of eyeballed in a screenshot.
  *
- *   node --experimental-transform-types scripts/check-scan-boxes.mjs
+ *   node scripts/check-scan-boxes.mjs
  *
  * No browser, no model, no network: 'scanBoxes.ts' is pure and its 'Region' import is
  * type-only, so importing it does not pull in ONNX Runtime.

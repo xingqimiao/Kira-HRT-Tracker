@@ -7,7 +7,7 @@
  * Several rounds of "looks wrong in the screenshot" would have been caught instantly by
  * this file.
  *
- *   node --experimental-transform-types scripts/preview-vial.mjs [width] [height]
+ *   node scripts/preview-vial.mjs [width] [height]
  *
  * The fluid level is shown per frame so the rise and the spill can be read together.
  */

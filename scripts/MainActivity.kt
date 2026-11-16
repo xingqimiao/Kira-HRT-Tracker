@@ -16,8 +16,11 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.BackEventCompat
 import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import java.io.File
 import java.net.HttpURLConnection
@@ -26,6 +29,19 @@ import java.net.URL
 class MainActivity : TauriActivity() {
   private var topInset = 0f
   private var bottomInset = 0f
+  /**
+   * The soft keyboard's height **beyond the system bars**, in dp.
+   *
+   * Updated live during the keyboard's open/close animation on Android 11+ (see
+   * the `WindowInsetsAnimationCompat` callback in `onWebViewCreate`). This is the
+   * height the WebView must give up, not the keyboard's full height: the bars
+   * already sit under the page via `--android-safe-bottom`, and subtracting them
+   * again would leave a bar-sized gap above the keyboard on a device where the
+   * IME overlaps the bar.
+   */
+  private var imeBottomInset = 0f
+  /** True while an IME-driven insets animation is running. */
+  private var imeAnimating = false
   private var appWebView: WebView? = null
   private var pendingOAuthUrl: String? = null
   /** Set by onStop, consumed by onStart to decide whether background re-lock is due. */
@@ -53,20 +69,28 @@ class MainActivity : TauriActivity() {
    *  HrtBack interface, read on the UI thread from the back callback. */
   @Volatile private var canPopBack = false
 
-  /** Enabled only while the SPA reports something to pop; the dispatcher then
-   *  forwards a `hrt-back` DOM event and the SPA decides what to close. When
-   *  nothing can pop this callback is disabled, no callback handles the
-   *  gesture, and the system plays its predictive back-to-home animation and
-   *  finishes the activity — the app never consumes back at the root.
-   *  (scripts/MainActivity.kt is the canonical copy; build:android copies it
-   *  over the gen/ one on every build.) */
-  private val backCallback = object : OnBackPressedCallback(false) {
-    override fun handleOnBackPressed() {
-      appWebView?.evaluateJavascript(
-        "window.dispatchEvent(new CustomEvent('hrt-back'))",
-        null
-      )
-    }
+  /**
+   * Back on the AndroidX path: key events (three-button navigation) and any
+   * Android below 13, where the platform gesture callback in
+   * [registerGestureCallback] does not exist. The gesture preview on Android 13+
+   * is not carried by this object — see [registerGestureCallback] for why.
+   *
+   * Enabled unconditionally, because AndroidX registers its platform callback only
+   * while some `OnBackPressedCallback` is enabled; with none enabled the system
+   * sees an app that does not handle back and never starts the gesture. The root
+   * case is handled inside [onGestureCommitted]: when nothing can pop we finish the
+   * activity ourselves, which is what a disabled callback used to achieve by
+   * letting the event fall through.
+   *
+   * JS hears three events — `hrt-back-start`, `hrt-back-progress` (detail 0..1) and
+   * `hrt-back-cancel` — plus the committing `hrt-back`; `src/utils/nativeBack.ts`
+   * drives the surface transform from them.
+   */
+  private val backCallback = object : OnBackPressedCallback(true) {
+    override fun handleOnBackPressed() = onGestureCommitted()
+    override fun handleOnBackStarted(backEvent: BackEventCompat) = onGestureStarted(backEvent.progress, backEvent.swipeEdge)
+    override fun handleOnBackProgressed(backEvent: BackEventCompat) = onGestureProgressed(backEvent.progress)
+    override fun handleOnBackCancelled() = onGestureCancelled()
   }
 
   /**
@@ -79,13 +103,15 @@ class MainActivity : TauriActivity() {
    * "side-back jumps to the overview, and the sheet is still open when I return".
    * The SPA no longer writes history on the APK, but this is the guarantee that
    * the gesture belongs to the SPA and not to a WebView history that has no
-   * meaning here: while the stack has something to pop, back goes straight to
-   * the dispatcher (the same path that bridges to the predictive-back callback).
-   * With nothing to pop it falls through, so back at the root still plays the
-   * system's back-to-home animation and finishes the activity.
+   * meaning here.
+   *
+   * This only covers the **three-button** case: gesture navigation never produces
+   * a KEYCODE_BACK, it goes straight to `OnBackInvokedDispatcher` and from there
+   * to the callback above. So the two paths do not overlap — the key is
+   * intercepted here, the gesture is not.
    */
   override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
-    if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK && backCallback.isEnabled) {
+    if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
       if (event.action == android.view.KeyEvent.ACTION_UP) {
         onBackPressedDispatcher.onBackPressed()
       }
@@ -97,6 +123,8 @@ class MainActivity : TauriActivity() {
   inner class SafeArea {
     @JavascriptInterface fun top(): Float = topInset
     @JavascriptInterface fun bottom(): Float = bottomInset
+    /** The keyboard's height in dp; 0 when it is closed. See [imeBottomInset]. */
+    @JavascriptInterface fun ime(): Float = imeBottomInset
     @JavascriptInterface fun takeOAuthUrl(): String? {
       val url = pendingOAuthUrl
       pendingOAuthUrl = null
@@ -109,8 +137,10 @@ class MainActivity : TauriActivity() {
    *  is volatile and the callback toggling hops to the UI thread. */
   inner class BackBridge {
     @JavascriptInterface fun setCanPop(v: Boolean) {
+      // Only the flag. `isEnabled` stays true for the life of the activity — see
+      // the note on [backCallback]: disabling it is what makes the system stop
+      // offering the gesture preview at all.
       canPopBack = v
-      runOnUiThread { backCallback.isEnabled = v }
     }
   }
 
@@ -435,6 +465,79 @@ class MainActivity : TauriActivity() {
     }
   }
 
+  /**
+   * The gesture's own registration, on the platform dispatcher rather than
+   * AndroidX's.
+   *
+   * `OnBackPressedDispatcher` registers every `OnBackPressedCallback` it is given
+   * under one platform callback of its own, and forwards the gesture preview to
+   * whichever `OnBackPressedCallback` was added **last**. `AppPlugin` (tauri's app
+   * plugin) adds one in its `init`, which runs when the WebView is created — after
+   * `onCreate` has added ours — so the preview reached a callback whose
+   * `handleOnBackStarted`/`Progressed` are inherited no-ops. The commit still
+   * worked (its handler falls back to the next callback), but the finger's
+   * progress was dropped on the floor: the reported "预测性返回没有用".
+   *
+   * Registering directly, one priority above `PRIORITY_DEFAULT`, takes the whole
+   * gesture away from that indirection. The commit case duplicates what
+   * [backCallback] does, which is fine: on Android 13+ the platform path is the
+   * only one that runs, and below 13 this object is never registered.
+   */
+  private fun registerGestureCallback() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
+    val callback = object : android.window.OnBackAnimationCallback {
+      override fun onBackStarted(backEvent: android.window.BackEvent) {
+        onGestureStarted(backEvent.progress, backEvent.swipeEdge)
+      }
+
+      override fun onBackProgressed(backEvent: android.window.BackEvent) {
+        onGestureProgressed(backEvent.progress)
+      }
+
+      override fun onBackCancelled() {
+        onGestureCancelled()
+      }
+
+      override fun onBackInvoked() {
+        onGestureCommitted()
+      }
+    }
+    window.getOnBackInvokedDispatcher()
+      .registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT + 1, callback)
+  }
+
+  private fun onGestureStarted(progress: Float, edge: Int) {
+    android.util.Log.i("HrtBack", "gesture started progress=$progress edge=$edge")
+    if (!canPopBack) return
+    appWebView?.evaluateJavascript(
+      "window.dispatchEvent(new CustomEvent('hrt-back-start',{detail:$edge}))",
+      null,
+    )
+  }
+
+  private fun onGestureProgressed(progress: Float) {
+    // `progress` runs 0 → 1 and is clamped by the platform. Not logged: it fires
+    // on every frame of the gesture and would drown everything else in logcat.
+    appWebView?.evaluateJavascript(
+      "window.dispatchEvent(new CustomEvent('hrt-back-progress',{detail:$progress}))",
+      null,
+    )
+  }
+
+  private fun onGestureCancelled() {
+    android.util.Log.i("HrtBack", "gesture cancelled")
+    appWebView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('hrt-back-cancel'))", null)
+  }
+
+  private fun onGestureCommitted() {
+    android.util.Log.i("HrtBack", "gesture committed canPop=$canPopBack")
+    if (!canPopBack) {
+      finish()
+      return
+    }
+    appWebView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('hrt-back'))", null)
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     pendingOAuthUrl = intent?.dataString
     // Transparent, system-following bars. `enableEdgeToEdge()` with no args applies a
@@ -449,6 +552,7 @@ class MainActivity : TauriActivity() {
     )
     super.onCreate(savedInstanceState)
     onBackPressedDispatcher.addCallback(this, backCallback)
+    registerGestureCallback()
   }
 
   override fun onNewIntent(intent: Intent) {
@@ -487,10 +591,111 @@ class MainActivity : TauriActivity() {
       val density = resources.displayMetrics.density
       topInset = bars.top / density
       bottomInset = bars.bottom / density
+      // The keyboard's height *beyond the bars* — see [imeBottomInset]. The bars
+      // reach the page through `--android-safe-bottom` and must not be counted
+      // twice, and on a device where the IME covers the bar the two regions
+      // overlap, so a `max` of the two is also wrong for the WebView's height.
+      val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+      imeBottomInset = maxOf(0f, (ime.bottom - bars.bottom).toFloat()) / density
+      // Only when no keyboard animation is running: during one, `onProgress`
+      // below owns the WebView's height with the *animated* insets, and this
+      // listener fires with the *final* ones. Both writing `layoutParams` made
+      // the two fight — the height snapping to the end state on the first frame
+      // (the reported "闪一下然后没变化") and oscillating on the way up
+      // (the reported "颤颤巍巍").
+      if (!imeAnimating) applyImeHeight(webView, ime.bottom - bars.bottom)
       webView.post { webView.evaluateJavascript("window.dispatchEvent(new Event('hrt-safe-area-change'))", null) }
       insets
     }
+
+    /*
+     * IME animation (Android 11+).
+     *
+     * The app is edge-to-edge (`enableEdgeToEdge` sets
+     * `setDecorFitsSystemWindows(false)`), and under edge-to-edge Android 11+ no
+     * longer honours `adjustResize` — the manifest's `windowSoftInputMode` is
+     * inert, the window does not shrink, and the keyboard simply covers the
+     * WebView. Resizing is therefore ours to do, and it is done per frame so the
+     * page tracks the keyboard instead of snapping once the animation has
+     * finished: [applyImeHeight] is called from both the insets listener above and
+     * this callback's `onProgress`, whichever runs on a given frame.
+     *
+     * The keyboard's height is also pushed to the page as a DOM event
+     * (`hrt-ime-progress`, see `src/utils/androidSafeArea.ts`) for the CSS that
+     * keeps a focused field in view.
+     *
+     * `WindowInsetsAnimationCompat.Callback` is a no-op below API 30 (it calls
+     * `super` and returns the unchanged insets), so this is safe on the API 24
+     * floor. The compat class is used rather than the platform one for exactly
+     * that reason.
+     */
+    ViewCompat.setWindowInsetsAnimationCallback(
+      webView,
+      object : WindowInsetsAnimationCompat.Callback(DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
+        override fun onPrepare(animation: WindowInsetsAnimationCompat) {
+          // A keyboard-driven animation is the only one the page cares about;
+          // the bars fading in or out must not be mistaken for it.
+          imeAnimating = animation.typeMask and WindowInsetsCompat.Type.ime() != 0
+          android.util.Log.i("HrtIme", "onPrepare typeMask=${animation.typeMask} ime=${imeAnimating}")
+        }
+
+        override fun onProgress(
+          insets: WindowInsetsCompat,
+          runningAnimations: MutableList<WindowInsetsAnimationCompat>,
+        ): WindowInsetsCompat {
+          if (!imeAnimating) return insets
+          val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+          val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+          applyImeHeight(webView, ime.bottom - bars.bottom)
+          return insets
+        }
+
+        override fun onEnd(animation: WindowInsetsAnimationCompat) {
+          if (!imeAnimating) return
+          imeAnimating = false
+          android.util.Log.i("HrtIme", "onEnd settled=$imeBottomInset")
+          // The last `onProgress` frame lands a hair short of the settled inset;
+          // write the final value so the WebView ends exactly where the next
+          // insets dispatch expects it.
+          val density = resources.displayMetrics.density
+          applyImeHeight(webView, Math.round(imeBottomInset * density))
+        }
+      },
+    )
+
     ViewCompat.requestApplyInsets(webView)
+  }
+
+  /**
+   * Give the keyboard room by shrinking the WebView, one frame at a time.
+   *
+   * Under edge-to-edge (`setDecorFitsSystemWindows(false)`, which
+   * `enableEdgeToEdge` sets) Android 11+ ignores the manifest's `adjustResize`, so
+   * without this the WebView stays full-height and the keyboard covers the bottom
+   * of the page — inputs included. Doing it here, on every frame of the IME's own
+   * insets animation, is what makes the page follow the keyboard rather than
+   * teleporting when the animation commits.
+   *
+   * The reference height is the **screen**, not the WebView's own. The WebView is
+   * the content view sized `WRAP_CONTENT` around a document that is far taller
+   * than the screen — the crawler footer below `.phone`, which `overflow: hidden`
+   * clamps for layout but not for the view's own measurement — so
+   * `webView.height` reports the document (≈45k CSS px on a 3200 px screen) and
+   * subtracting the keyboard from it changes nothing visible. The first call
+   * writes the screen height outright, which also fixes the view at the viewport
+   * instead of letting it wrap the document.
+   *
+   * `excessPx` is the keyboard's height beyond the system bars ([imeBottomInset]
+   * explains why).
+   */
+  private fun applyImeHeight(webView: WebView, excessPx: Int) {
+    val rest = webView.rootView.height
+    if (rest == 0) return
+    val lp = webView.layoutParams ?: return
+    val target = maxOf(0, rest - excessPx)
+    if (lp.height == target) return
+    lp.height = target
+    webView.layoutParams = lp
   }
 
   /** WryActivity's own back callback (webview history) would sit between the

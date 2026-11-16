@@ -44,33 +44,48 @@ const targetDateFor = (days) => {
   return d;
 };
 
-/** Answers the start-date question in the intro, then leaves the rest alone. */
+/**
+ * Answers the start-date question in the intro, then leaves the rest alone.
+ *
+ * The control it drives is `TimePage` in `mode="date"`, which is a full-screen
+ * panel with three numeric text inputs — not the `aria-expanded` dropdown this
+ * used to click, and not a `<select>` pair either. The inputs are addressed by
+ * their `aria-label`, which is the one thing about them that is not styling.
+ */
 async function setStartDate(page, days) {
   const target = targetDateFor(days);
   await page.goto(BASE + '/');
   await page.waitForTimeout(700);
   await page.getByRole('button', { name: 'English' }).first().click().catch(() => {});
   await page.waitForTimeout(250);
-  for (let i = 0; i < 3; i++) {
+  // Walk to the start-date step. It is the third one, but the intro gains and
+  // loses steps between releases, so stop when the trigger is actually there
+  // rather than at a fixed count.
+  const openTrigger = page.getByRole('button', { name: /No start date yet|Tap to|start date/i });
+  for (let i = 0; i < 8; i++) {
+    if (await openTrigger.count()) break;
     const next = page.getByRole('button', { name: /^Next$/ });
     if (!(await next.count())) break;
     await next.first().click();
     await page.waitForTimeout(320);
   }
-  const trigger = page.locator('button[aria-expanded]').first();
-  await trigger.click();
-  await page.waitForTimeout(350);
-  const pick = async (label, optionLabel) => {
-    await page.getByRole('button', { name: label, exact: true }).first().click();
-    await page.waitForTimeout(220);
-    await page.getByRole('option', { name: optionLabel, exact: true }).first().click();
-    await page.waitForTimeout(220);
+  await openTrigger.first().click();
+  await page.waitForTimeout(400);
+
+  const fill = async (label, value) => {
+    const field = page.getByLabel(label, { exact: true }).first();
+    await field.fill(String(value));
+    // The panel commits a part on blur, not on input.
+    await field.blur();
+    await page.waitForTimeout(150);
   };
-  await pick('Year', String(target.getFullYear()));
-  await pick('Month', target.toLocaleDateString('en-US', { month: 'long' }));
-  await pick('Day', String(target.getDate()));
-  await trigger.click().catch(() => {});
-  await page.waitForTimeout(250);
+  await fill('Year', target.getFullYear());
+  await fill('Month', target.getMonth() + 1);
+  await fill('Day', target.getDate());
+
+  // "Confirm time" is the panel's label even in date mode — it is one component.
+  await page.getByRole('button', { name: /Confirm time/i }).first().click();
+  await page.waitForTimeout(350);
   for (let i = 0; i < 12; i++) {
     const b = page.getByRole('button', { name: /^(Skip|Next)$/ });
     if (!(await b.count())) break;
@@ -93,7 +108,22 @@ async function setStartDate(page, days) {
    would have got anyway. */
 
 const INSTALL_SAMPLER = () => {
-  const content = () => document.querySelector('.m3-shell-body > .overflow-y-auto');
+  // What gets pushed is the page content inside the prototype shell's `.scroll`
+  // column: `<div class="flex-1 flex flex-col view-enter-…">`, which the milestone
+  // spacer sits *before*. This used to look for `.m3-shell-body >
+  // .overflow-y-auto`, from the M3E shell the prototype replaced — a selector that
+  // matches nothing does not fail, it samples `top: null` for the whole run and
+  // then throws on the rect.
+  //
+  // `.scroll` itself never moves (it is the scrollport, pinned at top 0), so
+  // sampling it would report a perfectly flat line and "pass" the no-jump check
+  // for the wrong reason.
+  const content = () => {
+    const scroll = document.querySelector('.phone > .scroll');
+    const page = scroll && [...scroll.children].find(el => !el.classList.contains('m3-milestone-shell'));
+    return page
+      || document.querySelector('.m3-shell-body > .overflow-y-auto');
+  };
   const shell = () => document.querySelector('.m3-milestone-shell');
   window.__mbArm = (ms) => new Promise((resolve) => {
     const samples = [];
@@ -181,10 +211,16 @@ async function cropBar(page, name) {
  * Bring the bar into view before anything is measured. The scrolling content is
  * taller than the phone, so a clip taken against a scrolled page is a coin toss
  * on a 390px window.
+ *
+ * The scroller is the prototype shell's `.scroll`; the `.m3-shell-body >
+ * .overflow-y-auto` this used to reach for belongs to the M3E shell it replaced
+ * and is no longer in the document, so the call threw before measuring anything.
  */
 async function showBar(page) {
   await page.evaluate(() => {
-    document.querySelector('.m3-shell-body > .overflow-y-auto').scrollTop = 0;
+    const scroller = document.querySelector('.phone > .scroll')
+      || document.querySelector('.m3-shell-body > .overflow-y-auto');
+    if (scroller) scroller.scrollTop = 0;
     window.scrollTo(0, 0);
   });
   await page.waitForTimeout(120);
@@ -290,7 +326,10 @@ async function run() {
     const geometry = await page.evaluate(() => {
       const bar = document.querySelector('.m3-milestone-bar');
       const sh = document.querySelector('.m3-milestone-shell');
-      const el = document.querySelector('.m3-shell-body > .overflow-y-auto');
+      // Same element the sampler reads — see INSTALL_SAMPLER.
+      const scroll = document.querySelector('.phone > .scroll');
+      const el = (scroll && [...scroll.children].find(e => !e.classList.contains('m3-milestone-shell')))
+        || document.querySelector('.m3-shell-body > .overflow-y-auto');
       return {
         barHeight: bar.getBoundingClientRect().height,
         barTop: bar.getBoundingClientRect().top,
@@ -317,9 +356,16 @@ async function run() {
     record(Math.abs(geometry.shellHeight - geometry.barHeight) < 0.5,
       label + ': the strip settles exactly on the bar',
       'strip ' + geometry.shellHeight + 'px vs bar ' + geometry.barHeight + 'px');
-    record(Math.abs(geometry.shellTop - geometry.barTop) < 1,
-      label + ': the bar sits on the strip it paid for',
-      'strip top ' + Math.round(geometry.shellTop) + ' vs bar top ' + Math.round(geometry.barTop));
+    // The bar is `position: fixed` at the viewport's top edge; the strip is an
+    // in-flow spacer inside the scroll column, which the prototype pads by 36px.
+    // They are therefore NOT expected to share a top — the bar was deliberately
+    // pinned to the window so it spans edge to edge instead of starting 36px down
+    // (see `.m3-milestone-bar` in index.css). What has to hold is that the bar
+    // never starts below the strip's top, which would leave a gap the page shows
+    // through, and that it is fully on screen.
+    record(geometry.barTop <= geometry.shellTop + 1 && geometry.barTop >= 0,
+      label + ': the bar is pinned to the top, not floating below the strip',
+      'bar top ' + Math.round(geometry.barTop) + ' vs strip top ' + Math.round(geometry.shellTop));
 
     const restTop = Math.round(geometry.contentTop);
 
@@ -337,17 +383,22 @@ async function run() {
 
     await page.waitForTimeout(500);
     const after = await page.evaluate(() => {
-      const el = document.querySelector('.m3-shell-body > .overflow-y-auto');
+      // Same element the sampler reads — see INSTALL_SAMPLER.
+      const scroll = document.querySelector('.phone > .scroll');
+      const el = (scroll && [...scroll.children].find(e => !e.classList.contains('m3-milestone-shell')))
+        || document.querySelector('.m3-shell-body > .overflow-y-auto');
       return { shell: !!document.querySelector('.m3-milestone-shell'), top: Math.round(el.getBoundingClientRect().top), scroll: el.scrollTop };
     });
-    /* `restTop` is the content's top on the frame the bar was armed, which is
-       already a frame *into* the push — so the meaningful end state is the one
-       with no bar at all. Read it off the shell's own sibling after the fact:
-       with the shell gone and nothing else in the flow above it, the content's
-       top is the top of the scrolling box, which is 0. */
-    record(!after.shell && after.top === 0,
+    /* The meaningful end state is the one with no bar at all. `restTop` was
+       captured with the bar up, so the proof that the exit *returned* rather than
+       overshot is that the content is exactly one bar's height higher than it was
+       — the same distance, in the opposite direction, as the entrance travelled.
+       A residual gap would show as a difference that is not the bar height. */
+    const barH = Math.round(geometry.barHeight);
+    record(!after.shell && Math.abs((restTop - after.top) - barH) <= 1,
       label + ': settles exactly, no residual gap',
-      'content top ' + after.top + ' with the shell out of the DOM (was ' + restTop + ' mid-push); shell still mounted: ' + after.shell);
+      'content top ' + after.top + ' vs ' + restTop + ' with the bar up (moved '
+        + (restTop - after.top) + 'px, bar is ' + barH + 'px); shell still mounted: ' + after.shell);
 
     const summary = { label, enter, exit, barHeight: Math.round(geometry.barHeight), shellHeight: Math.round(geometry.shellHeight), restTop, after };
     results.push(['info', label, summary]);
@@ -408,7 +459,10 @@ async function run() {
       const t0 = performance.now();
       while (performance.now() - t0 < 300) {
         const sh = document.querySelector('.m3-milestone-shell');
-        const el = document.querySelector('.m3-shell-body > .overflow-y-auto');
+        // Same element the sampler reads — see INSTALL_SAMPLER.
+        const scroller = document.querySelector('.phone > .scroll');
+        const el = (scroller && [...scroller.children].find(e => !e.classList.contains('m3-milestone-shell')))
+          || document.querySelector('.m3-shell-body > .overflow-y-auto');
         const bar = document.querySelector('.m3-milestone-bar');
         out.push({
           t: Math.round(performance.now() - t0),

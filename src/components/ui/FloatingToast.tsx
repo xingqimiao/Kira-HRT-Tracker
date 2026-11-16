@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePresence } from '../../hooks/usePresence';
+import { springTo, SPRING } from '../../utils/spring';
 
 /**
  * The two edge-anchored notices: the quick-add undo and the update prompt.
@@ -84,6 +85,8 @@ const FloatingToast: React.FC<FloatingToastProps> = ({
 
     const [drag, setDrag] = useState({ dx: 0, active: false });
     const startRef = useRef<{ x: number; t: number; id: number } | null>(null);
+    /** The spring running the pill back to rest after a released drag. */
+    const settleRef = useRef<(() => void) | null>(null);
 
     const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
         if (!onDismiss) return;
@@ -114,8 +117,19 @@ const FloatingToast: React.FC<FloatingToastProps> = ({
         const elapsed = Math.max(1, performance.now() - start.t);
         if (Math.abs(dx) > DISMISS_PX || Math.abs(dx) / elapsed > DISMISS_VELOCITY_PX_MS) {
             onDismiss?.();
+            setDrag({ dx: 0, active: false });
+            return;
         }
-        setDrag({ dx: 0, active: false });
+        // Below the dismiss threshold: spring back rather than snap. The velocity
+        // is the finger's own, so a quick release travels back faster than a slow
+        // one — a fixed curve would make both look identical.
+        const velocity = (dx / elapsed) * 1000;
+        settleRef.current?.();
+        settleRef.current = springTo(dx, 0, value => setDrag({ dx: value, active: true }), {
+            config: SPRING.UI,
+            velocity,
+            onSettled: () => setDrag({ dx: 0, active: false }),
+        });
     };
 
     if (!mounted) return null;

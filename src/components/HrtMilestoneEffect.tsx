@@ -231,20 +231,37 @@ const HrtMilestoneEffect: React.FC<HrtMilestoneEffectProps> = ({ milestone, days
          * transform touches it, and `translateY` in the entrance keyframes does
          * not resize it.
          *
+         * Measured again whenever the bar's own box changes, which is the part that
+         * was missing. This effect used to run on `[mounted, state]` only, so it
+         * measured once, on the frame the bar mounted — and the language packs are
+         * lazily imported, so on a cold start the copy at that moment is still the
+         * fallback. The real string arrives a tick later and rewraps. The
+         * anniversary bar is three lines of copy: measured as one, it wrote 102px
+         * for a 118px bar, and the page stayed pushed 16px short for as long as the
+         * bar was up, so the bar's last line sat over the first row of the page.
+         * Day 100 never showed it because a single line does not rewrap.
+         *
+         * `ResizeObserver` rather than a `[lang]` dependency: the same rewrap
+         * happens when a font finishes loading and when the viewport changes
+         * width, and only the box itself knows about all three.
+         *
          * Settling is the browser's job and it is exact: when `state` leaves
          * "open" the property goes back to 0px, the tween runs to the closed end,
          * and the shell is `height: 0` — which is also the only value that stays
-         * correct through a remount, unlike the height it was at. A bar that is
-         * already up has been measured, so a viewport change that rewraps the
-         * message is the one case this does not follow; a `ResizeObserver` for it
-         * would be a second watcher on a box that is about to animate anyway.
+         * correct through a remount, unlike the height it was at.
          */
-        const height = bar.offsetHeight + 'px';
-        if (state === 'open') {
-            shell.style.setProperty('--m3-milestone-height', height);
-        } else {
-            shell.style.removeProperty('--m3-milestone-height');
-        }
+        const sync = () => {
+            if (state === 'open') {
+                shell.style.setProperty('--m3-milestone-height', bar.offsetHeight + 'px');
+            } else {
+                shell.style.removeProperty('--m3-milestone-height');
+            }
+        };
+        sync();
+        if (state !== 'open') return undefined;
+        const observer = new ResizeObserver(sync);
+        observer.observe(bar);
+        return () => observer.disconnect();
     }, [mounted, state]);
 
     const pieces = useMemo(

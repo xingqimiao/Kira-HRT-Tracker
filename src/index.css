@@ -197,9 +197,31 @@
     /* — Easing, expressive set (web approximation of the springs) —
        `spatial` is for anything with a size or position: a sheet, a card, a FAB.
        `effects` is for a value that changes in place: opacity, colour, a toggle
-       knob's fill. Effects must NOT overshoot, which is why they are separate. */
-    --md-sys-motion-easing-expressive-spatial: cubic-bezier(0.34, 1.28, 0.64, 1);
+       knob's fill. Effects must NOT overshoot, which is why they are separate.
+
+       `spatial` used to be an overshoot bezier (0.34, 1.28, 0.64, 1). It is now
+       the same critically-damped shape as `--spring-settled`: a curve that
+       overshoots by a fixed ~7% at every distance is not a spring, it bounces a
+       4px chip exactly as hard as a 400px sheet. Real springs live in
+       `src/utils/spring.ts`; this is their declarative twin. */
+    --md-sys-motion-easing-expressive-spatial: cubic-bezier(0.22, 1, 0.36, 1);
     --md-sys-motion-easing-expressive-effects: cubic-bezier(0.2, 0, 0, 1);
+
+    /* — Spring, as the product actually wants it —
+       `src/utils/spring.ts` runs a real damped-spring solver for anything whose
+       target can move or whose release velocity matters (drags, released
+       gestures, tracking values). These three are the same motion for the
+       declarative half of the stylesheet, where a solver is not available: a
+       class toggle, a hover fill, a sheet's open/close keyframe.
+
+       They deliberately do NOT overshoot. The expressive bezier above overshoots
+       by a fixed ~7% at every distance — a property of the curve, not of the
+       motion — which reads as a bounce on a 4px chip and as nothing on a 400px
+       sheet. `--spring-settled` is the shape of the critically-damped solver
+       sampled and fitted, so a CSS transition and a JS spring settle alike. */
+    --spring-settled: cubic-bezier(0.22, 1, 0.36, 1);
+    --spring-effects: cubic-bezier(0.2, 0, 0, 1);
+    --spring-leaving: cubic-bezier(0.4, 0, 1, 1);
 
     /* — Duration (M3 spec values) — */
     --md-sys-motion-duration-short1: 50ms;
@@ -466,7 +488,7 @@
        /animate rule is to cite a curve, never to invent one. It is only for a
        decorative one-shot: an overshoot on a control the user is waiting on reads
        as the interface wobbling. */
-    --ease-in-out-back: cubic-bezier(0.68, -0.6, 0.32, 1.6);
+    --ease-in-out-back: var(--spring-settled);
 
 }
 
@@ -985,11 +1007,33 @@ body {
 :root {
     --app-safe-top: 0px;
     --app-safe-bottom: 0px;
+    --app-ime-bottom: 0px;
 }
 
 body.native-app {
     --app-safe-top: var(--android-safe-top, 0px);
     --app-safe-bottom: var(--android-safe-bottom, 0px);
+    --app-ime-bottom: var(--android-ime-bottom, 0px);
+}
+
+/* Keep the focused field above the soft keyboard.
+ *
+ * The keyboard's room is made natively: MainActivity shrinks the WebView itself,
+ * one frame at a time (`applyImeHeight`), because the app is edge-to-edge and
+ * Android 11+ ignores `adjustResize` under edge-to-edge — the manifest flag never
+ * did anything here. With the viewport already ending at the keyboard's top edge,
+ * all the page needs is breathing room, and a scroll container the browser will
+ * not scroll into view on its own still needs it: the time picker's number boxes,
+ * a sheet's last input.
+ *
+ * `scroll-padding-bottom` rather than a margin on the element: padding changes
+ * where the browser considers "the end of the scrollable area", which is exactly
+ * what `scrollIntoView` consults. A margin would move the element instead and
+ * leave the scroll position wrong. */
+body.native-app:has(input:focus, textarea:focus, select:focus) .scroll,
+body.native-app:has(input:focus, textarea:focus, select:focus) .phone > .scroll,
+body.native-app:has(input:focus, textarea:focus, select:focus) .dose-panel .sub-page {
+    scroll-padding-bottom: 16px;
 }
 
 /* Keep the full-bleed shell behind system chrome; inset its interactive content. */
@@ -2533,7 +2577,7 @@ select,
    later. */
 .btn.auth-cta {
     position: relative;
-    transition: border-radius .42s cubic-bezier(.3, 1.7, .5, 1), filter .15s, background .2s;
+    transition: border-radius .42s var(--spring-settled), filter .15s, background .2s;
 }
 .btn.auth-cta:active:not(:disabled) {
     transform: none;
@@ -3098,17 +3142,22 @@ select,
        the bar's absolute child would then resolve `inset-inline` against for
        no gain. */
     height: 0;
-    transition: height var(--md-sys-motion-transition-enter);
+    /* `--md-sys-motion-transition-enter` is a *composite* token (duration and
+       easing together). Appending a curve to it produced an invalid value and the
+       tween silently stopped happening — the page jumped instead of being pushed,
+       which `check-milestone-push.mjs` caught. The duration is taken from the
+       token's own duration half and the curve is the spring. */
+    transition: height var(--md-sys-motion-duration-medium4) var(--spring-settled);
 }
 
 .m3-milestone-shell[data-open="true"] {
     height: var(--m3-milestone-height, 0px);
 }
 
-/* The exit is the entrance mirrored: the same distance back at the exit token,
-   which is what makes the page settle exactly where it started. */
+/* The exit is the entrance mirrored: the same distance back, which is what makes
+   the page settle exactly where it started. */
 .m3-milestone-shell[data-state="closed"] {
-    transition: height var(--md-sys-motion-transition-exit);
+    transition: height var(--md-sys-motion-duration-short4) var(--spring-leaving);
 }
 
 /* The bar. Square, full-width and pinned to the top of the window.
@@ -3215,7 +3264,7 @@ body.desktop .m3-milestone-bar {
     color: inherit;
     opacity: .8;
     cursor: pointer;
-    transition: background .18s, opacity .18s;
+    transition: background .18s var(--spring-effects), opacity .18s var(--spring-effects);
 }
 
 .m3-milestone-bar__close:hover {
@@ -3368,7 +3417,7 @@ body.desktop .m3-milestone-bar {
     background: var(--sch);
     color: var(--on);
     cursor: pointer;
-    transition: background .2s, color .2s, transform .25s cubic-bezier(.3, 1.7, .5, 1);
+    transition: background .2s, color .2s, transform .25s var(--spring-settled);
 }
 .ic-btn:hover { background: var(--sch-h); }
 .ic-btn:active { transform: scale(.94); }

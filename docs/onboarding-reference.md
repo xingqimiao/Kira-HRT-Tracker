@@ -71,7 +71,7 @@ The seven language packs are `src/i18n/langs/{zh,en,ja,ko,tr,yue,zh-TW}.ts`. The
 Keep keys aligned across all seven packs; validate with:
 
 ```sh
-node --experimental-transform-types scripts/check-i18n-coverage.mjs --strict
+node scripts/check-i18n-coverage.mjs --strict
 ```
 
 `src/i18n/types.ts` defines the language IDs and order. The language picker values are assembled in `src/App.tsx` using native-script labels.

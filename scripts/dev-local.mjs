@@ -1,7 +1,7 @@
 /**
  * Local dev server: embedded Postgres + the real API, with a seeded account.
  *
- *   node --experimental-transform-types --import ./server/resolve-hook.mjs scripts/dev-local.mjs
+ *   node --import ./scripts/lib/ts-hook-register.mjs scripts/dev-local.mjs
  *
  * (The flags are needed on Node 24: the server sources use TypeScript enums, which
  * strip-only type removal refuses. The script boots, seeds, and serves on :8787.)

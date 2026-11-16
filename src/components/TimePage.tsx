@@ -4,6 +4,7 @@ import { Icon } from '../ui/SvgDefs';
 import { useTranslation } from '../contexts/LanguageContext';
 import { LOCALE_MAP } from '../utils/helpers';
 import { useBackHandler } from '../utils/nativeBack';
+import { useBackPose } from '../utils/backPose';
 
 /**
  * The M3E calendar + clock page. The dose panel used to carry its own copy; every
@@ -52,10 +53,17 @@ export function TimePage({ open, initialDate, onClose, onConfirm, mode = 'dateti
     const showDate = mode !== 'time';
     const showTime = mode !== 'date';
 
+    /** The overlay itself, for the predictive-back pose. */
+    const panelRef = useRef<HTMLDivElement | null>(null);
+
     useBackHandler(open, () => {
         onClose();
         return true;
-    });
+    }, 'overlay', true);
+
+    // A full-screen picker answers the gesture like the system's own pages do —
+    // scaling into a rounded card — rather than sitting still and then vanishing.
+    useBackPose(open, panelRef, 'card');
 
     /**
      * Seed the page when it opens, and only then.
@@ -218,7 +226,7 @@ export function TimePage({ open, initialDate, onClose, onConfirm, mode = 'dateti
     };
 
     return createPortal(
-        <div className={`dose-panel lab-time${open ? ' open' : ''}`} aria-hidden={!open || undefined}>
+        <div ref={panelRef} className={`dose-panel lab-time${open ? ' open' : ''}`} aria-hidden={!open || undefined}>
             <div className="sub-page open">
                 <div className="hdr">
                     <div className="hdr-l">

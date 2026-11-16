@@ -1,7 +1,7 @@
 // Generates the golden vectors the Kotlin port is tested against.
 //
 // Run from the repo root:
-//   node --experimental-transform-types scripts/gen-pk-vectors.mjs
+//   node scripts/gen-pk-vectors.mjs
 //
 // The TypeScript engine is the reference implementation; this script pins the
 // clock so `runSimulation`'s window is deterministic, runs a set of scenarios

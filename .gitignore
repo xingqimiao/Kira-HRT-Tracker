@@ -138,3 +138,8 @@ skills-lock.json
 /deploy/self-host/backups/
 /deploy/self-host/local-root.crt
 /deploy/self-host/smoke-state.json
+
+# Generated PK/Tf vectors for the Android instrumented tests, and the local
+# research workspace. Build output, never committed.
+android/
+research/

@@ -7,7 +7,7 @@
  * behaviour the reload path depends on — an occurrence is shown at most once, across
  * a simulated reload, and the ledger stays bounded.
  *
- *   node --experimental-transform-types --import ./server/resolve-hook.mjs scripts/check-med-plan-notify.mjs
+ *   node --import ./scripts/lib/ts-hook-register.mjs scripts/check-med-plan-notify.mjs
  *
  * The notification plugin is deliberately not imported: the ledger is pure, and the
  * wiring below mirrors the timer's own persist-before-dispatch order against an

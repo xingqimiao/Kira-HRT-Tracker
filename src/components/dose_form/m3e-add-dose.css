@@ -29,8 +29,8 @@ input[type=number] {
     60% { transform: scale(1.03); }
     100% { transform: scale(1); opacity: 1; }
 }
-.dose-panel .anim-in { animation: m3eSpringIn .36s cubic-bezier(.22, 1.25, .36, 1) both; }
-.dose-panel .anim-pop { animation: m3ePop .32s cubic-bezier(.22, 1.3, .36, 1) both; }
+.dose-panel .anim-in { animation: m3eSpringIn .36s var(--spring-settled) both; }
+.dose-panel .anim-pop { animation: m3ePop .32s var(--spring-settled) both; }
 
 /* Shared record-row tone: progestins and hair-loss drugs sit on the secondary
    container, matching their dose-hero card. */
@@ -89,7 +89,7 @@ input[type=number] {
     background: var(--sch); color: var(--on);
     font-size: 12.5px; font-weight: 600; white-space: nowrap;
     flex-shrink: 0;
-    transition: border-radius .35s cubic-bezier(.3, 1.7, .5, 1), background .25s, color .25s, transform .25s;
+    transition: border-radius .35s var(--spring-settled), background .25s, color .25s, transform .25s;
 }
 .dose-panel .tpl-chip .i { width: 15px; height: 15px; color: var(--pri); }
 .dose-panel .tpl-chip.on {
@@ -118,7 +118,7 @@ input[type=number] {
     background: var(--sch); color: var(--var);
     font-size: 12px; font-weight: 700; border-radius: 6px;
     white-space: nowrap;
-    transition: border-radius .4s cubic-bezier(.3, 1.8, .5, 1), background .25s, color .25s, transform .25s;
+    transition: border-radius .4s var(--spring-settled), background .25s, color .25s, transform .25s;
 }
 .dose-panel .cg button:first-child { border-radius: 20px 6px 6px 20px; }
 .dose-panel .cg button:last-child { border-radius: 6px 20px 20px 6px; }
@@ -141,12 +141,12 @@ input[type=number] {
     padding: 10px 2px 8px; background: var(--sch); color: var(--var);
     display: flex; flex-direction: column; align-items: center; gap: 4px;
     font-size: 11.5px; font-weight: 700; border-radius: 8px;
-    transition: border-radius .4s cubic-bezier(.3, 1.8, .5, 1), background .25s, color .25s, transform .25s;
+    transition: border-radius .4s var(--spring-settled), background .25s, color .25s, transform .25s;
 }
 .dose-panel .rt-item:first-child { border-radius: 20px 8px 8px 20px; }
 .dose-panel .rt-item:last-child { border-radius: 8px 20px 20px 8px; }
 .dose-panel .rt-item:only-child { border-radius: 20px; }
-.dose-panel .rt-item .i { width: 20px; height: 20px; transition: transform .3s cubic-bezier(.3, 1.8, .5, 1); }
+.dose-panel .rt-item .i { width: 20px; height: 20px; transition: transform .3s var(--spring-settled); }
 .dose-panel .rt-item.on { background: var(--pric); color: var(--onpric); border-radius: 20px !important; }
 .dose-panel .rt-item.on .i { transform: scale(1.12); }
 
@@ -155,7 +155,7 @@ input[type=number] {
     padding: 8px 14px; border-radius: 14px;
     background: var(--sch); color: var(--var);
     font-size: 12.5px; font-weight: 600;
-    transition: border-radius .35s cubic-bezier(.3, 1.7, .5, 1), background .22s, color .22s, transform .22s;
+    transition: border-radius .35s var(--spring-settled), background .22s, color .22s, transform .22s;
 }
 .dose-panel .drug-pill.on {
     background: var(--pri); color: var(--onpri);
@@ -167,7 +167,7 @@ input[type=number] {
     position: relative; overflow: hidden;
     border-radius: 30px; padding: 18px;
     background: var(--pric); color: var(--onpric);
-    transition: background .35s, color .35s, transform .35s cubic-bezier(.22, 1.25, .36, 1);
+    transition: background .35s, color .35s, transform .35s var(--spring-settled);
     margin-bottom: 10px;
 }
 .dose-panel .dose-hero.aux-mode { background: var(--terc); color: var(--onterc); }
@@ -176,7 +176,7 @@ input[type=number] {
     position: absolute; right: -36px; top: -42px;
     width: 136px; height: 136px; opacity: .13;
     pointer-events: none;
-    transition: transform .65s cubic-bezier(.2, 1.1, .3, 1);
+    transition: transform .65s var(--spring-settled);
 }
 .dose-panel .dh-top { display: flex; justify-content: space-between; align-items: center; position: relative; z-index: 1; }
 .dose-panel .dh-drug { font-size: 14px; font-weight: 800; }
@@ -219,7 +219,7 @@ input[type=number] {
     flex: 1; min-width: 64px; padding: 8px 8px;
     border-radius: 14px; background: rgba(0, 0, 0, .2); color: currentColor;
     font-size: 12.5px; font-weight: 700; text-align: center; white-space: nowrap;
-    transition: border-radius .35s cubic-bezier(.3, 1.7, .5, 1), background .2s, color .2s, transform .2s;
+    transition: border-radius .35s var(--spring-settled), background .2s, color .2s, transform .2s;
 }
 :root:not(.dark) .dose-panel .preset-pill { background: rgba(255, 255, 255, .55); color: var(--onpric); }
 :root:not(.dark) .dose-panel .dose-hero.aux-mode .preset-pill { color: var(--onterc); }
@@ -267,7 +267,7 @@ input[type=number] {
     background: var(--sch); padding: 14px 16px;
     display: flex; align-items: center; gap: 13px;
     min-height: 68px; border-radius: 8px;
-    transition: background .15s, border-radius .3s;
+    transition: background .15s var(--spring-effects), border-radius .3s var(--spring-settled);
 }
 .dose-panel .list > .li:first-child { border-radius: 26px 26px 8px 8px; }
 .dose-panel .list > .li:last-child { border-radius: 8px 8px 26px 26px; }
@@ -309,7 +309,7 @@ input[type=number] {
     background: var(--sc); color: var(--var);
     font-size: 12px; font-weight: 700; border-radius: 8px;
     white-space: nowrap; text-align: center;
-    transition: border-radius .38s cubic-bezier(.3, 1.7, .5, 1), background .2s, color .2s, transform .2s;
+    transition: border-radius .38s var(--spring-settled), background .2s, color .2s, transform .2s;
 }
 .dose-panel .cg-inner button:first-child { border-top-left-radius: 18px; border-bottom-left-radius: 18px; }
 .dose-panel .cg-inner button:last-child { border-top-right-radius: 18px; border-bottom-right-radius: 18px; }
@@ -347,7 +347,7 @@ input[type=number] {
 .dose-panel .m3e-num-btn {
     width: 34px; height: 34px; background: var(--sch-h); color: var(--on);
     font-size: 18px; font-weight: 800;
-    display: grid; place-items: center; transition: .2s;
+    display: grid; place-items: center; transition: .2s var(--spring-effects);
 }
 .dose-panel .m3e-num-btn.minus { border-radius: 15px 5px 5px 15px; }
 .dose-panel .m3e-num-btn.plus { border-radius: 5px 15px 15px 5px; }
@@ -405,7 +405,7 @@ input[type=number] {
     width: 36px; height: 36px; border-radius: 14px;
     background: var(--sch); color: var(--on);
     display: grid; place-items: center;
-    transition: background .2s, transform .28s cubic-bezier(.3,1.7,.5,1);
+    transition: background .2s, transform .28s var(--spring-settled);
 }
 .dose-panel .cal-nav-btn:hover { background: var(--sch-h); }
 .dose-panel .cal-nav-btn:active { transform: scale(.9); }
@@ -430,13 +430,13 @@ input[type=number] {
     65% { transform: scale(1.1); }
     100% { transform: scale(1.06); }
 }
-.dose-panel .cal-day.on { animation: tpDayPop .34s cubic-bezier(.3,1.7,.5,1) both; }
+.dose-panel .cal-day.on { animation: tpDayPop .34s var(--spring-settled) both; }
 .dose-panel .cal-day:active { transform: scale(.88); }
 .dose-panel .cal-day {
     height: 38px; border-radius: 12px;
     font-size: 13px; font-weight: 700; color: var(--on);
     display: grid; place-items: center;
-    transition: border-radius .35s cubic-bezier(.3, 1.8, .5, 1), background .2s, color .2s, transform .2s;
+    transition: border-radius .35s var(--spring-settled), background .2s, color .2s, transform .2s;
 }
 .dose-panel .cal-day.empty { pointer-events: none; }
 .dose-panel .cal-day.today { border: 1.5px solid var(--pri); color: var(--pri); }
@@ -457,9 +457,9 @@ input[type=number] {
 .lab-time.open .m3e-cal-card,
 .lab-time.open .tp-card { animation: tpCardIn .4s cubic-bezier(.2,1,.3,1) both; }
 .lab-time.open .tp-card { animation-delay: .06s; }
-.dose-panel .tp-display { animation: tpClockPop .28s cubic-bezier(.3,1.7,.5,1) both; }
+.dose-panel .tp-display { animation: tpClockPop .28s var(--spring-settled) both; }
 .dose-panel .tp-step {
-    transition: background .2s, color .2s, transform .26s cubic-bezier(.3,1.7,.5,1);
+    transition: background .2s, color .2s, transform .26s var(--spring-settled);
 }
 .dose-panel .tp-step:active { transform: scale(.9); }
 .dose-panel .tp-card {
@@ -494,7 +494,7 @@ input[type=number] {
     font-size: 36px;
     line-height: 70px;
     caret-color: var(--onpric);
-    transition: transform .28s cubic-bezier(.3,1.7,.5,1), box-shadow .2s ease, background .2s ease;
+    transition: transform .28s var(--spring-settled), box-shadow .2s ease, background .2s ease;
 }
 .dose-panel .tp-input:focus {
     transform: scale(1.04);
@@ -534,7 +534,7 @@ input[type=number] {
     font-weight: 800;
     text-align: center;
     font-variant-numeric: tabular-nums;
-    transition: transform .28s cubic-bezier(.3,1.7,.5,1), box-shadow .2s ease;
+    transition: transform .28s var(--spring-settled), box-shadow .2s ease;
 }
 .dose-panel .tp-date-input:focus { transform: scale(1.04); }
 .dose-panel .tp-date-input:focus,
@@ -558,7 +558,7 @@ input[type=number] {
 /* 9. Save-as-template sheet */
 .dose-panel .scrim {
     position: absolute; inset: 0; background: rgba(0, 0, 0, .55);
-    opacity: 0; pointer-events: none; transition: .25s; z-index: 30;
+    opacity: 0; pointer-events: none; transition: .25s var(--spring-effects); z-index: 30;
 }
 .dose-panel .scrim.open { opacity: 1; pointer-events: auto; }
 .dose-panel .sheet {
@@ -596,7 +596,7 @@ input[type=number] {
     padding: 12px 16px; border-radius: 16px;
     font-size: 13px; font-weight: 700;
     transform: translateY(30px); opacity: 0; pointer-events: none;
-    transition: .28s; z-index: 40;
+    transition: .28s var(--spring-effects); z-index: 40;
 }
 .dose-panel .dose-snack.on { transform: none; opacity: 1; }
 
@@ -638,7 +638,7 @@ input[type=number] {
         transform: translate(-50%, 60%) scale(.92);
         opacity: 0; pointer-events: none;
         border-radius: 32px;
-        transition: .28s;
+        transition: .28s var(--spring-effects);
     }
     .dose-panel .sheet.open {
         transform: translate(-50%, 50%) scale(1);
@@ -684,7 +684,7 @@ input[type=number] {
     display: inline-flex; flex: none; align-items: center; gap: 5px; min-width: 164px; height: 34px; padding: 0 12px; white-space: nowrap;
     border: 0; border-radius: 17px; background: var(--pric); color: var(--onpric);
     font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
-    transition: transform .16s cubic-bezier(.3,1.6,.5,1), background .16s ease;
+    transition: transform .16s var(--spring-settled), background .16s ease;
 }
 .m3e-gelref-pill:active { transform: scale(.96); }
 .m3e-gelref-pill .dim { opacity: .72; font-weight: 500; }

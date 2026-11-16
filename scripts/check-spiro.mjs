@@ -12,7 +12,7 @@
  * needs to catch is the inverse of the one it was born for: a CPA record must keep
  * its row, its export and its advisory while contributing no curve point anywhere.
  *
- *   node --experimental-transform-types scripts/check-spiro.mjs
+ *   node --import ./scripts/lib/ts-hook-register.mjs scripts/check-spiro.mjs
  *
  * The flag is needed because it imports `logic.ts` directly, which is the point:
  * the check reads the same module the chart is drawn from.

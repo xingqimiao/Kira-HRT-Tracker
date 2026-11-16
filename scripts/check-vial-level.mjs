@@ -10,7 +10,7 @@
  *
  * So the geometry and the simulation are both pure modules, and both are asserted here.
  *
- *   node --experimental-transform-types scripts/check-vial-level.mjs
+ *   node scripts/check-vial-level.mjs
  *
  * The flag is needed because it imports the app's TypeScript directly, which is the point: the
  * check reads the same modules the component paints from.

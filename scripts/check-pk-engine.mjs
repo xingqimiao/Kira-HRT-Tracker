@@ -7,20 +7,20 @@
  * calibration that cannot recover a known answer produces a plausible-looking wrong
  * number. None of those throw. So the properties are asserted here instead.
  *
- *   node --experimental-transform-types scripts/check-pk-engine.mjs
+ *   node scripts/check-pk-engine.mjs
  *
  * `src/pk/index.ts` imports `../../logic` by extensionless path, which is a bundler
  * convention rather than a Node one, so the resolve hook below fills the extension
  * in — the same local hook `check-sync-merge.mjs` uses.
  */
 import assert from 'node:assert/strict';
-import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
-register(
-  pathToFileURL('./scripts/lib/ts-extension-hook.mjs'),
-  pathToFileURL('./'),
-);
+import { registerHooks } from 'node:module';
+import { load as tsLoad, resolve as tsResolve } from './lib/ts-extension-hook.mjs';
+
+// Synchronous, so it is in force before the first import below is resolved.
+registerHooks({ resolve: tsResolve, load: tsLoad });
 
 const A = await import(pathToFileURL('./src/pk/index.ts').href);
 const R = await import(pathToFileURL('./src/engine/registry.ts').href);
@@ -221,11 +221,19 @@ check('gel product and co-application change the curve', () => {
 
 // ---------------------------------------------------------------------------
 // Calibration
+//
+// Every fixture below carries `analyte: 'E2'`. Since 2.3.0 a lab result without
+// one reads as "unconfirmed" and is excluded from every calibration — the release
+// deliberately stopped guessing the analyte from the unit — so an E2 lab that
+// omits it is not an E2 lab at all. Omitting it here did not make these checks
+// fail loudly: `computeCalibration` returns the identity when no point survives
+// filtering, so the "recovers ~1" case passed by doing nothing at all, and the
+// "~1.2" case was the only one that noticed.
 // ---------------------------------------------------------------------------
 check('calibration off is the identity', () => {
   const events = [ev(L.Route.injection, L.Ester.EV, 5, 24 * 7)];
   const base = A.runSimulation(events, 56);
-  const labs = [{ id: 'l1', timeH: NOW_H - 24, concValue: 150, unit: 'pg/ml' }];
+  const labs = [{ id: 'l1', timeH: NOW_H - 24, concValue: 150, unit: 'pg/ml', analyte: 'E2' }];
   const c = A.computeCalibration(base, events, 56, labs, 'off', 'retrospective');
   assert.equal(c.scale, 1);
   assert.equal(c.factorFn(NOW_H), 1);
@@ -240,6 +248,7 @@ check('calibrating against the model\'s own curve recovers ~1', () => {
   const base = A.runSimulation(events, 56);
   const labs = [7 * 24, 3 * 24, 1 * 24].map((ago, i) => ({
     id: 'l' + i, timeH: NOW_H - ago, concValue: A.interpolateConcentration_E2(base, NOW_H - ago), unit: 'pg/ml',
+    analyte: 'E2',
   }));
   for (const method of ['ekf', 'ou_kalman', 'mipd']) {
     const c = A.computeCalibration(base, events, 56, labs, method, 'retrospective');
@@ -255,6 +264,7 @@ check('calibrating against labs 20% high recovers ~1.2', () => {
   const labs = [7 * 24, 3 * 24, 1 * 24].map((ago, i) => ({
     id: 'l' + i, timeH: NOW_H - ago,
     concValue: A.interpolateConcentration_E2(base, NOW_H - ago) * 1.2, unit: 'pg/ml',
+    analyte: 'E2',
   }));
   for (const method of ['ekf', 'mipd']) {
     const c = A.computeCalibration(base, events, 56, labs, method, 'retrospective');

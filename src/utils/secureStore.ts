@@ -134,6 +134,23 @@ async function hydrateRecords(): Promise<void> {
     }
 }
 
+/**
+ * Set when a launch found ciphertext this device holds no key for, and recovered by
+ * issuing a fresh key. Read once by the overview so the reader is told why their
+ * records are empty instead of finding an app that looks wiped.
+ *
+ * In memory on purpose: the condition is a fact about *this* launch. The next one
+ * finds a working key and has nothing to report.
+ */
+let recoveredFromMissingKey = false;
+
+/** True exactly once, on the launch that recovered from a missing key. */
+export const consumeMissingKeyRecovery = (): boolean => {
+    const recovered = recoveredFromMissingKey;
+    recoveredFromMissingKey = false;
+    return recovered;
+};
+
 /** Prepare the synchronous cache before React state initializers run. */
 export async function initSecureStore(): Promise<void> {
     if (!isNativeApp() || ready) { ready = true; return; }
@@ -155,9 +172,20 @@ export async function initSecureStore(): Promise<void> {
                 break;
             }
         }
-        if (encryptedDataExists) {
-            throw new Error('secure store key is missing while encrypted data exists');
-        }
+        // Ciphertext with no key used to throw here, and the throw landed in the
+        // bootstrap before React mounted: the window kept the WebView's own
+        // background colour and the reader got a grey screen with no message and no
+        // way out. A device migrated from another phone hits it every time, because
+        // a backup carries `/data/data` but never the Android Keystore alias the key
+        // lives in — so the key is not late, it is gone.
+        //
+        // Boot anyway, under a new key. The old ciphertext cannot be opened by
+        // anything (the key never left the previous device), so nothing is lost that
+        // was not already lost; what is gained is an app that starts, a notice that
+        // says so, and a sign-in that pulls the records back from the cloud. The
+        // three retries above still run first, so a merely slow plugin read is not
+        // mistaken for this.
+        if (encryptedDataExists) recoveredFromMissingKey = true;
     }
     if (!stored) {
         const generated = b64(crypto.getRandomValues(new Uint8Array(32)));

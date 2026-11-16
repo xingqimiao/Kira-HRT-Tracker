@@ -14,19 +14,18 @@
  * The legacy-analyte switch is checked here too, because the merge import and the
  * overwrite import reach that decision through different code and have to agree.
  *
- *   node --experimental-transform-types scripts/check-import-merge.mjs
+ *   node scripts/check-import-merge.mjs
  *
  * The extension hook is the same one `check-sync-merge.mjs` uses: the app's sources
  * import by extensionless path, which is a bundler convention rather than a Node one.
  */
 import assert from 'node:assert/strict';
-import { register } from 'node:module';
-import { pathToFileURL } from 'node:url';
 
-register(
-  pathToFileURL('./scripts/lib/ts-extension-hook.mjs'),
-  pathToFileURL('./'),
-);
+import { registerHooks } from 'node:module';
+import { load as tsLoad, resolve as tsResolve } from './lib/ts-extension-hook.mjs';
+
+// Synchronous, so it is in force before the first import below is resolved.
+registerHooks({ resolve: tsResolve, load: tsLoad });
 
 const { importedAdditions } = await import('../src/utils/importMerge.ts');
 const { mergeSyncStates, normalizeSyncState } = await import('../src/utils/syncMerge.ts');

@@ -34,7 +34,9 @@ jobs:
       - run: npm ci --prefix server
       - name: Key and configuration regression tests
         working-directory: server
-        run: node --experimental-transform-types --import ./resolve-hook.mjs --test test/localKeys.test.ts test/credentials.test.ts
+        # `--experimental-transform-types` was removed in Node 26; the resolve hook
+        # now transpiles the enum syntax itself. See server/resolve-hook.mjs.
+        run: node --import ./resolve-hook.mjs --test test/localKeys.test.ts test/credentials.test.ts
       - run: node --test deploy/self-host/manage.test.mjs
       - name: Build native images
         run: |

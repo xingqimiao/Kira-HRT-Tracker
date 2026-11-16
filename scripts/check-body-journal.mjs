@@ -13,7 +13,7 @@
  *   3. the record transport round-trips the journal collection, which is what
  *      makes an entry leave the device at all.
  *
- *   node --experimental-transform-types --import ./server/resolve-hook.mjs scripts/check-body-journal.mjs
+ *   node --import ./scripts/lib/ts-hook-register.mjs scripts/check-body-journal.mjs
  *
  * The resolve hook is the server's; it is what lets a bare script import the
  * app's extensionless TypeScript the way Vite does.

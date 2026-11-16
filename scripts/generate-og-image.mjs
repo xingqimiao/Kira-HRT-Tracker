@@ -1,7 +1,7 @@
 /**
  * Generate `public/og.png` — the social preview card.
  *
- *   node --experimental-transform-types scripts/generate-og-image.mjs
+ *   node scripts/generate-og-image.mjs
  *
  * 1200×630, the size `index.html` already declares, rendered through `sharp` because
  * `sharp` is already here as a transitive dependency and renders SVG text correctly

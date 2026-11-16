@@ -47,6 +47,21 @@ html,body{margin:0;background:var(--stage);color:var(--st-ink);font-family:syste
    WindowInsets value from the native shell. */
 .phone{padding-top:max(env(safe-area-inset-top,0px),var(--app-safe-top,0px));padding-bottom:max(env(safe-area-inset-bottom,0px),var(--app-safe-bottom,0px))}
 
+/* Predictive back's surround. The page shrinks into a rounded card while the
+   gesture runs (driven from PrototypeShell's onBackGesture), and what shows
+   around it is this dim. Android natively reveals the destination screen there;
+   the app mounts one view at a time, so there is nothing behind to reveal and a
+   dim stands in for it. Painted under `.scroll` (DOM order) and under the nav
+   and FAB (their z-index), so the chrome never dims. */
+.phone::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background:#000;
+  opacity:var(--back-scrim,0);
+  pointer-events:none;
+}
+
 /* Desktop Mode Shell Overrides */
 body.desktop .phone{
   width:100vw;
@@ -160,7 +175,7 @@ body.desktop .exam-entry{display:none}
 body.desktop .exam-text-desktop{display:flex;flex-direction:column;gap:12px}
 
 /* Expressive Morph */
-[data-m]{transition:border-radius .5s cubic-bezier(.3,1.8,.5,1),transform .35s cubic-bezier(.3,1.7,.5,1),background .2s}
+[data-m]{transition:border-radius .5s var(--spring-settled),transform .35s var(--spring-settled),background .2s}
 [data-m].mo{transform:scale(.96)}
 /* Only surfaces that name a pressed radius deform. A positional row
    (`squeeze`) keeps the corners `:first-child`/`:last-child` gave it —
@@ -169,7 +184,7 @@ body.desktop .exam-text-desktop{display:flex;flex-direction:column;gap:12px}
 [data-m]:not([data-m="squeeze"]).mo{border-radius:var(--mo)!important}
 
 /* Buttons */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:96px;height:44px;border:0;border-radius:22px;background:var(--pri);color:var(--onpri);font:inherit;font-weight:700;font-size:14px;padding:0 18px;cursor:pointer;transition:filter .15s,background .2s,transform .25s cubic-bezier(.3,1.7,.5,1)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:96px;height:44px;border:0;border-radius:22px;background:var(--pri);color:var(--onpri);font:inherit;font-weight:700;font-size:14px;padding:0 18px;cursor:pointer;transition:filter .15s,background .2s,transform .25s var(--spring-settled)}
 .btn:hover{filter:brightness(1.06)}
 .btn:active{transform:scale(.96)}
 .btn.t{background:var(--secc);color:var(--onsecc)}
@@ -188,10 +203,10 @@ body.desktop .exam-text-desktop{display:flex;flex-direction:column;gap:12px}
    changes to the primary role, and the plus rotates into the close mark. Every
    one of those is transitioned here rather than by `[data-m]`, which only knows
    about the press squash. */
-.fab{position:absolute;right:16px;bottom:92px;display:none;align-items:center;height:56px;padding:0 22px;border:0;border-radius:22px;background:var(--pric);color:var(--onpric);font:inherit;font-weight:700;font-size:15px;box-shadow:0 6px 18px rgba(0,0,0,.32);cursor:pointer;z-index:6;overflow:hidden;transition:padding .42s cubic-bezier(.05,.7,.1,1),border-radius .5s cubic-bezier(.3,1.8,.5,1),transform .35s cubic-bezier(.3,1.7,.5,1),background-color .3s ease,color .3s ease}
+.fab{position:absolute;right:16px;bottom:calc(92px + max(env(safe-area-inset-bottom,0px),var(--app-safe-bottom,0px)));display:none;align-items:center;height:56px;padding:0 22px;border:0;border-radius:22px;background:var(--pric);color:var(--onpric);font:inherit;font-weight:700;font-size:15px;box-shadow:0 6px 18px rgba(0,0,0,.32);cursor:pointer;z-index:6;overflow:hidden;transition:padding .42s cubic-bezier(.05,.7,.1,1),border-radius .5s var(--spring-settled),transform .35s var(--spring-settled),background-color .3s ease,color .3s ease}
 .fab.on{display:flex}
 .fab-ico{position:relative;width:22px;height:22px;flex:none;display:grid;place-items:center}
-.fab-ico svg.i{position:absolute;inset:0;margin:auto;transition:opacity .16s ease,transform .42s cubic-bezier(.34,1.28,.64,1)}
+.fab-ico svg.i{position:absolute;inset:0;margin:auto;transition:opacity .16s ease,transform .42s var(--spring-settled)}
 /* Closed: the close mark is parked a quarter-turn away, scaled down, invisible. */
 .fab-morph .fab-ico svg.i:last-child{opacity:0;transform:rotate(-90deg) scale(.5)}
 /* Open: the two swap, and each one travels a quarter turn — which is exactly
@@ -226,7 +241,7 @@ body.desktop .fab .fab-txt-wrap{display:none}
   background:var(--pric);color:var(--onpric);
   place-items:center;cursor:pointer;z-index:6;
   box-shadow:0 4px 12px rgba(0,0,0,.22);
-  transition:transform .28s cubic-bezier(.3,1.7,.5,1),background .2s;
+  transition:transform .28s var(--spring-settled),background .2s;
 }
 body.desktop .rail-logo.on{display:grid}
 .rail-logo:hover{transform:scale(1.06)}
@@ -234,7 +249,7 @@ body.desktop .rail-logo.on{display:grid}
 .rail-logo svg.i{width:29px;height:29px;stroke-width:1.7}
 
 /* Tiles */
-.tile{display:flex;flex-direction:column;justify-content:space-between;padding:16px 18px;cursor:pointer;min-width:0;transition:border-radius .5s cubic-bezier(.3,1.8,.5,1),transform .35s cubic-bezier(.3,1.7,.5,1),background .2s}
+.tile{display:flex;flex-direction:column;justify-content:space-between;padding:16px 18px;cursor:pointer;min-width:0;transition:border-radius .5s var(--spring-settled),transform .35s var(--spring-settled),background .2s}
 .tile:hover{filter:brightness(1.02)}
 .tile.mo{transform:scale(.96)}
 .tile .n{font-size:38px;font-weight:800;line-height:1;letter-spacing:-.5px}
@@ -257,7 +272,7 @@ body.desktop .rail-logo.on{display:grid}
 
 /* M3E Segmented List */
 .list{display:grid;gap:3px}
-.li{display:flex;align-items:center;gap:14px;background:var(--sch);padding:12px 16px;border-radius:8px;cursor:pointer;min-height:64px;transition:background .18s,border-radius .25s cubic-bezier(.3,1.7,.5,1),transform .3s cubic-bezier(.3,1.7,.5,1)}
+.li{display:flex;align-items:center;gap:14px;background:var(--sch);padding:12px 16px;border-radius:8px;cursor:pointer;min-height:64px;transition:background .18s,border-radius .25s var(--spring-settled),transform .3s var(--spring-settled)}
 .li:hover{background:var(--sch-h)}
 .li.no-hover:hover,.li.no-hover:active{background:var(--sch)}
 .li.no-hover .btn.x:hover{background:var(--errc)}
@@ -287,12 +302,12 @@ body.desktop .li.active-nav .ic{background:rgba(255,255,255,.18);color:var(--onp
    and the batch checkbox share it — so entering selection does not shorten the
    row, and the two cross-fade rather than one popping in where the other was. */
 .li .lead{position:relative;width:50px;height:50px;flex:none}
-.li .lead .ic{position:absolute;inset:0;width:50px;height:50px;transition:opacity .18s ease,transform .3s cubic-bezier(.3,1.7,.5,1)}
+.li .lead .ic{position:absolute;inset:0;width:50px;height:50px;transition:opacity .18s ease,transform .3s var(--spring-settled)}
 .li .lead.sel .ic{opacity:0;transform:scale(.72)}
 
 /* Batch-selection checkbox: an M3 circle the size of the route glyph it replaces,
    so the two are the same object in the same place. */
-.li .sel-box{position:absolute;inset:0;width:50px;height:50px;border-radius:50%;border:2px solid var(--out);display:grid;place-items:center;flex:none;color:var(--pric);background:transparent;opacity:0;transform:scale(.72);transition:opacity .18s ease,transform .3s cubic-bezier(.3,1.7,.5,1),background .18s ease,border-color .18s ease}
+.li .sel-box{position:absolute;inset:0;width:50px;height:50px;border-radius:50%;border:2px solid var(--out);display:grid;place-items:center;flex:none;color:var(--pric);background:transparent;opacity:0;transform:scale(.72);transition:opacity .18s ease,transform .3s var(--spring-settled),background .18s ease,border-color .18s ease}
 .li .lead.sel .sel-box{opacity:1;transform:none}
 .li .sel-box.on{background:var(--onpric);border-color:var(--onpric);color:var(--pric)}
 .li .sel-box svg{width:22px;height:22px}
@@ -305,7 +320,7 @@ body.desktop .li.active-nav .ic{background:rgba(255,255,255,.18);color:var(--onp
 /* Warning Badge & Status Chips */
 .warn-badge{display:inline-flex;align-items:center;justify-content:center;color:var(--warn);font-size:14px}
 .warn-badge svg{width:17px;height:17px;stroke:var(--warn);fill: none;stroke-width:2.2}
-.icon-del{width:38px;height:38px;border-radius:50%;border:0;background:transparent;color:var(--var);display:grid;place-items:center;cursor:pointer;flex:none;transition:background .15s,color .15s}
+.icon-del{width:38px;height:38px;border-radius:50%;border:0;background:transparent;color:var(--var);display:grid;place-items:center;cursor:pointer;flex:none;transition: background .15s var(--spring-effects), color .15s var(--spring-effects)}
 .icon-del:hover{background:var(--errc);color:var(--err)}
 .icon-del svg.i{width:19px;height:19px}
 
@@ -322,7 +337,7 @@ body.desktop .li.active-nav .ic{background:rgba(255,255,255,.18);color:var(--onp
   font-weight:700;
   text-align:center;
   outline:none!important;
-  transition:border-color .2s,background .2s,transform .15s;
+  transition: border-color .2s var(--spring-effects), background .2s var(--spring-effects), transform .15s var(--spring-settled);
 }
 .num-pill:focus,
 .num-pill:focus-visible{
@@ -344,7 +359,7 @@ body.desktop .li.active-nav .ic{background:rgba(255,255,255,.18);color:var(--onp
   font-size:14.5px;
   font-weight:700;
   cursor:pointer;
-  transition:all .25s cubic-bezier(.3,1.5,.5,1);
+  transition:all .25s var(--spring-settled);
 }
 .mode-btn.on{
   background:var(--pri);
@@ -352,34 +367,34 @@ body.desktop .li.active-nav .ic{background:rgba(255,255,255,.18);color:var(--onp
   border-color:var(--pri);
 }
 
-.card{background:var(--sc);border-radius:28px;padding:18px;transition:background .2s,border-radius .35s cubic-bezier(.3,1.7,.5,1)}
-.chip{display:inline-flex;align-items:center;gap:6px;border-radius:12px;padding:6px 12px;font:inherit;font-size:12.5px;font-weight:700;border:0;transition:background .2s,color .2s,transform .25s cubic-bezier(.3,1.7,.5,1)}
+.card{background:var(--sc);border-radius:28px;padding:18px;transition:background .2s,border-radius .35s var(--spring-settled)}
+.chip{display:inline-flex;align-items:center;gap:6px;border-radius:12px;padding:6px 12px;font:inherit;font-size:12.5px;font-weight:700;border:0;transition:background .2s,color .2s,transform .25s var(--spring-settled)}
 .chip.ok{background:var(--okc);color:var(--ok)}
 .chip.dot::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
 
 .cg{display:flex;gap:3px;flex-wrap:nowrap}
 .cg.wrap{flex-wrap:wrap;gap:6px}
 .cg.wrap button{border-radius:20px!important}
-.cg button{border:0;background:var(--sch);color:var(--var);font:inherit;font-size:13px;font-weight:600;padding:8px 14px;border-radius:6px;cursor:pointer;transition:border-radius .35s cubic-bezier(.3,1.7,.5,1),background .2s,color .2s,transform .25s cubic-bezier(.3,1.7,.5,1)}
+.cg button{border:0;background:var(--sch);color:var(--var);font:inherit;font-size:13px;font-weight:600;padding:8px 14px;border-radius:6px;cursor:pointer;transition:border-radius .35s var(--spring-settled),background .2s,color .2s,transform .25s var(--spring-settled)}
 .cg button:hover{background:var(--sch-h)}
 .cg button:active{transform:scale(.96)}
 .cg button:first-child{border-radius:20px 6px 6px 20px}
 .cg button:last-child{border-radius:6px 20px 20px 6px}
 .cg button.on{background:var(--pric);color:var(--onpric);border-radius:20px}
 
-.sw{width:52px;height:30px;border-radius:15px;background:var(--sch);border:2px solid var(--out);position:relative;cursor:pointer;flex:none;transition:background .2s,border-color .2s}
-.sw i{position:absolute;left:5px;top:5px;width:16px;height:16px;border-radius:50%;background:var(--out);transition:all .25s cubic-bezier(.3,1.5,.5,1)}
+.sw{width:52px;height:30px;border-radius:15px;background:var(--sch);border:2px solid var(--out);position:relative;cursor:pointer;flex:none;transition: background .2s var(--spring-effects), border-color .2s var(--spring-effects)}
+.sw i{position:absolute;left:5px;top:5px;width:16px;height:16px;border-radius:50%;background:var(--out);transition:all .25s var(--spring-settled)}
 .sw.on{background:var(--pri);border-color:var(--pri)}
 .sw.on i{left:26px;top:3px;width:20px;height:20px;background:var(--onpri)}
 
-.rad{display:flex;gap:12px;align-items:center;padding:11px 14px;border-radius:20px;cursor:pointer;background:var(--sch);transition:background .2s}
+.rad{display:flex;gap:12px;align-items:center;padding:11px 14px;border-radius:20px;cursor:pointer;background:var(--sch);transition: background .2s var(--spring-effects)}
 .rad.on{background:var(--pric);color:var(--onpric)}
 .rad .s{font-size:12.5px;opacity:.82}
 .rb{width:22px;height:22px;border-radius:50%;border:2px solid var(--out);position:relative;flex:none}
 .rad.on .rb{border-color:var(--onpric)}
 .rad.on .rb::after{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--onpric)}
 
-.model{border-radius:26px;background:var(--sch);padding:15px 18px;cursor:pointer;transition:background .25s,transform .2s}
+.model{border-radius:26px;background:var(--sch);padding:15px 18px;cursor:pointer;transition: background .25s var(--spring-effects), transform .2s var(--spring-settled)}
 .model.on{background:var(--pric);color:var(--onpric)}
 .model ul{list-style:none;margin:6px 0 0;padding:0;font-size:12.5px;line-height:1.7;opacity:.92}
 .model li:before{content:"✓ "}
@@ -396,7 +411,7 @@ body.desktop .li.active-nav .ic{background:rgba(255,255,255,.18);color:var(--onp
   width:27px;height:27px;
   transform:rotate(180deg);
   color:var(--pri);flex:none;
-  transition:transform .22s cubic-bezier(.3,1.5,.5,1),opacity .2s;
+  transition:transform .22s var(--spring-settled),opacity .2s;
 }
 .hback .ht{font-size:28px;font-weight:800;letter-spacing:-.5px;line-height:1.15;color:var(--on)}
 .hback:active svg.i{transform:rotate(180deg) translateX(4px)}
@@ -455,7 +470,7 @@ body.desktop .detail-pane{
 .lic-head{position:sticky;top:calc(-36px - max(env(safe-area-inset-top,0px),var(--app-safe-top,0px)));z-index:6;margin:calc(-36px - max(env(safe-area-inset-top,0px),var(--app-safe-top,0px))) -14px 0;padding:calc(44px + max(env(safe-area-inset-top,0px),var(--app-safe-top,0px))) 14px 6px;background:var(--bg)}
 .lic-head .hback{margin-bottom:0}
 body.desktop .lic-head{position:static;margin:0;padding:0 0 4px;background:none}
-.lic-link{display:inline-flex;align-items:center;gap:6px;border:0;background:none;padding:2px 0;color:var(--pri);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;text-align:left;transition:opacity .2s}
+.lic-link{display:inline-flex;align-items:center;gap:6px;border:0;background:none;padding:2px 0;color:var(--pri);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;text-align:left;transition: opacity .2s var(--spring-effects)}
 .lic-link:hover{opacity:.8;text-decoration:underline;text-underline-offset:2px}
 /* The lab editor's time page: a secondary page above the bottom sheet, not an
    inline disclosure. It slides in from the right and leaves the same way. */
@@ -468,7 +483,7 @@ body.desktop .lab-time{inset:0}
 .lab-num{width:92px;min-width:0;border:0;background:transparent;color:var(--on);font:inherit;font-size:16px;font-weight:700;text-align:right;padding:8px 0;outline:0;font-variant-numeric:tabular-nums}
 .lab-num:focus,.lab-num:focus-visible{outline:none;border:0;box-shadow:none;background:transparent}
 .lf-num:focus-visible{outline:none}
-.foot a{color:inherit;text-decoration:none;transition:color .2s}
+.foot a{color:inherit;text-decoration:none;transition: color .2s var(--spring-effects)}
 .foot a:hover{color:var(--pri);text-decoration:underline;text-underline-offset:2px}
 .empty{text-align:center;color:var(--var);font-size:13px;padding:16px 0 8px}
 .empty svg{display:block;margin:0 auto 2px}
@@ -489,7 +504,7 @@ body.desktop .nav{
   border-right:1px solid rgba(154,141,149,.14);
 }
 .nav button{border:0;background:none;color:var(--var);font:inherit;font-size:12px;font-weight:600;display:grid;justify-items:center;gap:4px;min-width:64px;cursor:pointer}
-.nav .p{width:58px;height:30px;border-radius:15px;display:grid;place-items:center;transition:background .25s,width .3s cubic-bezier(.3,1.5,.5,1)}
+.nav .p{width:58px;height:30px;border-radius:15px;display:grid;place-items:center;transition:background .25s,width .3s var(--spring-settled)}
 .nav button.on{color:var(--on)}
 .nav button.on .p{background:var(--pric);color:var(--onpric);width:64px}
 
@@ -500,7 +515,7 @@ body.desktop .nav{
 /* Sheets, Menus & Fullscreen/Modal Overlays */
 /* 22px glyph + 17px each side = the 56px square the pill shrinks into. */
 .fab.open{padding:0 17px;justify-content:center;z-index:13;background:var(--pri);color:var(--onpri)}
-.scrim{position:absolute;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .3s;z-index:10}
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition: opacity .3s var(--spring-effects);z-index:10}
 .scrim.on{opacity:1;pointer-events:auto}
 
 /* Height follows the content up to a ceiling. A fixed 56% gave a one-paragraph
@@ -544,7 +559,7 @@ body.desktop .sheet.on{
 .hd{width:38px;height:5px;border-radius:3px;background:var(--out);margin:6px auto 14px;cursor:pointer;opacity:.7}
 body.desktop .hd{display:none}
 
-#fm{position:absolute;right:16px;bottom:158px;display:flex;flex-direction:column;align-items:flex-end;gap:10px;z-index:13;pointer-events:none}
+#fm{position:absolute;right:16px;bottom:calc(158px + max(env(safe-area-inset-bottom,0px),var(--app-safe-bottom,0px)));display:flex;flex-direction:column;align-items:flex-end;gap:10px;z-index:13;pointer-events:none}
 #fm.on{pointer-events:auto}
 body.desktop #fm{
   left:90px;
@@ -556,7 +571,7 @@ body.desktop #fm{
 /* The stack grows out of the FAB's corner: the origin sits on the button, the
    item starts small and close to it, and the spring overshoots on the way out.
    The nearest item leaves first so the two read as one unfolding motion. */
-.fmi{display:flex;align-items:center;gap:10px;height:52px;padding:0 20px;border:0;border-radius:26px;background:var(--sch);color:var(--on);font:inherit;font-weight:700;font-size:15px;box-shadow:0 6px 16px rgba(0,0,0,.3);opacity:0;transform:translate(4px,18px) scale(.62);transform-origin:right bottom;transition:opacity .16s ease,transform .36s cubic-bezier(.34,1.56,.64,1);cursor:pointer}
+.fmi{display:flex;align-items:center;gap:10px;height:52px;padding:0 20px;border:0;border-radius:26px;background:var(--sch);color:var(--on);font:inherit;font-weight:700;font-size:15px;box-shadow:0 6px 16px rgba(0,0,0,.3);opacity:0;transform:translate(4px,18px) scale(.62);transform-origin:right bottom;transition:opacity .16s ease,transform .36s var(--spring-settled);cursor:pointer}
 #fm.on .fmi{opacity:1;transform:none}
 #fm.on .fmi:nth-child(2){transition-delay:.03s}
 #fm.on .fmi:nth-child(1){transition-delay:.09s}
@@ -575,7 +590,7 @@ body.desktop .fmi{transform:translate(-6px,10px) scale(.62);transform-origin:lef
   margin-top:6px;
   border:1.5px solid rgba(154,141,149,.25);
   outline:none!important;
-  transition:border-color .2s,background .2s;
+  transition: border-color .2s var(--spring-effects), background .2s var(--spring-effects);
   box-sizing:border-box;
 }
 .fld:focus-within{
@@ -606,7 +621,7 @@ textarea.fld{
   color:var(--on);
   font:inherit;
   outline:none!important;
-  transition:border-color .2s,background .2s;
+  transition: border-color .2s var(--spring-effects), background .2s var(--spring-effects);
   box-sizing:border-box;
 }
 textarea.fld:focus,
@@ -615,7 +630,7 @@ textarea.fld:focus-visible{
   outline:none!important;
   background:var(--sc);
 }
-#snack{position:absolute;left:14px;right:14px;bottom:92px;background:var(--on);color:var(--bg);border-radius:16px;padding:12px 10px 12px 16px;display:flex;align-items:center;justify-content:space-between;font-size:14px;font-weight:600;opacity:0;transform:translateY(14px);pointer-events:none;transition:opacity .25s,transform .35s cubic-bezier(.3,1.5,.5,1);z-index:30}
+#snack{position:absolute;left:14px;right:14px;bottom:92px;background:var(--on);color:var(--bg);border-radius:16px;padding:12px 10px 12px 16px;display:flex;align-items:center;justify-content:space-between;font-size:14px;font-weight:600;opacity:0;transform:translateY(14px);pointer-events:none;transition:opacity .25s,transform .35s var(--spring-settled);z-index:30}
 body.desktop #snack{left:auto;right:28px;bottom:24px;min-width:320px}
 #snack.show{opacity:1;transform:none;pointer-events:auto}
 #snack button{border:0;background:none;color:var(--pric);font:inherit;font-weight:700;padding:6px 12px;cursor:pointer}
@@ -653,7 +668,7 @@ body.desktop #snack{left:auto;right:28px;bottom:24px;min-width:320px}
 
 /* The prototype's snackbar is an id (#snack); the app mounts more than one, so
    the same shell is also available as a class. */
-.snack{position:fixed;left:14px;right:14px;bottom:calc(92px + max(env(safe-area-inset-bottom,0px),var(--app-safe-bottom,0px)));background:var(--on);color:var(--bg);border-radius:16px;padding:12px 10px 12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:14px;font-weight:600;opacity:0;transform:translateY(14px);pointer-events:none;transition:opacity .25s,transform .35s cubic-bezier(.3,1.5,.5,1);z-index:30}
+.snack{position:fixed;left:14px;right:14px;bottom:calc(92px + max(env(safe-area-inset-bottom,0px),var(--app-safe-bottom,0px)));background:var(--on);color:var(--bg);border-radius:16px;padding:12px 10px 12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:14px;font-weight:600;opacity:0;transform:translateY(14px);pointer-events:none;transition:opacity .25s,transform .35s var(--spring-settled);z-index:30}
 body.desktop .snack{left:auto;right:28px;bottom:24px;min-width:320px}
 .snack.show{opacity:1;transform:none;pointer-events:auto}
 .snack button{border:0;background:none;color:var(--pri);font:inherit;font-weight:700;padding:6px 12px;cursor:pointer}
@@ -770,7 +785,7 @@ body.desktop .m3e-ct-inner{height:100%}
 .lf-sec{font-size:12.5px;font-weight:800;color:var(--var);letter-spacing:.02em;padding:8px 6px 0}
 .lf-row{display:flex;align-items:center;gap:10px;min-height:56px}
 .lf-row .n{flex:1;min-width:0;font-size:14px;font-weight:600}
-.lf-row input{width:96px;height:44px;border-radius:14px;border:1.5px solid color-mix(in srgb,var(--out) 30%,transparent);background:var(--sch);color:var(--on);font:inherit;font-size:16px;font-weight:700;text-align:center;padding:0 8px;outline:0;transition:border-color .2s,background .2s}
+.lf-row input{width:96px;height:44px;border-radius:14px;border:1.5px solid color-mix(in srgb,var(--out) 30%,transparent);background:var(--sch);color:var(--on);font:inherit;font-size:16px;font-weight:700;text-align:center;padding:0 8px;outline:0;transition: border-color .2s var(--spring-effects), background .2s var(--spring-effects)}
 .lf-row input:focus{border-color:var(--pri);background:var(--sch-h)}
 
 /* ── Monitoring rows ────────────────────────────────────────────────────────
@@ -782,7 +797,7 @@ body.desktop .m3e-ct-inner{height:100%}
 .li.mon{display:block;padding:0;cursor:default;min-height:0;overflow:hidden}
 .li.mon .mon-head{display:flex;align-items:center;gap:2px;padding-right:10px}
 .li.mon .mon-btn{flex:1;min-width:0;display:flex;align-items:center;gap:14px;padding:12px 0 12px 16px;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;min-height:64px}
-.li.mon .mon-btn>svg.i:last-child{color:var(--out);width:20px;height:20px;flex:none;transition:transform .22s cubic-bezier(.3,1.5,.5,1)}
+.li.mon .mon-btn>svg.i:last-child{color:var(--out);width:20px;height:20px;flex:none;transition:transform .22s var(--spring-settled)}
 .li.mon.open .mon-btn>svg.i:last-child{transform:rotate(90deg)}
 .li.mon .icon-del svg.i{width:17px;height:17px}
 .li.mon .mon-body{padding:0 16px 14px;display:flex;flex-direction:column;gap:7px;font-size:12.5px;line-height:1.55;color:var(--var)}

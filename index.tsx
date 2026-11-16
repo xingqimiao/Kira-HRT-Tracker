@@ -6,6 +6,7 @@ import SplashScreen from './src/components/SplashScreen';
 import AppUnlockScreen from './src/components/AppUnlockScreen';
 import AppClockScreen from './src/components/AppClockScreen';
 import AppLockGuard from './src/components/AppLockGuard';
+import BootFailureScreen from './src/components/BootFailureScreen';
 import { primeLoginProviders } from './src/services/coreAuth';
 import { watchForAppUpdates } from './src/utils/swUpdate';
 import { preventPinchZoom } from './src/utils/preventPinchZoom';
@@ -90,6 +91,27 @@ if (isNativeApp()) {
 watchForAppUpdates();
 preventPinchZoom();
 
+/**
+ * Last line of defence for a bootstrap that throws.
+ *
+ * Everything below runs before any provider exists, so a rejection here had nowhere
+ * to go: `void mount()` swallowed it and the window kept the WebView's own background
+ * colour. That is the grey screen — no message, no button, nothing to press. Rendering
+ * a plain screen with the reason and a reload is the difference between "the app is
+ * broken" and "the app is broken, here is what happened".
+ *
+ * Its own root, because the failed one may be mid-render; `createRoot` on an element
+ * that already has one is a warning, not a crash, and this path must not depend on
+ * the state the failure left behind.
+ */
+const renderBootFailure = (error: unknown) => {
+    console.error('[boot] failed to start', error);
+    const container = document.getElementById('root');
+    if (!container) return;
+    container.replaceChildren();
+    createRoot(container).render(<BootFailureScreen error={error} />);
+};
+
 const mount = async () => {
     const container = document.getElementById('root');
     if (!container) return;
@@ -115,7 +137,6 @@ const mount = async () => {
         renderApp();
         return;
     }
-
     // The splash is already on screen in its own right here, not an overlay over a
     // mounted app: the record key has not been fetched, so mounting App would let
     // `useAppData` initialise from empty storage before the prompt returns.
@@ -144,4 +165,4 @@ const mount = async () => {
     );
 };
 
-void mount();
+void mount().catch(renderBootFailure);

@@ -1,7 +1,7 @@
 /**
  * Does the new `format` field, or an imported foreign record, break cloud sync?
  *
- *   node --experimental-transform-types scripts/check-sync-safety.mjs
+ *   node scripts/check-sync-safety.mjs
  *
  * The concern is specific and worth a check rather than a reading: `buildExportPayload`
  * is shared by file export AND cloud sync, so a field added for the file protocol
@@ -9,13 +9,15 @@
  * does not, along the two functions that actually touch the payload.
  */
 import assert from 'node:assert/strict'
-import { register } from 'node:module'
-import { pathToFileURL } from 'node:url'
+import { registerHooks } from 'node:module'
 
 // `syncMerge.ts` imports the app's `logic.ts` by extensionless path — a bundler
-// convention, not a Node one — so the same resolve hook the other checks use fills
-// the extension in. See scripts/check-sync-merge.mjs.
-register(pathToFileURL('./scripts/lib/ts-extension-hook.mjs'), pathToFileURL('./'))
+// convention, not a Node one — so the shared hook fills the extension in and
+// transpiles the enums strip-only mode refuses. Synchronous, so it is in force
+// before the first import below is resolved. See scripts/lib/ts-extension-hook.mjs.
+import { load as tsLoad, resolve as tsResolve } from './lib/ts-extension-hook.mjs'
+
+registerHooks({ resolve: tsResolve, load: tsLoad })
 
 const { normalizeSyncState } = await import('../src/utils/syncMerge.ts')
 const { payloadToRecords } = await import('../src/services/recordDocs.ts')

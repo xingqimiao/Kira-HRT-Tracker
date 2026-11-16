@@ -8,6 +8,7 @@ import { checkNativeUpdate } from '../utils/nativeUpdate';
 import { isNativeApp } from '../utils/platform';
 import { NativeUpdateSheet } from './NativeUpdateSheet';
 import { openUpdateSheet } from '../utils/updateSheet';
+import { springTo, SPRING } from '../utils/spring';
 
 /**
  * "A new version is ready."
@@ -40,8 +41,15 @@ const UpdateNotice: React.FC = () => {
     const [dismissed, setDismissed] = useState(false);
     // Swipe-down to dismiss on a phone, matching the quick-add snackbar. The close
     // button stays for the desktop shell, where a drag is not a gesture anyone tries.
+    //
+    // The offset is driven by `springTo` rather than a CSS transition on release:
+    // a flicked pill has velocity, and a fixed curve cannot carry it. Below the
+    // dismiss threshold the pill springs back from wherever the finger left it,
+    // arriving with that velocity — which is what makes a fast flick feel
+    // thrown-and-caught instead of placed back.
     const [dragOffset, setDragOffset] = useState(0);
-    const drag = useRef<{ startY: number; active: boolean } | null>(null);
+    const drag = useRef<{ startY: number; active: boolean; lastY: number; lastT: number; velocity: number } | null>(null);
+    const settleRef = useRef<(() => void) | null>(null);
 
     useEffect(() => {
         if (isNativeApp()) {
@@ -65,31 +73,68 @@ const UpdateNotice: React.FC = () => {
             onPointerDown={(event) => {
                 // Desktop keeps the button; the drag is a phone gesture.
                 if (document.body.classList.contains('desktop')) return;
-                drag.current = { startY: event.clientY, active: true };
+                settleRef.current?.();
+                settleRef.current = null;
+                drag.current = {
+                    startY: event.clientY,
+                    active: true,
+                    lastY: event.clientY,
+                    lastT: event.timeStamp,
+                    velocity: 0,
+                };
                 event.currentTarget.setPointerCapture?.(event.pointerId);
             }}
             onPointerMove={(event) => {
                 if (!drag.current?.active) return;
+                // Track velocity across a short window; a single frame's delta is
+                // noisy, and the release uses this to carry momentum.
+                const dt = event.timeStamp - drag.current.lastT;
+                if (dt > 0) {
+                    const instant = (event.clientY - drag.current.lastY) / dt;
+                    // Low-pass: 0.7 of the previous estimate, 0.3 of the new one.
+                    drag.current.velocity = drag.current.velocity * 0.7 + instant * 0.3;
+                    drag.current.lastY = event.clientY;
+                    drag.current.lastT = event.timeStamp;
+                }
                 setDragOffset(Math.max(0, event.clientY - drag.current.startY));
             }}
             onPointerUp={() => {
                 if (!drag.current?.active) return;
-                drag.current.active = false;
                 const travelled = dragOffset;
-                setDragOffset(0);
-                if (travelled >= 64) setDismissed(true);
+                // px/ms → px/s, which is the unit `springTo` wants.
+                const releaseVelocity = drag.current.velocity * 1000;
+                drag.current.active = false;
+
+                // A fast downward flick dismisses even if it has not travelled the
+                // full 64px yet: that is what a flick means. Upward or near-still
+                // releases always spring back.
+                const flicked = releaseVelocity > 900;
+                if (travelled >= 64 || (flicked && travelled > 12)) {
+                    setDismissed(true);
+                    return;
+                }
+                settleRef.current = springTo(
+                    travelled,
+                    0,
+                    value => setDragOffset(value),
+                    { config: SPRING.UI, velocity: releaseVelocity },
+                );
             }}
             onPointerCancel={() => {
                 drag.current = null;
-                setDragOffset(0);
+                settleRef.current?.();
+                settleRef.current = springTo(dragOffset, 0, value => setDragOffset(value), { config: SPRING.UI });
             }}
             style={{
                 // The drag has to win over the page's own vertical scroll.
                 touchAction: 'none',
-                ...(dragOffset > 0
+                ...(dragOffset !== 0
                     ? {
                         transform: `translateY(${dragOffset}px)`,
                         opacity: Math.max(0.2, 1 - dragOffset / 160),
+                        // No CSS transition: the offset is already being animated
+                        // by the solver, and a transition on top of it would fight
+                        // the per-frame writes.
                         transition: 'none',
                     }
                     : {}),

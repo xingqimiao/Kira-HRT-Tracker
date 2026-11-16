@@ -103,6 +103,17 @@ export async function bootPostgres(opts: {
         password: 'postgres',
         port,
         persistent: false,
+        // Force UTF8 and the C locale instead of letting initdb inherit the host's.
+        //
+        // `schema.sql` contains box-drawing characters in its comments (U+2500 "─").
+        // On a Windows host whose ANSI code page is 1252, initdb picks WIN1252 as the
+        // server encoding, and applying that file then fails with
+        //   character with byte sequence 0xe2 0x94 0x80 in encoding "UTF8"
+        //   has no equivalent in encoding "WIN1252"
+        // — every test in the file failing from the `before` hook, which reads like a
+        // code regression and is not one. Production runs UTF8, so pinning it here
+        // also makes the harness match what the server actually runs on.
+        initdbFlags: ['--encoding=UTF8', '--locale=C'],
       });
       await withTimeout(instance.initialise(), `initdb (${dir})`);
       await withTimeout(instance.start(), `postgres start (${dir})`);

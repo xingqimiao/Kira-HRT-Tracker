@@ -6,7 +6,7 @@
  * key travels in the URL fragment, the server stores an envelope it cannot open, and a
  * wrong key or a single flipped byte must fail loudly rather than render something.
  *
- *   node --experimental-transform-types scripts/check-share-crypto.mjs
+ *   node scripts/check-share-crypto.mjs
  *
  * `shareCrypto.ts` imports `secureStore` lazily, inside the functions that persist a
  * live share's key, so importing it here pulls in no Tauri plugin.

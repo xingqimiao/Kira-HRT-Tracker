@@ -23,7 +23,7 @@ import { useLiveShareSync } from './hooks/useLiveShareSync';
 import { useCoreSync } from './hooks/useCoreSync';
 import { onAppSettingsApplied } from './utils/appSettings';
 import { saveTextFile } from './utils/saveFile';
-import { get as secureGet, set as secureSet } from './utils/secureStore';
+import { get as secureGet, set as secureSet, consumeMissingKeyRecovery } from './utils/secureStore';
 import { setAuthLandingIntent, takeAuthLandingIntent } from './utils/authLandingIntent';
 
 import WeightEditorModal from './components/WeightEditorModal';
@@ -183,6 +183,26 @@ const AppContent = () => {
     // events, so a ref carries the live value across its 60-second ticks.
     const eventsRef = useRef(events);
     eventsRef.current = events;
+    /**
+     * Tell the reader when this launch had to replace a record key it could not find.
+     *
+     * `initSecureStore` used to throw in that situation and the app never mounted —
+     * a grey screen with nothing on it. It now boots under a new key, and the cost of
+     * that recovery is that the records on this device read as empty: the old
+     * ciphertext is still in localStorage, sealed under a key that only ever existed
+     * in the previous phone's Keystore. Silence here would look exactly like "the app
+     * lost my data", which is the impression the grey screen already gave.
+     *
+     * Read once, at mount: the flag is about this launch, and a later render must not
+     * re-raise the dialog after the reader dismissed it.
+     */
+    useEffect(() => {
+        if (!consumeMissingKeyRecovery()) return;
+        showDialog('alert', t('boot.key_lost'));
+        // Runs once by design — `consumeMissingKeyRecovery` is destructive.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     useEffect(() => {
         registerDoseSource(() => eventsRef.current);
         migrateOldRemindersToPlans();

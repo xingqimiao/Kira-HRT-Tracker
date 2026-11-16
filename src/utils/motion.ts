@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { isAtRest, stepSpring, SPRING } from './spring';
 
 /**
  * One definition of "a value glides to its new number", used by everything that shows one.
@@ -14,10 +15,23 @@ import { useEffect, useRef, useState } from 'react';
  * the same code.
  */
 
-/** How long a value takes to glide. Slow enough to read as movement, quick enough to feel immediate. */
+/**
+ * How long a value used to take to glide.
+ *
+ * Kept as the `duration` default so callers that pass it explicitly still
+ * typecheck, but it no longer sets the length of anything: `useEasedValue` runs a
+ * spring, and a spring's duration is a *result* of its stiffness and the distance
+ * it has to travel, not an input. See `src/utils/spring.ts`.
+ */
 export const VALUE_EASE_MS = 550;
 
-/** Ease-out cubic: leaves quickly, settles gently. */
+/**
+ * Ease-out cubic.
+ *
+ * No longer used by `useEasedValue` (that is a spring now). Kept because it is
+ * exported and a canvas animation may want a plain curve, but new motion should
+ * use `springTo` / `SPRING` rather than this.
+ */
 export function easeOutCubic(t: number): number {
     return 1 - Math.pow(1 - t, 3);
 }
@@ -57,19 +71,42 @@ export function useEasedValue(
             return;
         }
 
-        const startValue = fromRef.current;
-        const started = performance.now();
+        // Spring, not an eased tween. This value is the one the reader watches —
+        // the level readout, and the vial's fill with it — so it is the animation
+        // most worth making physical. A fixed 550ms ease is distance-blind: a 2
+        // pg/mL change and a 200 pg/mL change take the same time and follow the
+        // same curve, and neither carries momentum when a second reading lands
+        // mid-flight. `SPRING.UI` is critically damped, so it settles without
+        // overshooting a number that is meant to be read.
+        //
+        // The interrupted case is why this carries state: `fromRef` holds the
+        // current *value* and the solver holds the current *velocity*, so a second
+        // reading bends the curve instead of restarting it from zero.
+        let state = { value: fromRef.current, velocity: 0 };
         let raf = 0;
+        let last = performance.now();
         const tick = (now: number) => {
-            const t = Math.min((now - started) / duration, 1);
-            const current = startValue + (value - startValue) * easeOutCubic(t);
+            // Clamp: a backgrounded tab delivers one enormous frame.
+            const elapsed = Math.min(now - last, 1000 / 30);
+            last = now;
+            const steps = Math.max(1, Math.min(40, Math.ceil(elapsed / (1000 / 240))));
+            const dt = elapsed / steps;
+            for (let i = 0; i < steps; i += 1) {
+                if (isAtRest(state, value, SPRING.UI)) break;
+                state = stepSpring(state, value, SPRING.UI, dt);
+            }
             // Written through the ref as well as the state so an interrupted animation
             // resumes from where it actually is, not from where it began — otherwise a
             // second change mid-flight snaps backwards first.
-            fromRef.current = current;
-            setShown(current);
-            if (t < 1) raf = requestAnimationFrame(tick);
-            else onDoneRef.current?.();
+            fromRef.current = state.value;
+            setShown(state.value);
+            if (isAtRest(state, value, SPRING.UI)) {
+                fromRef.current = value;
+                setShown(value);
+                onDoneRef.current?.();
+                return;
+            }
+            raf = requestAnimationFrame(tick);
         };
         raf = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(raf);

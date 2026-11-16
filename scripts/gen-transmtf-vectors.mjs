@@ -1,6 +1,6 @@
 // Generates the Transmtf-engine golden vectors.
 //
-//   node --experimental-transform-types scripts/gen-transmtf-vectors.mjs
+//   node scripts/gen-transmtf-vectors.mjs
 //
 // The reference is the vendored engine behind `src/pk/index.ts` — the same code
 // the web build runs when the user picks the Transmtf model. The events are

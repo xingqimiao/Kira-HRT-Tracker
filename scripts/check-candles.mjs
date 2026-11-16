@@ -1,7 +1,7 @@
 /**
  * Runnable check for the chart's candle (K-line) aggregation.
  *
- *   node --experimental-transform-types scripts/check-candles.mjs
+ *   node scripts/check-candles.mjs
  *
  * The candles are an OHLC read of a continuous PK curve, and two ways for it
  * to be quietly wrong both matter:

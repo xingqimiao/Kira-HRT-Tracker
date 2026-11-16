@@ -1,7 +1,7 @@
 /**
  * Runnable check for the calibration-card preview data (src/utils/modelPreview.ts).
  *
- *   node --experimental-transform-types --import ./server/resolve-hook.mjs scripts/check-model-preview.mjs
+ *   node --import ./scripts/lib/ts-hook-register.mjs scripts/check-model-preview.mjs
  *
  * The drawing itself needs a canvas and is not checked here. What *is* checked is the
  * pure part the drawing stands on: that real data maps to points inside the axis, that

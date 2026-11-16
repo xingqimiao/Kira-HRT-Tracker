@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Icon } from './SvgDefs';
 import { useEscape } from '../hooks/useEscape';
 import { useBackHandler } from '../utils/nativeBack';
+import { useBackPose } from '../utils/backPose';
 
 /**
  * M3E Container Transform (docs/m3e-prototype.html `openFull` / `closeFull`).
@@ -169,6 +170,8 @@ export function ContainerTransform({
 
     /** The element this surface grew out of, held for the whole lifetime. */
     const triggerRef = useRef<HTMLElement | null>(null);
+    /** The surface itself, for the predictive-back pose. */
+    const panelRef = useRef<HTMLDivElement | null>(null);
     /** Whether that element was actually on screen when we hid it. */
     const triggerVisibleRef = useRef(false);
     const exitTimer = useRef<number | undefined>(undefined);
@@ -212,7 +215,13 @@ export function ContainerTransform({
     useBackHandler(open, () => {
         onClose();
         return true;
-    });
+    }, 'overlay', true);
+
+    // A full-screen panel answers the gesture the way the system's own pages do:
+    // it scales into a rounded card leaning toward the finger's edge. Marked as a
+    // gesture surface above, so the shell's page peek stands down while this is
+    // the thing being dismissed.
+    useBackPose(open, panelRef, 'card');
 
     // Capture before the first paint of the overlay, so the very first frame is
     // already clipped to the trigger rather than flashing full-screen. The
@@ -369,6 +378,7 @@ export function ContainerTransform({
                 aria-hidden="true"
             />
             <div
+                ref={panelRef}
                 className={`m3e-ct${entered ? ' open' : ''}${leaving ? ' out' : ''}${fadeExit ? ' fade' : ''}${bare ? ' bare' : ''}${className ? ` ${className}` : ''}`}
                 role="dialog"
                 aria-modal="true"

@@ -6,8 +6,8 @@
  * so the page still renders — in the wrong language, or with the wrong script, which
  * is the kind of bug nobody files. This turns that silence into a number.
  *
- *   node --experimental-transform-types scripts/check-i18n-coverage.mjs
- *   node --experimental-transform-types scripts/check-i18n-coverage.mjs --strict
+ *   node scripts/check-i18n-coverage.mjs
+ *   node scripts/check-i18n-coverage.mjs --strict
  *
  * Reports by default and only fails under `--strict`, because the counts below are
  * allowed to be non-zero while a translation is in progress; a check that is red for
