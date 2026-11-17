@@ -15,6 +15,7 @@ import { getShareCopy } from '../i18n/share';
 import { formatRelativeParts } from '../utils/helpers';
 import { readMedPlans, planStatuses, planQuickEntries, plansForMode, activePatches, patchRemovalEvent, ignorePlanOccurrences, restorePlanOccurrences, MED_PLAN_CHANGED_EVENT, type PlanStatus } from '../utils/medPlan';
 import { templateToEvent } from '../utils/templateToEvent';
+import { currentTimeZone, currentTzOffset, onAppSettingsApplied } from '../utils/appSettings';
 import {
     AdaptiveSheet,
     SegmentedList,
@@ -161,9 +162,18 @@ const Home: React.FC<HomeProps> = ({
         }
     }, [absurd]);
 
+    // Adopting the account's zone (set on another device, or by this one a moment
+    // ago) has to re-run the "today" maths below; nothing else in this page
+    // listens for that event.
+    const [settingsRev, setSettingsRev] = React.useState(0);
+    React.useEffect(() => onAppSettingsApplied(() => setSettingsRev(v => v + 1)), []);
+
     const antiandrogen = React.useMemo(
-        () => antiandrogenReading(events, nowMs / 3_600_000, aaChartMode),
-        [events, nowMs, aaChartMode],
+        // The account's zone, not this device's: "today" has to mean one thing for
+        // one account, or a phone and a laptop in different zones read the same day
+        // two ways.
+        () => antiandrogenReading(events, nowMs / 3_600_000, aaChartMode, currentTimeZone()),
+        [events, nowMs, aaChartMode, settingsRev],
     );
     // The heading is the tile's own slot, not the drug's full name: half a tile
     // cannot hold "Cyproterone Acetate (CPA)" in English, and the value below it
@@ -187,7 +197,7 @@ const Home: React.FC<HomeProps> = ({
     const planState = React.useMemo(() => {
         const plans = plansForMode(readMedPlans(), isTransmasc ? 'transmasc' : 'transfem');
         if (plans.length === 0) return { overdue: false, statuses: [] as PlanStatus[], entries: [] };
-        const tz = new Date().getTimezoneOffset();
+        const tz = currentTzOffset(nowMs);
         const refs = events.map(e => ({ ester: e.ester, route: e.route, timeH: e.timeH }));
         const statuses = planStatuses(plans, refs, nowMs, tz);
         const covered = new Set(doseTemplates.map(d => `${d.ester}:${d.route}`));
@@ -196,7 +206,7 @@ const Home: React.FC<HomeProps> = ({
             statuses,
             entries: planQuickEntries(plans, covered, t('plan.quick_suffix')),
         };
-    }, [events, nowMs, doseTemplates, t, isTransmasc, planRev]);
+    }, [events, nowMs, doseTemplates, t, isTransmasc, planRev, settingsRev]);
 
     // Fold the overdue sheet away once nothing is overdue — the ignore that
     // emptied it, or a dose logged from the quick-record sheet meanwhile.

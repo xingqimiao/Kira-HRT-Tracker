@@ -32,8 +32,14 @@ export interface MedPlan {
     extras?: Record<string, number>;
     /** Stable local-calendar anchor for an every-N-days cadence. */
     anchorDate?: string;
-    /** The device's UTC offset at save time (getTimezoneOffset(), minutes — CST is
-     *  -480). The server uses it to place the day boundary where the user's is. */
+    /** The account zone's UTC offset when the plan was saved (getTimezoneOffset()
+     *  units — CST is -480).
+     *
+     *  Legacy: readers take the boundary from the account's `app-timezone` now, so
+     *  a plan saved on a laptop in New York is not due at New York's midnight for a
+     *  phone in Taipei. Kept because the server falls back to it for accounts that
+     *  have never stored a zone, and because dropping the field would rewrite every
+     *  stored plan for no gain. */
     tzOffsetMinutes?: number;
     /** Optional: only doses by this route count. Unset = any route. */
     route?: Route;

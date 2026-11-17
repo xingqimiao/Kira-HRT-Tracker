@@ -1204,6 +1204,10 @@ const PACK: LangPack = {
     "settings.aa_display.cumulative": "Cumulative total",
 
     "settings.aa_display.none": "Hide",
+    "settings.timezone": "Time zone",
+    "settings.timezone_desc": "\"Today\", due times and reminders all follow this zone. Use the same one on every device, or the same day can read two ways.",
+    "settings.timezone_use_device": "Use this device's zone",
+    "settings.timezone_search": "Search time zones",
     "backup.auto_saved": "Auto-backed up to cloud",
     "onboarding.privacy_title_1": "Privacy protection is rooted in",
     "onboarding.privacy_title_highlight": "KiraEqual and Kira Tracker",

@@ -20,6 +20,7 @@ import { get as secureGet, set as secureSet, remove as secureRemove } from './se
  */
 import type { AppSettings } from './syncMerge';
 import { readGelProducts, writeGelProducts } from './gelProducts';
+import { deviceTimeZone, isTimeZone, resolveTimeZone, utcOffsetMinutes } from './timezone';
 
 /** Fired after `apply` so each owner can adopt its own key. */
 export const APP_SETTINGS_EVENT = 'app-settings-applied';
@@ -187,4 +188,57 @@ export function applyAppSettings(settings: AppSettings | undefined, at = 0): voi
 export function onAppSettingsApplied(handler: () => void): () => void {
     window.addEventListener(APP_SETTINGS_EVENT, handler);
     return () => window.removeEventListener(APP_SETTINGS_EVENT, handler);
+}
+
+/**
+ * The account's zone, read fresh.
+ *
+ * Every "today" in the app converts through this rather than through the
+ * device's own zone, which is what let two devices in different places disagree
+ * about the same day. The stored value wins; a device that has none yet (first
+ * launch) uses its own, which is also what seeds the account below.
+ */
+export function currentTimeZone(): string {
+    return resolveTimeZone(secureGet(KEYS.timezone));
+}
+
+/**
+ * The account zone's offset at `nowMs`, in `getTimezoneOffset()` units — the form
+ * the plan arithmetic takes.
+ *
+ * A plan's `firstHour` is a wall-clock time, so it has to be read in one zone for
+ * everyone: the account's. Resolving it per instant rather than storing it once
+ * is also what keeps a plan from drifting an hour on the two DST days.
+ */
+export function currentTzOffset(nowMs: number = Date.now()): number {
+    return utcOffsetMinutes(currentTimeZone(), nowMs);
+}
+
+/**
+ * Give the account a zone if it has none.
+ *
+ * Called once per boot: the first device to sign in decides, the value rides the
+ * settings bag to every other device, and nobody after that is asked. Returns
+ * whether it wrote, so the caller knows a sync now has something to push.
+ */
+export function seedTimeZone(): boolean {
+    if (isTimeZone(secureGet(KEYS.timezone))) return false;
+    secureSet(KEYS.timezone, deviceTimeZone());
+    touchAppSettings();
+    return true;
+}
+
+/**
+ * Set the account's zone.
+ *
+ * Writes the bag key, stamps it (so the sync pushes rather than adopts), and
+ * announces it — the pages that compute a day boundary from it are not re-rendered
+ * by a settings write otherwise, and the values on screen would stay on the old
+ * midnight until something else changed.
+ */
+export function writeTimeZone(zone: string): void {
+    if (!isTimeZone(zone) || secureGet(KEYS.timezone) === zone) return;
+    secureSet(KEYS.timezone, zone);
+    touchAppSettings();
+    window.dispatchEvent(new CustomEvent(APP_SETTINGS_EVENT));
 }

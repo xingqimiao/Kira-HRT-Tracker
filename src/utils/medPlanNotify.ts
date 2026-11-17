@@ -31,6 +31,8 @@ import { applyNotifFallbacks, notifFallbacks, type NotifFallbacks } from './noti
 import { readMedPlans, writeMedPlans, medPlanUpdatedAt, medPlanClearedAt, sanitizeMedPlans, dueTimesToday, matchesPlan, planStatuses, plansForMode, localDateKey, isSavedTemplate, type MedPlan, type PlanStatus, type PlanTime } from './medPlan';
 import { get, set } from './secureStore';
 import { occurrenceKey, readLedger, serializeLedger, pruneLedger } from './medPlanNotifyLedger';
+import { currentTimeZone, currentTzOffset } from './appSettings';
+import { wallClockIn, zonedTimeToEpoch } from './timezone';
 
 // --- Migration: the old name+time reminders become plans ---------------------
 
@@ -223,22 +225,26 @@ async function rescheduleOnce(request: boolean): Promise<boolean> {
         return granted;
     }
     const now = new Date();
+    // Every wall clock below is read in the account's zone, not this device's: the
+    // badge and the server's catch-up scan already work that way, and a reminder
+    // that rings at the device's 08:00 while the app calls the dose due at 08:00
+    // somewhere else is the same disagreement in a different place.
+    const tz = currentTimeZone();
+    const today = wallClockIn(tz, now.getTime());
+    const todayKey = `${today.year}-${String(today.month).padStart(2, '0')}-${String(today.day).padStart(2, '0')}`;
     const mode = currentMode();
     for (const plan of plansForMode(readMedPlans(), mode)) {
         if (!plan.enabled || plan.route === Route.patchRemove) continue;
         const schedules: Date[] = [];
         if (plan.mode === 'days') {
-            const anchor = plan.anchorDate ?? localDateKey(now);
+            const anchor = plan.anchorDate ?? todayKey;
             const [y, m, d] = anchor.split('-').map(Number);
-            const anchorDate = new Date(y, m - 1, d, plan.firstHour, plan.firstMinute, 0, 0);
-            const cycleDays = plan.everyDays ?? 1;
-            let due = new Date(anchorDate);
-            while (due <= now) due.setDate(due.getDate() + cycleDays);
-            for (let i = 0; i < NATIVE_QUEUE_SIZE; i++) {
-                const candidate = new Date(due);
-                candidate.setDate(candidate.getDate() + i * cycleDays);
-                schedules.push(candidate);
-            }
+            const cycleDays = Math.max(1, plan.everyDays ?? 1);
+            const at = (offsetDays: number) =>
+                new Date(zonedTimeToEpoch(tz, y, m, d + offsetDays, plan.firstHour, plan.firstMinute));
+            let step = 0;
+            while (at(step) <= now) step += cycleDays;
+            for (let i = 0; i < NATIVE_QUEUE_SIZE; i++) schedules.push(at(step + i * cycleDays));
         } else {
             const localTimes = plan.mode === 'times'
                 ? [{ dayOffset: 0, hour: plan.firstHour, minute: plan.firstMinute }, ...(plan.doseTimes ?? []).map(t => ({ ...t, dayOffset: 0 }))]
@@ -249,7 +255,7 @@ async function rescheduleOnce(request: boolean): Promise<boolean> {
             for (let day = 0; day < 5; day++) for (let i = 0; i < localTimes.length; i++) {
                 const t = localTimes[i];
                 const dayOffset = 'dayOffset' in t ? t.dayOffset : 0;
-                const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + day + dayOffset, t.hour, t.minute, 0, 0);
+                const date = new Date(zonedTimeToEpoch(tz, today.year, today.month, today.day + day + dayOffset, t.hour, t.minute));
                 if (date > now) schedules.push(date);
             }
         }
@@ -414,7 +420,7 @@ export function startPlanWebNotifications(): void {
             const plans = plansForMode(readMedPlans(), currentMode());
             if (plans.length === 0) return;
             const nowMs = Date.now();
-            const tz = new Date().getTimezoneOffset();
+            const tz = currentTzOffset(nowMs);
             // Prune on every tick, and persist the pruned set when it shrank, so
             // expired occurrences do not linger in storage.
             const stored = readLedger(get(WEB_LEDGER_KEY));

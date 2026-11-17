@@ -5,6 +5,7 @@ import {
     e2VolumeWeightKG,
 } from './src/pk/kernels.ts';
 import { decompressGzipText } from './src/utils/boundedDecompression.ts';
+import { dayKeyIn as dayKeyInZone, isTimeZone } from './src/utils/timezone.ts';
 
 // --- Types & Enums ---
 
@@ -705,7 +706,7 @@ export type AntiandrogenReading =
     | { kind: 'since'; ester: Ester; sinceH: number }
     | { kind: 'grams'; grams: number };
 
-/** Local calendar day, so "today" is the user's midnight, not UTC's. */
+/** Calendar day in the device's own zone, for callers that have no account zone yet. */
 function localDayKey(hoursSinceEpoch: number): string {
     const d = new Date(hoursSinceEpoch * 3600000);
     return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
@@ -722,12 +723,22 @@ function localDayKey(hoursSinceEpoch: number): string {
  * taken, and it is the only one whose "today" can be non-zero. Showing an older
  * compound's 0 mg would read as "you took none today" when the truth is "that
  * drug is no longer used".
+ *
+ * `timeZone` is the account's zone (`app-timezone`), not the viewer's: "today"
+ * has to mean one thing for one account, or a phone in Taipei and a laptop in
+ * New York show two different readings of the same day. Callers that have not
+ * resolved the account's zone yet fall back to this device's, which is what the
+ * pre-account screens want anyway.
  */
 export function antiandrogenReading(
     events: DoseEvent[],
     nowH: number = Date.now() / (1000 * 60 * 60),
     mode: AntiandrogenChartMode = 'auto',
+    timeZone?: string,
 ): AntiandrogenReading {
+    const zone = isTimeZone(timeZone) ? timeZone : null;
+    const dayKeyOf = (h: number): string => (zone ? dayKeyInZone(zone, h * 3_600_000) : localDayKey(h));
+
     // Cumulative is CPA-only by definition — it is the >=10 g meningioma figure —
     // so it keeps the pre-existing "nothing to show" reading at zero grams.
     if (mode === 'cumulative') {
@@ -746,11 +757,12 @@ export function antiandrogenReading(
     const sinceH = Math.max(0, nowH - latest.timeH);
     if (mode === 'since') return { kind: 'since', ester, sinceH };
 
-    const today = localDayKey(nowH);
+    const today = dayKeyOf(nowH);
     let mgToday = 0;
     for (const e of events) {
-        if (e.ester === ester && localDayKey(e.timeH) === today) mgToday += e.doseMG;
+        if (e.ester === ester && dayKeyOf(e.timeH) === today) mgToday += e.doseMG;
     }
+
 
     // CPA is taken every 1–3 days, so a mg count says nothing on the days in
     // between; the useful reading there is how long ago the last dose was. The

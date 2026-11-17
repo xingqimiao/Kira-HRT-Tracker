@@ -1169,6 +1169,10 @@ const PACK: LangPack = {
     "settings.aa_display.cumulative": "Kümülatif toplam",
 
     "settings.aa_display.none": "Gizle",
+    "settings.timezone": "Saat dilimi",
+    "settings.timezone_desc": "\"Bugün\", doz saatleri ve hatırlatıcılar bu saat dilimine göre hesaplanır. Her cihazda aynı değeri seçin.",
+    "settings.timezone_use_device": "Bu cihazın saat dilimini kullan",
+    "settings.timezone_search": "Saat dilimi ara",
     "backup.auto_saved": "Buluta otomatik yedeklendi",
     "onboarding.privacy_title_1": "Gizlilik koruması",
     "onboarding.privacy_title_highlight": "KiraEqual ve Kira Tracker",

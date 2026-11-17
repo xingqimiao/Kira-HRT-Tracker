@@ -21,6 +21,7 @@ import {
     arePlanNotificationsMuted, resumePlanNotifications, stopPlanWebNotifications,
 } from '../utils/medPlanNotify';
 import { plansForMode, localDateKey, nextPlanOccurrences } from '../utils/medPlan';
+import { currentTzOffset } from '../utils/appSettings';
 import {
     categoriesOf,
     categoryForEster,
@@ -173,12 +174,12 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
             : undefined,
         intervalHours: mode === 'hours' ? intervalHours : undefined,
         everyDays: mode === 'days' ? everyDays : undefined,
-        tzOffsetMinutes: new Date().getTimezoneOffset(),
+        tzOffsetMinutes: currentTzOffset(),
         firstHour: firstTime.getHours(),
         firstMinute: firstTime.getMinutes(),
         enabled: true,
     }), [ester, route, hrtMode, mode, editingId, plans, extraTimes, intervalHours, everyDays, firstTime]);
-    const preview = nextPlanOccurrences(draftPlan, nowMs, new Date().getTimezoneOffset(), 2);
+    const preview = nextPlanOccurrences(draftPlan, nowMs, currentTzOffset(nowMs), 2);
 
     // Read the current permission on mount (async: the native check hits the plugin).
     useEffect(() => {
@@ -345,7 +346,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                 : undefined,
             intervalHours: mode === 'hours' ? intervalHours : undefined,
             everyDays: mode === 'days' ? everyDays : undefined,
-            tzOffsetMinutes: new Date().getTimezoneOffset(),
+            tzOffsetMinutes: currentTzOffset(),
             firstHour: firstTime.getHours(),
             firstMinute: firstTime.getMinutes(),
             // A new plan is on; an edit keeps whatever the row's switch says.
@@ -660,7 +661,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
             ) : (
                 <SegmentedList label={t('plan.title')}>
                     {visiblePlans.map(p => {
-                        const next = nextPlanOccurrences(p, nowMs, new Date().getTimezoneOffset(), 2);
+                        const next = nextPlanOccurrences(p, nowMs, currentTzOffset(nowMs), 2);
                         // The title already carries the drug name unless an alias
                         // replaced it, and the route is not repeated anywhere else…
                         const meta: string[] = [];

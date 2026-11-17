@@ -33,6 +33,8 @@ import {
 import type { IconComponent } from '../icons';
 import type { Lang } from '../i18n/types';
 import { AppTheme, APP_VERSION } from '../constants';
+import { currentTimeZone, onAppSettingsApplied, writeTimeZone } from '../utils/appSettings';
+import { DEFAULT_TIME_ZONE, deviceTimeZone } from '../utils/timezone';
 import {
     AntiandrogenChartMode,
     ANTIANDROGEN_CHART_MODES,
@@ -154,8 +156,8 @@ interface SettingsProps {
 
 type SettingsCat = 'general' | 'algo' | 'plans' | 'reminders' | 'data' | 'about';
 type MobileView = 'list' | SettingsCat;
-/** The three choices that drill one level further inside the detail pane. */
-type SubPanel = 'aa' | 'pk' | 'calib';
+/** The choices that drill one level further inside the detail pane. */
+type SubPanel = 'aa' | 'pk' | 'calib' | 'tz';
 
 /** The master-detail breakpoint, the same one the M3E pages use for desktop. */
 const DESKTOP_QUERY = '(min-width: 760px)';
@@ -211,6 +213,31 @@ const Settings: React.FC<SettingsProps> = ({
     const [cat, setCat] = useState<SettingsCat>(_savedCat);
     const [mobileView, setMobileView] = useState<MobileView>(_savedMobileView);
     const [sub, setSub] = useState<SubPanel | null>(null);
+
+    // ── Account time zone ────────────────────────────────────────────────────
+    // Held in state rather than read per render so the row and the panel agree
+    // with what a sync just adopted from another device.
+    const [timeZone, setTimeZoneState] = useState(currentTimeZone);
+    useEffect(() => onAppSettingsApplied(() => setTimeZoneState(currentTimeZone())), []);
+    const [tzQuery, setTzQuery] = useState('');
+    const zoneChoices = React.useMemo(() => {
+        let supported: string[] = [];
+        try {
+            supported = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] })
+                .supportedValuesOf?.('timeZone') ?? [];
+        } catch { /* older engine: fall back to the few that matter */ }
+        return [...new Set([timeZone, DEFAULT_TIME_ZONE, 'UTC', ...supported])].sort();
+    }, [timeZone]);
+    const visibleZones = React.useMemo(() => {
+        const q = tzQuery.trim().toLowerCase();
+        if (!q) return zoneChoices;
+        return zoneChoices.filter(z => z.toLowerCase().replace(/_/g, ' ').includes(q));
+    }, [zoneChoices, tzQuery]);
+    const chooseTimeZone = (zone: string) => {
+        writeTimeZone(zone);
+        setTimeZoneState(zone);
+        setTzQuery('');
+    };
 
     // ── App lock (Android only) ──────────────────────────────────────────────
     // `lockPresent` is false on web and on any build without the native bridge;
@@ -398,6 +425,15 @@ const Settings: React.FC<SettingsProps> = ({
                 trailing={chevron}
                 onClick={() => navTo(onNavigateToAppearance, 'general')}
             />
+            {/* "Today", due times and push timing all follow this zone, so it is a
+                setting rather than something each device decides for itself. */}
+            <SegmentedListItem
+                icon={Clock3}
+                title={t('settings.timezone')}
+                subtitle={timeZone}
+                trailing={chevron}
+                onClick={() => openSub('tz')}
+            />
             <SegmentedListItem
                 icon={Activity}
                 title={t('status.weight')}
@@ -576,6 +612,41 @@ const Settings: React.FC<SettingsProps> = ({
                 label={t('settings.aa_display')}
                 className="wrap"
             />
+        </div>
+    );
+
+    // ── Third level: the account's time zone ──────────────────────────────────
+    const renderTimeZonePanel = (): React.ReactNode => (
+        <div className="flex flex-col gap-4">
+            <p className="muted text-sm leading-relaxed">{t('settings.timezone_desc')}</p>
+            <SegmentedList label={t('settings.timezone')}>
+                <SegmentedListItem
+                    icon={MonitorSmartphone}
+                    title={t('settings.timezone_use_device')}
+                    subtitle={deviceTimeZone()}
+                    onClick={() => chooseTimeZone(deviceTimeZone())}
+                />
+            </SegmentedList>
+            <input
+                className="input-base"
+                value={tzQuery}
+                onChange={(e) => setTzQuery(e.target.value)}
+                placeholder={t('settings.timezone_search')}
+                aria-label={t('settings.timezone_search')}
+                autoComplete="off"
+                spellCheck={false}
+            />
+            <SegmentedList label={t('settings.timezone')}>
+                {visibleZones.slice(0, 60).map(z => (
+                    <SegmentedListItem
+                        key={z}
+                        title={z}
+                        active={z === timeZone}
+                        trailing={z === timeZone ? <Icon icon={Check} size={20} /> : undefined}
+                        onClick={() => chooseTimeZone(z)}
+                    />
+                ))}
+            </SegmentedList>
         </div>
     );
 
@@ -996,7 +1067,9 @@ const Settings: React.FC<SettingsProps> = ({
             ? t('settings.pk_engine')
             : sub === 'calib'
                 ? t('cal.settings')
-                : cats.find(c => c.id === cat)?.label ?? t('nav.settings');
+                : sub === 'tz'
+                    ? t('settings.timezone')
+                    : cats.find(c => c.id === cat)?.label ?? t('nav.settings');
 
     const paneBody: React.ReactNode = aaPane
         ? renderAaPanel()
@@ -1004,7 +1077,9 @@ const Settings: React.FC<SettingsProps> = ({
             ? renderPkPanel()
             : sub === 'calib'
                 ? renderCalibPanel()
-                : cat === 'general'
+                : sub === 'tz'
+                    ? renderTimeZonePanel()
+                    : cat === 'general'
                 ? renderGeneral()
                 : cat === 'algo'
                 ? renderAlgo()

@@ -58,6 +58,7 @@ import {
   type MedPlan,
   type PlanDoseRef,
 } from '../../src/utils/medPlan.ts';
+import { isTimeZone, utcOffsetMinutes } from '../../src/utils/timezone.ts';
 
 export type { AuthContext };
 export { hashPassword, verifyPassword, AccountService } from './accounts.ts';
@@ -592,12 +593,17 @@ export const MedPlanService = {
    *
    * Doses are read newest-first; a single generous page bounds the query and any
    * real daily count fits well inside it. `nowMs` is passed in so the day boundary
-   * is the caller's, and each plan's own saved UTC offset places its midnight where
-   * the user's is (a plan made on a device in CST is due 08:00 CST wherever the
-   * server sits).
+   * is the caller's, and the account's own zone places its midnight where the
+   * user's is — one zone for every device, so the in-app badge, this scan and a
+   * phone in another time zone cannot disagree about which day it is.
+   *
+   * `plan.tzOffsetMinutes` is only the fallback for an account that has never
+   * stored a zone (a client older than the setting); it is the offset of whatever
+   * device saved the plan, which is precisely what made statuses device-dependent.
    */
   async status(ctx: AuthContext, nowMs: number): Promise<MedPlanStatus[]> {
-    const { hrtMode } = await AccountService.getSettings(ctx);
+    const { hrtMode, timezone } = await AccountService.getSettings(ctx);
+    const accountOffset = isTimeZone(timezone) ? utcOffsetMinutes(timezone, nowMs) : null;
     const plans = plansForMode(await MedPlanService.read(ctx), hrtMode);
     if (plans.length === 0) return [];
     const { records } = await MedicationService.list(ctx, { limit: 500 });
@@ -608,7 +614,7 @@ export const MedPlanService = {
     }));
     const out: MedPlanStatus[] = [];
     for (const plan of plans) {
-      const [status] = planStatuses([plan], doses, nowMs, plan.tzOffsetMinutes ?? 0);
+      const [status] = planStatuses([plan], doses, nowMs, accountOffset ?? plan.tzOffsetMinutes ?? 0);
       if (!status) continue;
       out.push({
         plan,

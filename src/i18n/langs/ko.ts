@@ -1218,6 +1218,10 @@ const PACK: LangPack = {
     "settings.aa_display.cumulative": "누적 총량",
 
     "settings.aa_display.none": "표시 안 함",
+    "settings.timezone": "시간대",
+    "settings.timezone_desc": "\"오늘\", 복용 예정 시각, 알림은 모두 이 시간대를 기준으로 계산됩니다. 기기마다 같은 값으로 맞춰 주세요.",
+    "settings.timezone_use_device": "이 기기의 시간대 사용",
+    "settings.timezone_search": "시간대 검색",
     "label.t": "테스토스테론",
     "label.total_t": "총 테스토스테론",
     "label.total_t_nmol": "총 테스토스테론",

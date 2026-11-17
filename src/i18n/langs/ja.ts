@@ -1240,6 +1240,10 @@ const PACK: LangPack = {
     "settings.aa_display.cumulative": "累計量",
 
     "settings.aa_display.none": "非表示",
+    "settings.timezone": "タイムゾーン",
+    "settings.timezone_desc": "「今日」、服薬予定の時刻、リマインダーはすべてこのタイムゾーンで計算されます。端末ごとに同じ値を選んでください。",
+    "settings.timezone_use_device": "この端末のタイムゾーンを使う",
+    "settings.timezone_search": "タイムゾーンを検索",
     "export.btn_csv": "CSV ファイルをエクスポート",
     "export.btn_pdf": "PDF ファイルをエクスポート",
     "export.btn_copy_json": "JSON をコピー",

@@ -21,7 +21,7 @@ import type { ImportMode } from './components/ImportSection';
 import { useAppNavigation, ViewKey } from './hooks/useAppNavigation';
 import { useLiveShareSync } from './hooks/useLiveShareSync';
 import { useCoreSync } from './hooks/useCoreSync';
-import { onAppSettingsApplied } from './utils/appSettings';
+import { onAppSettingsApplied, seedTimeZone } from './utils/appSettings';
 import { saveTextFile } from './utils/saveFile';
 import { get as secureGet, set as secureSet, consumeMissingKeyRecovery } from './utils/secureStore';
 import { setAuthLandingIntent, takeAuthLandingIntent } from './utils/authLandingIntent';
@@ -205,6 +205,10 @@ const AppContent = () => {
 
     useEffect(() => {
         registerDoseSource(() => eventsRef.current);
+        // A new account needs a zone before any "today" is computed: the first
+        // device to sign in decides, and the value rides the settings bag to the
+        // others. Seeding is a no-op once the account has one.
+        seedTimeZone();
         migrateOldRemindersToPlans();
         void reschedulePlanNotifications().catch(e => console.error('[med-plan] reschedule failed', e));
         startPlanWebNotifications();
