@@ -1174,6 +1174,8 @@ const PACK: LangPack = {
     "settings.timezone_use_device": "Bu cihazın saat dilimini kullan",
     "settings.timezone_search": "Saat dilimi ara",
     "settings.timezone_more": "{n} saat dilimi daha var — yazarak daraltın",
+    "settings.timezone_hint": "Şehir, ülke veya UTC+8 yazarak arayın",
+    "settings.timezone_empty": "Eşleşen saat dilimi yok. Şehir adı ya da UTC farkı deneyin.",
     "backup.auto_saved": "Buluta otomatik yedeklendi",
     "onboarding.privacy_title_1": "Gizlilik koruması",
     "onboarding.privacy_title_highlight": "KiraEqual ve Kira Tracker",

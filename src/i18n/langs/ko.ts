@@ -1223,6 +1223,8 @@ const PACK: LangPack = {
     "settings.timezone_use_device": "이 기기의 시간대 사용",
     "settings.timezone_search": "시간대 검색",
     "settings.timezone_more": "시간대 {n}개 더 있습니다. 입력해서 좁혀 보세요",
+    "settings.timezone_hint": "도시, 국가 또는 UTC+8 로 검색하세요",
+    "settings.timezone_empty": "일치하는 시간대가 없습니다. 도시 이름이나 UTC 오프셋으로 시도해 보세요.",
     "label.t": "테스토스테론",
     "label.total_t": "총 테스토스테론",
     "label.total_t_nmol": "총 테스토스테론",

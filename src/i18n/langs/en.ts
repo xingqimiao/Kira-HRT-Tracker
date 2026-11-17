@@ -1209,6 +1209,8 @@ const PACK: LangPack = {
     "settings.timezone_use_device": "Use this device's zone",
     "settings.timezone_search": "Search time zones",
     "settings.timezone_more": "{n} more zones — type to narrow the list",
+    "settings.timezone_hint": "Type a city, country or UTC+8 to search",
+    "settings.timezone_empty": "No matching zone. Try a city, a country, or a UTC offset.",
     "backup.auto_saved": "Auto-backed up to cloud",
     "onboarding.privacy_title_1": "Privacy protection is rooted in",
     "onboarding.privacy_title_highlight": "KiraEqual and Kira Tracker",

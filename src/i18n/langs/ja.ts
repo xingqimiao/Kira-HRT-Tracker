@@ -1245,6 +1245,8 @@ const PACK: LangPack = {
     "settings.timezone_use_device": "この端末のタイムゾーンを使う",
     "settings.timezone_search": "タイムゾーンを検索",
     "settings.timezone_more": "ほか {n} 件のタイムゾーン。入力で絞り込めます",
+    "settings.timezone_hint": "都市名・国名・UTC+8 で検索できます",
+    "settings.timezone_empty": "一致するタイムゾーンがありません。都市名か UTC オフセットで試してください。",
     "export.btn_csv": "CSV ファイルをエクスポート",
     "export.btn_pdf": "PDF ファイルをエクスポート",
     "export.btn_copy_json": "JSON をコピー",

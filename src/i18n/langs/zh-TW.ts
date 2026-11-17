@@ -892,6 +892,8 @@ const PACK: LangPack = {
     "settings.timezone_use_device": "使用本機時區",
     "settings.timezone_search": "搜尋時區",
     "settings.timezone_more": "還有 {n} 個時區，輸入關鍵字縮小範圍",
+    "settings.timezone_hint": "輸入城市、國家或 UTC+8 開始搜尋",
+    "settings.timezone_empty": "沒有符合的時區。試試城市名、國家名或 UTC+8。",
     "label.t": "睪固酮",
     "label.total_t": "總睪固酮",
     "label.total_t_nmol": "總睪固酮",
