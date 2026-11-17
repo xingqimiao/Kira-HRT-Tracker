@@ -1222,6 +1222,7 @@ const PACK: LangPack = {
     "settings.timezone_desc": "\"오늘\", 복용 예정 시각, 알림은 모두 이 시간대를 기준으로 계산됩니다. 기기마다 같은 값으로 맞춰 주세요.",
     "settings.timezone_use_device": "이 기기의 시간대 사용",
     "settings.timezone_search": "시간대 검색",
+    "settings.timezone_more": "시간대 {n}개 더 있습니다. 입력해서 좁혀 보세요",
     "label.t": "테스토스테론",
     "label.total_t": "총 테스토스테론",
     "label.total_t_nmol": "총 테스토스테론",

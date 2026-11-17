@@ -1244,6 +1244,7 @@ const PACK: LangPack = {
     "settings.timezone_desc": "「今日」、服薬予定の時刻、リマインダーはすべてこのタイムゾーンで計算されます。端末ごとに同じ値を選んでください。",
     "settings.timezone_use_device": "この端末のタイムゾーンを使う",
     "settings.timezone_search": "タイムゾーンを検索",
+    "settings.timezone_more": "ほか {n} 件のタイムゾーン。入力で絞り込めます",
     "export.btn_csv": "CSV ファイルをエクスポート",
     "export.btn_pdf": "PDF ファイルをエクスポート",
     "export.btn_copy_json": "JSON をコピー",

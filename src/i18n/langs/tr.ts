@@ -1173,6 +1173,7 @@ const PACK: LangPack = {
     "settings.timezone_desc": "\"Bugün\", doz saatleri ve hatırlatıcılar bu saat dilimine göre hesaplanır. Her cihazda aynı değeri seçin.",
     "settings.timezone_use_device": "Bu cihazın saat dilimini kullan",
     "settings.timezone_search": "Saat dilimi ara",
+    "settings.timezone_more": "{n} saat dilimi daha var — yazarak daraltın",
     "backup.auto_saved": "Buluta otomatik yedeklendi",
     "onboarding.privacy_title_1": "Gizlilik koruması",
     "onboarding.privacy_title_highlight": "KiraEqual ve Kira Tracker",

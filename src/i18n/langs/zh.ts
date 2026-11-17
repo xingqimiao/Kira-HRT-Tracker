@@ -1208,6 +1208,7 @@ const PACK: LangPack = {
     "settings.timezone_desc": "「今天」、用药到期与提醒都按这个时区计算。多台设备请选同一个，否则同一天可能显示出两种结果。",
     "settings.timezone_use_device": "使用本机时区",
     "settings.timezone_search": "搜索时区",
+    "settings.timezone_more": "还有 {n} 个时区，输入关键字缩小范围",
     "backup.auto_saved": "已自动备份到云端",
     "onboarding.privacy_title_1": "隐私保护根植于",
     "onboarding.privacy_title_highlight": "KiraEqual 和 Kira Tracker",

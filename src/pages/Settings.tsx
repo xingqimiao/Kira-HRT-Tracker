@@ -34,7 +34,7 @@ import type { IconComponent } from '../icons';
 import type { Lang } from '../i18n/types';
 import { AppTheme, APP_VERSION } from '../constants';
 import { currentTimeZone, onAppSettingsApplied, writeTimeZone } from '../utils/appSettings';
-import { DEFAULT_TIME_ZONE, deviceTimeZone } from '../utils/timezone';
+import { DEFAULT_TIME_ZONE, deviceTimeZone, utcOffsetMinutes } from '../utils/timezone';
 import {
     AntiandrogenChartMode,
     ANTIANDROGEN_CHART_MODES,
@@ -226,13 +226,46 @@ const Settings: React.FC<SettingsProps> = ({
             supported = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] })
                 .supportedValuesOf?.('timeZone') ?? [];
         } catch { /* older engine: fall back to the few that matter */ }
-        return [...new Set([timeZone, DEFAULT_TIME_ZONE, 'UTC', ...supported])].sort();
+        return [...new Set([timeZone, DEFAULT_TIME_ZONE, 'UTC', ...supported])];
     }, [timeZone]);
+
+    /**
+     * The zones as a person picks them: offset first, then the name ICU gives them
+     * *in this language*, which is what makes "china" / "中国" find Asia/Shanghai —
+     * the bare IANA id contains neither.
+     */
+    const zoneOptions = React.useMemo(() => {
+        // Deferred: naming 400+ zones costs 800 ICU formats, and Settings is opened
+        // far more often than this one panel.
+        if (sub !== 'tz') return [];
+        const now = Date.now();
+        const rows = zoneChoices.map(zone => {
+            // UTC offset as people read it: minutes east of UTC (Taipei is +480).
+            const plus = -utcOffsetMinutes(zone, now);
+            const sign = plus < 0 ? '-' : '+';
+            const abs = Math.abs(plus);
+            const label = `UTC${sign}${Math.floor(abs / 60)}${abs % 60 ? `:${String(abs % 60).padStart(2, '0')}` : ''}`;
+            let name = '';
+            try {
+                name = new Intl.DateTimeFormat(lang, { timeZone: zone, timeZoneName: 'long' })
+                    .formatToParts(now)
+                    .find(p => p.type === 'timeZoneName')?.value ?? '';
+            } catch { /* no long name for this zone; the id is still searchable */ }
+            return { zone, plus, label, name };
+        });
+        return rows.sort((a, b) => a.plus - b.plus || a.zone.localeCompare(b.zone));
+    }, [zoneChoices, lang, sub]);
+
     const visibleZones = React.useMemo(() => {
         const q = tzQuery.trim().toLowerCase();
-        if (!q) return zoneChoices;
-        return zoneChoices.filter(z => z.toLowerCase().replace(/_/g, ' ').includes(q));
-    }, [zoneChoices, tzQuery]);
+        if (!q) return zoneOptions;
+        return zoneOptions.filter(o =>
+            o.zone.toLowerCase().replace(/_/g, ' ').includes(q)
+            || o.name.toLowerCase().includes(q)
+            || o.label.toLowerCase().includes(q)
+            || `utc${o.plus / 60}` .includes(q),
+        );
+    }, [zoneOptions, tzQuery]);
     const chooseTimeZone = (zone: string) => {
         writeTimeZone(zone);
         setTimeZoneState(zone);
@@ -624,6 +657,7 @@ const Settings: React.FC<SettingsProps> = ({
                     icon={MonitorSmartphone}
                     title={t('settings.timezone_use_device')}
                     subtitle={deviceTimeZone()}
+                    active={deviceTimeZone() === timeZone}
                     onClick={() => chooseTimeZone(deviceTimeZone())}
                 />
             </SegmentedList>
@@ -637,16 +671,23 @@ const Settings: React.FC<SettingsProps> = ({
                 spellCheck={false}
             />
             <SegmentedList label={t('settings.timezone')}>
-                {visibleZones.slice(0, 60).map(z => (
+                {visibleZones.slice(0, 80).map(o => (
                     <SegmentedListItem
-                        key={z}
-                        title={z}
-                        active={z === timeZone}
-                        trailing={z === timeZone ? <Icon icon={Check} size={20} /> : undefined}
-                        onClick={() => chooseTimeZone(z)}
+                        key={o.zone}
+                        title={o.zone}
+                        // The offset is what people actually pick by ("UTC+8"), and
+                        // the ICU name is what makes the row recognisable in their
+                        // own language rather than only by IANA city.
+                        subtitle={o.name && o.name !== o.zone ? `${o.label} · ${o.name}` : o.label}
+                        active={o.zone === timeZone}
+                        trailing={o.zone === timeZone ? <Icon icon={Check} size={20} /> : undefined}
+                        onClick={() => chooseTimeZone(o.zone)}
                     />
                 ))}
             </SegmentedList>
+            {visibleZones.length > 80 && (
+                <p className="muted text-sm">{t('settings.timezone_more').replace('{n}', String(visibleZones.length - 80))}</p>
+            )}
         </div>
     );
 

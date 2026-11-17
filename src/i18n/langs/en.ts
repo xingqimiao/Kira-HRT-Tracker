@@ -1208,6 +1208,7 @@ const PACK: LangPack = {
     "settings.timezone_desc": "\"Today\", due times and reminders all follow this zone. Use the same one on every device, or the same day can read two ways.",
     "settings.timezone_use_device": "Use this device's zone",
     "settings.timezone_search": "Search time zones",
+    "settings.timezone_more": "{n} more zones — type to narrow the list",
     "backup.auto_saved": "Auto-backed up to cloud",
     "onboarding.privacy_title_1": "Privacy protection is rooted in",
     "onboarding.privacy_title_highlight": "KiraEqual and Kira Tracker",

@@ -891,6 +891,7 @@ const PACK: LangPack = {
     "settings.timezone_desc": "「今日」、用藥到期同提醒都係按呢個時區計。幾部機請揀同一個，唔係同一日會出兩款結果。",
     "settings.timezone_use_device": "用本機時區",
     "settings.timezone_search": "搵時區",
+    "settings.timezone_more": "仲有 {n} 個時區，打關鍵字搵快啲",
     "label.t": "睪固酮",
     "label.total_t": "總睪固酮",
     "label.total_t_nmol": "總睪固酮",
