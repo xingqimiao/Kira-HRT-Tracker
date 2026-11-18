@@ -424,7 +424,6 @@ test('an agent settings change is visible to the app read', async () => {
         hrt_mode: 'transmasc',
         calibration_method: 'ekf',
         calibration_history: 'forward',
-        timezone: 'Asia/Tokyo',
         pk_params: { e2_kClear: 0.42 },
       }),
     });
@@ -434,7 +433,6 @@ test('an agent settings change is visible to the app read', async () => {
     assert.equal(asState.appSettings?.hrtMode, 'transmasc', 'the browser read did not see the agent mode');
     assert.equal(asState.appSettings?.calMethod, 'ekf', 'the browser read did not see the agent calibration');
     assert.equal(asState.appSettings?.calHistoryMode, 'forward');
-    assert.equal(asState.appSettings?.timezone, 'Asia/Tokyo', 'the browser read did not see the agent timezone');
     assert.ok((asState.appSettingsUpdatedAt ?? 0) > 0, 'the bag stamp did not survive the read');
     assert.deepEqual(asState.pkParams, { e2_kClear: 0.42 }, 'the browser read did not see the agent override');
     assert.ok((asState.pkParamsUpdatedAt ?? 0) > 0, 'the override stamp did not survive the read');
@@ -862,4 +860,21 @@ test('disabling restore does not disable the generation gate', async () => {
   } finally {
     setConfigForTesting({ ...getConfig(), restoreEnabled: true });
   }
+});
+
+test('the device time zone is available to MCP and excluded from the plaintext settings projection', async () => {
+  const account = await registerAccount(base, { password: 'time-context-test' });
+  const response = await fetch(base + '/api/settings/device-timezone', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + account.token },
+    body: JSON.stringify({ zone: 'Asia/Shanghai' }),
+  });
+  assert.equal(response.status, 200);
+  const { AccountService } = await import('../src/accounts.ts');
+  const ctx = await AccountService.resolveApiContext(account.token);
+  assert.ok(ctx && !('denied' in ctx));
+  const accountSettings = await AccountService.getSettings(ctx);
+  assert.equal((accountSettings.appState?.settings as Record<string, unknown>)?.last_known_timezone, 'Asia/Shanghai');
+  const { getPool } = await import('../src/db.ts');
+  const { rows } = await getPool().query('SELECT app_state FROM user_settings WHERE user_id = $1', [account.userId]);
+  assert.equal(rows[0].app_state?.settings?.last_known_timezone, undefined);
 });

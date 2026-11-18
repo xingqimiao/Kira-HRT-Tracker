@@ -1,3 +1,4 @@
+import { mergePlanReminderVersions, sanitizeMedPlans } from '../../src/utils/medPlan.ts';
 /**
  * Records: the encrypted business payload.
  *
@@ -105,6 +106,14 @@ function mergeIncomingMedPlan(raw: unknown, prior: Record<string, unknown> | nul
     // Not a plan and not a clear: the write says nothing, whatever its stamp. Keep the
     // stored copy entire — including a clear marker, which a later old-client write
     // would otherwise strip and let a stale plan resurrect.
+    if (Array.isArray(incoming) && incoming.length > 0 && Array.isArray(prior?.value) && prior.value.length > 0) {
+        const a = typeof data.stamp === 'number' ? data.stamp : 0;
+        const b = typeof prior.stamp === 'number' ? prior.stamp : 0;
+        const primary = a >= b ? data : prior;
+        const secondary = a >= b ? prior : data;
+        const merged = mergePlanReminderVersions(sanitizeMedPlans(primary.value), sanitizeMedPlans(secondary.value));
+        return { ...item, takenAt: Math.max(a, b), data: { ...primary, value: merged } };
+    }
     if (!Array.isArray(incoming) || incoming.length > 0 || clearedAt > 0) return raw;
     if (!prior || !Array.isArray(prior.value)) return raw;
     const stamp = typeof prior.stamp === 'number' && Number.isFinite(prior.stamp) ? prior.stamp : 0;
@@ -113,8 +122,8 @@ function mergeIncomingMedPlan(raw: unknown, prior: Record<string, unknown> | nul
 }
 
 /** The plan record this account holds, as the guard above needs it. */
-async function readStoredMedPlan(ctx: AuthContext): Promise<Record<string, unknown> | null> {
-    const record = await RecordService.get(ctx, 'scalar:medPlan').catch(() => null);
+async function readStoredMedPlan(ctx: AuthContext, client?: PoolClient): Promise<Record<string, unknown> | null> {
+    const record = await RecordService.get(ctx, 'scalar:medPlan', client).catch(() => null);
     return jsonObject(record?.data);
 }
 
@@ -165,13 +174,14 @@ function sameTombstoneMap(a: Record<string, unknown>, b: Record<string, unknown>
 async function readTombstoneMaps(
     ctx: AuthContext,
     items: unknown[],
+    client?: PoolClient,
 ): Promise<Map<string, Record<string, unknown>>> {
     const prior = new Map<string, Record<string, unknown>>();
     for (const raw of items) {
         const item = jsonObject(raw);
         const parts = typeof item?.id === 'string' ? item.id.split(':') : [];
         if (parts[0] !== 'del' || !TOMBSTONE_PREFIX[parts[2] ?? '']) continue;
-        const stored = await RecordService.get(ctx, String(item?.id)).catch(() => null);
+        const stored = await RecordService.get(ctx, String(item?.id), client).catch(() => null);
         const value = jsonObject(stored?.data);
         if (value) prior.set(String(item?.id), value);
     }
@@ -714,6 +724,21 @@ export const RecordService = {
             for (const row of existing.rows) {
                 if (!recognizedRecordId(row.id)) throw new RestoreUnsupportedRecordError();
             }
+            const priorSettings = await RecordService.get(ctx, 'scalar:appSettings', client);
+            const priorZoneSettings = jsonObject(jsonObject(jsonObject(priorSettings?.data)?.value)?.settings) ?? {};
+            const deviceSettings = Object.fromEntries(Object.entries(priorZoneSettings).filter(([key]) =>
+                key === 'last_known_timezone' || key.startsWith('push_timezone_')));
+            if (Object.keys(deviceSettings).length > 0) {
+                const setting = items.find(item => item.id === 'scalar:appSettings');
+                const stamp = setting?.data?.stamp ?? Date.now();
+                const value = { ...setting?.data?.value, settings: { ...setting?.data?.value?.settings, ...deviceSettings },
+                    settingsUpdatedAt: setting?.data?.value?.settingsUpdatedAt ?? stamp };
+                const item = { id: 'scalar:appSettings', category: 'setting', takenAt: stamp, data: { value, stamp } };
+                const prepared = prepareRecord(ctx, item);
+                if (!prepared.ok) throw new RestoreInputError(prepared.error);
+                const existing = records.findIndex(record => record.id === item.id);
+                if (existing < 0) records.push(prepared.value); else records[existing] = prepared.value;
+            }
             const advanced = await client.query<{ sync_version: string; restore_generation: string }>(
                 'UPDATE users SET sync_version = sync_version + 1, restore_generation = restore_generation + 1 WHERE id = $1 RETURNING sync_version, restore_generation', [ctx.userId],
             );
@@ -867,63 +892,66 @@ export const RecordService = {
      */
     async putMany(
         ctx: AuthContext,
-        items: unknown,
+        itemsOrFactory: unknown,
+        factory?: (client: PoolClient) => Promise<unknown[]>,
     ): Promise<
         | { ok: true; written: string[]; rejected: { id: string; reason: string }[] }
         | { ok: false; error: string }
     > {
-        if (!Array.isArray(items)) return { ok: false, error: 'records: must be an array' };
-
-        const rejected: { id: string; reason: string }[] = [];
-        const pending = new Map<string, PreparedRecord>();
-        // A sync carries the settings-class scalars — body weight, PK overrides, the
-        // app's own settings blob — as records, but the model and the export read
-        // the settings table instead. Keep the copy that landed to reflect below;
-        // a repeated id is applied last-wins, matching the upsert above it, so the
-        // map is keyed by id. Which ids are scalars is named in `SETTINGS_SCALARS`.
-        const synced = new Map<string, SyncedScalar>();
-        // The app's settings blob is merged, not replaced, before it is sealed.
-        //
-        // `scalar:appSettings` is the copy the app reads its own preferences from
-        // (see `appStateForRead`), and a record write is last-wins — so a blob that
-        // mentions only `settings` would drop the `modes` collections, and one that
-        // mentions only `modes` would drop the settings. Both are shapes the app
-        // produces: `toAppState` omits a half it has nothing to say about. A partial
-        // blob must not erase what it never mentioned, which is the rule the settings
-        // row already followed. Read before the loop, because the loop seals each item.
-        const storedAppSettings = await RecordService.get(ctx, 'scalar:appSettings').catch(() => null);
-        const priorAppSettings = jsonObject(
-            (storedAppSettings?.data as { value?: unknown } | null)?.value,
-        );
-        // The plan's stored copy, for the same reason: a batch may carry an empty plan
-        // that says nothing, and it must not replace a real one. Read before the loop,
-        // because the loop seals each item.
-        const priorMedPlan = await readStoredMedPlan(ctx);
-        // The tombstone maps as they stand *before* this batch writes its own. Read here
-        // because the sweep below runs after the write, when reading them back would
-        // return the copy this batch just stored and the change would look like none.
-        const priorTombstones = await readTombstoneMaps(ctx, items);
-        for (const raw of items) {
-            const item = mergeIncomingMedPlan(
-                mergeIncomingAppState(raw, priorAppSettings),
-                priorMedPlan,
-            );
-            const prepared = prepareRecord(ctx, item as { id?: unknown; takenAt?: unknown; category?: unknown; data?: unknown });
-            if (prepared.ok) {
-                pending.set(prepared.value.id, prepared.value);
-                const scalar = scalarOf(prepared.value.id, (item as { data?: unknown })?.data);
-                if (scalar) synced.set(prepared.value.id, scalar);
-            } else {
-                rejected.push({ id: prepared.id, reason: prepared.error });
-            }
-        }
-
-        const records = [...pending.values()];
+        if (!factory && !Array.isArray(itemsOrFactory)) return { ok: false, error: 'records: must be an array' };
         const written: string[] = [];
-        if (records.length === 0) return { ok: true, written, rejected };
-
-        await withTransaction(async (client) => {
+        const result = await withTransaction(async client => {
             await lockRestoreGeneration(client, ctx);
+            const items = factory ? await factory(client) : itemsOrFactory;
+            if (!Array.isArray(items)) return { ok: false as const, error: 'records: must be an array' };
+
+            const rejected: { id: string; reason: string }[] = [];
+            const pending = new Map<string, PreparedRecord>();
+            // A sync carries the settings-class scalars — body weight, PK overrides, the
+            // app's own settings blob — as records, but the model and the export read
+            // the settings table instead. Keep the copy that landed to reflect below;
+            // a repeated id is applied last-wins, matching the upsert above it, so the
+            // map is keyed by id. Which ids are scalars is named in `SETTINGS_SCALARS`.
+            const synced = new Map<string, SyncedScalar>();
+            // The app's settings blob is merged, not replaced, before it is sealed.
+            //
+            // `scalar:appSettings` is the copy the app reads its own preferences from
+            // (see `appStateForRead`), and a record write is last-wins — so a blob that
+            // mentions only `settings` would drop the `modes` collections, and one that
+            // mentions only `modes` would drop the settings. Both are shapes the app
+            // produces: `toAppState` omits a half it has nothing to say about. A partial
+            // blob must not erase what it never mentioned, which is the rule the settings
+            // row already followed. Read before the loop, because the loop seals each item.
+            const storedAppSettings = await RecordService.get(ctx, 'scalar:appSettings', client).catch(() => null);
+            const priorAppSettings = jsonObject(
+                (storedAppSettings?.data as { value?: unknown } | null)?.value,
+            );
+            // The plan's stored copy, for the same reason: a batch may carry an empty plan
+            // that says nothing, and it must not replace a real one. Read before the loop,
+            // because the loop seals each item.
+            const priorMedPlan = await readStoredMedPlan(ctx, client);
+            // The tombstone maps as they stand *before* this batch writes its own. Read here
+            // because the sweep below runs after the write, when reading them back would
+            // return the copy this batch just stored and the change would look like none.
+            const priorTombstones = await readTombstoneMaps(ctx, items, client);
+            for (const raw of items) {
+                const item = mergeIncomingMedPlan(
+                    mergeIncomingAppState(raw, priorAppSettings),
+                    priorMedPlan,
+                );
+                const prepared = prepareRecord(ctx, item as { id?: unknown; takenAt?: unknown; category?: unknown; data?: unknown });
+                if (prepared.ok) {
+                    pending.set(prepared.value.id, prepared.value);
+                    const scalar = scalarOf(prepared.value.id, (item as { data?: unknown })?.data);
+                    if (scalar) synced.set(prepared.value.id, scalar);
+                } else {
+                    rejected.push({ id: prepared.id, reason: prepared.error });
+                }
+            }
+
+            const records = [...pending.values()];
+            if (records.length === 0) return { ok: true as const, rejected, priorTombstones, items };
+
             // One version for the whole request, taken inside the transaction so it is
             // the value every row of this batch carries. A concurrent batch bumps it
             // again after this commits, which is what keeps the cursors ordered.
@@ -960,12 +988,16 @@ export const RecordService = {
                 for (const record of chunk) written.push(record.id);
             }
             await reflectSettings(ctx, [...synced.values()], client);
+            return { ok: true as const, rejected, priorTombstones, items };
         });
+
+        if (!result.ok) return result;
+        const { rejected, priorTombstones } = result;
 
         // After the write has committed, so a failure here cannot lose the tombstone
         // that makes the delete stick. The next push carries the same map again and
         // the sweep is idempotent, so a purge that fails is retried by the next sync.
-        await purgeTombstoned(ctx, items, priorTombstones).catch(() => undefined);
+        await purgeTombstoned(ctx, result.items, priorTombstones).catch(() => undefined);
         return { ok: true, written, rejected };
     },
 
@@ -1116,8 +1148,8 @@ export const RecordService = {
      * another account reads as absent rather than as a refusal — the same answer an id
      * that never existed gets, so a prober learns nothing from the difference.
      */
-    async get(ctx: AuthContext, id: string): Promise<StoredRecord | null> {
-        const { rows } = await getPool().query<{
+    async get(ctx: AuthContext, id: string, client?: PoolClient): Promise<StoredRecord | null> {
+        const { rows } = await (client ?? getPool()).query<{
             id: string; taken_at: Date; category: string; payload_encrypted: string; updated_at: Date;
         }>(
             `SELECT id, taken_at, category, payload_encrypted, updated_at

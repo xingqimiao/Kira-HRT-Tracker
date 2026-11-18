@@ -708,7 +708,6 @@ test('an agent settings change reaches the read the browser makes', async () => 
       hrt_mode: 'transmasc',
       calibration_method: 'ekf',
       calibration_history: 'forward',
-      timezone: 'Asia/Tokyo',
       pk_params: { e2_kClear: 0.42 },
     }),
   });
@@ -724,7 +723,6 @@ test('an agent settings change reaches the read the browser makes', async () => 
   assert.equal(settings.appState?.settings?.hrtMode, 'transmasc', 'an agent HRT-mode change was invisible');
   assert.equal(settings.appState?.settings?.calMethod, 'ekf', 'an agent calibration change was invisible');
   assert.equal(settings.appState?.settings?.calHistoryMode, 'forward');
-  assert.equal(settings.appState?.settings?.timezone, 'Asia/Tokyo', 'an agent timezone change was invisible');
   assert.deepEqual(settings.pkParams, { e2_kClear: 0.42 }, 'an agent PK override was invisible');
   assert.ok(
     typeof settings.appState?.settingsUpdatedAt === 'number' && settings.appState.settingsUpdatedAt > 0,
@@ -748,6 +746,7 @@ test('an app settings blob projects onto the model columns', async () => {
             hrtMode: 'transmasc',
             calMethod: 'ou_kalman',
             calHistoryMode: 'forward',
+            last_known_timezone: 'Asia/Tokyo',
             timezone: 'Asia/Tokyo',
           },
           settingsUpdatedAt: stamp,
@@ -761,7 +760,8 @@ test('an app settings blob projects onto the model columns', async () => {
   assert.equal(after.body.hrtMode, 'transmasc', 'the app mode never reached the model column');
   assert.equal(after.body.calibrationMethod, 'ou_kalman');
   assert.equal(after.body.calibrationHistory, 'forward');
-  assert.equal(after.body.timezone, 'Asia/Tokyo');
+  assert.equal(after.body.timezone, null);
+  assert.equal(after.body.appState.settings.last_known_timezone, 'Asia/Tokyo');
   assert.equal(after.body.appState.settings.theme, 'dark', 'the app-only keys were dropped');
 });
 

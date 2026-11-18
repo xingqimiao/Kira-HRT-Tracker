@@ -544,6 +544,10 @@ input[type=number] {
 }
 .dose-panel .tp-colon { font-size: 34px; font-weight: 800; color: var(--var); }
 .dose-panel .tp-confirm { width: 100%; flex: none; height: 54px; margin-top: 8px; }
+.dose-panel .tp-reminder-actions { display: grid; justify-items: start; gap: 12px; width: 100%; }
+.dose-panel .tp-reminder-shortcuts { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.dose-panel .tp-reminder-cycle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; font-size: 13px; }
+.dose-panel .tp-reminder-actions [role="alert"] { margin: 0; color: var(--err); font-size: 13px; }
 @media (prefers-reduced-motion: reduce) {
     .lab-time.open .m3e-cal-card,
     .lab-time.open .tp-card,

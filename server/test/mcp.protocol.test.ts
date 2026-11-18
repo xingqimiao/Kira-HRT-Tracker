@@ -115,7 +115,7 @@ test('an MCP client can list and call tools', async () => {
   }
   // Exact, not a floor: the documented count is derived from this surface, so a tool
   // added without updating the count has to fail here rather than in a doc.
-  assert.equal(names.length, 19, `expected the full tool surface, got ${names.length}: ${names}`);
+  assert.equal(names.length, 21, `expected the full tool surface, got ${names.length}: ${names}`);
 
   // Every tool must describe itself — an agent picks tools from descriptions.
   for (const tool of tools) {
@@ -357,7 +357,7 @@ test('hrt_med_plan_status filters plans to the account HRT mode, including legac
   const stamp = Date.now();
   const plan = (id: string, hrtMode?: 'transfem' | 'transmasc') => ({
     id, ester: 'E2', hrtMode, alias: id, dose: '2mg', route: 'sublingual', mode: 'hours',
-    intervalHours: 8, firstHour: 0, firstMinute: 0, tzOffsetMinutes: 0, enabled: true,
+    intervalHours: 8, firstHour: 0, firstMinute: 0, intervalAnchorUtcMs: stamp - 3600_000, enabled: true,
   });
   const saved = await fetch(`${base}/api/records/batch`, {
     method: 'POST',
@@ -396,7 +396,7 @@ test('hrt_med_plan_status reads the pushed plan and reports overdue doses', asyn
   const plan = {
     id: 'plan-1',
     ester: 'E2',
-    tzOffsetMinutes: 0,
+    intervalAnchorUtcMs: stamp - 3600_000,
     dose: '2mg',
     how: 'sublingual',
     mode: 'hours',
@@ -432,4 +432,38 @@ test('hrt_med_plan_status reads the pushed plan and reports overdue doses', asyn
   assert.ok(plans[0].missed_times.length > 0, 'at least one missed due time is listed');
 
   await client.close();
+});
+
+test('MCP adjustment is consumed only by a matching new dose', async () => {
+  const account = await registerAccount(base, { password: 'mcp-plan-override-test' });
+  const stamp = Date.now() - 2000;
+  const make = (id: string, ester: string, route: string) => ({
+    id, ester, route, hrtMode: 'transfem', dose: '2mg', mode: 'days', everyDays: 5,
+    firstHour: 8, firstMinute: 0, anchorDate: new Date(stamp).toISOString().slice(0, 10), enabled: true,
+  });
+  const target = stamp + 3600_000;
+  const injection = { ...make('injection', 'EV', 'injection'), nextOverrideUtcMs: target, overrideCreatedAt: stamp, reminderUpdatedAt: stamp };
+  const anti = make('anti', 'CPA', 'oral');
+  const seeded = await fetch(base + '/api/records/batch', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + account.token },
+    body: JSON.stringify({ records: [
+      { id: 'scalar:medPlan', takenAt: stamp, category: 'setting', data: { value: [injection, anti], stamp } },
+      { id: 'scalar:appSettings', takenAt: stamp, category: 'setting', data: { value: { settings: { last_known_timezone: 'Asia/Shanghai' }, settingsUpdatedAt: stamp }, stamp } },
+    ] }),
+  });
+  assert.equal(seeded.status, 200);
+  const { client, transport } = connect(account.token);
+  await client.connect(transport);
+  try {
+    const adjusted = await client.callTool({ name: 'hrt_adjust_med_plan_reminder', arguments: { plan_id: 'anti', at: new Date(target).toISOString() } });
+    assert.notEqual(adjusted.isError, true, JSON.stringify(adjusted));
+    await new Promise(resolve => setTimeout(resolve, 5));
+    const naive = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, -1);
+    const added = await client.callTool({ name: 'hrt_add_medication', arguments: { ester: 'CPA', route: 'oral', dose_mg: 2, at: naive } });
+    assert.notEqual(added.isError, true, JSON.stringify(added));
+    const status = await client.callTool({ name: 'hrt_med_plan_status', arguments: {} });
+    const plans = JSON.parse((status.content as any)[0].text) as { plan_id: string; next_override_utc_ms: number | null }[];
+    assert.equal(plans.find(plan => plan.plan_id === 'anti')?.next_override_utc_ms, null);
+    assert.equal(plans.find(plan => plan.plan_id === 'injection')?.next_override_utc_ms, target);
+  } finally { await client.close(); }
 });

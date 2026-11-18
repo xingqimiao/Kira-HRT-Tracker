@@ -1,3 +1,4 @@
+import { deviceTimeZone } from './timezone';
 import { get as secureGet, set as secureSet, remove as secureRemove } from './secureStore';
 import { apiEndpoint, apiFetch } from '../services/apiClient';
 import { isNativeApp } from './platform';
@@ -118,8 +119,9 @@ export async function syncPushRegistration(authToken: string): Promise<void> {
     if (!authToken) return;
     const deviceToken = await currentDeviceToken();
     if (!deviceToken) return;
+    const zone = deviceTimeZone();
     try {
-        if (secureGet(LAST_TOKEN_KEY) === deviceToken) return;
+        if (secureGet(LAST_TOKEN_KEY) === deviceToken && secureGet('hrt-push-device-zone') === zone) return;
     } catch {
         // Storage unavailable: fall through and register anyway.
     }
@@ -127,9 +129,12 @@ export async function syncPushRegistration(authToken: string): Promise<void> {
         const res = await apiFetch(apiEndpoint('/api/push/register'), {
             method: 'POST',
             headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: deviceToken, platform: isNativeApp() ? 'android' : 'web' }),
+            body: JSON.stringify({ token: deviceToken, platform: isNativeApp() ? 'android' : 'web', zone }),
         });
-        if (res.ok) secureSet(LAST_TOKEN_KEY, deviceToken);
+        if (res.ok) {
+            secureSet(LAST_TOKEN_KEY, deviceToken);
+            secureSet('hrt-push-device-zone', zone);
+        }
     } catch {
         // A failed registration is retried on the next sign-in or enable.
     }

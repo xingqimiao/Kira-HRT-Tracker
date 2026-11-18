@@ -1,3 +1,6 @@
+import { syncTimestamp } from '../utils/syncClock';
+import { ReminderAdjustment } from './ReminderAdjustment';
+import { calendarDateIn, deviceTimeContext, deviceTimeZone, parseCalendarDate } from '../utils/timezone';
 import React, { useEffect, useMemo, useState } from 'react';
 import Icon from './Icon';
 import Switch from './Switch';
@@ -20,8 +23,7 @@ import {
     canScheduleExactAlarms, openNativeExactAlarmSettings, maybePromptExactAlarms,
     arePlanNotificationsMuted, resumePlanNotifications, stopPlanWebNotifications,
 } from '../utils/medPlanNotify';
-import { plansForMode, localDateKey, nextPlanOccurrences } from '../utils/medPlan';
-import { currentTzOffset } from '../utils/appSettings';
+import { plansForMode, initializePlanAnchor, localDateKey, nextPlanOccurrences, planStatuses, MED_PLAN_CHANGED_EVENT, type PlanDoseRef } from '../utils/medPlan';
 import {
     categoriesOf,
     categoryForEster,
@@ -63,7 +65,7 @@ const planRoutes = (mode: DoseMode, cat: CatId) => routesFor(mode, cat).filter(r
  * sync to the account as their own sealed scalar, so nothing here reaches the dose
  * data or the sync engine.
  */
-const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: DoseTemplate[] }> = ({ muted, on, doseTemplates = [] }) => {
+const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: DoseTemplate[]; events: readonly PlanDoseRef[] }> = ({ muted, on, doseTemplates = [], events }) => {
     const { t, lang } = useTranslation();
     const session = useCoreSession();
     const { isTransmasc, mode: hrtMode } = useHRTMode();
@@ -73,6 +75,11 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
         migrateOldRemindersToPlans();
         return readMedPlans();
     });
+    useEffect(() => {
+        const read = () => setPlans(readMedPlans());
+        window.addEventListener(MED_PLAN_CHANGED_EVENT, read);
+        return () => window.removeEventListener(MED_PLAN_CHANGED_EVENT, read);
+    }, []);
     const [webPermission, setWebPermission] = useState(false);
     /**
      * The user's own off switch, which is a different thing from the permission.
@@ -126,6 +133,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
     const [mode, setMode] = useState<PlanMode>('times');
     const [intervalHours, setIntervalHours] = useState(8);
     const [everyDays, setEveryDays] = useState(2);
+    const [anchorDate, setAnchorDate] = useState(() => calendarDateIn(deviceTimeZone(), Date.now()));
     const [firstTime, setFirstTime] = useState<Date>(() => {
         const d = new Date();
         d.setHours(9, 0, 0, 0);
@@ -166,20 +174,23 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
         hrtMode,
         dose: '',
         mode,
-        anchorDate: mode === 'days'
-            ? (editingId ? plans.find(p => p.id === editingId)?.anchorDate : undefined) ?? localDateKey(new Date())
-            : undefined,
+        anchorDate: mode === 'days' && parseCalendarDate(anchorDate) ? anchorDate : undefined,
         doseTimes: mode === 'times'
             ? extraTimes.map(e => ({ hour: e.date.getHours(), minute: e.date.getMinutes() }))
             : undefined,
         intervalHours: mode === 'hours' ? intervalHours : undefined,
         everyDays: mode === 'days' ? everyDays : undefined,
-        tzOffsetMinutes: currentTzOffset(),
         firstHour: firstTime.getHours(),
         firstMinute: firstTime.getMinutes(),
         enabled: true,
-    }), [ester, route, hrtMode, mode, editingId, plans, extraTimes, intervalHours, everyDays, firstTime]);
-    const preview = nextPlanOccurrences(draftPlan, nowMs, currentTzOffset(nowMs), 2);
+    }), [ester, route, hrtMode, mode, editingId, plans, extraTimes, intervalHours, everyDays, firstTime, anchorDate]);
+    const preview = nextPlanOccurrences(draftPlan, deviceTimeContext(nowMs), mode === 'days' ? 2 : 1, events);
+    const cycleStart = mode === 'days' ? parseCalendarDate(anchorDate) : null;
+    const firstDoseDate = cycleStart
+        ? new Date(cycleStart[0], cycleStart[1] - 1, cycleStart[2], firstTime.getHours(), firstTime.getMinutes())
+        : firstTime;
+    const editedPlan = plans.find(plan => plan.id === editingId);
+    const [editedStatus] = editedPlan?.enabled ? planStatuses([editedPlan], events, deviceTimeContext(nowMs)) : [];
 
     // Read the current permission on mount (async: the native check hits the plugin).
     useEffect(() => {
@@ -221,7 +232,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
         // this distinction a device with no plan deletes everyone else's (see
         // `resolvePlan` in syncMerge.ts).
         const clearing = clean.length === 0 && readMedPlans().length > 0;
-        const at = Date.now();
+        const at = syncTimestamp();
         setPlans(clean);
         writeMedPlans(clean, at, clearing ? at : 0);
         void reschedulePlanNotifications(true).catch(() => undefined);
@@ -268,6 +279,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
         setMode('times');
         setIntervalHours(8);
         setEveryDays(2);
+        setAnchorDate(calendarDateIn(deviceTimeZone(), Date.now()));
         const d = new Date();
         d.setHours(9, 0, 0, 0);
         setFirstTime(d);
@@ -289,6 +301,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
         setMode(p.mode);
         setIntervalHours(p.intervalHours ?? 8);
         setEveryDays(p.everyDays ?? 2);
+        setAnchorDate(initializePlanAnchor(p, deviceTimeContext()).anchorDate ?? calendarDateIn(deviceTimeZone(), Date.now()));
         const d = new Date();
         d.setHours(p.firstHour, p.firstMinute, 0, 0);
         setFirstTime(d);
@@ -331,7 +344,15 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
             const wearDays = Number(patchWearDays);
             if (patchWearDays.trim() && Number.isFinite(wearDays) && wearDays > 0) extras[ExtraKey.patchWearH] = wearDays * 24;
         }
+        if (mode === 'days' && !parseCalendarDate(anchorDate)) return;
+        const prior = readMedPlans().find(p => p.id === editingId);
+        const context = deviceTimeContext();
         const plan: MedPlan = {
+            ...prior,
+            intervalAnchorUtcMs: prior?.mode === mode && prior.firstHour === firstTime.getHours() && prior.firstMinute === firstTime.getMinutes() ? prior.intervalAnchorUtcMs : undefined,
+            intervalReanchoredAt: prior?.mode === mode && prior.firstHour === firstTime.getHours() && prior.firstMinute === firstTime.getMinutes() ? prior.intervalReanchoredAt : undefined,
+            createdAt: prior?.createdAt ?? context.nowUtcMs,
+            createdTimezone: prior?.createdTimezone ?? context.deviceTimezone,
             id: editingId ?? crypto.randomUUID(),
             ester: selectedEster,
             hrtMode,
@@ -339,22 +360,21 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
             alias: alias.trim() || undefined,
             dose: selectedRoute === Route.patchApply && patchMode === 'rate' ? '' : (dose.trim() ? `${dose.trim()}mg` : ''),
             extras: Object.keys(extras).length ? extras : undefined,
-            anchorDate: mode === 'days' ? (editingId ? readMedPlans().find(p => p.id === editingId)?.anchorDate : undefined) ?? localDateKey(new Date()) : undefined,
+            anchorDate: mode === 'days' ? anchorDate : undefined,
             mode,
             doseTimes: mode === 'times'
                 ? extraTimes.map(e => ({ hour: e.date.getHours(), minute: e.date.getMinutes() }))
                 : undefined,
             intervalHours: mode === 'hours' ? intervalHours : undefined,
             everyDays: mode === 'days' ? everyDays : undefined,
-            tzOffsetMinutes: currentTzOffset(),
             firstHour: firstTime.getHours(),
             firstMinute: firstTime.getMinutes(),
             // A new plan is on; an edit keeps whatever the row's switch says.
             enabled: editingId ? (readMedPlans().find(p => p.id === editingId)?.enabled ?? true) : true,
         };
         commit(editingId
-            ? readMedPlans().map(p => p.id === editingId ? plan : p)
-            : [...readMedPlans(), plan]);
+            ? readMedPlans().map(p => p.id === editingId ? initializePlanAnchor(plan, context) : p)
+            : [...readMedPlans(), initializePlanAnchor(plan, context)]);
         closeForm();
     };
 
@@ -498,7 +518,9 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
     // A time row in the same `.li` vocabulary as the record panel: clock glyph,
     // HH:MM, caption, chevron. The old white `.input-base` box was the visual
     // seam the user kept seeing.
-    const timeField = (label: string, key: string, date: Date, onPick: (d: Date) => void, onRemove?: () => void) => (
+    const timeField = (label: string, key: string, date: Date, onPick: (d: Date) => void, onRemove?: () => void) => {
+        const withDate = key === 'first' && mode === 'days';
+        return (
         <React.Fragment>
             <div
                 className="li"
@@ -515,7 +537,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
             >
                 <div className="ic p"><SpriteIcon id="clock" /></div>
                 <div className="tx">
-                    <div className="t">{hhmm(date)}</div>
+                    <div className="t">{withDate ? formatNext(date.getTime()) : hhmm(date)}</div>
                     <div className="s">{label}</div>
                 </div>
                 {onRemove && (
@@ -535,14 +557,15 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                 in the time page reached the row's onClick and closed it at once. */}
             <TimePage
                 open={openPicker === key}
-                mode="time"
+                mode={withDate ? 'datetime' : 'time'}
                 onClose={() => setOpenPicker(null)}
                 onConfirm={(d) => { onPick(d); setOpenPicker(null); }}
                 initialDate={date}
-                title={label}
+                title={withDate ? t('plan.anchor_date') : label}
             />
         </React.Fragment>
-    );
+        );
+    };
 
     const chooseCategory = (nextCat: CatId) => {
         const nextRoute = planRoutes(doseMode, nextCat)[0].id;
@@ -661,7 +684,8 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
             ) : (
                 <SegmentedList label={t('plan.title')}>
                     {visiblePlans.map(p => {
-                        const next = nextPlanOccurrences(p, nowMs, currentTzOffset(nowMs), 2);
+                        const context = deviceTimeContext(nowMs);
+                        const next = nextPlanOccurrences(p, context, p.mode === 'days' ? 2 : 1, events);
                         // The title already carries the drug name unless an alias
                         // replaced it, and the route is not repeated anywhere else…
                         const meta: string[] = [];
@@ -675,6 +699,7 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                         if (summary) meta.push(summary);
                         if (next[0]) meta.push(`${t('plan.next')}: ${formatNext(next[0])}`);
                         if (next[1]) meta.push(`${t('plan.next_next')}: ${formatNext(next[1])}`);
+                        if (p.nextOverrideUtcMs != null) meta.push(t('plan.adjusted'));
                         return (
                             <div key={p.id} className="li" style={{ alignItems: 'flex-start', cursor: 'default' }}>
                                 <button
@@ -891,7 +916,10 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                                 </div>
 
                                 <div className="list" style={{ marginTop: 10 }}>
-                                    {timeField(t('plan.add_first'), 'first', firstTime, setFirstTime)}
+                                    {timeField(t('plan.add_first'), 'first', firstDoseDate, date => {
+                                        setFirstTime(date);
+                                        if (mode === 'days') setAnchorDate(localDateKey(date));
+                                    })}
                                     {mode === 'times' && extraTimes.map((e, i) => (
                                         <React.Fragment key={e.id}>
                                             {timeField(
@@ -905,7 +933,8 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                                     ))}
                                     {mode === 'hours' && (
                                         <label className="li" style={{ cursor: 'default' }}>
-                                            <div className="t"><b>{t('plan.add_interval')}</b></div>
+                                            <span className="ic" aria-hidden="true"><SpriteIcon id="sync" /></span>
+                                            <div className="tx t">{t('plan.add_interval')}</div>
                                             <input
                                                 type="number"
                                                 inputMode="numeric"
@@ -919,7 +948,8 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                                     )}
                                     {mode === 'days' && (
                                         <label className="li" style={{ cursor: 'default' }}>
-                                            <div className="t"><b>{t('plan.add_every')}</b></div>
+                                            <span className="ic" aria-hidden="true"><SpriteIcon id="sync" /></span>
+                                            <div className="tx t">{t('plan.add_every')}</div>
                                             <input
                                                 type="number"
                                                 inputMode="numeric"
@@ -930,6 +960,26 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
                                                 className="num-pill tabular-nums"
                                             />
                                         </label>
+                                    )}
+                                    {editedStatus && mode === editedStatus.plan.mode && (
+                                        <ReminderAdjustment
+                                            plan={editedStatus.plan}
+                                            nextDueUtcMs={editedStatus.nextDueUtcMs}
+                                            variant="row"
+                                            nextDueLabel={!editedStatus.overdue && editedStatus.nextDueUtcMs !== null
+                                                ? formatNext(editedStatus.nextDueUtcMs)
+                                                : undefined}
+                                            t={t}
+                                            onCommit={plan => {
+                                                if (plan.mode !== 'days' || !plan.anchorDate) return;
+                                                setAnchorDate(plan.anchorDate);
+                                                setFirstTime(time => {
+                                                    const next = new Date(time);
+                                                    next.setHours(plan.firstHour, plan.firstMinute, 0, 0);
+                                                    return next;
+                                                });
+                                            }}
+                                        />
                                     )}
                                 </div>
 
@@ -945,9 +995,11 @@ const MedPlanSettings: React.FC<{ muted: string; on: string; doseTemplates?: Dos
 
                     {preview.length > 0 && (
                         <p className="text-xs" style={{ padding: '0 18px 8px', color: 'var(--var)' }}>
-                            {t('plan.next_preview')
-                                .replace('{first}', formatNext(preview[0]))
-                                .replace('{second}', preview[1] ? formatNext(preview[1]) : '—')}
+                            {preview[1] === undefined
+                                ? `${t('plan.next')}: ${formatNext(preview[0])}`
+                                : t('plan.next_preview')
+                                    .replace('{first}', formatNext(preview[0]))
+                                    .replace('{second}', formatNext(preview[1]))}
                         </p>
                     )}
 

@@ -245,11 +245,13 @@ export function get(key: string): string | null {
 }
 
 export function set(key: string, value: string): void {
-    nextWriteRevision(key);
+    const revision = nextWriteRevision(key);
     if (!isProtectedKey(key)) { localStorage.setItem(key, value); return; }
     cache.set(key, value);
     const write = encrypt(value)
-        .then(envelope => { localStorage.setItem(key, envelope); })
+        .then(envelope => {
+            if (writeRevision.get(key) === revision) localStorage.setItem(key, envelope);
+        })
         .catch(error => { console.error('[secure-store] write failed', key, error); });
     pendingWrites.add(write);
     void write.finally(() => pendingWrites.delete(write));

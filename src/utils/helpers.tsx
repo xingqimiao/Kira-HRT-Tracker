@@ -33,8 +33,8 @@ export const formatDate = (date: Date, lang: Lang, timeZone?: string) => {
  * Such a record needs no devtools: batch add multiplies an unbounded interval
  * into `timeH`. Returning the old string leaves that case rendering as it did.
  */
-export const createDayLabelFormatter = (lang: Lang) => {
-    const fmt = new Intl.DateTimeFormat(LOCALE_MAP[lang] || 'en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+export const createDayLabelFormatter = (lang: Lang, timeZone?: string) => {
+    const fmt = new Intl.DateTimeFormat(LOCALE_MAP[lang] || 'en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone });
     return (date: Date): string => Number.isNaN(date.getTime()) ? 'Invalid Date' : fmt.format(date);
 };
 

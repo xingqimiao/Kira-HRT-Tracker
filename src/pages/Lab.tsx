@@ -1,3 +1,4 @@
+import { deviceTimeZone, originalTimeLabel, recordInstant } from '../utils/timezone';
 import React, { useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Virtuoso } from 'react-virtuoso';
@@ -135,14 +136,15 @@ const LabItemRow: React.FC<{
     onOpen: (res: LabResult) => void;
     radius?: string;
 }> = ({ res, item, point, t, lang, onOpen, radius }) => {
-    const d = new Date(res.timeH * 3600000);
+    const d = new Date(recordInstant(res));
     const analyte = item.kind === 'E2'
         ? t('scan.analyte_e2')
         : item.kind === 'T'
             ? t('scan.analyte_t')
             : t(`monitor.${item.kind.toLowerCase()}`);
     const subtitle = [
-        `${formatDate(d, lang)} · ${formatTime(d)}`,
+        `${formatDate(d, lang, deviceTimeZone())} · ${formatTime(d, deviceTimeZone())}`,
+        originalTimeLabel(res, deviceTimeZone(), LOCALE_MAP[lang]),
         analyte,
         ...(item.uln !== undefined ? [`${t('monitor.uln')} ${item.uln} ${item.unit}`] : []),
     ].join(' · ');
@@ -191,7 +193,7 @@ const CatDoodle: React.FC = () => (
 const JournalPanel: React.FC<{
     entries: JournalEntry[];
     t: (key: string) => string;
-    formatWhen: (timeH: number) => string;
+    formatWhen: (entry: JournalEntry) => string;
     onAdd: () => void;
     onEdit: (entry: JournalEntry) => void;
 }> = ({ entries, t, formatWhen, onAdd, onEdit }) => (
@@ -225,7 +227,7 @@ const JournalPanel: React.FC<{
                             onClick={() => onEdit(entry)}
                             style={{ flex: 1, minWidth: 0, textAlign: 'left', border: 0, background: 'none', font: 'inherit', color: 'inherit', padding: 0 }}
                         >
-                            <span className="s" style={{ display: 'block', marginTop: 0, fontSize: 12 }}>{formatWhen(entry.timeH)}</span>
+                            <span className="s" style={{ display: 'block', marginTop: 0, fontSize: 12 }}>{formatWhen(entry)}</span>
                             {/* The note is the reason the row exists; the timestamp is
                                 metadata. Setting both at the same size made the eye land
                                 on the time first. */}
@@ -411,10 +413,16 @@ const Lab: React.FC<LabProps> = ({
         setScanValues(null);
     };
 
-    const formatJournalWhen = (timeH: number) =>
-        new Date(timeH * 3600000).toLocaleString(LOCALE_MAP[lang] || 'en-US', {
+    const formatJournalWhen = (entry: JournalEntry) => {
+        const zone = deviceTimeZone();
+        const locale = LOCALE_MAP[lang] || 'en-US';
+        const local = new Date(recordInstant(entry)).toLocaleString(locale, {
+            timeZone: zone,
             month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
         });
+        const original = originalTimeLabel(entry, zone, locale);
+        return original ? local + ' (' + original + ')' : local;
+    };
 
     const openJournalNew = () => {
         setJournalEditing(null);

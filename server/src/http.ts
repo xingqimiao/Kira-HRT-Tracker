@@ -1,3 +1,4 @@
+import { isTimeZone } from '../../src/utils/timezone.ts';
 /**
  * HTTP surface: the web API, the MCP endpoint, and the browser auth flow.
  *
@@ -60,7 +61,7 @@ import {
   rename as renameSupporter,
   resolveAfdianSponsorName,
 } from './supporters.ts';
-import { PushStore, startPushScanner } from './push.ts';
+import { PushStore, startPushScanner, pushTimezoneKey } from './push.ts';
 import type { ApiCode, AuthContext } from './types.ts';
 import {
   lookupSession,
@@ -122,6 +123,7 @@ function corsHeaders(requestOrigin: string | undefined): Record<string, string> 
   return {
     'Access-Control-Allow-Origin': requestOrigin,
     'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Expose-Headers': 'X-Server-Time-Utc',
     Vary: 'Origin',
   };
 }
@@ -254,8 +256,10 @@ async function readBody(req: IncomingMessage, limitBytes = 1_000_000): Promise<u
 }
 
 function send(res: ServerResponse, status: number, body: unknown): void {
+  const payload = JSON.stringify(body);
+  res.setHeader('X-Server-Time-Utc', String(Date.now()));
   res.writeHead(status, JSON_HEADERS);
-  res.end(JSON.stringify(body));
+  res.end(payload);
 }
 
 /**
@@ -1426,6 +1430,14 @@ export function createRequestHandler() {
       }
 
       // --- Settings --------------------------------------------------------
+      if (path === '/api/settings/device-timezone' && req.method === 'POST') {
+        const ctx = await requireSessionCtx();
+        if (!ctx) return;
+        const body = (await readBody(req)) as { zone?: unknown } | undefined;
+        if (!isTimeZone(body?.zone)) return fail(res, 400, 'zone: expected an IANA time zone');
+        if (!await AccountService.observeDeviceTimezone(ctx, body.zone)) return fail(res, 400, 'could not save device time zone');
+        return send(res, 200, { ok: true });
+      }
       if (path === '/api/settings' && req.method === 'GET') {
         const ctx = await requireCtx();
         if (!ctx) return;
@@ -1506,12 +1518,17 @@ export function createRequestHandler() {
       if (path === '/api/push/register' && req.method === 'POST') {
         const ctx = await requireCtx();
         if (!ctx) return;
-        const body = (await readBody(req)) as { token?: unknown; platform?: unknown } | undefined;
+        const body = (await readBody(req)) as { token?: unknown; platform?: unknown; zone?: unknown } | undefined;
         const token = typeof body?.token === 'string' ? body.token.trim() : '';
         if (token === '' || token.length > 4096) return fail(res, 400, 'a device token is required');
         const platform = typeof body?.platform === 'string' && body.platform.trim() !== ''
           ? body.platform.trim().slice(0, 32)
           : 'android';
+        const zone = body?.zone;
+        if (zone !== undefined && !isTimeZone(zone)) return fail(res, 400, 'zone: expected an IANA time zone');
+        if (isTimeZone(zone) && !await AccountService.observeDeviceTimezone(ctx, zone, pushTimezoneKey(token))) {
+          return fail(res, 400, 'could not save device time zone');
+        }
         await PushStore.register(ctx.userId, token, platform);
         return send(res, 200, { ok: true });
       }

@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 /**
  * The Application Core.
  *
@@ -41,6 +42,7 @@ import { RecordService } from './records.ts';
 import type { RecordCategory, StoredRecord } from './records.ts';
 import {
   parseMedicationInput,
+  parseInstant,
   parseLabInput,
   parseJournalInput,
   parseTemplateInput,
@@ -52,13 +54,18 @@ import { settings } from './settings.ts';
 import { AccountService } from './accounts.ts';
 import type { AuthContext } from './types.ts';
 import {
+  adjustPlanReminder,
+  initializePlanAnchor,
+  clearConsumedPlanOverrides,
   sanitizeMedPlans,
   plansForMode,
   planStatuses,
+  planScheduleRevision,
+  matchesPlan,
   type MedPlan,
   type PlanDoseRef,
 } from '../../src/utils/medPlan.ts';
-import { isTimeZone, utcOffsetMinutes } from '../../src/utils/timezone.ts';
+import { isTimeZone, recordInstant, withUtcTime } from '../../src/utils/timezone.ts';
 
 export type { AuthContext };
 export { hashPassword, verifyPassword, AccountService } from './accounts.ts';
@@ -81,6 +88,8 @@ export interface RecordItem<T = unknown> {
 export interface DoseRecord {
   id: string;
   timeH: number;
+  timestamp_utc_ms?: number;
+  recorded_tz?: string;
   doseMG: number;
   ester: string;
   route: string;
@@ -92,6 +101,8 @@ export interface DoseRecord {
 export interface LabRecord {
   id: string;
   timeH: number;
+  timestamp_utc_ms?: number;
+  recorded_tz?: string;
   concValue: number;
   unit: string;
   analyte?: 'E2' | 'T' | 'unknown';
@@ -150,10 +161,9 @@ function innerIdOfKey(key: string): string {
 }
 
 /** Epoch ms for a stored record, preferring the event's own `timeH` over the column. */
-function takenAtOf(data: { timeH?: unknown }, fallback: number): number {
-    return typeof data?.timeH === 'number' && Number.isFinite(data.timeH)
-        ? data.timeH * HOUR_MS
-        : fallback;
+function takenAtOf(data: { timeH?: unknown; timestamp_utc_ms?: unknown }, fallback: number): number {
+    const value = recordInstant(data as { timeH: number; timestamp_utc_ms?: number });
+    return Number.isFinite(value) ? value : fallback;
 }
 
 function asRecord(record: StoredRecord): RecordItem {
@@ -207,13 +217,14 @@ async function lookup(
     kind: RecordKind,
     id: string,
     modeHint: Mode,
+    client?: PoolClient,
 ): Promise<{ record: StoredRecord; mode: Mode } | null> {
-    const direct = await RecordService.get(ctx, id);
+    const direct = await RecordService.get(ctx, id, client);
     if (direct) return { record: direct, mode: modeOfKey(direct.id) ?? modeHint };
 
     const bare = innerIdOfKey(id);
     for (const mode of [modeHint, ...MODES.filter((m) => m !== modeHint)]) {
-        const found = await RecordService.get(ctx, recordKey(kind, mode, bare));
+        const found = await RecordService.get(ctx, recordKey(kind, mode, bare), client);
         if (found) return { record: found, mode };
     }
     return null;
@@ -313,24 +324,63 @@ async function noteDeletion(
  * generated id is a UUID because that is what the app does, but the domain does
  * not require it — see `parseRecordId`.
  */
+export async function accountTimezone(ctx: AuthContext): Promise<string | undefined> {
+    const settings = await AccountService.getSettings(ctx);
+    const value = (settings.appState?.settings as { last_known_timezone?: unknown } | undefined)?.last_known_timezone;
+    return isTimeZone(value) ? value : undefined;
+}
+
+export async function retimeRecord(ctx: AuthContext, kind: 'dose' | 'lab' | 'journal', id: string, at: string): Promise<Result<RecordItem>> {
+    const mode = await currentMode(ctx);
+    const zone = await accountTimezone(ctx);
+    const instant = parseInstant(at, 'at', zone);
+    if (!instant.ok) return instant;
+    const now = Date.now();
+    const timestamp_utc_ms = Math.round(instant.value * HOUR_MS);
+    if (kind === 'dose' && timestamp_utc_ms > now + 86_400_000) return { ok: false, error: 'at: cannot be more than a day in the future' };
+    let value: RecordItem | undefined;
+    const saved = await RecordService.putMany(ctx, [], async client => {
+        const found = await lookup(ctx, kind, id, mode, client);
+        if (!found || found.record.category !== kind || !found.record.id.startsWith(kind + ':')) return [];
+        const prior = found.record.data as { timeH: number; timestamp_utc_ms?: number; recorded_tz?: string };
+        const recorded_tz = recordInstant(prior) === timestamp_utc_ms ? prior.recorded_tz : zone;
+        const data = { ...prior, timeH: instant.value, timestamp_utc_ms, recorded_tz, updatedAt: now };
+        value = { id: found.record.id, takenAt: timestamp_utc_ms, mode: found.mode, updatedAt: now, data };
+        return [{ id: value.id, takenAt: timestamp_utc_ms, category: kind, data }];
+    });
+    return saved.ok && value && saved.written.includes(value.id)
+        ? { ok: true, value } : { ok: false, error: 'Record not found or could not be updated' };
+}
+
 export const MedicationService = {
     async add(ctx: AuthContext, input: unknown): Promise<Result<RecordItem<DoseRecord>>> {
-        const parsed: Result<DoseEvent> = parseMedicationInput(input, randomUUID());
+        const parsed: Result<DoseEvent> = parseMedicationInput(input, randomUUID(), await accountTimezone(ctx));
         if (!parsed.ok) return parsed;
         if (parsed.value.timeH * HOUR_MS > Date.now() + 86_400_000) {
             return { ok: false, error: 'at: cannot be more than a day in the future' };
         }
         const mode = await currentMode(ctx);
-        const stored = await write(ctx, 'dose', mode, parsed.value);
-        if (!stored) return { ok: false, error: 'could not store the record' };
+        const now = Date.now();
+        const data = { ...parsed.value, loggedAtUtcMs: now, updatedAt: now };
+        const takenAt = recordInstant(data);
+        const id = recordKey('dose', mode, data.id);
+        const result = await RecordService.putMany(ctx, [], async client => {
+            const rows: unknown[] = [{ id, takenAt, category: 'dose', data }];
+            const plan = await MedPlanService.readState(ctx, client);
+            const stamp = Math.max(now, plan.stamp + 1);
+            const next = clearConsumedPlanOverrides(plan.plans, data, mode, now, stamp);
+            if (next !== plan.plans) rows.push(medPlanDocument(next, stamp, plan.clearedAt));
+            return rows;
+        });
+        if (!result.ok || !result.written.includes(id)) return { ok: false, error: 'could not store the record' };
         return {
             ok: true,
             value: {
-                id: stored.id,
+                id,
                 mode,
-                takenAt: stored.takenAt,
-                updatedAt: Date.now(),
-                data: parsed.value,
+                takenAt,
+                updatedAt: now,
+                data,
             },
         };
     },
@@ -364,7 +414,7 @@ export const MedicationService = {
 
 export const LabService = {
     async add(ctx: AuthContext, input: unknown): Promise<Result<RecordItem<LabRecord>>> {
-        const parsed: Result<LabResult> = parseLabInput(input, randomUUID());
+        const parsed: Result<LabResult> = parseLabInput(input, randomUUID(), await accountTimezone(ctx));
         if (!parsed.ok) return parsed;
         const mode = await currentMode(ctx);
         const stored = await write(ctx, 'lab', mode, parsed.value);
@@ -418,7 +468,7 @@ export const LabService = {
  */
 export const JournalService = {
     async add(ctx: AuthContext, input: unknown): Promise<Result<RecordItem<JournalRecord>>> {
-        const parsed: Result<JournalRecord> = parseJournalInput(input, randomUUID());
+        const parsed: Result<JournalRecord> = parseJournalInput(input, randomUUID(), await accountTimezone(ctx));
         if (!parsed.ok) return parsed;
         const mode = await currentMode(ctx);
         // Stamped like every other record the app writes: sync's newest-wins rule
@@ -539,14 +589,14 @@ export const TimelineService = {
             ...doses.records.map((r): TimelineEntry => ({
                 kind: 'dose',
                 id: r.id,
-                at: timeHToIso(r.data.timeH),
+                at: new Date(recordInstant(r.data)).toISOString(),
                 event: r.data,
                 version: r.updatedAt,
             })),
             ...labs.records.map((r): TimelineEntry => ({
                 kind: 'lab',
                 id: r.id,
-                at: timeHToIso(r.data.timeH),
+                at: new Date(recordInstant(r.data)).toISOString(),
                 lab: r.data,
                 version: r.updatedAt,
             })),
@@ -578,48 +628,96 @@ export type MedPlanStatus = {
   missed: string[];
   /** True when at least one due time has passed unmatched. */
   overdue: boolean;
+  nextDueUtcMs: number | null;
+  status: ReturnType<typeof planStatuses>[number]['status'];
+  skippedDueToRefractory: boolean;
+  revision: string;
 };
 
+function medPlanDocument(plans: readonly MedPlan[], stamp: number, clearedAt: number) {
+    return { id: 'scalar:medPlan', category: 'setting', takenAt: stamp, data: { value: plans, stamp, clearedAt } };
+}
+
 export const MedPlanService = {
-  /** The stored plan, sanitised. Empty when the account never pushed one. */
-  async read(ctx: AuthContext): Promise<MedPlan[]> {
-    const record = await RecordService.get(ctx, 'scalar:medPlan').catch(() => null);
-    const value = (record?.data as { value?: unknown } | null)?.value;
-    return sanitizeMedPlans(value);
+  async readState(ctx: AuthContext, client?: PoolClient) {
+    const record = await RecordService.get(ctx, 'scalar:medPlan', client);
+    const data = record?.data as { value?: unknown; stamp?: number; clearedAt?: number } | undefined;
+    return { plans: sanitizeMedPlans(data?.value), stamp: data?.stamp ?? 0, clearedAt: data?.clearedAt ?? 0 };
   },
 
-  /**
-   * Today's status for every enabled plan.
-   *
-   * Doses are read newest-first; a single generous page bounds the query and any
-   * real daily count fits well inside it. `nowMs` is passed in so the day boundary
-   * is the caller's, and the account's own zone places its midnight where the
-   * user's is — one zone for every device, so the in-app badge, this scan and a
-   * phone in another time zone cannot disagree about which day it is.
-   *
-   * `plan.tzOffsetMinutes` is only the fallback for an account that has never
-   * stored a zone (a client older than the setting); it is the offset of whatever
-   * device saved the plan, which is precisely what made statuses device-dependent.
-   */
-  async status(ctx: AuthContext, nowMs: number): Promise<MedPlanStatus[]> {
-    const { hrtMode, timezone } = await AccountService.getSettings(ctx);
-    const accountOffset = isTimeZone(timezone) ? utcOffsetMinutes(timezone, nowMs) : null;
-    const plans = plansForMode(await MedPlanService.read(ctx), hrtMode);
+  async read(ctx: AuthContext): Promise<MedPlan[]> {
+    return (await MedPlanService.readState(ctx)).plans;
+  },
+
+  async adjust(ctx: AuthContext, id: string, input: { at?: string; offset_minutes?: number; restore?: boolean; reanchor?: boolean }): Promise<Result<MedPlanStatus>> {
+    const nowUtcMs = Date.now();
+    const zone = await accountTimezone(ctx);
+    const mode = await currentMode(ctx);
+    const { records } = await MedicationService.list(ctx, { limit: 500 });
+    const doses = records.map(({ data }) => ({ ...data, ester: data.ester as Ester, route: data.route as Route }));
+    let problem = 'Plan not found or disabled';
+    const saved = await RecordService.putMany(ctx, [], async client => {
+      const state = await MedPlanService.readState(ctx, client);
+      const plan = plansForMode(state.plans, mode).find(item => item.id === id && item.enabled);
+      if (!plan) return [];
+      const current = zone || plan.mode === 'hours' || plan.nextOverrideUtcMs != null
+        ? planStatuses([plan], doses, { deviceTimezone: zone ?? 'UTC', nowUtcMs })[0] : undefined;
+      let target: number | null = null;
+      if (input.at !== undefined) {
+        const parsed = parseInstant(input.at, 'at', zone);
+        if (!parsed.ok) { problem = parsed.error; return []; }
+        target = Math.round(parsed.value * 3_600_000);
+      } else if (input.offset_minutes !== undefined) {
+        if (current?.nextDueUtcMs == null) { problem = 'Plan has no next reminder'; return []; }
+        target = current.nextDueUtcMs + input.offset_minutes * 60_000;
+      }
+      if (input.reanchor && plan.mode === 'days' && !zone) { problem = 'Confirm the current time zone first'; return []; }
+      try {
+        const stamp = Math.max(nowUtcMs, state.stamp + 1);
+        const changed = adjustPlanReminder(plan, { nowUtcMs, deviceTimezone: zone ?? 'UTC' }, target, input.reanchor, stamp);
+        return [medPlanDocument(state.plans.map(item => item === plan ? changed : item), stamp, state.clearedAt)];
+      } catch (error) {
+        problem = (error as Error).message;
+        return [];
+      }
+    });
+    if (!saved.ok || !saved.written.length) return { ok: false, error: problem };
+    const next = (await MedPlanService.status(ctx, nowUtcMs)).find(item => item.plan.id === id);
+    return next ? { ok: true, value: next } : { ok: false, error: 'Plan saved; confirm the current time zone to calculate its next reminder' };
+  },
+  /** Status in the endpoint zone, or the account observation for MCP. */
+  async status(ctx: AuthContext, nowMs: number, endpointZone?: string | null): Promise<MedPlanStatus[]> {
+    const account = await AccountService.getSettings(ctx);
+    const bag = account.appState?.settings as { last_known_timezone?: string } | undefined;
+    const zone = endpointZone === undefined ? bag?.last_known_timezone : endpointZone;
+    const state = await MedPlanService.readState(ctx);
+    const plans = plansForMode(state.plans, account.hrtMode).map(plan => isTimeZone(zone)
+      ? initializePlanAnchor(plan, { deviceTimezone: zone, nowUtcMs: nowMs }, state.stamp, account.timezone ?? undefined) : plan);
     if (plans.length === 0) return [];
     const { records } = await MedicationService.list(ctx, { limit: 500 });
     const doses: PlanDoseRef[] = records.map((r) => ({
       ester: r.data.ester as Ester,
       route: r.data.route as Route,
       timeH: r.data.timeH,
+      timestamp_utc_ms: r.data.timestamp_utc_ms,
     }));
     const out: MedPlanStatus[] = [];
     for (const plan of plans) {
-      const [status] = planStatuses([plan], doses, nowMs, accountOffset ?? plan.tzOffsetMinutes ?? 0);
+      const utcInterval = plan.mode === 'hours' && (plan.intervalAnchorUtcMs !== undefined || doses.some(dose => matchesPlan(plan, dose) && recordInstant(dose) <= nowMs));
+      if (plan.enabled && !isTimeZone(zone) && !utcInterval && plan.nextOverrideUtcMs == null) {
+        out.push({ plan, nextDueUtcMs: null, status: 'normal', skippedDueToRefractory: false, overdue: false, missed: [], revision: planScheduleRevision(plan, doses, nowMs) });
+        continue;
+      }
+      const [status] = planStatuses([plan], doses, { nowUtcMs: nowMs, deviceTimezone: isTimeZone(zone) ? zone : 'UTC' });
       if (!status) continue;
       out.push({
         plan,
         missed: status.missed.map((ms) => new Date(ms).toISOString()),
         overdue: status.overdue,
+        nextDueUtcMs: status.nextDueUtcMs,
+        status: status.status,
+        skippedDueToRefractory: status.skippedDueToRefractory,
+        revision: planScheduleRevision(plan, doses, nowMs),
       });
     }
     return out;
@@ -966,7 +1064,7 @@ function toDoseEvent(record: DoseRecord): DoseEvent {
         id: record.id,
         route: record.route as DoseEvent['route'],
         ester: record.ester as DoseEvent['ester'],
-        timeH: record.timeH,
+        timeH: withUtcTime(record).timeH,
         doseMG: record.doseMG,
         extras: (record.extras ?? {}) as DoseEvent['extras'],
     };
@@ -976,7 +1074,7 @@ function toDoseEvent(record: DoseRecord): DoseEvent {
 function toLabResult(record: LabRecord): LabResult {
     return {
         id: record.id,
-        timeH: record.timeH,
+        timeH: withUtcTime(record).timeH,
         concValue: record.concValue,
         unit: record.unit as LabResult['unit'],
         ...(record.analyte ? { analyte: record.analyte } : {}),

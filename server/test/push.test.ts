@@ -86,7 +86,7 @@ const midnightPlan = (id = 'plan-1') => ({
   dose: '2mg',
   mode: 'days' as const,
   everyDays: 1,
-  tzOffsetMinutes: 0,
+  anchorDate: '2026-06-01',
   firstHour: 0,
   firstMinute: 0,
   enabled: true,
@@ -135,7 +135,7 @@ async function seed(token: string, plans: unknown[]): Promise<void> {
   const reg = await call(base, '/api/push/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ token: 'device-token-1', platform: 'android' }),
+    body: JSON.stringify({ token: 'device-token-1', platform: 'android', zone: 'UTC' }),
   });
   assert.equal(reg.status, 200, `registering the token failed: ${JSON.stringify(reg.body)}`);
 }
@@ -234,7 +234,11 @@ test('a web token is sent without the Android priority block', async () => {
   const account = await registerAccount(base);
   await seed(account.token, [midnightPlan()]);
   // Re-register the same device as web: the platform decides the payload shape.
-  await PushStore.register(account.userId, 'web-token-1', 'web');
+  const registered = await call(base, '/api/push/register', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + account.token },
+    body: JSON.stringify({ token: 'web-token-1', platform: 'web', zone: 'UTC' }),
+  });
+  assert.equal(registered.status, 200);
 
   const sends = installFakeFcm();
   const result = await scanMissedDoses(noon);
@@ -300,4 +304,23 @@ test('unregister removes only the caller\'s token', async () => {
   assert.equal(res.status, 200);
   const { rows } = await getPool().query('SELECT count(*)::int AS n FROM device_tokens WHERE user_id = $1', [account.userId]);
   assert.equal(rows[0].n, 0);
+});
+
+test('wall-clock push is evaluated independently for each encrypted endpoint zone', async () => {
+  const account = await registerAccount(base);
+  const plan = { ...midnightPlan('zone-08'), firstHour: 8 };
+  await seed(account.token, [plan]);
+  await PushStore.unregister(account.userId, 'device-token-1');
+  for (const [token, zone] of [['shanghai-device', 'Asia/Shanghai'], ['ny-device', 'America/New_York']]) {
+    const registration = await call(base, '/api/push/register', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + account.token },
+      body: JSON.stringify({ token, platform: 'web', zone }),
+    });
+    assert.equal(registration.status, 200);
+  }
+  const sends = installFakeFcm();
+  await scanMissedDoses(Date.parse('2026-06-01T05:00:00Z'));
+  const messages = sends.map(send => send.message as { token: string; data: { zone?: string } });
+  assert.deepEqual(messages.filter(message => ['shanghai-device', 'ny-device'].includes(message.token)).map(message => [message.token, message.data.zone]),
+    [['shanghai-device', 'Asia/Shanghai']]);
 });

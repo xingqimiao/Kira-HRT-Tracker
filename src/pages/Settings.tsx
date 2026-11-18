@@ -33,8 +33,6 @@ import {
 import type { IconComponent } from '../icons';
 import type { Lang } from '../i18n/types';
 import { AppTheme, APP_VERSION } from '../constants';
-import { currentTimeZone, onAppSettingsApplied, writeTimeZone } from '../utils/appSettings';
-import { DEFAULT_TIME_ZONE, deviceTimeZone, utcOffsetMinutes } from '../utils/timezone';
 import {
     AntiandrogenChartMode,
     ANTIANDROGEN_CHART_MODES,
@@ -157,7 +155,7 @@ interface SettingsProps {
 type SettingsCat = 'general' | 'algo' | 'plans' | 'reminders' | 'data' | 'about';
 type MobileView = 'list' | SettingsCat;
 /** The choices that drill one level further inside the detail pane. */
-type SubPanel = 'aa' | 'pk' | 'calib' | 'tz';
+type SubPanel = 'aa' | 'pk' | 'calib';
 
 /** The master-detail breakpoint, the same one the M3E pages use for desktop. */
 const DESKTOP_QUERY = '(min-width: 760px)';
@@ -213,73 +211,6 @@ const Settings: React.FC<SettingsProps> = ({
     const [cat, setCat] = useState<SettingsCat>(_savedCat);
     const [mobileView, setMobileView] = useState<MobileView>(_savedMobileView);
     const [sub, setSub] = useState<SubPanel | null>(null);
-
-    // ── Account time zone ────────────────────────────────────────────────────
-    // Held in state rather than read per render so the row and the panel agree
-    // with what a sync just adopted from another device.
-    const [timeZone, setTimeZoneState] = useState(currentTimeZone);
-    useEffect(() => onAppSettingsApplied(() => setTimeZoneState(currentTimeZone())), []);
-    const [tzQuery, setTzQuery] = useState('');
-    const zoneChoices = React.useMemo(() => {
-        let supported: string[] = [];
-        try {
-            supported = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] })
-                .supportedValuesOf?.('timeZone') ?? [];
-        } catch { /* older engine: fall back to the few that matter */ }
-        return [...new Set([timeZone, DEFAULT_TIME_ZONE, 'UTC', ...supported])];
-    }, [timeZone]);
-
-    /**
-     * The zones as a person picks them: offset first, then the name ICU gives them
-     * *in this language*, which is what makes "中国" find Asia/Shanghai — the bare
-     * IANA id contains neither "china" nor the country.
-     *
-     * The English name is indexed alongside, because the interface language is not
-     * the language people search in: a Chinese screen still gets "china" typed into
-     * it, and `Asia/Shanghai` matches neither string on its own.
-     */
-    const zoneOptions = React.useMemo(() => {
-        // Deferred: naming 400+ zones twice costs ~1.3k ICU formats, and Settings is
-        // opened far more often than this one panel.
-        if (sub !== 'tz') return [];
-        const now = Date.now();
-        const longName = (zone: string, locale: string): string => {
-            try {
-                return new Intl.DateTimeFormat(locale, { timeZone: zone, timeZoneName: 'long' })
-                    .formatToParts(now)
-                    .find(p => p.type === 'timeZoneName')?.value ?? '';
-            } catch {
-                return '';
-            }
-        };
-        const rows = zoneChoices.map(zone => {
-            // UTC offset as people read it: minutes east of UTC (Taipei is +480).
-            const plus = -utcOffsetMinutes(zone, now);
-            const sign = plus < 0 ? '-' : '+';
-            const abs = Math.abs(plus);
-            const label = `UTC${sign}${Math.floor(abs / 60)}${abs % 60 ? `:${String(abs % 60).padStart(2, '0')}` : ''}`;
-            return { zone, plus, label, name: longName(zone, lang), nameEn: longName(zone, 'en') };
-        });
-        return rows.sort((a, b) => a.plus - b.plus || a.zone.localeCompare(b.zone));
-    }, [zoneChoices, lang, sub]);
-
-    const search = tzQuery.trim().toLowerCase();
-    const visibleZones = React.useMemo(() => {
-        // Nothing until something is typed: 400 rows is not a list, it is a haystack.
-        if (!search) return [];
-        return zoneOptions.filter(o =>
-            o.zone.toLowerCase().replace(/_/g, ' ').includes(search)
-            || o.name.toLowerCase().includes(search)
-            || o.nameEn.toLowerCase().includes(search)
-            || o.label.toLowerCase().includes(search)
-            || `utc${o.plus / 60}`.includes(search),
-        );
-    }, [zoneOptions, search]);
-    const chooseTimeZone = (zone: string) => {
-        writeTimeZone(zone);
-        setTimeZoneState(zone);
-        setTzQuery('');
-    };
 
     // ── App lock (Android only) ──────────────────────────────────────────────
     // `lockPresent` is false on web and on any build without the native bridge;
@@ -467,15 +398,6 @@ const Settings: React.FC<SettingsProps> = ({
                 trailing={chevron}
                 onClick={() => navTo(onNavigateToAppearance, 'general')}
             />
-            {/* "Today", due times and push timing all follow this zone, so it is a
-                setting rather than something each device decides for itself. */}
-            <SegmentedListItem
-                icon={Clock3}
-                title={t('settings.timezone')}
-                subtitle={timeZone}
-                trailing={chevron}
-                onClick={() => openSub('tz')}
-            />
             <SegmentedListItem
                 icon={Activity}
                 title={t('status.weight')}
@@ -658,58 +580,6 @@ const Settings: React.FC<SettingsProps> = ({
     );
 
     // ── Third level: the account's time zone ──────────────────────────────────
-    const deviceZone = deviceTimeZone();
-    const deviceZoneRow = zoneOptions.find(o => o.zone === deviceZone);
-    const renderTimeZonePanel = (): React.ReactNode => (
-        <div className="flex flex-col gap-4">
-            <p className="muted text-sm leading-relaxed">{t('settings.timezone_desc')}</p>
-            <SegmentedList label={t('settings.timezone')}>
-                <SegmentedListItem
-                    icon={MonitorSmartphone}
-                    title={t('settings.timezone_use_device')}
-                    subtitle={deviceZoneRow ? `${deviceZone} · ${deviceZoneRow.label}` : deviceZone}
-                    active={deviceZone === timeZone}
-                    onClick={() => chooseTimeZone(deviceZone)}
-                />
-            </SegmentedList>
-            <input
-                className="input-base"
-                value={tzQuery}
-                onChange={(e) => setTzQuery(e.target.value)}
-                placeholder={t('settings.timezone_search')}
-                aria-label={t('settings.timezone_search')}
-                autoComplete="off"
-                spellCheck={false}
-            />
-            {!search ? (
-                <p className="muted text-sm leading-relaxed">{t('settings.timezone_hint')}</p>
-            ) : visibleZones.length === 0 ? (
-                <p className="muted text-sm leading-relaxed">{t('settings.timezone_empty')}</p>
-            ) : (
-                <>
-                    <SegmentedList label={t('settings.timezone')}>
-                        {visibleZones.slice(0, 80).map(o => (
-                            <SegmentedListItem
-                                key={o.zone}
-                                title={o.zone}
-                                // The offset is what people actually pick by ("UTC+8"), and
-                                // the ICU name is what makes the row recognisable in their
-                                // own language rather than only by IANA city.
-                                subtitle={o.name && o.name !== o.zone ? `${o.label} · ${o.name}` : o.label}
-                                active={o.zone === timeZone}
-                                trailing={o.zone === timeZone ? <Icon icon={Check} size={20} /> : undefined}
-                                onClick={() => chooseTimeZone(o.zone)}
-                            />
-                        ))}
-                    </SegmentedList>
-                    {visibleZones.length > 80 && (
-                        <p className="muted text-sm">{t('settings.timezone_more').replace('{n}', String(visibleZones.length - 80))}</p>
-                    )}
-                </>
-            )}
-        </div>
-    );
-
     // ── Third level: PK engine ────────────────────────────────────────────────
     const renderPkPanel = (): React.ReactNode => (
         <div className="flex flex-col gap-4">
@@ -836,7 +706,7 @@ const Settings: React.FC<SettingsProps> = ({
                     />
                 </div>
             </div>
-            <MedPlanSettings muted="muted" on="text-m3e-on" doseTemplates={doseTemplates} />
+            <MedPlanSettings muted="muted" on="text-m3e-on" doseTemplates={doseTemplates} events={events} />
         </div>
     );
 
@@ -1127,9 +997,7 @@ const Settings: React.FC<SettingsProps> = ({
             ? t('settings.pk_engine')
             : sub === 'calib'
                 ? t('cal.settings')
-                : sub === 'tz'
-                    ? t('settings.timezone')
-                    : cats.find(c => c.id === cat)?.label ?? t('nav.settings');
+                : cats.find(c => c.id === cat)?.label ?? t('nav.settings');
 
     const paneBody: React.ReactNode = aaPane
         ? renderAaPanel()
@@ -1137,9 +1005,7 @@ const Settings: React.FC<SettingsProps> = ({
             ? renderPkPanel()
             : sub === 'calib'
                 ? renderCalibPanel()
-                : sub === 'tz'
-                    ? renderTimeZonePanel()
-                    : cat === 'general'
+                : cat === 'general'
                 ? renderGeneral()
                 : cat === 'algo'
                 ? renderAlgo()

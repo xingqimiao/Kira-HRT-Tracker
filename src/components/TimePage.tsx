@@ -29,6 +29,8 @@ export interface TimePageProps {
     /** Which halves of the page to show. Default is both. */
     mode?: 'datetime' | 'date' | 'time';
     title?: string;
+    showRestoreNow?: boolean;
+    renderClockActions?: (selectDate: (date: Date) => void) => React.ReactNode;
     /**
      * Overrides what the "now" chip does. The dose panel tracks a "current time"
      * flag (a dose logged as "now" must be stamped at save time, not at open
@@ -37,7 +39,7 @@ export interface TimePageProps {
     onRestoreNow?: (date: Date) => void;
 }
 
-export function TimePage({ open, initialDate, onClose, onConfirm, mode = 'datetime', title, onRestoreNow }: TimePageProps) {
+export function TimePage({ open, initialDate, onClose, onConfirm, mode = 'datetime', title, showRestoreNow = true, renderClockActions, onRestoreNow }: TimePageProps) {
     const { t, lang } = useTranslation();
     const locale = LOCALE_MAP[lang] || 'en-US';
     const [draft, setDraft] = useState(initialDate);
@@ -215,8 +217,8 @@ export function TimePage({ open, initialDate, onClose, onConfirm, mode = 'dateti
         const max = kind === 'h' ? 23 : 59;
         const n = Math.min(max, Math.max(0, Number.parseInt(raw, 10) || 0));
         const next = new Date(draft);
-        if (kind === 'h') next.setHours(n);
-        else next.setMinutes(n);
+        if (kind === 'h' && n !== next.getHours()) next.setHours(n);
+        if (kind === 'm' && n !== next.getMinutes()) next.setMinutes(n);
         applyDraft(next);
     };
 
@@ -226,7 +228,8 @@ export function TimePage({ open, initialDate, onClose, onConfirm, mode = 'dateti
     };
 
     return createPortal(
-        <div ref={panelRef} className={`dose-panel lab-time${open ? ' open' : ''}`} aria-hidden={!open || undefined}>
+        <div ref={panelRef} className={`dose-panel lab-time${open ? ' open' : ''}`} aria-hidden={!open || undefined}
+            role="dialog" aria-modal={open || undefined} aria-label={title ?? t('m3e.time.title')}>
             <div className="sub-page open">
                 <div className="hdr">
                     <div className="hdr-l">
@@ -235,9 +238,9 @@ export function TimePage({ open, initialDate, onClose, onConfirm, mode = 'dateti
                         </button>
                         <span className="hdr-title">{title ?? t('m3e.time.title')}</span>
                     </div>
-                    <button type="button" className="tpl-chip on" data-m style={{ ['--mo' as string]: '10px' }} onClick={restoreNow}>
+                    {showRestoreNow && <button type="button" className="tpl-chip on" data-m style={{ ['--mo' as string]: '10px' }} onClick={restoreNow}>
                         {t('m3e.time.now_restore')}
-                    </button>
+                    </button>}
                 </div>
 
                 <div className={`tp-layout${!showDate || !showTime ? ' single' : ''}`}>
@@ -327,6 +330,7 @@ export function TimePage({ open, initialDate, onClose, onConfirm, mode = 'dateti
                     {showTime && (
                     <div className="tp-card">
                         <div className="tp-caption">{t('m3e.time.clock')}</div>
+                        {renderClockActions?.(applyDraft)}
                         <div className="tp-display" key={`clock-${clockPulse}`}>
                             <div className="tp-col">
                                 <button type="button" className="tp-step" data-m style={{ ['--mo' as string]: '8px' }} onClick={() => nudgePart('h', 1)}>+</button>

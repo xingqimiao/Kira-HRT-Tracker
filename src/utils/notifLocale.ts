@@ -42,7 +42,7 @@ export interface NotifFallbacks {
      * also made the notification text a server-side composition of health data. Now
      * the payload names the plan and this map supplies the words.
      */
-    plans?: Record<string, { title: string; body: string }>;
+    plans?: Record<string, { title: string; body: string; revision?: string }>;
 }
 
 /** The resolved fallbacks for the current language. */
@@ -73,7 +73,8 @@ export function applyNotifFallbacks(fallbacks: NotifFallbacks): void {
     // The web tray is generic-only (the browser notification has no private/redacted
     // variant, so anything sent here is what a lock screen shows), which means the
     // per-plan labels never reach the worker — and never sit in its cache.
-    const generic = { title: fallbacks.title, body: fallbacks.body, hidden: fallbacks.hidden };
+    const revisions = Object.fromEntries(Object.entries(fallbacks.plans ?? {}).map(([id, info]) => [id, info.revision]));
+    const generic = { title: fallbacks.title, body: fallbacks.body, hidden: fallbacks.hidden, revisions };
     // `ready` waits for a controlling worker; `.active` can be null only before then.
     navigator.serviceWorker.ready
         .then((registration) => {

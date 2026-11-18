@@ -1,3 +1,5 @@
+import { useDeviceTimeZone } from '../hooks/useDeviceTimeZone';
+import { recordInstant } from '../utils/timezone';
 import React, { useState, useEffect } from 'react';
 import { GroupedVirtuoso } from 'react-virtuoso';
 import Icon from '../components/Icon';
@@ -27,6 +29,7 @@ type RecordFilter = 'all' | 'e2' | 'aa' | 't' | 'cycle';
 
 interface HistoryRowProps {
     ev: DoseEvent;
+    zone: string;
     isSelected: boolean;
     isFuture: boolean;
     selectMode: boolean;
@@ -45,7 +48,7 @@ const ROUTE_ICON_ID: Record<string, string> = {
 };
 
 const HistoryRow: React.FC<HistoryRowProps> = ({
-    ev, isSelected, isFuture, selectMode, radius, t, onToggle,
+    ev, zone, isSelected, isFuture, selectMode, radius, t, onToggle,
 }) => {
     const { isTransmasc } = useHRTMode();
     const rowCategory = categoryForEster(modeOf(isTransmasc), ev.ester);
@@ -116,7 +119,9 @@ const HistoryRow: React.FC<HistoryRowProps> = ({
                     </b>
                     <span className="s">{detail.join(' · ')}</span>
                 </div>
-                <div className="r">{formatTime(new Date(ev.timeH * 3600000))}</div>
+                <div className="r">
+                    {formatTime(new Date(recordInstant(ev)), zone)}
+                </div>
             </div>
         </div>
     );
@@ -169,6 +174,7 @@ const History: React.FC<HistoryProps> = ({
 }) => {
     const { isTransmasc } = useHRTMode();
     const { showDialog } = useDialog();
+    const zone = useDeviceTimeZone();
     const rootRef = React.useRef<HTMLDivElement>(null);
     const scrollParent = useScrollParent(rootRef);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -441,6 +447,7 @@ const History: React.FC<HistoryProps> = ({
                                 return (
                                     <MemoHistoryRow
                                         ev={ev}
+                                        zone={zone}
                                         isSelected={selectedIds.has(ev.id)}
                                         isFuture={ev.timeH > nowH}
                                         selectMode={selectMode}

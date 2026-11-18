@@ -674,6 +674,8 @@ test('CORS allows exactly the configured web origin and nothing else', async () 
   const allowed = await fetch(`${base}/health`, { headers: { Origin: PUBLIC_ORIGIN } });
   assert.equal(allowed.headers.get('access-control-allow-origin'), PUBLIC_ORIGIN);
   assert.equal(allowed.headers.get('access-control-allow-credentials'), 'true');
+  assert.match(allowed.headers.get('access-control-expose-headers') ?? '', /\bX-Server-Time-Utc\b/i);
+  assert.ok(Math.abs(Date.now() - Number(allowed.headers.get('x-server-time-utc'))) < 30_000);
 
   for (const origin of ['http://tauri.localhost', 'https://tauri.localhost']) {
     const native = await fetch(`${base}/health`, { headers: { Origin: origin } });

@@ -1240,13 +1240,6 @@ const PACK: LangPack = {
     "settings.aa_display.cumulative": "累計量",
 
     "settings.aa_display.none": "非表示",
-    "settings.timezone": "タイムゾーン",
-    "settings.timezone_desc": "「今日」、服薬予定の時刻、リマインダーはすべてこのタイムゾーンで計算されます。端末ごとに同じ値を選んでください。",
-    "settings.timezone_use_device": "この端末のタイムゾーンを使う",
-    "settings.timezone_search": "タイムゾーンを検索",
-    "settings.timezone_more": "ほか {n} 件のタイムゾーン。入力で絞り込めます",
-    "settings.timezone_hint": "都市名・国名・UTC+8 で検索できます",
-    "settings.timezone_empty": "一致するタイムゾーンがありません。都市名か UTC オフセットで試してください。",
     "export.btn_csv": "CSV ファイルをエクスポート",
     "export.btn_pdf": "PDF ファイルをエクスポート",
     "export.btn_copy_json": "JSON をコピー",

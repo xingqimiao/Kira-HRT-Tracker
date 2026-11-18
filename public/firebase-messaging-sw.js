@@ -116,6 +116,7 @@ function sanitizeFallbacks(value) {
         body: typeof value.body === 'string' ? value.body : '',
         // `hidden` postdates older cached blobs; the generic body stands in for it.
         hidden: typeof value.hidden === 'string' && value.hidden ? value.hidden : (typeof value.body === 'string' ? value.body : ''),
+        revisions: value.revisions && typeof value.revisions === 'object' ? value.revisions : {},
         // `plans` is deliberately dropped: the web tray is generic-only, so the
         // per-plan labels (drug names and doses) are neither shown nor kept here.
     };
@@ -172,8 +173,10 @@ self.addEventListener('message', (event) => {
 firebase.messaging().onBackgroundMessage(async (payload) => {
     const data = payload.data || {};
     if (data.kind !== 'dose_overdue') return;
+    if (data.zone && data.zone !== Intl.DateTimeFormat().resolvedOptions().timeZone) return;
     const key = data.planId + ':' + data.dueAt;
     await ensureHydrated();
+    if (data.revision !== undefined && data.revision !== fallbacks.revisions?.[data.planId]) return;
     if (shown.has(key)) return;
     shown.add(key);
     // Best-effort durable write; the in-memory add already dedups within this worker's

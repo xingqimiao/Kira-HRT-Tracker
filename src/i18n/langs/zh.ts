@@ -132,6 +132,14 @@ const PACK: LangPack = {
 
 
     "plan.next": "下次",
+    "plan.anchor_date": "周期起始日",
+    "plan.adjust_next": "调整下次时间",
+    "plan.adjusted": "已临时调整",
+    "plan.adjust_day": "顺延 1 天",
+    "plan.reanchor": "同时顺延后续周期",
+    "plan.adjust_invalid": "请选择有效的未来时间。",
+    "plan.adjust_restore": "恢复原计划",
+    "plan.jetlag": "时差过渡中",
 
 
     "plan.next_next": "再下次",
@@ -1204,13 +1212,6 @@ const PACK: LangPack = {
     "settings.aa_display.cumulative": "累计总量",
 
     "settings.aa_display.none": "不显示",
-    "settings.timezone": "时区",
-    "settings.timezone_desc": "「今天」、用药到期与提醒都按这个时区计算。多台设备请选同一个，否则同一天可能显示出两种结果。",
-    "settings.timezone_use_device": "使用本机时区",
-    "settings.timezone_search": "搜索时区",
-    "settings.timezone_more": "还有 {n} 个时区，输入关键字缩小范围",
-    "settings.timezone_hint": "输入城市、国家或 UTC+8 开始搜索",
-    "settings.timezone_empty": "没有匹配的时区。试试城市名、国家名或 UTC+8。",
     "backup.auto_saved": "已自动备份到云端",
     "onboarding.privacy_title_1": "隐私保护根植于",
     "onboarding.privacy_title_highlight": "KiraEqual 和 Kira Tracker",

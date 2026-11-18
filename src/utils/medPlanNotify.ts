@@ -28,11 +28,10 @@ import {
 } from '@choochmeque/tauri-plugin-notifications-api';
 import { isNativeApp } from './platform';
 import { applyNotifFallbacks, notifFallbacks, type NotifFallbacks } from './notifLocale';
-import { readMedPlans, writeMedPlans, medPlanUpdatedAt, medPlanClearedAt, sanitizeMedPlans, dueTimesToday, matchesPlan, planStatuses, plansForMode, localDateKey, isSavedTemplate, type MedPlan, type PlanStatus, type PlanTime } from './medPlan';
+import { readMedPlans, writeMedPlans, medPlanUpdatedAt, medPlanClearedAt, sanitizeMedPlans, nextPlanOccurrences, matchesPlan, planStatuses, planScheduleRevision, plansForMode, localDateKey, isSavedTemplate, type MedPlan, type PlanStatus, type PlanTime } from './medPlan';
 import { get, set } from './secureStore';
 import { occurrenceKey, readLedger, serializeLedger, pruneLedger } from './medPlanNotifyLedger';
-import { currentTimeZone, currentTzOffset } from './appSettings';
-import { wallClockIn, zonedTimeToEpoch } from './timezone';
+import { deviceTimeContext } from './timezone';
 
 // --- Migration: the old name+time reminders become plans ---------------------
 
@@ -83,10 +82,12 @@ let notifFallback: NotifFallbacks = { title: 'Medication reminder', body: '', hi
  * account actually holds. Recomputed on language change and on every reschedule, so
  * an edit reaches the next push without a reload.
  */
-export function planNotificationLabels(): Record<string, { title: string; body: string }> {
-    const out: Record<string, { title: string; body: string }> = {};
+export function planNotificationLabels(): Record<string, { title: string; body: string; revision: string }> {
+    const out: Record<string, { title: string; body: string; revision: string }> = {};
+    const doses = doseSource?.() ?? [];
+    const now = Date.now();
     for (const plan of plansForMode(readMedPlans(), currentMode())) {
-        out[plan.id] = { title: reminderTitle(plan), body: reminderBody(plan) };
+        if (plan.enabled) out[plan.id] = { title: reminderTitle(plan), body: reminderBody(plan), revision: planScheduleRevision(plan, doses, now) };
     }
     return out;
 }
@@ -218,68 +219,42 @@ async function rescheduleOnce(request: boolean): Promise<boolean> {
         try { return JSON.parse(get(OWNED_NOTIFICATION_IDS_KEY) ?? '[]') as number[]; } catch { return []; }
     })();
     const ownedIds = storedIds.filter((id): id is number => Number.isInteger(id));
-    if (ownedIds.length) await cancel(ownedIds).catch(() => undefined);
-    const nextIds: number[] = [];
-    if (!granted || get(NOTIFY_OFF_KEY) === '1') {
-        set(OWNED_NOTIFICATION_IDS_KEY, '[]');
+    if (ownedIds.length) {
+        try { await cancel(ownedIds); } catch { return false; }
+    }
+    const bridge = (globalThis as { HrtTimeZone?: { generation(): string; replaceQueue(zone: string, generation: string, queue: string): boolean } }).HrtTimeZone;
+    if (ownedIds.length && bridge) set(OWNED_NOTIFICATION_IDS_KEY, '[]');
+    const generation = bridge?.generation() ?? '';
+    const context = deviceTimeContext();
+    const doses = doseSource?.() ?? [];
+    const slotsByDrug = new Map<string, { key: string; identity: string; planId: string; dueAt: number; zone: string }>();
+    const plans = granted && get(NOTIFY_OFF_KEY) !== '1' ? plansForMode(readMedPlans(), currentMode()) : [];
+    for (const plan of plans) {
+        if (!plan.enabled || plan.route === Route.patchRemove) continue;
+        const zone = plan.mode === 'hours' || plan.nextOverrideUtcMs != null ? '' : context.deviceTimezone;
+        const revision = planScheduleRevision(plan, doses, context.nowUtcMs);
+        for (const dueAt of nextPlanOccurrences(plan, context, NATIVE_QUEUE_SIZE, doses)) {
+            const key = plan.id + ':' + dueAt;
+            const identity = JSON.stringify([key, zone, revision]);
+            const drugSlot = drugKeyOf(plan) + ':' + dueAt;
+            if (!slotsByDrug.has(drugSlot)) slotsByDrug.set(drugSlot, { key, identity, planId: plan.id, dueAt, zone });
+        }
+    }
+    if (bridge) {
+        bridge.replaceQueue(context.deviceTimezone, generation, JSON.stringify([...slotsByDrug.values()]));
         return granted;
     }
-    const now = new Date();
-    // Every wall clock below is read in the account's zone, not this device's: the
-    // badge and the server's catch-up scan already work that way, and a reminder
-    // that rings at the device's 08:00 while the app calls the dose due at 08:00
-    // somewhere else is the same disagreement in a different place.
-    const tz = currentTimeZone();
-    const today = wallClockIn(tz, now.getTime());
-    const todayKey = `${today.year}-${String(today.month).padStart(2, '0')}-${String(today.day).padStart(2, '0')}`;
-    const mode = currentMode();
-    for (const plan of plansForMode(readMedPlans(), mode)) {
-        if (!plan.enabled || plan.route === Route.patchRemove) continue;
-        const schedules: Date[] = [];
-        if (plan.mode === 'days') {
-            const anchor = plan.anchorDate ?? todayKey;
-            const [y, m, d] = anchor.split('-').map(Number);
-            const cycleDays = Math.max(1, plan.everyDays ?? 1);
-            const at = (offsetDays: number) =>
-                new Date(zonedTimeToEpoch(tz, y, m, d + offsetDays, plan.firstHour, plan.firstMinute));
-            let step = 0;
-            while (at(step) <= now) step += cycleDays;
-            for (let i = 0; i < NATIVE_QUEUE_SIZE; i++) schedules.push(at(step + i * cycleDays));
-        } else {
-            const localTimes = plan.mode === 'times'
-                ? [{ dayOffset: 0, hour: plan.firstHour, minute: plan.firstMinute }, ...(plan.doseTimes ?? []).map(t => ({ ...t, dayOffset: 0 }))]
-                : Array.from({ length: Math.ceil(24 / (plan.intervalHours ?? 24)) }, (_, i) => {
-                    const total = plan.firstHour * 60 + plan.firstMinute + i * (plan.intervalHours ?? 24) * 60;
-                    return { dayOffset: Math.floor(total / 1440), hour: Math.floor(total / 60) % 24, minute: total % 60 };
-                });
-            for (let day = 0; day < 5; day++) for (let i = 0; i < localTimes.length; i++) {
-                const t = localTimes[i];
-                const dayOffset = 'dayOffset' in t ? t.dayOffset : 0;
-                const date = new Date(zonedTimeToEpoch(tz, today.year, today.month, today.day + day + dayOffset, t.hour, t.minute));
-                if (date > now) schedules.push(date);
-            }
-        }
-        for (const time of schedules) {
-            // The id is the *drug at an instant*, not the plan at an instant.
-            // Two plans for the same compound and route at the same time (the
-            // migration could leave one behind, and a user can create one by
-            // hand) are one reminder: the second write replaces the first
-            // instead of stacking a second tray entry beside it.
-            const id = stableIntId(`med-plan:${drugKeyOf(plan)}:${time.getTime()}`);
-            nextIds.push(id);
-            await sendNotification({
-                id,
-                title: reminderTitle(plan),
-                body: reminderBody(plan),
-                channelId: MED_CHANNEL_ID,
-                schedule: Schedule.at(time, false, true),
-            });
-        }
+    const nextIds: number[] = [];
+    for (const slot of slotsByDrug.values()) {
+        const plan = plans.find(item => item.id === slot.planId)!;
+        const id = stableIntId(slot.key);
+        nextIds.push(id);
+        await sendNotification({ id, title: reminderTitle(plan), body: reminderBody(plan),
+            channelId: MED_CHANNEL_ID, schedule: Schedule.at(new Date(slot.dueAt), false, true) });
     }
     set(OWNED_NOTIFICATION_IDS_KEY, JSON.stringify(nextIds));
-    return true;
+    return granted;
 }
-
 /**
  * The identity a reminder is deduplicated by: compound + route.
  *
@@ -420,7 +395,7 @@ export function startPlanWebNotifications(): void {
             const plans = plansForMode(readMedPlans(), currentMode());
             if (plans.length === 0) return;
             const nowMs = Date.now();
-            const tz = currentTzOffset(nowMs);
+            const context = deviceTimeContext(nowMs);
             // Prune on every tick, and persist the pruned set when it shrank, so
             // expired occurrences do not linger in storage.
             const stored = readLedger(get(WEB_LEDGER_KEY));
@@ -431,7 +406,7 @@ export function startPlanWebNotifications(): void {
             // drug at the same instant: the key is the drug, not the plan, so one
             // due time is one notification however many plans point at it.
             const fired = new Set<string>();
-            for (const st of planStatuses(plans, doseSource?.() ?? [], nowMs, tz)) {
+            for (const st of planStatuses(plans, doseSource?.() ?? [], context)) {
                 for (const missed of st.missed) {
                     const key = occurrenceKey(drugKeyOf(st.plan), missed);
                     if (seen.has(key) || fired.has(key)) continue;
@@ -489,5 +464,5 @@ export function arePlanNotificationsMuted(): boolean {
 
 // --- Re-export so callers need only this module --------------------------------
 
-export { readMedPlans, writeMedPlans, sanitizeMedPlans, dueTimesToday, matchesPlan, planStatuses, isSavedTemplate };
+export { readMedPlans, writeMedPlans, sanitizeMedPlans, matchesPlan, planStatuses, isSavedTemplate };
 export type { MedPlan, PlanStatus, PlanTime };

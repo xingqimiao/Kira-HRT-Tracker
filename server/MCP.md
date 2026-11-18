@@ -22,6 +22,12 @@ locked account waiting for a browser.
 
 ---
 
+## Record and reminder times
+
+Use ISO 8601 timestamps with an explicit offset, such as `2026-11-20T09:00:00+08:00`. For a datetime without an offset, the server uses the device time zone most recently synced to the account. If the account has no zone or the local time is ambiguous at a daylight-saving transition, ask for a timestamp with an explicit offset.
+
+`hrt_med_plan_status` returns the plan ID and effective next due time. To move that reminder, call `hrt_adjust_med_plan_reminder` with `plan_id` and exactly one of `at`, `offset_minutes`, or `restore: true`. An adjustment applies once by default. On every-days and fixed-interval plans, `reanchor: true` moves the cycle as well. `hrt_update_record_time` updates the occurrence time of an existing dose, lab, or journal record.
+
 ## What you need
 
 | | |
@@ -168,7 +174,7 @@ It writes the tombstone the app's merge needs, so a deleted record does not come
 the next sync from another device.
 
 **`hrt_update_settings` covers the settings the model reads** — body weight, HRT mode,
-calibration method and history window, timezone, and the PK parameter overrides. Those are
+calibration method and history window, the latest synced device time zone, and the PK parameter overrides. Those are
 settings, so they belong here, and the write reaches both readers of them: the
 `user_settings` columns the PK model uses, and the app's own settings bag (merged in, not
 replaced) that the browser syncs — so a change an agent makes is visible in the app. The

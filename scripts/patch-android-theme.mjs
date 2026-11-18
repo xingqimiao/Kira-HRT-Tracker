@@ -64,7 +64,7 @@ if (!readFileSync(gradleProperties, 'utf8').includes('kotlin.incremental=false')
 // changes were written into `scripts/MainActivity.kt`, an APK was built without
 // re-running this script, and both features shipped dead while every source file
 // looked correct. `verifyCanonicalCopies` below is the guard against a repeat.
-const KOTLIN_FILES = ['MainActivity.kt', 'HrtLockBridge.kt', 'HrtMessagingService.kt'];
+const KOTLIN_FILES = ['MainActivity.kt', 'HrtLockBridge.kt', 'HrtMessagingService.kt', 'HrtMedAlarmReceiver.kt', 'HrtDoseReminder.kt'];
 const javaDir = resolve(root, '..', 'java', 'com', 'kiramyao', 'hrt');
 mkdirSync(javaDir, { recursive: true });
 
@@ -344,6 +344,10 @@ if (!manifestXml.includes('HrtMessagingService')) {
         '            tools:node="remove" />\n' +
         '    </application>',
     );
+}
+if (!manifestXml.includes('HrtMedAlarmReceiver')) {
+    manifestXml = manifestXml.replace('</application>',
+        '<receiver android:name=".HrtMedAlarmReceiver" android:exported="false" />\n    </application>');
 }
 writeFileSync(manifest, manifestXml);
 

@@ -214,6 +214,10 @@ export const GEL_COAPPLICATION_OPTIONS: readonly string[] = ['none', 'sunscreen'
 export const GEL_COAPPLICATION_DEFAULT_INDEX = 0;;
 
 export interface DoseEvent {
+    timestamp_utc_ms?: number;
+    recorded_tz?: string;
+    medPlanId?: string;
+    loggedAtUtcMs?: number;
     id: string;
     route: Route;
     timeH: number; // Hours since 1970
@@ -252,6 +256,8 @@ export interface SimulationResult {
 // --- Lab Results & Calibration ---
 
 export interface LabResult {
+    timestamp_utc_ms?: number;
+    recorded_tz?: string;
     id: string;
     timeH: number;
     concValue: number; // Value in the user's unit
@@ -724,11 +730,7 @@ function localDayKey(hoursSinceEpoch: number): string {
  * compound's 0 mg would read as "you took none today" when the truth is "that
  * drug is no longer used".
  *
- * `timeZone` is the account's zone (`app-timezone`), not the viewer's: "today"
- * has to mean one thing for one account, or a phone in Taipei and a laptop in
- * New York show two different readings of the same day. Callers that have not
- * resolved the account's zone yet fall back to this device's, which is what the
- * pre-account screens want anyway.
+ * timeZone is the viewer's device zone for the current calendar day.
  */
 export function antiandrogenReading(
     events: DoseEvent[],

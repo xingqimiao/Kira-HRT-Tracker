@@ -887,13 +887,6 @@ const PACK: LangPack = {
     "settings.aa_display.cumulative": "累計總量",
 
     "settings.aa_display.none": "唔顯示",
-    "settings.timezone": "時區",
-    "settings.timezone_desc": "「今日」、用藥到期同提醒都係按呢個時區計。幾部機請揀同一個，唔係同一日會出兩款結果。",
-    "settings.timezone_use_device": "用本機時區",
-    "settings.timezone_search": "搵時區",
-    "settings.timezone_more": "仲有 {n} 個時區，打關鍵字搵快啲",
-    "settings.timezone_hint": "打城市、國家或者 UTC+8 開始搵",
-    "settings.timezone_empty": "搵唔到時區。試吓城市名、國家名或者 UTC+8。",
     "label.t": "睪固酮",
     "label.total_t": "總睪固酮",
     "label.total_t_nmol": "總睪固酮",

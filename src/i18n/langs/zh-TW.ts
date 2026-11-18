@@ -887,13 +887,6 @@ const PACK: LangPack = {
     "settings.aa_display.cumulative": "累計總量",
 
     "settings.aa_display.none": "不顯示",
-    "settings.timezone": "時區",
-    "settings.timezone_desc": "「今天」、用藥到期與提醒都依這個時區計算。多台裝置請選同一個，否則同一天可能顯示出兩種結果。",
-    "settings.timezone_use_device": "使用本機時區",
-    "settings.timezone_search": "搜尋時區",
-    "settings.timezone_more": "還有 {n} 個時區，輸入關鍵字縮小範圍",
-    "settings.timezone_hint": "輸入城市、國家或 UTC+8 開始搜尋",
-    "settings.timezone_empty": "沒有符合的時區。試試城市名、國家名或 UTC+8。",
     "label.t": "睪固酮",
     "label.total_t": "總睪固酮",
     "label.total_t_nmol": "總睪固酮",
@@ -1045,6 +1038,14 @@ const PACK: LangPack = {
 
 
     "plan.next": "下次",
+    "plan.anchor_date": "週期起始日",
+    "plan.adjust_next": "調整下次時間",
+    "plan.adjusted": "已暫時調整",
+    "plan.adjust_day": "順延 1 天",
+    "plan.reanchor": "同時順延後續週期",
+    "plan.adjust_invalid": "請選擇有效的未來時間。",
+    "plan.adjust_restore": "恢復原計畫",
+    "plan.jetlag": "時差過渡中",
 
 
     "plan.next_next": "再下次",

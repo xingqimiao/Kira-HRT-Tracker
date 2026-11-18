@@ -1,3 +1,6 @@
+import { useDeviceTimeZone } from './useDeviceTimeZone';
+import { syncTimestamp } from '../utils/syncClock';
+import { calendarDateIn, deviceTimeZone, recordInstant, withUtcTime } from '../utils/timezone';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { DoseEvent, Route, Ester, SimulationResult, runSimulation, interpolateConcentration_E2, interpolateConcentration_T, LabResult, computeCalibration, CalibrationMethod, CalibrationHistoryMode, normalizeCalibrationMethod, AntiandrogenChartMode, normalizeAntiandrogenChartMode, isTestosteroneEster, isEstradiolEster, isAntiandrogen, isTestosteroneLab, isEstradiolLab, PKCustomParams, applyPKOverrides, sanitizePKParams, isPlausibleBodyWeightKG,
@@ -21,8 +24,8 @@ import { milestoneFor } from '../utils/hrtMilestone';
 import { isThirdDayStreak } from '../utils/hrtStreak';
 import { backfillLegacyLabAnalyte, normalizeImportedAnalyte, normalizeImportUnit } from '../utils/labAnalyteImport';
 import { importedAdditions } from '../utils/importMerge';
-import { get as secureGet, set as secureSet, remove as secureRemove } from '../utils/secureStore';
-import { readMedPlans, readMedPlanState, writeMedPlans, setMedPlanOwner, MED_PLAN_CHANGED_EVENT } from '../utils/medPlan';
+import { get as secureGet, set as secureSet, remove as secureRemove, flushSecureStore } from '../utils/secureStore';
+import { clearConsumedPlanOverrides, readMedPlans, readMedPlanState, writeMedPlans, setMedPlanOwner, MED_PLAN_CHANGED_EVENT } from '../utils/medPlan';
 
 /** Namespace used while signed out. Its keys are the original, un-prefixed ones. */
 const LOCAL_OWNER = 'local';
@@ -199,7 +202,7 @@ export const useAppData = (
     const recordDeletions = (kind: RecordKind, ids: string[], m: 'transfem' | 'transmasc' = mode) => {
         if (!ids.length) return;
         const current = readTombstones(m);
-        const at = Date.now();
+        const at = syncTimestamp();
         for (const id of ids) if (id) current[kind][id] = at;
         writeTombstones(m, current);
     };
@@ -258,7 +261,7 @@ export const useAppData = (
     };
 
     // --- State ---
-    const [events, setEvents] = useState<DoseEvent[]>(() => loadJSON(keyFor(mode, 'events'), [] as DoseEvent[]));
+    const [events, setEvents] = useState<DoseEvent[]>(() => loadJSON(keyFor(mode, 'events'), [] as DoseEvent[]).map(withUtcTime));
     const [inactiveImportRevision, setInactiveImportRevision] = useState(0);
     const [weight, setWeightState] = useState<number>(() => {
         // Weight is shared across modes (a physical attribute of the person).
@@ -273,7 +276,7 @@ export const useAppData = (
         setWeightState(w);
         secureSet(sharedKey('weight-at'), String(Date.now()));
     };
-    const [labResults, setLabResults] = useState<LabResult[]>(() => loadJSON(keyFor(mode, 'lab-results'), [] as LabResult[]));
+    const [labResults, setLabResults] = useState<LabResult[]>(() => loadJSON(keyFor(mode, 'lab-results'), [] as LabResult[]).map(withUtcTime));
     const [calibrationMethod, setCalibrationMethodState] = useState<CalibrationMethod>(() =>
         // Hybrid-MIPD is the default; legacy 'average'/'adaptive' values are migrated.
         normalizeCalibrationMethod(secureGet(sharedKey('cal-method')))
@@ -510,7 +513,7 @@ export const useAppData = (
     // The private body-and-mood log. Unlike the monitoring bloods and quick
     // doses above, this one *is* a record: it is exported and synced, so it has
     // tombstones and a real merge path (see "journal" in syncMerge.ts).
-    const [journal, setJournal] = useState<JournalEntry[]>(() => loadJSON(keyFor(mode, 'journal'), [] as JournalEntry[]));
+    const [journal, setJournal] = useState<JournalEntry[]>(() => loadJSON(keyFor(mode, 'journal'), [] as JournalEntry[]).map(withUtcTime));
     const [pkParams, setPkParamsState] = useState<PKCustomParams | null>(() => {
         const saved = secureGet(sharedKey('pk-params'));
         if (!saved) return null;
@@ -560,11 +563,11 @@ export const useAppData = (
         // switch has to re-read it too — otherwise a new account kept the previous
         // account's plan in memory and in the notification scheduler.
         setMedPlanState(readMedPlans());
-        setEvents(loadJSON(keyFor(mode, 'events'), [] as DoseEvent[]));
-        setLabResults(loadJSON(keyFor(mode, 'lab-results'), [] as LabResult[]));
+        setEvents(loadJSON(keyFor(mode, 'events'), [] as DoseEvent[]).map(withUtcTime));
+        setLabResults(loadJSON(keyFor(mode, 'lab-results'), [] as LabResult[]).map(withUtcTime));
         setDoseTemplates(loadJSON(keyFor(mode, 'dose-templates'), [] as DoseTemplate[]));
         setQuickDoses(loadJSON(keyFor(mode, 'quick-doses'), [] as QuickDose[]));
-        setJournal(loadJSON(keyFor(mode, 'journal'), [] as JournalEntry[]));
+        setJournal(loadJSON(keyFor(mode, 'journal'), [] as JournalEntry[]).map(withUtcTime));
         // Mode-independent, but still per-account, so they reload on the same beat.
         const savedWeight = secureGet(sharedKey('weight'));
         setWeightState(savedWeight ? parseFloat(savedWeight) : 70.0);
@@ -610,6 +613,20 @@ export const useAppData = (
     useEffect(() => {
         if (loadedScopeRef.current !== scope) return;
         secureSet(keyFor(mode, 'events'), JSON.stringify(events));
+
+        let active = true;
+        if (readMedPlans().some(plan => plan.nextOverrideUtcMs != null)) {
+            void flushSecureStore().then(() => {
+                if (!active) return;
+                const { plans, updatedAt } = readMedPlanState();
+                const now = Date.now();
+                const stamp = Math.max(syncTimestamp(), updatedAt + 1);
+                const next = events.reduce<readonly typeof plans[number][]>((current, dose) =>
+                    clearConsumedPlanOverrides(current, dose, mode, now, stamp), plans);
+                if (next !== plans) writeMedPlans([...next], stamp);
+            }).catch(() => undefined);
+        }
+        return () => { active = false; };
     }, [events, scope]);
     useEffect(() => {
         if (loadedScopeRef.current !== scope) return;
@@ -768,19 +785,21 @@ export const useAppData = (
     // run-length grouping keeps that order structurally. Object key enumeration
     // would not: it quietly re-sorts any key that looks like an array index, so a
     // key such as "20260827" would have come back oldest-first.
+    const zone = useDeviceTimeZone();
     const groupedEvents = useMemo<DoseDayGroup[]>(() => {
-        const formatLabel = createDayLabelFormatter(lang);
+        const formatLabel = createDayLabelFormatter(lang, zone);
         const sorted = [...events].sort((a, b) => b.timeH - a.timeH);
         const groups: DoseDayGroup[] = [];
         for (const e of sorted) {
-            const at = new Date(e.timeH * 3600000);
-            const key = toDayKey(at);
+            const utc = recordInstant(e);
+            const at = new Date(utc);
+            const key = Number.isFinite(at.getTime()) ? calendarDateIn(zone, utc) : 'invalid-date';
             const last = groups[groups.length - 1];
             if (last && last.key === key) last.events.push(e);
             else groups.push({ key, label: formatLabel(at), events: [e] });
         }
         return groups;
-    }, [events, lang]);
+    }, [events, lang, zone]);
 
     // Pharmacological active duration for injected esters (hours):
     // EB: ~5d, EV: ~12d, EC/EN/TC/TE: ~21d, EU: ~60d, TU (Nebido): ~84d.
@@ -866,19 +885,29 @@ export const useAppData = (
     // stamp `updatedAt`. Sync uses the stamp to tell an edit from its older
     // twin; an unstamped record silently loses that argument.
     const stamp = <T extends object>(record: T): T & { updatedAt: number } =>
-        ({ ...record, updatedAt: Date.now() });
+        ({ ...record, updatedAt: syncTimestamp() });
+
+    const stampTimed = <T extends { timeH: number; timestamp_utc_ms?: number; recorded_tz?: string }>(record: T, previous?: T) => {
+        const changed = !previous || previous.timeH !== record.timeH;
+        const instant = changed ? Math.round(record.timeH * 3_600_000) : recordInstant(previous);
+        return withUtcTime({ ...stamp(record), timestamp_utc_ms: instant, recorded_tz: changed ? deviceTimeZone() : previous.recorded_tz });
+    };
 
     const addEvent = (e: DoseEvent) => {
         forgetDeletions('events', [e.id]);
-        setEvents(prev => [...prev, stamp(e)]);
+        const next = { ...stampTimed(e), loggedAtUtcMs: Date.now() };
+        setEvents(prev => [...prev, next]);
     };
     const addEvents = (list: DoseEvent[]) => {
         if (!list.length) return;
         forgetDeletions('events', list.map(e => e.id));
-        setEvents(prev => [...prev, ...list.map(stamp)]);
+        const now = Date.now();
+        const next = list.map(event => ({ ...stampTimed(event), loggedAtUtcMs: now }));
+        setEvents(prev => [...prev, ...next]);
     };
     const updateEvent = (e: DoseEvent) => {
-        const next = stamp(e);
+        const previous = events.find(item => item.id === e.id);
+        const next = stampTimed({ ...e, medPlanId: previous?.medPlanId ?? e.medPlanId, loggedAtUtcMs: previous?.loggedAtUtcMs ?? e.loggedAtUtcMs }, previous);
         setEvents(prev => prev.map(p => p.id === e.id ? next : p));
     };
     const deleteEvent = (id: string) => {
@@ -901,10 +930,10 @@ export const useAppData = (
 
     const addLabResult = (res: LabResult) => {
         forgetDeletions('labResults', [res.id]);
-        setLabResults(prev => [...prev, stamp(res)]);
+        setLabResults(prev => [...prev, stampTimed(res)]);
     };
     const updateLabResult = (res: LabResult) => {
-        const next = stamp(res);
+        const next = stampTimed(res, labResults.find(item => item.id === res.id));
         setLabResults(prev => prev.map(r => r.id === res.id ? next : r));
     };
     const deleteLabResult = (id: string) => {
@@ -923,11 +952,11 @@ export const useAppData = (
     // stops another device pulling a deleted entry back out of the cloud.
     const addJournalEntry = (entry: JournalEntry) => {
         forgetDeletions('journal', [entry.id]);
-        setJournal(prev => [...prev, stamp(entry)]);
+        setJournal(prev => [...prev, stampTimed(entry)]);
     };
     const updateJournalEntry = (entry: JournalEntry) => {
         forgetDeletions('journal', [entry.id]);
-        const next = stamp(entry);
+        const next = stampTimed(entry, journal.find(item => item.id === entry.id));
         setJournal(prev => prev.map(p => p.id === entry.id ? next : p));
     };
     const deleteJournalEntry = (id: string) => {
@@ -1771,6 +1800,7 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
                 },
                 settings: {
                     ...readAppSettings(),
+                    last_known_timezone: secureGet(sharedKey('last-known-timezone')) ?? undefined,
                     calMethod: calibrationMethod,
                     calHistoryMode: calibrationHistoryMode,
                     aaChartMode,
@@ -1841,12 +1871,13 @@ const IMPORT_EXTRA_KEYS = new Set<string>([...Object.values(ExtraKey), ...IMPORT
         // contexts that own them have to be told, or the theme on screen stays
         // the one this device booted with until the next reload.
         if (state.appSettings) {
-            const { calMethod, calHistoryMode, aaChartMode, hrtStartDate, recheckIntervals, ocrModelTier, pkEngine: syncedPkEngine, ...global } = state.appSettings;
+            const { calMethod, calHistoryMode, aaChartMode, hrtStartDate, recheckIntervals, ocrModelTier, last_known_timezone, pkEngine: syncedPkEngine, ...global } = state.appSettings;
             // The merge's stamp is handed to `applyAppSettings` so this device
             // records the account's settings as *adopted*, not as an edit of its
             // own — otherwise it would immediately look newer and push the same
             // values straight back.
             applyAppSettings(global, state.appSettingsUpdatedAt);
+            if (last_known_timezone) secureSet(sharedKey('last-known-timezone'), last_known_timezone);
             if (calMethod) {
                 const normalized = normalizeCalibrationMethod(calMethod);
                 setCalibrationMethodState(normalized);

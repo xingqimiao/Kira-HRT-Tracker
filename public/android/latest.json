@@ -1,8 +1,8 @@
 {
-  "version": "2.5.5",
-  "versionCode": 2005005,
-  "apk": "https://hrt.kiramyao.com/android/KiraHRT-2.5.5-release.apk",
-  "sha256": "0EE04EB915C6150A1F4BA7CB9EE69919A14C73E5CD57AD85FB86428604688CD0",
+  "version": "2.5.6",
+  "versionCode": 2005006,
+  "apk": "https://hrt.kiramyao.com/android/KiraHRT-2.5.6-release.apk",
+  "sha256": "3A82A57251EDEC595DBC9DD5C749A02A0A38B503163F8B67DEE6575D93A4D02F",
   "notes": [
     "时区选择器重做：每行显示 UTC 偏移（如 UTC+8）与本地化名称（中国标准时间），按偏移排序；默认不列全部时区，输入城市、国家或 UTC+8 才出结果，中英文名都可搜。",
     "时区修复延续：概览的「今日」、用药到期、本地提醒与服务端推送都按账号时区计算，多设备不再对同一天给出两种答案。",

@@ -1,3 +1,4 @@
+import { parseCalendarDate, parseLocalInstant } from '../../src/utils/timezone.ts';
 /**
  * The trust boundary.
  *
@@ -56,7 +57,7 @@ export function timeHToIso(timeH: number): string {
  * misreading 1758000000 as hours versus milliseconds is a ~200,000-year error
  * that would otherwise pass silently.
  */
-function parseInstant(raw: unknown, field: string): Result<number> {
+export function parseInstant(raw: unknown, field: string, zone?: string): Result<number> {
   if (typeof raw === 'number') {
     if (!Number.isFinite(raw)) return fail(`${field}: must be a finite number`);
     const ms = raw > 1e11 ? raw : raw * 1000; // ≥1e11 ms is year 5138; below that, seconds
@@ -67,7 +68,12 @@ function parseInstant(raw: unknown, field: string): Result<number> {
     return pass(timeH);
   }
   if (typeof raw === 'string') {
-    const ms = Date.parse(raw);
+    const explicit = /(?:Z|[+-]\d{2}:\d{2})$/i.test(raw);
+    const absolute = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/i.test(raw);
+    if (!parseCalendarDate(raw.slice(0, 10)) || (explicit && !absolute)) return fail(field + ': expected an ISO 8601 datetime');
+    if (!explicit && !zone) return fail(field + ': confirm the current time zone or provide an explicit ISO 8601 offset');
+    const ms = explicit ? Date.parse(raw) : parseLocalInstant(zone!, raw);
+    if (ms === null) return fail(field + ': invalid or ambiguous local time; provide an explicit ISO 8601 offset');
     if (Number.isNaN(ms)) return fail(`${field}: not a valid ISO 8601 timestamp (got ${JSON.stringify(raw)})`);
     const timeH = ms / HOUR_MS;
     if (timeH < EVENT_TIME_H_MIN || timeH > EVENT_TIME_H_MAX) {
@@ -179,7 +185,7 @@ export function parseRecordId(raw: unknown, generated: string): Result<string> {
  * event carries no dose, and a CPA event under an ester route is a caller error
  * worth catching before it reaches the engine.
  */
-export function parseMedicationInput(input: unknown, id: string): Result<DoseEvent> {
+export function parseMedicationInput(input: unknown, id: string, zone?: string): Result<DoseEvent> {
   if (!input || typeof input !== 'object') return fail('expected an object');
   const raw = input as Record<string, unknown>;
 
@@ -191,7 +197,7 @@ export function parseMedicationInput(input: unknown, id: string): Result<DoseEve
   const ester: Result<string> = requireEnum(raw.ester, ESTERS, 'ester');
   if (!ester.ok) return ester;
 
-  const at: Result<number> = parseInstant(raw.at, 'at');
+  const at: Result<number> = parseInstant(raw.at, 'at', zone);
   if (!at.ok) return at;
 
   // A patch removal is a stop signal, not a dose. Requiring dose_mg here would
@@ -211,6 +217,8 @@ export function parseMedicationInput(input: unknown, id: string): Result<DoseEve
     id: recordId.value,
     route: route.value as Route,
     timeH: at.value,
+    timestamp_utc_ms: Math.round(at.value * HOUR_MS),
+    recorded_tz: zone,
     doseMG,
     ester: ester.value as Ester,
     extras: extras.value as DoseEvent['extras'],
@@ -228,7 +236,7 @@ export interface LabInput {
 
 const LAB_UNITS = ['pg/ml', 'pmol/l', 'ng/dl', 'nmol/l'] as const;
 
-export function parseLabInput(input: unknown, id: string): Result<LabResult> {
+export function parseLabInput(input: unknown, id: string, zone?: string): Result<LabResult> {
   if (!input || typeof input !== 'object') return fail('expected an object');
   const raw = input as Record<string, unknown>;
 
@@ -251,7 +259,7 @@ export function parseLabInput(input: unknown, id: string): Result<LabResult> {
     analyte = 'unknown';
   }
 
-  const at: Result<number> = parseInstant(raw.at, 'at');
+  const at: Result<number> = parseInstant(raw.at, 'at', zone);
   if (!at.ok) return at;
 
   if (typeof raw.value !== 'number' || !Number.isFinite(raw.value)) {
@@ -265,6 +273,8 @@ export function parseLabInput(input: unknown, id: string): Result<LabResult> {
   return pass({
     id: recordId.value,
     timeH: at.value,
+    timestamp_utc_ms: Math.round(at.value * HOUR_MS),
+    recorded_tz: zone,
     concValue: raw.value,
     unit: unit.value as LabResult['unit'],
     analyte,
@@ -296,6 +306,8 @@ export interface JournalInput {
 
 /** A check-in as the app stores it: what was written, and when. */
 export interface JournalRecord {
+  timestamp_utc_ms?: number;
+  recorded_tz?: string;
   id: string;
   /** Hours since epoch, the unit the app's records use. */
   timeH: number;
@@ -313,14 +325,14 @@ export interface JournalRecord {
  * middle of a log is exactly what the form's guard exists to prevent, and an agent
  * has no form standing between it and the store.
  */
-export function parseJournalInput(input: unknown, id: string): Result<JournalRecord> {
+export function parseJournalInput(input: unknown, id: string, zone?: string): Result<JournalRecord> {
   if (!input || typeof input !== 'object') return fail('expected an object');
   const raw = input as Record<string, unknown>;
 
   const recordId: Result<string> = parseRecordId(raw.id, id);
   if (!recordId.ok) return recordId;
 
-  const at: Result<number> = parseInstant(raw.at, 'at');
+  const at: Result<number> = parseInstant(raw.at, 'at', zone);
   if (!at.ok) return at;
 
   if (typeof raw.note !== 'string') return fail('note: must be a string');
@@ -330,7 +342,7 @@ export function parseJournalInput(input: unknown, id: string): Result<JournalRec
     return fail(`note: must be at most ${NOTE_MAX_LENGTH} characters (got ${note.length})`);
   }
 
-  return pass({ id: recordId.value, timeH: at.value, note });
+  return pass({ id: recordId.value, timeH: at.value, timestamp_utc_ms: Math.round(at.value * HOUR_MS), recorded_tz: zone, note });
 }
 
 // ---------------------------------------------------------------------------

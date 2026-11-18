@@ -1,3 +1,7 @@
+import { useDeviceTimeZone } from './hooks/useDeviceTimeZone';
+import { reportDeviceTimezone } from './services/coreSync';
+import { migrateLocalPlanAnchors } from './utils/medPlan';
+import { deviceTimeContext } from './utils/timezone';
 import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { SvgDefs } from './ui/SvgDefs';
 import { PrototypeShell, type ShellFab } from './ui/PrototypeShell';
@@ -21,7 +25,7 @@ import type { ImportMode } from './components/ImportSection';
 import { useAppNavigation, ViewKey } from './hooks/useAppNavigation';
 import { useLiveShareSync } from './hooks/useLiveShareSync';
 import { useCoreSync } from './hooks/useCoreSync';
-import { onAppSettingsApplied, seedTimeZone } from './utils/appSettings';
+import { onAppSettingsApplied } from './utils/appSettings';
 import { saveTextFile } from './utils/saveFile';
 import { get as secureGet, set as secureSet, consumeMissingKeyRecovery } from './utils/secureStore';
 import { setAuthLandingIntent, takeAuthLandingIntent } from './utils/authLandingIntent';
@@ -205,11 +209,8 @@ const AppContent = () => {
 
     useEffect(() => {
         registerDoseSource(() => eventsRef.current);
-        // A new account needs a zone before any "today" is computed: the first
-        // device to sign in decides, and the value rides the settings bag to the
-        // others. Seeding is a no-op once the account has one.
-        seedTimeZone();
         migrateOldRemindersToPlans();
+        migrateLocalPlanAnchors(deviceTimeContext());
         void reschedulePlanNotifications().catch(e => console.error('[med-plan] reschedule failed', e));
         startPlanWebNotifications();
         // Users who enabled reminders before the exact-alarm gate existed still run
@@ -217,19 +218,31 @@ const AppContent = () => {
         void maybePromptExactAlarms({ onceOnly: true }).catch(() => undefined);
         const refresh = () => {
             if (document.visibilityState === 'visible') {
+                migrateLocalPlanAnchors(deviceTimeContext());
                 void reschedulePlanNotifications().catch(e => console.error('[med-plan] reschedule failed', e));
             }
         };
         document.addEventListener('visibilitychange', refresh);
         window.addEventListener('focus', refresh);
+        window.addEventListener('hrt-timezone-changed', refresh);
         window.addEventListener('hrt-mode-changed', refresh);
         return () => {
             document.removeEventListener('visibilitychange', refresh);
             window.removeEventListener('focus', refresh);
+            window.removeEventListener('hrt-timezone-changed', refresh);
             window.removeEventListener('hrt-mode-changed', refresh);
         };
     }, []);
 
+    const deviceZone = useDeviceTimeZone();
+    const authTokenForZone = coreSession.token;
+    useEffect(() => {
+        if (!authTokenForZone) return;
+        const report = () => void reportDeviceTimezone(authTokenForZone, deviceZone).catch(() => undefined);
+        report();
+        window.addEventListener('online', report);
+        return () => window.removeEventListener('online', report);
+    }, [authTokenForZone, deviceZone]);
     // Keep the device's FCM token bound to the signed-in account, so a catch-up
     // nudge can reach it. Runs when the account changes: FCM rotates the token
     // rarely, so re-registering is cheap and a missing token (first launch,
@@ -244,9 +257,19 @@ const AppContent = () => {
 
     useEffect(() => {
         if (!coreSession.token) return;
-        void isPlanNotificationGranted()
-            .then(granted => (granted ? syncPushRegistration(coreSession.token as string) : undefined))
-            .catch(() => undefined);
+        const refreshRegistration = () => {
+            if (document.visibilityState !== 'visible') return;
+            void isPlanNotificationGranted()
+                .then(granted => granted ? syncPushRegistration(coreSession.token as string) : undefined)
+                .catch(() => undefined);
+        };
+        refreshRegistration();
+        document.addEventListener('visibilitychange', refreshRegistration);
+        window.addEventListener('hrt-timezone-changed', refreshRegistration);
+        return () => {
+            document.removeEventListener('visibilitychange', refreshRegistration);
+            window.removeEventListener('hrt-timezone-changed', refreshRegistration);
+        };
     }, [coreSession.token]);
 
     /**

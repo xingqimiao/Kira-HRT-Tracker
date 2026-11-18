@@ -23,6 +23,8 @@ import { z } from 'zod';
 
 import {
   AccountService,
+  accountTimezone,
+  retimeRecord,
   MedicationService,
   LabService,
   JournalService,
@@ -216,6 +218,20 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
     return { value: await fn(ctx) };
   }
 
+  async function timeFields(ctx: AuthContext) {
+    const zone = await accountTimezone(ctx);
+    const now = Date.now();
+    return (at: string | number) => {
+      const time = typeof at === 'number' ? at : Date.parse(at);
+      return {
+        local_time: zone && Number.isFinite(time) ? new Intl.DateTimeFormat('sv-SE', {
+          timeZone: zone, dateStyle: 'short', timeStyle: 'medium', hourCycle: 'h23',
+        }).format(time) : null,
+        hours_elapsed: Number.isFinite(time) ? (now - time) / 3_600_000 : null,
+      };
+    };
+  }
+
   // --- Reads ---------------------------------------------------------------
 
   server.registerTool(
@@ -247,15 +263,15 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
       if (!cursor.ok) return toolError(cursor.error);
       const cutoffH = Date.now() / 3_600_000 - MCP_RECENT_DAYS * 24;
       if (cursor.value !== undefined && cursor.value < cutoffH) return toolResult([]);
-      const r = await withContext((ctx) => TimelineService.get(ctx, { limit, before: cursor.value, beforeId: cursor.id }));
+      const r = await withContext(async (ctx) => ({ entries: await TimelineService.get(ctx, { limit, before: cursor.value, beforeId: cursor.id }), describeTime: await timeFields(ctx) }));
       if ('error' in r) return toolError(r.error);
       return toolResult(
-        r.value
+        r.value.entries
           .filter((e) => Date.parse(e.at) / 3_600_000 >= cutoffH)
           .map((e) =>
             e.kind === 'dose'
-              ? { kind: 'dose', at: e.at, route: e.event.route, ester: e.event.ester, dose_mg: e.event.doseMG, id: e.id }
-              : { kind: 'lab', at: e.at, value: e.lab.concValue, unit: e.lab.unit, id: e.id },
+              ? { kind: 'dose', at: e.at, ...r.value.describeTime(e.at), route: e.event.route, ester: e.event.ester, dose_mg: e.event.doseMG, id: e.id }
+              : { kind: 'lab', at: e.at, ...r.value.describeTime(e.at), value: e.lab.concValue, unit: e.lab.unit, id: e.id },
           ),
       );
     },
@@ -289,7 +305,7 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
       if (!cursor.ok) return toolError(cursor.error);
       const cutoffH = Date.now() / 3_600_000 - MCP_RECENT_DAYS * 24;
       if (cursor.value !== undefined && cursor.value < cutoffH) return toolResult([]);
-      const r = await withContext((ctx) => MedicationService.list(ctx, { limit, before: cursor.value, beforeId: cursor.id }));
+      const r = await withContext(async (ctx) => ({ ...await MedicationService.list(ctx, { limit, before: cursor.value, beforeId: cursor.id }), describeTime: await timeFields(ctx) }));
       if ('error' in r) return toolError(r.error);
       return toolResult(
         r.value.records
@@ -301,7 +317,8 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
           id: rec.data.id,
           record_id: rec.id,
           mode: rec.mode,
-          at: new Date(rec.data.timeH * 3_600_000).toISOString(),
+          at: new Date(rec.data.timestamp_utc_ms ?? rec.data.timeH * 3_600_000).toISOString(),
+          ...r.value.describeTime(rec.data.timestamp_utc_ms ?? rec.data.timeH * 3_600_000),
           route: rec.data.route,
           ester: rec.data.ester,
           dose_mg: rec.data.doseMG,
@@ -338,14 +355,15 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
     async ({ limit, before, before_id }) => {
       const cursor = pagingCursor(before, before_id);
       if (!cursor.ok) return toolError(cursor.error);
-      const r = await withContext((ctx) => LabService.list(ctx, { limit, before: cursor.value, beforeId: cursor.id }));
+      const r = await withContext(async (ctx) => ({ ...await LabService.list(ctx, { limit, before: cursor.value, beforeId: cursor.id }), describeTime: await timeFields(ctx) }));
       if ('error' in r) return toolError(r.error);
       return toolResult(
         r.value.records.map((rec) => ({
           id: rec.data.id,
           record_id: rec.id,
           mode: rec.mode,
-          at: new Date(rec.data.timeH * 3_600_000).toISOString(),
+          at: new Date(rec.data.timestamp_utc_ms ?? rec.data.timeH * 3_600_000).toISOString(),
+          ...r.value.describeTime(rec.data.timestamp_utc_ms ?? rec.data.timeH * 3_600_000),
           value: rec.data.concValue,
           unit: rec.data.unit,
           version: rec.updatedAt,
@@ -381,14 +399,15 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
     async ({ limit, before, before_id }) => {
       const cursor = pagingCursor(before, before_id);
       if (!cursor.ok) return toolError(cursor.error);
-      const r = await withContext((ctx) => JournalService.list(ctx, { limit, before: cursor.value, beforeId: cursor.id }));
+      const r = await withContext(async (ctx) => ({ ...await JournalService.list(ctx, { limit, before: cursor.value, beforeId: cursor.id }), describeTime: await timeFields(ctx) }));
       if ('error' in r) return toolError(r.error);
       return toolResult(
         r.value.records.map((rec) => ({
           id: rec.data.id,
           record_id: rec.id,
           mode: rec.mode,
-          at: new Date(rec.data.timeH * 3_600_000).toISOString(),
+          at: new Date(rec.data.timestamp_utc_ms ?? rec.data.timeH * 3_600_000).toISOString(),
+          ...r.value.describeTime(rec.data.timestamp_utc_ms ?? rec.data.timeH * 3_600_000),
           note: rec.data.note,
           version: rec.updatedAt,
         })),
@@ -477,18 +496,17 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
       },
     },
     async ({ analyte, from_days, to_days, points, with_calibration }) => {
-      const r = await withContext((ctx) =>
-        PKSimulationService.predict(ctx, {
+      const r = await withContext(async (ctx) => ({ describeTime: await timeFields(ctx), result: await PKSimulationService.predict(ctx, {
           analyte,
           fromDays: from_days,
           toDays: to_days,
           points,
           withCalibration: with_calibration,
-        }),
-      );
+        }) }));
       if ('error' in r) return toolError(r.error);
-      if (!r.value.ok) return toolError(r.value.error);
-      return toolResult(r.value.value);
+      if (!r.value.result.ok) return toolError(r.value.result.error);
+      const prediction = r.value.result.value;
+      return toolResult({ ...prediction, points: prediction.points.map(point => ({ ...point, ...r.value.describeTime(point.at) })) });
     },
   );
 
@@ -522,10 +540,16 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
       inputSchema: {},
     },
     async () => {
-      const r = await withContext((ctx) => MedPlanService.status(ctx, Date.now()));
+      const r = await withContext(async (ctx) => ({ plans: await MedPlanService.status(ctx, Date.now()), describeTime: await timeFields(ctx) }));
       if ('error' in r) return toolError(r.error);
       return toolResult(
-        r.value.map((s) => ({
+        r.value.plans.map((s) => ({
+          plan_id: s.plan.id,
+          status: s.status,
+          next_due_utc_ms: s.nextDueUtcMs,
+          ...(s.nextDueUtcMs === null ? {} : r.value.describeTime(s.nextDueUtcMs)),
+          anchor_date: s.plan.anchorDate ?? null,
+          next_override_utc_ms: s.plan.nextOverrideUtcMs ?? null,
           esters: {
             ester: s.plan.ester,
             route: s.plan.route ?? null,
@@ -773,7 +797,6 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
         hrt_mode: z.enum(['transfem', 'transmasc']).optional(),
         calibration_method: z.enum(['off', 'ekf', 'ou_kalman', 'mipd']).optional(),
         calibration_history: z.enum(['forward', 'retrospective']).optional(),
-        timezone: z.string().max(64).optional(),
         pk_params: z
           .record(z.string(), z.number())
           .optional()
@@ -791,6 +814,42 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
     },
   );
 
+  server.registerTool(
+    'hrt_update_record_time',
+    {
+      description: 'Update the occurrence time of a dose, patch removal, laboratory result or journal entry. ISO 8601 with an explicit offset is preferred.',
+      inputSchema: { kind: z.enum(['dose', 'lab', 'journal']), record_id: z.string().min(1).max(250), at: z.string() },
+    },
+    async ({ kind, record_id, at }) => {
+      const result = await withContext(async ctx => ({ result: await retimeRecord(ctx, kind, record_id, at), describeTime: await timeFields(ctx) }));
+      if ('error' in result) return toolError(result.error);
+      if (!result.value.result.ok) return toolError(result.value.result.error);
+      const value = result.value.result.value;
+      return toolResult({ record_id: value.id, at: new Date(value.takenAt).toISOString(), ...result.value.describeTime(value.takenAt) });
+    },
+  );
+  server.registerTool(
+    'hrt_adjust_med_plan_reminder',
+    {
+      description: 'Adjust the next reminder on an existing medication plan. Use its plan_id from hrt_med_plan_status. One-time by default.',
+      inputSchema: {
+        plan_id: z.string().min(1).max(200),
+        at: z.string().optional().describe('ISO 8601 with offset preferred'),
+        offset_minutes: z.number().int().optional(),
+        restore: z.literal(true).optional(),
+        reanchor: z.boolean().optional(),
+      },
+    },
+    async ({ plan_id, ...input }) => {
+      if (Number(input.at !== undefined) + Number(input.offset_minutes !== undefined) + Number(input.restore === true) !== 1
+          || (input.restore && input.reanchor)) return toolError('Specify exactly one of at, offset_minutes, or restore');
+      const result = await withContext(ctx => MedPlanService.adjust(ctx, plan_id, input));
+      if ('error' in result) return toolError(result.error);
+      if (!result.value.ok) return toolError(result.value.error);
+      const value = result.value.value;
+      return toolResult({ plan_id, status: value.status, next_due_utc_ms: value.nextDueUtcMs, next_override_utc_ms: value.plan.nextOverrideUtcMs });
+    },
+  );
   server.registerTool(
     'hrt_delete_record',
     {
@@ -894,6 +953,8 @@ export function buildServer(resolveContext: ContextResolver): McpServer {
           ],
           write: [
             'hrt_add_medication',
+            'hrt_adjust_med_plan_reminder',
+            'hrt_update_record_time',
             'hrt_add_lab_result',
             'hrt_add_journal_entry',
             'hrt_add_dose_template',

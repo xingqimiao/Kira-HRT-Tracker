@@ -1,3 +1,4 @@
+import { isTimeZone, withUtcTime } from './timezone';
 /**
  * Two-way merge between this device's records and the newest cloud backup.
  *
@@ -32,7 +33,7 @@
  */
 
 import { isTestosteroneEster, isTestosteroneLab } from '../../logic';
-import { sanitizeMedPlans, type MedPlan } from './medPlan';
+import { mergePlanReminderVersions, sanitizeMedPlans, type MedPlan } from './medPlan';
 import type { GelProduct } from './gelProducts';
 
 export type ModeKey = 'transfem' | 'transmasc';
@@ -78,6 +79,7 @@ export interface ModeBlock {
  * with the first record rather than minting an otherwise-empty backup.
  */
 export interface AppSettings {
+    last_known_timezone?: string;
     theme?: string;
     keyColor?: string;
     lang?: string;
@@ -131,15 +133,6 @@ export interface AppSettings {
      */
     pkEngine?: string;
     /**
-     * IANA timezone the account's times are read in, e.g. `Asia/Tokyo`.
-     *
-     * The app has no control for it yet, so it is usually only ever written by an
-     * agent through `hrt_update_settings`. It travels with the rest of the bag
-     * anyway: a setting the server holds and the app silently drops is exactly the
-     * one-way street this transport exists to close.
-     */
-    timezone?: string;
-    /**
      * The account's own gel products — ids ≥ 1000, the catalogue a gel record's
      * `gelProductId` resolves against.
      *
@@ -155,7 +148,7 @@ export interface AppSettings {
 /** Every key `sanitizeAppSettings` will carry. An unknown key is dropped. */
 export const APP_SETTING_KEYS: readonly (keyof AppSettings)[] = [
     'theme', 'keyColor', 'lang', 'hrtMode', 'calMethod', 'calHistoryMode', 'aaChartMode',
-    'hrtStartDate', 'recheckIntervals', 'ocrModelTier', 'pkEngine', 'timezone',
+    'hrtStartDate', 'recheckIntervals', 'ocrModelTier', 'pkEngine', 'last_known_timezone',
     'chartStyle', 'readingDecimals', 'hideAA', 'gelProducts',
 ];
 
@@ -343,6 +336,7 @@ export function sanitizeAppSettings(raw: unknown): AppSettings {
     // though each branch here has just checked the value's type.
     const out: Record<string, unknown> = {};
     for (const key of APP_SETTING_KEYS) {
+        if (key === 'last_known_timezone' && !isTimeZone(src[key])) continue;
         const value = src[key];
         if (BOOLEAN_SETTING_KEYS.has(key)) {
             if (typeof value === 'boolean') out[key] = value;
@@ -431,11 +425,11 @@ export function normalizeSyncState(payload: unknown): SyncState {
             const block = p.modes[m];
             if (!block || typeof block !== 'object') continue;
             state.modes[m] = {
-                events: asArray(block.events),
-                labResults: asArray(block.labResults),
+                events: asArray(block.events).map(withUtcTime),
+                labResults: asArray(block.labResults).map(withUtcTime),
                 doseTemplates: asArray(block.doseTemplates),
                 quickDoses: asArray(block.quickDoses),
-                journal: asArray(block.journal),
+                journal: asArray(block.journal).map(withUtcTime),
                 deletions: sanitizeTombstones(block.deletions),
             };
         }
@@ -489,19 +483,19 @@ export function normalizeSyncState(payload: unknown): SyncState {
 const CONTENT_FIELDS: Record<RecordKind, readonly string[]> = {
     // Quick-add buttons. Matched by id like the rest, so a deletion is expressible.
     quickDoses: ['route', 'ester', 'value'],
-    events: ['route', 'ester', 'doseMG', 'timeH', 'extras'],
+    events: ['route', 'ester', 'doseMG', 'timeH', 'timestamp_utc_ms', 'recorded_tz', 'medPlanId', 'loggedAtUtcMs', 'extras'],
     // Monitoring bloods are part of the record, so a later edit to prolactin/ALT/K
     // has to show up as a content change; omitting them made the merge treat the two
     // versions as the same record and keep whichever copy it already held.
     // `analyte` belongs here for the same reason: the upgrade migration writes it
     // onto legacy rows, and without it that write is invisible to the transport
     // (never uploaded) and a pull can hand the untyped copy straight back.
-    labResults: ['analyte', 'unit', 'concValue', 'timeH', 'monitoringOnly', 'prolactin', 'prolactinUln', 'alt', 'altUln', 'ast', 'potassium', 'lh', 'lhUln', 'fsh', 'fshUln'],
+    labResults: ['analyte', 'unit', 'concValue', 'timeH', 'timestamp_utc_ms', 'recorded_tz', 'monitoringOnly', 'prolactin', 'prolactinUln', 'alt', 'altUln', 'ast', 'potassium', 'lh', 'lhUln', 'fsh', 'fshUln'],
     doseTemplates: ['name', 'route', 'ester', 'doseMG', 'extras'],
     // Everything a check-in holds. The scales may be absent ("not answered"),
     // which stableString renders as an empty slot, so one answered scale is
     // enough to make an edit visible.
-    journal: ['timeH', 'urinaryTolerance', 'skinOil', 'hairLoss', 'bodyHair', 'moodTolerance', 'symptoms', 'note'],
+    journal: ['timeH', 'timestamp_utc_ms', 'recorded_tz', 'urinaryTolerance', 'skinOil', 'hairLoss', 'bodyHair', 'moodTolerance', 'symptoms', 'note'],
 };
 
 export function stableString(value: unknown): string {

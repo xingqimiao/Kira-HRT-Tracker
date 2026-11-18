@@ -1,3 +1,6 @@
+import { initializePlanAnchorForSync } from '../utils/planTimeSync';
+import { deviceTimeZone } from '../utils/timezone';
+import { syncTimestamp } from '../utils/syncClock';
 import { get as secureGet, set as secureSet, remove as secureRemove } from '../utils/secureStore';
 /**
  * Two-way sync against the Application Core.
@@ -446,10 +449,18 @@ export const useCoreSync = ({
       const local = normalizeSyncState(buildPayloadRef.current());
 
       const merged = mergeSyncStates(local, remote);
+      const zone = deviceTimeZone();
+      const state = merged.merged;
+      const timezoneChanged = state.appSettings?.last_known_timezone !== zone;
+      if (timezoneChanged) {
+        state.appSettings = { ...state.appSettings, last_known_timezone: zone };
+        state.appSettingsUpdatedAt = Math.max(syncTimestamp(), state.appSettingsUpdatedAt + 1);
+      }
+      const plansChanged = initializePlanAnchorForSync(state);
 
       // Apply only when the merge actually changed this device's picture, so a
       // no-op sync does not rewrite every storage key.
-      if (merged.localChanged) {
+      if (merged.localChanged || plansChanged || timezoneChanged) {
         if (!stillMine()) return;
         applyRemoteRef.current(merged.merged);
       }
@@ -712,12 +723,14 @@ export const useCoreSync = ({
     window.addEventListener('online', handleForeground);
     window.addEventListener('focus', handleForeground);
     document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('hrt-timezone-changed', handleVisibility);
     window.addEventListener('pagehide', flushPending);
     window.addEventListener('beforeunload', flushPending);
     return () => {
       window.removeEventListener('online', handleForeground);
       window.removeEventListener('focus', handleForeground);
       document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('hrt-timezone-changed', handleVisibility);
       window.removeEventListener('pagehide', flushPending);
       window.removeEventListener('beforeunload', flushPending);
     };

@@ -620,3 +620,12 @@ export function toLocalPayload(state: SyncState): SyncPayload {
     appState: toAppState(state),
   };
 }
+
+export async function reportDeviceTimezone(token: string, zone: string): Promise<boolean> {
+  const res = await apiFetch(apiEndpoint('/api/settings/device-timezone'), {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ zone }),
+  });
+  return res.ok;
+}

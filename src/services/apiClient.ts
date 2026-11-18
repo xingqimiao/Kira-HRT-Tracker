@@ -1,3 +1,4 @@
+import { observeServerClock } from '../utils/syncClock';
 import { isNativeApp } from '../utils/platform';
 import { APP_VERSION } from '../constants';
 
@@ -81,8 +82,9 @@ export const appClientId = (): string => {
  * the server records a device from carries it.
  */
 export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-    if (!isNativeApp()) return await fetch(input, init);
     const headers = new Headers(init?.headers);
-    if (!headers.has(APP_CLIENT_HEADER)) headers.set(APP_CLIENT_HEADER, appClientId());
-    return await fetch(input, { ...init, headers });
+    if (isNativeApp() && !headers.has(APP_CLIENT_HEADER)) headers.set(APP_CLIENT_HEADER, appClientId());
+    const response = await fetch(input, { ...init, headers });
+    observeServerClock(response.headers.get('X-Server-Time-Utc'));
+    return response;
 }

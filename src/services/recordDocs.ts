@@ -1,3 +1,4 @@
+import { recordInstant } from '../utils/timezone';
 /**
  * The seam between the app's whole-payload sync model and the record store.
  *
@@ -128,20 +129,16 @@ function payloadToDocs(payload: SyncPayload): PendingDoc[] {
             const id = idOf(event);
             if (!id) continue;
             // `timeH` is hours since the epoch, the app's own unit.
-            const timeH = (event as { timeH?: unknown }).timeH;
-            const takenAt = typeof timeH === 'number' && Number.isFinite(timeH)
-                ? timeH * 3_600_000
-                : stampOf(event);
+            const utc = recordInstant(event);
+            const takenAt = Number.isFinite(utc) ? utc : stampOf(event);
             push(`dose:${mode}:${id}`, 'dose', takenAt, event, contentFingerprint('events', event));
         }
 
         for (const lab of block.labResults ?? []) {
             const id = idOf(lab);
             if (!id) continue;
-            const timeH = (lab as { timeH?: unknown }).timeH;
-            const takenAt = typeof timeH === 'number' && Number.isFinite(timeH)
-                ? timeH * 3_600_000
-                : stampOf(lab);
+            const utc = recordInstant(lab);
+            const takenAt = Number.isFinite(utc) ? utc : stampOf(lab);
             push(`lab:${mode}:${id}`, 'lab', takenAt, lab, contentFingerprint('labResults', lab));
         }
 
@@ -162,10 +159,8 @@ function payloadToDocs(payload: SyncPayload): PendingDoc[] {
             if (!id) continue;
             // Like a dose, a check-in carries its own time; the server sorts and
             // pages by it.
-            const timeH = (entry as { timeH?: unknown }).timeH;
-            const takenAt = typeof timeH === 'number' && Number.isFinite(timeH)
-                ? timeH * 3_600_000
-                : stampOf(entry);
+            const utc = recordInstant(entry);
+            const takenAt = Number.isFinite(utc) ? utc : stampOf(entry);
             push(`journal:${mode}:${id}`, 'journal', takenAt, entry, contentFingerprint('journal', entry));
         }
 

@@ -1643,6 +1643,17 @@ export const AccountService = {
    * settings (MCP's `hrt_get_settings`, `/api/settings`) sees the same bag it always
    * did, without the server keeping a readable copy of it.
    */
+  async observeDeviceTimezone(ctx: AuthContext, zone: string, settingKey = 'last_known_timezone'): Promise<boolean> {
+    const result = await RecordService.putMany({ ...ctx, trustedActor: true }, [], async client => {
+      const previous = await RecordService.get(ctx, 'scalar:appSettings', client);
+      const data = previous?.data as { stamp?: number; value?: { settingsUpdatedAt?: number; settings?: Record<string, unknown> } } | undefined;
+      if (data?.value?.settings?.[settingKey] === zone) return [];
+      const stamp = data?.stamp ?? Date.now();
+      const value = { settings: { [settingKey]: zone }, settingsUpdatedAt: data?.value?.settingsUpdatedAt ?? stamp };
+      return [{ id: 'scalar:appSettings', category: 'setting', takenAt: stamp, data: { value, stamp } }];
+    });
+    return result.ok && result.rejected.length === 0;
+  },
   async getSettings(ctx: AuthContext) {
     const found = await settings.get(ctx.userId);
     if (found) return mergeSealedPreferences(ctx, found);
@@ -1676,7 +1687,6 @@ export const AccountService = {
       calibration_method?: unknown;
       calibration_history?: unknown;
       pk_params?: unknown;
-      timezone?: unknown;
     },
   ): Promise<Result<unknown>> {
     const update: Partial<import('./settings.ts').UserSettings> = {};
@@ -1703,12 +1713,6 @@ export const AccountService = {
         return { ok: false, error: 'calibration_history: must be forward or retrospective' };
       }
       update.calibrationHistory = patch.calibration_history;
-    }
-    if (patch.timezone !== undefined) {
-      if (typeof patch.timezone !== 'string' || patch.timezone.length > 64) {
-        return { ok: false, error: 'timezone: must be a string of at most 64 characters' };
-      }
-      update.timezone = patch.timezone;
     }
     if (patch.pk_params !== undefined) {
       const params: Result<PKCustomParams | null> = parsePKParams(patch.pk_params);

@@ -1,3 +1,5 @@
+import { useDeviceTimeZone } from '../hooks/useDeviceTimeZone';
+import { ReminderAdjustment } from '../components/ReminderAdjustment';
 import React from 'react';
 import Icon from '../components/Icon';
 import { Info, Share2, AlertTriangle, TriangleWarning, X, Bookmark } from '../icons';
@@ -15,7 +17,6 @@ import { getShareCopy } from '../i18n/share';
 import { formatRelativeParts } from '../utils/helpers';
 import { readMedPlans, planStatuses, planQuickEntries, plansForMode, activePatches, patchRemovalEvent, ignorePlanOccurrences, restorePlanOccurrences, MED_PLAN_CHANGED_EVENT, type PlanStatus } from '../utils/medPlan';
 import { templateToEvent } from '../utils/templateToEvent';
-import { currentTimeZone, currentTzOffset, onAppSettingsApplied } from '../utils/appSettings';
 import {
     AdaptiveSheet,
     SegmentedList,
@@ -162,18 +163,10 @@ const Home: React.FC<HomeProps> = ({
         }
     }, [absurd]);
 
-    // Adopting the account's zone (set on another device, or by this one a moment
-    // ago) has to re-run the "today" maths below; nothing else in this page
-    // listens for that event.
-    const [settingsRev, setSettingsRev] = React.useState(0);
-    React.useEffect(() => onAppSettingsApplied(() => setSettingsRev(v => v + 1)), []);
-
+    const zone = useDeviceTimeZone();
     const antiandrogen = React.useMemo(
-        // The account's zone, not this device's: "today" has to mean one thing for
-        // one account, or a phone and a laptop in different zones read the same day
-        // two ways.
-        () => antiandrogenReading(events, nowMs / 3_600_000, aaChartMode, currentTimeZone()),
-        [events, nowMs, aaChartMode, settingsRev],
+        () => antiandrogenReading(events, nowMs / 3_600_000, aaChartMode, zone),
+        [events, nowMs, aaChartMode, zone],
     );
     // The heading is the tile's own slot, not the drug's full name: half a tile
     // cannot hold "Cyproterone Acetate (CPA)" in English, and the value below it
@@ -197,16 +190,14 @@ const Home: React.FC<HomeProps> = ({
     const planState = React.useMemo(() => {
         const plans = plansForMode(readMedPlans(), isTransmasc ? 'transmasc' : 'transfem');
         if (plans.length === 0) return { overdue: false, statuses: [] as PlanStatus[], entries: [] };
-        const tz = currentTzOffset(nowMs);
-        const refs = events.map(e => ({ ester: e.ester, route: e.route, timeH: e.timeH }));
-        const statuses = planStatuses(plans, refs, nowMs, tz);
+        const statuses = planStatuses(plans, events, { nowUtcMs: nowMs, deviceTimezone: zone });
         const covered = new Set(doseTemplates.map(d => `${d.ester}:${d.route}`));
         return {
             overdue: statuses.some(s => s.overdue),
             statuses,
             entries: planQuickEntries(plans, covered, t('plan.quick_suffix')),
         };
-    }, [events, nowMs, doseTemplates, t, isTransmasc, planRev, settingsRev]);
+    }, [events, nowMs, doseTemplates, t, isTransmasc, planRev, zone]);
 
     // Fold the overdue sheet away once nothing is overdue — the ignore that
     // emptied it, or a dose logged from the quick-record sheet meanwhile.
@@ -294,6 +285,8 @@ const Home: React.FC<HomeProps> = ({
 
     const logTemplate = (template: DoseTemplate) => {
         const event = templateToEvent(template, crypto.randomUUID(), Date.now() / 3600000);
+        const plan = planState.entries.find(entry => entry.id === template.id);
+        if (plan) event.medPlanId = plan.medPlanId;
         onAddEvent(event);
         onQuickRecordClose();
         setUndo({ kind: 'dose', id: event.id, name: template.name });
@@ -680,8 +673,7 @@ const OverdueSheet: React.FC<{
 
 /**
  * One missed plan, in the monitoring notice's expandable-row idiom (`.li.mon`):
- * the row keeps the segmented look, and tapping it folds a 取消 / 忽略一次 strip
- * out beneath the title with the shared grid disclosure.
+ * tapping the segmented row reveals its reminder actions.
  */
 const OverdueRow: React.FC<{
     status: PlanStatus;
@@ -740,7 +732,7 @@ const OverdueRow: React.FC<{
             <div id={panelId} className="disclosure" data-open={open}>
                 <div className="disclosure-inner">
                     <div className="overdue-actions">
-                        <button type="button" className="btn t" onClick={() => setOpen(false)}>{t('plan.overdue_cancel')}</button>
+                        <ReminderAdjustment plan={s.plan} nextDueUtcMs={s.nextDueUtcMs} t={t} />
                         <button type="button" className="btn" onClick={ignore}>{t('plan.overdue_ignore')}</button>
                     </div>
                 </div>

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { isTimeZone } from '../../src/utils/timezone.ts';
 /**
  * FCM supplementary push (HTTP v1).
  *
@@ -180,6 +182,10 @@ export async function sendMessage(
 // Store: device tokens + the dedup log
 // ---------------------------------------------------------------------------
 
+export function pushTimezoneKey(token: string): string {
+  return 'push_timezone_' + createHash('sha256').update(token).digest('hex');
+}
+
 export const PushStore = {
   /**
    * Record a device token for an account. Re-registering the same token is a no-op.
@@ -284,38 +290,28 @@ export async function scanMissedDoses(nowMs: number = Date.now()): Promise<ScanR
       // cannot be evaluated. Skipping is the only honest option.
       if (!ctx || 'denied' in ctx) continue;
       result.accounts += 1;
-      for (const instance of await missedInstances(ctx, nowMs, graceMs)) {
-        if (!(await PushStore.claimPush(userId, instance.planId, instance.dueAt))) continue;
-        // Only the identity of the reminder travels. It used to carry the plan's
-        // alias and dose so the device could print them without any local state —
-        // which meant a token left behind by the previous account rendered that
-        // account's drug name on this phone after a switch. The device already
-        // holds the plan, and the app pushes a per-plan label map alongside the
-        // language fallbacks, so the text is composed locally from data the
-        // current account owns.
-        const data: Record<string, string> = {
-          kind: 'dose_overdue',
-          planId: instance.planId,
-          dueAt: String(instance.dueAt),
-        };
-
-        let sentAny = false;
-        for (const { token, platform } of tokens) {
+      const account = await AccountService.getSettings(ctx);
+      const zones = account.appState?.settings as Record<string, unknown> | undefined;
+      const byZone = new Map<string | null, MissedInstance[]>();
+      const delivered = new Set<string>();
+      for (const { token, platform } of tokens) {
+        const saved = zones?.[pushTimezoneKey(token)];
+        const zone = isTimeZone(saved) ? saved : null;
+        if (!byZone.has(zone)) byZone.set(zone, await missedInstances(ctx, nowMs, graceMs, zone));
+        for (const instance of byZone.get(zone)!) {
+          const claim = JSON.stringify([instance.planId, pushTimezoneKey(token)]);
+          if (!(await PushStore.claimPush(userId, claim, instance.dueAt))) continue;
+          const data: Record<string, string> = {
+            kind: 'dose_overdue', planId: instance.planId, dueAt: String(instance.dueAt), revision: instance.revision,
+            ...(instance.zone ? { zone: instance.zone } : {}),
+          };
           const outcome = await sendMessage(fcm, token, data, platform).catch((): SendResult => ({ ok: false, unregistered: false }));
-          if (outcome.unregistered) {
-            await PushStore.unregister(userId, token);
-          } else if (outcome.ok) {
-            sentAny = true;
-          }
-        }
-        if (sentAny) {
-          result.pushed += 1;
-        } else {
-          // Nothing was delivered — release the claim so the next round retries
-          // instead of the instance being silently dropped.
-          await PushStore.releasePush(userId, instance.planId, instance.dueAt);
+          if (outcome.ok) delivered.add(JSON.stringify([instance.planId, instance.dueAt]));
+          else await PushStore.releasePush(userId, claim, instance.dueAt);
+          if (outcome.unregistered) { await PushStore.unregister(userId, token); break; }
         }
       }
+      result.pushed += delivered.size;
     }
     return result;
   } finally {
@@ -326,8 +322,8 @@ export async function scanMissedDoses(nowMs: number = Date.now()): Promise<ScanR
 interface MissedInstance {
   planId: string;
   dueAt: number;
-  alias?: string;
-  dose?: string;
+  revision: string;
+  zone: string | null;
 }
 
 /**
@@ -336,8 +332,8 @@ interface MissedInstance {
  * nudge and the in-app badge can never disagree, and so the day boundary and the
  * plan's own timezone are handled once.
  */
-async function missedInstances(ctx: AuthContext, nowMs: number, graceMs: number): Promise<MissedInstance[]> {
-  const statuses = await MedPlanService.status(ctx, nowMs);
+async function missedInstances(ctx: AuthContext, nowMs: number, graceMs: number, zone: string | null): Promise<MissedInstance[]> {
+  const statuses = await MedPlanService.status(ctx, nowMs, zone);
   const out: MissedInstance[] = [];
   // One reminder per drug per instant, not per plan. Two plans for the same
   // compound and route that fall due at the same time are one thing to the
@@ -355,8 +351,8 @@ async function missedInstances(ctx: AuthContext, nowMs: number, graceMs: number)
       out.push({
         planId: status.plan.id,
         dueAt,
-        alias: status.plan.alias,
-        dose: status.plan.dose,
+        revision: status.revision,
+        zone: status.plan.mode === 'hours' || status.plan.nextOverrideUtcMs != null ? null : zone,
       });
     }
   }

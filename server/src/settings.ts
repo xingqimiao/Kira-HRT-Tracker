@@ -97,11 +97,6 @@ export const APP_SETTING_BY_COLUMN = {
     appKey: 'calHistoryMode',
     accept: (value: unknown) => (value === 'forward' || value === 'retrospective' ? value : null),
   },
-  timezone: {
-    appKey: 'timezone',
-    accept: (value: unknown) => (typeof value === 'string' && value.length > 0 && value.length <= 64
-      ? value : null),
-  },
 } as const satisfies Partial<Record<keyof UserSettings, ModelSetting>>;
 
 /**
@@ -310,7 +305,7 @@ export const settings = {
         columns.hrtMode ?? null,
         columns.calibrationMethod ?? null,
         columns.calibrationHistory ?? null,
-        columns.timezone ?? null,
+        null,
       ],
     );
   },
@@ -521,7 +516,7 @@ type CarriedSetting =
   | (typeof SETTINGS_SCALARS)[number]['key']
   | (typeof SETTINGS_SCALARS)[number]['carries'][number]
   | keyof typeof APP_SETTING_BY_COLUMN;
-type UncarriedSetting = Exclude<keyof UserSettings, CarriedSetting>;
+type UncarriedSetting = Exclude<keyof UserSettings, CarriedSetting | 'timezone'>;
 const _everySettingTravels: [UncarriedSetting] extends [never]
   ? true
   : ['settings field is not carried by the record path', UncarriedSetting] = true;

@@ -1,3 +1,4 @@
+import { addCalendarDays, calendarDateIn, calendarDaysBetween, isTimeZone, parseCalendarDate, recordInstant, wallClockIn, zonedTimeToEpoch, type TimeContext } from './timezone';
 import { get as secureGet, set as secureSet, remove as secureRemove } from './secureStore';
 import { Ester, Route, ExtraKey, type DoseEvent } from '../../logic';
 
@@ -32,15 +33,14 @@ export interface MedPlan {
     extras?: Record<string, number>;
     /** Stable local-calendar anchor for an every-N-days cadence. */
     anchorDate?: string;
-    /** The account zone's UTC offset when the plan was saved (getTimezoneOffset()
-     *  units — CST is -480).
-     *
-     *  Legacy: readers take the boundary from the account's `app-timezone` now, so
-     *  a plan saved on a laptop in New York is not due at New York's midnight for a
-     *  phone in Taipei. Kept because the server falls back to it for accounts that
-     *  have never stored a zone, and because dropping the field would rewrite every
-     *  stored plan for no gain. */
-    tzOffsetMinutes?: number;
+    createdAt?: number;
+    createdTimezone?: string;
+    intervalAnchorUtcMs?: number;
+    intervalReanchoredAt?: number;
+    nextOverrideUtcMs?: number | null;
+    reminderUpdatedAt?: number;
+    overrideCreatedAt?: number;
+    cadenceUpdatedAt?: number;
     /** Optional: only doses by this route count. Unset = any route. */
     route?: Route;
     /** Display alias — what the user calls this plan ("补佳乐", "早上那针"). */
@@ -161,7 +161,15 @@ export function sanitizeMedPlans(value: unknown): MedPlan[] {
             extras: p.extras && typeof p.extras === 'object'
                 ? Object.fromEntries(Object.entries(p.extras).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1])))
                 : undefined,
-            anchorDate: typeof p.anchorDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.anchorDate) ? p.anchorDate : undefined,
+            anchorDate: parseCalendarDate(p.anchorDate) ? String(p.anchorDate) : undefined,
+            createdAt: validUtc(p.createdAt),
+            createdTimezone: isTimeZone(p.createdTimezone) ? p.createdTimezone : undefined,
+            intervalAnchorUtcMs: validUtc(p.intervalAnchorUtcMs),
+            intervalReanchoredAt: validUtc(p.intervalReanchoredAt),
+            nextOverrideUtcMs: p.nextOverrideUtcMs === null ? null : validUtc(p.nextOverrideUtcMs),
+            reminderUpdatedAt: validUtc(p.reminderUpdatedAt),
+            overrideCreatedAt: validUtc(p.overrideCreatedAt),
+            cadenceUpdatedAt: validUtc(p.cadenceUpdatedAt),
             route: isRoute(p.route) ? p.route : undefined,
             alias: typeof p.alias === 'string' ? p.alias.trim().slice(0, 40) : undefined,
             dose: typeof p.dose === 'string' ? p.dose.trim().slice(0, 40) : '',
@@ -169,7 +177,6 @@ export function sanitizeMedPlans(value: unknown): MedPlan[] {
             doseTimes,
             intervalHours: p.mode === 'hours' && Number.isFinite(intervalHours) && intervalHours > 0 && intervalHours <= 72 ? intervalHours : undefined,
             everyDays: p.mode === 'days' && Number.isInteger(everyDays) && everyDays > 0 && everyDays <= 365 ? everyDays : undefined,
-            tzOffsetMinutes: Number.isFinite(p.tzOffsetMinutes) ? Number(p.tzOffsetMinutes) : 0,
             firstHour: hour,
             firstMinute: minute,
             enabled: p.enabled !== false,
@@ -304,124 +311,138 @@ export function resetMedPlanStorage(): void {
     if (typeof window !== 'undefined') window.dispatchEvent(new Event(MED_PLAN_CHANGED_EVENT));
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function localDateKey(date: Date): string {
     return `${String(date.getFullYear()).padStart(4, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-/** The day's due times as true epoch ms, in the user's own day.
- *
- *  `tzOffsetMinutes` is the device offset (getTimezoneOffset(): JS's inverted sign
- *  — CST is -480). A plan's `firstHour`/`firstMinute` are the user's *local* wall
- *  clock, so the arithmetic runs in a "local wall clock carried in UTC fields"
- *  space and the offset is added back before returning: `localFirst + off` is the
- *  true epoch of the dose. Returning `localFirst` unconverted (the earlier bug) put
- *  every due time off by the offset — an 08:00 CST plan read as 16:00 CST.
- *
- *  The day boundary is the user's own midnight, so 08:00 is due 08:00 their time
- *  regardless of where the server sits. All times returned are true epoch ms,
- *  directly comparable against dose events.
- */
-export function dueTimesToday(plan: MedPlan, nowMs: number, tzOffsetMinutes: number): number[] {
-    if (!plan.enabled) return [];
-    const off = tzOffsetMinutes * 60_000;
-    const localNow = nowMs - off;
-    const localMidnight = Math.floor(localNow / DAY_MS) * DAY_MS;
-    const localFirst = localMidnight + plan.firstHour * 3_600_000 + plan.firstMinute * 60_000;
-    if (plan.mode === 'days') {
-        const cycle = plan.everyDays ?? 1;
-        const anchorDate = plan.anchorDate ?? new Date(localFirst).toISOString().slice(0, 10);
-        const [year, month, day] = anchorDate.split('-').map(Number);
-        const anchor = Date.UTC(year, month - 1, day);
-        const offset = Math.floor((localMidnight - anchor) / DAY_MS);
-        if (offset < 0 || offset % cycle !== 0) return [];
-        const due = localFirst + off;
-        return due <= nowMs ? [due] : [];
-    }
-    // The day's local times, as true epoch: the first dose plus, for 'times' mode,
-    // each extra time the user added. 'hours' spaces from the first by intervalHours.
-    const dayTimes: number[] = [];
-    if (plan.mode === 'times') {
-        dayTimes.push(localFirst);
-        for (const t of plan.doseTimes ?? []) {
-            dayTimes.push(localMidnight + t.hour * 3_600_000 + t.minute * 60_000);
-        }
-    } else {
-        const gapHours = plan.intervalHours ?? 24;
-        const count = Math.ceil(24 / gapHours);
-        for (let i = 0; i < count; i++) dayTimes.push(localFirst + i * gapHours * 3_600_000);
-    }
-    // + off converts each local wall clock back to its true epoch. A time that
-    // crosses midnight (22:00 + 8h → 06:00) still belongs to today's schedule; it is
-    // simply in the past by the time it is checked, which is the overdue case.
-    return dayTimes.map(t => t + off).filter(t => t <= nowMs);
+const HOUR_MS = 3_600_000;
+
+function validUtc(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value < 5_400_000_000_000
+        ? value : undefined;
 }
 
-/**
- * The next `count` reminders for a plan, strictly after `nowMs`, in true epoch ms.
- *
- * `dueTimesToday` answers "what is due/overdue today"; this answers "when will it
- * next ring", across day boundaries and for the every-N-days mode. Same wall-clock
- * arithmetic: local fields carried in UTC, offset added back.
- */
-export function nextPlanOccurrences(
-    plan: MedPlan,
-    nowMs: number,
-    tzOffsetMinutes: number,
-    count = 2,
-): number[] {
+export function initializePlanAnchor(plan: MedPlan, context: TimeContext, legacyStamp?: number, legacyTimezone?: string): MedPlan {
+    const { deviceTimezone, nowUtcMs } = context;
+    const today = calendarDateIn(deviceTimezone, nowUtcMs);
+    if (plan.mode === 'days' && !plan.anchorDate) {
+        const sourceTime = plan.createdAt ?? (legacyStamp && legacyStamp > 946_684_800_000 ? legacyStamp : nowUtcMs);
+        const sourceZone = plan.createdTimezone ?? (isTimeZone(legacyTimezone) ? legacyTimezone : deviceTimezone);
+        return { ...plan, anchorDate: calendarDateIn(sourceZone, sourceTime) };
+    }
+    if (plan.mode === 'hours' && plan.intervalAnchorUtcMs === undefined) {
+        const at = (date: string) => zonedTimeToEpoch(deviceTimezone, ...parseCalendarDate(date)!, plan.firstHour, plan.firstMinute);
+        const todayAt = at(today);
+        return { ...plan, intervalAnchorUtcMs: todayAt >= nowUtcMs ? todayAt : at(addCalendarDays(today, 1)) };
+    }
+    return plan;
+}
+
+export function migrateLocalPlanAnchors(context: TimeContext): void {
+    const state = readMedPlanState();
+    const plans = state.plans.map(plan => initializePlanAnchor(plan, context, state.updatedAt));
+    if (plans.some((plan, index) => plan !== state.plans[index])) writeMedPlans(plans, Math.max(state.updatedAt + 1, context.nowUtcMs));
+}
+export function adjustPlanReminder(plan: MedPlan, context: TimeContext, targetUtcMs: number | null, reanchor = false, stamp = context.nowUtcMs): MedPlan {
+    if (targetUtcMs === null) return { ...plan, nextOverrideUtcMs: null, reminderUpdatedAt: stamp };
+    if (validUtc(targetUtcMs) === undefined || targetUtcMs <= context.nowUtcMs) throw new RangeError('Choose a reminder time in the future');
+    if (!reanchor) return { ...plan, nextOverrideUtcMs: targetUtcMs, reminderUpdatedAt: stamp, overrideCreatedAt: context.nowUtcMs };
+    const cleared = { ...plan, nextOverrideUtcMs: null, reminderUpdatedAt: stamp, cadenceUpdatedAt: stamp };
+    if (plan.mode === 'hours') return { ...cleared, intervalAnchorUtcMs: targetUtcMs, intervalReanchoredAt: context.nowUtcMs };
+    if (plan.mode === 'days') {
+        const { hour, minute } = wallClockIn(context.deviceTimezone, targetUtcMs);
+        return { ...cleared, anchorDate: calendarDateIn(context.deviceTimezone, targetUtcMs), firstHour: hour, firstMinute: minute };
+    }
+    throw new RangeError('Daily plans support only a one-time adjustment');
+}
+
+function matchingDoseTimes(plan: MedPlan, doses: readonly PlanDoseRef[], now: number): number[] {
+    return doses.filter(dose => matchesPlan(plan, dose)).map(recordInstant).filter(at => at <= now);
+}
+
+export function clearConsumedPlanOverrides(plans: readonly MedPlan[], dose: PlanDoseRef, mode: MedPlan['hrtMode'], now: number, stamp = now): readonly MedPlan[] {
+    const time = recordInstant(dose);
+    if (!Number.isFinite(time) || time > now) return plans;
+    const matching = plans.filter(plan => plan.enabled && (plan.hrtMode ?? 'transfem') === mode && matchesPlan(plan, dose)
+        && (!dose.medPlanId || dose.medPlanId === plan.id));
+    if (matching.length !== 1) return plans;
+    const [plan] = matching;
+    const adjustedAt = plan.overrideCreatedAt ?? plan.reminderUpdatedAt ?? 0;
+    if (plan.nextOverrideUtcMs == null || time <= adjustedAt || (dose.loggedAtUtcMs ?? time) <= adjustedAt) return plans;
+    return plans.map(item => item !== plan ? item : { ...item, nextOverrideUtcMs: null, reminderUpdatedAt: stamp });
+}
+
+function wallSchedule(plan: MedPlan, context: TimeContext, lastDose: number, count: number) {
+    const { deviceTimezone, nowUtcMs } = context;
+    const today = calendarDateIn(deviceTimezone, nowUtcMs);
+    const first = { hour: plan.firstHour, minute: plan.firstMinute };
+    const times = plan.mode === 'times' ? [first, ...(plan.doseTimes ?? [])] : [first];
+    const cycle = plan.mode === 'days' ? plan.everyDays ?? 1 : 1;
+    const gap = 0.65 * HOUR_MS * (24 * cycle / times.length);
+    const anchor = plan.mode === 'days' ? plan.anchorDate ?? today : today;
+    const start = addCalendarDays(today, Number.isFinite(lastDose) ? -1 : 0);
+    const daysFromAnchor = calendarDaysBetween(anchor, start);
+    let date = plan.mode === 'days' ? addCalendarDays(anchor, Math.max(0, Math.ceil(daysFromAnchor / cycle)) * cycle) : start;
+    const windowEnd = addCalendarDays(today, 7);
+    const due: number[] = [];
+    let futureCount = 0;
+    let skipped = false;
+    let skippedElapsed = false;
+    while (date <= windowEnd || futureCount < count) {
+        const calendar = parseCalendarDate(date);
+        if (!calendar) break;
+        const slots = new Set(times.map(t => zonedTimeToEpoch(deviceTimezone, ...calendar, t.hour, t.minute)));
+        for (const at of slots) {
+            if (at <= lastDose || plan.ignoredDue?.includes(at)) continue;
+            if (at - lastDose < gap) {
+                skipped = true;
+                skippedElapsed ||= at <= nowUtcMs;
+                continue;
+            }
+            due.push(at);
+            if (at > nowUtcMs) futureCount++;
+        }
+        date = addCalendarDays(date, cycle);
+    }
+    return { due, skipped, cooling: skippedElapsed && nowUtcMs - lastDose < gap };
+}
+
+function schedule(plan: MedPlan, doses: readonly PlanDoseRef[], context: TimeContext, count: number) {
+    if (plan.nextOverrideUtcMs != null) return { due: [plan.nextOverrideUtcMs], skipped: false, cooling: false };
+    let lastDose = -Infinity;
+    for (const dose of matchingDoseTimes(plan, doses, context.nowUtcMs)) lastDose = Math.max(lastDose, dose);
+    if (plan.mode !== 'hours') return wallSchedule(plan, context, lastDose, count);
+    const interval = Math.max(1, Math.round((plan.intervalHours ?? 24) * HOUR_MS));
+    const anchor = initializePlanAnchor(plan, context).intervalAnchorUtcMs!;
+    let next = Number.isFinite(lastDose) && lastDose > (plan.intervalReanchoredAt ?? -Infinity) ? lastDose + interval : anchor;
+    while (plan.ignoredDue?.includes(next)) next += interval;
+    const future = next > context.nowUtcMs ? next : next + (Math.floor((context.nowUtcMs - next) / interval) + 1) * interval;
+    const due = next < future ? [next] : [];
+    for (let at = future; due.length < count + Number(next < future); at += interval) {
+        if (!plan.ignoredDue?.includes(at)) due.push(at);
+    }
+    return { due, skipped: false, cooling: false };
+}
+
+export function planScheduleRevision(plan: MedPlan, doses: readonly PlanDoseRef[], now: number): string {
+    const latest = matchingDoseTimes(plan, doses, now).reduce((latest, at) => Math.max(latest, at), 0);
+    const inputs = [plan.mode, plan.route, plan.ester, plan.firstHour, plan.firstMinute, plan.doseTimes, plan.intervalHours,
+        plan.everyDays, plan.anchorDate, plan.nextOverrideUtcMs, plan.intervalAnchorUtcMs, plan.intervalReanchoredAt,
+        plan.reminderUpdatedAt, plan.ignoredDue, Math.round(latest)];
+    let hash = 0;
+    for (const ch of JSON.stringify(inputs)) hash = (Math.imul(hash, 31) + ch.charCodeAt(0)) | 0;
+    return String(hash);
+}
+
+export function nextPlanOccurrences(plan: MedPlan, context: TimeContext, count = 2, doses: readonly PlanDoseRef[] = []): number[] {
     if (!plan.enabled || count <= 0) return [];
-    const off = tzOffsetMinutes * 60_000;
-    const localNow = nowMs - off;
-    const localMidnight = Math.floor(localNow / DAY_MS) * DAY_MS;
-    const out: number[] = [];
-    const push = (epoch: number) => {
-        if (!Number.isFinite(epoch) || epoch <= nowMs || out.includes(epoch)) return;
-        out.push(epoch);
-    };
-
-    if (plan.mode === 'days') {
-        const cycle = Math.max(1, plan.everyDays ?? 1);
-        const anchorKey = plan.anchorDate ?? localDateKey(new Date(nowMs));
-        const [y, m, d] = anchorKey.split('-').map(Number);
-        let anchor = Date.UTC(y, m - 1, d);
-        if (anchor < localMidnight) {
-            const steps = Math.ceil((localMidnight - anchor) / DAY_MS / cycle);
-            anchor += steps * cycle * DAY_MS;
-        }
-        for (let i = 0; i < 400 && out.length < count; i++) {
-            const local = anchor + plan.firstHour * 3_600_000 + plan.firstMinute * 60_000;
-            push(local + off);
-            anchor += cycle * DAY_MS;
-        }
-        return out.slice(0, count);
-    }
-
-    const timesForDay = (dayOffset: number): number[] => {
-        const base = localMidnight + dayOffset * DAY_MS;
-        if (plan.mode === 'times') {
-            return [
-                base + plan.firstHour * 3_600_000 + plan.firstMinute * 60_000,
-                ...(plan.doseTimes ?? []).map(t => base + t.hour * 3_600_000 + t.minute * 60_000),
-            ];
-        }
-        const gap = Math.max(1, plan.intervalHours ?? 24);
-        const perDay = Math.ceil(24 / gap);
-        return Array.from({ length: perDay }, (_, i) =>
-            base + plan.firstHour * 3_600_000 + plan.firstMinute * 60_000 + i * gap * 3_600_000);
-    };
-
-    for (let day = 0; day < 400 && out.length < count; day++) {
-        timesForDay(day)
-            .map(t => t + off)
-            .sort((a, b) => a - b)
-            .forEach(push);
-    }
-    return out.slice(0, count);
+    return schedule(plan, doses, context, count).due.filter(at => at > context.nowUtcMs).sort((a, b) => a - b).slice(0, count);
 }
-
 export interface PlanDoseRef {
+    timestamp_utc_ms?: number;
+    medPlanId?: string;
+    loggedAtUtcMs?: number;
     ester: Ester;
     route: Route;
     /** Hours since 1970 — DoseEvent's own time base. */
@@ -430,12 +451,16 @@ export interface PlanDoseRef {
 
 /** Whether a dose event counts toward this plan: compound (+route) identity. */
 export function matchesPlan(plan: MedPlan, dose: PlanDoseRef): boolean {
-    if (dose.ester !== plan.ester) return false;
+    if (dose.route === Route.patchRemove || dose.ester !== plan.ester) return false;
     if (plan.route && dose.route !== plan.route) return false;
     return true;
 }
 
 export interface PlanStatus {
+    nextDueUtcMs: number | null;
+    remainingMs: number | null;
+    skippedDueToRefractory: boolean;
+    status: 'normal' | 'due_soon' | 'overdue' | 'jetlag_cooldown';
     plan: MedPlan;
     /** Due times today (epoch ms) with no matching dose taken after them. */
     missed: number[];
@@ -445,6 +470,7 @@ export interface PlanStatus {
 
 /** A quick-record entry auto-generated from a plan, shaped like a saved dose template. */
 export interface PlanQuickEntry {
+    medPlanId: string;
     id: string;
     name: string;
     route: Route;
@@ -489,6 +515,24 @@ export function parseDoseMG(dose: string): number {
  * whose drug and route a template already offers is not duplicated. The name carries
  * the caller's suffix ("·方案") so the entry reads as a plan, not a hand-saved dose.
  */
+export function mergePlanReminderVersions(winners: MedPlan[], others: MedPlan[]): MedPlan[] {
+    const byId = new Map(others.map(plan => [plan.id, plan]));
+    return winners.map(plan => {
+        const prior = byId.get(plan.id);
+        if (!prior || prior.mode !== plan.mode) return plan;
+        const replaceReminder = (prior.reminderUpdatedAt ?? 0) > (plan.reminderUpdatedAt ?? 0)
+            || (prior.reminderUpdatedAt === plan.reminderUpdatedAt && prior.nextOverrideUtcMs === null && plan.nextOverrideUtcMs != null);
+        const replaceCadence = (prior.cadenceUpdatedAt ?? 0) > (plan.cadenceUpdatedAt ?? 0);
+        if (!replaceReminder && !replaceCadence) return plan;
+        return {
+            ...plan,
+            ...(replaceReminder && { nextOverrideUtcMs: prior.nextOverrideUtcMs, reminderUpdatedAt: prior.reminderUpdatedAt, overrideCreatedAt: prior.overrideCreatedAt }),
+            ...(replaceCadence && { anchorDate: prior.anchorDate, firstHour: prior.firstHour, firstMinute: prior.firstMinute,
+                intervalAnchorUtcMs: prior.intervalAnchorUtcMs, intervalReanchoredAt: prior.intervalReanchoredAt, cadenceUpdatedAt: prior.cadenceUpdatedAt }),
+        };
+    });
+}
+
 export function plansForMode(plans: MedPlan[], mode: 'transfem' | 'transmasc'): MedPlan[] {
     return plans.filter(plan => (plan.hrtMode ?? mode) === mode);
 }
@@ -575,6 +619,7 @@ export function planQuickEntries(plans: MedPlan[], covered: ReadonlySet<string>,
         .filter(p => p.enabled && p.route && !covered.has(`${p.ester}:${p.route}`))
         .map(p => ({
             id: `${PLAN_ENTRY_PREFIX}${p.id}`,
+            medPlanId: p.id,
             name: `${p.alias || String(p.ester)}${suffix}`,
             route: p.route as Route,
             ester: p.ester,
@@ -584,34 +629,16 @@ export function planQuickEntries(plans: MedPlan[], covered: ReadonlySet<string>,
         }));
 }
 
-/**
- * Compute today's status for every enabled plan. A due time is satisfied by any
- * matching dose taken at or after it (the earliest unmatched due time claims the
- * earliest qualifying dose).
- */
-export function planStatuses(plans: MedPlan[], doses: PlanDoseRef[], nowMs: number, tzOffsetMinutes: number): PlanStatus[] {
-    const out: PlanStatus[] = [];
-    for (const plan of plans) {
-        if (!plan.enabled) continue;
-        const due = dueTimesToday(plan, nowMs, tzOffsetMinutes);
-        if (due.length === 0) {
-            out.push({ plan, missed: [], overdue: false });
-            continue;
-        }
-        const takenTimes = doses
-            .filter(d => matchesPlan(plan, d))
-            .map(d => d.timeH * 60 * 60 * 1000)
-            .sort((a, b) => a - b);
-        const ignored = plan.ignoredDue?.length ? new Set(plan.ignoredDue) : null;
-        const missed: number[] = [];
-        for (const dueMs of due) {
-            // 忽略一次: a forgiven occurrence is not a missed dose. The instant is
-            // matched by epoch ms, so the same wall-clock time tomorrow — and any
-            // occurrence not explicitly forgiven — is still counted here.
-            if (ignored?.has(dueMs)) continue;
-            if (!takenTimes.some(tt => tt >= dueMs)) missed.push(dueMs);
-        }
-        out.push({ plan, missed, overdue: missed.length > 0 });
-    }
-    return out;
+export function planStatuses(plans: readonly MedPlan[], doses: readonly PlanDoseRef[], context: TimeContext): PlanStatus[] {
+    return plans.filter(plan => plan.enabled).map(plan => {
+        const { due, skipped, cooling } = schedule(plan, doses, context, 1);
+        due.sort((a, b) => a - b);
+        const nextDueUtcMs = due[0] ?? null;
+        const missed = cooling ? [] : due.filter(at => at <= context.nowUtcMs);
+        const overdue = missed.length > 0;
+        const remainingMs = nextDueUtcMs === null ? null : nextDueUtcMs - context.nowUtcMs;
+        const soon = remainingMs !== null && remainingMs <= HOUR_MS;
+        const status = cooling ? 'jetlag_cooldown' : overdue ? 'overdue' : soon ? 'due_soon' : 'normal';
+        return { plan, nextDueUtcMs, remainingMs, skippedDueToRefractory: skipped, missed, overdue, status };
+    });
 }

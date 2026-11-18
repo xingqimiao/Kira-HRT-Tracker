@@ -21,6 +21,8 @@ export interface JournalEntry {
     id: string;
     /** Hours since epoch, the same unit dose and lab records use. */
     timeH: number;
+    timestamp_utc_ms?: number;
+    recorded_tz?: string;
     /** Epoch ms of the last edit — what sync's newest-wins compares. */
     updatedAt?: number;
     /** The entry itself. An entry with no words is not stored at all. */

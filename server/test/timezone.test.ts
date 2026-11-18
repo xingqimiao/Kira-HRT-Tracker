@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { dayKeyIn, deviceTimeZone, isTimeZone, resolveTimeZone, utcOffsetMinutes, wallClockIn, zonedTimeToEpoch } from '../../src/utils/timezone.ts';
+import { dayKeyIn, deviceTimeZone, isTimeZone, utcOffsetMinutes, wallClockIn, zonedTimeToEpoch } from '../../src/utils/timezone.ts';
 import { Ester, Route, antiandrogenReading, type DoseEvent } from '../../logic.ts';
 
 const H = 3_600_000;
@@ -70,12 +70,10 @@ test('zonedTimeToEpoch and wallClockIn are inverses', () => {
     );
 });
 
-test('a bad zone never wins over the device', () => {    assert.equal(isTimeZone('Mars/Base'), false);
-    assert.equal(isTimeZone(''), false);
-    assert.equal(isTimeZone(null), false);
-    assert.equal(isTimeZone('Asia/Taipei'), true);
-    assert.equal(resolveTimeZone('Mars/Base'), deviceTimeZone());
-    assert.equal(resolveTimeZone('Asia/Taipei'), 'Asia/Taipei');
+test('device zones are IANA IDs and fixed offsets or ambiguous abbreviations are rejected', () => {
+  assert.equal(isTimeZone('+08:00'), false);
+  assert.equal(isTimeZone('CST'), false);
+  assert.equal(isTimeZone(deviceTimeZone()), true);
 });
 
 test('the anti-androgen reading is the account day, not the viewer day', () => {

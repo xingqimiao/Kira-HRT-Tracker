@@ -131,6 +131,14 @@ const PACK: LangPack = {
 
 
     "plan.next": "Next",
+    "plan.anchor_date": "Cycle start date",
+    "plan.adjust_next": "Adjust next time",
+    "plan.adjusted": "Temporarily adjusted",
+    "plan.adjust_day": "Move 1 day later",
+    "plan.reanchor": "Also move future doses",
+    "plan.adjust_invalid": "Choose a valid future time.",
+    "plan.adjust_restore": "Restore original schedule",
+    "plan.jetlag": "Cooling down after time-zone change",
 
 
     "plan.next_next": "Then",
@@ -1204,13 +1212,6 @@ const PACK: LangPack = {
     "settings.aa_display.cumulative": "Cumulative total",
 
     "settings.aa_display.none": "Hide",
-    "settings.timezone": "Time zone",
-    "settings.timezone_desc": "\"Today\", due times and reminders all follow this zone. Use the same one on every device, or the same day can read two ways.",
-    "settings.timezone_use_device": "Use this device's zone",
-    "settings.timezone_search": "Search time zones",
-    "settings.timezone_more": "{n} more zones — type to narrow the list",
-    "settings.timezone_hint": "Type a city, country or UTC+8 to search",
-    "settings.timezone_empty": "No matching zone. Try a city, a country, or a UTC offset.",
     "backup.auto_saved": "Auto-backed up to cloud",
     "onboarding.privacy_title_1": "Privacy protection is rooted in",
     "onboarding.privacy_title_highlight": "KiraEqual and Kira Tracker",

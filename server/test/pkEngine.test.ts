@@ -18,6 +18,7 @@ import {
   Route,
   Ester,
   DEFAULT_PK_PARAMS,
+  calibrateForEngine,
   engineForCurve,
   simulateForEngine,
 } from '../src/engine.ts';
@@ -125,4 +126,21 @@ test('the two engines produce measurably different curves from the same dose', (
     transmtf,
     'the two engines returned an identical E2 value — only one engine is actually wired',
   );
+});
+
+test('the same recorded UTC instants produce the same curve across device zones', async () => {
+  const { withUtcTime } = await import('../../src/utils/timezone.ts');
+  const timestamp_utc_ms = Math.round(e2Injection.timeH * 3_600_000);
+  const outputs = ['Asia/Shanghai', 'America/New_York'].map(recorded_tz => {
+    const events = [withUtcTime({ ...e2Injection, timestamp_utc_ms, recorded_tz })];
+    const baseline = simulateForEngine('builtin', events, 70, DEFAULT_PK_PARAMS);
+    assert.ok(baseline);
+    const labs = [{ id: 'lab', timeH: nowH - 1, concValue: 110, unit: 'pg/ml' as const, analyte: 'E2' as const, recorded_tz }];
+    const methods = ['mipd', 'ekf', 'ou_kalman'] as const;
+    return { baseline, calibrated: methods.map(method => {
+      const calibration = calibrateForEngine('builtin', baseline, events, 70, labs, method);
+      return baseline.timeH.map((time, i) => baseline.concPGmL_E2[i] * calibration.factorFn(time) + (calibration.offsetFn?.(time) ?? 0));
+    }) };
+  });
+  assert.deepEqual(outputs[0], outputs[1]);
 });

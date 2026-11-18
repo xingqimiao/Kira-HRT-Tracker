@@ -1,6 +1,8 @@
 package com.kiramyao.hrt
 
 import android.app.AlarmManager
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -568,7 +570,44 @@ class MainActivity : TauriActivity() {
     }, 500)
   }
 
+  private var zoneReceiverRegistered = false
+  private var reportedZone = HrtMedAlarmReceiver.zone()
+  private val zoneReceiver = object : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) { refreshTimeZone() }
+  }
+
+  private fun refreshTimeZone(force: Boolean = false) {
+    val current = HrtMedAlarmReceiver.zone()
+    if (current == reportedZone && !force) return
+    reportedZone = current
+    HrtMedAlarmReceiver.invalidateOldZone(this)
+    appWebView?.evaluateJavascript("window.dispatchEvent(new Event('hrt-timezone-changed'))", null)
+  }
+
+  override fun onResume() {
+    super.onResume()
+    refreshTimeZone(true)
+  }
+
+  override fun onDestroy() {
+    if (zoneReceiverRegistered) unregisterReceiver(zoneReceiver)
+    super.onDestroy()
+  }
+
+  inner class TimeZoneBridge {
+    @JavascriptInterface fun current(): String = HrtMedAlarmReceiver.zone()
+    @JavascriptInterface fun generation(): String = HrtMedAlarmReceiver.generation(this@MainActivity)
+    @JavascriptInterface fun replaceQueue(zone: String, generation: String, queue: String): Boolean =
+      HrtMedAlarmReceiver.replaceQueue(this@MainActivity, zone, generation, queue)
+  }
+
   override fun onWebViewCreate(webView: WebView) {
+    webView.addJavascriptInterface(TimeZoneBridge(), "HrtTimeZone")
+    if (!zoneReceiverRegistered) {
+      androidx.core.content.ContextCompat.registerReceiver(this, zoneReceiver,
+        IntentFilter(Intent.ACTION_TIMEZONE_CHANGED), androidx.core.content.ContextCompat.RECEIVER_EXPORTED)
+      zoneReceiverRegistered = true
+    }
     appWebView = webView
     // The WebView's own background shows before the page paints. Match the system's
     // light/dark setting so a light-mode launch does not flash a black rectangle
