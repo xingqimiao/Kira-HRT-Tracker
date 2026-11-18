@@ -102,7 +102,7 @@ internal object HrtDoseReminder {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(context.applicationInfo.icon)
+            .setSmallIcon(R.drawable.ic_medication_notification)
             .setContentTitle(title)
             .setContentText(body)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
@@ -121,7 +121,7 @@ internal object HrtDoseReminder {
             .getString(MainActivity.NOTIF_HIDDEN_KEY, null)
             ?: context.getString(R.string.app_name)
         return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(context.applicationInfo.icon)
+            .setSmallIcon(R.drawable.ic_medication_notification)
             .setContentTitle(hidden)
             .setContentText(context.getString(R.string.app_name))
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)

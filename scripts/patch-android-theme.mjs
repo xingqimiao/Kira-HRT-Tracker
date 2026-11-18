@@ -1,3 +1,4 @@
+import { TEST_TUBE2_OUTLINE } from './android-adaptive-icon.mjs';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
@@ -21,8 +22,8 @@ mkdirSync(drawable, { recursive: true });
 // and the per-OEM mask shapes for this one app. See the header of
 // `android-adaptive-icon.mjs`.
 //
-// `patch-android-theme` therefore no longer touches icons at all: `sharp` and the
-// size table moved with the code.
+// Launcher artwork stays in its own generator. Notifications use a separate
+// monochrome drawable so Android does not scale launcher-mask padding into the status bar.
 
 // The launch surface must follow the system's light/dark setting, not be pinned dark.
 // The theme is `DayNight`, so Android resolves `@color/window_surface` from `values/`
@@ -38,6 +39,12 @@ const colorsDark = `<resources>\n    <color name="window_surface">#0D0D12</color
 // pre-edge-to-edge frame's value and the two agree by construction.
 const theme = (lightStatusBar) => `<resources>\n    <style name="Theme.kira_hrt" parent="Theme.Material3.DayNight.NoActionBar">\n        <item name="android:windowActionModeOverlay">true</item>\n        <item name="android:windowSplashScreenBackground">@color/window_surface</item>\n        <item name="android:windowSplashScreenAnimatedIcon">@drawable/launch_splash_transparent</item>\n        <item name="android:windowSplashScreenIconBackgroundColor">@color/window_surface</item>\n        <item name="android:windowLightStatusBar">${lightStatusBar}</item>\n        <item name="android:statusBarColor">@color/window_surface</item>\n        <item name="android:navigationBarColor">@color/window_surface</item>\n        <item name="android:windowBackground">@color/window_surface</item>\n        <item name="android:fontFamily">sans</item>\n    </style>\n</resources>\n`;
 writeFileSync(resolve(drawable, 'launch_splash_transparent.xml'), '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="1dp" android:height="1dp" android:viewportWidth="1" android:viewportHeight="1"><path android:fillColor="@android:color/transparent" android:pathData="M0,0h1v1h-1z" /></vector>\n');
+writeFileSync(resolve(drawable, 'ic_medication_notification.xml'), `<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <group android:pivotX="12" android:pivotY="12" android:scaleX="0.65" android:scaleY="0.65">
+        <path android:fillType="evenOdd" android:fillColor="#FFFFFFFF" android:pathData="${TEST_TUBE2_OUTLINE}" />
+    </group>
+</vector>\n`);
 writeFileSync(resolve(values, 'colors.xml'), colorsLight);
 writeFileSync(resolve(night, 'colors.xml'), colorsDark);
 writeFileSync(resolve(values, 'themes.xml'), theme(true));
