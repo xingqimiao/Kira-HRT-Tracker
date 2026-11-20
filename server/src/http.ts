@@ -189,15 +189,19 @@ function applyCommonHeaders(req: IncomingMessage, res: ServerResponse): void {
  * coordinate across instances. Move to Redis when more than one instance fronts the
  * same database.
  */
+const MAX_RATE_BUCKETS = 10_000;
+let nextRateSweepAt = 0;
 const attempts = new Map<string, { count: number; resetAt: number }>();
 
 function rateLimited(key: string, max: number, windowMs: number): boolean {
   const now = Date.now();
-  if (attempts.size > 10_000) {
+  if (now >= nextRateSweepAt) {
+    nextRateSweepAt = now + 1_000;
     for (const [k, entry] of attempts) if (entry.resetAt <= now) attempts.delete(k);
   }
   const entry = attempts.get(key);
   if (!entry || entry.resetAt <= now) {
+    if (!entry && attempts.size >= MAX_RATE_BUCKETS) return true;
     attempts.set(key, { count: 1, resetAt: now + windowMs });
     return false;
   }
@@ -225,22 +229,33 @@ function clientIp(req: IncomingMessage): string {
  * JSON would produce a different string for any client that formatted it
  * differently, and the comparison would fail for a genuine delivery.
  */
+class RequestBodyTooLarge extends Error {}
+class InvalidJsonBody extends Error {}
+
 function readRawBody(req: IncomingMessage, limitBytes = 1_000_000): Promise<Buffer> {
   return new Promise((resolve, reject) => {
+    if (Number(req.headers['content-length']) > limitBytes) {
+      reject(new RequestBodyTooLarge('request body too large'));
+      return;
+    }
     const chunks: Buffer[] = [];
     let size = 0;
-    req.on('data', (chunk: Buffer) => {
+    const readChunk = (chunk: Buffer) => {
       size += chunk.length;
       // Cap before buffering: an unbounded JSON body is a trivial memory exhaustion
       // vector on a public endpoint.
       if (size > limitBytes) {
-        reject(new Error('request body too large'));
-        req.destroy();
+        req.pause();
+        req.off('data', readChunk);
+        chunks.length = 0;
+        reject(new RequestBodyTooLarge('request body too large'));
         return;
       }
       chunks.push(chunk);
-    });
+    };
+    req.on('data', readChunk);
     req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('aborted', () => reject(new Error('request aborted')));
     req.on('error', reject);
   });
 }
@@ -251,7 +266,7 @@ async function readBody(req: IncomingMessage, limitBytes = 1_000_000): Promise<u
   try {
     return JSON.parse(raw.toString('utf8'));
   } catch {
-    throw new Error('request body is not valid JSON');
+    throw new InvalidJsonBody('request body is not valid JSON');
   }
 }
 
@@ -606,7 +621,11 @@ export function createRequestHandler() {
     // them, or it could mint successors, replace the password, or lock its owner out.
     async function requireSessionCtx(): Promise<AuthContext | null> {
       const token = bearer(req);
-      if (!token || !token.startsWith('ks_')) {
+      if (!token) {
+        fail(res, 401, 'authentication required');
+        return null;
+      }
+      if (!token.startsWith('ks_')) {
         fail(res, 403, 'this operation requires signing in through the web app');
         return null;
       }
@@ -618,13 +637,15 @@ export function createRequestHandler() {
       return resolved;
     }
 
-    const url = new URL(req.url ?? '/', 'http://localhost');
-    // Route matching happens on the path *inside* the mount, so every comparison
-    // below stays a plain absolute path and no route has to know it is mounted.
-    const path = stripBasePath(url.pathname);
-
     try {
       applyCommonHeaders(req, res);
+      let url: URL;
+      try {
+        url = new URL(req.url ?? '/', 'http://localhost');
+      } catch {
+        return fail(res, 400, 'invalid request target');
+      }
+      const path = stripBasePath(url.pathname);
 
       // A request outside the mount is not ours. Answering 404 rather than falling
       // through matters when a sibling service shares the host: serving `/health`
@@ -813,7 +834,7 @@ export function createRequestHandler() {
       // --- Auth: password ---------------------------------------------------
       if (path === '/auth/password' && req.method === 'POST') {
         const ctx = await requireSessionCtx();
-        if (!ctx) return fail(res, 401, 'authentication required');
+        if (!ctx) return;
         // A session is not a licence to guess the password. This route bcrypt-checks
         // `current_password`, so without a bucket a stolen token is a password oracle at
         // whatever rate the socket allows. Keyed by account rather than address: the
@@ -836,12 +857,15 @@ export function createRequestHandler() {
       // rides the login rate bucket, not an unbounded one.
       if (path === '/auth/keys/rotate' && req.method === 'POST') {
         const limits = getConfig().rateLimits;
-        if (rateLimited(`rotate:${bearer(req) ?? clientIp(req)}`, limits.login, limits.windowMs)) {
+        if (rateLimited(`rotate-ip:${clientIp(req)}`, limits.login, limits.windowMs)) {
           return fail(res, 429, 'too many attempts, try again later');
         }
         const ctx = await contextFor(req);
         if (!ctx) return fail(res, 401, 'authentication required');
         const body = (await readBody(req)) as { password?: unknown } | undefined;
+        if (rateLimited(`rotate-account:${ctx.userId}`, limits.login, limits.windowMs)) {
+          return fail(res, 429, 'too many attempts, try again later');
+        }
         const result = await AccountService.rotateKeys(ctx, body?.password);
         if (!result.ok) return fail(res, 400, result.error);
         return send(res, 200, { ok: true, records: result.value.records, unreadable: result.value.unreadable });
@@ -862,8 +886,8 @@ export function createRequestHandler() {
         const wantsLink = url.searchParams.get('purpose') === 'link';
         let userId: string | undefined;
         if (wantsLink) {
-          const ctx = await contextFor(req);
-          if (!ctx) return fail(res, 401, 'authentication required to link an account');
+          const ctx = await requireSessionCtx();
+          if (!ctx) return;
           userId = ctx.userId;
         } else if (url.searchParams.get('intent') === 'register') {
           // Human verification, asked for only when the caller says it is signing up.
@@ -885,6 +909,7 @@ export function createRequestHandler() {
         }
         const result = await AccountService.startGoogleAuthorization({
           purpose: wantsLink ? 'link' : 'login',
+          sessionToken: wantsLink ? bearer(req) : undefined,
           userId,
           returnUri: oauthReturnUri(url.searchParams.get('return_uri')),
         });
@@ -934,8 +959,8 @@ export function createRequestHandler() {
         const wantsLink = url.searchParams.get('purpose') === 'link';
         let userId: string | undefined;
         if (wantsLink) {
-          const ctx = await contextFor(req);
-          if (!ctx) return fail(res, 401, 'authentication required to link an account');
+          const ctx = await requireSessionCtx();
+          if (!ctx) return;
           userId = ctx.userId;
         } else if (url.searchParams.get('intent') === 'register') {
           // See the Google route above: same gate, same reason, and the same
@@ -949,6 +974,7 @@ export function createRequestHandler() {
         }
         const result = await AccountService.startXAuthorization({
           purpose: wantsLink ? 'link' : 'login',
+          sessionToken: wantsLink ? bearer(req) : undefined,
           userId,
           returnUri: oauthReturnUri(url.searchParams.get('return_uri')),
         });
@@ -997,13 +1023,13 @@ export function createRequestHandler() {
       // not so anyone can resume it.
       if (path === '/auth/sessions' && req.method === 'GET') {
         const ctx = await requireSessionCtx();
-        if (!ctx) return fail(res, 401, 'authentication required');
+        if (!ctx) return;
         return send(res, 200, { sessions: await listUserSessions(ctx.userId, bearer(req) ?? null) });
       }
 
       if (path === '/auth/sessions/revoke' && req.method === 'POST') {
         const ctx = await requireSessionCtx();
-        if (!ctx) return fail(res, 401, 'authentication required');
+        if (!ctx) return;
         const token = bearer(req) ?? null;
         const body = (await readBody(req)) as { ids?: unknown; all_others?: unknown } | undefined;
 
@@ -1029,7 +1055,7 @@ export function createRequestHandler() {
           return fail(res, 429, 'too many attempts; try again shortly');
         }
         const ctx = await requireSessionCtx();
-        if (!ctx) return fail(res, 401, 'authentication required');
+        if (!ctx) return;
         const body = (await readBody(req)) as
           | { password?: unknown; reason?: unknown }
           | undefined;
@@ -1152,7 +1178,7 @@ export function createRequestHandler() {
 
       if (path === '/auth/x/unlink' && req.method === 'POST') {
         const ctx = await requireSessionCtx();
-        if (!ctx) return fail(res, 401, 'authentication required');
+        if (!ctx) return;
         const result = await AccountService.unlinkX(ctx);
         if (!result.ok) return fail(res, 400, result.error);
         return send(res, 200, { ok: true });
@@ -1168,7 +1194,7 @@ export function createRequestHandler() {
 
       if (path === '/auth/credentials/bind' && req.method === 'POST') {
         const ctx = await requireSessionCtx();
-        if (!ctx) return fail(res, 401, 'authentication required');
+        if (!ctx) return;
         const body = (await readBody(req)) as {
           username?: unknown;
           password?: unknown;
@@ -1200,8 +1226,8 @@ export function createRequestHandler() {
 
       if (path.startsWith('/auth/oauth/') && path.endsWith('/unlink') && req.method === 'POST') {
         const provider = path.slice('/auth/oauth/'.length, -'/unlink'.length);
-        const ctx = await contextFor(req);
-        if (!ctx) return fail(res, 401, 'authentication required');
+        const ctx = await requireSessionCtx();
+        if (!ctx) return;
         const result = await AccountService.unlinkProvider(ctx, provider);
         if (!result.ok) return fail(res, 400, result.error);
         return send(res, 200, { ok: true });
@@ -1292,6 +1318,7 @@ export function createRequestHandler() {
           // Settings ride with the first delta page of each sync, for the same reason
           // they ride with the first page of a full read: a settings route or an agent
           // writes the settings table, which is not a record and so has no change row.
+          if (unreadable > 0) return fail(res, 409, 'record page contains unreadable data');
           const settings = afterVersion === undefined ? await buildSettingsScalars(ctx) : undefined;
           return send(res, 200, {
             records: records.map((r) => ({
@@ -1783,7 +1810,8 @@ export function createRequestHandler() {
         let body: unknown;
         try {
           body = await readBody(req, 64_000);
-        } catch {
+        } catch (error) {
+          if (error instanceof RequestBodyTooLarge) throw error;
           return send(res, 200, { ec: 400003, em: 'params was not valid json string' });
         }
         const data = (body as { data?: Record<string, unknown> } | undefined)?.data;
@@ -1861,6 +1889,14 @@ export function createRequestHandler() {
 
       fail(res, 404, 'not found');
     } catch (error) {
+      if (error instanceof RequestBodyTooLarge) {
+        if (!res.headersSent) {
+          res.setHeader('Connection', 'close');
+          fail(res, 413, error.message);
+        }
+        return;
+      }
+      if (error instanceof InvalidJsonBody) return fail(res, 400, error.message);
       if (error instanceof RestoreGenerationConflict) {
         if (!res.headersSent) fail(res, 409, 'restore generation mismatch');
         return;
@@ -1890,8 +1926,12 @@ export function createRequestHandler() {
 }
 
 export function startServer(port = getConfig().port): ReturnType<typeof createHttpServer> {
+  const handle = createRequestHandler();
   const server = createHttpServer((req, res) => {
-    void createRequestHandler()(req, res);
+    void handle(req, res).catch(() => {
+      // A failure while conveying an error must stay local to this connection.
+      res.destroy();
+    });
   });
   // Bind to loopback by default: the reverse proxy is the only ingress, so the
   // service is never directly reachable and `X-Forwarded-For` cannot be spoofed.
@@ -1911,6 +1951,7 @@ export function startServer(port = getConfig().port): ReturnType<typeof createHt
  */
 export function resetRateLimits(): void {
   attempts.clear();
+  nextRateSweepAt = 0;
 }
 
 export { closeSession, openSession };

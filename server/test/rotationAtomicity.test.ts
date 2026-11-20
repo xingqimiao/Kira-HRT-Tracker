@@ -84,3 +84,19 @@ test('a refused rotation leaves the readable rows readable', async () => {
   assert.equal((kept?.data as { med_name?: string })?.med_name, 'ATOMIC_KEEP');
   assert.equal(after.unreadable, 1, 'exactly the corrupted row is unreadable');
 });
+
+test('an in-flight writer must refresh its context after key rotation', async () => {
+  const { AccountService } = await import('../src/accounts.ts');
+  const { RecordService } = await import('../src/records.ts');
+  const { RestoreVersionConflict } = await import('../src/restoreGeneration.ts');
+  const account = await registerAccount(base, {});
+  const stale = await AccountService.resolveApiContext(account.token);
+  assert.ok(stale && 'recordKey' in stale);
+  const rotated = await AccountService.rotateKeys(stale, account.password);
+  assert.ok(rotated.ok);
+  const item = { id: 'after-rotation', category: 'dose', takenAt: Date.now(), data: { med_name: 'fixture' } };
+  await assert.rejects(RecordService.put(stale, item), RestoreVersionConflict);
+  const fresh = await AccountService.resolveApiContext(account.token);
+  assert.ok(fresh && 'recordKey' in fresh);
+  assert.ok((await RecordService.put(fresh, item)).ok);
+});

@@ -18,6 +18,8 @@ export interface AuthContext {
   recordKey: string;
   /** Generation acknowledged by this device after replacing any stale local cache. */
   restoreGeneration?: string;
+  /** Key epoch used to derive recordKey. */
+  keyGeneration?: string;
   /**
    * This caller is a live agent session, not a cache that could be replayed.
    *

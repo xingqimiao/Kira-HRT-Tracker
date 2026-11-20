@@ -221,6 +221,7 @@ async function readChangedSince(token: string, since: number): Promise<CoreState
       restoreGeneration?: string;
       restoreEnabled?: boolean;
     };
+    if (body.unreadable) throw new Error('Cannot finish sync with unreadable records');
     const batch = body.records ?? [];
     if (typeof body.syncVersion === 'number') syncVersion = body.syncVersion;
     if (typeof body.restoreGeneration === 'string') restoreGeneration = body.restoreGeneration;
@@ -237,6 +238,7 @@ async function readChangedSince(token: string, since: number): Promise<CoreState
     }
 
     if (batch.length < PAGE_SIZE) break;
+    if (page === 99) throw new Error('Sync page limit reached before completion');
     const last = batch[batch.length - 1];
     if (!last || typeof last.sync_version !== 'number') break;
     afterVersion = last.sync_version;
@@ -293,6 +295,7 @@ async function readFullState(token: string): Promise<CoreStateRead> {
       restoreGeneration?: string;
       restoreEnabled?: boolean;
     };
+    if (body.unreadable) throw new Error('Cannot finish sync with unreadable records');
     const batch = body.records ?? [];
     settings = body.settings ?? settings;
     // Every page of a full read carries the same captured version; the first one wins.
@@ -312,6 +315,7 @@ async function readFullState(token: string): Promise<CoreStateRead> {
     // Stop on a short page, or when the oldest row in this page has no usable time —
     // paging further with a bad cursor would loop.
     if (batch.length < PAGE_SIZE) break;
+    if (page === 99) throw new Error('Sync page limit reached before completion');
     const oldest = batch[batch.length - 1];
     if (!oldest) break;
     before = Date.parse(oldest.taken_at);

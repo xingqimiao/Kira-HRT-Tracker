@@ -1080,24 +1080,8 @@ export const RecordService = {
         return { records, unreadable };
     },
 
-    /** Record a deletion tombstone so client sync does not resurrect the deleted record. */
-    async noteDeletion(ctx: AuthContext, mode: Mode, kind: string, appId: string): Promise<void> {
-        const mapKey = `del:${mode}:${kind}`;
-        const existing = await RecordService.get(ctx, mapKey).catch(() => null);
-        const map = existing && typeof existing.data === 'object' && existing.data !== null
-            ? { ...(existing.data as Record<string, number>) }
-            : {};
-        map[appId] = Date.now();
-        await RecordService.put(ctx, {
-            id: mapKey,
-            takenAt: Math.max(...Object.values(map)),
-            category: 'setting',
-            data: map,
-        }).catch(() => undefined);
-    },
-
     /** True when a row was removed. Records a tombstone if it is a deletable item so sync does not resurrect it. */
-    async remove(ctx: AuthContext, id: string): Promise<boolean> {
+    async remove(ctx: AuthContext, id: string, legacy?: { mode: Mode; kind: string; appId: string }): Promise<boolean> {
         if (id.startsWith('del:')) {
             // A tombstone map is the only record of what was deleted; removing it would
             // let a lagging device resurrect those records on the next sync.
@@ -1114,11 +1098,12 @@ export const RecordService = {
                 'UPDATE users SET sync_version = sync_version + 1 WHERE id = $1 RETURNING sync_version', [ctx.userId],
             );
             const parts = id.split(':');
-            if (parts.length >= 3) {
-                const [head, mode, ...rest] = parts;
-                const appId = rest.join(':');
-                const kind = WIRE_TO_TOMBSTONE_KIND[head];
-                if (kind && (mode === 'transfem' || mode === 'transmasc')) {
+            {
+                const structured = parts.length >= 3 && WIRE_TO_TOMBSTONE_KIND[parts[0]] && (parts[1] === 'transfem' || parts[1] === 'transmasc');
+                const mode = structured ? parts[1] : legacy?.mode;
+                const appId = structured ? parts.slice(2).join(':') : legacy?.appId;
+                const kind = structured ? WIRE_TO_TOMBSTONE_KIND[parts[0]] : legacy?.kind;
+                if (appId && kind && (mode === 'transfem' || mode === 'transmasc')) {
                     const mapKey = `del:${mode}:${kind}`;
                     const existing = await client.query<{ payload_encrypted: string }>(
                         'SELECT payload_encrypted FROM records WHERE user_id = $1 AND id = $2', [ctx.userId, mapKey],
@@ -1176,32 +1161,31 @@ export const RecordService = {
     /**
      * Every record in one category, decrypted.
      *
-     * Read a page at a time, walking backwards by `taken_at`, because the store caps a
-     * single response and a caller that silently received one page would believe a long
-     * history was short. The loop is bounded so a cursor that cannot advance ends the
-     * walk instead of repeating a page forever.
+     * A PostgreSQL cursor reads one snapshot, including rows sharing a timestamp.
+     * Abort the export if any payload cannot be opened.
      */
-    async all(
-        ctx: AuthContext,
-        category?: string,
-    ): Promise<{ records: StoredRecord[]; unreadable: number }> {
-        const pageSize = 1000;
-        const records: StoredRecord[] = [];
-        let unreadable = 0;
-        let before: number | undefined;
-        let beforeId: string | undefined;
-
-        for (let page = 0; page < 100; page++) {
-            const listed = await RecordService.list(ctx, { limit: pageSize, category, before, beforeId });
-            records.push(...listed.records);
-            unreadable += listed.unreadable;
-            if (listed.records.length < pageSize) break;
-            const oldest = listed.records[listed.records.length - 1].takenAt;
-            if (before !== undefined && oldest >= before) break;
-            before = oldest;
-        }
-
-        return { records, unreadable };
+    async all(ctx: AuthContext, category?: string): Promise<{ records: StoredRecord[]; unreadable: number }> {
+        if (category !== undefined && !isCategory(category)) return { records: [], unreadable: 0 };
+        return withTransaction(async client => {
+            await client.query(
+                `DECLARE export_records NO SCROLL CURSOR FOR
+                 SELECT id, taken_at, category, payload_encrypted, updated_at FROM records
+                 WHERE user_id = $1 AND ($2::text IS NULL OR category = $2)
+                 ORDER BY taken_at DESC, id DESC`,
+                [ctx.userId, category ?? null],
+            );
+            const records: StoredRecord[] = [];
+            while (true) {
+                const { rows } = await client.query('FETCH FORWARD 1000 FROM export_records');
+                for (const row of rows) {
+                    records.push({
+                        id: row.id, takenAt: row.taken_at.getTime(), category: row.category,
+                        data: open(row.payload_encrypted, ctx), updatedAt: row.updated_at.getTime(),
+                    });
+                }
+                if (rows.length < 1000) return { records, unreadable: 0 };
+            }
+        });
     },
 
     /** How many records the account holds, without decrypting anything. */

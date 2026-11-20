@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, chownSync, copyFileSync, cpSync, readdirSync, lstatSync, renameSync } from 'node:fs';
+import { openSync, closeSync, readSync, statSync, existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, chownSync, copyFileSync, cpSync, readdirSync, lstatSync, renameSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { isIP } from 'node:net';
 import { createHash, randomBytes } from 'node:crypto';
@@ -113,7 +113,20 @@ function files(root, prefix = '') {
     return stat.isDirectory() ? files(root, rel) : [rel];
   });
 }
-const digest = path => createHash('sha256').update(readFileSync(path)).digest('hex');
+function digest(path) {
+  const fd = openSync(path, 'r');
+  try {
+    const chunk = Buffer.allocUnsafe(256 * 1024);
+    const hash = createHash('sha256');
+    let length;
+    while ((length = readSync(fd, chunk, 0, chunk.length, null)) > 0) {
+      hash.update(chunk.subarray(0, length));
+    }
+    return hash.digest('hex');
+  } finally {
+    closeSync(fd);
+  }
+}
 function protectBackupTree(path) {
   const stat = lstatSync(path);
   if (stat.isSymbolicLink()) throw new Error('Symlinks are not allowed in backups');
@@ -137,7 +150,13 @@ export function prepareBackup(root, name, ca = '/caddy') {
 }
 export function finishBackup(root, name) {
   const dir = backupPath(root, name);
-  if (readFileSync(join(dir, 'database.dump')).subarray(0, 5).toString() !== 'PGDMP') throw new Error('Missing PostgreSQL custom-format dump');
+  const fd = openSync(join(dir, 'database.dump'), 'r');
+  try {
+    const header = Buffer.alloc(5);
+    if (readSync(fd, header, 0, 5, 0) !== 5 || header.toString() !== 'PGDMP') throw new Error('Missing PostgreSQL custom-format dump');
+  } finally {
+    closeSync(fd);
+  }
   const checksums = Object.fromEntries(files(dir).map(file => [file, digest(join(dir, file))]));
   protectBackupTree(dir);
   privateWrite(join(dir, 'manifest.json'), JSON.stringify({ format: 1, checksums }, null, 2));
@@ -155,7 +174,7 @@ export function verifyBackup(root, name) {
   for (const required of ['database.dump', 'config.env', 'master.key', 'Caddyfile']) {
     if (!found.includes(required)) throw new Error(`Backup missing ${required}`);
   }
-  if (readFileSync(join(dir, 'master.key')).length !== 32) throw new Error('Invalid backup master key');
+  if (statSync(join(dir, 'master.key')).size !== 32) throw new Error('Invalid backup master key');
   return dir;
 }
 export function restoreFiles(root, name, ca = '/caddy') {

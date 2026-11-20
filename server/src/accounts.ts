@@ -97,6 +97,7 @@ export interface AccountRow {
   password_set_at: Date | null;
   wrapped_dek: unknown;
   encryption_metadata: unknown;
+  key_generation: string;
   failed_unlocks: number;
   locked_until: Date | null;
   /** Needed for the deletion tombstone: "how long after signing up do people leave". */
@@ -189,7 +190,7 @@ async function loadUser(where: { id?: string; username?: string }): Promise<Acco
   const { rows } = await getPool().query<AccountRow>(
     `SELECT id, username, display_name, password_hash, password_set_at, wrapped_dek,
             encryption_metadata,
-            failed_unlocks, locked_until,
+            key_generation, failed_unlocks, locked_until,
             created_at
        FROM users WHERE ${column} = $1`,
     [value],
@@ -232,6 +233,21 @@ function metadataFor(user: AccountRow): EncryptionMetadata {
  * transaction (`rotateKeys` commits this together with the re-encryption) passes
  * its client so both writes share one commit.
  */
+async function lockCredentialSnapshot(client: PoolClient, user: AccountRow): Promise<boolean> {
+  const { rowCount } = await client.query(
+    `SELECT id FROM users WHERE id = $1 AND key_generation = $2
+       AND password_hash IS NOT DISTINCT FROM $3 FOR UPDATE`,
+    [user.id, user.key_generation, user.password_hash],
+  );
+  return rowCount === 1;
+}
+
+async function revokeCredentials(client: PoolClient, userId: string): Promise<void> {
+  await client.query('DELETE FROM sessions WHERE user_id = $1', [userId]);
+  await client.query('DELETE FROM api_tokens WHERE user_id = $1', [userId]);
+  await client.query('DELETE FROM device_tokens WHERE user_id = $1', [userId]);
+}
+
 async function saveMetadata(userId: string, metadata: EncryptionMetadata, client?: PoolClient): Promise<void> {
   const legacy = passwordEnvelopeOf(metadata);
   const query = `UPDATE users SET encryption_metadata = $2, wrapped_dek = $3, updated_at = now() WHERE id = $1`;
@@ -477,17 +493,14 @@ export const AccountService = {
       return { ok: false, error: 'account key material is unreadable; set a new password to re-key it' };
     }
 
-    await getPool().query(`UPDATE users SET failed_unlocks = 0, locked_until = NULL WHERE id = $1`, [user.id]);
-
-    // Every account must carry the server wrapper, so the deployment can open it
-    // again without the user. An account created before this release may not; a
-    // password unlock is the one moment the key is in hand to add it without asking
-    // the user for anything twice.
-    if (!metadata.wrappers.server) {
-      await saveMetadata(user.id, await addServerWrapper(metadata, dek, user.id));
-    }
-
-    const token = await openSession(user.id, { persistent: opts.persistent });
+    const upgrade = metadata.wrappers.server ? null : await addServerWrapper(metadata, dek, user.id);
+    const token = await withTransaction(async (client) => {
+      if (!await lockCredentialSnapshot(client, user)) return null;
+      await client.query('UPDATE users SET failed_unlocks = 0, locked_until = NULL WHERE id = $1', [user.id]);
+      if (upgrade) await saveMetadata(user.id, upgrade, client);
+      return openSession(user.id, { persistent: opts.persistent }, client);
+    });
+    if (!token) return generic;
     await this.recordAuthEvent(user.id, 'unlock');
 
     return {
@@ -537,7 +550,7 @@ export const AccountService = {
       // below. A KMS outage or a disabled master key is the only "locked" left.
       const sessionKey = await recordKeyFor(sessionUser);
       if (!sessionKey) return { denied: 'locked' };
-      return { userId: session.userId, recordKey: sessionKey };
+      return { userId: session.userId, recordKey: sessionKey, keyGeneration: sessionUser.key_generation };
     }
     const userId = await this.resolveApiToken(token);
     if (!userId) return null;
@@ -550,7 +563,7 @@ export const AccountService = {
     // A denial rather than a failure, so an adapter can say "locked" instead of
     // reporting an authentication error the credential does not have.
     if (!recordKey) return { denied: 'locked' };
-    return { userId, recordKey };
+    return { userId, recordKey, keyGeneration: user.key_generation };
   },
 
   /**
@@ -567,7 +580,7 @@ export const AccountService = {
     if (!user) return null;
     const recordKey = await recordKeyFor(user);
     if (!recordKey) return { denied: 'locked' };
-    return { userId, recordKey };
+    return { userId, recordKey, keyGeneration: user.key_generation };
   },
 
   async lock(token: string): Promise<void> {
@@ -605,28 +618,17 @@ export const AccountService = {
     const bareDek = await repairBareDek(metadataFor(user), opened, ctx.recordKey, ctx.userId);
     const metadata = await setPasswordWrapper(metadataFor(user), bareDek, newPassword.value, ctx.userId);
     const passwordHash = await hashPassword(newPassword.value);
-    await getPool().query(
-      `UPDATE users SET password_hash = $1, password_set_at = COALESCE(password_set_at, now()),
-                        updated_at = now()
-        WHERE id = $2`,
-      [passwordHash, ctx.userId],
-    );
-    await saveMetadata(ctx.userId, metadata);
-
-    // A password change is a security event: every other session and every API
-    // token minted under the old credentials should stop working.
-    //
-    // Deleted rather than expired-in-place. Both reject the token, but a row left
-    // behind would sit in the user's token list looking live — and since tokens are
-    // permanent by default, an entry that had quietly stopped working is exactly the
-    // confusion the management screen exists to remove. The security event is still
-    // recorded below.
-    await closeUserSessions(ctx.userId);
-    await getPool().query(`DELETE FROM api_tokens WHERE user_id = $1`, [ctx.userId]);
-    // Same reasoning as the tokens above: a device that was trusted under the old
-    // password should not keep receiving this account’s reminders. The app
-    // re-registers on the next launch, so a legitimate device recovers by itself.
-    await getPool().query(`DELETE FROM device_tokens WHERE user_id = $1`, [ctx.userId]);
+    const changed = await withTransaction(async (client) => {
+      if (!await lockCredentialSnapshot(client, user)) return false;
+      await client.query(
+        `UPDATE users SET password_hash = $1, password_set_at = COALESCE(password_set_at, now())
+         WHERE id = $2`, [passwordHash, ctx.userId],
+      );
+      await saveMetadata(ctx.userId, metadata, client);
+      await revokeCredentials(client, ctx.userId);
+      return true;
+    });
+    if (!changed) return { ok: false, error: 'account credentials changed; try again' };
     await this.recordAuthEvent(ctx.userId, 'password_change');
     return { ok: true, value: undefined };
   },
@@ -696,7 +698,7 @@ export const AccountService = {
       // users row first also serializes this against concurrent unlinks and a second
       // rotation on the same account.
       const reencrypted = await withTransaction(async (client) => {
-        await client.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [ctx.userId]);
+        if (!await lockCredentialSnapshot(client, user)) return 'stale' as const;
         const { reencrypted: count, unreadable } = await RecordService.reencryptAll(
           ctx.userId,
           Buffer.from(oldR, 'base64'),
@@ -705,12 +707,14 @@ export const AccountService = {
         );
         if (unreadable > 0) throw new RotationRefusedError();
         await saveMetadata(ctx.userId, { ...metadata, pad }, client);
+        await client.query('UPDATE users SET key_generation = key_generation + 1 WHERE id = $1', [ctx.userId]);
         return count;
       }).catch((error) => {
         if (error instanceof RotationRefusedError) return null;
         throw error;
       });
-      if (reencrypted === null) {
+      if (reencrypted === 'stale') return { ok: false, error: 'account credentials changed; retry rotation' };
+    if (reencrypted === null) {
         return { ok: false, error: 'rotation found unreadable records; key material unchanged' };
       }
       await this.recordAuthEvent(ctx.userId, 'key_rotation');
@@ -729,7 +733,7 @@ export const AccountService = {
       ctx.userId,
     );
     const reencrypted = await withTransaction(async (client) => {
-      await client.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [ctx.userId]);
+      if (!await lockCredentialSnapshot(client, user)) return 'stale' as const;
       const { reencrypted: count, unreadable } = await RecordService.reencryptAll(
         ctx.userId,
         Buffer.from(dekPlain, 'base64'),
@@ -738,11 +742,13 @@ export const AccountService = {
       );
       if (unreadable > 0) throw new RotationRefusedError();
       await saveMetadata(ctx.userId, next, client);
-      return count;
+      await client.query('UPDATE users SET key_generation = key_generation + 1 WHERE id = $1', [ctx.userId]);
+        return count;
     }).catch((error) => {
       if (error instanceof RotationRefusedError) return null;
       throw error;
     });
+    if (reencrypted === 'stale') return { ok: false, error: 'account credentials changed; retry rotation' };
     if (reencrypted === null) {
       return { ok: false, error: 'rotation found unreadable records; key material unchanged' };
     }
@@ -886,13 +892,14 @@ export const AccountService = {
   async startXAuthorization(opts: {
     purpose: 'login' | 'link';
     userId?: string;
+    sessionToken?: string;
     returnUri?: string;
   }): Promise<Result<{ authorizeUrl: string; state: string }>> {
     const config = getConfig().x;
     if (!isXConfigured(config)) {
       return { ok: false, error: 'X login is not configured on this instance' };
     }
-    if (opts.purpose === 'link' && !opts.userId) {
+    if (opts.purpose === 'link' && (!opts.userId || !opts.sessionToken?.startsWith('ks_'))) {
       return { ok: false, error: 'linking requires a signed-in account' };
     }
 
@@ -903,9 +910,10 @@ export const AccountService = {
     // they go before a new one is added. The index on expires_at makes this cheap.
     await getPool().query(`DELETE FROM oauth_states WHERE expires_at <= now()`);
     await getPool().query(
-      `INSERT INTO oauth_states (state, code_verifier, purpose, user_id, expires_at, return_uri)
-       VALUES ($1, $2, $3, $4, now() + ($5 || ' milliseconds')::interval, $6)`,
-      [state, codeVerifier, opts.purpose, opts.userId ?? null, String(OAUTH_STATE_TTL_MS), opts.returnUri ?? null],
+      `INSERT INTO oauth_states (state, code_verifier, purpose, user_id, expires_at, return_uri, link_session_hash)
+       VALUES ($1, $2, $3, $4, now() + ($5 || ' milliseconds')::interval, $6, $7)`,
+      [state, codeVerifier, opts.purpose, opts.userId ?? null, String(OAUTH_STATE_TTL_MS), opts.returnUri ?? null,
+       opts.sessionToken ? createHash('sha256').update(opts.sessionToken).digest('hex') : null],
     );
 
     return {
@@ -951,11 +959,11 @@ export const AccountService = {
       code_verifier: string;
       purpose: 'login' | 'link';
       user_id: string | null;
-      return_uri: string | null;
+      return_uri: string | null; link_session_hash: string | null;
     }>(
       `UPDATE oauth_states SET consumed_at = now()
-        WHERE state = $1 AND consumed_at IS NULL AND expires_at > now()
-        RETURNING code_verifier, purpose, user_id, return_uri`,
+        WHERE state = $1 AND provider = 'x' AND consumed_at IS NULL AND expires_at > now()
+        RETURNING code_verifier, purpose, user_id, return_uri, link_session_hash`,
       [query.state],
     );
     if (rows.length === 0) {
@@ -990,17 +998,20 @@ export const AccountService = {
         }
         return { ok: false, error: 'that X account is already linked to a different account' };
       }
-      await getPool().query(
+      const linked = await getPool().query(
         `INSERT INTO oauth_accounts
            (user_id, provider, provider_user_id, handle, avatar_url,
             avatar_image, avatar_content_type, avatar_fetched_at)
-         VALUES ($1, 'x', $2, $3, $4, $5, $6,
-                 CASE WHEN $5::bytea IS NULL THEN NULL ELSE now() END)`,
+         SELECT $1, 'x', $2, $3, $4, $5, $6,
+                 CASE WHEN $5::bytea IS NULL THEN NULL ELSE now() END
+           FROM (SELECT id FROM sessions WHERE user_id = $1 AND token_hash = $7
+                   AND (expires_at IS NULL OR expires_at > now()) FOR SHARE) AS live_session`,
         [
           pending.user_id, profile.id, profile.handle, profile.avatarUrl,
-          profile.avatarImage, profile.avatarContentType,
+          profile.avatarImage, profile.avatarContentType, pending.link_session_hash,
         ],
       );
+      if (!linked.rowCount) return { ok: false, error: 'linking session expired; sign in again' };
       await this.recordAuthEvent(pending.user_id, 'x_linked');
       return { ok: true, value: { outcome: 'link', handle: profile.handle } };
     }
@@ -1057,13 +1068,14 @@ export const AccountService = {
   async startGoogleAuthorization(opts: {
     purpose: 'login' | 'link';
     userId?: string;
+    sessionToken?: string;
     returnUri?: string;
   }): Promise<Result<{ authorizeUrl: string; state: string }>> {
     const config = getConfig().google;
     if (!isGoogleConfigured(config)) {
       return { ok: false, error: 'Google login is not configured on this instance' };
     }
-    if (opts.purpose === 'link' && !opts.userId) {
+    if (opts.purpose === 'link' && (!opts.userId || !opts.sessionToken?.startsWith('ks_'))) {
       return { ok: false, error: 'linking requires a signed-in account' };
     }
 
@@ -1076,9 +1088,10 @@ export const AccountService = {
     // they go before a new one is added. The index on expires_at makes this cheap.
     await getPool().query(`DELETE FROM oauth_states WHERE expires_at <= now()`);
     await getPool().query(
-      `INSERT INTO oauth_states (state, code_verifier, purpose, provider, user_id, expires_at, return_uri)
-       VALUES ($1, $2, $3, 'google', $4, now() + ($5 || ' milliseconds')::interval, $6)`,
-      [state, nonce, opts.purpose, opts.userId ?? null, String(OAUTH_STATE_TTL_MS), opts.returnUri ?? null],
+      `INSERT INTO oauth_states (state, code_verifier, purpose, provider, user_id, expires_at, return_uri, link_session_hash)
+       VALUES ($1, $2, $3, 'google', $4, now() + ($5 || ' milliseconds')::interval, $6, $7)`,
+      [state, nonce, opts.purpose, opts.userId ?? null, String(OAUTH_STATE_TTL_MS), opts.returnUri ?? null,
+       opts.sessionToken ? createHash('sha256').update(opts.sessionToken).digest('hex') : null],
     );
 
     return {
@@ -1112,12 +1125,12 @@ export const AccountService = {
     // Spend the state first, so a replayed callback cannot be redeemed twice even if
     // the exchange below fails.
     const { rows } = await getPool().query<{
-      purpose: 'login' | 'link'; user_id: string | null; code_verifier: string | null; provider: string; return_uri: string | null;
+      purpose: 'login' | 'link'; user_id: string | null; code_verifier: string | null; provider: string; return_uri: string | null; link_session_hash: string | null;
     }>(
       `UPDATE oauth_states
           SET consumed_at = now()
         WHERE state = $1 AND consumed_at IS NULL AND expires_at > now()
-        RETURNING purpose, user_id, code_verifier, provider, return_uri`,
+        RETURNING purpose, user_id, code_verifier, provider, return_uri, link_session_hash`,
       [query.state],
     );
     const pending = rows[0];
@@ -1152,17 +1165,20 @@ export const AccountService = {
         }
         return { ok: false, error: 'that Google account is already linked to a different account' };
       }
-      await getPool().query(
+      const linked = await getPool().query(
         `INSERT INTO oauth_accounts
            (user_id, provider, provider_user_id, handle, avatar_url,
             avatar_image, avatar_content_type, avatar_fetched_at)
-         VALUES ($1, 'google', $2, $3, $4, $5, $6,
-                 CASE WHEN $5::bytea IS NULL THEN NULL ELSE now() END)`,
+         SELECT $1, 'google', $2, $3, $4, $5, $6,
+                 CASE WHEN $5::bytea IS NULL THEN NULL ELSE now() END
+           FROM (SELECT id FROM sessions WHERE user_id = $1 AND token_hash = $7
+                   AND (expires_at IS NULL OR expires_at > now()) FOR SHARE) AS live_session`,
         [
           pending.user_id, profile.id, profile.handle, profile.avatarUrl,
-          profile.avatarImage, profile.avatarContentType,
+          profile.avatarImage, profile.avatarContentType, pending.link_session_hash,
         ],
       );
+      if (!linked.rowCount) return { ok: false, error: 'linking session expired; sign in again' };
       await this.recordAuthEvent(pending.user_id, 'google_linked');
       return { ok: true, value: { outcome: 'link', handle: profile.handle } };
     }
@@ -1445,11 +1461,7 @@ export const AccountService = {
     if (user.password_hash) {
       const okCurrent = await verifyPassword(String(currentPasswordRaw ?? ''), user.password_hash);
       if (!okCurrent) return { ok: false as const, error: 'current password is incorrect' };
-      // A replaced master credential ends every credential derived from the old one,
-      // exactly as changePassword does (the stolen-token holder must not keep access).
-      await closeUserSessions(ctx.userId);
-      await getPool().query(`DELETE FROM api_tokens WHERE user_id = $1`, [ctx.userId]);
-      await getPool().query(`DELETE FROM device_tokens WHERE user_id = $1`, [ctx.userId]);
+
     }
 
     // Renaming to a name another account holds must fail loudly rather than as a
@@ -1477,21 +1489,27 @@ export const AccountService = {
     const legacy = passwordEnvelopeOf(metadata);
 
     try {
-      await getPool().query(
-        `UPDATE users
-            SET username = $2, password_hash = $3,
-                password_set_at = COALESCE(password_set_at, now()),
-                encryption_metadata = $4, wrapped_dek = $5,
-                updated_at = now()
-          WHERE id = $1`,
-        [
-          ctx.userId,
-          username.value,
-          passwordHash,
-          JSON.stringify(metadata),
-          legacy ? JSON.stringify(legacy) : null,
-        ],
-      );
+      const changed = await withTransaction(async (client) => {
+        if (!await lockCredentialSnapshot(client, user)) return false;
+        await client.query(
+          `UPDATE users
+              SET username = $2, password_hash = $3,
+                  password_set_at = COALESCE(password_set_at, now()),
+                  encryption_metadata = $4, wrapped_dek = $5,
+                  updated_at = now()
+            WHERE id = $1`,
+          [
+            ctx.userId,
+            username.value,
+            passwordHash,
+            JSON.stringify(metadata),
+            legacy ? JSON.stringify(legacy) : null,
+          ],
+        );
+        if (user.password_hash) await revokeCredentials(client, ctx.userId);
+        return true;
+      });
+      if (!changed) return { ok: false, error: 'account credentials changed; try again' };
     } catch (error) {
       // The unique index is the real arbiter: two requests can both pass the check
       // above and only one can commit.

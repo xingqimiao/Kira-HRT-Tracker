@@ -106,3 +106,17 @@ test('paging with same-instant records does not silently drop any', async () => 
       `missing: ${missing.join(', ') || '(none)'}`,
   );
 });
+
+test('complete export reads beyond a full page of identical timestamps', async () => {
+  const { AccountService } = await import('../src/accounts.ts');
+  const { RecordService } = await import('../src/records.ts');
+  const { getPool } = await import('../src/db.ts');
+  const account = await registerAccount(base);
+  const ctx = await AccountService.resolveApiContext(account.token);
+  assert.ok(ctx && 'recordKey' in ctx);
+  assert.ok((await RecordService.put(ctx, { id: 'seed', category: 'dose', takenAt: Date.now(), data: {} })).ok);
+  await getPool().query(`INSERT INTO records (user_id,id,taken_at,category,payload_encrypted)
+    SELECT user_id,'copy-' || n,taken_at,category,payload_encrypted FROM records CROSS JOIN generate_series(1,1000) n
+    WHERE user_id = $1 AND id = 'seed'`, [ctx.userId]);
+  assert.equal((await RecordService.all(ctx, 'dose')).records.length, 1001);
+});
