@@ -191,17 +191,14 @@ export const PushStore = {
    * Record a device token for an account. Re-registering the same token is a no-op.
    *
    * A token identifies one installation, so it belongs to the account that
-   * registered it *last*. The other rows for this token are deleted first: the
-   * logout-side unregister is best-effort (it races the sign-out and fails offline),
-   * and a leftover row meant the previous account's reminders kept arriving here
-   * after a switch — with the previous account's drug name in them.
+   * registered it last, including when two registrations overlap.
    */
   async register(userId: string, token: string, platform = 'android'): Promise<void> {
-    await getPool().query('DELETE FROM device_tokens WHERE token = $1 AND user_id <> $2', [token, userId]);
     await getPool().query(
       `INSERT INTO device_tokens (user_id, token, platform, updated_at)
-       VALUES ($1, $2, $3, now())
-       ON CONFLICT (user_id, token) DO UPDATE SET platform = EXCLUDED.platform, updated_at = now()`,
+       VALUES ($1, $2, $3, clock_timestamp())
+       ON CONFLICT (token) DO UPDATE
+       SET user_id = EXCLUDED.user_id, platform = EXCLUDED.platform, updated_at = clock_timestamp()`,
       [userId, token, platform],
     );
   },
@@ -261,6 +258,7 @@ export const PushStore = {
 export interface ScanResult {
   /** Accounts considered this round. */
   accounts: number;
+  failedAccounts: number;
   /** Dose instances for which a supplementary push was sent. */
   pushed: number;
 }
@@ -276,43 +274,48 @@ let scanning = false;
  */
 export async function scanMissedDoses(nowMs: number = Date.now()): Promise<ScanResult> {
   const { fcm } = getConfig();
-  if (!fcm) return { accounts: 0, pushed: 0 };
-  if (scanning) return { accounts: 0, pushed: 0 };
+  if (!fcm) return { accounts: 0, pushed: 0, failedAccounts: 0 };
+  if (scanning) return { accounts: 0, pushed: 0, failedAccounts: 0 };
   scanning = true;
-  const result: ScanResult = { accounts: 0, pushed: 0 };
+  const result: ScanResult = { accounts: 0, pushed: 0, failedAccounts: 0 };
   try {
     const graceMs = fcm.graceMinutes * 60_000;
     for (const userId of await PushStore.usersWithTokens()) {
-      const tokens = await PushStore.tokensFor(userId);
-      if (tokens.length === 0) continue;
-      const ctx = await AccountService.resolveContextForUser(userId);
-      // A locked account (no server copy of its key) cannot be read, so its plan
-      // cannot be evaluated. Skipping is the only honest option.
-      if (!ctx || 'denied' in ctx) continue;
-      result.accounts += 1;
-      const account = await AccountService.getSettings(ctx);
-      const zones = account.appState?.settings as Record<string, unknown> | undefined;
-      const byZone = new Map<string | null, MissedInstance[]>();
-      const delivered = new Set<string>();
-      for (const { token, platform } of tokens) {
-        const saved = zones?.[pushTimezoneKey(token)];
-        const zone = isTimeZone(saved) ? saved : null;
-        if (!byZone.has(zone)) byZone.set(zone, await missedInstances(ctx, nowMs, graceMs, zone));
-        for (const instance of byZone.get(zone)!) {
-          const claim = JSON.stringify([instance.planId, pushTimezoneKey(token)]);
-          if (!(await PushStore.claimPush(userId, claim, instance.dueAt))) continue;
-          const data: Record<string, string> = {
-            kind: 'dose_overdue', planId: instance.planId, dueAt: String(instance.dueAt), revision: instance.revision,
-            ...(instance.zone ? { zone: instance.zone } : {}),
-          };
-          const outcome = await sendMessage(fcm, token, data, platform).catch((): SendResult => ({ ok: false, unregistered: false }));
-          if (outcome.ok) delivered.add(JSON.stringify([instance.planId, instance.dueAt]));
-          else await PushStore.releasePush(userId, claim, instance.dueAt);
-          if (outcome.unregistered) { await PushStore.unregister(userId, token); break; }
+      try {
+        const tokens = await PushStore.tokensFor(userId);
+        if (tokens.length === 0) continue;
+        const ctx = await AccountService.resolveContextForUser(userId);
+        // A locked account (no server copy of its key) cannot be read, so its plan
+        // cannot be evaluated. Skipping is the only honest option.
+        if (!ctx || 'denied' in ctx) continue;
+        result.accounts += 1;
+        const account = await AccountService.getSettings(ctx);
+        const zones = account.appState?.settings as Record<string, unknown> | undefined;
+        const byZone = new Map<string | null, MissedInstance[]>();
+        const delivered = new Set<string>();
+        for (const { token, platform } of tokens) {
+          const saved = zones?.[pushTimezoneKey(token)];
+          const zone = isTimeZone(saved) ? saved : null;
+          if (!byZone.has(zone)) byZone.set(zone, await missedInstances(ctx, nowMs, graceMs, zone));
+          for (const instance of byZone.get(zone)!) {
+            const claim = JSON.stringify([instance.planId, pushTimezoneKey(token)]);
+            if (!(await PushStore.claimPush(userId, claim, instance.dueAt))) continue;
+            const data: Record<string, string> = {
+              kind: 'dose_overdue', planId: instance.planId, dueAt: String(instance.dueAt), revision: instance.revision,
+              ...(instance.zone ? { zone: instance.zone } : {}),
+            };
+            const outcome = await sendMessage(fcm, token, data, platform).catch((): SendResult => ({ ok: false, unregistered: false }));
+            if (outcome.ok) delivered.add(JSON.stringify([instance.planId, instance.dueAt]));
+            else await PushStore.releasePush(userId, claim, instance.dueAt);
+            if (outcome.unregistered) { await PushStore.unregister(userId, token); break; }
+          }
         }
+        result.pushed += delivered.size;
+      } catch {
+        result.failedAccounts++;
       }
-      result.pushed += delivered.size;
     }
+    if (result.failedAccounts) process.stderr.write(`hrt-server: push scan skipped ${result.failedAccounts} failed account(s)\n`);
     return result;
   } finally {
     scanning = false;

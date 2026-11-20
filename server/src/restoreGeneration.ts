@@ -39,12 +39,13 @@ export class RestoreUnsupportedRecordError extends Error {
 
 /** Must run inside the same transaction as the guarded account mutation. */
 export async function lockRestoreGeneration(client: PoolClient, ctx: AuthContext): Promise<void> {
-  const { rows } = await client.query<{ restore_generation: string }>(
-    'SELECT restore_generation FROM users WHERE id = $1 FOR UPDATE', [ctx.userId],
+  const { rows } = await client.query<{ restore_generation: string; key_generation: string }>(
+    'SELECT restore_generation, key_generation FROM users WHERE id = $1 FOR UPDATE', [ctx.userId],
   );
   if (!rows.length) throw new Error('account missing');
   // Still locked on the account row, so this write is ordered after any restore even
   // when the caller carries no epoch (see `trustedActor`).
+  if (rows[0].key_generation !== (ctx.keyGeneration ?? '0')) throw new RestoreVersionConflict();
   if (ctx.trustedActor) return;
   const current = rows[0].restore_generation;
   const requested = ctx.restoreGeneration;

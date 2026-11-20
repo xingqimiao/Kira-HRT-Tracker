@@ -194,11 +194,11 @@ export const settings = {
          body_weight_kg         = COALESCE(EXCLUDED.body_weight_kg, s.body_weight_kg),
          body_weight_updated_at = CASE WHEN EXCLUDED.body_weight_kg IS NOT NULL
                                        THEN now() ELSE s.body_weight_updated_at END,
-         hrt_mode               = COALESCE(EXCLUDED.hrt_mode, s.hrt_mode),
-         calibration_method     = COALESCE(EXCLUDED.calibration_method, s.calibration_method),
-         calibration_history    = COALESCE(EXCLUDED.calibration_history, s.calibration_history),
-         pk_params              = COALESCE(EXCLUDED.pk_params, s.pk_params),
-         pk_params_updated_at   = CASE WHEN EXCLUDED.pk_params IS NOT NULL
+         hrt_mode               = COALESCE($3, s.hrt_mode),
+         calibration_method     = COALESCE($4, s.calibration_method),
+         calibration_history    = COALESCE($5, s.calibration_history),
+         pk_params              = CASE WHEN $9 THEN EXCLUDED.pk_params ELSE s.pk_params END,
+         pk_params_updated_at   = CASE WHEN $9
                                        THEN now() ELSE s.pk_params_updated_at END,
          timezone               = COALESCE(EXCLUDED.timezone, s.timezone),
          app_state              = COALESCE(EXCLUDED.app_state, s.app_state),
@@ -214,6 +214,7 @@ export const settings = {
         patch.pkParams ? JSON.stringify(patch.pkParams) : null,
         patch.timezone ?? null,
         patch.appState ? JSON.stringify(patch.appState) : null,
+        patch.pkParams !== undefined,
       ],
     );
     const row = rows[0];

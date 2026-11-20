@@ -282,37 +282,6 @@ async function currentMode(ctx: AuthContext): Promise<Mode> {
     return userSettings.hrtMode === 'transmasc' ? 'transmasc' : 'transfem';
 }
 
-/**
- * Record a deletion as a tombstone, so the app's merge does not resurrect the row.
- *
- * The app unions records by id, which makes absence ambiguous — "the other side
- * added this" and "this side deleted it" look identical. A tombstone is what tells
- * them apart, and without one the next sync from any device still holding the record
- * would put it back. Best effort: the record itself is already gone, and failing to
- * write a tombstone must not make a completed delete look like a failed one.
- */
-async function noteDeletion(
-    ctx: AuthContext,
-    kind: RecordKind,
-    mode: Mode,
-    id: string,
-): Promise<void> {
-    const mapKey = `del:${mode}:${KIND_SPEC[kind].deletionKind}`;
-    const existing = await RecordService.get(ctx, mapKey).catch(() => null);
-    const map = existing && typeof existing.data === 'object' && existing.data !== null
-        ? { ...(existing.data as Record<string, number>) }
-        : {};
-    map[id] = Date.now();
-    await RecordService.put(ctx, {
-        id: mapKey,
-        takenAt: Math.max(...Object.values(map)),
-        // `setting`, matching `payloadToRecords`: a tombstone map is bookkeeping, not a
-        // clinical record, and filing it as a dose would put it on someone's timeline.
-        category: 'setting',
-        data: map,
-    }).catch(() => undefined);
-}
-
 // ---------------------------------------------------------------------------
 // MedicationService / LabService
 // ---------------------------------------------------------------------------
@@ -402,13 +371,9 @@ export const MedicationService = {
     async remove(ctx: AuthContext, id: string): Promise<boolean> {
         const found = await lookup(ctx, 'dose', id, await currentMode(ctx));
         if (!found) return false;
-        const removed = await RecordService.remove(ctx, found.record.id);
-        // The tombstone is keyed by the app-level id, never by the record address: the
-        // app's map holds the id it minted, so a tombstone written under
-        // `dose:transfem:<id>` would never match and the record would come back on the
-        // next sync from a device that still holds it.
-        if (removed) await noteDeletion(ctx, 'dose', found.mode, innerIdOfKey(found.record.id));
-        return removed;
+        return RecordService.remove(ctx, found.record.id, {
+            mode: found.mode, kind: KIND_SPEC['dose'].deletionKind, appId: innerIdOfKey(found.record.id),
+        });
     },
 };
 
@@ -447,9 +412,9 @@ export const LabService = {
     async remove(ctx: AuthContext, id: string): Promise<boolean> {
         const found = await lookup(ctx, 'lab', id, await currentMode(ctx));
         if (!found) return false;
-        const removed = await RecordService.remove(ctx, found.record.id);
-        if (removed) await noteDeletion(ctx, 'lab', found.mode, innerIdOfKey(found.record.id));
-        return removed;
+        return RecordService.remove(ctx, found.record.id, {
+            mode: found.mode, kind: KIND_SPEC['lab'].deletionKind, appId: innerIdOfKey(found.record.id),
+        });
     },
 };
 
@@ -499,9 +464,9 @@ export const JournalService = {
     async remove(ctx: AuthContext, id: string): Promise<boolean> {
         const found = await lookup(ctx, 'journal', id, await currentMode(ctx));
         if (!found) return false;
-        const removed = await RecordService.remove(ctx, found.record.id);
-        if (removed) await noteDeletion(ctx, 'journal', found.mode, innerIdOfKey(found.record.id));
-        return removed;
+        return RecordService.remove(ctx, found.record.id, {
+            mode: found.mode, kind: KIND_SPEC['journal'].deletionKind, appId: innerIdOfKey(found.record.id),
+        });
     },
 };
 
@@ -550,9 +515,9 @@ export const TemplateService = {
     async remove(ctx: AuthContext, id: string): Promise<boolean> {
         const found = await lookup(ctx, 'template', id, await currentMode(ctx));
         if (!found) return false;
-        const removed = await RecordService.remove(ctx, found.record.id);
-        if (removed) await noteDeletion(ctx, 'template', found.mode, innerIdOfKey(found.record.id));
-        return removed;
+        return RecordService.remove(ctx, found.record.id, {
+            mode: found.mode, kind: KIND_SPEC['template'].deletionKind, appId: innerIdOfKey(found.record.id),
+        });
     },
 };
 

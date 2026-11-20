@@ -437,6 +437,7 @@ function toLiveSession(row: SessionRow): LiveSession {
 export async function openSession(
   userId: string,
   opts: { persistent?: boolean } = {},
+  client: Pick<ReturnType<typeof getPool>, 'query'> = getPool(),
 ): Promise<string> {
   const persistent = opts.persistent === true;
   const ttlMs = idleTtlMinutes() * 60 * 1000;
@@ -448,9 +449,9 @@ export async function openSession(
   //
   // `ponytail:` one DELETE per login. Move it to a cron if the table ever grows enough
   // for the scan to show up.
-  await getPool().query(`DELETE FROM sessions WHERE expires_at IS NOT NULL AND expires_at <= now()`);
+  await client.query(`DELETE FROM sessions WHERE expires_at IS NOT NULL AND expires_at <= now()`);
 
-  await getPool().query(
+  await client.query(
     `INSERT INTO sessions (user_id, token_hash, persistent, expires_at)
      VALUES ($1, $2, $3, $4)`,
     [userId, hashToken(token), persistent, persistent ? null : new Date(Date.now() + ttlMs)],

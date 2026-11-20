@@ -326,6 +326,7 @@ ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS provider varchar(32) NOT NULL 
 -- Google has no PKCE, so its rows carry no verifier. X's path still sets one.
 ALTER TABLE oauth_states ALTER COLUMN code_verifier DROP NOT NULL;
 ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS return_uri text;
+ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS link_session_hash text;
 
 -- ---------------------------------------------------------------------------
 -- Health records — encrypted at rest
@@ -623,6 +624,17 @@ CREATE TABLE IF NOT EXISTS device_tokens (
     updated_at  timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, token)
 );
+-- Expire ambiguous registrations; a device re-registers under its current account.
+DO $$
+BEGIN
+  IF to_regclass('idx_device_tokens_token') IS NULL THEN
+    LOCK TABLE device_tokens IN SHARE ROW EXCLUSIVE MODE;
+    DELETE FROM device_tokens WHERE token IN (
+      SELECT token FROM device_tokens GROUP BY token HAVING count(*) > 1
+    );
+    CREATE UNIQUE INDEX idx_device_tokens_token ON device_tokens (token);
+  END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_device_tokens_user ON device_tokens(user_id);
 
 -- One row per dose instance the server has ALREADY pushed a supplementary reminder
@@ -661,6 +673,30 @@ CREATE TABLE IF NOT EXISTS supporters (
     approved_at    timestamptz
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_supporters_tx ON supporters (tx_hash);
+-- Preserve the earliest accepted claim when old hexadecimal spellings collide.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'supporters'::regclass
+                 AND conname = 'supporters_tx_hex_canonical') THEN
+    LOCK TABLE supporters IN SHARE ROW EXCLUSIVE MODE;
+    DELETE FROM supporters WHERE id IN (
+      SELECT id FROM (
+        SELECT id, row_number() OVER (PARTITION BY lower(tx_hash) ORDER BY created_at, id) AS ordinal
+        FROM supporters WHERE tx_hash ~ '^(0x)?[0-9A-Fa-f]{64}$'
+      ) claims WHERE ordinal > 1
+    );
+    UPDATE supporters SET tx_hash = lower(tx_hash)
+     WHERE tx_hash ~ '^(0x)?[0-9A-Fa-f]{64}$' AND tx_hash <> lower(tx_hash);
+    ALTER TABLE supporters ADD CONSTRAINT supporters_tx_hex_canonical CHECK
+      (tx_hash !~ '^(0x)?[0-9A-Fa-f]{64}$' OR tx_hash = lower(tx_hash));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'supporters'::regclass
+                 AND conname = 'supporters_status_v2') THEN
+    ALTER TABLE supporters DROP CONSTRAINT IF EXISTS supporters_status_check;
+    ALTER TABLE supporters ADD CONSTRAINT supporters_status_v2 CHECK
+      (status IN ('pending','approved') OR (source = 'bmc' AND status = 'revoked'));
+  END IF;
+END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_supporters_bmc ON supporters (bmc_payment_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_supporters_afdian ON supporters (afdian_order_no);
 
@@ -690,3 +726,6 @@ CREATE TABLE IF NOT EXISTS deployment_key_guard (
 RESET statement_timeout;
 RESET lock_timeout;
 
+
+-- Reject encrypted writes prepared before a key rotation.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS key_generation bigint NOT NULL DEFAULT 0;

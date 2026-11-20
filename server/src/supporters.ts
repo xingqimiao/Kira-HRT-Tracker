@@ -97,7 +97,8 @@ export function parseDisplayName(raw: unknown): Result<string> {
 
 export function parseTxHash(raw: unknown): Result<string> {
   if (!isSupporterTxHash(raw)) return fail('tx_hash: that is not a transaction hash');
-  return pass((raw as string).trim());
+  const tx = (raw as string).trim();
+  return pass(/^(?:0x)?[0-9a-fA-F]{64}$/.test(tx) ? tx.toLowerCase() : tx);
 }
 
 /**
@@ -293,8 +294,12 @@ export async function acceptBmcSubscription(input: {
  */
 export async function removeBmcRecord(key: string): Promise<boolean> {
   const { rowCount } = await getPool().query(
-    'DELETE FROM supporters WHERE source = $1 AND bmc_payment_id = $2',
-    ['bmc', key],
+    `INSERT INTO supporters (display_name, source, status, bmc_payment_id)
+     VALUES ('', 'bmc', 'revoked', $1)
+     ON CONFLICT (bmc_payment_id) DO UPDATE
+       SET display_name = '', status = 'revoked', approved_at = NULL
+       WHERE supporters.status <> 'revoked'`,
+    [key],
   );
   return (rowCount ?? 0) > 0;
 }

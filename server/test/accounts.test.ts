@@ -770,3 +770,21 @@ test('the per-IP limiter refuses a burst of sign-in attempts', async () => {
     });
   }
 });
+
+test('revoking the initiating session cancels an unfinished provider link', async () => {
+  const account = await createAccount();
+  const x = stubX({ userId: 'revoked-session-link', handle: 'revoked' });
+  try {
+    const start = await call(base, '/auth/x/start?purpose=link', auth(account.token));
+    assert.equal(start.status, 200);
+    const state = new URL(start.body.authorize_url).searchParams.get('state');
+    await closeUserSessions(await userIdFor(account.username));
+    const callback = await fetch(base + '/auth/x/callback?code=stub&state=' + state, { redirect: 'manual' });
+    assert.equal(callback.status, 302);
+    const { getPool } = await import('../src/db.ts');
+    const links = await getPool().query('SELECT id FROM oauth_accounts WHERE provider_user_id = $1', ['revoked-session-link']);
+    assert.equal(links.rowCount, 0);
+  } finally {
+    x.restore();
+  }
+});
