@@ -1,11 +1,11 @@
 {
-  "version": "2.5.6",
-  "versionCode": 2005006,
-  "apk": "https://hrt.kiramyao.com/android/KiraHRT-2.5.6-release.apk",
-  "sha256": "66B285A7643EB54CD7969935CFB5EFF7C4D5C4BA7B9290269475F8527FC92366",
+  "version": "2.5.7",
+  "versionCode": 2005007,
+  "apk": "https://hrt.kiramyao.com/android/KiraHRT-2.5.7-release.apk",
+  "sha256": "43713FC1DA3B05CAAE66DF7D1704ACCD0A41072D776940146C08753C4D05C684",
   "notes": [
-    "使用设备时区，跨时区时避免短时间内出现重复的用药提醒。",
-    "支持设置用药周期起始日、单次改期及顺延周期。",
-    "放大 Android 状态栏的用药提醒图标，并更新应用依赖。"
+    "修复剂量输入时意外露出快捷模板弹层的问题。",
+    "复查间隔可以先清空再输入。",
+    "时间选择器的文字选中高亮改用应用主题色。"
   ]
 }
