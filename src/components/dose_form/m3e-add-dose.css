@@ -536,6 +536,11 @@ input[type=number] {
     font-variant-numeric: tabular-nums;
     transition: transform .28s var(--spring-settled), box-shadow .2s ease;
 }
+.dose-panel .tp-date-input::selection,
+.dose-panel .tp-input::selection {
+    background-color: var(--pri);
+    color: var(--onpri);
+}
 .dose-panel .tp-date-input:focus { transform: scale(1.04); }
 .dose-panel .tp-date-input:focus,
 .dose-panel .tp-date-input:focus-visible {

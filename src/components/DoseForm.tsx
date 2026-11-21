@@ -1476,10 +1476,17 @@ const DoseForm: React.FC<DoseFormProps> = ({
                                                 className="dh-input"
                                                 type="text"
                                                 inputMode="decimal"
+                                                enterKeyHint="done"
                                                 value={doseText}
                                                 aria-label={t('m3e.field.dose')}
                                                 onChange={e => handleDoseText(e.target.value)}
                                                 onBlur={handleDoseBlur}
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                                                        e.preventDefault();
+                                                        e.currentTarget.blur();
+                                                    }
+                                                }}
                                             />
                                             <span className="dh-unit" id="doseUnit">{currentUnit()}</span>
                                         </div>
@@ -1608,7 +1615,7 @@ const DoseForm: React.FC<DoseFormProps> = ({
 
             {/* Save-as-template sheet */}
             <div className={`scrim${showTplSheet ? ' open' : ''}`} onClick={closeTplSheet} />
-            <div className={`sheet${showTplSheet ? ' open' : ''}`} id="tplSheet" role="dialog" aria-modal="true" aria-label={t('m3e.tpl.sheet_title')}>
+            <div className={`sheet${showTplSheet ? ' open' : ''}`} id="tplSheet" inert={!showTplSheet} role="dialog" aria-modal="true" aria-label={t('m3e.tpl.sheet_title')}>
                 <div className="sh-handle" />
                 <div className="sh-title">{tplSheetMode === 'edit' ? t('m3e.tpl.edit_title') : t('m3e.tpl.sheet_title')}</div>
                 <div className="sh-sub">{tplSheetMode === 'edit' ? t('m3e.tpl.edit_desc') : t('m3e.tpl.save_desc')}</div>

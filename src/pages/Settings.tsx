@@ -166,6 +166,41 @@ const HOURS_PER_RECHECK_MONTH = 30.44 * 24;
 let _savedCat: SettingsCat = 'general';
 let _savedMobileView: MobileView = 'list';
 
+function RecheckIntervalRow({ label, value, onCommit }: {
+    label: string;
+    value: number;
+    onCommit: (months: number) => void;
+}) {
+    const [draft, setDraft] = useState<string | null>(null);
+
+    return (
+        <label className="li" style={{ cursor: 'default' }}>
+            <div className="t"><b>{label}</b></div>
+            <input
+                type="number"
+                min={1}
+                max={120}
+                inputMode="numeric"
+                enterKeyHint="done"
+                value={draft ?? String(value)}
+                onChange={e => setDraft(e.currentTarget.value)}
+                onBlur={e => {
+                    const months = e.currentTarget.valueAsNumber;
+                    setDraft(null);
+                    if (Number.isFinite(months) && months !== value) onCommit(months);
+                }}
+                onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        e.currentTarget.blur();
+                    }
+                }}
+                className="num-pill"
+            />
+        </label>
+    );
+}
+
 /**
  * Settings, as an M3 Expressive master–detail page. AGENTS.md §2.4.
  *
@@ -717,22 +752,12 @@ const Settings: React.FC<SettingsProps> = ({
         (Object.keys(DEFAULT_RECHECK_INTERVALS) as (keyof RecheckIntervals)[])
             .some(key => intervals[key] !== DEFAULT_RECHECK_INTERVALS[key]);
 
-    /** One interval as a label plus a bounded numeric pill. */
-    const intervalRow = (label: string, value: number, onChange: (n: number) => void) => (
-        <label className="li" style={{ cursor: 'default' }}>
-            <div className="t">
-                <b>{label}</b>
-            </div>
-            <input
-                type="number"
-                min={1}
-                max={120}
-                inputMode="numeric"
-                value={value}
-                onChange={(e) => onChange(Number(e.target.value))}
-                className="num-pill"
-            />
-        </label>
+    const intervalRow = (label: string, field: keyof RecheckIntervals) => (
+        <RecheckIntervalRow
+            label={label}
+            value={recheckIntervals[field]}
+            onCommit={months => setRecheckIntervals({ ...recheckIntervals, [field]: months })}
+        />
     );
 
     const intervalGroup = (title: string, rows: React.ReactNode): React.ReactNode => (
@@ -810,20 +835,20 @@ const Settings: React.FC<SettingsProps> = ({
 
                 {intervalGroup(t(isFtm ? 'settings.reminders.liver_ftm' : 'settings.reminders.liver'), (
                     <>
-                        {intervalRow(t('settings.reminders.phase'), recheckIntervals.liverFirstPhaseMonths, v => setRecheckIntervals({ ...recheckIntervals, liverFirstPhaseMonths: v }))}
-                        {intervalRow(t('settings.reminders.early'), recheckIntervals.liverEarlyMonths, v => setRecheckIntervals({ ...recheckIntervals, liverEarlyMonths: v }))}
-                        {intervalRow(t('settings.reminders.after'), recheckIntervals.liverMonths, v => setRecheckIntervals({ ...recheckIntervals, liverMonths: v }))}
+                        {intervalRow(t('settings.reminders.phase'), 'liverFirstPhaseMonths')}
+                        {intervalRow(t('settings.reminders.early'), 'liverEarlyMonths')}
+                        {intervalRow(t('settings.reminders.after'), 'liverMonths')}
                     </>
                 ))}
                 {!isFtm && intervalGroup(t('settings.reminders.potassium'), (
                     <>
-                        {intervalRow(t('settings.reminders.phase'), recheckIntervals.potassiumFirstPhaseMonths, v => setRecheckIntervals({ ...recheckIntervals, potassiumFirstPhaseMonths: v }))}
-                        {intervalRow(t('settings.reminders.early'), recheckIntervals.potassiumEarlyMonths, v => setRecheckIntervals({ ...recheckIntervals, potassiumEarlyMonths: v }))}
-                        {intervalRow(t('settings.reminders.after'), recheckIntervals.potassiumMonths, v => setRecheckIntervals({ ...recheckIntervals, potassiumMonths: v }))}
+                        {intervalRow(t('settings.reminders.phase'), 'potassiumFirstPhaseMonths')}
+                        {intervalRow(t('settings.reminders.early'), 'potassiumEarlyMonths')}
+                        {intervalRow(t('settings.reminders.after'), 'potassiumMonths')}
                     </>
                 ))}
                 {!isFtm && intervalGroup(t('settings.reminders.estradiol'), (
-                    intervalRow(t('settings.reminders.interval'), recheckIntervals.estradiolMonths, v => setRecheckIntervals({ ...recheckIntervals, estradiolMonths: v }))
+                    intervalRow(t('settings.reminders.interval'), 'estradiolMonths')
                 ))}
 
                 {/* Reset, as a row in its own list so it reads as one of this
