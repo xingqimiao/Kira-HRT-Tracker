@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@alerix/m3-loading-indicator": "^1.0.5",
-    "@choochmeque/tauri-plugin-notifications-api": "^0.5.0-rc.14",
+    "@choochmeque/tauri-plugin-notifications-api": "^0.5.0-rc.16",
     "@tauri-apps/plugin-opener": "^2.7.3",
     "firebase": "^13.3.0",
     "hash-wasm": "^4.13.0",
