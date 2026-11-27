@@ -614,6 +614,58 @@ function googleLoginAvailable(): boolean {
   return isGoogleConfigured(getConfig().google);
 }
 
+const VERSION_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+let versionCache: { expiresAt: number; latest: string | null; releaseUrl: string | null } | null = null;
+
+function compareSemver(a: string, b: string): number {
+  const parse = (v: string) => v.trim().replace(/^v/i, '').split('-')[0].split('.').map((n) => Number.parseInt(n, 10) || 0);
+  const pa = parse(a);
+  const pb = parse(b);
+  for (let i = 0; i < 3; i += 1) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+async function getLatestSelfHostRelease(): Promise<{ latest: string | null; releaseUrl: string | null }> {
+  const now = Date.now();
+  if (versionCache && now < versionCache.expiresAt) {
+    return { latest: versionCache.latest, releaseUrl: versionCache.releaseUrl };
+  }
+  const repo = process.env.HRT_UPDATE_REPO || 'xingqimiao/Kira-HRT-Tracker';
+  let latest: string | null = null;
+  let releaseUrl: string | null = null;
+  try {
+    const response = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=10`, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'kira-hrt-server' },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (response.ok) {
+      const releases = await response.json();
+      if (Array.isArray(releases)) {
+        const pick = (pattern: RegExp) => {
+          for (const release of releases) {
+            if (!release || release.draft) continue;
+            const match = pattern.exec(String(release.tag_name ?? ''));
+            if (!match) continue;
+            if (!latest || compareSemver(match[1], latest) > 0) {
+              latest = match[1];
+              releaseUrl = typeof release.html_url === 'string' ? release.html_url : null;
+            }
+          }
+        };
+        pick(/^self-host-v(\d+\.\d+\.\d+)$/);
+        if (!latest) pick(/^v(\d+\.\d+\.\d+)$/);
+      }
+    }
+  } catch {
+    // Offline or GitHub unavailable — leave latest null without failing.
+  }
+  versionCache = { expiresAt: now + VERSION_CACHE_TTL_MS, latest, releaseUrl };
+  return { latest, releaseUrl };
+}
+
 export function createRequestHandler() {
   return async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Live-web-session credential gate (hoisted): identity and destructive operations
@@ -729,6 +781,24 @@ export function createRequestHandler() {
           x_login: AccountService.xLoginAvailable(),
           google_login: googleLoginAvailable(),
         });
+        return;
+      }
+
+      // --- Self-host version & update status -------------------------------
+      if (path === '/version') {
+        if (req.method !== 'GET') {
+          fail(res, 405, 'method not allowed; GET on /version');
+          return;
+        }
+        probeHeaders(req, res);
+        const current = process.env.APP_VERSION?.trim() || null;
+        if (process.env.SELF_HOST_UPDATE_CHECK !== '1') {
+          send(res, 200, { version: current, latest: null, updateAvailable: false, releaseUrl: null });
+          return;
+        }
+        const { latest, releaseUrl } = await getLatestSelfHostRelease();
+        const updateAvailable = Boolean(current && latest && compareSemver(latest, current) > 0);
+        send(res, 200, { version: current, latest, updateAvailable, releaseUrl });
         return;
       }
 

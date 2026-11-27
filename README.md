@@ -271,7 +271,7 @@ Web 应用、Android 应用、MCP 服务端共用一套「应用内核」，云�
 |---|---|
 | 前端 | React 19 · TypeScript 7 · Vite 8 · Tailwind CSS（Material Design 3 令牌与组件） |
 | 原生 | Tauri 2.12（`src-tauri/`）· Kotlin 桥（应用锁、导出、通知、返回手势、安全区） |
-| 后端 | Node.js · PostgreSQL · 原生 `pg`（无 ORM） |
+| 后端 | Node.js · PostgreSQL 19 · 原生 `pg`（无 ORM） |
 | 协议 | REST + [MCP](https://modelcontextprotocol.io)（Streamable HTTP） |
 | 加密 | 逐帐户 DEK；口令 KEK + OCI KMS 主密钥（HSM）双重包裹 |
 | PK 引擎 | 内置引擎：`logic.ts` + `src/pk/kernels.ts`（参数取自公开文献）· Transmtf 引擎：`src/pk/`（懒加载） |
@@ -328,11 +328,11 @@ node_modules/.bin/tauri android build --apk --target aarch64 \
 - **[局域网 / NAS 部署](deploy/self-host/LAN.md)**：固定 IP → Windows/macOS/NAS 准备 → 安装 → 每台设备信任本地证书。
 - [备份、升级、恢复与故障处理](deploy/self-host/MAINTENANCE.md)：安装完成后使用。
 
-[下载 2.5.6 部署包](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.5.6/kira-hrt-self-host-2.5.6.tar.gz)。同一个包包含中英文的两条安装路线及维护文档，具体命令在各自教程中。[部署总入口](deploy/self-host/README.md) 说明如何选择场景。
+[下载 2.5.8 部署包](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.5.8/kira-hrt-self-host-2.5.8.tar.gz)。同一个包包含中英文的两条安装路线及维护文档，具体命令在各自教程中。[部署总入口](deploy/self-host/README.md) 说明如何选择场景。
 
-GitHub 两个 Packages 是网页及 HTTPS 的 `kira-hrt-web` 和后端 `kira-hrt-api`，安装时连同 PostgreSQL 自动下载，不用二选一。已有实例按[维护文档](deploy/self-host/MAINTENANCE.md)的升级命令切到 2.5.6 即可，不需要重新初始化；旧版本部署包仍保留。
+GitHub 两个 Packages 是网页及 HTTPS 的 `kira-hrt-web` 和后端 `kira-hrt-api`，安装时连同 PostgreSQL 自动下载，不用二选一。已有实例按[维护文档](deploy/self-host/MAINTENANCE.md)的 `check-update` / `update` 或升级命令切到 2.5.8 即可，不需要重新初始化；旧版本部署包仍保留。
 
-默认关闭 OAuth、验证码、FCM 和官网更新入口。官网 Android APK 仍连接官网，自部署手机端使用 Web/PWA。官网迁移通过导出、导入，不能直接复制 OCI 数据库后切换密钥提供方。主密钥和数据库都需要备份，密钥副本与数据库副本分开保管。
+默认关闭 OAuth、验证码、FCM，仅启用自部署版本更新检测与提醒（可通过 `HRT_UPDATE_CHECK=0` 或 `SELF_HOST_UPDATE_CHECK=0` 关闭）。官网 Android APK 仍连接官网，自部署手机端使用 Web/PWA。官网迁移通过导出、导入，不能直接复制 OCI 数据库后切换密钥提供方。主密钥和数据库都需要备份，密钥副本与数据库副本分开保管。
 
 [验证记录](deploy/self-host/VERIFICATION.md) 说明验收范围；OCI/systemd 定制部署维护者可参考 [旧部署手册](server/DEPLOY.md)。
 

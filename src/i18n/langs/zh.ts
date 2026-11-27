@@ -368,6 +368,7 @@ const PACK: LangPack = {
     "timeline.delete_confirm": "确定删除这条记录吗？",
     "timeline.select": "选择",
     "timeline.select_all": "全选",
+    "timeline.backup_warning": "当前记录仅保存于本机，若设备已 Root 数据可能面临丢失风险！",
     "timeline.batch_delete_confirm": "删除选中的 {n} 条记录？此操作无法撤销。",
     "timeline.batch": "批量添加",
     "timeline.batch_desc": "按固定间隔重复添加此剂量",
@@ -487,7 +488,7 @@ const PACK: LangPack = {
     "error.body": "应用遇到了预料之外的错误，重新载入页面试试。",
     "error.reload": "重新载入",
 
-    "boot.key_lost": "本机的记录密钥已无法使用（通常是换机或恢复备份后发生的），应用已改用新密钥启动。本机原有的记录无法再解开，但它们从未离开过旧设备。登录账号后，云端记录会自动同步回来。",
+    "boot.key_lost": "本机的记录密钥已无法使用（常见于换机、恢复备份，或已 Root 设备的 Keystore/代理模块变动），应用已改用新密钥启动。本机原有的记录无法再解开，但它们从未离开过旧设备。登录账号后，云端记录会自动同步回来。",
     "patch.rate_placeholder": "例如 50、100",
     "unit.min_short": "分钟",
     "btn.confirm": "确认",

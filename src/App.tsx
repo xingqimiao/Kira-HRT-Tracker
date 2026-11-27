@@ -1172,6 +1172,7 @@ const AppContent = () => {
                             onDeleteTemplate={deleteTemplate}
                             groupedEvents={groupedEvents}
                             activeEngine={engineInUse}
+                            isSignedIn={Boolean(coreSession.user)}
                         />
                     )}
 

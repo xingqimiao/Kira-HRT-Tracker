@@ -895,8 +895,10 @@ export const useAppData = (
 
     const addEvent = (e: DoseEvent) => {
         forgetDeletions('events', [e.id]);
-        const next = { ...stampTimed(e), loggedAtUtcMs: Date.now() };
+        const now = Date.now();
+        const next = { ...stampTimed(e), loggedAtUtcMs: now };
         setEvents(prev => [...prev, next]);
+        setCurrentTime(new Date(now));
     };
     const addEvents = (list: DoseEvent[]) => {
         if (!list.length) return;
@@ -904,11 +906,13 @@ export const useAppData = (
         const now = Date.now();
         const next = list.map(event => ({ ...stampTimed(event), loggedAtUtcMs: now }));
         setEvents(prev => [...prev, ...next]);
+        setCurrentTime(new Date(now));
     };
     const updateEvent = (e: DoseEvent) => {
         const previous = events.find(item => item.id === e.id);
         const next = stampTimed({ ...e, medPlanId: previous?.medPlanId ?? e.medPlanId, loggedAtUtcMs: previous?.loggedAtUtcMs ?? e.loggedAtUtcMs }, previous);
         setEvents(prev => prev.map(p => p.id === e.id ? next : p));
+        setCurrentTime(new Date());
     };
     const deleteEvent = (id: string) => {
         recordDeletions('events', [id]);

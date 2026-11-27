@@ -42,6 +42,7 @@ interface HrtLockBridge {
     authenticate(callbackId: string, title: string, negative: string): void;
     disable(callbackId: string, title: string, negative: string): void;
     confirmDisabled(): void;
+    resetRecordKeyAlias?(): void;
     lockNow(): void;
     setSecureScreen(enabled: boolean): void;
     beginExternalFlow(): void;
@@ -176,6 +177,10 @@ export const disableLock = (title: string, negative: string): Promise<LockResult
 };
 
 export const confirmLockDisabled = (): void => lockBridge()?.confirmDisabled();
+
+export const resetRecordKeyAlias = (): void => {
+    lockBridge()?.resetRecordKeyAlias?.();
+};
 
 /**
  * Last resort on the unlock screen. The user has already confirmed twice; this

@@ -13,8 +13,29 @@
  * the directory first — a half-written cluster from the failed attempt would
  * otherwise fail the retry too.
  */
-import { rmSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { existsSync, rmSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { Server } from 'node:http';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Resolve `pg_ctl.exe` from the Windows embedded-postgres binary package so we can
+ * stop clusters gracefully instead of relying on `taskkill /f /t`.
+ */
+function resolveWindowsPgCtl(): string | undefined {
+  if (process.platform !== 'win32') return undefined;
+  try {
+    const entry = fileURLToPath(import.meta.resolve('@embedded-postgres/windows-x64'));
+    const candidate = join(dirname(entry), '..', 'native', 'bin', 'pg_ctl.exe');
+    return existsSync(candidate) ? candidate : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * How long a single initdb/start may take before it is treated as hung.
@@ -122,7 +143,24 @@ export async function bootPostgres(opts: {
         // Clean up the throwaway directory too, so a full run does not leave a
         // dozen half-gigabyte clusters behind.
         stop: async () => {
-          await instance.stop().catch(() => undefined);
+          const pgCtl = resolveWindowsPgCtl();
+          const child = (instance as { process?: { exitCode: number | null; once: (ev: string, cb: () => void) => void; removeAllListeners: (ev?: string) => void } }).process;
+          if (pgCtl) {
+            await execFileAsync(pgCtl, ['stop', '-D', dir, '-m', 'immediate', '-w', '-t', '10']).catch(() => undefined);
+            // Wait briefly for Node's child handle to observe exit without invoking taskkill via instance.stop().
+            if (child && child.exitCode === null) {
+              await new Promise<void>((resolve) => {
+                const timer = setTimeout(resolve, 2000);
+                child.once('exit', () => {
+                  clearTimeout(timer);
+                  resolve();
+                });
+              });
+            }
+            (instance as { process?: unknown }).process = undefined;
+          } else {
+            await instance.stop().catch(() => undefined);
+          }
           rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
         },
         dir,

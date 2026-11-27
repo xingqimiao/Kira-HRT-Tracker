@@ -25,7 +25,7 @@ const ALLOWED = new Map([
     ['src/contexts/HRTModeContext.tsx', 'boot: hrt-mode for the splash vial'],
     ['src/contexts/LanguageContext.tsx', 'boot: hrt-lang before the packs load'],
     ['src/components/ErrorBoundary.tsx', 'boot: hrt-lang to render a crash in the right language'],
-    ['src/components/BootFailureScreen.tsx', 'boot: hrt-lang for a mount() that never reached React'],
+    ['src/components/BootFailureScreen.tsx', 'boot: hrt-lang and two-step reset clear() when mount() never reached React'],
     ['src/components/AppUnlockScreen.tsx', 'reset: one clear() when the user wipes the device'],
     ['src/pages/Onboarding.tsx', 'enumeration only: key list to detect existing data'],
     ['index.tsx', 'boot: hrt-mode before React exists'],
@@ -65,7 +65,7 @@ function inspect(path) {
         const at = `${rel}:${index + 1}`;
         if (!CALL.test(line)) return;
 
-        if (/localStorage\.clear\(/.test(line) && rel !== 'src/components/AppUnlockScreen.tsx') {
+        if (/localStorage\.clear\(/.test(line) && rel !== 'src/components/AppUnlockScreen.tsx' && rel !== 'src/components/BootFailureScreen.tsx') {
             violations.push(`${at}: clear() outside the reset screen`);
         }
         if (/localStorage\.(length|key\()/.test(line) && !ENUMERATION.has(rel)) {

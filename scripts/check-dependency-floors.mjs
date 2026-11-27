@@ -30,21 +30,21 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  */
 const FLOORS = {
   'package-lock.json': {
-    vite: ['8.3.5', 'dev server and the production build; recurring advisory target'],
+    vite: ['8.4.0', 'dev server and the production build; recurring advisory target'],
     'vite-plugin-pwa': ['2.0.0', 'pulls the workbox tree the service worker ships from'],
     'workbox-build': ['7.4.1', 'transitive serialize-javascript advisory was fixed here'],
     'serialize-javascript': ['7.1.3', 'the advisory itself; workbox resolves this copy (advisory fixed in 7.1.3)'],
     sharp: ['0.35.5', 'native image decoding of provider avatars and OCR assets'],
     tailwindcss: ['4.3.4', 'postcss plugin runs over every stylesheet'],
-    '@tauri-apps/cli': ['2.12.4', 'builds the Android shell'],
+    '@tauri-apps/cli': ['2.12.6', 'builds the Android shell'],
   },
   'server/package-lock.json': {
     pg: ['8.23.1', 'the only database client; drives every query'],
     express: ['5.3.0', 'HTTP server for the API'],
     'body-parser': ['2.4.0', 'compressed request decoder crash fixed in GHSA-27r3-jxmh-p828'],
     esbuild: ['0.28.2', 'bundles the shipped server'],
-    'oci-common': ['2.144.0', 'OCI SDK shared layer, including the KMS calls'],
-    'oci-keymanagement': ['2.144.0', 'KMS client that unwraps account keys'],
+    'oci-common': ['2.148.0', 'OCI SDK shared layer, including the KMS calls'],
+    'oci-keymanagement': ['2.148.0', 'KMS client that unwraps account keys'],
     '@modelcontextprotocol/sdk': ['1.32.2', 'MCP adapter transport'],
     // Both are the SDK's transitive HTTP layer, pinned by `overrides` in
     // `server/package.json`. The floors are what keep a later install from

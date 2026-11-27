@@ -17,6 +17,17 @@ backup() {
   dc start api web
   trap - EXIT HUP INT TERM
 }
+do_upgrade() {
+  version="$1"
+  tool validate-version "$version"
+  # Validate before stopping anything; pull the selected release before changing configuration.
+  HRT_VERSION="$version" dc config --quiet
+  HRT_VERSION="$version" dc pull
+  backup
+  tool version "$version"
+  dc up -d --wait --wait-timeout 180
+  echo "Upgrade healthy: $version"
+}
 command="${1:-help}"
 case "$command" in
   install)
@@ -33,8 +44,8 @@ case "$command" in
   init) tool init "${2:?Supply https://domain or https://fixed-IP}" ;;
   start) dc up -d --wait --wait-timeout 180 ;;
   stop) dc stop ;;
-  status) dc ps --all ;;
-  check) dc up -d --wait --wait-timeout 180; dc exec -T api node -e "fetch('http://127.0.0.1:8788/health').then(async r=>{if(!r.ok)process.exit(1);console.log(await r.text())}).catch(()=>process.exit(1))" ;;
+  status) dc ps --all; tool check-update --quiet || true ;;
+  check) dc up -d --wait --wait-timeout 180; dc exec -T api node -e "fetch('http://127.0.0.1:8788/health').then(async r=>{if(!r.ok)process.exit(1);console.log(await r.text())}).catch(()=>process.exit(1))"; tool check-update --quiet || true ;;
   logs) dc logs --tail 100 -f ;;
   cert) tool cert ;;
   backup) backup ;;
@@ -51,18 +62,21 @@ case "$command" in
     dc exec -T db rm /tmp/hrt-restore.dump
     dc up -d --wait --wait-timeout 180
     ;;
+  check-update) tool check-update ;;
+  update)
+    latest="$(tool latest-version)"
+    current="$(sed -n 's/^HRT_VERSION=//p' .env 2>/dev/null | head -n 1 | tr -d '[:space:]')"
+    if [ "$current" = "$latest" ]; then
+      echo "Already up to date: $latest"
+    else
+      do_upgrade "$latest"
+    fi
+    ;;
   upgrade)
     version="${2:?Supply an explicit version}"
-    tool validate-version "$version"
-    # Validate before stopping anything; pull the selected release before changing configuration.
-    HRT_VERSION="$version" dc config --quiet
-    HRT_VERSION="$version" dc pull
-    backup
-    tool version "$version"
-    dc up -d --wait --wait-timeout 180
-    echo "Upgrade healthy: $version"
+    do_upgrade "$version"
     ;;
   build) docker compose -f compose.yaml -f compose.build.yaml build ;;
-  help) echo 'First installation: sh hrt.sh install https://YOUR-DOMAIN-OR-IP'; echo 'Maintenance: sh hrt.sh start | stop | status | check | logs | cert | backup | restore NAME | upgrade VERSION'; echo 'Advanced: sh hrt.sh init URL | build' ;;
+  help) echo 'First installation: sh hrt.sh install https://YOUR-DOMAIN-OR-IP'; echo 'Maintenance: sh hrt.sh start | stop | status | check | logs | cert | backup | restore NAME | check-update | update | upgrade VERSION'; echo 'Advanced: sh hrt.sh init URL | build' ;;
   *) echo 'Unknown command. Run: sh hrt.sh help' >&2; exit 1 ;;
 esac

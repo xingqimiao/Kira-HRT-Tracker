@@ -368,6 +368,7 @@ const PACK: LangPack = {
     "timeline.delete_confirm": "Are you sure you want to delete this record?",
     "timeline.select": "Select",
     "timeline.select_all": "Select all",
+    "timeline.backup_warning": "Records are stored on this device only. If your device is rooted, data may be at risk of loss!",
     "timeline.batch_delete_confirm": "Delete {n} selected records? This cannot be undone.",
     "timeline.batch": "Batch add",
     "timeline.batch_desc": "Repeat this dose at a fixed interval",
@@ -487,7 +488,7 @@ const PACK: LangPack = {
     "error.body": "The app hit an unexpected error. Try reloading the page.",
     "error.reload": "Reload",
 
-    "boot.key_lost": "This device's record key can no longer be used — usually after moving to a new phone or restoring a backup — so the app started with a new one. The records that were already on this device cannot be decrypted any more, but they never left the old device. Sign in and your records will sync back from the cloud.",
+    "boot.key_lost": "This device's record key can no longer be used — usually after moving to a new phone, restoring a backup, or a Keystore/root module change on a rooted device — so the app started with a new one. The records that were already on this device cannot be decrypted any more, though they never left the previous device. Sign in to pull your cloud records back.",
     "patch.rate_placeholder": "e.g. 50, 100",
     "unit.min_short": "min",
     "btn.confirm": "Confirm",

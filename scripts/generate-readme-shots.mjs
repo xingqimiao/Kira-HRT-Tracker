@@ -25,9 +25,9 @@ const OUT_DIR = 'docs/screenshots';
 
 /** `public/about/index.html` — `:root[data-theme="dark"]`. */
 const C = {
-    bg: '#141017',
-    surface: '#1f1a23',
-    surfaceHigh: '#2b2430',
+    bg: '#000000',
+    surface: '#0a0a0a',
+    surfaceHigh: '#141414',
     primary: '#ffb1c8',
     primaryContainer: '#7a2c4a',
     onPrimaryContainer: '#ffd9e3',
@@ -130,24 +130,14 @@ function cookie(cx, cy, size, radius, fill, opacity) {
       fill="${fill}" opacity="${opacity}"/>`;
 }
 
-/** A dark stage with a pink glow — the panel a single screenshot sits in. */
+/** A solid black stage — the panel a single screenshot sits in. */
 function stage(width, height) {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-  <defs>
-    <radialGradient id="glow" cx="0.5" cy="0.06" r="0.72">
-      <stop offset="0" stop-color="${C.primary}" stop-opacity="0.20"/>
-      <stop offset="0.55" stop-color="${C.primary}" stop-opacity="0.05"/>
-      <stop offset="1" stop-color="${C.primary}" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
   <rect width="${width}" height="${height}" fill="${C.bg}"/>
-  <rect width="${width}" height="${height}" fill="url(#glow)"/>
-  ${cookie(-width * 0.05, height * 0.9, width * 0.85, width * 0.12, C.primaryContainer, 0.22)}
-  ${cookie(width * 1.03, height * 0.12, width * 0.5, width * 0.07, C.surfaceHigh, 0.55)}
 </svg>`;
 }
 
-/** The gallery card: a rounded stage panel, the phone, and its name. */
+/** The gallery card: a rounded solid black panel, the phone, and its name. */
 async function card(buf, label, width, height) {
     const screenW = Math.round(width * 0.66);
     const frame = await phone(buf, screenW);
@@ -160,16 +150,9 @@ async function card(buf, label, width, height) {
     const labelY = panelY + panelH - Math.round(height * 0.05);
 
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-  <defs>
-    <radialGradient id="glow" cx="0.5" cy="0.1" r="0.8">
-      <stop offset="0" stop-color="${C.primary}" stop-opacity="0.16"/>
-      <stop offset="1" stop-color="${C.primary}" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
   <rect width="${width}" height="${height}" fill="${C.bg}"/>
-  <rect x="${panelX}" y="${panelY}" width="${panelW}" height="${panelH}" rx="${Math.round(width * 0.115)}" fill="${C.surface}"/>
-  <rect x="${panelX}" y="${panelY}" width="${panelW}" height="${panelH}" rx="${Math.round(width * 0.115)}" fill="url(#glow)"/>
-  <rect x="${panelX + 1}" y="${panelY + 1}" width="${panelW - 2}" height="${panelH - 2}" rx="${Math.round(width * 0.115) - 1}" fill="none" stroke="${C.primary}" stroke-opacity="0.12" stroke-width="2"/>
+  <rect x="${panelX}" y="${panelY}" width="${panelW}" height="${panelH}" rx="${Math.round(width * 0.115)}" fill="${C.bg}"/>
+  <rect x="${panelX + 1}" y="${panelY + 1}" width="${panelW - 2}" height="${panelH - 2}" rx="${Math.round(width * 0.115) - 1}" fill="none" stroke="#222222" stroke-width="2"/>
   <text x="${width / 2}" y="${labelY}" text-anchor="middle" font-family="${REALM}" font-size="${Math.round(width * 0.052)}" font-weight="800" letter-spacing="-0.5" fill="${C.onSurface}">${label}</text>
 </svg>`;
 
@@ -194,17 +177,7 @@ async function hero(frames, width, height) {
     const baseY = Math.round((height - phoneH) / 2);
 
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-  <defs>
-    <radialGradient id="glow" cx="0.5" cy="0.12" r="0.75">
-      <stop offset="0" stop-color="${C.primary}" stop-opacity="0.22"/>
-      <stop offset="0.5" stop-color="${C.primary}" stop-opacity="0.06"/>
-      <stop offset="1" stop-color="${C.primary}" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
   <rect width="${width}" height="${height}" fill="${C.bg}"/>
-  <rect width="${width}" height="${height}" fill="url(#glow)"/>
-  ${cookie(-width * 0.06, height * 0.88, height * 0.98, height * 0.13, C.primaryContainer, 0.20)}
-  ${cookie(width * 1.04, height * 0.16, height * 0.62, height * 0.09, C.surfaceHigh, 0.5)}
 </svg>`;
 
     const layers = frames.map((frame, i) => ({

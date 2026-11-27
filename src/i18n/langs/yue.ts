@@ -93,6 +93,7 @@ const PACK: LangPack = {
     "timeline.delete_confirm": "確認刪除呢條記錄？",
     "timeline.select": "揀選",
     "timeline.select_all": "全揀",
+    "timeline.backup_warning": "而家啲記錄淨係存喺本機，如果部機已經 Root 咗，資料可能會有遺失風險！",
     "timeline.batch_delete_confirm": "刪除揀咗嘅 {n} 條記錄？呢個操作冇得返轉頭。",
     "timeline.batch": "批量新增",
     "timeline.batch_desc": "按固定間隔重複加呢個劑量",
@@ -930,7 +931,7 @@ const PACK: LangPack = {
     "error.body": "軟件遇到咗預料之外嘅錯誤，重新載入頁面試吓。",
     "error.reload": "重新載入",
 
-    "boot.key_lost": "部機嘅紀錄鎖匙已經用唔到（通常係換機或者還原備份之後發生），應用程式已經改用新鎖匙啟動。部機原本嘅紀錄解唔返，但佢哋從未離開過舊機。登入帳號之後，雲端紀錄會自動同步返嚟。",
+    "boot.key_lost": "部機嘅紀錄鎖匙已經用唔到（常見於換機、還原備份，或者已 Root 裝置嘅 Keystore/代理模組變動），應用程式已經改用新鎖匙啟動。部機原本嘅紀錄解唔返，但佢哋從未離開過舊機。登入帳號之後，雲端紀錄會自動同步返嚟。",
     "patch.rate_placeholder": "例如 50、100",
     "unit.min_short": "分鐘",
     "onboarding.privacy_title_1": "私隱保護植根於",

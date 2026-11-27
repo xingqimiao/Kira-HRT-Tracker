@@ -529,6 +529,7 @@ const PACK: LangPack = {
     "timeline.delete_confirm": "この記録を削除してもよろしいですか？",
     "timeline.select": "選択",
     "timeline.select_all": "すべて選択",
+    "timeline.backup_warning": "記録はこの端末のみに保存されています。端末が Root 化されている場合、データが失われる可能性があります！",
     "timeline.batch_delete_confirm": "選択した {n} 件の記録を削除しますか？この操作は取り消せません。",
     "timeline.batch": "一括追加",
     "timeline.batch_desc": "一定間隔でこの用量を繰り返し追加",
@@ -1260,7 +1261,7 @@ const PACK: LangPack = {
     "error.body": "予期しないエラーが発生しました。ページを再読み込みしてみてください。",
     "error.reload": "再読み込み",
 
-    "boot.key_lost": "この端末の記録キーが使えなくなったため（多くは機種変更やバックアップの復元後に起こります）、新しいキーで起動しました。この端末にあった記録は復号できなくなりましたが、それらは以前の端末から出ていません。ログインすればクラウドから記録が同期されます。",
+    "boot.key_lost": "この端末の記録キーが使えなくなったため（機種変更やバックアップの復元、または root 化端末での Keystore／モジュール変更後に多く起こります）、新しいキーで起動しました。この端末にあった記録は復号できなくなりましたが、それらは以前の端末から出ていません。ログインすればクラウドから記録が同期されます。",
     "patch.rate_placeholder": "例：50、100",
     "unit.min_short": "分",
     "med.title": "服薬リマインダー",

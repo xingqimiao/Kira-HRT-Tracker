@@ -127,6 +127,7 @@ class MainActivity : TauriActivity() {
     @JavascriptInterface fun bottom(): Float = bottomInset
     /** The keyboard's height in dp; 0 when it is closed. See [imeBottomInset]. */
     @JavascriptInterface fun ime(): Float = imeBottomInset
+    @JavascriptInterface fun model(): String = Build.MODEL ?: ""
     @JavascriptInterface fun takeOAuthUrl(): String? {
       val url = pendingOAuthUrl
       pendingOAuthUrl = null

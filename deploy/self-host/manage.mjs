@@ -26,7 +26,7 @@ ${site} {
     Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'none'; worker-src 'self' blob:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'"
     -Server
   }
-  @api path /health /stats /auth /auth/* /api /api/* /mcp /mcp/* /supporters /supporters/* /webhooks /webhooks/*
+  @api path /health /version /stats /auth /auth/* /api /api/* /mcp /mcp/* /supporters /supporters/* /webhooks /webhooks/*
   handle @api {
     reverse_proxy api:8788 {
       header_up -CF-Connecting-IP
@@ -200,6 +200,71 @@ export function setVersion(root, version) {
   renameSync(temporary, path);
 }
 
+/** Compare two semantic versions (`x.y.z`, ignoring leading `v` or prerelease tags). */
+export function compareVersions(a, b) {
+  const parse = (v) => String(v ?? '').trim().replace(/^v/i, '').split('-')[0].split('.').map((n) => Number.parseInt(n, 10) || 0);
+  const pa = parse(a);
+  const pb = parse(b);
+  for (let i = 0; i < 3; i += 1) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+function readConfiguredVersion(root) {
+  const envPath = join(root, '.env');
+  if (existsSync(envPath)) {
+    const match = /^HRT_VERSION=(.+)$/m.exec(readFileSync(envPath, 'utf8'));
+    if (match?.[1]?.trim()) return match[1].trim();
+  }
+  return readFileSync(join(root, 'VERSION'), 'utf8').trim();
+}
+
+export async function fetchLatestSelfHostVersion(repo = process.env.HRT_UPDATE_REPO || 'xingqimiao/Kira-HRT-Tracker') {
+  try {
+    const response = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=10`, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'kira-hrt-self-host' },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!response.ok) return null;
+    const releases = await response.json();
+    if (!Array.isArray(releases)) return null;
+    let best = null;
+    const pick = (pattern) => {
+      for (const release of releases) {
+        if (!release || release.draft) continue;
+        const match = pattern.exec(String(release.tag_name ?? ''));
+        if (!match) continue;
+        const candidate = { version: match[1], url: String(release.html_url || '') };
+        if (!best || compareVersions(candidate.version, best.version) > 0) best = candidate;
+      }
+    };
+    pick(/^self-host-v(\d+\.\d+\.\d+)$/);
+    if (!best) pick(/^v(\d+\.\d+\.\d+)$/);
+    return best;
+  } catch {
+    return null;
+  }
+}
+
+export async function checkUpdate(root, { quiet = false } = {}) {
+  if (process.env.HRT_UPDATE_CHECK === '0') return null;
+  const current = readConfiguredVersion(root);
+  const latest = await fetchLatestSelfHostVersion();
+  if (!latest) {
+    if (!quiet) console.log('Unable to check for updates right now.');
+    return null;
+  }
+  const updateAvailable = compareVersions(latest.version, current) > 0;
+  if (updateAvailable) {
+    console.log(`Update available: ${current} -> ${latest.version} (run: sh hrt.sh update)`);
+  } else if (!quiet) {
+    console.log(`Up to date: ${current}`);
+  }
+  return { current, latest: latest.version, updateAvailable, url: latest.url };
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const [command, value] = process.argv.slice(2);
@@ -216,7 +281,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       if (existsSync(join(dir, 'caddy'))) cpSync(join(dir, 'caddy'), '/caddy', { recursive: true });
     } else if (command === 'version') setVersion(root, value);
     else if (command === 'validate-version') requireVersion(value);
-    else if (command === 'cert') {
+    else if (command === 'check-update') {
+      await checkUpdate(root, { quiet: process.argv.includes('--quiet') });
+    } else if (command === 'latest-version') {
+      const latest = await fetchLatestSelfHostVersion();
+      if (!latest) throw new Error('Unable to determine latest self-host version');
+      console.log(latest.version);
+    } else if (command === 'cert') {
       exportCertificate(root);
       console.log('Exported local-root.crt (public certificate only)');
     } else throw new Error('Unknown management command');

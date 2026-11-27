@@ -51,6 +51,7 @@ class HrtLockBridge(
 
         private const val KEYSTORE = "AndroidKeyStore"
         private const val ALIAS = "hrt-lock-key-v1"
+        private const val RECORD_KEY_ALIAS = "tauri-storage_hrt-local-data-key"
         private const val GCM_TAG_BITS = 128
 
         /** OEM fallback: Android normally reports lockout itself; this is the backstop. */
@@ -222,6 +223,21 @@ class HrtLockBridge(
             KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(ALIAS)
         } catch (_: Exception) {
             // Nothing else to clean up.
+        }
+    }
+
+    /**
+     * Drop the secure-storage plugin's AndroidKeyStore alias when decryption fails
+     * permanently (e.g. Keystore/proxy mismatch or a corrupted alias). The plugin's
+     * own `removeItem` only deletes the DataStore ciphertext, leaving a broken alias
+     * behind; clearing it here lets the next `setItem` generate a clean key.
+     */
+    @JavascriptInterface
+    fun resetRecordKeyAlias() {
+        try {
+            KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(RECORD_KEY_ALIAS)
+        } catch (_: Exception) {
+            // Best-effort; if the alias is already gone, nothing else to clean up.
         }
     }
 

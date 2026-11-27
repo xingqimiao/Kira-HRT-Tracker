@@ -28,6 +28,17 @@ function Backup {
         Tool backup-finish $backupName
     } finally { Dc start api web }
 }
+function Invoke-Upgrade([string]$Version) {
+    if ($Version -notmatch '^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$') { throw 'Supply an explicit version, for example 2.2.0' }
+    $previous = $env:HRT_VERSION
+    try { $env:HRT_VERSION = $Version; Dc pull } finally {
+        if ($null -eq $previous) { Remove-Item Env:HRT_VERSION -ErrorAction SilentlyContinue } else { $env:HRT_VERSION = $previous }
+    }
+    Backup
+    Tool version $Version
+    Dc up -d --wait --wait-timeout 180
+    Write-Output "Upgrade healthy: $Version"
+}
 switch ($Command) {
     'install' {
         if (!$Value) { throw 'Supply https://domain or https://fixed-IP' }
@@ -45,10 +56,14 @@ switch ($Command) {
     'init' { if (!$Value) { throw 'Supply https://domain or https://fixed-IP' }; Tool init $Value }
     'start' { Dc up -d --wait --wait-timeout 180 }
     'stop' { Dc stop }
-    'status' { Dc ps --all }
+    'status' {
+        Dc ps --all
+        try { Tool check-update --quiet } catch {}
+    }
     'check' {
         Dc up -d --wait --wait-timeout 180
         Dc exec -T api node -e "fetch('http://127.0.0.1:8788/health').then(async r=>{if(!r.ok)process.exit(1);console.log(await r.text())}).catch(()=>process.exit(1))"
+        try { Tool check-update --quiet } catch {}
     }
     'logs' { Dc logs --tail 100 -f }
     'cert' { Tool cert }
@@ -66,16 +81,22 @@ switch ($Command) {
         Dc exec -T db rm /tmp/hrt-restore.dump
         Dc up -d --wait --wait-timeout 180
     }
-    'upgrade' {
-        if ($Value -notmatch '^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$') { throw 'Supply an explicit version, for example 2.2.0' }
-        $previous = $env:HRT_VERSION
-        try { $env:HRT_VERSION = $Value; Dc pull } finally {
-            if ($null -eq $previous) { Remove-Item Env:HRT_VERSION -ErrorAction SilentlyContinue } else { $env:HRT_VERSION = $previous }
+    'check-update' { Tool check-update }
+    'update' {
+        $latest = (Tool latest-version | Out-String).Trim()
+        $current = ''
+        if (Test-Path .env) {
+            $line = Get-Content .env | Where-Object { $_ -match '^HRT_VERSION=' } | Select-Object -First 1
+            if ($line) { $current = ($line -replace '^HRT_VERSION=', '').Trim() }
         }
-        Backup
-        Tool version $Value
-        Dc up -d --wait --wait-timeout 180
-        Write-Output "Upgrade healthy: $Value"
+        if ($current -eq $latest) {
+            Write-Output "Already up to date: $latest"
+        } else {
+            Invoke-Upgrade $latest
+        }
+    }
+    'upgrade' {
+        Invoke-Upgrade $Value
     }
     'build' {
         & docker compose -f compose.yaml -f compose.build.yaml build
@@ -83,7 +104,7 @@ switch ($Command) {
     }
     'help' {
         Write-Output 'First installation: ./hrt.ps1 install https://YOUR-DOMAIN-OR-IP'
-        Write-Output 'Maintenance: ./hrt.ps1 start | stop | status | check | logs | cert | backup | restore NAME | upgrade VERSION'
+        Write-Output 'Maintenance: ./hrt.ps1 start | stop | status | check | logs | cert | backup | restore NAME | check-update | update | upgrade VERSION'
         Write-Output 'Advanced: ./hrt.ps1 init URL | build'
     }
     default { throw 'Unknown command. Run: ./hrt.ps1 help' }

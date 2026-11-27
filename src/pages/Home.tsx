@@ -190,7 +190,7 @@ const Home: React.FC<HomeProps> = ({
     const planState = React.useMemo(() => {
         const plans = plansForMode(readMedPlans(), isTransmasc ? 'transmasc' : 'transfem');
         if (plans.length === 0) return { overdue: false, statuses: [] as PlanStatus[], entries: [] };
-        const statuses = planStatuses(plans, events, { nowUtcMs: nowMs, deviceTimezone: zone });
+        const statuses = planStatuses(plans, events, { nowUtcMs: Math.max(nowMs, Date.now()), deviceTimezone: zone });
         const covered = new Set(doseTemplates.map(d => `${d.ester}:${d.route}`));
         return {
             overdue: statuses.some(s => s.overdue),

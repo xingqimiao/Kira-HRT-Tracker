@@ -19,6 +19,7 @@ import { DoseDayGroup } from '../hooks/useAppData';
 import { useScrollParent } from '../hooks/useScrollParent';
 import { FloatingToolbar, FloatingToolbarAction } from '../ui/proto';
 import { rememberTransformSource } from '../ui/ContainerTransform';
+import { isNativeApp } from '../utils/platform';
 
 // Trim trailing zeros so wear durations read "3.5" / "7" rather than "3.50".
 const formatWearDays = (days: number): string =>
@@ -157,7 +158,11 @@ interface HistoryProps {
     groupedEvents: DoseDayGroup[];
     /** The engine in use, so the dose form can hide the gel fields it does not read. */
     activeEngine?: PkEngineId;
+    isSignedIn?: boolean;
 }
+
+// Remember dismissal for the current app session without adding localStorage keys.
+let backupBannerDismissedInSession = false;
 
 const History: React.FC<HistoryProps> = ({
     t,
@@ -171,6 +176,7 @@ const History: React.FC<HistoryProps> = ({
     onDeleteTemplate,
     groupedEvents,
     activeEngine = 'builtin',
+    isSignedIn = false,
 }) => {
     const { isTransmasc } = useHRTMode();
     const { showDialog } = useDialog();
@@ -185,8 +191,18 @@ const History: React.FC<HistoryProps> = ({
         setFilter('all');
     }, [isTransmasc]);
 
-    // Keep Virtuoso's viewport offsetTop honest when the fixed overlay closes or
-    // the filter changes the height of what is above it.
+    const [selectMode, setSelectMode] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [backupBannerDismissed, setBackupBannerDismissed] = useState(backupBannerDismissedInSession);
+
+    const allRecords = React.useMemo(() => groupedEvents.flatMap(g => g.events), [groupedEvents]);
+    const totalRecords = allRecords.length;
+    const isAndroidApp = isNativeApp() && typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+    const showBackupBanner = isAndroidApp && !isSignedIn && totalRecords > 0 && !backupBannerDismissed;
+    const nowH = Date.now() / 3600000;
+
+    // Keep Virtuoso's viewport offsetTop honest when the fixed overlay closes,
+    // the filter changes, or the backup banner alters the height above it.
     useEffect(() => {
         if (!scrollParent) return;
         let animId: number;
@@ -197,14 +213,7 @@ const History: React.FC<HistoryProps> = ({
         };
         animId = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(animId);
-    }, [isQuickAddOpen, filter, scrollParent]);
-
-    const [selectMode, setSelectMode] = useState(false);
-    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-    const allRecords = React.useMemo(() => groupedEvents.flatMap(g => g.events), [groupedEvents]);
-    const totalRecords = allRecords.length;
-    const nowH = Date.now() / 3600000;
+    }, [isQuickAddOpen, filter, showBackupBanner, scrollParent]);
 
     const groups = React.useMemo(() => {
         if (filter === 'all') return groupedEvents;
@@ -403,6 +412,37 @@ const History: React.FC<HistoryProps> = ({
                             ))}
                         </div>
                     </div>
+                    {showBackupBanner ? (
+                        <div
+                            className="card"
+                            role="status"
+                            style={{
+                                background: 'var(--warnc)',
+                                color: 'var(--onterc)',
+                                padding: '10px 12px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 8,
+                            }}
+                        >
+                            <p className="sub" style={{ margin: 0, color: 'inherit', lineHeight: 1.45 }}>
+                                {t('timeline.backup_warning')}
+                            </p>
+                            <button
+                                type="button"
+                                className="icon-del"
+                                onClick={() => {
+                                    backupBannerDismissedInSession = true;
+                                    setBackupBannerDismissed(true);
+                                }}
+                                aria-label={t('btn.close')}
+                                style={{ color: 'inherit', width: 32, height: 32 }}
+                            >
+                                <SpriteIcon id="x" />
+                            </button>
+                        </div>
+                    ) : null}
                 </div>
 
                 <div className="d-col" style={{ minWidth: 0 }}>

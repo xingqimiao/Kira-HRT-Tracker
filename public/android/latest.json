@@ -1,11 +1,12 @@
 {
-  "version": "2.5.7",
-  "versionCode": 2005007,
-  "apk": "https://hrt.kiramyao.com/android/KiraHRT-2.5.7-release.apk",
-  "sha256": "43713FC1DA3B05CAAE66DF7D1704ACCD0A41072D776940146C08753C4D05C684",
+  "version": "2.5.8",
+  "versionCode": 2005008,
+  "apk": "https://hrt.kiramyao.com/android/KiraHRT-2.5.8-release.apk",
+  "sha256": "97F139B725CC1B401E4654D93B4BF0CE3F77D5CB39332E4F4FEF956729C3C397",
   "notes": [
-    "修复剂量输入时意外露出快捷模板弹层的问题。",
-    "复查间隔可以先清空再输入。",
-    "时间选择器的文字选中高亮改用应用主题色。"
+    "加固 Android 密钥恢复与错误提示，历史记录页新增未登录本机风险提醒。",
+    "修复「今日未用药」横幅 60 秒时钟延迟及 Android 会话设备型号识别。",
+    "自托管新增自动更新提醒与一键更新，并迁移至 PostgreSQL 19。",
+    "全面升级 Web、服务端及原生依赖与插件至最新版本。"
   ]
 }

@@ -52,11 +52,16 @@ export function apiEndpoint(path: string): string {
 export const APP_CLIENT_HEADER = 'X-Kira-Client';
 
 function deviceDescriptor(): string {
+    const nativeModel = typeof window !== 'undefined'
+        ? (window as unknown as { HrtSafeArea?: { model?: () => string } }).HrtSafeArea?.model?.()?.trim() || ''
+        : '';
+    if (nativeModel) return `Android ${nativeModel}`;
     const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
-    // Android: the token after "Android <ver>;" is the model.
+    // Android: the token after "Android <ver>;" is the model, except Chromium's UA-reduction placeholder "K".
     const android = /Android[^;]*;\s*([^;)]+?)(?:\s+Build[/)]|\s*\))/.exec(ua) || /Android[^;]*;\s*([^;)]+)\)/.exec(ua);
     if (/Android/i.test(ua)) {
-        const model = (android?.[1] ?? '').trim();
+        const rawModel = (android?.[1] ?? '').trim();
+        const model = rawModel && rawModel !== 'K' ? rawModel : '';
         return model ? `Android ${model}` : 'Android';
     }
     if (/iPhone|iPad|iPod/i.test(ua)) return /iPad/i.test(ua) ? 'iPad' : 'iPhone';

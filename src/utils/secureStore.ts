@@ -1,5 +1,19 @@
 import { secureStorage } from 'tauri-plugin-secure-storage-api';
 import { isNativeApp } from './platform';
+import { resetRecordKeyAlias } from './appLock';
+import {
+    isUnrecoverableKeyError,
+    isValidRawKeyBase64,
+    resolveRecordKey,
+    type RecordKeyDeps,
+} from './secureKeyRecovery';
+
+export {
+    isUnrecoverableKeyError,
+    isValidRawKeyBase64,
+    resolveRecordKey,
+    type RecordKeyDeps,
+};
 
 const KEY_NAME = 'hrt-local-data-key';
 
@@ -155,51 +169,24 @@ export const consumeMissingKeyRecovery = (): boolean => {
 export async function initSecureStore(): Promise<void> {
     if (!isNativeApp() || ready) { ready = true; return; }
     if (!crypto.subtle) throw new Error('Web Crypto is unavailable in the Android WebView');
-    let stored = await secureStorage.getItem(KEY_NAME);
-    // A transient read failure right after an update must not be mistaken for a
-    // fresh install: generating a key here would encrypt the plaintext values
-    // under a key that is gone on the next launch.
-    for (let attempt = 0; !stored && attempt < 3; attempt += 1) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-        stored = await secureStorage.getItem(KEY_NAME);
-    }
-    if (!stored) {
-        let encryptedDataExists = false;
-        for (let i = 0; i < localStorage.length; i += 1) {
-            const key = localStorage.key(i);
-            if (key && isProtectedKey(key) && localStorage.getItem(key) !== null) {
-                encryptedDataExists = true;
-                break;
+    const { key: stored, recovered } = await resolveRecordKey({
+        getItem: () => secureStorage.getItem(KEY_NAME),
+        setItem: (value) => secureStorage.setItem(KEY_NAME, value),
+        removeItem: () => secureStorage.removeItem(KEY_NAME),
+        resetAlias: resetRecordKeyAlias,
+        generateKey: () => b64(crypto.getRandomValues(new Uint8Array(32))),
+        hasProtectedLocalData: () => {
+            for (let i = 0; i < localStorage.length; i += 1) {
+                const key = localStorage.key(i);
+                if (key && isProtectedKey(key) && localStorage.getItem(key) !== null) {
+                    return true;
+                }
             }
-        }
-        // Ciphertext with no key used to throw here, and the throw landed in the
-        // bootstrap before React mounted: the window kept the WebView's own
-        // background colour and the reader got a grey screen with no message and no
-        // way out. A device migrated from another phone hits it every time, because
-        // a backup carries `/data/data` but never the Android Keystore alias the key
-        // lives in — so the key is not late, it is gone.
-        //
-        // Boot anyway, under a new key. The old ciphertext cannot be opened by
-        // anything (the key never left the previous device), so nothing is lost that
-        // was not already lost; what is gained is an app that starts, a notice that
-        // says so, and a sign-in that pulls the records back from the cloud. The
-        // three retries above still run first, so a merely slow plugin read is not
-        // mistaken for this.
-        if (encryptedDataExists) recoveredFromMissingKey = true;
-    }
-    if (!stored) {
-        const generated = b64(crypto.getRandomValues(new Uint8Array(32)));
-        await secureStorage.setItem(KEY_NAME, generated);
-        // Read it back before using it. A generated key that does not survive the
-        // write turns every value encrypted under it into unreadable ciphertext on
-        // the next launch, when the original key reappears — the upgrade report of
-        // 2026-10-21 traced a lost sign-in token to exactly that window.
-        const check = await secureStorage.getItem(KEY_NAME);
-        if (check !== generated) {
-            throw new Error('secure store key was not persisted');
-        }
-        stored = generated;
-    }
+            return false;
+        },
+        sleep: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
+    });
+    if (recovered) recoveredFromMissingKey = true;
     dataKey = await crypto.subtle.importKey('raw', unb64(stored) as unknown as BufferSource, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
     await hydrateRecords();
     ready = true;

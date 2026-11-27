@@ -49,6 +49,7 @@ sh hrt.sh logs
 | 停止 / 启动 | `sh hrt.sh stop` / `sh hrt.sh start` | `./hrt.ps1 stop` / `./hrt.ps1 start` |
 | 再次导出根证书（仅局域网） | `sh hrt.sh cert` | `./hrt.ps1 cert` |
 | 备份 | `sh hrt.sh backup` | `./hrt.ps1 backup` |
+| 检查 / 一键更新 | `sh hrt.sh check-update` / `sh hrt.sh update` | `./hrt.ps1 check-update` / `./hrt.ps1 update` |
 
 ### 备份：第一次存入重要数据后就做
 
@@ -64,11 +65,13 @@ backups/20261025T120000Z/  ← 实际名字以输出为准
 
 保留**整套**备份，包括 CA。备份没有额外加密，放在受限的加密存储中；主密钥副本与数据库副本分开保管，恢复时再组成完整目录。Linux 工具限制权限；Windows 在目录属性 → 安全中限制 NTFS 权限，仅允许自己的账号和管理员。只有数据库、没有主密钥，无法恢复。
 
-### 升级：指定已发布版本，不追踪 latest
+### 升级与更新提醒：支持自动检测或指定版本
 
-假设未来发布了 2.2.3，才运行 `sh hrt.sh upgrade 2.2.3`；Windows：`./hrt.ps1 upgrade 2.2.3`。**这里只演示格式，不表示 2.2.3 已发布。** 工具先拉镜像，再备份当前数据、更新版本、等待健康检查；成功才显示 `Upgrade healthy`。
+运行 `sh hrt.sh status` 或 `sh hrt.sh check` 时会自动检测新版并在终端提示；在网页端「设置 → 关于」中也会显示更新提醒（如不需要可在 `.env` 或环境变量设 `HRT_UPDATE_CHECK=0` / `SELF_HOST_UPDATE_CHECK=0` 关闭）。
 
-不自动升级 PostgreSQL 主版本。失败时保留日志与备份；数据库不兼容时需从升级前备份恢复，不能保证只换回旧镜像即可恢复。
+手动检查或一键更新到最新已发布版本：运行 `sh hrt.sh check-update` / `sh hrt.sh update`（Windows：`./hrt.ps1 check-update` / `./hrt.ps1 update`）。如需切换到指定版本（例如 2.5.8），运行 `sh hrt.sh upgrade 2.5.8`（Windows：`./hrt.ps1 upgrade 2.5.8`）。工具会先拉镜像，再备份当前数据、更新版本、等待健康检查；成功才显示 `Upgrade healthy`。
+
+不自动升级 PostgreSQL 主版本。失败时保留日志与备份；数据库不兼容时需从升级前备份恢复，不能保证只换回旧镜像即可恢复。从 PostgreSQL 18 迁移到 PostgreSQL 19 时不能直接复用旧数据卷，请先在旧实例执行 `backup`，再按下方恢复步骤在新的空目录中以 PostgreSQL 19 执行 `restore`。
 
 ### 恢复：只在新的空目录操作
 
@@ -84,7 +87,7 @@ backups/20261025T120000Z/  ← 实际名字以输出为准
 
 普通使用者不需要下面的步骤。源码构建需要完整源码仓库，部署压缩包不含源码。进入源码的 `deploy/self-host/`，依次执行 `sh hrt.sh init 你的地址` → `sh hrt.sh build` → `sh hrt.sh start`；Windows 使用相同 `./hrt.ps1` 子命令。不要先 `install`，它使用预构建镜像。编译在容器中进行，不要求宿主机 Node。
 
-OAuth、Turnstile、FCM、赞助集成及官网更新默认关闭，不影响基础功能。配置参考 [server/.env.example](https://github.com/xingqimiao/Kira-HRT-Tracker/blob/rewrite/server/.env.example)；启用验证码/推送还需构建匹配前端和 Service Worker。维护脚本显式加载 `compose.yaml`，**不会自动加载 `compose.override.yaml`**；定制者须统一调整所有维护命令的文件列表，备份自己的 override 并验证恢复。OAuth/FCM 需 API 出站网络，但仍不得暴露 API / 数据库端口。
+OAuth、Turnstile、FCM、赞助集成及官网客户端更新默认关闭，不影响基础功能；自部署版本更新检测默认开启（见上文）。配置参考 [server/.env.example](https://github.com/xingqimiao/Kira-HRT-Tracker/blob/rewrite/server/.env.example)；启用验证码/推送还需构建匹配前端和 Service Worker。维护脚本显式加载 `compose.yaml`，**不会自动加载 `compose.override.yaml`**；定制者须统一调整所有维护命令的文件列表，备份自己的 override 并验证恢复。OAuth/FCM 需 API 出站网络，但仍不得暴露 API / 数据库端口。
 
 本地提供方用随机 32 字节主密钥，以 AES-256-GCM 包裹逐账号密钥及 pad，绑定账号和用途。数据库保存密文，但密钥与服务器在同一管理边界，**没有 OCI HSM 的隔离能力，也不是端到端加密**。密钥缺失或不匹配时 API 拒绝启动。掌握服务器及主密钥的管理员仍在信任边界内。
 

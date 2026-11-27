@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, existsSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { initialize, deploymentAddress, prepareBackup, finishBackup, verifyBackup, restoreFiles, setVersion, caddyfile, completeInstallation } from './manage.mjs';
+import { initialize, deploymentAddress, prepareBackup, finishBackup, verifyBackup, restoreFiles, setVersion, caddyfile, completeInstallation, compareVersions, checkUpdate } from './manage.mjs';
 
 function directory(t) {
   const root = mkdtempSync(join(tmpdir(), 'hrt-deploy-'));
@@ -72,4 +72,19 @@ test('backup pairs database, configuration and key, and restore refuses occupied
   writeFileSync(join(source, 'backups/snapshot/master.key'), Buffer.alloc(32));
   assert.throws(() => verifyBackup(source, 'snapshot'), /checksum mismatch/);
   assert.equal(existsSync(join(target, 'backups/snapshot/caddy/root.crt')), true);
+});
+test('update comparison and Caddy /version routing work as expected', async t => {
+  assert.equal(compareVersions('2.5.8', '2.5.7'), 1);
+  assert.equal(compareVersions('2.5.8', '2.5.8'), 0);
+  assert.equal(compareVersions('2.5.7', '2.6.0'), -1);
+  assert.equal(compareVersions('v2.10.0', '2.9.9'), 1);
+  assert.match(caddyfile(deploymentAddress('hrt.example.com')), /@api path .* \/version /);
+  const prev = process.env.HRT_UPDATE_CHECK;
+  process.env.HRT_UPDATE_CHECK = '0';
+  try {
+    assert.equal(await checkUpdate(directory(t), { quiet: true }), null);
+  } finally {
+    if (prev === undefined) delete process.env.HRT_UPDATE_CHECK;
+    else process.env.HRT_UPDATE_CHECK = prev;
+  }
 });

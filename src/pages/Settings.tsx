@@ -246,6 +246,26 @@ const Settings: React.FC<SettingsProps> = ({
     const [cat, setCat] = useState<SettingsCat>(_savedCat);
     const [mobileView, setMobileView] = useState<MobileView>(_savedMobileView);
     const [sub, setSub] = useState<SubPanel | null>(null);
+    const [selfHostUpdate, setSelfHostUpdate] = useState<{ version: string; latest: string; releaseUrl: string | null } | null>(null);
+    const [selfHostUpdateDismissed, setSelfHostUpdateDismissed] = useState(false);
+
+    useEffect(() => {
+        if (import.meta.env.VITE_SELF_HOST !== '1') return;
+        let cancelled = false;
+        const origin = (import.meta.env.VITE_API_ORIGIN as string | undefined)?.replace(/\/+$/, '') || '';
+        void fetch(`${origin}/version`, { cache: 'no-store' })
+            .then(async (res) => (res.ok ? res.json() : null))
+            .then((data: { version?: string | null; latest?: string | null; updateAvailable?: boolean; releaseUrl?: string | null } | null) => {
+                if (cancelled || !data?.updateAvailable || !data.latest) return;
+                setSelfHostUpdate({
+                    version: data.version || APP_VERSION.replace(/^v/, ''),
+                    latest: data.latest,
+                    releaseUrl: data.releaseUrl ?? null,
+                });
+            })
+            .catch(() => undefined);
+        return () => { cancelled = true; };
+    }, []);
 
     // ── App lock (Android only) ──────────────────────────────────────────────
     // `lockPresent` is false on web and on any build without the native bridge;
@@ -408,7 +428,7 @@ const Settings: React.FC<SettingsProps> = ({
         { id: 'plans', label: t('plan.title'), icon: Clock3, hint: t('plan.hint') },
         { id: 'reminders', label: t('settings.group.reminders'), icon: CalendarDays, hint: [t('settings.reminders.liver'), t('settings.reminders.estradiol')].join(' · ') },
         { id: 'data', label: t('settings.group.data'), icon: Database, hint: [t('export.title'), t('import.title')].join(' · ') },
-        { id: 'about', label: t('settings.group.about'), icon: Info, hint: [t('drawer.algorithm_credits'), t('licence.title')].join(' · ') },
+        { id: 'about', label: t('settings.group.about'), icon: Info, hint: selfHostUpdate && !selfHostUpdateDismissed ? `${selfHostUpdate.version} → ${selfHostUpdate.latest}` : [t('drawer.algorithm_credits'), t('licence.title')].join(' · ') },
     ];
 
     const chevron = <Icon icon={ChevronRight} size={18} />;
@@ -903,6 +923,38 @@ const Settings: React.FC<SettingsProps> = ({
 
     // ── About ─────────────────────────────────────────────────────────────────
     const renderAbout = (): React.ReactNode => (
+        <div className="d-col">
+            {selfHostUpdate && !selfHostUpdateDismissed ? (
+                <div
+                    className="card"
+                    role="status"
+                    style={{
+                        background: 'var(--warnc)',
+                        color: 'var(--onterc)',
+                        padding: '10px 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 8,
+                    }}
+                >
+                    <p className="sub" style={{ margin: 0, color: 'inherit', lineHeight: 1.45 }}>
+                        {`${selfHostUpdate.version} → ${selfHostUpdate.latest} · `}
+                        <code>sh hrt.sh update</code>
+                        {' / '}
+                        <code>./hrt.ps1 update</code>
+                    </p>
+                    <button
+                        type="button"
+                        className="icon-del"
+                        onClick={() => setSelfHostUpdateDismissed(true)}
+                        aria-label={t('btn.close')}
+                        style={{ color: 'inherit', width: 32, height: 32 }}
+                    >
+                        <SpriteIcon id="x" />
+                    </button>
+                </div>
+            ) : null}
         <SegmentedList label={t('settings.group.about')}>
             <div className="li" style={{ cursor: 'default' }}>
                 <div className="t">
@@ -1012,6 +1064,7 @@ const Settings: React.FC<SettingsProps> = ({
                 onClick={onShowIntro}
             />
         </SegmentedList>
+        </div>
     );
 
     // ── Pane ──────────────────────────────────────────────────────────────────

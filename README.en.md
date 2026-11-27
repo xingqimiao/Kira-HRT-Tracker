@@ -342,7 +342,7 @@ estradiol equivalent), the optional encryption envelope, and a minimal example.
 |---|---|
 | Front end | React 19 · TypeScript 7 · Vite 8 · Tailwind CSS (Material Design 3 tokens and components) |
 | Native | Tauri 2.12 (`src-tauri/`) · Kotlin bridges (app lock, export, notifications, back gesture, safe areas) |
-| Back end | Node.js · PostgreSQL · plain `pg` (no ORM) |
+| Back end | Node.js · PostgreSQL 19 · plain `pg` (no ORM) |
 | Protocols | REST + [MCP](https://modelcontextprotocol.io) (Streamable HTTP) |
 | Crypto | per-account DEK; wrapped by a password KEK and an OCI KMS master key (HSM) |
 | PK engines | built-in: `logic.ts` + `src/pk/kernels.ts` (parameters from published literature) · the Transmtf engine in `src/pk/` (lazy-loaded) |
@@ -399,11 +399,11 @@ The independent **Web/PWA distribution** retains multiple accounts, sync, sharin
 - **[LAN / NAS deployment](deploy/self-host/LAN.en.md)**: fixed IP → Windows/macOS/NAS preparation → install → trust the local certificate on each device.
 - [Backup, upgrade, recovery and troubleshooting](deploy/self-host/MAINTENANCE.en.md): after installation.
 
-[Download the 2.5.6 archive](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.5.6/kira-hrt-self-host-2.5.6.tar.gz). One archive includes both routes and maintenance in English/Chinese; exact commands are in the matching guide. The [deployment index](deploy/self-host/README.en.md) helps select your scenario.
+[Download the 2.5.8 archive](https://github.com/xingqimiao/Kira-HRT-Tracker/releases/download/self-host-v2.5.8/kira-hrt-self-host-2.5.8.tar.gz). One archive includes both routes and maintenance in English/Chinese; exact commands are in the matching guide. The [deployment index](deploy/self-host/README.en.md) helps select your scenario.
 
-The two GitHub Packages are kira-hrt-web (website/HTTPS) and kira-hrt-api (backend). Both and PostgreSQL are pulled automatically; do not choose between them. Existing instances upgrade to 2.5.6 with the commands in the [maintenance guide](deploy/self-host/MAINTENANCE.en.md); no reinitialization is needed and the previous archives remain available.
+The two GitHub Packages are kira-hrt-web (website/HTTPS) and kira-hrt-api (backend). Both and PostgreSQL are pulled automatically; do not choose between them. Existing instances upgrade to 2.5.8 with `check-update` / `update` or the commands in the [maintenance guide](deploy/self-host/MAINTENANCE.en.md); no reinitialization is needed and the previous archives remain available.
 
-OAuth, CAPTCHA, FCM and official-site updates are disabled by default. Official Android APKs use the official service; use Web/PWA for self-hosting. Migrate via export/import rather than copying an OCI database and switching key providers. Back up keys and database, keeping key copies separately.
+OAuth, CAPTCHA, and FCM are disabled by default, while self-hosted release update checks and reminders are enabled (can be disabled via `HRT_UPDATE_CHECK=0` / `SELF_HOST_UPDATE_CHECK=0`). Official Android APKs use the official service; use Web/PWA for self-hosting. Migrate via export/import rather than copying an OCI database and switching key providers. Back up keys and database, keeping key copies separately.
 
 See [verification](deploy/self-host/VERIFICATION.md) for acceptance scope. OCI/systemd operators may consult the [custom deployment manual](server/DEPLOY.md).
 

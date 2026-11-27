@@ -49,6 +49,7 @@ The website goes offline when the host sleeps/shuts down or Docker stops. Contai
 | Stop / start | `sh hrt.sh stop` / `sh hrt.sh start` | `./hrt.ps1 stop` / `./hrt.ps1 start` |
 | Export root certificate again (LAN only) | `sh hrt.sh cert` | `./hrt.ps1 cert` |
 | Backup | `sh hrt.sh backup` | `./hrt.ps1 backup` |
+| Check / update to latest | `sh hrt.sh check-update` / `sh hrt.sh update` | `./hrt.ps1 check-update` / `./hrt.ps1 update` |
 
 ### Back up after first saving important data
 
@@ -56,11 +57,13 @@ The website goes offline when the host sleeps/shuts down or Docker stops. Contai
 
 Keep the **whole set**, including the CA. Backup files have no additional encryption: store securely in encrypted storage, keep key copies separate from database copies and reunite the complete set for recovery. Linux tooling restricts permissions. On Windows restrict directory NTFS permissions to your user and administrators. A database dump without the master key cannot be recovered.
 
-### Upgrade only to an explicitly published version
+### Updates, reminders and explicit version upgrades
 
-If a future 2.2.3 release is published, use `sh hrt.sh upgrade 2.2.3` or `./hrt.ps1 upgrade 2.2.3`. **This illustrates syntax, not an assertion that 2.2.3 exists.** The command pulls images, backs up current data, updates the version and waits for health checks. Only success prints `Upgrade healthy`.
+Running `sh hrt.sh status` or `sh hrt.sh check` checks for newer self-hosted releases and prints a reminder when an update is available, and the web app shows an update banner under Settings → About (set `HRT_UPDATE_CHECK=0` / `SELF_HOST_UPDATE_CHECK=0` to disable).
 
-No `latest` tracking or automatic PostgreSQL major upgrades. Preserve logs/backups on failure. Incompatible database changes require recovery from the pre-upgrade backup; changing back only the image is not guaranteed to work.
+Run `sh hrt.sh check-update` / `sh hrt.sh update` (Windows: `./hrt.ps1 check-update` / `./hrt.ps1 update`) to check or update to the latest self-hosted release, or run `sh hrt.sh upgrade 2.5.8` / `./hrt.ps1 upgrade 2.5.8` to pin an explicit version. The command pulls images, backs up current data, updates the version and waits for health checks. Only success prints `Upgrade healthy`.
+
+No `latest` tracking or automatic PostgreSQL major upgrades. Preserve logs/backups on failure. Incompatible database changes require recovery from the pre-upgrade backup; changing back only the image is not guaranteed to work. Migrating an existing PostgreSQL 18 instance to PostgreSQL 19 cannot reuse the old data volume in-place; run `backup` on the old instance first, then run `restore` into a new empty deployment directory on PostgreSQL 19.
 
 ### Restore only into a new empty deployment directory
 
@@ -76,7 +79,7 @@ No `latest` tracking or automatic PostgreSQL major upgrades. Preserve logs/backu
 
 Normal users do not need these steps. Source builds require the complete repository, not the deployment archive. In its `deploy/self-host/` directory run `sh hrt.sh init YOUR-ADDRESS`, then `sh hrt.sh build`, then `sh hrt.sh start`; Windows uses the same subcommands with `./hrt.ps1`. Do not run install first, which uses published images. Compilation happens in containers, without host Node.
 
-OAuth, Turnstile, FCM, sponsor integrations and official-site updates are disabled by default. See [server/.env.example](https://github.com/xingqimiao/Kira-HRT-Tracker/blob/rewrite/server/.env.example) for advanced configuration; CAPTCHA/push also require a matching frontend/worker build. Scripts explicitly load `compose.yaml` and **do not automatically load compose.override.yaml**. Custom operators must consistently change all maintenance command file lists, back up overrides and test recovery. OAuth/FCM require API egress without publishing API/database ports.
+OAuth, Turnstile, FCM, sponsor integrations and official-site APK updates are disabled by default; self-host release update checks are enabled by default (see above). See [server/.env.example](https://github.com/xingqimiao/Kira-HRT-Tracker/blob/rewrite/server/.env.example) for advanced configuration; CAPTCHA/push also require a matching frontend/worker build. Scripts explicitly load `compose.yaml` and **do not automatically load compose.override.yaml**. Custom operators must consistently change all maintenance command file lists, back up overrides and test recovery. OAuth/FCM require API egress without publishing API/database ports.
 
 The local provider uses a random 32-byte master key and AES-256-GCM to wrap account keys and pads, binding account and purpose. The database stores ciphertext, but the key file shares the server's administrative boundary: **no OCI HSM isolation and no end-to-end encryption claim**. Missing/mismatched keys stop API startup. Server administrators with the key remain inside the trust boundary.
 

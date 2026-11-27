@@ -351,6 +351,7 @@ const PACK: LangPack = {
     "timeline.delete_confirm": "Bu kaydı silmek istediğinizden emin misiniz?",
     "timeline.select": "Seç",
     "timeline.select_all": "Tümünü seç",
+    "timeline.backup_warning": "Kayıtlar yalnızca bu cihazda saklanır. Cihazınız rootluysa veri kaybı riski olabilir!",
     "timeline.batch_delete_confirm": "Seçilen {n} kayıt silinsin mi? Bu işlem geri alınamaz.",
     "timeline.batch": "Toplu ekle",
     "timeline.batch_desc": "Bu dozu sabit aralıkla tekrarla",
@@ -458,7 +459,7 @@ const PACK: LangPack = {
     "error.body": "Uygulama beklenmeyen bir hatayla karşılaştı. Sayfayı yeniden yüklemeyi dene.",
     "error.reload": "Yeniden Yükle",
 
-    "boot.key_lost": "Bu cihazın kayıt anahtarı artık kullanılamıyor (genellikle yeni bir telefona geçince veya yedek geri yüklenince olur), bu yüzden uygulama yeni bir anahtarla başladı. Bu cihazda bulunan kayıtlar artık çözülemiyor, ancak eski cihazdan hiç ayrılmadılar. Giriş yapın; kayıtlarınız buluttan geri eşitlenir.",
+    "boot.key_lost": "Bu cihazın kayıt anahtarı artık kullanılamıyor (genellikle yeni bir telefona geçince, yedek geri yüklenince veya root'lu cihazlarda Keystore/modül değişikliği sonrası olur), bu yüzden uygulama yeni bir anahtarla başladı. Bu cihazda bulunan kayıtlar artık çözülemiyor, ancak önceki cihazdan hiç çıkmadılar. Buluttaki kayıtlarınızı geri almak için giriş yapın.",
     "patch.rate_placeholder": "örn. 50, 100",
     "unit.min_short": "dk",
     "btn.confirm": "Onayla",

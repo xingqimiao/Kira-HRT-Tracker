@@ -93,6 +93,7 @@ const PACK: LangPack = {
     "timeline.delete_confirm": "確定要刪除這筆紀錄嗎？",
     "timeline.select": "選擇",
     "timeline.select_all": "全選",
+    "timeline.backup_warning": "目前記錄僅儲存於本機，若裝置已 Root 資料可能面臨遺失風險！",
     "timeline.batch_delete_confirm": "刪除選取的 {n} 筆紀錄？此操作無法復原。",
     "timeline.batch": "批次新增",
     "timeline.batch_desc": "按固定間隔重複新增此劑量",
@@ -930,7 +931,7 @@ const PACK: LangPack = {
     "error.body": "應用程式發生非預期的錯誤，請重新整理頁面試試看。",
     "error.reload": "重新整理",
 
-    "boot.key_lost": "本機的紀錄金鑰已無法使用（通常是換機或還原備份後發生的），應用程式已改用新金鑰啟動。本機原有的紀錄無法再解開，但它們從未離開過舊裝置。登入帳號後，雲端紀錄會自動同步回來。",
+    "boot.key_lost": "本機的紀錄金鑰已無法使用（常見於換機、還原備份，或已 Root 裝置的 Keystore/代理模組變動），應用程式已改用新金鑰啟動。本機原有的紀錄無法再解開，但它們從未離開過舊裝置。登入帳號後，雲端紀錄會自動同步回來。",
     "patch.rate_placeholder": "如 50、100",
     "unit.min_short": "分鐘",
     "onboarding.privacy_title_1": "隱私保護根植於",

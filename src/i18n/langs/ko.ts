@@ -511,6 +511,7 @@ const PACK: LangPack = {
     "timeline.delete_confirm": "이 기록을 삭제하시겠습니까?",
     "timeline.select": "선택",
     "timeline.select_all": "전체 선택",
+    "timeline.backup_warning": "기록은 이 기기에만 저장됩니다. 기기가 루팅된 경우 데이터가 손실될 위험이 있습니다!",
     "timeline.batch_delete_confirm": "선택한 {n}개의 기록을 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
     "timeline.batch": "일괄 추가",
     "timeline.batch_desc": "일정 간격으로 이 용량을 반복 추가",
@@ -1260,7 +1261,7 @@ const PACK: LangPack = {
     "error.body": "앱에 예상치 못한 문제가 생겼습니다. 페이지를 새로고침해 보세요.",
     "error.reload": "새로고침",
 
-    "boot.key_lost": "이 기기의 기록 키를 더 이상 사용할 수 없어(주로 기기 변경이나 백업 복원 후에 발생) 새 키로 시작했습니다. 이 기기에 있던 기록은 더 이상 복호화할 수 없지만, 그 기록은 이전 기기를 떠난 적이 없습니다. 로그인하면 클라우드에서 기록이 다시 동기화됩니다.",
+    "boot.key_lost": "이 기기의 기록 키를 더 이상 사용할 수 없어(주로 기기 변경, 백업 복원 또는 루팅된 기기의 Keystore/모듈 변경 후 발생) 새 키로 시작했습니다. 이 기기에 있던 기록은 더 이상 복호화할 수 없지만, 그 기록은 이전 기기를 떠난 적이 없습니다. 로그인하면 클라우드에서 기록이 다시 동기화됩니다.",
     "patch.rate_placeholder": "예: 50, 100",
     "unit.min_short": "분",
     "med.title": "복약 알림",
